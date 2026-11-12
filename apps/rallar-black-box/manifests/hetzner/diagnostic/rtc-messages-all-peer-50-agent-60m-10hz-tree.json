@@ -324,9 +324,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-relay-hold",
-            "count": 546,
+            "count": 101,
             "intervalMs": 1000,
-            "maxCommands": 546,
+            "maxCommands": 101,
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
               "transport": "messages.rtc",
@@ -342,7 +342,7 @@
               "minReceiveRatio": 0.85,
               "logicalFanoutMessages": 88200000,
               "purpose": "relay-hold",
-              "relayHoldMs": 545000
+              "relayHoldMs": 100000
             },
             "commands": [
               {

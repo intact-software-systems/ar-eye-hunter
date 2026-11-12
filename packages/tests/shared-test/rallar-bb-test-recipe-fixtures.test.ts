@@ -218,23 +218,31 @@ describe('rallar-bb-test recipe fixtures', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, receiver).ok).toBe(true);
     });
 
-    it('derives the relay hold from the delivery shortfall the threshold tolerates plus the tail', () => {
+    it('holds a relay for the most stream any one sender can still have left once its threshold holds, plus the tail', () => {
         const principal = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({ participantCount: 50 })[1];
         const principalHold = principal.commands.find((command) => command.commandId === 'rtc-messages-principal-receiver-relay-hold');
 
+        // Manifest 07: one sender, so its 30 unreceived frames (1.5 s at 20 Hz) are all it can have left.
         expect(computeRtcMessagesRelayHoldMs({
             frameCount: 600,
             intervalMs: 50,
             expectedInboundMessages: 600,
-            minExpectedInboundMessages: 570
-        })).toBe(6_500);
+            minExpectedInboundMessages: 570,
+            latestSenderStreamEndMs: 130_000,
+            earliestPollStartMs: 0
+        })).toBe(1_500 + 5_000);
+        expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 }, count: 8 });
+        // Manifest 09: the 735-message shortfall exceeds one sender's 150 frames, so a sender may not have started when
+        // the receiver's poll starts 35 s after its connect; that sender streams until the 95 s connect spread, the 5 s
+        // settle and the 30 s stream have passed.
         expect(computeRtcMessagesRelayHoldMs({
             frameCount: 150,
             intervalMs: 200,
             expectedInboundMessages: 7_350,
-            minExpectedInboundMessages: 6_615
-        })).toBe(8_000);
-        expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 } });
+            minExpectedInboundMessages: 6_615,
+            latestSenderStreamEndMs: 95_000 + 5_000 + 30_000,
+            earliestPollStartMs: 5_000 + 30_000
+        })).toBe(95_000 + 5_000);
     });
 
     it('paces the principal delivery poll at the mid-stream stats interval and stays inside the command limits for long runs', () => {
@@ -353,7 +361,9 @@ describe('rallar-bb-test recipe fixtures', () => {
             kind: 'loop',
             commandId: 'rtc-messages-all-peer-relay-hold',
             intervalMs: 1_000,
-            count: 9,
+            count: 101,
+            maxCommands: 101,
+            metadata: { purpose: 'relay-hold', relayHoldMs: 100_000 },
             commands: [{ kind: 'stats', commandId: 'rtc-messages-all-peer-relay-hold-stats' }]
         });
         expect(recipe.commands[allPeerPollIndex + 2]).toMatchObject({
