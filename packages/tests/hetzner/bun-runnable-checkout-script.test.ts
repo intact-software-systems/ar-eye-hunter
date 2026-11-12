@@ -151,7 +151,7 @@ describe('runnable Bun checkout', () => {
     it('follows a rewritten remote branch instead of failing the fast-forward of a diverged local one', async (context) => {
         const repository = await createRolloutRepository(context, 'rallar-rollout-rewritten-branch-');
         await repository.git(repository.sourceDir, ['checkout', '-b', 'feature']);
-        await writeFile(path.join(repository.sourceDir, 'README.md'), 'first\n');
+        await writeFile(path.join(repository.sourceDir, 'revision.txt'), 'first\n');
         await commitTree(repository, bunCommit, 'first');
         await repository.git(repository.sourceDir, ['push', '-u', 'origin', 'feature']);
         // The controller rolled out the first version of the branch.
@@ -159,7 +159,7 @@ describe('runnable Bun checkout', () => {
         await repository.git(repository.checkoutDir, ['checkout', 'feature']);
         // The branch is rewritten upstream (a rebase), so the local branch no longer fast-forwards.
         await repository.git(repository.sourceDir, ['reset', '--hard', 'main']);
-        await writeFile(path.join(repository.sourceDir, 'README.md'), 'rewritten\n');
+        await writeFile(path.join(repository.sourceDir, 'revision.txt'), 'rewritten\n');
         const rewrittenSha = await commitTree(repository, bunCommit, 'rewritten');
         await repository.git(repository.sourceDir, ['push', '--force', 'origin', 'feature']);
 
