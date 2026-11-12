@@ -13,15 +13,6 @@ import {
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 const expectedTypeScriptVersion = '7.0.2';
-// These projects reach api-v1's PGlite adapter, and @electric-sql/pglite 0.5.4 ships declarations
-// that use the Emscripten globals of @types/emscripten without depending on it. Each entry leaves
-// this list once that declaration gap is closed; no other configuration may suppress library checks.
-const configsAwaitingPGliteDeclarations = [
-    'apps/api-v1/tsconfig.json',
-    'apps/ar-eye-hunter-server-v1/tsconfig.json',
-    'apps/relic-hunter-server-v1/tsconfig.json',
-    'packages/shared-test/tsconfig.json'
-];
 const ignoredDirectoryNames = new Set([
     '.claude',
     '.git',
@@ -146,10 +137,7 @@ describe('native TypeScript 7 repository boundaries', () => {
                 problems.push('declares forbidden ignoreDeprecations fallback');
             }
 
-            if (
-                compilerOptions.skipLibCheck === true &&
-                !configsAwaitingPGliteDeclarations.includes(relativePath(configPath))
-            ) {
+            if (compilerOptions.skipLibCheck === true) {
                 problems.push('enables forbidden skipLibCheck suppression');
             }
 
@@ -180,11 +168,6 @@ describe('native TypeScript 7 repository boundaries', () => {
         });
 
         expect(configProblems).toEqual([]);
-        expect(
-            configsAwaitingPGliteDeclarations.filter((configPath) =>
-                readJson<TypeScriptConfig>(path.join(repositoryRoot, configPath)).compilerOptions?.skipLibCheck !== true
-            )
-        ).toEqual([]);
     });
 
     it('does not import TypeScript compiler APIs', () => {

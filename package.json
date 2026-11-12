@@ -203,6 +203,7 @@
     "@babel/parser": "^8.0.4",
     "@electric-sql/pglite": "0.5.4",
     "@playwright/test": "1.61.1",
+    "@types/emscripten": "1.41.6",
     "@vitest/ui": "4.1.10",
     "ajv": "6.15.0",
     "dprint": "^0.56.0",
