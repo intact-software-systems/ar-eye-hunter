@@ -248,8 +248,9 @@ function requireManagedApiEnvironmentValue(
 
 export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly string[] {
     // The managed server's child environment is minimal and omits PATH, so resolve the runtime by
-    // absolute path rather than the literal `bun` (Bun.spawn does not inject a default PATH).
-    return [process.execPath, 'run', API_ENTRYPOINT];
+    // absolute path rather than the literal `bun` (Bun.spawn does not inject a default PATH). The plan's
+    // env is complete, so the repo root's developer env files must not be read.
+    return [process.execPath, '--no-env-file', 'run', API_ENTRYPOINT];
 }
 
 function toRecipeMatrixCommand(

@@ -400,11 +400,12 @@ describe('API-v1 runner options and process plans', () => {
         expect(plan?.env).not.toHaveProperty('RALLAR_DB_PUBSUB');
     });
 
-    it('builds the api-v1 Bun server command', () => {
+    it('builds the api-v1 Bun server command, reading no env files because the plan env is complete', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
 
         expect(toApiV1ServerCommand(options)).toEqual([
             process.execPath,
+            '--no-env-file',
             'run',
             'apps/api-v1/src/main.ts'
         ]);
