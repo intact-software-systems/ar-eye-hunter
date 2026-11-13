@@ -566,13 +566,29 @@ publication succeed. The event's `data` is the event itself:
   value that never decodes, or a thrown business path can emit none; disabled or
   failed diagnostics can also lose this event. Its absence does not establish an
   admission outcome. A retained data admission's replay states one more event
-  per replay that reaches a verdict, under the same `msgId`, trace and runtime
-  `workerId` (never `…/volatile`): the acceptance its commit reached, `pending` /
-  `pending-admission` again when it conflicts again, `rejected` / `expired`
-  past its deadline, or `unauthorized` when its current authority refuses it.
+  per replay that reaches a verdict, under the same `msgId`, trace, carrier
+  and runtime `workerId` (never `…/volatile`):
+  - the acceptance its commit reached, mapped as an ingress's is;
+  - `pending` / `pending-admission` again when it conflicts again;
+  - `rejected` / `expired` past its deadline;
+  - `unauthorized` / `unauthorized` when its current authority refuses the
+    message, or when that authority's source no longer covers the scope a
+    stored WS client admission names. That scope is checked at dispatch, not at
+    ingress: an admission that was not retained reads `committed` here and its
+    refusal shows only at dispatch, while a retained one's replay reads
+    `unauthorized`;
+  - a rejection, by its ingress authorization or by the attempt, as an ingress
+    states one: `unauthorized` for code `unauthorized`, otherwise `rejected`
+    (`malformed`, for example), with the code as the reason.
+
   A replay whose authority asks for a retry, or that shutdown cut short, states
-  nothing. So one message can read `pending` and then its verdict, and the
-  latest event for a `msgId` is the one that says where it stopped
+  nothing. No field marks an event as a replay's. A later arrival of the same
+  `msgId` (a copy on the other carrier, a retried copy) states its own event
+  too, so the latest event for a `msgId` is not by itself where the message
+  stopped. On one carrier, only the order separates a replay's verdict from a
+  re-arrival's: the first event after a `pending` / `pending-admission` that
+  is not itself `pending` is that retained arrival's verdict, unless another
+  arrival on the carrier was stated in between
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
