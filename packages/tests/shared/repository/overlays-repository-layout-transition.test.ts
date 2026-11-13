@@ -8,7 +8,9 @@ import {
     isOverlayIdentity,
     readableLayoutTransitionCache,
     reconcileAcceptedOverlayIdentity,
+    removeAcceptedOverlayByGroupRef,
     removeAcceptedOverlayById,
+    removeAcceptedOverlayByIdIfUnchanged,
     setAcceptedOverlayById,
     setCurrentAcceptedServerOverlayById,
     setPlannedOverlayById,
@@ -165,7 +167,105 @@ describe('overlay repository layout transition', () => {
             replacedAtEpochMs: 3_000
         }]);
     });
+
+    it('a transition does not survive two repairs that return the accepted slot to the layout that made it', () => {
+        const replaced = overlay({ groupRevision: 3, presenceRevision: 5, version: 6 });
+        const promoted = overlay({ groupRevision: 4, presenceRevision: 6, version: 7 });
+        const repair = overlay({ groupRevision: 5, presenceRevision: 5, version: 8 });
+        promote(replaced, promoted);
+
+        expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, repair)).toBe('adopted');
+        expect(readTransition()).toBeUndefined();
+
+        expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, promoted)).toBe('adopted');
+        expect(acceptedLayout()).toEqual(promoted);
+        expect(readTransition()).toBeUndefined();
+    });
+
+    it('a transition does not survive the removal and re-adoption of the layout that made it', () => {
+        const replaced = overlay({ version: 1 });
+        const promoted = overlay({ version: 2 });
+        promote(replaced, promoted);
+
+        removeAcceptedOverlayById(OVERLAY_ID);
+        expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('initial-set');
+
+        expect(acceptedLayout()).toEqual(promoted);
+        expect(readTransition()).toBeUndefined();
+    });
+
+    it.each([
+        { removal: 'by id', remove: (held: OverlayInfo) => removeAcceptedOverlayById(held.overlayId) },
+        { removal: 'by group ref', remove: (held: OverlayInfo) => removeAcceptedOverlayByGroupRef(held.groupRef) },
+        {
+            removal: 'by id while unchanged',
+            remove: (held: OverlayInfo) => removeAcceptedOverlayByIdIfUnchanged(held.overlayId, findAcceptedOverlayById(held.overlayId))
+        },
+        {
+            removal: 'through a group snapshot that names no accepted layout',
+            remove: (held: OverlayInfo) => reconcileAcceptedOverlayIdentity({ overlayId: held.overlayId, acceptedIdentity: undefined })
+        }
+    ])('a removal of the accepted layout clears the transition ($removal)', ({ remove }) => {
+        const promoted = overlay({ version: 2 });
+        promote(overlay({ version: 1 }), promoted);
+
+        expect(remove(promoted)).toBe(true);
+
+        expect(findAcceptedOverlayById(OVERLAY_ID)).toBeUndefined();
+        expect(readTransition()).toBeUndefined();
+    });
+
+    it('an accepted write that changes nothing keeps the transition', () => {
+        const replaced = overlay({ groupRevision: 3, presenceRevision: 5, version: 6 });
+        const promoted = overlay({ groupRevision: 4, presenceRevision: 6, version: 7 });
+        promote(replaced, promoted);
+        const recorded = readTransition();
+
+        expect(setAcceptedOverlayById(OVERLAY_ID, { ...promoted })).toBe('equal');
+        expect(setAcceptedOverlayById(OVERLAY_ID, replaced)).toBe('dominated-dropped');
+        expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ groupRevision: 5, presenceRevision: 5, version: 8 })))
+            .toBe('incomparable-conflict');
+
+        expect(acceptedLayout()).toEqual(promoted);
+        expect(readTransition()).toEqual(recorded);
+        expect(recorded?.replaced).toEqual(replaced);
+    });
+
+    it('a removed layout that takes the accepted slot records nothing and clears the transition', () => {
+        const promoted = overlay({ version: 2 });
+        promote(overlay({ version: 1 }), promoted);
+        const retired: OverlayInfo = { ...promoted, state: 'removed', nextHopSessionIds: [] };
+
+        expect(setAcceptedOverlayById(OVERLAY_ID, retired)).toBe('adopted');
+
+        expect(readTransition()).toBeUndefined();
+    });
+
+    it('a replaced layout that is not active is never recorded', () => {
+        const active = overlay({ version: 1 });
+        const retired: OverlayInfo = { ...active, state: 'removed', nextHopSessionIds: [] };
+        setAcceptedOverlayById(OVERLAY_ID, active);
+        expect(setAcceptedOverlayById(OVERLAY_ID, retired)).toBe('adopted');
+
+        expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }))).toBe('adopted');
+
+        expect(readTransition()).toBeUndefined();
+    });
+
+    it('a planned layout that dominates the planned layout it replaces leaves no transition', () => {
+        setPlannedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+
+        expect(setPlannedOverlayById(OVERLAY_ID, overlay({ version: 2 }))).toBe('adopted');
+
+        expect(readTransition()).toBeUndefined();
+    });
 });
+
+function promote(replaced: OverlayInfo, promoted: OverlayInfo): void {
+    setAcceptedOverlayById(OVERLAY_ID, replaced);
+    expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('adopted');
+    expect(readTransition()?.replaced).toEqual(replaced);
+}
 
 function readTransition(): OverlayLayoutTransition | undefined {
     return readableLayoutTransitionCache().read(OVERLAY_ID);
