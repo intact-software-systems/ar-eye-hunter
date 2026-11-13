@@ -58,6 +58,7 @@ describe('PR handoff admission', () => {
                     'release-gate',
                     'games-release-gate',
                     'alm-conformance-observation',
+                    'navigation-report-observation',
                     'publish-validation-evidence',
                     'rtc-observation-integrity'
                 ]
@@ -80,7 +81,16 @@ describe('PR handoff admission', () => {
             expect(workflow.on.pull_request.types).toContain(event);
             expect(workflow.jobs['draft-checks']).toBeDefined();
             expect(isAdmitted(workflow.jobs['draft-checks']?.if, scenario)).toBe(false);
-            for (const job of ['validation-evidence', 'game-changes', 'release-gate', 'games-release-gate', 'publish-validation-evidence']) {
+            for (
+                const job of [
+                    'validation-evidence',
+                    'game-changes',
+                    'release-gate',
+                    'games-release-gate',
+                    'navigation-report-observation',
+                    'publish-validation-evidence'
+                ]
+            ) {
                 expect(isAdmitted(workflow.jobs[job].if, scenario), job).toBe(true);
             }
             const result = workflow.jobs['branch-release-result'];

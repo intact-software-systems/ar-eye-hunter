@@ -215,7 +215,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/navigation-report-observation.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}

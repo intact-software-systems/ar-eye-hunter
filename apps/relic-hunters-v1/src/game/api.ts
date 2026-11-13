@@ -30,14 +30,17 @@ export async function fetchRelicSnapshot(
     return await decodeRelicResponse(response, 'Failed to load expedition');
 }
 
-export async function initializeRelicGame(gameId: string): Promise<RelicPublicSnapshot | undefined> {
+export async function initializeRelicGame(
+    gameId: string,
+    signal: AbortSignal
+): Promise<RelicPublicSnapshot | undefined> {
     const session = readSession();
     if (!session) {
         return undefined;
     }
     const response = await fetch(
         `${readApiBaseUrl()}/api/relic/games/${encodeURIComponent(gameId)}/initialize/requests/${crypto.randomUUID()}`,
-        { method: 'POST', headers: newApiRequestHeaders({ authSession: session }) }
+        { method: 'POST', headers: newApiRequestHeaders({ authSession: session }), signal }
     );
     if (!response.ok) {
         throw new Error(`Failed to initialize expedition: ${response.status}`);
