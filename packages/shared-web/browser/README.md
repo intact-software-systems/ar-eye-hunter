@@ -31,8 +31,17 @@ registration, invocation, and cleanup without consulting a historical plan.
 
 1. [createRallarFacade](./rallar.ts) delegates to
    [createRallarFacade](./composition/create-rallar-facade.ts).
-2. [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
-   creates the per-facade runtime ports and lifecycle coordinator.
+2. [createDefaultBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
+   reads the page's WebCrypto and builds the IndexedDB publication-key store;
+   [createBrowserRuntimeFoundation](./composition/browser-runtime-composition.ts)
+   takes those two platform inputs and creates the per-facade runtime ports and
+   lifecycle coordinator.
+   [createBrowserParticipantCore](./composition/create-browser-participant-core.ts)
+   then composes steps 3–5 and the messaging and realtime-core compositions of
+   step 6, with the session's resync recovery, granted topics, topic
+   subscriptions and publication verifier, over that foundation and the root's
+   session QoS inputs; the product root and the black-box runtime root both
+   call it.
 3. [createBrowserStateComposition](./composition/browser-runtime-composition.ts)
    creates [createRallarStateCacheReadPort](./state-cache/rallar-state-store.ts)
    before constructing both the room-state store and aggregate state store from
@@ -54,7 +63,9 @@ registration, invocation, and cleanup without consulting a historical plan.
    [createBrowserRealtimeCoreComposition](./composition/browser-communication-composition.ts),
    and the granular feature compositions construct completed message, RTC,
    realtime, media, room, people, stats, call, and director capabilities
-   directly. No grouping factory sits between a feature owner and the composer.
+   directly. The participant core is the one grouping between these owners and
+   a composition root, because two roots share it; every other feature
+   composition is called by the root itself.
    Call signal routing lives in
    [BrowserCallSignalRuntime](./calls/browser-call-signal-runtime.ts),
    while each accepted or started call creates one

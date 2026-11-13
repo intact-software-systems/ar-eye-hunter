@@ -148,10 +148,6 @@ and it has no status list.
   `packages/shared-web/browser/messages/publication/validate-browser-live-send.ts`)
   are candidates for `packages/shared/al-contracts` once a second runtime
   validates a channel.
-- `packages/shared/services/ws-queue-box-client-service.ts` keeps
-  `qosProvider?:` optional (S9-i, D620), outside the list of inputs S9-i made
-  required; its only browser caller always passes the wrapper, so the field
-  can become required with the remaining callers' review.
 - ALM congestion beyond V1b: relay fanout reduction, rerouting around a backpressured
   peer, RTC unicast congestion, server-side WS backpressure and a rotating claim order.
 - ALM topic-policy advertisement (carried from S1-ii, D482, S2-i and S3): a

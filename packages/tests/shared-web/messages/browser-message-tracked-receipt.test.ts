@@ -623,6 +623,7 @@ async function createWsClient(
     TestWebSocket.instances.at(-1)!.open();
     await connected;
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId,

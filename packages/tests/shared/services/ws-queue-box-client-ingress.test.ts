@@ -88,6 +88,7 @@ describe('WS client typed ingress and transport effects', () => {
         const engine = new InboxOutboxEngine();
         engine.start();
         const replay = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             outbox: new InMemoryQueueBox(),
             socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
             sessionId: 'self',
@@ -425,6 +426,7 @@ async function createClientIngressFixture(
         maxDeliveredMarkers: undefined
     });
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox,
         socket: client,
         sessionId: 'self',

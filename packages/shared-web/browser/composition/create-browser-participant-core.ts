@@ -1,14 +1,17 @@
 import {
     createBrowserMessagingComposition,
+    createBrowserRealtimeCoreComposition,
     createBrowserResyncRecoveryComposition,
     createDefaultBrowserGrantedTopics,
     createDefaultBrowserTopicSubscriptions,
     createDefaultRtcPublicationProofVerifier,
     readBrowserSessionInboundDiagnostics,
-    type BrowserMessagingComposition
+    type BrowserMessagingComposition,
+    type BrowserRealtimeCoreComposition
 } from './browser-communication-composition.ts';
 import type { browserDeliveryComposition } from './browser-delivery-composition.ts';
 import {
+    createBrowserStateComposition,
     createBrowserStateEventComposition,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
@@ -20,21 +23,42 @@ import {
     type BrowserSessionQosInputs
 } from './browser-session-composition.ts';
 
-export interface BrowserSessionMessagingComposition {
+export interface BrowserParticipantCore {
+    readonly state: BrowserStateComposition;
     readonly session: BrowserSessionCoreComposition;
     readonly stateEvents: BrowserStateEventComposition;
     readonly messaging: BrowserMessagingComposition;
+    readonly realtime: BrowserRealtimeCoreComposition;
 }
 
-export interface CreateBrowserSessionMessagingInput extends BrowserSessionQosInputs {
+export interface CreateBrowserParticipantCoreInput extends BrowserSessionQosInputs {
     readonly foundation: BrowserRuntimeFoundation;
-    readonly state: BrowserStateComposition;
     readonly delivery: typeof browserDeliveryComposition;
 }
 
-export function createBrowserSessionMessaging(
-    input: CreateBrowserSessionMessagingInput
-): BrowserSessionMessagingComposition {
+interface CreateBrowserParticipantSessionMessagingInput extends CreateBrowserParticipantCoreInput {
+    readonly state: BrowserStateComposition;
+}
+
+export function createBrowserParticipantCore(input: CreateBrowserParticipantCoreInput): BrowserParticipantCore {
+    const { foundation } = input;
+    const state = createBrowserStateComposition({
+        runtime: foundation.runtime,
+        stateRuntime: foundation.stateRuntime
+    });
+    const { session, stateEvents, messaging } = createBrowserParticipantSessionMessaging({ ...input, state });
+    const realtime = createBrowserRealtimeCoreComposition({
+        runtime: foundation.runtime,
+        transportRuntime: foundation.transportRuntime,
+        state,
+        session: session.session
+    });
+    return { state, session, stateEvents, messaging, realtime };
+}
+
+function createBrowserParticipantSessionMessaging(
+    input: CreateBrowserParticipantSessionMessagingInput
+): Pick<BrowserParticipantCore, 'session' | 'stateEvents' | 'messaging'> {
     const { foundation, state, delivery } = input;
     const { nowMs, publicationStages, deliveries, sessionDeliveries } = delivery;
     const recovery = createBrowserResyncRecoveryComposition({ nowMs });

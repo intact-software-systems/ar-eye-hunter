@@ -144,7 +144,7 @@ export namespace WsQueueBoxClientService {
          * names none, so the client tracks no server hop.
          */
         readonly serverPeerId: string | undefined;
-        readonly qosProvider?: ALQosInputProvider;
+        readonly qosProvider: ALQosInputProvider;
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly outboundStores?: ALOutboundRuntimeStores<ALOutboundTransportMessage>;
