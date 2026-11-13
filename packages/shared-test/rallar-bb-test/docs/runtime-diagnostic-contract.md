@@ -882,7 +882,7 @@ are the sync points of a paired `agent.reload`.
   no `recovery` while it waits. When the owner's connect ends, the next tab's
   lock is granted, and its first batch, the takeover's, reports `restored` with
   the rows it claimed: a row the previous owner still held under its lease is
-  claimed by a later batch, at its lease end plus at most 19.1 s. Without the
+  claimed by a later batch, at its lease end plus at most 16.6 s. Without the
   Locks API every tab drains, and reports, as before. `durable-takeover` closes
   the owner page with one durable original held, waits out one lease before the
   successor page connects, then waits for the successor's `restored` recovery
