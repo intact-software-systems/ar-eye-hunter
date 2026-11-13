@@ -15,7 +15,7 @@ export interface RallarBlackBoxTestValueAssertResultValue {
 }
 
 export interface RallarBlackBoxTestSetAssertResultValue {
-    readonly operator: 'sameUniqueStringSet';
+    readonly operator: 'equals' | 'sameUniqueStringSet';
     readonly expected?: never;
     readonly actual?: ApiJsonValue;
     readonly comparisonActual?: ApiJsonValue;

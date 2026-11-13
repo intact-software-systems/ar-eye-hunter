@@ -1427,6 +1427,11 @@ Operators:
 - `equals` / `notEquals` / `contains` / `exists` — historical semantics kept:
   `notEquals` passes when the path is missing, and `gte` / `lte` accept only
   values that are already numbers.
+- `equals` with `comparisonSource` (and no `expected`) — compares two evidence
+  paths: it passes only when both paths exist and hold the same JSON value, so
+  a missing path on either side fails. The result value carries `actual`,
+  `comparisonActual`, `exists` and `comparisonExists`. No other operator
+  except `sameUniqueStringSet` takes a `comparisonSource`.
 - `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.

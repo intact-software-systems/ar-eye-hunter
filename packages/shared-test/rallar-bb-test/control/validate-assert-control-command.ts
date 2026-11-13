@@ -16,12 +16,16 @@ export function validateAssertControlCommand(command: RallarBlackBoxTestRecord):
     if (typeof command.source === 'string' && command.source.trim().length === 0) {
         issues.push(toControlCommandIssue('assert.source must be a non-empty string.'));
     }
-    if (command.operator === 'sameUniqueStringSet') {
+    const comparesSources = command.operator === 'sameUniqueStringSet' ||
+        (command.operator === 'equals' && command.comparisonSource !== undefined);
+    if (comparesSources) {
         if (typeof command.comparisonSource !== 'string' || command.comparisonSource.trim().length === 0) {
             issues.push(toControlCommandIssue('assert.comparisonSource must be a non-empty string.'));
         }
         if (command.expected !== undefined) {
-            issues.push(toControlCommandIssue('assert.expected is unsupported for sameUniqueStringSet.'));
+            issues.push(
+                toControlCommandIssue(`assert.expected is unsupported with a comparisonSource for ${command.operator}.`)
+            );
         }
     }
     else if (command.comparisonSource !== undefined) {

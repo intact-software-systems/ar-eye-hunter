@@ -642,7 +642,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                 properties: {
                     ...commandBaseProperties('assert'),
                     source: nonEmptyStringSchema,
-                    operator: { const: 'sameUniqueStringSet' },
+                    operator: { enum: ['equals', 'sameUniqueStringSet'] },
                     comparisonSource: nonEmptyStringSchema
                 },
                 additionalProperties: false

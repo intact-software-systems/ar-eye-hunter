@@ -328,7 +328,7 @@ export type RallarBlackBoxTestAssertCommand =
         }>
         | Readonly<{
             source: string;
-            operator: 'sameUniqueStringSet';
+            operator: 'equals' | 'sameUniqueStringSet';
             comparisonSource: string;
             expected?: never;
         }>
