@@ -1,5 +1,6 @@
 import { ApiV1ConfigurationError, type ApiV1ConfigurationIssue } from './api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationProfile } from './api-v1-configuration.ts';
+import { computeApiReplicaLimitShare } from './compute-api-replica-limit-share.ts';
 import {
     apiV1ConfigurationEnvironmentName,
     readApiV1ConfigurationSourcePath,
@@ -77,6 +78,7 @@ export class ApiV1ConfigurationValueDecoder implements ApiV1ConfigurationInvaria
     readonly #sources: readonly ApiV1ConfigurationSource[];
     readonly #issues: ApiV1ConfigurationIssue[];
     readonly #invalidPaths = new Set<string>();
+    #replicaCount: number | undefined;
 
     constructor(
         sources: readonly ApiV1ConfigurationSource[],
@@ -183,6 +185,18 @@ export class ApiV1ConfigurationValueDecoder implements ApiV1ConfigurationInvaria
             return minimum;
         }
         return value;
+    }
+
+    /** The processes that serve one fleet behind one balancer; no committed profile names it, so one by default. */
+    replicaCount(): number {
+        const path = 'http.replicaCount';
+        this.#replicaCount ??= this.hasValue(path) ? this.integer(path, 1) : 1;
+        return this.#replicaCount;
+    }
+
+    /** A limit each process enforces on its own: the source names the fleet's, and this replica takes its share. */
+    replicaLimitShare(path: string, minimum: number, maximum = Number.MAX_SAFE_INTEGER): number {
+        return computeApiReplicaLimitShare(this.integer(path, minimum, maximum), this.replicaCount());
     }
 
     ratio(path: string): number {

@@ -210,6 +210,15 @@ function groupPresenceSummaryPublicationKeysEqual(
     );
 }
 
+/** Two records of one session that members observe as the same: equal topology inputs and publication key. */
+export function isGroupPresenceSessionContentEqual(
+    current: GroupPresenceSession,
+    content: GroupPresenceSession
+): boolean {
+    return groupPresenceSessionTopologyInputsEqual(current, content) &&
+        jsonEquals(current.publicationKey, content.publicationKey);
+}
+
 function groupPresenceSessionTopologyInputsEqual(
     current: GroupPresenceSession,
     content: GroupPresenceSession

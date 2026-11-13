@@ -16,10 +16,11 @@ fi
 if declare -F apply_rallar_controller_role >/dev/null 2>&1; then
 	apply_rallar_controller_role
 else
-	# Streamed over SSH stdin without sibling scripts; the inspect path hardcodes its own services.
+	# Streamed over SSH stdin without sibling scripts; hardcode the api role's three-replica facts.
 	RALLAR_CONTROLLER_ROLE="api"
 	RALLAR_ROLE_HAS_POSTGRES=1
-	RALLAR_ROLE_APP_SERVICES=(rallar-api-v1.service)
+	RALLAR_ROLE_APP_SERVICES=(rallar-api-v1.service rallar-api-v1-2.service rallar-api-v1-3.service)
+	RALLAR_API_REPLICA_PORTS=(8080 8081 8082)
 fi
 
 inspect_fail() {
@@ -215,16 +216,25 @@ COMMIT;" 2>/dev/null)" || {
 }
 
 inspect_services() {
-	local api_state control_state postgres_state caddy_state headless_state
-	local api_process control_process headless_process services processes
-	api_state="$(inspect_service_state rallar-api-v1.service)" || return 1
+	local control_state postgres_state caddy_state headless_state
+	local control_process headless_process services processes
+	local api_replica_service api_replica_states='{}' api_replica_processes='{}' replica_state replica_process
 	postgres_state="$(inspect_service_state postgresql.service)" || return 1
 	caddy_state="$(inspect_service_state caddy.service)" || return 1
 	control_state='not-local'
 	headless_state='not-local'
-	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
 	control_process='"not-local"'
 	headless_process='"not-local"'
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'api' ]]; then
+		for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+			replica_state="$(inspect_service_state "${api_replica_service}")" || return 1
+			replica_process="$(inspect_service_process "${api_replica_service}")" || return 1
+			api_replica_states="$(jq -cn --argjson acc "${api_replica_states}" --arg service "${api_replica_service}" \
+				--arg state "${replica_state}" '$acc + {($service): $state}')" || return 1
+			api_replica_processes="$(jq -cn --argjson acc "${api_replica_processes}" --arg service "${api_replica_service}" \
+				--argjson process "${replica_process}" '$acc + {($service): $process}')" || return 1
+		done
+	fi
 	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
 		control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
 		headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
@@ -232,12 +242,11 @@ inspect_services() {
 		headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
 	fi
 	services="$(jq -cn \
-		--arg api "${api_state}" --arg control "${control_state}" \
-		--arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
-		--arg headless "${headless_state}" \
-		'{api: $api, control: $control, postgres: $postgres, caddy: $caddy, headless: $headless}')" || return 1
-	processes="$(jq -cn --argjson api "${api_process}" --argjson control "${control_process}" \
-		--argjson headless "${headless_process}" '{api: $api, control: $control, headless: $headless}')" || return 1
+		--arg control "${control_state}" --arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
+		--arg headless "${headless_state}" --argjson apiReplicas "${api_replica_states}" \
+		'{control: $control, postgres: $postgres, caddy: $caddy, headless: $headless, apiReplicas: $apiReplicas}')" || return 1
+	processes="$(jq -cn --argjson apiReplicas "${api_replica_processes}" --argjson control "${control_process}" \
+		--argjson headless "${headless_process}" '{apiReplicas: $apiReplicas, control: $control, headless: $headless}')" || return 1
 	jq -cn --argjson services "${services}" --argjson processes "${processes}" '{services: $services, processes: $processes}'
 }
 
@@ -284,8 +293,16 @@ inspect_health() {
 		api_public='not-configured'
 		;;
 	*)
-		# The api role (and the games role once its hosts are wired) probes its own api-v1 surface.
-		api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
+		# The api role probes every api-v1 replica loopback; the public URL is served by Caddy
+		# round-robin across the same replicas. (The games role uses this branch once wired.)
+		api_loopback=200
+		for api_replica_port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+			replica_loopback="$(inspect_health_code "http://127.0.0.1:${api_replica_port}/api/config")" || return 1
+			if [[ "${replica_loopback}" != 200 ]]; then
+				api_loopback="${replica_loopback}"
+				break
+			fi
+		done
 		api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
 		api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
 		control_loopback='not-local'

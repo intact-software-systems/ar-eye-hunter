@@ -109,7 +109,15 @@ describe('Hetzner SPA public env wiring', () => {
         });
         expect(await readFile(destination, 'utf8')).toBe(
             prefix + `api.example.test {
-\treverse_proxy 127.0.0.1:8080
+\treverse_proxy 127.0.0.1:8080 127.0.0.1:8081 127.0.0.1:8082 {
+\t\tlb_policy round_robin
+\t\tlb_try_duration 5s
+\t\thealth_uri /api/config
+\t\thealth_interval 5s
+\t\theader_up X-Real-IP {remote_host}
+\t\theader_up -Cf-Connecting-Ip
+\t\theader_up -Forwarded
+\t}
 }
 
 spa.example.test {
@@ -191,7 +199,6 @@ ar-eye.example.test {
         expect(await readFile(envFile, 'utf8')).toBe([
             `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
             `DATABASE_URL=${databaseUrl}`,
-            'PORT=8080',
             'RALLAR_API_CONFIGURATION_PROFILE=prod',
             'RALLAR_ICE_MODE=local',
             ''

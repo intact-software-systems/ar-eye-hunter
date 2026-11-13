@@ -14,6 +14,7 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { assertGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/state-validation/assert-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { isGroupSessionEvent } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type {
@@ -93,6 +94,76 @@ function idempotencyRecord(): GroupMutationIdempotencyRecord {
         }
     };
 }
+
+describe('group mutation revision contiguity', () => {
+    it('advances the group revision by one per group event and keeps it for every session event', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const groupId = 'contiguous-room';
+        await seedOpenGroup(runtime, groupId);
+        const service = createService(runtime, 2_000);
+        const session = {
+            principalId: 'bob',
+            generationId: 'generation-1',
+            publicationKey: null,
+            connectionGenerationId: 'ws-generation-1',
+            actorPrincipalId: 'bob',
+            expiresAtEpochMs: 4_102_444_801_000
+        };
+        await service.upsertMember(SCOPE, groupId, 'bob', { status: 'active', actorPrincipalId: 'alice', requestId: 'activate-bob' });
+        await service.connectPresenceSession(SCOPE, groupId, 'bob-session', { ...session, requestId: 'connect-bob' });
+        await service.grantGroupPublication(SCOPE, groupId, 'bob', {
+            topicId: 'room.feed',
+            publish: true,
+            subscribe: false,
+            actorPrincipalId: 'alice',
+            requestId: 'grant-bob'
+        });
+        await service.updateGroup(SCOPE, groupId, { displayName: 'Renamed', actorPrincipalId: 'alice', requestId: 'rename' });
+        await createService(runtime, 3_000).heartbeatPresenceSession(SCOPE, groupId, 'bob-session', {
+            generationId: 'generation-1',
+            publicationKey: null,
+            actorPrincipalId: 'bob',
+            lastHeartbeatAtEpochMs: 3_000,
+            requestId: 'heartbeat-bob'
+        });
+        await service.revokeGroupPublication(SCOPE, groupId, 'bob', {
+            topicId: 'room.feed',
+            publish: true,
+            subscribe: false,
+            actorPrincipalId: 'alice',
+            requestId: 'revoke-bob'
+        });
+        await createService(runtime, 4_000).disconnectPresenceSession(SCOPE, groupId, 'bob-session', {
+            generationId: 'generation-1',
+            connectionGenerationId: 'ws-generation-1',
+            actorPrincipalId: 'bob',
+            disconnectedAtEpochMs: 4_000,
+            requestId: 'disconnect-bob'
+        });
+        const repository = createTestGroupStateRepository(runtime);
+        const events = await repository.listEvents(runtimeGroupRef(groupId));
+
+        const groupRevisions = events.filter((event) => !isGroupSessionEvent(event)).map((event) => event.causalRevision.groupRevision);
+        const sessionRevisions = events.filter(isGroupSessionEvent).map((event) => event.causalRevision.groupRevision);
+        const snapshot = await repository.readSnapshot(runtimeGroupRef(groupId));
+
+        expect(events.map((event) => event.eventType).toSorted()).toEqual([
+            'group-created',
+            'group-updated',
+            'member-joined',
+            'publication-grant-changed',
+            'publication-grant-changed',
+            'session-connected',
+            'session-disconnected',
+            'session-heartbeat'
+        ]);
+        expect(groupRevisions.toSorted((left, right) => left - right)).toEqual(
+            groupRevisions.map((_revision, index) => index + 1)
+        );
+        expect(sessionRevisions.every((revision) => groupRevisions.includes(revision))).toBe(true);
+        expect(snapshot?.causalRevision.groupRevision).toBe(groupRevisions.length);
+    });
+});
 
 describe('group mutation receipt causal invariants', () => {
     it('requires receipt snapshotVersion to equal causal groupRevision', () => {

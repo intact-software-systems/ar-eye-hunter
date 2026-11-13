@@ -167,7 +167,7 @@ lane's work type, `toALOutboundWorkType(namespace)`, which every runtime of the 
 lane still admits under the commit lock. When ownership turns true (once, never back) the handler
 registers its task and runs the bootstrap batch once; that batch's first-batch report is the
 takeover's recovery outcome. A row the previous owner held is recovered by the lease sweep of a later
-batch, at its lease end plus at most 19.1 s, never sooner. The owner's lane hears every commit another
+batch, at its lease end plus at most 16.6 s, never sooner. The owner's lane hears every commit another
 runtime announced for its work type (`onForeignCommit`) and runs it through `applyForeignCommit(rows)`,
 the same `committed(rows)` its own commits take, so its batch claims the rows at once instead of at
 its remembered answer's age bound; in the browser the announcement travels on the connect's session
@@ -1263,18 +1263,18 @@ Each store lane, browser and server alike, sweeps for lapsed leases and exhauste
 limiter pair of its own, the ResourceInbox dequeuer's lock-limiter design on the lane clock: the
 first sweeps run on the lane's bootstrap batch, and no timeout sweep runs on a batch whose claim
 filled the page. A sweep spends its allowance only when it comes back with room to spare, which
-closes its window for up to 1.25 leases; a sweep that fills its room keeps the window open, so a
+closes its window for one lease; a sweep that fills its room keeps the window open, so a
 backlog of crashed or exhausted rows drains on consecutive batches. While a sweep's window is closed
 the readiness scan does not advertise the reserved rows that sweep would recover, so no batch runs
 empty waiting for it. A crashed lease or an exhausted row, a backlog included, is recovered at most
-19.1 s after its lease ends: the window reopens within 1.25 leases of the last spent sweep, then the
+16.6 s after its lease ends: the window reopens one lease after the last spent sweep, then the
 remembered readiness ages and the idle engine passes once. The bound assumes the readiness scan, 16
 reserved rows per type, sees the row; a crashed row hidden behind 16 live leases is recovered by the
 first batch that sweeps with its window open. On the PostgreSQL lane it also assumes the database
 clock is not behind the lane clock: the scan advertises a lease end on the lane clock while the
 sweep tests the lease on the database clock, so with the database δ behind, the sweep a lease end
 triggers can come back empty and spend its window, and the worst case becomes lease end + δ +
-19.1 s; the browser lanes are exact. The claim page is ordered by key, not by readiness: 15 or more
+16.6 s; the browser lanes are exact. The claim page is ordered by key, not by readiness: 15 or more
 receipted sends left unacknowledged within one ACK timeout (with a send's own timeout row, 16 rows
 ahead of its `send` row) still hide the next send's row until the first of them falls due; a
 readiness-ordered scan is a later slice. The inbound owner sweeps on every batch.

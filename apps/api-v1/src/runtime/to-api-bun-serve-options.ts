@@ -7,6 +7,7 @@ export interface ApiBunServeHandlers<TFetch, TWebSocket extends object> {
 }
 
 export interface ApiBunServeOptions<TFetch, TWebSocket extends object> {
+    readonly hostname: string;
     readonly port: number;
     readonly idleTimeout: number;
     readonly fetch: TFetch;
@@ -23,6 +24,7 @@ export function toApiBunServeOptions<TFetch, TWebSocket extends object>(
     handlers: ApiBunServeHandlers<TFetch, TWebSocket>
 ): ApiBunServeOptions<TFetch, TWebSocket> {
     return {
+        hostname: configuration.http.hostname,
         port: configuration.http.port,
         idleTimeout: computeHttpIdleTimeoutSeconds(configuration.appInbox.completionWait.maxElapsedMs),
         fetch: handlers.fetch,

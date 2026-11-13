@@ -12,6 +12,19 @@ RALLAR_BLACKBOX_HOST_DEFAULT="blackbox.rallar.intactss.com"
 RALLAR_API_PORT_DEFAULT="8080"
 RALLAR_CONTROL_PORT_DEFAULT="5180"
 
+# The api role runs three api-v1 replicas behind one shared Postgres store. Each replica
+# binds a distinct loopback port; Caddy round-robins the public host across the replicas its active
+# health check (the unauthenticated, store-free GET /api/config) finds up, and retries a
+# request whose dial fails on the next replica, so a replica that is down or in its
+# RestartSec loop costs neither HTTP requests nor WS upgrades.
+# The API's per-client limits key on the first client-address header they find, so Caddy sets X-Real-IP from the
+# connection and drops the client-supplied headers read before or instead of it.
+# Multi-instance correctness (cross-instance WS/RTC fanout) relies on RALLAR_DB_PUBSUB=postgres.
+RALLAR_API_REPLICA_PORTS_DEFAULT=(8080 8081 8082)
+# Caddy reaches the replicas over loopback, so they bind only loopback and nothing reaches them around Caddy.
+RALLAR_API_REPLICA_HOSTNAME="127.0.0.1"
+RALLAR_API_REPLICA_SERVICES_DEFAULT=(rallar-api-v1.service rallar-api-v1-2.service rallar-api-v1-3.service)
+
 RALLAR_API_STORE_FAILURE_FILE_DEFAULT="/etc/rallar/api-v1.store-failure"
 
 RALLAR_RELIC_HOST_DEFAULT="relic.rallar.intactss.com"
@@ -32,6 +45,11 @@ RALLAR_AR_EYE_APP_DIR_DEFAULT="apps/ar-eye-hunter-server-v1"
 
 RALLAR_GAME_CORS_ORIGINS_DEFAULT="https://ar-eye-hunter.pages.dev,https://relic-hunters-v1.intact-software-systems.workers.dev"
 
+# The api role's replica units, one per line: the units the role installs and every reader of their journals.
+rallar_api_replica_services() {
+	printf '%s\n' "${RALLAR_API_REPLICA_SERVICES[@]:-${RALLAR_API_REPLICA_SERVICES_DEFAULT[@]}}"
+}
+
 apply_rallar_controller_role() {
 	local role="${RALLAR_CONTROLLER_ROLE:-api}"
 
@@ -39,9 +57,17 @@ apply_rallar_controller_role() {
 	api)
 		RALLAR_ROLE_HAS_POSTGRES=1
 		RALLAR_ROLE_WRITES_HEADLESS_WORKER=0
-		RALLAR_ROLE_APP_SERVICES=(rallar-api-v1.service)
+		RALLAR_ROLE_APP_SERVICES=()
+		while IFS= read -r api_replica_service; do
+			RALLAR_ROLE_APP_SERVICES+=("${api_replica_service}")
+		done < <(rallar_api_replica_services)
 		RALLAR_ROLE_HOST="${RALLAR_API_HOST:-${RALLAR_API_HOST_DEFAULT}}"
 		RALLAR_ROLE_PORT="${RALLAR_API_PORT:-${RALLAR_API_PORT_DEFAULT}}"
+		RALLAR_API_REPLICA_PORTS=("${RALLAR_API_REPLICA_PORTS[@]:-${RALLAR_API_REPLICA_PORTS_DEFAULT[@]}}")
+		RALLAR_API_REPLICA_PORTS_UPSTREAMS=''
+		for port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+			RALLAR_API_REPLICA_PORTS_UPSTREAMS="${RALLAR_API_REPLICA_PORTS_UPSTREAMS:+${RALLAR_API_REPLICA_PORTS_UPSTREAMS} }${RALLAR_API_REPLICA_HOSTNAME}:${port}"
+		done
 		;;
 	control)
 		RALLAR_ROLE_HAS_POSTGRES=0
@@ -88,8 +114,14 @@ apply_rallar_controller_role() {
 
 # The store-failure fence for a DB-bearing service; empty for services without a Postgres store.
 rallar_role_service_failure_file() {
+	local api_replica_service
+	while IFS= read -r api_replica_service; do
+		if [[ "$1" == "${api_replica_service}" ]]; then
+			printf '%s' "${RALLAR_API_STORE_FAILURE_FILE:-${RALLAR_API_STORE_FAILURE_FILE_DEFAULT}}"
+			return 0
+		fi
+	done < <(rallar_api_replica_services)
 	case "$1" in
-	rallar-api-v1.service) printf '%s' "${RALLAR_API_STORE_FAILURE_FILE:-${RALLAR_API_STORE_FAILURE_FILE_DEFAULT}}" ;;
 	rallar-relic-hunter-server-v1.service) printf '%s' "${RALLAR_RELIC_STORE_FAILURE_FILE:-${RALLAR_RELIC_STORE_FAILURE_FILE_DEFAULT}}" ;;
 	rallar-ar-eye-hunter-server-v1.service) printf '%s' "${RALLAR_AR_EYE_STORE_FAILURE_FILE:-${RALLAR_AR_EYE_STORE_FAILURE_FILE_DEFAULT}}" ;;
 	*) return 1 ;;
@@ -108,6 +140,66 @@ rallar_controller_role_url_origin() {
 	host="${rest%%/*}"
 	[[ -n "${scheme}" && -n "${host}" ]] || return 1
 	printf '%s://%s' "${scheme}" "${host}"
+}
+
+# Writes the api role's api-v1 replica systemd units and removes those the list no longer names.
+# Every replica learns the replica count, so it enforces its share of each per-client limit the env file names.
+# Each replica binds its own loopback port (from RALLAR_API_REPLICA_PORTS) and shares the one Postgres
+# store in the env file.
+write_rallar_api_replica_units() {
+	local api_replica_index=0 api_replica_port
+	local unit_dir="${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
+	for api_replica_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		api_replica_port="${RALLAR_API_REPLICA_PORTS[${api_replica_index}]}"
+		cat >"${unit_dir}/${api_replica_service}" <<EOF
+[Unit]
+Description=Rallar API-v1 controller replica ${api_replica_port}
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+ConditionPathExists=!${RALLAR_API_STORE_FAILURE_FILE}
+
+[Service]
+Type=simple
+User=rallar
+Group=rallar
+WorkingDirectory=${RALLAR_CHECKOUT_DIR}/apps/api-v1
+EnvironmentFile=/etc/rallar/api-v1.env
+EnvironmentFile=-/etc/rallar/api-v1.secrets.env
+Environment=RALLAR_HTTP_HOSTNAME=${RALLAR_API_REPLICA_HOSTNAME}
+Environment=RALLAR_API_REPLICA_COUNT=${#RALLAR_ROLE_APP_SERVICES[@]}
+ExecStart=/usr/bin/env PORT=${api_replica_port} /usr/local/bin/bun run src/main.ts
+SyslogIdentifier=${api_replica_service%.service}
+Restart=always
+RestartSec=5
+$(print_rallar_bun_service_hardening)
+
+[Install]
+WantedBy=multi-user.target
+EOF
+		api_replica_index=$((api_replica_index + 1))
+	done
+	remove_stale_rallar_api_replica_units "${unit_dir}"
+}
+
+# Disables, stops and deletes every api-v1 replica unit the current list no longer names. A
+# rollback or a shorter list otherwise leaves a Restart=always replica on a swapped checkout,
+# still claiming AppInbox work from the shared store.
+remove_stale_rallar_api_replica_units() {
+	local unit_dir="$1" unit_path unit_name listed_service is_listed
+	for unit_path in "${unit_dir}"/rallar-api-v1*.service; do
+		[[ -f "${unit_path}" ]] || continue
+		unit_name="${unit_path##*/}"
+		is_listed=0
+		for listed_service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+			if [[ "${unit_name}" == "${listed_service}" ]]; then
+				is_listed=1
+			fi
+		done
+		if [[ "${is_listed}" == "0" ]]; then
+			systemctl disable --now "${unit_name}"
+			rm -f "${unit_path}"
+		fi
+	done
 }
 
 # Writes the role's Caddyfile: each server only serves the hosts its role owns.
@@ -129,7 +221,15 @@ write_rallar_role_caddyfile() {
 		api)
 			cat <<EOF
 ${RALLAR_API_HOST:-${RALLAR_API_HOST_DEFAULT}} {
-	reverse_proxy 127.0.0.1:${RALLAR_API_PORT:-${RALLAR_API_PORT_DEFAULT}}
+	reverse_proxy ${RALLAR_API_REPLICA_PORTS_UPSTREAMS} {
+		lb_policy round_robin
+		lb_try_duration 5s
+		health_uri /api/config
+		health_interval 5s
+		header_up X-Real-IP {remote_host}
+		header_up -Cf-Connecting-Ip
+		header_up -Forwarded
+	}
 }
 
 ${RALLAR_BLACKBOX_HOST:-${RALLAR_BLACKBOX_HOST_DEFAULT}} {

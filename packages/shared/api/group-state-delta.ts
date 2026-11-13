@@ -27,8 +27,14 @@ import type { StateScope } from './state-types.ts';
  * The `group-state.event` WS row payload under delta dissemination. It wraps
  * the durable GroupEvent with the resulting-state slice a browser needs to
  * reapply the transition onto a cached snapshot whose revision equals
- * `predecessorCausalRevision`. A summary no-op expansion has no CAS
- * predecessor and stamps `predecessorCausalRevision === resultingCausalRevision`.
+ * `predecessorCausalRevision`. `resultingCausalRevision` is the snapshot the
+ * expansion read. An envelope claims the write from its predecessor only when
+ * its expansion's batch carries that range; it is write-nothing
+ * (`predecessorCausalRevision === resultingCausalRevision`) for a summary
+ * no-op, and for a batch that does not cover the snapshot: a group revision
+ * after the predecessor's that no event of the batch wrote, or an active
+ * session another principal changed. A consumer behind a write-nothing
+ * envelope pulls the snapshot.
  * `activeSessionIds` is always the complete resulting identity set because
  * snapshot assembly TTL-filters sessions beyond the mutation's own slice.
  * `audienceSessionIds` is the persisted immutable delivery audience computed
