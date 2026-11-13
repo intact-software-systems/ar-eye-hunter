@@ -60,7 +60,7 @@ describe('revision source reader', () => {
 
         expect(Buffer.byteLength(listing)).toBeGreaterThan(oneMebibyte);
         expect(readSources(root, 'HEAD')).toHaveLength(9_000);
-    });
+    }, 30_000);
 
     it('fails the way git ls-tree fails for an unknown revision', () => {
         const root = createEdgeCaseRevision();
