@@ -97,11 +97,11 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         leaveRoom: async (roomId) => {
             await rallar.rooms.leave({ roomRef: { ...RELIC_ROOM_SCOPE, groupId: roomId } });
         },
-        initializeGame: initializeRelicGame,
-        fetchSnapshot: fetchRelicSnapshot,
+        initializeGame: (roomId) => initializeRelicGame(roomId),
+        fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId),
         sendWsCommand: (roomId, command) => sendRelicWsCommand(rallar, roomId, command),
         sendRestCommand: sendRelicCommand,
-        resetGame: resetRelicGame
+        resetGame: (roomId) => resetRelicGame(roomId)
     };
 }
 

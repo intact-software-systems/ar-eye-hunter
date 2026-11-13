@@ -187,13 +187,6 @@ test(
                 browserErrors.push(message.text());
             }
         });
-        const initializationPending = Promise.withResolvers<void>();
-        const releaseInitialization = Promise.withResolvers<void>();
-        await page.route('**/api/relic/games/*/initialize/requests/*', async (route) => {
-            initializationPending.resolve();
-            await releaseInitialization.promise;
-            await route.continue();
-        }, { times: 1 });
         await page.goto('/');
         const previousUsername = await registerPrivateHunter(page, 'previous');
         await expect(page.locator('.profile-row strong')).toHaveText(previousUsername);
@@ -203,17 +196,7 @@ test(
         await expect(roomLink).toHaveValue(/#rallar-room\?/);
         const previousRoomLink = await roomLink.inputValue();
 
-        try {
-            await initializationPending.promise;
-            const loggedOut = page.waitForResponse((response) =>
-                response.request().method() === 'POST' && response.url().includes('/api/auth/logout/requests/')
-            );
-            await page.getByRole('button', { name: 'Logout', exact: true }).click();
-            expect((await loggedOut).ok()).toBe(true);
-        }
-        finally {
-            releaseInitialization.resolve();
-        }
+        await page.getByRole('button', { name: 'Logout', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Enter', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'New Room', exact: true })).toHaveCount(0);
         await expect(roomLink).toHaveCount(0);

@@ -118,7 +118,7 @@ export namespace RelicHuntersRuntime {
         ): Promise<GroupSnapshot>;
         joinRoom(roomId: string, participation: 'preserve' | 'player' | 'spectator'): Promise<void>;
         leaveRoom(roomId: string): Promise<void>;
-        initializeGame(roomId: string, signal: AbortSignal): Promise<RelicPublicSnapshot | undefined>;
+        initializeGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
         sendWsCommand(roomId: string, command: RelicCommand): Promise<RelicWsCommandDelivery | undefined>;
         resetGame(roomId: string): Promise<RelicPublicSnapshot | undefined>;
     }
@@ -191,7 +191,7 @@ export class RelicHuntersRuntime {
     private roomGeneration = 0;
     private readonly connectionStarts = new SingleFlight<string, void>();
     private readonly departures = new SingleFlight<string, void>();
-    private connectionAbort: AbortController | undefined;
+    private bootstrap: AbortController | undefined;
     private lifecycle: RallarSubscriptionScope | undefined;
     private transport: RallarSubscriptionScope | undefined;
     private roomListeners: RallarSubscriptionScope | undefined;
@@ -423,8 +423,8 @@ export class RelicHuntersRuntime {
         this.generation++;
         this.snapshotRequest++;
         this.roomRefreshRequest++;
-        this.connectionAbort?.abort();
-        this.connectionAbort = undefined;
+        this.bootstrap?.abort();
+        this.bootstrap = undefined;
         this.connectionStarts.clear();
         this.transport?.unsubscribe();
         this.transport = undefined;
@@ -484,12 +484,12 @@ export class RelicHuntersRuntime {
         if (!this.current(attempt)) {
             return;
         }
-        this.connectionAbort = new AbortController();
+        this.bootstrap = new AbortController();
         try {
             const started = await this.deps.start({
                 refreshRooms: this.deps.roomEntry.getState().status === 'idle' ||
                     this.deps.roomEntry.getState().destination?.intent === 'preview-session',
-                signal: this.connectionAbort.signal
+                signal: this.bootstrap.signal
             });
             if (!this.current(attempt)) {
                 return;
@@ -763,8 +763,7 @@ export class RelicHuntersRuntime {
 
     private async hydrateRoom(source: RelicSnapshotSource): Promise<void> {
         const attempt = this.attempt();
-        const signal = this.connectionAbort?.signal;
-        if (!attempt?.roomId || !signal) {
+        if (!attempt?.roomId) {
             return;
         }
         const roomId = attempt.roomId;
@@ -786,7 +785,7 @@ export class RelicHuntersRuntime {
                 return;
             }
             const snapshot = existing ?? (this.connection.participation === 'player'
-                ? await this.deps.initializeGame(attempt.roomId, signal)
+                ? await this.deps.initializeGame(attempt.roomId)
                 : undefined);
             if (!this.current(attempt, true) || request !== this.snapshotRequest) {
                 return;
@@ -1104,7 +1103,7 @@ export class RelicHuntersRuntime {
         }
         const presence = await this.deps.waitForPresence(roomId, {
             expect: { sessionIds: [attempt.session.sessionId] },
-            signal: this.connectionAbort?.signal,
+            signal: this.bootstrap?.signal,
             timeoutMs: 10_000
         });
         if (!this.current(attempt)) {
