@@ -1,6 +1,7 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     computeGroupPresenceSummaryState,
+    resolveGroupStateDeltaPredecessorCausalRevision,
     type GroupPresenceSummaryExpansionInput,
     type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryWorkRead
@@ -128,10 +129,16 @@ export function toSummaryExpansion(
     command: GroupPresenceSummaryWorkData,
     read: GroupPresenceSummaryWorkRead
 ): GroupPresenceSummaryExpansionInput {
+    const state = computeGroupPresenceSummaryState(command, read);
     return {
         work: command,
         read,
-        state: computeGroupPresenceSummaryState(command, read),
+        state,
+        deltaPredecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision({
+            coalescedEvents: read.coalescedEvents,
+            state,
+            presence: read.presence
+        }),
         traceId: SUMMARY_EXPANSION_TRACE_ID
     };
 }
