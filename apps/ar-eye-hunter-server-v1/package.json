@@ -10,11 +10,11 @@
     "test": "bun test test/"
   },
   "dependencies": {
-    "@electric-sql/pglite": "0.5.4",
+    "@electric-sql/pglite": "0.5.16",
     "@js-temporal/polyfill": "^0.5.1",
     "graphology": "0.26.0",
     "hono": "4.11.9",
-    "postgres": "^3.4.9"
+    "postgres": "^4.1.1"
   },
   "devDependencies": {
     "@types/bun": "1.4.4"
