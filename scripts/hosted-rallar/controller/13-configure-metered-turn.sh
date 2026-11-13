@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SERVICE_NAME="${RALLAR_API_SERVICE_NAME:-rallar-api-v1.service}"
 ETC_DIR="${RALLAR_ETC_DIR:-/etc/rallar}"
-SYSTEMD_DIR="${RALLAR_SYSTEMD_DIR:-/etc/systemd/system}"
 SECRET_FILE="${RALLAR_METERED_SECRET_FILE:-${ETC_DIR}/api-v1.secrets.env}"
-DROPIN_DIR="${SYSTEMD_DIR}/${SERVICE_NAME}.d"
-DROPIN_FILE="${DROPIN_DIR}/10-metered-turn.conf"
 SYSTEMCTL_BIN="${RALLAR_SYSTEMCTL_BIN:-systemctl}"
 REQUIRE_ROOT="${RALLAR_REQUIRE_ROOT:-1}"
 RESTART_SERVICE="${RALLAR_RESTART_SERVICE:-1}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-api-effective-env.sh"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+
+# Every api replica reads the secret file at start, so a rotation restarts all of them.
+declare -a api_replica_services=()
+while IFS= read -r api_replica_service; do
+	api_replica_services+=("${api_replica_service}")
+done < <(rallar_api_replica_services)
 
 usage() {
 	cat <<EOF
 Usage: sudo ./13-configure-metered-turn.sh [--no-restart]
 
-Creates or updates a root-only Metered TURN secret env file and wires it into
-${SERVICE_NAME} through a systemd drop-in.
+Creates or updates the root-only Metered TURN secret env file that every API
+replica unit reads, then restarts ${api_replica_services[*]}.
 
 The script prompts for METERED_APP_NAME and METERED_API_KEY when they are not
 already present in the process environment. Prefer the prompts for manual use so
@@ -28,7 +31,6 @@ Environment overrides for tests/automation:
   METERED_APP_NAME
   METERED_API_KEY
   RALLAR_ETC_DIR
-  RALLAR_SYSTEMD_DIR
   RALLAR_METERED_SECRET_FILE
   RALLAR_SYSTEMCTL_BIN
   RALLAR_RESTART_SERVICE=0
@@ -136,21 +138,12 @@ if [[ "$(id -u)" == "0" ]]; then
 	chown root:root "${SECRET_FILE}"
 fi
 
-echo "==> Wiring ${SERVICE_NAME} to read ${SECRET_FILE}"
-mkdir -p "${DROPIN_DIR}"
-cat >"${DROPIN_FILE}" <<EOF
-[Service]
-EnvironmentFile=-${SECRET_FILE}
-EOF
-chmod 0644 "${DROPIN_FILE}"
-
 if [[ "${RESTART_SERVICE}" == "0" ]]; then
-	echo "Metered TURN secrets installed. Restart skipped; run '${SYSTEMCTL_BIN} daemon-reload' and '${SYSTEMCTL_BIN} restart ${SERVICE_NAME}' when ready."
+	echo "Metered TURN secrets installed. Restart skipped; run '${SYSTEMCTL_BIN} restart ${api_replica_services[*]}' when ready."
 	exit 0
 fi
 
-echo "==> Reloading systemd and restarting ${SERVICE_NAME}"
-"${SYSTEMCTL_BIN}" daemon-reload
-"${SYSTEMCTL_BIN}" restart "${SERVICE_NAME}"
+echo "==> Restarting ${api_replica_services[*]}"
+"${SYSTEMCTL_BIN}" restart "${api_replica_services[@]}"
 
 echo "Metered TURN secrets installed. API key was not printed."

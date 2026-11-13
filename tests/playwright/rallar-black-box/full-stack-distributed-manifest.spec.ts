@@ -105,7 +105,7 @@ test('observes the selected authored ALM manifest with complete native evidence'
         await writeProvenance(artifactDir, source, selection.participantCount);
         expect(process.env.CI).toBe('1');
         expect(process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS).toBe('1');
-        expect(process.env.RALLAR_BLACK_BOX_API_MODE).toBe('memory');
+        expect(['memory', 'postgres']).toContain(process.env.RALLAR_BLACK_BOX_API_MODE);
         expect(process.env.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE).toBe(String(selection.meshMinSize));
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS).toBe('unbounded');
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS).toBe('unbounded');
@@ -484,8 +484,12 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
                 topology: configuration.topology.planning,
                 runtimeRetention: { events: 'unbounded', results: 'unbounded' },
                 limits: [
-                    'Fresh ephemeral PGlite',
-                    'Local pubsub and ICE',
+                    process.env.RALLAR_BLACK_BOX_API_MODE === 'postgres'
+                        ? 'Ephemeral Postgres service container'
+                        : 'Fresh ephemeral PGlite',
+                    process.env.RALLAR_BLACK_BOX_API_MODE === 'postgres'
+                        ? 'Postgres pubsub'
+                        : 'Local pubsub and ICE',
                     'Loopback transport',
                     `${participantCount} co-located browser contexts`,
                     'Runtime versions differ from hosted runs; CPU-only causality is not established'
@@ -501,7 +505,7 @@ async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
     const profileEnvironment = createFullStackApiProfileEnvironment();
     const resourceUrl = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return readApiV1Configuration({
-        environment: { get: (key) => profileEnvironment[key] ?? process.env[key] },
+        environment: { ...process.env, ...profileEnvironment },
         hardwareConcurrency: availableParallelism(),
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resourceUrl('configuration/defaults-config.json'),

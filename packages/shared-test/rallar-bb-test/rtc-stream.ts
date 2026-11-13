@@ -9,6 +9,9 @@ import type {
     RallarBlackBoxTestTransport
 } from './rallar-black-box-test-contracts.ts';
 
+/** How long a stream without its own drain timeout waits for its frames in flight once the last one is sent. */
+export const RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
+
 export interface RallarBlackBoxRtcStreamFramePlan {
     readonly index: number;
     readonly iteration: number;

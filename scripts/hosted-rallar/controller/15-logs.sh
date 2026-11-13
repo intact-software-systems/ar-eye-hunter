@@ -113,6 +113,27 @@ fi
 service_spec="${service_spec:-${DEFAULT_SERVICES}}"
 declare -a units=()
 
+# The directory of this script itself; hosts run it through the /usr/local/bin/rallar-logs symlink.
+resolve_script_dir() {
+	local script_path="${BASH_SOURCE[0]:-}"
+	local link_target
+	[[ -n "${script_path}" && -e "${script_path}" ]] || return 1
+	while [[ -L "${script_path}" ]]; do
+		link_target="$(readlink "${script_path}")"
+		if [[ "${link_target}" != /* ]]; then
+			link_target="$(dirname -- "${script_path}")/${link_target}"
+		fi
+		script_path="${link_target}"
+	done
+	cd -P -- "$(dirname -- "${script_path}")" && pwd
+}
+
+# The role helper names every api replica unit: sourced beside the script, or streamed ahead of it over SSH stdin.
+if ! declare -F rallar_api_replica_services >/dev/null && script_dir="$(resolve_script_dir)" &&
+	[[ -r "${script_dir}/rallar-controller-role.sh" ]]; then
+	source "${script_dir}/rallar-controller-role.sh"
+fi
+
 add_unit() {
 	local unit="$1"
 	local existing
@@ -130,7 +151,13 @@ expand_service() {
 	local service="$1"
 	case "${service}" in
 	api)
-		add_unit "rallar-api-v1.service"
+		if ! declare -F rallar_api_replica_services >/dev/null; then
+			echo "The api units come from rallar-controller-role.sh; keep it beside this script or stream it ahead." >&2
+			exit 2
+		fi
+		while IFS= read -r api_unit; do
+			add_unit "${api_unit}"
+		done < <(rallar_api_replica_services)
 		;;
 	control)
 		add_unit "rallar-black-box-control.service"

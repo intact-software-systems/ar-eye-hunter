@@ -70,19 +70,31 @@ describe('Bun server systemd units', () => {
     it.for([
         {
             role: 'api',
-            units: [{
-                name: 'rallar-api-v1.service',
+            units: [
+                { name: 'rallar-api-v1-2.service', port: 8081 },
+                { name: 'rallar-api-v1-3.service', port: 8082 },
+                { name: 'rallar-api-v1.service', port: 8080 }
+            ].map(({ name, port }) => ({
+                name,
                 app: 'apps/api-v1',
+                execStart: `ExecStart=/usr/bin/env PORT=${port} /usr/local/bin/bun run src/main.ts`,
+                // Caddy fronts the replicas, so none of them is reachable around it.
+                bind: ['Environment=RALLAR_HTTP_HOSTNAME=127.0.0.1'],
+                // Each of the three replicas enforces its share of the fleet's per-client limits.
+                replicas: ['Environment=RALLAR_API_REPLICA_COUNT=3'],
                 // The optional secrets file carries the Metered TURN credentials 13-configure-metered-turn.sh writes.
                 environment: ['EnvironmentFile=/etc/rallar/api-v1.env', 'EnvironmentFile=-/etc/rallar/api-v1.secrets.env'],
                 writes: []
-            }]
+            }))
         },
         {
             role: 'control',
             units: [{
                 name: 'rallar-black-box-control.service',
                 app: 'apps/rallar-black-box-control-server',
+                replicas: [],
+                bind: [],
+                execStart: 'ExecStart=/usr/local/bin/bun run src/main.ts',
                 environment: ['EnvironmentFile=/etc/rallar/control-server.env'],
                 writes: [`ReadWritePaths=${controlStateDir}`]
             }]
@@ -93,12 +105,18 @@ describe('Bun server systemd units', () => {
                 {
                     name: 'rallar-ar-eye-hunter-server-v1.service',
                     app: 'apps/ar-eye-hunter-server-v1',
+                    replicas: [],
+                    bind: [],
+                    execStart: 'ExecStart=/usr/local/bin/bun run src/main.ts',
                     environment: ['EnvironmentFile=/etc/rallar/ar-eye-hunter-server-v1.env'],
                     writes: []
                 },
                 {
                     name: 'rallar-relic-hunter-server-v1.service',
                     app: 'apps/relic-hunter-server-v1',
+                    replicas: [],
+                    bind: [],
+                    execStart: 'ExecStart=/usr/local/bin/bun run src/main.ts',
                     environment: ['EnvironmentFile=/etc/rallar/relic-hunter-server-v1.env'],
                     writes: []
                 }
@@ -111,7 +129,11 @@ describe('Bun server systemd units', () => {
         for (const [index, unit] of rendered.entries()) {
             const expected = units[index]!;
             expect(unit.serviceLines).toContain(`WorkingDirectory=${checkoutDir}/${expected.app}`);
-            expect(unit.serviceLines).toContain('ExecStart=/usr/local/bin/bun run src/main.ts');
+            expect(unit.serviceLines).toContain(expected.execStart);
+            expect(unit.serviceLines.filter((line) => line.startsWith('Environment=RALLAR_HTTP_HOSTNAME='))).toEqual(expected.bind);
+            expect(unit.serviceLines.filter((line) => line.startsWith('Environment=RALLAR_API_REPLICA_COUNT='))).toEqual(
+                expected.replicas
+            );
             expect(unit.serviceLines.filter((line) => line.startsWith('EnvironmentFile='))).toEqual(expected.environment);
             expect(unit.serviceLines.filter((line) => bunServerHardening.includes(line))).toEqual(bunServerHardening);
             expect(unit.serviceLines.filter((line) => line.startsWith('ReadWritePaths='))).toEqual(expected.writes);
