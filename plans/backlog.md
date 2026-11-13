@@ -710,7 +710,8 @@ and it has no status list.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
-  `scripts/hosted-rallar/controller/rallar-controller-role.sh`).
+  `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
+  campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
 - A relay partition, one RTC edge cut while the others stay, has no fault
   step: `TransportFaultPort.decideSend` sees a carrier and a message, not an
   edge. It needs per-edge control in the transport fault port.
@@ -721,8 +722,32 @@ and it has no status list.
   it.
 - Make-before-break routing in the browser, where a new layout's edges open
   before routing moves to them, is the complete fix for the RTT re-plan
-  failures of manifests 07, 09 and 21 and is not scheduled
-  (`plans/active/deno-to-bun-validation.md`).
+  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
+  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
+  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
+- At 50 agents the RTC delivery fails after the connect. With #813 merged,
+  manifests 07 and 09 connect every agent and then fail on delivery: manifest
+  07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
+  (the failing step named 2), and manifest 09 (run 43383760956) has 9 agents at
+  0.89 to 0.94 send success against 0.95, with 2 to 3 s bursts of
+  `RALLAR_BB_RTC_SEND_FAILED`. An analysis of the runs' recorded events found
+  the mechanism: a new tree layout was published in or just before the stream,
+  and each browser routed only over its edges before they were open, so for 0.7
+  to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
+  refused frames from the old parent (`unauthorized`) and a switched relay
+  stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
+  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
+  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  Reproduced in unit tests of the routing code; the `unauthorized` refusal is
+  confirmed from the code (`resolveRtcRoomEdgeDenial` in
+  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  server path produced the re-plans (neither run records the server's planning
+  decision; a tree's leader-rooting or update-failure rebuild and the
+  unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
+  agents recorded) and a browser-level reproduction, which needs a new spec.
+- The byte sizes the game fixtures send (the AR Eye and position frames) are
+  stated nowhere. Measure them in one small task; the first campaign rung sends
+  those sizes (D643).
 - The changed-range style check (`scripts/check-changed-repo-style.mjs`) scans
   the whole base and the whole head for its per-file rules. A range that
   touches a navigation product source also builds the type-checked program at
