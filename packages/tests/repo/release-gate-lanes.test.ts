@@ -107,6 +107,13 @@ describe('Release Gate lanes', () => {
         }
     });
 
+    it('runs the api-v1 Bun test files in four workers that each keep one global, as the serial run did', () => {
+        expect(scripts['test:bun:platform']).toContain(
+            'cd apps/api-v1 && bun test --timeout=240000 --parallel=4 --no-isolate test/'
+        );
+        expect(scripts['test:bun:platform']).not.toMatch(/ --isolate\b/u);
+    });
+
     it('runs every blocking lane with the in-memory configuration profile and no credential secret', () => {
         for (const job of blockingLanes) {
             expect(job.env?.RALLAR_API_CONFIGURATION_PROFILE).toBe('prod-in-memory');
