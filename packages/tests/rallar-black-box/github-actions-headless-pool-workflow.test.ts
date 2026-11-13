@@ -318,6 +318,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
 
     it.each([
         { executionMode: 'all-local', selectedJobs: ['all-local'] },
+        { executionMode: 'all-local-postgres', selectedJobs: ['all-local'] },
         { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
     ])('routes $executionMode exclusively to its selected job family', async ({ executionMode, selectedJobs }) => {
         const jobs = required((await readWorkflow()).jobs, 'jobs');
@@ -330,7 +331,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(mode).toMatchObject({
             type: 'choice',
             default: 'hetzner-control',
-            options: ['hetzner-control', 'all-local']
+            options: ['hetzner-control', 'all-local', 'all-local-postgres']
         });
         const local = required(workflow.jobs?.['all-local'], 'all-local job');
         expect(local['runs-on']).toBe('ubuntu-latest');
@@ -383,7 +384,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
             INPUT_RTC_CAPTURE_MODE: '${{ inputs.rtc_capture_mode }}',
             RALLAR_BLACK_BOX_FULL_STACK: '1',
             RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1',
-            RALLAR_BLACK_BOX_API_MODE: 'memory',
+            RALLAR_BLACK_BOX_API_MODE: '${{ inputs.execution_mode == \'all-local-postgres\' && \'postgres\' || \'memory\' }}',
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '${{ env.ALM_MESH_MIN_SIZE }}',
             RALLAR_BLACK_BOX_STORAGE_DIR: '${{ github.workspace }}/tmp/alm-v1c/all-local-recorder',
             RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: 'unbounded',

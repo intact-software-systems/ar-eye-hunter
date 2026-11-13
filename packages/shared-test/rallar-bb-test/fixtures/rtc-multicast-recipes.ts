@@ -6,11 +6,12 @@ import type {
     RallarBlackBoxTestRtcStreamThresholds
 } from '../rallar-black-box-test-contracts.ts';
 import {
+    computeRtcEstablishAndReadyCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
-    RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
 
@@ -30,6 +31,12 @@ const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS = 5_000;
 
 const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS = 1_000;
 
+const RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS = 5_000;
+
+const RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_POLL_INTERVAL_MS = 5_000;
+
+const RALLAR_BLACK_BOX_RTC_MESSAGES_RELAY_HOLD_INTERVAL_MS = 1_000;
+
 export interface RallarBlackBoxRtcMessagesMulticastRecipeOptions {
     readonly participantCount?: number;
     readonly durationSeconds?: number;
@@ -39,8 +46,9 @@ export interface RallarBlackBoxRtcMessagesMulticastRecipeOptions {
     readonly connection?: string;
     readonly readyTimeoutMs?: number;
     /**
-     * Absent, the sender reads no stats while it streams and each receiver reads them every 5 s; present, the sender
-     * and every receiver read their stats, the page's ALM ledger among them, at this interval for the whole stream.
+     * Absent, the sender reads no stats while it streams and each receiver samples them every 5 s while it polls for
+     * delivery; present, the sender and every receiver read their stats, the page's ALM ledger among them, at this
+     * interval for the whole stream.
      */
     readonly midStreamStatsIntervalMs?: number;
     readonly stream?: Readonly<{
@@ -132,6 +140,65 @@ const RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR = {
     topicId: 'black-box.group.multicast.position'
 } as const;
 
+function resolveMulticastReadinessTimeoutMs(readyTimeoutMs: number | undefined): number {
+    return readyTimeoutMs ?? RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS;
+}
+
+export interface RtcMessagesDeliveryPollWindowInput {
+    readonly readinessTimeoutMs: number;
+    /** The sender's warmup or the all-peer settle that precedes the stream. */
+    readonly leadInMs: number;
+    readonly durationSeconds: number;
+    /** Whether the receiver runs its own lead-in and stream before its delivery poll starts. */
+    readonly streamsBeforePoll: boolean;
+}
+
+/**
+ * Peers connect at different times and the last one to connect streams last: measured from a receiver's connect, the
+ * latest sender streams until the worst-case spread between connects, the lead-in and the stream are over. A receiver
+ * that streams first has already spent its own lead-in and stream when its poll starts, so only the spread remains.
+ */
+export function computeRtcMessagesSenderStreamRemainingAtPollStartMs(
+    input: RtcMessagesDeliveryPollWindowInput
+): number {
+    const leadInAndStreamMs = input.leadInMs + input.durationSeconds * 1_000;
+    const latestSenderStreamEndMs = computeRtcEstablishAndReadyCommandTimeoutMs(input.readinessTimeoutMs) +
+        leadInAndStreamMs;
+    const earliestPollStartMs = input.streamsBeforePoll ? leadInAndStreamMs : 0;
+    return latestSenderStreamEndMs - earliestPollStartMs;
+}
+
+/** A receiver's delivery is complete only once the latest sender's stream has ended and its tail has arrived. */
+export function computeRtcMessagesDeliveryPollWindowMs(input: RtcMessagesDeliveryPollWindowInput): number {
+    return computeRtcMessagesSenderStreamRemainingAtPollStartMs(input) + RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
+}
+
+export interface RtcMessagesRelayHoldInput {
+    readonly frameCount: number;
+    readonly intervalMs: number;
+    readonly expectedInboundMessages: number;
+    readonly minExpectedInboundMessages: number;
+    /** The most stream the latest sender can still have once this receiver's delivery poll, and threshold, can hold. */
+    readonly senderStreamRemainingAtPollStartMs: number;
+}
+
+/**
+ * A receiver that meets its threshold may still relay frames to descendants, and leaving closes its page, so it holds
+ * for the most stream any one sender can still have left plus the tail. A sender's unsent frames count as unreceived,
+ * so a shortfall the threshold tolerates that is shorter than one sender's stream bounds what any sender has left. A
+ * longer shortfall can hide a sender that has not started yet; only the latest sender's remaining stream bounds it.
+ */
+export function computeRtcMessagesRelayHoldMs(input: RtcMessagesRelayHoldInput): number {
+    if (input.expectedInboundMessages <= 0) {
+        return RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
+    }
+    const shortfallMessages = input.expectedInboundMessages - input.minExpectedInboundMessages;
+    const remainingStreamMs = shortfallMessages < input.frameCount
+        ? shortfallMessages * input.intervalMs
+        : input.senderStreamRemainingAtPollStartMs;
+    return remainingStreamMs + RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_TAIL_MS;
+}
+
 function messagesRtcConnectCommand(
     options: Readonly<{
         commandId: string;
@@ -143,7 +210,7 @@ function messagesRtcConnectCommand(
     }>
 ): RallarBlackBoxTestCommand {
     const roomRef = groupRoomRef(options.group);
-    const readinessTimeoutMs = options.readyTimeoutMs ?? 45_000;
+    const readinessTimeoutMs = resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs);
     return {
         kind: 'rtc.connect',
         commandId: options.commandId,
@@ -155,7 +222,7 @@ function messagesRtcConnectCommand(
         roomRef,
         transport: 'messages.rtc',
         rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
-        timeoutMs: readinessTimeoutMs + RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS,
+        timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs),
         readiness: {
             minReadyPeers: options.minReadyPeers,
             timeoutMs: readinessTimeoutMs,
@@ -491,14 +558,17 @@ function toPrincipalSenderStream(context: MulticastRecipeContext): RallarBlackBo
 function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata, baseSetupCommands } = context;
     const roomRef = groupRoomRef(group);
-    const receiverHoldMs = Math.max(1, plan.durationSeconds + 5) * 1000;
-    const receiverStatsIntervalMs = options.midStreamStatsIntervalMs ?? (receiverHoldMs > 2000 ? 5000 : 1000);
-    const receiverStatsLoopCount = Math.ceil(receiverHoldMs / receiverStatsIntervalMs) + 1;
+    const delivery = {
+        readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
+        leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS,
+        durationSeconds: plan.durationSeconds,
+        streamsBeforePoll: false
+    };
     return {
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
         name: 'RTC messages principal multicast receiver',
-        description: `Connect RTC messages, hold for ${plan.durationSeconds}s, ` +
+        description: `Connect RTC messages, poll up to the delivery window around a ${plan.durationSeconds}s stream, ` +
             'and assert principal multicast delivery.',
         continueOnFailure: false,
         metadata: metadata,
@@ -512,25 +582,33 @@ function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlack
                 readyTimeoutMs: options.readyTimeoutMs,
                 metadata: metadata
             }),
-            toMulticastStatsLoop({
-                commandId: 'rtc-messages-principal-receiver-stats-loop',
-                count: receiverStatsLoopCount,
-                intervalMs: receiverStatsIntervalMs,
-                metadata: metadata,
-                childCommandId: 'rtc-messages-principal-receiver-stats',
-                childMetadata: metadata
+            toMulticastDeliveryPoll({
+                commandIds: {
+                    poll: 'rtc-messages-principal-receiver-delivery-poll',
+                    stats: 'rtc-messages-principal-receiver-stats',
+                    assertion: 'rtc-messages-principal-receiver-delivery-threshold'
+                },
+                plan,
+                metadata,
+                roomRef,
+                delivery,
+                options
+            }),
+            toMulticastRelayHold({
+                commandIds: {
+                    hold: 'rtc-messages-principal-receiver-relay-hold',
+                    stats: 'rtc-messages-principal-receiver-relay-hold-stats'
+                },
+                plan,
+                metadata,
+                delivery,
+                options
             }),
             {
                 kind: 'stats',
                 commandId: 'rtc-messages-principal-receiver-final-stats',
                 metadata: metadata
-            },
-            toMulticastDeliveryAssertion({
-                commandId: 'rtc-messages-principal-receiver-delivery-threshold',
-                plan,
-                metadata,
-                roomRef
-            })
+            }
         ]
     };
 }
@@ -540,6 +618,12 @@ function toAllPeerRecipe(
     settleMetadata: RallarBlackBoxTestRecord
 ): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata } = context;
+    const delivery = {
+        readinessTimeoutMs: resolveMulticastReadinessTimeoutMs(options.readyTimeoutMs),
+        leadInMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS,
+        durationSeconds: plan.durationSeconds,
+        streamsBeforePoll: true
+    };
     return {
         schemaVersion: 1,
         recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
@@ -571,16 +655,70 @@ function toAllPeerRecipe(
                     ...options.stream
                 }
             }),
-            toMulticastStatsLoop({
-                commandId: 'rtc-messages-all-peer-receiver-stats-loop',
-                count: 5,
-                intervalMs: 1_000,
+            toMulticastDeliveryPoll({
+                commandIds: {
+                    poll: 'rtc-messages-all-peer-delivery-poll',
+                    stats: 'rtc-messages-all-peer-receiver-stats',
+                    assertion: 'rtc-messages-all-peer-delivery-threshold'
+                },
+                plan,
                 metadata,
-                childCommandId: 'rtc-messages-all-peer-receiver-stats',
-                childMetadata: metadata
+                delivery,
+                options
             }),
-            { kind: 'stats', commandId: 'rtc-messages-all-peer-final-stats', metadata },
-            toMulticastDeliveryAssertion({ commandId: 'rtc-messages-all-peer-delivery-threshold', plan, metadata })
+            toMulticastRelayHold({
+                commandIds: {
+                    hold: 'rtc-messages-all-peer-relay-hold',
+                    stats: 'rtc-messages-all-peer-relay-hold-stats'
+                },
+                plan,
+                metadata,
+                delivery,
+                options
+            }),
+            { kind: 'stats', commandId: 'rtc-messages-all-peer-final-stats', metadata }
+        ]
+    };
+}
+
+interface MulticastRelayHoldInput {
+    readonly commandIds: Readonly<{ hold: string; stats: string; }>;
+    readonly plan: MulticastDeliveryPlan;
+    readonly metadata: RallarBlackBoxTestRecord;
+    readonly delivery: RtcMessagesDeliveryPollWindowInput;
+    readonly options: RallarBlackBoxRtcMessagesMulticastRecipeOptions;
+}
+
+interface MulticastDeliveryPollInput {
+    readonly commandIds: Readonly<{ poll: string; stats: string; assertion: string; }>;
+    readonly plan: MulticastDeliveryPlan;
+    readonly metadata: RallarBlackBoxTestRecord;
+    readonly roomRef?: RallarBlackBoxDistributedGroupRef;
+    readonly delivery: RtcMessagesDeliveryPollWindowInput;
+    readonly options: RallarBlackBoxRtcMessagesMulticastRecipeOptions;
+}
+
+function toMulticastDeliveryPoll(input: MulticastDeliveryPollInput): RallarBlackBoxTestCommand {
+    const { commandIds, plan, metadata, options } = input;
+    const windowMs = computeRtcMessagesDeliveryPollWindowMs(input.delivery);
+    const intervalMs = options.midStreamStatsIntervalMs ?? RALLAR_BLACK_BOX_RTC_MESSAGES_DELIVERY_POLL_INTERVAL_MS;
+    const count = Math.ceil(windowMs / intervalMs) + 1;
+    return {
+        kind: 'loop',
+        commandId: commandIds.poll,
+        count,
+        intervalMs,
+        maxCommands: count * 2,
+        until: 'first-success',
+        metadata: { ...metadata, purpose: 'delivery-poll', pollWindowMs: windowMs },
+        commands: [
+            { kind: 'stats', commandId: commandIds.stats, metadata },
+            toMulticastDeliveryAssertion({
+                commandId: commandIds.assertion,
+                plan,
+                metadata,
+                roomRef: input.roomRef
+            })
         ]
     };
 }
@@ -590,6 +728,23 @@ interface MulticastDeliveryAssertionInput {
     readonly plan: MulticastDeliveryPlan;
     readonly metadata: RallarBlackBoxTestRecord;
     readonly roomRef?: RallarBlackBoxDistributedGroupRef;
+}
+
+function toMulticastRelayHold(input: MulticastRelayHoldInput): RallarBlackBoxTestCommand {
+    const { commandIds, plan, metadata, options } = input;
+    const holdMs = computeRtcMessagesRelayHoldMs({
+        ...plan,
+        senderStreamRemainingAtPollStartMs: computeRtcMessagesSenderStreamRemainingAtPollStartMs(input.delivery)
+    });
+    const intervalMs = options.midStreamStatsIntervalMs ?? RALLAR_BLACK_BOX_RTC_MESSAGES_RELAY_HOLD_INTERVAL_MS;
+    return toMulticastStatsLoop({
+        commandId: commandIds.hold,
+        count: Math.ceil(holdMs / intervalMs) + 1,
+        intervalMs,
+        metadata: { ...metadata, purpose: 'relay-hold', relayHoldMs: holdMs },
+        childCommandId: commandIds.stats,
+        childMetadata: metadata
+    });
 }
 
 function toMulticastDeliveryAssertion(input: MulticastDeliveryAssertionInput): RallarBlackBoxTestCommand {

@@ -10,6 +10,7 @@ on:
         options:
           - hetzner-control
           - all-local
+          - all-local-postgres
       capture_setup_timing:
         description: Retain safe existing API setup timing for the all-local diagnostic only
         type: boolean
@@ -517,9 +518,25 @@ jobs:
 
   all-local:
     name: Observe selected all-local ALM manifest
-    if: ${{ inputs.execution_mode == 'all-local' }}
+    if: ${{ inputs.execution_mode == 'all-local' || inputs.execution_mode == 'all-local-postgres' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
     steps:
       - name: Checkout repo
         uses: actions/checkout@v7
@@ -542,6 +559,13 @@ jobs:
         with:
           bun: 'true'
           playwright: 'true'
+
+      - name: Run Postgres migrations
+        if: inputs.execution_mode == 'all-local-postgres'
+        shell: bash
+        env:
+          DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+        run: npm run db:migrate
 
       - name: Admit frozen ALM source
         shell: bash
@@ -593,7 +617,7 @@ jobs:
           RALLAR_BLACK_BOX_FULL_STACK_HEADLESS: '1'
           RALLAR_BLACK_BOX_CAPTURE_SETUP_TIMING: '${{ inputs.capture_setup_timing }}'
           RALLAR_BLACK_BOX_CAPTURE_WS_OBSERVATIONS: '${{ inputs.capture_ws_observations }}'
-          RALLAR_BLACK_BOX_API_MODE: memory
+          RALLAR_BLACK_BOX_API_MODE: ${{ inputs.execution_mode == 'all-local-postgres' && 'postgres' || 'memory' }}
           RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ env.ALM_MESH_MIN_SIZE }}
           RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/tmp/alm-v1c/all-local-recorder
           RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: unbounded

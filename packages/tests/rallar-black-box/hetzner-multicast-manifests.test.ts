@@ -1,3 +1,6 @@
+import { load as loadYaml } from 'js-yaml';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
     describe,
     expect,
@@ -5,11 +8,53 @@ import {
 } from 'vitest';
 
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import {
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts';
+import { createWorldFleetDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/world-fleet-distributed-manifests.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
+const repoRoot = path.resolve(__dirname, '../../..');
+
+/** The time limit of the GitHub-hosted job that runs a hosted fleet's headless agents for the whole distributed run. */
+async function readHostedAgentJobTimeoutSeconds(): Promise<number> {
+    const workflow = loadYaml(
+        await readFile(path.join(repoRoot, '.github/workflows/github-free-distributed-recipe.yml'), 'utf8')
+    );
+    return decodeHostedAgentJobTimeoutMinutes(workflow).fold(
+        (issue) => {
+            throw new Error(issue);
+        },
+        (minutes) => minutes * 60
+    );
+}
+
+function decodeHostedAgentJobTimeoutMinutes(value: unknown): Either<string, number> {
+    const schema = {
+        type: 'object',
+        required: ['jobs'],
+        properties: {
+            jobs: {
+                type: 'object',
+                required: ['github-agents'],
+                properties: {
+                    'github-agents': {
+                        type: 'object',
+                        required: ['timeout-minutes'],
+                        properties: { 'timeout-minutes': { type: 'integer' } }
+                    }
+                }
+            }
+        }
+    };
+    return validateJsonSchema(schema, value).ok
+        ? Either.ofRight((value as { jobs: { 'github-agents': { 'timeout-minutes': number; }; }; }).jobs['github-agents']['timeout-minutes'])
+        : Either.ofLeft('The hosted agent job names no integer timeout-minutes.');
+}
 
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
 const MATRIX_DURATION_SECONDS = [30, 300] as const;
@@ -49,7 +94,9 @@ describe('Hetzner multicast workloads', () => {
         expect(principalTree?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
+            // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
+            // 60 s, 20 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + 60 + 100 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -75,7 +122,10 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 60 s, 5 settle
+            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 13 delivery-poll pauses of 5 s and 65
+            // relay-hold pauses of 1 s, rounded up to the second.
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 60 + 5 + 29.8 + 5 + 65 + 65),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,
@@ -89,7 +139,6 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerDiagnostic?.diagnostic).toBe(true);
         expect(allPeerDiagnostic?.manifest.metadata).toMatchObject({
             expectedDurationSeconds: 30,
-            recommendedTerminalTimeoutSeconds: 330,
             receiverDelivery: {
                 expectedInboundMessages: 29400,
                 minExpectedInboundMessages: 23520,
@@ -99,7 +148,6 @@ describe('Hetzner multicast workloads', () => {
         expect(principalLong?.manifest.metadata).toMatchObject({
             diagnostic: true,
             expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 3900,
             loadEstimate: {
                 streamFrames: 72000,
                 logicalFanoutMessages: 3528000
@@ -108,7 +156,6 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerLong20?.manifest.metadata).toMatchObject({
             diagnostic: true,
             expectedDurationSeconds: 3600,
-            recommendedTerminalTimeoutSeconds: 4200,
             loadEstimate: {
                 streamFrames: 3600000,
                 logicalFanoutMessages: 176400000
@@ -226,7 +273,6 @@ describe('Hetzner multicast workloads', () => {
             senderCount: 1,
             rateHz: 2,
             expectedDurationSeconds: 4_680,
-            recommendedTerminalTimeoutSeconds: 5_100,
             receiverDelivery: { expectedInboundMessages: 9_360, minExpectedInboundMessages: 8_892 },
             rtcTopologyEnv: { RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16' }
         });
@@ -241,8 +287,9 @@ describe('Hetzner multicast workloads', () => {
             ]
         });
         expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
-            commandId: 'rtc-messages-principal-receiver-stats-loop',
-            count: 158,
+            commandId: 'rtc-messages-principal-receiver-delivery-poll',
+            until: 'first-success',
+            count: 160,
             intervalMs: 30_000
         });
         for (const selection of entry?.manifest.recipes ?? []) {
@@ -258,6 +305,38 @@ describe('Hetzner multicast workloads', () => {
             .map((entry) => entry.manifest.distributedRunId);
 
         expect(withHistory).toEqual(['hetzner-rtc-messages-principal-15-agent-78m-2hz-tree']);
+    });
+
+    it('recommends the terminal timeout its ack, barrier and slowest recipe budget add up to for every multicast run', () => {
+        const multicast = createHetznerDistributedManifestCatalog()
+            .filter((entry) => /-rtc-messages-(principal|all-peer)-/.test(entry.manifest.distributedRunId));
+
+        expect(multicast.length).toBeGreaterThan(0);
+        for (const { manifest } of multicast) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId).toBe(
+                computeDistributedRunTerminalTimeoutSeconds({
+                    recipes: manifest.recipes.flatMap((selection) => selection.recipe ? [selection.recipe] : []),
+                    ackTimeoutMs: manifest.ackTimeoutMs,
+                    barrier: manifest.barrier
+                })
+            );
+        }
+    });
+
+    it('ends every run a hosted agent job can stream within that job\'s own time limit', async () => {
+        const jobTimeoutSeconds = await readHostedAgentJobTimeoutSeconds();
+        const hostedRuns = [...createHetznerDistributedManifestCatalog(), ...createWorldFleetDistributedManifestCatalog()]
+            .map((entry) => entry.manifest)
+            .filter((manifest) =>
+                typeof manifest.metadata?.recommendedTerminalTimeoutSeconds === 'number' &&
+                Number(manifest.metadata.expectedDurationSeconds ?? 0) < jobTimeoutSeconds
+            );
+
+        expect(hostedRuns.length).toBeGreaterThan(0);
+        for (const manifest of hostedRuns) {
+            expect(manifest.metadata?.recommendedTerminalTimeoutSeconds, manifest.distributedRunId)
+                .toBeLessThanOrEqual(jobTimeoutSeconds);
+        }
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {

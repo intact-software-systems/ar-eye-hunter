@@ -139,7 +139,7 @@ write_rallar_api_postgres_sql() {
 # The mark outlives a killed rollout, so the API never starts on an unverified migration.
 write_rallar_api_store_failure() {
 	local stage="$1"
-	local message="The ${stage} of the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} failed at $(date -u +%Y-%m-%dT%H:%M:%SZ); rallar-api-v1 stays stopped until 08-rollout-controller.sh succeeds."
+	local message="The ${stage} of the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} failed at $(date -u +%Y-%m-%dT%H:%M:%SZ); every API replica stays stopped until 08-rollout-controller.sh succeeds."
 	printf '%s\n' "${message}" >"${RALLAR_API_STORE_FAILURE_FILE}"
 	echo "::error::${message}" >&2
 }

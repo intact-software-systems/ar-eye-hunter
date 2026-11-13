@@ -7,7 +7,7 @@ export function decodeApiV1Tournaments(decoder: ApiV1ConfigurationValueDecoder):
         profiles: decodeProfiles(decoder),
         rateLimit: {
             windowMs: decoder.integer('tournaments.rateLimit.windowMs', 1, 3600000),
-            requests: decoder.integer('tournaments.rateLimit.requests', 1, 10000)
+            requests: decoder.replicaLimitShare('tournaments.rateLimit.requests', 1, 10000)
         }
     };
 }

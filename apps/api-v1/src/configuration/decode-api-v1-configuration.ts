@@ -33,6 +33,7 @@ import type {
     ApiV1StateApiConfiguration,
     ApiV1TopologyConfiguration
 } from './api-v1-configuration.ts';
+import { computeApiReplicaLimitShare } from './compute-api-replica-limit-share.ts';
 import {
     readApiV1ConfigurationDecodedSources,
     type ApiV1ConfigurationSourceValue,
@@ -47,6 +48,8 @@ import {
 } from './decode-api-v1-configuration-values.ts';
 import { decodeApiV1GrantedWsTopics } from './decode-api-v1-granted-ws-topics.ts';
 import { validateApiV1ConfigurationInvariants } from './validate-api-v1-configuration-invariants.ts';
+
+const ALL_INTERFACES_HOSTNAME = '0.0.0.0';
 
 export type { DecodeApiV1ConfigurationInput } from './decode-api-v1-configuration-source.ts';
 
@@ -126,11 +129,22 @@ function decodeHttp(
     structuredValues: ApiV1ConfigurationStructuredValueDecoder
 ): ApiV1HttpConfiguration {
     return {
+        hostname: decodeHttpHostname(decoder),
         port: decoder.integer('http.port', 1, 65_535),
+        replicaCount: decoder.replicaCount(),
         corsOrigins: structuredValues.originSet('http.corsOrigins'),
         preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0),
         shutdownDeadlineMs: decodeShutdownDeadlineMs(decoder)
     };
+}
+
+/**
+ * Local dev, CI and containers reach the server on every interface, as Bun binds by default; a host that fronts the
+ * server with its own proxy names its loopback address instead.
+ */
+function decodeHttpHostname(values: ApiV1ConfigurationValueDecoder): string {
+    const path = 'http.hostname';
+    return values.hasValue(path) ? values.nonEmptyString(path) : ALL_INTERFACES_HOSTNAME;
 }
 
 /** The hosted units name the deadline; elsewhere the Bun servers share one default. */
@@ -346,20 +360,17 @@ function decodeAuthentication(
         sessionTtlMs: input.values.integer('authentication.sessionTtlMs', 1),
         webSocketTicketTtlMs: input.values.integer('authentication.webSocketTicketTtlMs', 1),
         agentSessionTicketTtlMs: input.values.integer('authentication.agentSessionTicketTtlMs', 1),
-        maxConcurrentPasswordDerivations: decodePasswordDerivationBound(input.values, input.hardwareConcurrency),
+        maxConcurrentPasswordDerivations: computeApiReplicaLimitShare(
+            decodePasswordDerivationBound(input.values, input.hardwareConcurrency),
+            input.values.replicaCount()
+        ),
         rateLimits: {
             windowMs: input.values.integer('authentication.rateLimits.windowMs', 1),
-            loginIp: input.values.integer('authentication.rateLimits.loginIp', 1),
-            loginUsername: input.values.integer('authentication.rateLimits.loginUsername', 1),
-            registrationIp: input.values.integer('authentication.rateLimits.registrationIp', 1),
-            registrationUsername: input.values.integer(
-                'authentication.rateLimits.registrationUsername',
-                1
-            ),
-            webSocketTicket: input.values.integer(
-                'authentication.rateLimits.webSocketTicket',
-                1
-            )
+            loginIp: input.values.replicaLimitShare('authentication.rateLimits.loginIp', 1),
+            loginUsername: input.values.replicaLimitShare('authentication.rateLimits.loginUsername', 1),
+            registrationIp: input.values.replicaLimitShare('authentication.rateLimits.registrationIp', 1),
+            registrationUsername: input.values.replicaLimitShare('authentication.rateLimits.registrationUsername', 1),
+            webSocketTicket: input.values.replicaLimitShare('authentication.rateLimits.webSocketTicket', 1)
         }
     };
 }
@@ -387,8 +398,8 @@ function decodeStateApi(
         strictReadAuthorization: decoder.boolean('stateApi.strictReadAuthorization'),
         rateLimits: {
             windowMs: decoder.integer('stateApi.rateLimits.windowMs', 1),
-            request: decoder.integer('stateApi.rateLimits.request', 1),
-            eventList: decoder.integer('stateApi.rateLimits.eventList', 1)
+            request: decoder.replicaLimitShare('stateApi.rateLimits.request', 1),
+            eventList: decoder.replicaLimitShare('stateApi.rateLimits.eventList', 1)
         },
         circuitBreaker: decodeCircuitBreaker(decoder, 'stateApi.circuitBreaker')
     };
@@ -416,10 +427,10 @@ function decodeGroup(
         roomOwnedAppDataBindings: decodeRoomOwnedBindings(decoder),
         admission: {
             windowMs: decoder.integer('group.admission.windowMs', 1),
-            joinPrincipal: decoder.integer('group.admission.joinPrincipal', 1),
-            joinGroup: decoder.integer('group.admission.joinGroup', 1),
-            presencePrincipal: decoder.integer('group.admission.presencePrincipal', 1),
-            presenceGroup: decoder.integer('group.admission.presenceGroup', 1)
+            joinPrincipal: decoder.replicaLimitShare('group.admission.joinPrincipal', 1),
+            joinGroup: decoder.replicaLimitShare('group.admission.joinGroup', 1),
+            presencePrincipal: decoder.replicaLimitShare('group.admission.presencePrincipal', 1),
+            presenceGroup: decoder.replicaLimitShare('group.admission.presenceGroup', 1)
         }
     };
 }
@@ -584,7 +595,7 @@ function decodeIce(
     const cacheTtlMs = decoder.integer('ice.cacheTtlMs', 1);
     const rateLimit = {
         windowMs: decoder.integer('ice.rateLimit.windowMs', 1),
-        requests: decoder.integer('ice.rateLimit.requests', 1)
+        requests: decoder.replicaLimitShare('ice.rateLimit.requests', 1)
     };
     if (mode === 'metered') {
         return {
@@ -759,7 +770,7 @@ function decodeFriends(decoder: ApiV1ConfigurationValueDecoder): ApiV1FriendsCon
         invitationLifetimeMs: decoder.integer('friends.invitationLifetimeMs', 1, 2_592_000_000),
         rateLimit: {
             windowMs: decoder.integer('friends.rateLimit.windowMs', 1, 3_600_000),
-            requests: decoder.integer('friends.rateLimit.requests', 1, 10_000)
+            requests: decoder.replicaLimitShare('friends.rateLimit.requests', 1, 10_000)
         }
     };
 }
@@ -770,7 +781,7 @@ function decodeParties(decoder: ApiV1ConfigurationValueDecoder): ApiV1PartiesCon
         invitationLifetimeMs: decoder.integer('parties.invitationLifetimeMs', 1000, 86400000),
         rateLimit: {
             windowMs: decoder.integer('parties.rateLimit.windowMs', 1, 3600000),
-            requests: decoder.integer('parties.rateLimit.requests', 1, 10000)
+            requests: decoder.replicaLimitShare('parties.rateLimit.requests', 1, 10000)
         }
     };
 }

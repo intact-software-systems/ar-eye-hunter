@@ -1,6 +1,8 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import { computeDistributedRunTerminalTimeoutSeconds } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/compute-distributed-run-terminal-timeout-seconds.ts';
 import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import type {
+    RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest,
@@ -111,9 +113,7 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
         targetPolicyMode: input.targetPolicyMode,
         rolePattern: input.rolePattern,
         ackTimeoutMs: ACK_TIMEOUT_MS,
-        barrier: input.barrier
-            ? { enabled: true, timeoutMs: BARRIER_TIMEOUT_MS }
-            : { enabled: false },
+        barrier: toBarrierPolicy(input.barrier),
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
         groupAssertions: input.groupAssertions,
@@ -143,6 +143,28 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
     };
 }
 
+/**
+ * A multicast entry whose terminal timeout is what its ack, its barrier and its slowest recipe add up to when every
+ * command uses its whole budget, so the control's terminal wait never ends a run still inside its own budgets.
+ */
+export function createMulticastManifestEntry(input: ManifestCatalogInput): HetznerDistributedManifestEntry {
+    return createManifestEntry({
+        ...input,
+        metadata: {
+            ...input.metadata,
+            recommendedTerminalTimeoutSeconds: computeDistributedRunTerminalTimeoutSeconds({
+                recipes: input.recipes,
+                ackTimeoutMs: ACK_TIMEOUT_MS,
+                barrier: toBarrierPolicy(input.barrier)
+            })
+        }
+    });
+}
+
+function toBarrierPolicy(barrier: boolean): RallarBlackBoxDistributedBarrierPolicy {
+    return barrier ? { enabled: true, timeoutMs: BARRIER_TIMEOUT_MS } : { enabled: false };
+}
+
 export function toControllerAgentIds(count: number): readonly string[] {
     return Array.from({ length: count }, (_value, index) => `controller-${String(index + 1).padStart(2, '0')}`);
 }
@@ -167,7 +189,6 @@ export type MulticastManifestMetadataInput =
         rateHz: number;
         minReceiveRatio: number;
         receiverExpectedFrames: number;
-        recommendedTerminalTimeoutSeconds: number;
         catalogProfiles: readonly string[];
     }>;
 
@@ -187,7 +208,6 @@ export function toMulticastManifestMetadata(
             : input.participantCount - input.senderCount,
         rateHz: input.rateHz,
         expectedDurationSeconds: input.durationSeconds,
-        recommendedTerminalTimeoutSeconds: input.recommendedTerminalTimeoutSeconds,
         ...(input.catalogProfiles.length > 0 ? { catalogProfiles: input.catalogProfiles } : {}),
         rtcTopologyEnv: {
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: input.topologyProfile === 'tree'
