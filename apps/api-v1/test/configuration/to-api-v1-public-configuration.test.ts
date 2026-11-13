@@ -8,7 +8,8 @@ import { toApiV1PublicConfiguration } from '../../src/configuration/to-api-v1-pu
 test('public configuration projection returns exactly the browser contract', () => {
     const publicApi: ApiV1PublicApiConfiguration = {
         apiBaseUrl: 'https://api.example.test',
-        wsBaseUrl: 'wss://api.example.test'
+        wsBaseUrl: 'wss://api.example.test',
+        rtcReplacedLayoutOverlapMs: 15_000
     };
     const projected: ApiConfig = toApiV1PublicConfiguration(publicApi);
 
@@ -26,6 +27,7 @@ test('public configuration projection input cannot contain a secret field', () =
     const publicApi: ApiV1PublicApiConfiguration = {
         apiBaseUrl: 'https://api.example.test',
         wsBaseUrl: 'wss://api.example.test',
+        rtcReplacedLayoutOverlapMs: 15_000,
         // @ts-expect-error Secrets are not part of the projection input contract.
         credentialSecret: 'must-not-compile-as-public-input'
     };

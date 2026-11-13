@@ -989,3 +989,36 @@ test('configuration decoder requires the finished AppInbox retention and bounds 
         );
     }
 });
+
+test('reads the replaced-layout overlap the defaults state', async () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    input.defaultsSource = await readJsonResource('defaults-config.json');
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.equal(configuration.publicApi.rtcReplacedLayoutOverlapMs, 15_000);
+});
+
+test('accepts an overlap of zero, which keeps routing on the accepted layout alone', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    setPath(input.defaultsSource, 'publicApi.rtcReplacedLayoutOverlapMs', 0);
+
+    const configuration = decodeApiV1Configuration(input);
+
+    assert.equal(configuration.publicApi.rtcReplacedLayoutOverlapMs, 0);
+});
+
+test('refuses an overlap above the browser\'s connection grace or below zero', () => {
+    for (const invalid of [15_001, -1]) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'publicApi.rtcReplacedLayoutOverlapMs', invalid);
+
+        const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+        assert.equal(
+            error.issues.some((issue) => issue.path === 'publicApi.rtcReplacedLayoutOverlapMs'),
+            true,
+            `an overlap of ${invalid} is refused`
+        );
+    }
+});

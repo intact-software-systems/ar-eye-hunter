@@ -37,6 +37,14 @@ A separate SPA origin is expected and remains governed by CORS. Do not substitut
 `Origin` header or an untrusted proxy header for the configured API authority. A reverse proxy's
 public addresses belong in the two configuration settings, independently of the internal listen port.
 
+## Replaced-layout overlap
+
+`publicApi.rtcReplacedLayoutOverlapMs` (default 15 000, range 0 to 15 000) is how long an RTC browser
+keeps routing over the layout a promotion replaced. It is one value per server, not per group, and it
+has no environment override: set it in a profile source. The ceiling is the browser's 15 s connection
+grace, because the overlap ends when the old connection closes. `0` keeps routing on the accepted
+layout alone.
+
 ## Environment allowlist
 
 The configuration reader recognizes only these operational overrides:

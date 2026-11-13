@@ -37,7 +37,8 @@ const CONFIGURATION_DEFAULTS_SOURCE = {
     },
     publicApi: {
         apiBaseUrl: 'http://localhost:8080',
-        wsBaseUrl: 'ws://localhost:8080'
+        wsBaseUrl: 'ws://localhost:8080',
+        rtcReplacedLayoutOverlapMs: 15_000
     },
     database: {
         mode: 'pglite-memory',
