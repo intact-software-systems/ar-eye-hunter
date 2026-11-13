@@ -599,7 +599,8 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
                     apiBaseUrl,
                     wsBaseUrl: 'wss://api.recipe-console-ticket.test',
                     endpoints: { createWs: `${apiBaseUrl}/api/ws` },
-                    serverPeerId: 'server'
+                    serverPeerId: 'server',
+                    rtcReplacedLayoutOverlapMs: 15_000
                 }
             });
             return;

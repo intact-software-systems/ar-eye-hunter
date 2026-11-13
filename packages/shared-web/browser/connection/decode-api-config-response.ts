@@ -3,7 +3,6 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { validateWebSocketHost } from '@shared/websocket/validate-web-socket-host.ts';
 
-/** Decodes the current `/api/config` wire contract, including its required WS server identity. */
 export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<string, ApiConfigResponse> {
     if (!isRecord(value) || !isRecord(value.endpoints)) {
         return Either.ofLeft('The /api/config response is not an object with endpoints.');
