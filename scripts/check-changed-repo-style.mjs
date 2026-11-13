@@ -9,6 +9,7 @@ import {
     matchesBaseMagnitude
 } from './repo-style-check/finding-magnitude.mjs';
 import { navigationClassifications, scanNavigationProject } from './repo-style-check/navigation-rules.mjs';
+import { readRevisionSources } from './repo-style-check/read-revision-sources.mjs';
 import {
     collectProductionSources,
     isProductionCodeFile,
@@ -388,7 +389,12 @@ async function readComparisonSources({ repoRoot, mergeBase, targetReference, tar
     });
     const governedTargetSources = targetReference === worktreeTarget
         ? await collectProductionSources([repoRoot], { includeTests: true })
-        : readRevisionProductionSources(repoRoot, targetCommit);
+        : readRevisionSources({
+            cwd: process.cwd(),
+            repoRoot,
+            revision: targetCommit,
+            isGovernedSourceFile
+        });
     const baseSources = readBaseSources({
         repoRoot,
         mergeBase,
@@ -446,23 +452,6 @@ function readBaseSources(input) {
         }
     }
     return [...sourceByPath.values()].sort((left, right) => left.file.localeCompare(right.file));
-}
-
-function readRevisionProductionSources(repoRoot, revision) {
-    return runGit(['ls-tree', '-r', '--name-only', revision])
-        .split('\n')
-        .filter(Boolean)
-        .filter((file) => isGovernedSourceFile(path.join(repoRoot, file)))
-        .map((file) => ({
-            file: path.join(repoRoot, file),
-            raw: readRevisionFile(revision, file)
-        }))
-        .filter((source) => source.raw !== undefined);
-}
-
-function readRevisionFile(revision, file) {
-    const result = runGitResult(['show', `${revision}:${file}`]);
-    return result.status === 0 ? result.stdout : undefined;
 }
 
 function readCommit(reference, role) {
