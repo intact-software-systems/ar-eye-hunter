@@ -30,6 +30,61 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | `publishing-plan-progress`                                       | Publishing a branch, draft pull request, milestone, or final remote evidence. Plan execution belongs to `adaptive-plan-execution`.    |
 | `validation`                                                     | Writing the session command catalog when a command failed, was skipped, or changed a decision, or when asked.                         |
 
+## Branch development: draft → ready → wait
+
+Keep implementation and review-fix batches in a **draft PR**. Marking ready is the handoff that
+starts broad release verification; it is not the end of the agent's work.
+
+1. **Start in draft.** Work on a non-default branch and open a draft PR early (`gh pr create
+   --draft`). Run focused behavioral tests and the affected package/app typecheck or build while
+   developing. Push coherent batches; draft CI runs governance and workspace/test type checks.
+2. **Prepare the handoff.** Finish implementation, affected validation, and review. Run
+   `npm run pr:delivery -- status` before broad final validation. Repair an actual merge conflict
+   first. `BEHIND` alone creates no work when the PR remains mergeable; do not rebase or merge
+   `main` merely to follow base movement.
+3. **Mark ready once.** Run `npm run pr:delivery -- ready` after the candidate is complete. This
+   starts the broad gate and reports current state; the command does not wait for CI to finish.
+4. **Stay and wait.** Monitor the new run with read-only status checks and bounded waits until the
+   current revision's required `Branch Release Gate result` succeeds or a concrete blocker requires
+   human input. Do not declare verification complete while checks are queued or running. Do not
+   repeatedly invoke `ready` while waiting.
+5. **Batch revisions in draft.** If code fixes are needed, run `gh pr ready <PR-number> --undo`
+   before pushing the revision batch. Complete the fixes and focused validation, push, then run
+   `npm run pr:delivery -- ready` once for that handoff and wait again. A push while still ready
+   starts validation for the new revision, so intermediate ready pushes repeat expensive work.
+
+### Interpreting red draft gates
+
+For a draft PR, `Branch Release Gate result` deliberately fails with **“Release verification is
+awaiting handoff”**. Broad suites are skipped, so these runs are short. This specific refusal is
+expected: continue draft development rather than rerunning the full gate or marking unfinished
+work ready to clear the red indicator. **Governance or Draft type checks failures are real failures
+to inspect and resolve; do not dismiss all red jobs as draft behavior.**
+
+After marking ready, the earlier draft refusal can remain visible while the new run queues.
+Inspect the ready-triggered run before treating that old result as a regression. Only explicit
+success for the current revision proves release verification; skipped checks and older successful
+revisions do not.
+
+Find the new run with `gh run list --branch <branch> --workflow branch-release-gate.yml`, then
+inspect it with `gh run view <run-id>`. Match its revision and event to the current handoff.
+
+Use `npm run pr:delivery -- status` to select the next action:
+
+| Action                        | Next step                                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `WORK`                        | Continue in draft with focused validation; inspect any actual governance/typecheck failure.                                |
+| `REPAIR_CONFLICT`             | Repair the real source conflict before broad validation.                                                                   |
+| `WAIT_CI` / `WAIT_GITHUB`     | Keep monitoring with bounded waits; do not end with a completion claim.                                                    |
+| `REPAIR_CHECK`                | Diagnose the latest handoff run. Retry only failed jobs for a confirmed transient failure; return to draft for code fixes. |
+| `AWAIT_REVIEW_OR_ADMIN_MERGE` | Verification is complete; await native review or an authorized administrator merge.                                        |
+| `DONE`                        | Stop; do not create post-merge governance work.                                                                            |
+
+For the remaining terminal and approved auto-merge states, follow
+`scripts/pull-request-delivery/README.md` and the `publishing-plan-progress` skill. Review and merge
+authorization remain unchanged. After native approval, a separate `ready` call may arm auto-merge
+as that skill describes; this is distinct from repeatedly calling it while CI runs.
+
 ## Runtime split
 
 This monorepo runs **two runtimes** and you must know which one owns the file you are editing:
@@ -61,13 +116,14 @@ npm run format:check    # dprint check
 `dprint` shells out to `shfmt` for `*.sh` and `*.bash`. Without it on `PATH`, both commands abort
 with `Cannot start formatter process`, so any CI job running them needs a `shfmt` setup step.
 
-Daily confidence:
+Broad local suite, selected when change risk or investigation requires it; not a per-commit
+requirement. Ordinary iteration uses focused tests, with broad release verification at handoff:
 
 ```sh
 npm run test:ci      # test:unit + test:bun + test:e2e + test:full-stack:memory
 ```
 
-Focused gates:
+Suite-wide commands (choose by affected surface; this is not a checklist to run on every commit):
 
 ```sh
 npm run test:unit    # vitest, both projects: unit (test:unit:main) + tooling (test:unit:tooling)
@@ -269,10 +325,10 @@ Highest-frequency rules:
 - Use `adaptive-plan-execution` for affected validation scope and `rallar-testing` for commands.
   Require **Branch Release Gate** for affected pull requests. Require **Run Hetzner Supported
   Distributed Manifests** only when classified distributed risk or acceptance selects it.
-- Use `publishing-plan-progress` for completion: check `npm run pr:delivery -- status` before broad
-  final validation, remove a completed written plan and its current-work index entries in the pull
-  request, and run `npm run pr:delivery -- ready` once at handoff. When GitHub reports the pull
-  request merged, stop; completion creates no post-merge governance work.
+- Follow the draft → ready → wait loop above and `publishing-plan-progress` for completion.
+  Remove a completed written plan and its current-work index entries in the pull request before
+  marking ready. Stay with the current handoff run until verification succeeds or a concrete blocker
+  requires human input. When GitHub reports the pull request merged, stop.
 - Write the command catalog only as the AI Handoff Contract in `AGENTS.md` describes.
 
 ## Git
@@ -282,9 +338,12 @@ Highest-frequency rules:
 approval are separate. Read the exact disclosure requirements in `AGENTS.md` before asking.
 
 Branch CI (`branch-release-gate.yml` → `release-gate.yml` and `games-release-gate.yml`) runs on pull
-requests (`opened`, `synchronize`, `reopened`, `ready_for_review`, `labeled`, `unlabeled`), not on
-bare branch pushes. The main-push deploy calls only `release-gate.yml`. The platform gate's blocking
-lanes run in parallel:
+requests (`opened`, `synchronize`, `reopened`, `ready_for_review`, `converted_to_draft`, `labeled`,
+`unlabeled`), not on bare branch pushes. Draft runs admit governance and type checks plus the
+intentional awaiting-handoff refusal. Ready runs admit broad suites under the existing validation
+selection policy; converting back to draft cancels superseded broad work. The main-push deploy
+calls only `release-gate.yml`. For a broad ready run, the platform gate's blocking lanes run in
+parallel:
 
 | Lane                   | Runs                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -298,8 +357,9 @@ lanes run in parallel:
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
 
 The games (`ar-eye-hunter-v1`, `relic-hunters-v1`, and their Bun servers) validate in
-`games-release-gate.yml`: required on pull requests, skipped when the diff is exclusively platform,
-and never run on the deploy path. Its lanes run in parallel:
+`games-release-gate.yml`: required for broad ready-PR validation when game/shared changes select
+it, skipped in draft or when the diff is exclusively platform, and never run on the deploy path.
+Its lanes run in parallel:
 
 | Lane             | Runs                                                                |
 | ---------------- | ------------------------------------------------------------------- |
