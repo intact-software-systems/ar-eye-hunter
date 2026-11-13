@@ -55,12 +55,12 @@ describe('revision source reader', () => {
     });
 
     it('reads a tree listing longer than 1 MiB whole', () => {
-        const root = createLongListingRevision(9_000);
+        const root = createLongListingRevision(500);
         const listing = runGit(root, ['ls-tree', '-r', '--name-only', 'HEAD']);
 
         expect(Buffer.byteLength(listing)).toBeGreaterThan(oneMebibyte);
-        expect(readSources(root, 'HEAD')).toHaveLength(9_000);
-    }, 30_000);
+        expect(readSources(root, 'HEAD')).toHaveLength(500);
+    });
 
     it('fails the way git ls-tree fails for an unknown revision', () => {
         const root = createEdgeCaseRevision();
@@ -112,7 +112,7 @@ function createEdgeCaseRevision(): string {
 function createLongListingRevision(count: number): string {
     const root = createRepository();
     const blob = runGitResult(root, ['hash-object', '-w', '--stdin'], 'export {};\n').stdout.trim();
-    const directory = 'nested-directory/'.repeat(7);
+    const directory = `${'d'.repeat(250)}/`.repeat(10);
     const entries = Array.from({ length: count }, (_, index) => `100644 ${blob}\t${directory}module-${index}.ts\n`);
     runGitResult(root, ['update-index', '--index-info'], entries.join(''));
     runGit(root, ['commit', '-qm', 'long listing']);
