@@ -4,10 +4,14 @@ import {
     setBrowserStateReadDiagnosticsSink,
     type BrowserStateReadDiagnosticEvent
 } from '@shared-web/browser/state-read/diagnostics.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
+
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 describe('group heartbeat snapshot reconciliation', () => {
     beforeEach(() => {
@@ -46,6 +50,7 @@ describe('group heartbeat snapshot reconciliation', () => {
 
         try {
             await browserStateCacheLifecycle.hydrate({
+                groupStateDiagnostics: passThroughGroupStateDiagnostics,
                 webRtcGroupManager: manager,
                 clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
                 clientSnapshots: [],
@@ -86,6 +91,7 @@ describe('group heartbeat snapshot reconciliation', () => {
         const observed = { ...group, publicationGrants: [grantOf('session-b')] };
         const returned = { ...group, publicationGrants: [grantOf('session-b'), grantOf('session-c')] };
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: createWebRtcGroupManager(),
             clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
             clientSnapshots: [],

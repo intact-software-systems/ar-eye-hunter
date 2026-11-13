@@ -21,6 +21,7 @@ import type { GroupPublicationGrant } from '@shared/api/group-publication/group-
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { initApiV1SchemaPGliteTemplate } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import {
     recordPostgresStatements,
     type PostgresStatementLog
@@ -40,6 +41,9 @@ interface GrantSqlFixture {
 }
 
 describe.each(['memory', 'postgres'] as const)('group publication grant rows (%s)', (backend) => {
+    if (backend === 'memory') {
+        initApiV1SchemaPGliteTemplate();
+    }
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
 
     sqlIt('the snapshot version probe changes when a grant row is written', async () => {

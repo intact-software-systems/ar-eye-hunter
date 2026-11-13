@@ -35,6 +35,11 @@ the receiver's pages and each scenario's successor page, with role `successor`. 
 ids start `alm-successor-`, which the snapshot decoder does not attribute, so its events read
 `unattributed`.
 
+The control run snapshot also carries each page's `rallar.browser.state-read` events (the state-read
+diagnostics of the runtime diagnostic contract), so a cell can tell when a page pulled or reconciled
+group state by `operation` and `result`, and its `rallar.browser.group_state.applied` events, which
+state the group revision the page's cache holds.
+
 They live beside the per-test output directories rather than inside one, because Playwright deletes
 a passing test's own directory at the end of the run. A failed cell additionally attaches its
 snapshot to the Playwright report, which is where it has always been; a green cell used to leave no
@@ -144,6 +149,9 @@ records what the runner was doing while the cell ran:
   `rtc` with a reason starting `not-yet-in-sync`. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
+    the count is of events, not messages: a retained admission's replay states its own event, so a
+    message whose commit conflicted counts its ingress `pending`, a further `pending` for each replay
+    that conflicted again, and its replay's verdict;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
     `admission-outcome` event, because a percentage over zero outcomes is not a measurement. The
     drain medians beside it are still reported in that case.

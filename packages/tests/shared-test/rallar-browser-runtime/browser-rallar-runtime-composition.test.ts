@@ -40,6 +40,7 @@ import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../shared-web/api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { createInitialiseMiddlewareDouble } from '../../shared-web/connection/create-initialise-middleware-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../../shared-web/data/rallar-data-test-runtime.ts';
 
 installFakeBroadcastChannelPerTest();
@@ -300,7 +301,7 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
     });
     vi.spyOn(auth, 'readSession').mockReturnValue(authSession);
     vi.spyOn(cache.browserStateCacheLifecycle, 'hydrate').mockResolvedValue();
-    vi.spyOn(middleware, 'initialiseMiddleware').mockImplementation(async (_session, _topic, options) => ({
+    vi.spyOn(middleware, 'initialiseMiddleware').mockImplementation(createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
         middleware: context.middleware,
         checkpoints: [],
         rtcCaptureReceipt: createBrowserRtcCapture({
@@ -309,7 +310,7 @@ async function createOwnedRuntime(): Promise<BlackBoxBrowserRallarRuntimeDepende
             record: options.diagnosticsPorts.signalingDiagnostics,
             nowEpochMs: () => 1
         }).receipt
-    }));
+    })));
     configureApiClient({ apiBaseUrl: 'https://api.example.test' });
     const runtime = createBlackBoxBrowserRallarRuntimeDependency({
         readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get,

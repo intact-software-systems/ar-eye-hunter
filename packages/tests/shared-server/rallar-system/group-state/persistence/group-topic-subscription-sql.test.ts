@@ -30,6 +30,7 @@ import {
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { initApiV1SchemaPGliteTemplate } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import { recordPostgresStatements, type PostgresStatementLog } from '../../../integration/postgres/test-support/record-postgres-statements.ts';
 import { createResourceInboxTestStorage, type ResourceInboxTestBackend } from '../../../queuebox/resource-inbox-test-storage.ts';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../app-inbox/test-support/test-app-inbox-finished-retention.ts';
@@ -47,6 +48,9 @@ interface SubscriptionSqlFixture {
 }
 
 describe.each(['memory', 'postgres'] as const)('group topic subscription rows (%s)', (backend) => {
+    if (backend === 'memory') {
+        initApiV1SchemaPGliteTemplate();
+    }
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
 
     sqlIt('a subscribe writes the row with its lease as the store expiry and no event row', async () => {

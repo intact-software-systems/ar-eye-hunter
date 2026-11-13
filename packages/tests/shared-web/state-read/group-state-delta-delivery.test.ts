@@ -23,6 +23,7 @@ import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-
 import { createDefaultALInboundRuntimeResources } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -32,6 +33,9 @@ import {
     createDeltaEnvelopeFixture,
     createDeltaEnvelopeFixtureGroupSnapshot
 } from '../../shared-server/rallar-system/group-state/presence/group-state-delta-envelope-fixtures.ts';
+
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
@@ -247,6 +251,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     constructor() {
         this.cache.initialise({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: this,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
@@ -289,6 +294,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     async hydrate(snapshot: GroupSnapshot): Promise<void> {
         await this.cache.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],

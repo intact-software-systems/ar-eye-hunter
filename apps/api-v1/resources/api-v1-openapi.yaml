@@ -7801,7 +7801,14 @@ components:
         - condition
         - remediation
         - coverageBasisLayoutIdentity
+        - causalRevision
       properties:
+        causalRevision:
+          description: >-
+            The group's causal revision of the snapshot layoutStale and condition were derived from; pending and the
+            planned and accepted slots come from a topology read made beside it, so this is not a version of pending.
+          allOf:
+            - { $ref: '#/components/schemas/GroupStateCausalRevision' }
         maxFormationAttempts:
           type:
             - integer

@@ -83,6 +83,7 @@ import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../shared/sign
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createInitialiseMiddlewareDouble } from '../connection/create-initialise-middleware-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -774,7 +775,9 @@ function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): RallarFacad
     };
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] });
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
+        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+    );
     return createRallarFacade();
 }
 
@@ -984,7 +987,9 @@ async function refreshNormalRoom(): Promise<void> {
     });
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
-    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] });
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
+        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+    );
     const facade = createRallarFacade();
     await facade.rooms.session(room).refresh();
 }

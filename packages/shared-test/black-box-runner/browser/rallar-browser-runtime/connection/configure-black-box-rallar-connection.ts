@@ -1,9 +1,11 @@
 import { checkRtcCaptureCompatibility } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import { setBrowserStateReadDiagnosticsSink } from '@shared-web/browser/state-read/diagnostics.ts';
 import { resolveRtcCaptureConfiguration } from '@shared/webrtc/rtc-capture-configuration.ts';
 
 import {
     createBlackBoxRallarDiagnosticsPorts,
+    createBlackBoxRallarStateReadSink,
     type BlackBoxRallarRuntimeDiagnostics
 } from '../black-box-rallar-diagnostics.ts';
 import type { BlackBoxRallarConnectionConfig } from '../black-box-rallar-operation-contracts.ts';
@@ -53,6 +55,7 @@ export function configureBlackBoxRallarConnection(
     const diagnosticsPorts = Object.freeze(
         createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics, almDiagnostics)
     );
+    setBrowserStateReadDiagnosticsSink(createBlackBoxRallarStateReadSink(diagnostics));
     rallar.configure({ apiBaseUrl: config.rallar.apiBaseUrl });
     const defaults = toBlackBoxRallarDefaults(config);
     rallar.setDefaults(defaults === undefined ? undefined : { ...defaults, diagnosticsPorts });

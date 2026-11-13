@@ -76,6 +76,7 @@ import {
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 // @vitest-environment happy-dom
 import '../../setup-browser-indexeddb.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -754,6 +755,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         configureBrowserALRuntimeStores(sessionId, {
             scope: SCOPE,
             diagnosticsPorts: {
+                groupStateDiagnostics: createPassThroughGroupStateSnapshotChangeSink(),
                 submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
                 transportFaultPort: createPassThroughTransportFaultPort(),
                 indexedDbOperationObserver: observer,

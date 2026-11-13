@@ -49,10 +49,11 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('./connection/create-initialise-middleware-double.ts'));
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: mocks.initialiseMiddleware
+        initialiseMiddleware: createInitialiseMiddlewareDouble(mocks.initialiseMiddleware)
     })
 );
 
@@ -331,7 +332,8 @@ describe('Rallar facade default scope behavior', () => {
                     indexedDbOperationObserver,
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
-                    storage: expect.any(Function)
+                    storage: expect.any(Function),
+                    groupStateDiagnostics: expect.any(Function)
                 }
             })
         );

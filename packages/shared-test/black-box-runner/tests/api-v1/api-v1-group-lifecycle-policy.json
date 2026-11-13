@@ -332,7 +332,10 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "optimisticJoinGroupRevision": "body.causalRevision.groupRevision"
+        }
       },
       "expect": {
         "status": 200,
@@ -344,6 +347,47 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "formationViewStatesTheGroupRevisionItWasDerivedAt",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "formationCausalGroupRevision": "body.causalRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "theFormationViewIsDerivedNoEarlierThanTheJoin",
+      "type": "assert",
+      "actual": {
+        "formationGroupRevision": "{formationCausalGroupRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "formationGroupRevision",
+            "gte": "{optimisticJoinGroupRevision}"
+          }
+        ]
       }
     },
     {

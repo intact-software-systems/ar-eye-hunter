@@ -9,6 +9,10 @@ import {
     type IndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
+    createPassThroughGroupStateSnapshotChangeSink,
+    type GroupStateSnapshotChangeSink
+} from '@shared/repository/group-state-snapshot-change-sink.ts';
+import {
     createPassThroughTransportFaultPort,
     createPassThroughWebSocketSubmissionReadinessFaultPort,
     type TransportFaultPort,
@@ -24,6 +28,8 @@ export interface RallarDiagnosticsPortsInput {
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly storage?: ALStorageEventSink;
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
+    /** Where the connect's group cache hands each raw change of what it holds. */
+    readonly groupStateDiagnostics?: GroupStateSnapshotChangeSink;
 }
 
 export interface RallarDiagnosticsPorts {
@@ -34,6 +40,7 @@ export interface RallarDiagnosticsPorts {
     readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
     readonly storage: ALStorageEventSink;
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
+    readonly groupStateDiagnostics: GroupStateSnapshotChangeSink;
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
@@ -56,6 +63,7 @@ export function toRallarDiagnosticsPorts(
         outboundDiagnostics: input?.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
         inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
         storage: input?.storage ?? createPassThroughALStorageEventSink(),
-        signalingDiagnostics: input?.signalingDiagnostics
+        signalingDiagnostics: input?.signalingDiagnostics,
+        groupStateDiagnostics: input?.groupStateDiagnostics ?? createPassThroughGroupStateSnapshotChangeSink()
     };
 }

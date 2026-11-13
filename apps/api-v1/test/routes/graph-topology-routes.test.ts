@@ -15,7 +15,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -895,6 +895,18 @@ function withActivationStatus(
     };
 }
 
+function withCausalRevision(snapshot: GroupSnapshot, causalRevision: GroupStateCausalRevision): GroupSnapshot {
+    return {
+        ...snapshot,
+        causalRevision,
+        group: {
+            ...snapshot.group,
+            snapshotVersion: causalRevision.groupRevision,
+            presenceVersion: causalRevision.presenceRevision
+        }
+    };
+}
+
 function withAcceptedLayout(snapshot: GroupSnapshot): GroupSnapshot {
     return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: ACCEPTED_IDENTITY } };
 }
@@ -1274,4 +1286,63 @@ test('formation view carries the queued replan the topology view reports', async
     const view = await readFormationView(app);
 
     assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 });
+});
+
+test('formation view states the group causal revision it was derived at', async () => {
+    const app = createRouteApp({
+        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.causalRevision, { groupRevision: 7, presenceRevision: 3 });
+});
+
+test('formation view states the causal revision of the planning snapshot, not the route read', async () => {
+    const routeSnapshot = createGroupSnapshot('room-1', ['owner']);
+    const planningSnapshot = withCausalRevision(routeSnapshot, { groupRevision: 9, presenceRevision: 4 });
+    const app = createRouteApp({
+        group: routeSnapshot,
+        topologyPlanning: {
+            readTopologyPlanningAuthority: () =>
+                Promise.resolve({
+                    group: planningSnapshot,
+                    config: createTopologyConfigView(),
+                    kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
+                    rttReportingDegreeLimit: 5,
+                    rttMeasurements: [],
+                    rttReplanMinimumLayoutAgeMs: 15_000,
+                    replanning: 'auto' as const,
+                    nowEpochMs: 123_456
+                })
+        }
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.causalRevision, { groupRevision: 9, presenceRevision: 4 });
+});
+
+test('formation view carries exactly the fields the view declares', async () => {
+    const app = createRouteApp({ group: createGroupSnapshot('room-1', ['owner']) });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(Object.keys(view).sort(), [
+        'causalRevision',
+        'condition',
+        'coverageBasisLayoutIdentity',
+        'establishmentStartedAtEpochMs',
+        'formationAttemptCount',
+        'formationEpoch',
+        'groupRef',
+        'lastFormationOutcome',
+        'layoutStale',
+        'lifecycleState',
+        'managerPrincipalIds',
+        'maxFormationAttempts',
+        'pending',
+        'readiness',
+        'remediation'
+    ]);
 });

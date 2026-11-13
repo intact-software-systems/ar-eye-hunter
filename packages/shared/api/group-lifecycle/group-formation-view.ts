@@ -1,5 +1,5 @@
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
-import type { GroupRef } from '../group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
 import type {
     GroupActivationCondition,
     GroupActivationRemediation
@@ -65,4 +65,11 @@ export type GroupFormationView = Readonly<{
      * is not itself a claim that traffic is flowing.
      */
     coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
+    /**
+     * The group's causal revision of the snapshot `layoutStale` and
+     * `condition` were derived from. `pending` and the planned and accepted
+     * slots come from a topology read made beside it, so this is not a
+     * version of `pending`.
+     */
+    causalRevision: GroupStateCausalRevision;
 }>;

@@ -160,7 +160,8 @@ describe('people events', () => {
             groupSnapshots: [groupSnapshot],
             options: {
                 scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
-            }
+            },
+            groupStateDiagnostics: mocks.context.middleware.groupStateDiagnostics
         });
     });
 

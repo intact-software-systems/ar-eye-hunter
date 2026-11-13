@@ -10,9 +10,15 @@ import {
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import {
+    createPassThroughGroupStateSnapshotChangeSink,
+    type GroupStateSnapshotChangeSink
+} from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
@@ -27,6 +33,7 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import {
     createClientSnapshot,
     createGroupSnapshot,
+    createGroupStateDeltaEnvelope,
     createTopologySnapshot,
     createWebRtcGroupManager,
     newCurrentStateTopologyMessage,
@@ -34,6 +41,9 @@ import {
     withGroupCausalRevision,
     withTopologyMessageId
 } from './browser-state-cache-lifecycle-fixtures.ts';
+
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 describe('browser state cache lifecycle scope filtering', () => {
     beforeEach(() => {
@@ -77,6 +87,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [sameScopeClient, otherWorkspaceClient],
@@ -132,6 +143,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [defaultScopeClient, customScopeClient],
@@ -186,6 +198,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const rereadGroupSnapshots = vi.fn(async () => [recovered]);
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -194,6 +207,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         acceptUpdate.mockClear();
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -223,6 +237,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -265,6 +280,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -308,6 +324,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -344,6 +361,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -393,6 +411,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData: {
                 clientId: 'session-a',
@@ -462,6 +481,7 @@ describe('browser state cache lifecycle scope filtering', () => {
         const unsubscribe = browserStateCacheLifecycle.onChange(listener);
 
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
             clientSnapshots: [],
@@ -533,12 +553,14 @@ describe('browser state cache lifecycle scope filtering', () => {
         const cacheOptions = { rereadGroupSnapshots };
 
         browserStateCacheLifecycle.initialise({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: webSocketQueueBox,
             webRtcGroupManager: manager,
             clientData,
             options: cacheOptions
         });
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -627,11 +649,13 @@ describe('browser state cache lifecycle scope filtering', () => {
         };
 
         browserStateCacheLifecycle.initialise({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: webSocketQueueBox,
             webRtcGroupManager: manager,
             clientData
         });
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -728,11 +752,13 @@ describe('browser state cache lifecycle scope filtering', () => {
         );
 
         browserStateCacheLifecycle.initialise({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: webSocketQueueBox,
             webRtcGroupManager: manager,
             clientData
         });
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -827,11 +853,13 @@ describe('browser state cache lifecycle scope filtering', () => {
                 8
             );
             browserStateCacheLifecycle.initialise({
+                groupStateDiagnostics: passThroughGroupStateDiagnostics,
                 inbox: webSocketQueueBox,
                 webRtcGroupManager: manager,
                 clientData
             });
             await browserStateCacheLifecycle.hydrate({
+                groupStateDiagnostics: passThroughGroupStateDiagnostics,
                 webRtcGroupManager: manager,
                 clientData,
                 clientSnapshots: [],
@@ -929,4 +957,160 @@ describe('browser state cache lifecycle scope filtering', () => {
             });
         }
     );
+});
+
+describe('browser state cache lifecycle group changes for diagnostics', () => {
+    beforeEach(() => {
+        configureTestCacheRepositories();
+    });
+
+    const clientData: ClientInfo = { clientId: 'alice', sessionId: 'session-a', isOnline: true };
+
+    function createRoomSnapshot(snapshotVersion: number) {
+        return createGroupSnapshot({
+            groupId: 'room-applied',
+            applicationId: DEFAULT_STATE_APPLICATION_ID,
+            workspaceId: DEFAULT_STATE_WORKSPACE_ID,
+            sessionIds: ['session-a', 'session-b'],
+            snapshotVersion
+        });
+    }
+
+    /** One sink for the connect's initialise and hydrate, as the middleware passes it: the hydrate keeps the observers. */
+    function connectWithSink(groupStateDiagnostics: GroupStateSnapshotChangeSink) {
+        const manager = createWebRtcGroupManager();
+        let receive: ((message: ALMessage) => Promise<void>) | undefined;
+        browserStateCacheLifecycle.initialise({
+            inbox: {
+                onAllInboxMessagesDo: vi.fn((callback: { onMessage: (message: ALMessage) => Promise<void>; }) => {
+                    receive = createPagedSnapshotReceiver(callback.onMessage);
+                })
+            },
+            webRtcGroupManager: manager,
+            clientData,
+            groupStateDiagnostics
+        });
+        return {
+            manager,
+            receive: async (message: ALMessage) => await receive?.(message),
+            hydrate: async (snapshot: GroupSnapshot) =>
+                await browserStateCacheLifecycle.hydrate({
+                    webRtcGroupManager: manager,
+                    clientData,
+                    clientSnapshots: [],
+                    groupSnapshots: [snapshot],
+                    groupStateDiagnostics
+                })
+        };
+    }
+
+    function withSessionLeases(snapshot: GroupSnapshot, sessionCount: number, leaseEpochMs: number): GroupSnapshot {
+        const activeSessions = snapshot.activeSessions.slice(0, sessionCount).map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: leaseEpochMs,
+            expiresAtEpochMs: leaseEpochMs + 60_000
+        }));
+        return { ...snapshot, activeSessions, onlineMemberCount: activeSessions.length };
+    }
+
+    function newDeltaMessage(resulting: ReturnType<typeof createRoomSnapshot>, predecessor: number): ALMessage {
+        const envelope = createGroupStateDeltaEnvelope(resulting, { groupRevision: predecessor, presenceRevision: predecessor });
+        return newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(AppTopics.groupStateEvent, 'room-applied', envelope.event.eventId),
+            'all',
+            AppTopics.groupStateEvent,
+            envelope
+        );
+    }
+
+    function newDirectorySnapshotMessage(snapshot: ReturnType<typeof createRoomSnapshot>): ALMessage {
+        return newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(AppTopics.groupDirectorySnapshot, 'room-applied', 'room-applied'),
+            'all',
+            AppTopics.groupDirectorySnapshot,
+            snapshot
+        );
+    }
+
+    it('hands each raw group change to the diagnostics sink, in order, for a delta, a snapshot page and a heartbeat adoption', async () => {
+        const stated: groupStateSnapshotsRepository.GroupStateSnapshotChange[] = [];
+        const connect = connectWithSink((change) => stated.push(change));
+        const paged = createRoomSnapshot(3);
+        const advanced = createRoomSnapshot(4);
+        const leased = withSessionLeases(advanced, 2, 10_000);
+        await connect.hydrate(createRoomSnapshot(1));
+
+        await connect.receive(newDeltaMessage(createRoomSnapshot(2), 1));
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        await connect.receive(newDirectorySnapshotMessage(paged));
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        adoptGroupSnapshotsFromHeartbeat([paged], [advanced]);
+        adoptGroupSnapshotsFromHeartbeat([advanced], [leased]);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(stated.map(({ kind, snapshot }) => [kind, snapshot?.causalRevision])).toEqual([
+            [ObservableValueEventType.Created, createRoomSnapshot(1).causalRevision],
+            [ObservableValueEventType.Updated, createRoomSnapshot(2).causalRevision],
+            [ObservableValueEventType.Updated, paged.causalRevision],
+            [ObservableValueEventType.Updated, advanced.causalRevision],
+            [ObservableValueEventType.Updated, leased.causalRevision]
+        ]);
+        expect(stated.at(-1)?.snapshot).toBe(leased);
+        expect(stated.every(({ groupRef }) => groupRef.groupId === 'room-applied')).toBe(true);
+    });
+
+    it('hands a heartbeat that changes the session count at an equal tuple to the sink, once per change', async () => {
+        const stated: groupStateSnapshotsRepository.GroupStateSnapshotChange[] = [];
+        const connect = connectWithSink((change) => stated.push(change));
+        const held = withSessionLeases(createRoomSnapshot(4), 2, 10_000);
+        const reduced = withSessionLeases(held, 1, 11_000);
+        const restored = withSessionLeases(held, 2, 12_000);
+        await connect.hydrate(held);
+
+        adoptGroupSnapshotsFromHeartbeat([held], [reduced]);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        adoptGroupSnapshotsFromHeartbeat([reduced], [restored]);
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(held.group)).toBe(restored);
+        expect(stated.map(({ snapshot, previous }) => [snapshot, previous])).toEqual([
+            [held, undefined],
+            [reduced, held],
+            [restored, reduced]
+        ]);
+    });
+
+    it('a sink that throws changes no adoption', async () => {
+        const reached: (number | undefined)[] = [];
+        const throwing: GroupStateSnapshotChangeSink = (change) => {
+            reached.push(change.snapshot?.causalRevision.groupRevision);
+            throw new Error('sink failed');
+        };
+        const { manager, receive, hydrate } = connectWithSink(throwing);
+        const notifiedRevisions: number[] = [];
+        const unsubscribe = browserStateCacheLifecycle.onChange((change) => {
+            notifiedRevisions.push(...change.groups.map((group) => group.causalRevision.groupRevision));
+        });
+        const first = createRoomSnapshot(1);
+        const advanced = createRoomSnapshot(2);
+
+        try {
+            await hydrate(first);
+            await receive(newDeltaMessage(advanced, 1));
+            await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+            expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(first.group)?.causalRevision)
+                .toEqual(advanced.causalRevision);
+            expect(manager.acceptGroupUpdate).toHaveBeenCalledWith(
+                expect.objectContaining({ causalRevision: advanced.causalRevision })
+            );
+            expect(notifiedRevisions).toEqual([1, 2]);
+            expect(reached).toEqual([1, 2]);
+        }
+        finally {
+            unsubscribe();
+        }
+    });
 });
