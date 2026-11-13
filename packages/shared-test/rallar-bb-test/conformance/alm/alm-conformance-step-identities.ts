@@ -6,6 +6,7 @@ import type {
 
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 export const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
@@ -37,7 +38,7 @@ export function toScenarioTypeId(step: AlmConformanceStepInput): string {
 }
 
 export function toCommandId(step: AlmConformanceStepInput, name: string): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-${name}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${step.role}-${name}`;
 }
 
 /** A recipient's own send names its role, so no handle of a cell names two sends. */
@@ -52,7 +53,7 @@ export function toLoopIterationSendHandleId(step: AlmConformanceStepInput): stri
 
 /** A responder's reply to the `step.index`-th arrival names its role, so the reply handles of a cell stay apart. */
 export function toReplyHandleId(step: AlmConformanceMessageStepInput): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-reply-${step.index}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${step.role}-reply-${step.index}`;
 }
 
 export function toConnectionName(step: AlmConformanceStepInput): string {
@@ -69,7 +70,7 @@ export function toRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlack
 
 function toHandleId(step: AlmConformanceStepInput, index: number | string): string {
     const origin = isSenderPage(step.role) ? '' : `${step.role}-`;
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${index}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${origin}send-${index}`;
 }
 
 /**

@@ -31,6 +31,7 @@ import {
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../alm-reload-pair.ts';
+import { toAlmCellCommandPrefix } from '../cell/to-alm-cell-command-prefix.ts';
 
 export const deliveryReload: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-reload',
@@ -48,7 +49,7 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
     const sender = { ...step, role: 'sender' as const };
     const receiver = { ...step, role: 'receiver' as const };
     return {
-        key: `alm-${step.input.carrier}-delivery-reload`,
+        key: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
         senderPrefixEnd: toCommandId(sender, 'assert-storage-write'),
         senderReload: toCommandId(sender, 'reload'),
         senderSuffixEnd: toCommandId(sender, 'storage-counters-recovered'),

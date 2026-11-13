@@ -33,6 +33,7 @@ import {
 } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from '../../alm-reload-pair.ts';
+import { toAlmCellCommandPrefix } from '../../cell/to-alm-cell-command-prefix.ts';
 import { toOwnerLeaseLapseWait, toPauseCommand } from '../../to-pause-command.ts';
 
 /**
@@ -57,7 +58,7 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
     const sender = { ...step, role: 'sender' as const };
     const receiver = { ...step, role: 'receiver' as const };
     return {
-        key: `alm-${step.input.carrier}-${step.scenarioKey}`,
+        key: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
         senderPrefixEnd: toCommandId(sender, 'assert-checkpoint-write'),
         senderReload: toCommandId(sender, 'reload'),
         senderSuffixEnd: toCommandId(sender, 'assert-recovered-claimed'),

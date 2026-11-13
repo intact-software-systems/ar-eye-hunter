@@ -327,6 +327,39 @@ describe('ALM conformance combined blocks', () => {
         }
     });
 
+    it('a cell\'s command ids, its lane barrier and its combined block barriers share one command prefix on every carrier', () => {
+        const toBaseline = (carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number], cellSettle?: 'barriered') =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000,
+                laneFamilies: ['two-agent'],
+                principalIdsByRole: {},
+                ...(cellSettle === undefined ? {} : { cellSettle })
+            }).find((scenario) => scenario.scenarioKey === 'delivery-baseline')!;
+
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = toBaseline(carrier);
+            const combined = toAlmConformanceCombinedRecipe(
+                carrier === 'rtc' ? [scenario] : [toBaseline('rtc'), scenario],
+                'sender',
+                'two-agent'
+            );
+            const laneBarrier = toNestedCommands(toBaseline(carrier, 'barriered').sender.commands)
+                .find((command): command is RallarBlackBoxTestBarrierCommand => command.kind === 'barrier')!;
+            const prefixes = [
+                scenario.sender.commands[0]!.commandId!.replace(/-sender-ensure-group$/, ''),
+                laneBarrier.barrierId.replace(/-connected$/, ''),
+                toCombinedBlocks(combined).at(-1)!.cell
+            ];
+
+            expect(prefixes, carrier).toEqual(Array.from(prefixes, () => `alm-${carrier}-delivery-baseline`));
+        }
+    });
+
     it('no combined block carries a cell gate', () => {
         const selections = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]
             .flatMap((entry) => entry.manifest.recipes);

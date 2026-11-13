@@ -45,6 +45,7 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '../alm-conformance-session-commands.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
+import { toAlmCellCommandPrefix } from '../cell/to-alm-cell-command-prefix.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -236,7 +237,7 @@ export const receiptedAudience: readonly AlmConformanceScenarioDefinition[] = [
  * the msgId of the send it answers, so a re-run on a page whose store survived is admitted again, never a duplicate.
  */
 function toRawAckMsgId(step: AlmConformanceStepInput, label: string, ackedMsgId: string): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${label}-${ackedMsgId}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${label}-${ackedMsgId}`;
 }
 
 /** A raw ACK over the rtc leg that answers the arrival's message event, addressed to the session that sent it. */

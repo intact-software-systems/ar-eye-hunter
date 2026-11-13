@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toAlmCellBarrier } from './to-alm-cell-barrier.ts';
+import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
 
 /**
  * The commands a settle role runs between its prologue and its body: none unless the cell is created `barriered`, and
@@ -18,7 +19,7 @@ export function toAlmCellSettleCommands(
     const settleRoles = step.roles.filter(isSettleRole);
     return [
         toAlmCellBarrier({
-            cellPrefix: `alm-${step.input.carrier}-${step.scenarioKey}`,
+            cellPrefix: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
             role: step.role,
             phase: 'connected',
             timeoutMs: computeConnectedBarrierTimeoutMs(settleRoles, prologueByRole),

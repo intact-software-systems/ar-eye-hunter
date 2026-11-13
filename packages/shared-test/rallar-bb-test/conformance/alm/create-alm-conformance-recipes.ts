@@ -34,6 +34,7 @@ import {
     type AlmConformanceCellParts,
     type AlmConformanceCellPartsInput
 } from './cell/alm-conformance-cell-parts.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 import { toAlmCellSettleCommands } from './cell/to-alm-cell-settle-commands.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { resolveAlmConformancePrincipals } from './resolve-alm-conformance-principals.ts';
@@ -426,7 +427,7 @@ function toContinuationRecipe(
     const step = toStepInput(input, definition, continuation.role);
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
-        recipeId: `alm-${input.carrier}-${definition.scenarioKey}-${continuation.role}-continuation`,
+        recipeId: `${toAlmCellCommandPrefix(input.carrier, definition.scenarioKey)}-${continuation.role}-continuation`,
         name: `ALM conformance ${definition.scenarioKey} ${continuation.role} continuation over ${input.carrier}`,
         continueOnFailure: false,
         metadata: {
@@ -498,7 +499,7 @@ function toAlmConformanceRecipe(
     const carrier = recipe.input.carrier;
     return {
         schemaVersion: 1,
-        recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
+        recipeId: `${toAlmCellCommandPrefix(carrier, recipe.scenarioKey)}-${recipe.role}`,
         name: recipe.deliveryDiagnostics
             ? `ALM delivery diagnostics ${recipe.almDiagnostics ? 'On' : 'Off'} ${recipe.role} over ${carrier}`
             : `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,

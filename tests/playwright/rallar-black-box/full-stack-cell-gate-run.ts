@@ -36,7 +36,7 @@ export interface StartCellGateRunInput extends CellGateRunInput {
 
 /** A start root is one `health` command, answered as soon as the agent dispatches it. */
 const GATE_START_TIMEOUT_MS = 30_000;
-/** Only the server's own pre-start barrier reads it, which this run disables. */
+/** Only a staged run waits for acknowledgements this long, and the gate run starts without a stage. */
 const GATE_ACK_TIMEOUT_MS = 10_000;
 
 /**

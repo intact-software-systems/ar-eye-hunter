@@ -12,6 +12,7 @@ import {
     toAlmCellBarrier,
     type AlmCellBarrierPhase
 } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-barrier.ts';
+import { toAlmCellCommandPrefix } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-command-prefix.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -357,7 +358,7 @@ function toBarrieredScenarioCommands(
     const armedEnd = firstStep < 0 ? commands.length : firstStep;
     const toBarrier = (phase: AlmCellBarrierPhase) =>
         toAlmCellBarrier({
-            cellPrefix: toScenarioCarrierAndKey(scenario),
+            cellPrefix: toAlmCellCommandPrefix(toScenarioCarrier(scenario), scenario.scenarioKey),
             role,
             phase,
             timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
@@ -366,13 +367,13 @@ function toBarrieredScenarioCommands(
     return [toBarrier('start'), ...commands.slice(0, armedEnd), toBarrier('armed'), ...commands.slice(armedEnd)];
 }
 
-/** Matches `toCommandId`'s own `alm-<carrier>-<scenarioKey>` prefix; `scenarioId` alone collides across scenarioKeys. */
-function toScenarioCarrierAndKey(scenario: AlmConformanceScenario): string {
-    const carrier = scenario.sender.metadata?.carrier;
-    if (typeof carrier !== 'string') {
+/** A scenario names no carrier of its own; its recipes' metadata does. */
+function toScenarioCarrier(scenario: AlmConformanceScenario): AlmConformanceCarrier {
+    const carrier = ALM_CONFORMANCE_CARRIERS.find((candidate) => candidate === scenario.sender.metadata?.carrier);
+    if (carrier === undefined) {
         throw new Error(`Generated ALM scenario ${scenario.scenarioKey} is missing its carrier metadata.`);
     }
-    return `alm-${carrier}-${scenario.scenarioKey}`;
+    return carrier;
 }
 
 /**

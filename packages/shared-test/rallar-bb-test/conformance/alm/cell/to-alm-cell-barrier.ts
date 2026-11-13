@@ -4,7 +4,7 @@ import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 
 /**
  * Where a cell's roles meet. The hosted combined recipe opens each block at `start` and sends at `armed`; the local
- * lane meets at `connected` once every page connected, then at `formation-settled` and `armed`.
+ * lane meets at `connected` once every page connected. No barrier names `formation-settled` yet.
  */
 export type AlmCellBarrierPhase = 'start' | 'connected' | 'formation-settled' | 'armed';
 

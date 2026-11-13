@@ -1684,6 +1684,17 @@ describe('alm-conformance cell parts', () => {
                 expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs)]));
             }
         }
+        // Each settle prologue is 5 000 + 5 000 + 45 000 ms, and the first arrival waits through every other one.
+        const timeoutOf = (scenarioKey: string, role: AlmConformanceRole) =>
+            toBarrierCommands(
+                toAlmConformanceRoleRecipe(
+                    createAlmConformanceRecipes(toBarrieredInput('rtc')).find((scenario) => scenario.scenarioKey === scenarioKey)!,
+                    role
+                )!
+            )[0]?.timeoutMs;
+        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(55_000);
+        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(110_000);
+        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(165_000);
     });
 
     it('a role recipe is its prologue then its body', () => {

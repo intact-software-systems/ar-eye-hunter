@@ -4,11 +4,11 @@ import type { AlmConformanceStepInput } from '../alm-conformance-scenario-defini
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 
 /**
- * Starts every wait of the commands, nested ones included, at its own cell's first command, so no wait reads an event
- * an earlier cell left on the same page. The one exception, declared `historyFrom: 'page'` in the wait's metadata, is a
- * store's recovery that a fresh document reports during its first connect, pinned to that connect's session: the
- * recovery precedes the connect's result, which opens the mark, and the fresh page's history starts inside the cell.
- * The mark opens at a command's result event, so any other wait must follow at least one of its cell's own commands.
+ * Starts every wait of the commands, nested ones included, at the first event of any of its own cell's commands, so no
+ * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before
+ * the command's result. The one exception, declared `historyFrom: 'page'` in the wait's metadata, is a store's recovery
+ * that a fresh document reports during its first connect, pinned to that connect's session, so no earlier cell's
+ * recovery can match it. Any other wait must follow at least one of its cell's own commands.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,
