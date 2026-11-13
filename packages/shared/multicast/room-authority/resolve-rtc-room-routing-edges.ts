@@ -49,6 +49,7 @@ function resolveReplacedLayoutInForce(input: ResolveRtcRoomRoutingEdgesInput): O
         !isRoomLayoutOverlay(input.accepted, input.roomRef) ||
         !isRoomLayoutOverlay(transition.replaced, input.roomRef) ||
         !isOverlayIdentity(input.accepted, transition.replacedBy) ||
+        input.nowMs < transition.replacedAtEpochMs ||
         input.nowMs >= transition.replacedAtEpochMs + input.history.replacedLayoutOverlapMs
     ) {
         return null;

@@ -327,11 +327,9 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
 
     it('refuses an expelled member that was a neighbour of the replaced layout, inside the overlap', () => {
         const current = promotionSnapshot();
-        const expelled = withMember(current, 'previous', 'removed');
-        const withoutSession = { ...expelled, activeSessions: expelled.activeSessions.filter((session) => session.sessionId !== 'previous') };
-        const input = relayedInput({ snapshot: withoutSession });
+        const input = relayedInput({ snapshot: withMember(current, 'previous', 'removed') });
 
-        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized' });
+        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause: 'authority-rejected' });
         expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', localDelivery: { enabled: false }, nack: { enabled: false } });
     });
 
@@ -339,8 +337,22 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         const current = promotionSnapshot();
         const left = withMember(current, 'previous', 'left');
 
-        expect(computeRtcRoomSnapshotAdmission(relayedInput({ snapshot: left }))).toMatchObject({ kind: 'unauthorized' });
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ snapshot: left }))).toMatchObject({ kind: 'unauthorized', cause: 'authority-rejected' });
         expect(planRelayed(relayedInput({ snapshot: left }))).toMatchObject({ dropReasonCode: 'unauthorized', nack: { enabled: false } });
+    });
+
+    it('refuses a previous neighbour whose session is present but who has no member row', () => {
+        const input = relayedInput({ snapshot: withMember(promotionSnapshot(), 'previous', 'absent') });
+
+        // The hop's own peer check only awaits a member row; the rule's authorized-now filter is what refuses the edge.
+        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', nack: { enabled: false } });
+    });
+
+    it('refuses a previous neighbour when now is before the replacement instant', () => {
+        for (const nowMs of [replacedAtEpochMs - 1, replacedAtEpochMs - 10 * overlapMs]) {
+            expect(computeRtcRoomSnapshotAdmission(relayedInput({ nowMs }))).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        }
     });
 
     it('admits a frame relayed by a live member that was this receiver\'s neighbour in the replaced layout, inside the overlap', () => {

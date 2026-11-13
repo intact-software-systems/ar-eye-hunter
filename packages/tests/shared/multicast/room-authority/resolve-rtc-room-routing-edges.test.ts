@@ -90,9 +90,15 @@ describe('resolveRtcRoomRoutingEdges', () => {
         }
     });
 
+    it('puts no replaced layout in force when now is before the replacement instant', () => {
+        for (const nowMs of [replacedAtEpochMs - 1, replacedAtEpochMs - 10 * overlapMs]) {
+            expect(resolveRtcRoomRoutingEdges(input({ nowMs }))).toEqual(acceptedAlone);
+        }
+    });
+
     it('with an overlap of zero, routes, relays and admits exactly as over the accepted layout alone', () => {
         const noOverlap = history({ replacedLayoutOverlapMs: 0 });
-        for (const nowMs of [replacedAtEpochMs, replacedAtEpochMs + 1]) {
+        for (const nowMs of [replacedAtEpochMs - 10 * overlapMs, replacedAtEpochMs - 1, replacedAtEpochMs, replacedAtEpochMs + 1]) {
             expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs }))).toEqual(
                 resolveRtcRoomRoutingEdges(input({ history: history({ transition: null }), nowMs }))
             );
