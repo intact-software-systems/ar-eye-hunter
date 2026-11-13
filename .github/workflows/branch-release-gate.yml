@@ -37,7 +37,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Install dependencies
@@ -64,7 +64,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Select same-PR validation evidence
         id: selection
         continue-on-error: true
@@ -237,7 +237,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Create validation evidence
         run: >-
           mkdir -p .artifacts/validation-evidence &&
@@ -274,7 +274,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - uses: oven-sh/setup-bun@v2
@@ -293,7 +293,9 @@ jobs:
             if (!Array.isArray(paths) || paths.length === 0) {
               throw new Error("RTC observation selection must contain at least one archive");
             }
-            for (const path of paths) console.log(path);
+            for (const path of paths) {
+              console.log(path);
+            }
           ' \
             "$RTC_OBSERVATION_ARCHIVES_JSON" |
           while IFS= read -r archive_path; do
@@ -341,7 +343,7 @@ jobs:
       - uses: actions/setup-node@v7
         if: ${{ github.event.pull_request.draft == false }}
         with:
-          node-version: 24
+          node-version: 26
       - name: Await release handoff
         if: ${{ github.event.pull_request.draft == true }}
         run: |

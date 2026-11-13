@@ -5,8 +5,7 @@ import { Temporal } from '@js-temporal/polyfill';
 if (!('Temporal' in globalThis)) {
     Object.defineProperty(globalThis, 'Temporal', {
         configurable: true,
-        // The polyfill namespace is frozen; Vitest's fake clock needs a configurable `Now`.
-        value: { ...Temporal },
+        value: Temporal,
         writable: true
     });
 }
