@@ -1,6 +1,4 @@
 const API_ROOT = new URL('../..', import.meta.url).pathname;
-const PORT_RANGE_START = 20_000;
-const PORT_RANGE_END = 32_768;
 
 export const IN_MEMORY_API_STARTUP_TIMEOUT_MS = 60_000;
 
@@ -19,7 +17,7 @@ export interface InMemoryApiProcess {
 
 /** The real `src/main.ts` entry on the in-memory profile, reading no env files, once it reports that it listens. */
 export async function startInMemoryApiProcess(options: InMemoryApiProcessOptions = {}): Promise<InMemoryApiProcess> {
-    const port = PORT_RANGE_START + Math.floor(Math.random() * (PORT_RANGE_END - PORT_RANGE_START));
+    const port = readFreePort();
     const envFileFlag = options.envFile === undefined ? '--no-env-file' : `--env-file=${options.envFile}`;
     const child = Bun.spawn({
         cmd: [process.execPath, envFileFlag, 'run', 'src/main.ts'],
@@ -37,6 +35,14 @@ export async function startInMemoryApiProcess(options: InMemoryApiProcessOptions
     });
     const listenedPort = await readListenedPort(child.stdout);
     return { port, listenedPort, baseUrl: `http://127.0.0.1:${listenedPort}`, child };
+}
+
+/** A port the operating system just handed out, so test files running in parallel workers never draw the same one. */
+function readFreePort(): number {
+    const probe = Bun.listen({ hostname: '0.0.0.0', port: 0, socket: { data: () => undefined } });
+    const { port } = probe;
+    probe.stop(true);
+    return port;
 }
 
 /** Keeps draining after the marker so the child never writes into a closed pipe while it shuts down. */
