@@ -119,19 +119,20 @@ describe('resolveRtcRoomRoutingEdges', () => {
         }
     });
 
-    it('never carries a replaced layout over an accepted layout of another room, a removed one, or a bootstrap one', () => {
-        const untrusted: readonly OverlayInfo[] = [
+    it('forwards over no accepted edge when the accepted layout is not a live server layout of this room', () => {
+        const notLive: readonly OverlayInfo[] = [
             { ...accepted, groupRef: { ...roomRef, groupId: 'other' } },
             { ...accepted, state: 'removed' },
             { ...accepted, provenance: 'bootstrap', nextHopsBySessionId: undefined }
         ];
-        for (const acceptedLayout of untrusted) {
+        for (const acceptedLayout of notLive) {
             const replacedBy = toOverlayLayoutIdentity(acceptedLayout);
             const edges = resolveRtcRoomRoutingEdges(
                 input({ accepted: acceptedLayout, history: history({ transition: transition({ replacedBy }) }) })
             );
+            expect(edges.accepted.neighbourPeerIds).toEqual([]);
             expect(edges.previous).toBeNull();
-            expect(edges.admittedEdgePeerIds).not.toContain('old-parent');
+            expect(edges.admittedEdgePeerIds).toEqual(acceptedLayout.nextHopSessionIds);
         }
     });
 
@@ -154,7 +155,6 @@ describe('resolveRtcRoomRoutingEdges', () => {
 
     it('widens nothing when the replaced layout carries the accepted layout\'s own identity', () => {
         const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transition: transition({ replaced: accepted }) }) }));
-        expect(edges.accepted).toEqual(acceptedAlone.accepted);
-        expect(edges.admittedEdgePeerIds).toEqual(acceptedAlone.admittedEdgePeerIds);
+        expect(edges).toEqual({ ...acceptedAlone, previous: acceptedAlone.accepted });
     });
 });

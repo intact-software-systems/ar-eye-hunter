@@ -30,7 +30,10 @@ export interface RtcRoomRoutingEdges {
 
 export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInput): RtcRoomRoutingEdges {
     const authorizedPeerIdSet = new Set(input.authorizedPeerIds);
-    const accepted = toRtcRoomLayoutEdges(input.accepted, authorizedPeerIdSet);
+    const acceptedNeighbourPeerIdSet = isRoomLayoutOverlay(input.accepted, input.roomRef)
+        ? authorizedPeerIdSet
+        : new Set<string>();
+    const accepted = toRtcRoomLayoutEdges(input.accepted, acceptedNeighbourPeerIdSet);
     const replaced = resolveReplacedLayoutInForce(input);
     const previous = replaced === null ? null : toRtcRoomLayoutEdges(replaced, authorizedPeerIdSet);
     const admittedEdgePeerIds = [
