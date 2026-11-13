@@ -1,6 +1,7 @@
 import type {
     BrowserConnectedMiddleware,
-    BrowserConnectOptions
+    BrowserConnectOptions,
+    initialiseMiddleware
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -9,30 +10,37 @@ import { createInitialiseMiddlewareDouble } from './create-initialise-middleware
 
 describe('createInitialiseMiddlewareDouble', () => {
     it('starts the fake connect only after the publication crypto settles, as the real initialiser does', async () => {
-        const fake = vi.fn(async () => ({}) as BrowserConnectedMiddleware);
+        const started: string[] = [];
         const crypto = Promise.withResolvers<PublicationCrypto>();
 
-        const connected = createInitialiseMiddlewareDouble(fake)(SESSION, 'rtc-topic', toOptions(crypto.promise));
+        const connected = createInitialiseMiddlewareDouble(recordConnect(started))(SESSION, 'rtc-topic', toOptions(crypto.promise));
         await Promise.resolve();
-        expect(fake).not.toHaveBeenCalled();
+        expect(started).toEqual([]);
 
         crypto.resolve({} as PublicationCrypto);
         await connected;
-        expect(fake).toHaveBeenCalledOnce();
+        expect(started).toEqual(['rtc-topic']);
     });
 
     it('rejects the connect with the publication crypto failure, as the real initialiser does', async () => {
-        const fake = vi.fn(async () => ({}) as BrowserConnectedMiddleware);
+        const started: string[] = [];
         const failure = new Error('publication crypto unavailable');
 
         await expect(
-            createInitialiseMiddlewareDouble(fake)(SESSION, 'rtc-topic', toOptions(Promise.reject(failure)))
+            createInitialiseMiddlewareDouble(recordConnect(started))(SESSION, 'rtc-topic', toOptions(Promise.reject(failure)))
         ).rejects.toBe(failure);
-        expect(fake).not.toHaveBeenCalled();
+        expect(started).toEqual([]);
     });
 });
 
 const SESSION = { sessionId: 'session-1' } as AuthSession;
+
+function recordConnect(started: string[]): typeof initialiseMiddleware {
+    return async (_session, rtcSignalingTopicId) => {
+        started.push(rtcSignalingTopicId);
+        return {} as BrowserConnectedMiddleware;
+    };
+}
 
 function toOptions(publicationCrypto: Promise<PublicationCrypto>): BrowserConnectOptions {
     return { publicationCrypto } as BrowserConnectOptions;
