@@ -6,17 +6,23 @@ if [[ "$(id -u)" != "0" ]]; then
 	exit 1
 fi
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+apply_rallar_controller_role
+
 RALLAR_INCLUDE_CADDY="${RALLAR_INCLUDE_CADDY:-0}"
 
-services=(rallar-api-v1.service rallar-black-box-control.service)
+services=("${RALLAR_ROLE_APP_SERVICES[@]}")
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
 	services+=(caddy.service)
 fi
 
-echo "Stopping controller services:"
+echo "Stopping controller services (role ${RALLAR_CONTROLLER_ROLE}):"
 printf "  %s\n" "${services[@]}"
 echo
-echo "Note: the API-v1 Postgres store survives a stop, deploy, or rollout."
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	echo "Note: the Postgres store survives a stop, deploy, or rollout."
+fi
 
 for service in "${services[@]}"; do
 	systemctl stop "${service}"

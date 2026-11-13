@@ -4,7 +4,8 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import type { ManagedApiServerPlan } from '../../managed-api/with-managed-api-server-plans.mts';
 import {
     ApiV1RtcTopologyProofApi,
@@ -62,7 +63,7 @@ export class OrderingClusterScenario {
             await this.#writeEvidence(await this.#runScenario());
         }
         catch (error) {
-            await Deno.writeTextFile(
+            await writeFile(
                 `${this.#input.artifactDir}/ordering-cluster-failure.json`,
                 JSON.stringify(
                     {
@@ -119,7 +120,7 @@ export class OrderingClusterScenario {
     }
 
     async #writeEvidence(evidence: ClusterEvidence): Promise<void> {
-        await Deno.writeTextFile(
+        await writeFile(
             `${this.#input.artifactDir}/ordering-cluster-proof.json`,
             JSON.stringify(
                 {
@@ -177,7 +178,7 @@ export class OrderingClusterScenario {
     async #connectRoom(session: ProofSession, socket: OrderingProofSocket): Promise<string> {
         const snapshot = await this.#readClient(session);
         const connected = snapshot.activeSessions.find((candidate) => candidate.sessionId === session.sessionId);
-        assert(connected, 'Current websocket has canonical client presence');
+        assert.ok(connected, 'Current websocket has canonical client presence');
         const requestId = this.#newRequestId();
         await this.#mutate(
             session,
@@ -222,7 +223,7 @@ export class OrderingClusterScenario {
             requestId,
             body: { topicId: GRANTED_FEED, connectionGenerationId: party.generationId }
         });
-        assertEquals(requireString(outcome.outcome, 'subscribe outcome'), 'subscribed');
+        assert.deepEqual(requireString(outcome.outcome, 'subscribe outcome'), 'subscribed');
     }
 
     /**
@@ -235,7 +236,7 @@ export class OrderingClusterScenario {
         const requestId = await this.#upsertPrincipal({ ...c.session, apiBaseUrl: secondary }, 'ordering-1');
         const first = await this.#waitForPrincipalFrame(r, requestId);
         const firstSeq = first.ordering!.seq!;
-        assert(firstSeq >= 2, `The principal track has a history before ${firstSeq}`);
+        assert.ok(firstSeq >= 2, `The principal track has a history before ${firstSeq}`);
         const copies = [
             { party: c, frame: await this.#waitForPrincipalFrame(c, requestId) },
             { party: r, frame: first },
@@ -248,7 +249,7 @@ export class OrderingClusterScenario {
         }
         await this.#database.waitForOutboxCompleted(first.id.msgId);
         const sentPositions = await this.#database.readSentPositions(first.id.msgId);
-        assertEquals(
+        assert.deepEqual(
             sentPositions,
             Object.fromEntries(copies.map(({ party, frame }) => [party.session.sessionId, toPriorSeq(party, frame)])),
             'The record names every live session of the audience at its prior position, the remote ones and the co-member included'
@@ -262,7 +263,7 @@ export class OrderingClusterScenario {
         const msg1 = this.#newFeedMessage(c, [r, x], 1);
         c.socket.send(msg1);
         const admitted = await this.#waitForReceipt(c, msg1, 'admitted');
-        assertEquals(
+        assert.deepEqual(
             [...admitted.expectedRecipientPeerIds].sort(),
             [r.session.sessionId, x.session.sessionId].sort(),
             'The admitted receipt expects both of Alice\'s receivers'
@@ -270,7 +271,7 @@ export class OrderingClusterScenario {
         await r.socket.waitForFrame((frame) => frame.id.msgId === msg1.id.msgId);
         await x.socket.waitForFrame((frame) => frame.id.msgId === msg1.id.msgId);
         const sentPositions = await this.#database.readSentPositions(msg1.id.msgId);
-        assertEquals(
+        assert.deepEqual(
             sentPositions,
             { [r.session.sessionId]: 0, [x.session.sessionId]: 0 },
             'A frozen row records the sessions live on another instance'
@@ -298,8 +299,8 @@ export class OrderingClusterScenario {
         r.socket.sendAck(msg1, r.session.sessionId);
         const complete = await this.#waitForReceipt(c, msg1, 'complete');
         const completeAfterAckMs = Date.now() - ackedAt;
-        assertEquals(complete.confirmedRecipientPeerIds, [r.session.sessionId]);
-        assertEquals(
+        assert.deepEqual(complete.confirmedRecipientPeerIds, [r.session.sessionId]);
+        assert.deepEqual(
             complete.outsideAudienceRecipientPeerIds,
             [x.session.sessionId],
             'The retry judges the closed session outside'
@@ -312,8 +313,8 @@ export class OrderingClusterScenario {
         c.socket.send(msg3);
         const omitted = await r.socket.waitForFrame((frame) => frame.id.msgId === msg3.id.msgId);
         r.socket.sendAck(msg3, r.session.sessionId);
-        assertEquals(r.socket.frames.filter((frame) => frame.id.msgId === msg2.id.msgId), []);
-        assertEquals(
+        assert.deepEqual(r.socket.frames.filter((frame) => frame.id.msgId === msg2.id.msgId), []);
+        assert.deepEqual(
             omitted.ordering?.priorSeqByRecipient,
             { [r.session.sessionId]: 1 },
             'The receiver reads seq 2 as omitted'
@@ -354,7 +355,7 @@ export class OrderingClusterScenario {
         const read = () => origin.socket.receipts().filter((receipt) => receipt.msgId === message.id.msgId);
         await waitForProofCondition(
             () => {
-                assertEquals(read().filter((receipt) => receipt.phase === 'timed-out'), []);
+                assert.deepEqual(read().filter((receipt) => receipt.phase === 'timed-out'), []);
                 return read().some((receipt) => receipt.phase === phase);
             },
             `the ${phase} receipt of ${message.id.msgId}`,
@@ -391,7 +392,7 @@ export class OrderingClusterScenario {
         const response = await fetch(`${session.apiBaseUrl}${this.#scopePath}/clients/${session.clientId}`, {
             headers: toAuthHeaders(session)
         });
-        assertEquals(response.status, 200);
+        assert.deepEqual(response.status, 200);
         return parseAuthoritativeClientSnapshot(await response.text(), this.#scope);
     }
 
@@ -406,7 +407,7 @@ export class OrderingClusterScenario {
             body: JSON.stringify(request.body)
         });
         const body = await response.text();
-        assertEquals(response.status, 200, `${request.method} ${path} applies through AppInbox: ${body}`);
+        assert.deepEqual(response.status, 200, `${request.method} ${path} applies through AppInbox: ${body}`);
         return requireRecord(JSON.parse(body), `${request.method} ${path} response`);
     }
 
@@ -483,12 +484,12 @@ interface ClusterEvidence {
  */
 function assertInOrderOnTrack(party: Party, frame: ALMessage, message: string): void {
     const ordering = frame.ordering!;
-    assert(ordering.priorSeqByRecipient !== undefined, 'An authority recorded this copy');
+    assert.ok(ordering.priorSeqByRecipient !== undefined, 'An authority recorded this copy');
     const track = party.socket.frames.filter((candidate) =>
         candidate.ordering?.orderingKey === ordering.orderingKey && candidate.ordering?.epoch === ordering.epoch
     );
     const previous = track[track.indexOf(frame) - 1];
-    assertEquals(toPriorSeq(party, frame), previous?.ordering?.seq ?? 0, message);
+    assert.deepEqual(toPriorSeq(party, frame), previous?.ordering?.seq ?? 0, message);
 }
 
 /** The prior a receiver reads: the listed one, or `seq - 1` when the record omits it. */

@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
 import {
@@ -116,7 +118,7 @@ function acceptedWorkerIdentity(worker: AcceptedArguments): RtcBaselineAcceptedW
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcPeerListenerCleanupArguments(Deno.args);
+    const parsed = parseRtcPeerListenerCleanupArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -136,7 +138,7 @@ async function main(): Promise<void> {
         for (let run = 1; run <= parsed.value.input.runs; run += 1) {
             results.push({ run, ...runListenerCleanup(parsed.value.input.peers, runtime) });
         }
-        await Deno.writeTextFile(
+        await writeFile(
             parsed.value.out,
             JSON.stringify(
                 {
@@ -147,7 +149,7 @@ async function main(): Promise<void> {
                 null,
                 2
             ),
-            { createNew: true }
+            { encoding: 'utf8', flag: 'wx' }
         );
         writeLine(`Wrote ${parsed.value.out}`);
     }

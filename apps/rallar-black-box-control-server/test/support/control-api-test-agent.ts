@@ -1,3 +1,5 @@
+import { readFile, stat } from 'node:fs/promises';
+
 import { getJson } from './control-api-test-server.ts';
 
 export async function registerAgent(
@@ -100,7 +102,7 @@ export async function waitForPersistedSnapshot(
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
         try {
-            const text = await Deno.readTextFile(path);
+            const text = await readFile(path, 'utf8');
             if (text.includes(marker)) {
                 return;
             }
@@ -117,10 +119,10 @@ export async function waitForPathMissing(path: string): Promise<void> {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
         try {
-            await Deno.stat(path);
+            await stat(path);
         }
         catch (error) {
-            if (error instanceof Deno.errors.NotFound) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
                 return;
             }
             throw error;

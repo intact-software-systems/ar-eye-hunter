@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupActivationStatusClockWork } from '@shared-server/rallar-system/group-state/activation-status-clock-outbox-entry.ts';
@@ -15,7 +16,7 @@ const CLOCK: GroupActivationStatusClockWork = {
     dueAtEpochMs: 5_000
 };
 
-Deno.test('every activation status clock arm writes its row under the arming trace', async () => {
+test('every activation status clock arm writes its row under the arming trace', async () => {
     const armed: ResourceEntry[] = [];
     const arm = createActivationStatusClockArm({
         outbox: {

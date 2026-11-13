@@ -32,6 +32,7 @@ import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-
 
 import { findCurrentClientSnapshot } from '../../../../../../apps/api-v1/src/crdt/create-api-crdt-document-authorizer.ts';
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
 const NOW = Date.now();
@@ -53,7 +54,8 @@ describe('CRDT principal fanout from a cold cache', () => {
         for (const id of ['alice', 'session-a', 'session-b']) {
             const sent: string[] = [];
             sockets.set(id, sent);
-            webSocketServer.addConnection(
+            attachTestWebSocket(
+                webSocketServer,
                 new ConnectionContext({
                     id,
                     socket: new RecordingWebSocket(sent),
@@ -102,7 +104,7 @@ describe('CRDT principal fanout from a cold cache', () => {
         expect(sockets.get('session-b')).toHaveLength(1);
 
         const replacementSends: string[] = [];
-        webSocketServer.addConnection(new ConnectionContext({ id: 'session-a', socket: new RecordingWebSocket(replacementSends) }));
+        attachTestWebSocket(webSocketServer, new ConnectionContext({ id: 'session-a', socket: new RecordingWebSocket(replacementSends) }));
         expect(service.sendToTargetsWithResult({ message, sentPositions: null, inboundScope: scope }).recipients).toEqual([
             { peerId: 'session-b', connectionId: 'session-b' }
         ]);
@@ -229,8 +231,9 @@ class RecordingWebSocket extends EventTarget implements WebSocket {
         this.sent = sent;
     }
 
-    send(data: string): void {
+    send(data: string): number {
         this.sent.push(data);
+        return data.length;
     }
 
     close(): void {}

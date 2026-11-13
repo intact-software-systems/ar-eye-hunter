@@ -196,7 +196,7 @@ function readTestBlocks(program) {
 
 function isTestCallee(callee) {
     const name = calleeName(callee);
-    return name === 'it' || name === 'test' || name === 'Deno.test';
+    return name === 'it' || name === 'test';
 }
 
 export function isProductionPath(node, paths, arrays) {
@@ -245,8 +245,7 @@ export function isReadCall(name, context) {
                 name === `${namespace}.readFile` ||
                 name === `${namespace}.readFileSync` ||
                 name === `${namespace}.promises.readFile`
-        ) ||
-        name === 'Deno.readTextFile'
+        )
     );
 }
 

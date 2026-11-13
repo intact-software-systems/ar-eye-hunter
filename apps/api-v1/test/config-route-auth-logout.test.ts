@@ -1,5 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../src/routes/config-route.ts';
 import { createConfigRouteTestDependencies } from './routes/config-route-test-runtime.ts';
@@ -17,7 +18,7 @@ const REQUEST_ID = 'LogoutMutationRequest_012345';
 
 type LogoutSessionInput = Parameters<configRoutes.ConfigRouteDependencies['appAuthInbox']['logoutSession']>[0];
 
-Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
+test('logout routes the session mutation through AppAuthInbox', async () => {
     const calls: LogoutSessionInput[] = [];
     const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
@@ -50,7 +51,7 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
     }]);
 });
 
-Deno.test('logout returns the durable AppInbox failure status', async () => {
+test('logout returns the durable AppInbox failure status', async () => {
     const app = createTracedApiTestApp();
     configRoutes.registerConfigRoutes(
         app,

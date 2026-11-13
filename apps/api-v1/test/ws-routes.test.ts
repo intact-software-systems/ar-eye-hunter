@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -5,7 +6,7 @@ import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts
 import { toAuthorisedWsClientInput } from '../src/routes/ws-routes.ts';
 import { PGliteTestSocket } from './db/pglite-test-socket.ts';
 
-Deno.test('websocket route forwards scoped state parameters to authorised connect', () => {
+test('websocket route forwards scoped state parameters to authorised connect', () => {
     const input = toAuthorisedWsClientInput(
         new URL(
             'https://api.example.test/api/ws/session-1?ticket=ticket-1&applicationId=ar-eye-hunter&workspaceId=default'
@@ -22,7 +23,7 @@ Deno.test('websocket route forwards scoped state parameters to authorised connec
     });
 });
 
-Deno.test('websocket connection generation is stable per context and fresh per upgrade', () => {
+test('websocket connection generation is stable per context and fresh per upgrade', () => {
     const socket = new PGliteTestSocket();
     const server = new JsonWebSocketServer();
     const first = server.createConnectionContext({ id: 'session-1', socket });
@@ -38,7 +39,7 @@ Deno.test('websocket connection generation is stable per context and fresh per u
     );
 });
 
-Deno.test('websocket server captures a strictly monotonic generation start fact once per upgrade', () => {
+test('websocket server captures a strictly monotonic generation start fact once per upgrade', () => {
     const socket = new PGliteTestSocket();
     const server = new JsonWebSocketServer();
     const first = server.createConnectionContext(

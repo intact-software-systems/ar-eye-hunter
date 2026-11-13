@@ -9,6 +9,6 @@
 # Add only whole-tree formatting commits here, one full 40-character SHA per
 # line, with a comment naming the change.
 
-# Repository-wide dprint reformat (Prettier and `deno fmt` retired).
+# Repository-wide dprint reformat (Prettier retired in favour of dprint).
 # Add the squashed commit SHA here once it lands on main.
 61e95edf35df9ecf2241356dfd43ce38298f7ec0

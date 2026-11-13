@@ -1,5 +1,4 @@
 // rallar-in-memory-runtime.ts
-// deno-lint-ignore-file no-explicit-any
 import {
     type RallarRtcClientArgs,
     type RallarRtcClientEventDispatcher,

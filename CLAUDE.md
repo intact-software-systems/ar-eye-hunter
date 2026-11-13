@@ -28,7 +28,7 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | `adaptive-plan-execution`                                        | Executing a written or multi-slice repository plan, and adapting it when evidence changes ownership, scope, or the current horizon.   |
 | `organizing-repository-structure`                                | Adding, moving, splitting, consolidating, or reviewing repository files and folders.                                                  |
 | `publishing-plan-progress`                                       | Publishing a branch, draft pull request, milestone, or final remote evidence. Plan execution belongs to `adaptive-plan-execution`.    |
-| `validation`                                                     | Writing the session command catalog when a command failed, was skipped, or changed a decision, or when asked.                        |
+| `validation`                                                     | Writing the session command catalog when a command failed, was skipped, or changed a decision, or when asked.                         |
 
 ## Runtime split
 
@@ -37,17 +37,17 @@ This monorepo runs **two runtimes** and you must know which one owns the file yo
 - **Node + npm workspaces** — `packages/**`, browser apps (`apps/ar-eye-hunter-v1`,
   `apps/relic-hunters-v1`, `apps/rallar-black-box`, `apps/rallar-black-box-headless`). Vite + React;
   tested with Vitest and Playwright.
-- **Deno** — `apps/api-v1`, `apps/rallar-black-box-control-server`, `apps/relic-hunter-server-v1`,
-  and the `packages/shared-test/black-box-runner` `.mts` entry points. Tested with `deno test`;
-  typechecked with `deno check` and linted with `deno lint`.
+- **Bun** — `apps/api-v1`, `apps/rallar-black-box-control-server`, `apps/relic-hunter-server-v1`,
+  `apps/ar-eye-hunter-server-v1`, and the `packages/shared-test/black-box-runner` `.mts` entry
+  points. Tested with `bun test`; typechecked with `bunx tsc -p tsconfig.json --noEmit`.
 
-Both runtimes are formatted by **dprint** (`dprint.json`) and nothing else. `deno fmt` is retired —
-no `deno.json` declares a `fmt` block or task. Suppress with `// dprint-ignore`.
+Both runtimes are formatted by **dprint** (`dprint.json`) and nothing else. Suppress with
+`// dprint-ignore`.
 
 Both runtimes share the same `packages/**` source via path aliases: `@shared/*`, `@shared-web/*`,
-`@shared-server/*`, `@shared-graph/*`, `@shared-test/*`, `@relic-hunters/*` — declared three times
-(root `tsconfig.json`, root `deno.json` imports, `vitest.config.ts` resolve.alias) plus per-app
-`deno.json`. Adding a new alias means updating all of them.
+`@shared-server/*`, `@shared-graph/*`, `@shared-test/*`, `@relic-hunters/*` — declared in the root
+`tsconfig.json`, `vitest.config.ts` resolve.alias, and each app's `tsconfig.json`. Adding a new
+alias means updating all of them.
 
 ## Commands
 
@@ -64,14 +64,14 @@ with `Cannot start formatter process`, so any CI job running them needs a `shfmt
 Daily confidence:
 
 ```sh
-npm run test:ci      # test:unit + test:deno + test:e2e + test:full-stack:memory
+npm run test:ci      # test:unit + test:bun + test:e2e + test:full-stack:memory
 ```
 
 Focused gates:
 
 ```sh
 npm run test:unit    # vitest, both projects: unit (test:unit:main) + tooling (test:unit:tooling)
-npm run test:deno    # deno tasks in the three Deno apps + two shared-test files
+npm run test:bun     # bun test in the Bun server apps + shared-test files
 npm run test:e2e     # Playwright: rallar-black-box app-local
 npm run test:full-stack  # Playwright full-stack against in-memory API
 npm run typecheck    # tsc project refs + per-workspace typecheck
@@ -83,7 +83,7 @@ Single test:
 ```sh
 npx vitest run packages/tests/shared-web/rallar-data.test.ts
 npx vitest run packages/tests/shared-server -t 'partial name'
-cd apps/api-v1 && deno test --allow-env --allow-read test/group-state/group-state-read-routes.test.ts
+cd apps/api-v1 && bun test test/group-state/group-state-read-routes.test.ts
 npx playwright test --config apps/rallar-black-box/playwright.config.ts -g 'spec name'
 ```
 
@@ -92,13 +92,13 @@ Note: Vitest has **two** roots, both in `vitest.config.ts`'s `include`. Almost e
 `packages/tests/api-v1/`, `packages/tests/repo/`, …) — not beside the source. The exception is
 `packages/shared-rtc-bench/tests/**`, which owns the RTC benchmark workloads. A sweep scoped to
 `packages/tests/` alone is **not** the suite `test:unit` runs; pass both paths or run `test:unit`.
-Deno app tests live in `apps/<app>/test/**`.
+Bun app tests live in `apps/<app>/test/**`.
 
 Per-package type check / build:
 
 ```sh
 npx tsc -p packages/shared/tsconfig.json --noEmit
-cd apps/api-v1 && deno task check
+cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit
 npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
 ```
 
@@ -169,7 +169,7 @@ deleted architecture notes are not current authority.
   RTC, ASSERT, SET, PARALLEL steps) and `rallar-bb-test/` (browser/control-agent recipe runtime).
   It owns the black-box control protocol, distributed-run artifact contracts, and artifact analysis;
   `apps/rallar-black-box` only consumes them for UI/operator flows.
-- **`apps/api-v1`** — the generic Rallar Server shell (Deno + Hono + Prisma/Postgres). Owns auth,
+- **`apps/api-v1`** — the generic Rallar Server shell (Bun + Hono + Prisma/Postgres). Owns auth,
   rooms, presence, WS topics, RTC signaling/topology, CRDT, app data, route mounting, OpenAPI
   (`resources/api-v1-openapi.yaml`). It must not become a concrete game server.
 
@@ -288,29 +288,29 @@ lanes run in parallel:
 
 | Lane                   | Runs                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, `rallar` build, Deno checks (shared-test, api-v1, control-server) |
+| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, `rallar` build, Bun checks (shared-test, api-v1, control-server)  |
 | `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
 | `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
-| `deno`                 | `test:deno:platform` (api-v1 + control-server + shared-test)                                                                                               |
+| `bun`                  | `test:bun:platform` (api-v1 + control-server + shared-test)                                                                                                |
 | `e2e-app`              | `test:rallar`, `test:full-stack:memory`                                                                                                                    |
 | `e2e-recipe-console`   | `test:rallar:recipe-console`, as two Playwright shards (`--shard=1/2`, `2/2`)                                                                              |
 | `black-box`            | API-v1 black-box recipes on Postgres: the standard profile as two balanced shards, plus the cluster profile, each on its own runner with all three servers |
 | `postgres-integration` | migrations, Postgres integration, topology replay proof, Postgres full-stack smoke, presence expiry last                                                   |
 
-The games (`ar-eye-hunter-v1`, `relic-hunters-v1`, and their Deno servers) validate in
+The games (`ar-eye-hunter-v1`, `relic-hunters-v1`, and their Bun servers) validate in
 `games-release-gate.yml`: required on pull requests, skipped when the diff is exclusively platform,
 and never run on the deploy path. Its lanes run in parallel:
 
-| Lane             | Runs                                                                 |
-| ---------------- | -------------------------------------------------------------------- |
-| `checks-games`   | game app builds and game Deno server checks                          |
-| `deno-games`     | `test:deno:games` (relic-hunter-server-v1 + ar-eye-hunter-server-v1) |
-| `e2e-game-rooms` | the seven game-room browser lanes (AR Eye + Relic)                   |
+| Lane             | Runs                                                                |
+| ---------------- | ------------------------------------------------------------------- |
+| `checks-games`   | game app builds and game Bun server checks                          |
+| `bun-games`      | `test:bun:games` (relic-hunter-server-v1 + ar-eye-hunter-server-v1) |
+| `e2e-game-rooms` | the seven game-room browser lanes (AR Eye + Relic)                  |
 
 `npm run check:test-reachability` fails when a tracked test file is run by no CI workflow and is not
 owned by an entry (owner, command, reason) in `tests/manual-suites.json`.
 
-Together `unit`, `unit-tooling`, `deno`, `deno-games`, `e2e-app` and `e2e-recipe-console` run exactly
+Together `unit`, `unit-tooling`, `bun`, `bun-games`, `e2e-app` and `e2e-recipe-console` run exactly
 what `npm run test:ci` runs;
 `packages/tests/repo/release-gate-lanes.test.ts` (and its `games-release-gate-lanes.test.ts` sibling)
 fails if a lane drops a suite or a Vitest project.

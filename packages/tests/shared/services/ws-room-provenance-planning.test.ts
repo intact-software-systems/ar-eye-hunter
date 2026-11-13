@@ -9,6 +9,7 @@ import { WsQueueBoxServerOutboundPlanning } from '@shared/services/ws-queue-box-
 import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-server/ws-queue-box-server-target-resolution.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -121,7 +122,7 @@ function createFixture(): RoomProvenanceFixture {
     for (const id of ['peer-socket', 'frozen', 'late']) {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
     }
     const targetResolution = new WsQueueBoxServerTargetResolution({
         socket,

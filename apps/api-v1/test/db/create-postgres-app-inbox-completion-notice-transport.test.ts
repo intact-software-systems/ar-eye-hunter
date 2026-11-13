@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { AppInboxCompletionNotice } from '@shared-server/rallar-system/queue-pubsub/app-inbox-completion-notice.ts';
@@ -22,7 +23,7 @@ const NOTICE: AppInboxCompletionNotice = {
     key: { topicId: 'app-inbox.client-state', resourceId: 'request-1', contextId: 'context-1' }
 };
 
-Deno.test('AppInbox completion notices exist only for PostgreSQL pub/sub', () => {
+test('AppInbox completion notices exist only for PostgreSQL pub/sub', () => {
     const notification = createRecordingNotificationPort();
     for (const mode of ['local', 'disabled'] as const) {
         assert.equal(createApiV1AppInboxCompletionNotices({ mode, notification, publisherId: 'server-b' }), undefined);
@@ -36,7 +37,7 @@ Deno.test('AppInbox completion notices exist only for PostgreSQL pub/sub', () =>
     );
 });
 
-Deno.test('the PostgreSQL completion transport notifies the notice and delivers only decodable payloads', async () => {
+test('the PostgreSQL completion transport notifies the notice and delivers only decodable payloads', async () => {
     const notification = createRecordingNotificationPort();
     const transport = createPostgresAppInboxCompletionNoticeTransport(notification);
     const received: AppInboxCompletionNotice[] = [];

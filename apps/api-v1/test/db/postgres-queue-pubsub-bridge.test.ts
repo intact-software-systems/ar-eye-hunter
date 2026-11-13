@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -18,7 +19,7 @@ interface CreateQueueBoxPubSubMessageOptions {
     readonly publisherId: string;
 }
 
-Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
+test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
     const notifications: RecordedPostgresNotification[] = [];
     const bridge = createPostgresQueuePubSubBridge({
         notify: (channel, message) => {
@@ -53,7 +54,7 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
     assert.equal('payload' in notifications[0].message, false);
 });
 
-Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects invalid JSON', async () => {
+test('postgres queue pub/sub bridge forwards JSON wire values and rejects invalid JSON', async () => {
     const received: JsonWireValue[] = [];
     const accepted = createMessage({
         channel: 'ws-channel',
@@ -77,7 +78,7 @@ Deno.test('postgres queue pub/sub bridge forwards JSON wire values and rejects i
     assert.deepEqual(received, [{ channel: 'ws-channel' }, unexpected, accepted]);
 });
 
-Deno.test('postgres queue pub/sub bridge rejects notices outside the wire budget before notify', async () => {
+test('postgres queue pub/sub bridge rejects notices outside the wire budget before notify', async () => {
     let notified = false;
     const bridge = createPostgresQueuePubSubBridge({
         notify: () => {
@@ -90,7 +91,7 @@ Deno.test('postgres queue pub/sub bridge rejects notices outside the wire budget
     assert.equal(notified, false);
 });
 
-Deno.test('postgres live WS transport publishes and receives a validated inline notice', async () => {
+test('postgres live WS transport publishes and receives a validated inline notice', async () => {
     const published: object[] = [];
     const received: object[] = [];
     const notice = {
@@ -131,7 +132,7 @@ Deno.test('postgres live WS transport publishes and receives a validated inline 
     assert.deepEqual(received, [notice]);
 });
 
-Deno.test('postgres live WS transport refuses expired and oversized notices before notify', async () => {
+test('postgres live WS transport refuses expired and oversized notices before notify', async () => {
     let notified = false;
     const transport = createPostgresLiveWsNoticeTransport({
         notify: () => {
@@ -156,7 +157,7 @@ Deno.test('postgres live WS transport refuses expired and oversized notices befo
     assert.equal(notified, false);
 });
 
-Deno.test('postgres live WS transport publishes the exact JSON-clean builder notice', async () => {
+test('postgres live WS transport publishes the exact JSON-clean builder notice', async () => {
     const sent: string[] = [];
     const transport = createPostgresLiveWsNoticeTransport({
         notify: (_channel, notice) => {
@@ -199,7 +200,7 @@ function createMessage(
 }
 
 for (const kind of ['durable', 'live'] as const) {
-    Deno.test(`PostgreSQL ${kind} transport forwards every LISTEN readiness generation`, async () => {
+    test(`PostgreSQL ${kind} transport forwards every LISTEN readiness generation`, async () => {
         const subscribed: Array<() => void> = [];
         const notification = {
             notify: () => Promise.resolve(),

@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import { toRemoteResultDetails } from './rallar-remote-browser-control-client.ts';
 import type { RallarRemoteBrowserConfig } from './resolve-rallar-remote-browser-config.ts';

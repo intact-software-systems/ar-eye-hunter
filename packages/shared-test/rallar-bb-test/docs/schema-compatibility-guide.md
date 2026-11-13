@@ -510,7 +510,7 @@ Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-group-assertion-conformance.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
-cd apps/rallar-black-box-control-server && deno task check && deno task test
+cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit && bun test
 ```
 
 ```text
@@ -558,7 +558,7 @@ required identity facts and the rejected envelopes.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
-cd apps/rallar-black-box-control-server && deno task check && deno task test
+cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit && bun test
 ```
 
 ```text
@@ -613,7 +613,7 @@ Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/rallar-black-box/world-fleet-distributed-manifests.test.ts
-cd apps/rallar-black-box-control-server && deno task check && deno task test
+cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit && bun test
 ```
 
 ```text
@@ -662,7 +662,7 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts
 npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check
 npx tsx apps/rallar-black-box/scripts/write-world-fleet-distributed-manifests.ts --check
-cd apps/rallar-black-box-control-server && deno task check && deno task test
+cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit && bun test
 ```
 
 ```text

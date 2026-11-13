@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 import { managedApiDiagnosticSecrets, waitForManagedApiReady } from './managed-api/api-v1-managed-api-readiness.mts';
 import {
@@ -43,7 +43,6 @@ export {
 
 const SCRIPT_DIR = new URL('.', import.meta.url);
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
-const API_CONFIG_PATH = 'apps/api-v1/deno.json';
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts';
 export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
@@ -80,7 +79,9 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON = '[]';
     env.RALLAR_TOURNAMENT_PROFILES_JSON = env.RALLAR_TOURNAMENT_PROFILES_JSON ?? JSON.stringify([{
         scope: { applicationId: 'black-box-tournaments', workspaceId: 'default' },
-        rulesId: 'black-box-native-v1', noShowGraceMs: 1000, gameLifecycleTopic: 'app:black-box:tournament-start'
+        rulesId: 'black-box-native-v1',
+        noShowGraceMs: 1000,
+        gameLifecycleTopic: 'app:black-box:tournament-start'
     }]);
     env.RALLAR_API_CONFIGURATION_PROFILE = MANAGED_API_CONFIGURATION_PROFILE;
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET ??
@@ -129,9 +130,12 @@ function toApiV1RecipeEndpointEnvironment(
             ? (env[prefix] ?? `${scheme}://127.0.0.1:${options.port}`)
             : `${scheme}://127.0.0.1:${options.port}`;
         env[prefix] = primary;
-        for (const [suffix, port] of [
-            ['_SECONDARY', options.secondaryPort], ['_TERTIARY', options.tertiaryPort]
-        ] as const) {
+        for (
+            const [suffix, port] of [
+                ['_SECONDARY', options.secondaryPort],
+                ['_TERTIARY', options.tertiaryPort]
+            ] as const
+        ) {
             const name = `${prefix}${suffix}`;
             env[name] = options.recipesOnly
                 ? (env[name] ?? primary)
@@ -242,18 +246,11 @@ function requireManagedApiEnvironmentValue(
     return value;
 }
 
-export function toApiV1ServerCommand(options: ApiV1BlackBoxOptions): readonly string[] {
-    return [
-        'deno',
-        'run',
-        '--config',
-        API_CONFIG_PATH,
-        '--allow-net',
-        '--allow-env',
-        '--allow-read',
-        ...(options.backend === 'postgres' ? [] : ['--allow-write']),
-        API_ENTRYPOINT
-    ];
+export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly string[] {
+    // The managed server's child environment is minimal and omits PATH, so resolve the runtime by
+    // absolute path rather than the literal `bun` (Bun.spawn does not inject a default PATH). The plan's
+    // env is complete, so the repo root's developer env files must not be read.
+    return [process.execPath, '--no-env-file', 'run', API_ENTRYPOINT];
 }
 
 function toRecipeMatrixCommand(
@@ -261,9 +258,8 @@ function toRecipeMatrixCommand(
     artifactDir: string
 ): readonly string[] {
     return [
-        'deno',
+        'bun',
         'run',
-        '-A',
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
         `--profile=${options.profile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
@@ -277,9 +273,8 @@ export function toClusterRecipeMatrixCommand(
     artifactDir: string
 ): readonly string[] {
     return [
-        'deno',
+        'bun',
         'run',
-        '-A',
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
         `--profile=${options.clusterProfile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
@@ -313,21 +308,24 @@ function resolveArtifactDir(path: string): string {
         return path;
     }
 
-    return new URL(path.replaceAll('\\', '/') + '/', `file://${Deno.cwd().replace(/\/$/, '')}/`)
+    return new URL(path.replaceAll('\\', '/') + '/', `file://${process.cwd().replace(/\/$/, '')}/`)
         .pathname;
 }
 
 async function runCommand(command: readonly string[], env: Record<string, string>): Promise<void> {
-    const output = await new Deno.Command(command[0], {
-        args: command.slice(1),
+    const [program, ...args] = command;
+    const child = Bun.spawn({
+        cmd: [program, ...args],
         cwd: repoRootPath(),
         env,
-        stdout: 'piped',
-        stderr: 'piped'
-    }).output();
-
-    const stdout = new TextDecoder().decode(output.stdout);
-    const stderr = new TextDecoder().decode(output.stderr);
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited
+    ]);
     if (stdout.trim()) {
         console.log(stdout);
     }
@@ -335,8 +333,8 @@ async function runCommand(command: readonly string[], env: Record<string, string
         console.error(stderr);
     }
 
-    if (!output.success) {
-        throw new Error(`${command.join(' ')} failed with exit code ${output.code}`);
+    if (exitCode !== 0) {
+        throw new Error(`${command.join(' ')} failed with exit code ${exitCode}`);
     }
 }
 
@@ -405,8 +403,8 @@ export async function withPreparedApiV1BlackBoxArtifacts<Result>(
 }
 
 async function main(): Promise<void> {
-    const options = parseApiV1BlackBoxArgs(Deno.args);
-    const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
+    const options = parseApiV1BlackBoxArgs(process.argv.slice(2));
+    const env = toApiV1BlackBoxEnvironment(options, process.env);
     const artifactDir = resolveArtifactDir(options.artifactDir);
     const runWithStorage = async (
         pgliteStorage: ManagedPGliteRunStorage | undefined
@@ -426,7 +424,7 @@ async function main(): Promise<void> {
                 artifactDir
             },
             {
-                writeEmptyLogFile: async (path) => await Deno.writeTextFile(path, ''),
+                writeEmptyLogFile: async (path) => await writeFile(path, ''),
                 startServer: startManagedApiServer,
                 waitForReady: waitForManagedApiReady,
                 toDiagnosticSecrets: managedApiDiagnosticSecrets,
@@ -499,6 +497,6 @@ const importMeta = import.meta as ImportMeta & { main?: boolean; };
 if (importMeta.main) {
     main().catch((error) => {
         console.error(error instanceof Error ? error.message : String(error));
-        Deno.exit(1);
+        process.exit(1);
     });
 }

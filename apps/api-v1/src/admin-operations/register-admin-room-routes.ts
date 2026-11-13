@@ -1,4 +1,4 @@
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 import { RequestAuthFailure, toAuthErrorResponse } from '@shared-server/http/request-auth-service.ts';
 import type { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';

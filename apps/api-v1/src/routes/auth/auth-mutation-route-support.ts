@@ -1,4 +1,4 @@
-import type { Context } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
 
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type {

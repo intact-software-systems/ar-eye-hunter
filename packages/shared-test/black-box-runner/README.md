@@ -70,7 +70,7 @@ processes and release the run database.
 
 All commands require an available PostgreSQL server. They use the runner's
 local default connection unless `DATABASE_URL` selects another server.
-The package `check:deno` command type checks these executable entries without
+The package `check:ts` command type checks these executable entries without
 starting services.
 
 No CI lane runs the group-delta or auth-logout proofs; those two are manual acceptance runs (owner: Knut-Helge Vik). They are not

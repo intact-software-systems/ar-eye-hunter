@@ -22,7 +22,7 @@ export default defineConfig({
             timeout: 60_000
         },
         {
-            command: 'cd ../rallar-black-box-control-server && deno task start',
+            command: 'cd ../rallar-black-box-control-server && bun run src/main.ts',
             url: 'http://127.0.0.1:5180/health',
             reuseExistingServer,
             timeout: 60_000

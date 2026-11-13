@@ -1,9 +1,11 @@
 import { decodeRoomOwnedAppDataBindings, type RoomOwnedAppData } from '@shared-server/app-data/room-owned-app-data.ts';
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import {
     MAX_APP_INBOX_FINISHED_RETENTION_MS,
     MIN_APP_INBOX_FINISHED_RETENTION_MS
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { decodeApiV1Matchmaking } from './decode-api-v1-matchmaking.ts';
@@ -126,8 +128,15 @@ function decodeHttp(
     return {
         port: decoder.integer('http.port', 1, 65_535),
         corsOrigins: structuredValues.originSet('http.corsOrigins'),
-        preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0)
+        preflightMaxAgeSeconds: decoder.integer('http.preflightMaxAgeSeconds', 0),
+        shutdownDeadlineMs: decodeShutdownDeadlineMs(decoder)
     };
+}
+
+/** The hosted units name the deadline; elsewhere the Bun servers share one default. */
+function decodeShutdownDeadlineMs(values: ApiV1ConfigurationValueDecoder): number {
+    const path = 'http.shutdownDeadlineMs';
+    return values.hasValue(path) ? values.integer(path, 1) : DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS;
 }
 
 function decodePublicApi(
@@ -285,6 +294,12 @@ function decodePasswordDerivationBound(
         return 1;
     }
     return Math.max(1, hardwareConcurrency - 1);
+}
+
+/** No committed resource names the wait: a mutation client derives its own budget from the same shared ceiling. */
+function decodeCompletionWaitMaxElapsedMs(values: ApiV1ConfigurationValueDecoder): number {
+    const path = 'appInbox.completionWait.maxElapsedMs';
+    return values.hasValue(path) ? values.integer(path, 0) : API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS;
 }
 
 function decodeDatabasePool(
@@ -529,7 +544,7 @@ function decodeAppInbox(
         newLaneConcurrency,
         newLaneHeldRows: decodeAppInboxNewLaneHeldRows(decoder, newLaneConcurrency),
         completionWait: {
-            maxElapsedMs: decoder.integer('appInbox.completionWait.maxElapsedMs', 0),
+            maxElapsedMs: decodeCompletionWaitMaxElapsedMs(decoder),
             retryIntervalMs: decoder.integer(
                 'appInbox.completionWait.retryIntervalMs',
                 0

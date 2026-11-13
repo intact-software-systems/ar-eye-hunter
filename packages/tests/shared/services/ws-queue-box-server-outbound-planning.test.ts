@@ -31,6 +31,7 @@ import { WsQueueBoxServerTargetResolution } from '@shared/services/ws-queue-box-
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { drainEngine } from '../alm/outbound-runtime-test-fixture.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -51,7 +52,7 @@ describe('WS server outbound planning', () => {
         const native = new TestWebSocket('ws://planning');
         native.open();
         const context = new ConnectionContext({ id: 'connection', socket: native });
-        server.addConnection(context);
+        attachTestWebSocket(server, context);
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
@@ -512,7 +513,7 @@ function createPlanningFixture(roomPeerIds: readonly string[]): PlanningFixture 
     for (const peerId of roomPeerIds) {
         const native = new TestWebSocket(`ws://${peerId}`);
         native.open();
-        server.addConnection(new ConnectionContext({ id: peerId, socket: native }));
+        attachTestWebSocket(server, new ConnectionContext({ id: peerId, socket: native }));
         sockets.set(peerId, native);
     }
     const roomRecipients: readonly WsServerResolvedRecipient[] = roomPeerIds.map((peerId) => ({ peerId, connectionId: peerId }));

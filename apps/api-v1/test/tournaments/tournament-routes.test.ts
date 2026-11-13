@@ -2,13 +2,14 @@ import { authenticationRequired } from '@shared-server/http/request-auth-service
 import type { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { registerTournamentRoutes, type TournamentRouteDependencies } from '../../src/tournaments/register-tournament-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const path = '/api/tournaments/apps/game/workspaces/default/tournaments/cup';
 
-Deno.test('tournament reads and writes bind scope and account to the authenticated request', async () => {
+test('tournament reads and writes bind scope and account to the authenticated request', async () => {
     const app = createTracedApiTestApp();
     const commands: TournamentService.Command[] = [];
     registerTournamentRoutes(app, {
@@ -45,7 +46,7 @@ Deno.test('tournament reads and writes bind scope and account to the authenticat
     }]);
 });
 
-Deno.test('tournament catalogue authenticates the personal account and bounds its query', async () => {
+test('tournament catalogue authenticates the personal account and bounds its query', async () => {
     const app = createTracedApiTestApp();
     registerTournamentRoutes(app, dependencies());
     const catalog = '/api/tournaments/apps/game/workspaces/default/catalog';
@@ -68,7 +69,7 @@ Deno.test('tournament catalogue authenticates the personal account and bounds it
     assert.equal((await anonymous.request(catalog)).status, 401);
 });
 
-Deno.test('tournaments reject anonymous access, fabricated results, authority and internal reconciliation', async () => {
+test('tournaments reject anonymous access, fabricated results, authority and internal reconciliation', async () => {
     const anonymous = createTracedApiTestApp();
     registerTournamentRoutes(anonymous, { ...dependencies(), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
     assert.equal((await anonymous.request(path)).status, 401);

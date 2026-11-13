@@ -16,9 +16,8 @@ const runnerRoot = fileURLToPath(new URL('../../shared-test/black-box-runner/', 
 
 describe('managed formation recipe loading', () => {
     it.each(['medium', 'large'])('resolves every %s HTTP operation against a declared server connection', (tier) => {
-        const result = spawnSync('deno', [
+        const result = spawnSync('bun', [
             'run',
-            '-A',
             `${runnerRoot}/scenario-black-box.ts`,
             '-w',
             runnerRoot,

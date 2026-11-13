@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
@@ -11,7 +12,7 @@ import { createAdminPruneAggregate, toAdminPruneAggregateEntry } from '@shared-s
 import { queueNow } from '../../crdt/crdt-api-test-fixtures.ts';
 import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
-Deno.test(
+test(
     'initial prune statistics use the command capture cutoff instead of database now',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -35,7 +36,7 @@ Deno.test(
     }
 );
 
-Deno.test('prune progress renews physical and JSON aggregate expiry together', async () => {
+test('prune progress renews physical and JSON aggregate expiry together', async () => {
     await withPGliteSql(async (sql) => {
         const now = await queueNow(sql);
         const current = createAdminPruneAggregate({

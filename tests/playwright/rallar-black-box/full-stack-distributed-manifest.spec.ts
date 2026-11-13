@@ -475,7 +475,7 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
                 diskAvailableBytes: disk.bavail * disk.bsize,
                 os: { platform: platform(), release: release(), version: version() },
                 node: process.version,
-                deno: spawnSync('deno', ['--version'], { encoding: 'utf8' }).stdout.trim(),
+                bun: spawnSync('bun', ['--version'], { encoding: 'utf8' }).stdout.trim(),
                 chromium: spawnSync(chromium.executablePath(), ['--version'], { encoding: 'utf8' }).stdout.trim(),
                 effectiveProfile: configuration.profile.name,
                 databaseMode: configuration.database.mode,

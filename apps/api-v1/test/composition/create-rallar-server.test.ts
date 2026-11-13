@@ -1,5 +1,6 @@
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 
@@ -13,7 +14,7 @@ import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1RouteInstallers } from '../../src/composition/create-api-v1-route-installers.ts';
 import { createRallarServer } from '../../src/composition/create-rallar-server.ts';
 
-Deno.test('required server assembly preserves explicit owners and mounts each installer once', () => {
+test('required server assembly preserves explicit owners and mounts each installer once', () => {
     const state = createState();
     const runtime = createRuntime(state);
     const repositories = new RepositoryManager();
@@ -41,7 +42,7 @@ Deno.test('required server assembly preserves explicit owners and mounts each in
     assert.deepEqual(state.events, ['topics', 'lifecycle', 'ws-route', 'rest-route', 'start']);
 });
 
-Deno.test('required server assembly retains the room-scoped game authority surface', () => {
+test('required server assembly retains the room-scoped game authority surface', () => {
     const state = createState();
     const server = createRallarServer({
         runtime: createRuntime(state),

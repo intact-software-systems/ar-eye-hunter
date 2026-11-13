@@ -1,4 +1,7 @@
-import { assertEquals } from '@std/assert';
+import { expect } from 'bun:test';
+import { mkdtemp, open } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { signRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -8,7 +11,7 @@ const CONTROL_ROOT = new URL('../..', import.meta.url).pathname;
 export const ADMIN_TOKEN = 'black-box-admin-token';
 export const OPERATOR_TOKEN_SECRET = 'black-box-operator-token-secret';
 
-// Deno.serve binds the wildcard address, so a loopback-only probe would miss a conflict.
+// Bun.serve binds the wildcard address, so a loopback-only probe would miss a conflict.
 const SERVER_BIND_HOST = '0.0.0.0';
 const PORT_RANGE_START = 20_000;
 // Linux hands out 32768 and above as ephemeral ports, which this suite's own client
@@ -35,9 +38,7 @@ export async function startControlServer(
     env: Readonly<Record<string, string>> = {}
 ): Promise<StartedControlServer> {
     const storageDir = env.RALLAR_BLACK_BOX_STORAGE_DIR ??
-        await Deno.makeTempDir({
-            prefix: 'rallar-control-api-'
-        });
+        await mkdtemp(join(tmpdir(), 'rallar-control-api-'));
     let failure = 'No start attempt was made.';
     let attempts = 0;
     while (attempts < START_ATTEMPTS) {
@@ -85,7 +86,7 @@ export async function getJson<TValue>(
     path: string
 ): Promise<TValue> {
     const response = await fetch(`${baseUrl}${path}`);
-    assertEquals(response.status, 200);
+    expect(response.status).toBe(200);
     return await response.json() as TValue;
 }
 
@@ -94,19 +95,12 @@ async function startControlServerOnce(
     storageDir: string
 ): Promise<Either<string, StartedControlServer>> {
     const port = readBindablePort();
-    const command = new Deno.Command(Deno.execPath(), {
-        args: [
-            'run',
-            '--allow-net',
-            '--allow-env',
-            '--allow-read',
-            '--allow-write',
-            'src/main.ts'
-        ],
+    const child = Bun.spawn({
+        cmd: [process.execPath, 'run', 'src/main.ts'],
         cwd: CONTROL_ROOT,
-        stdin: 'null',
-        stdout: 'null',
-        stderr: 'piped',
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'pipe',
         env: {
             RALLAR_BLACK_BOX_RETENTION_MAX_RUNS: '0',
             RALLAR_BLACK_BOX_SNAPSHOT_FLUSH_INTERVAL_MS: '20',
@@ -115,7 +109,6 @@ async function startControlServerOnce(
             RALLAR_BLACK_BOX_STORAGE_DIR: storageDir
         }
     });
-    const child = command.spawn();
     const baseUrl = `http://127.0.0.1:${port}`;
     try {
         await waitForHealth(baseUrl);
@@ -149,10 +142,7 @@ export function readBindablePort(): number {
 
 function isPortBindable(port: number): boolean {
     try {
-        Deno.listen({
-            hostname: SERVER_BIND_HOST,
-            port
-        }).close();
+        listenPort(SERVER_BIND_HOST, port).stop();
         return true;
     }
     catch {
@@ -162,19 +152,12 @@ function isPortBindable(port: number): boolean {
 
 async function inspectLoopbackAvailability(): Promise<boolean> {
     try {
-        const listener = Deno.listen({
-            hostname: '127.0.0.1',
-            port: 0
-        });
-        listener.close();
+        listenPort('127.0.0.1', 0).stop();
         return true;
     }
     catch (error) {
-        if (error instanceof Deno.errors.PermissionDenied) {
-            return false;
-        }
         const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('Operation not permitted')) {
+        if (message.includes('permission') || message.includes('Operation not permitted')) {
             return false;
         }
         throw error;
@@ -200,17 +183,10 @@ async function waitForHealth(baseUrl: string): Promise<void> {
 }
 
 async function stopChild(
-    child: Deno.ChildProcess
-): Promise<Deno.CommandStatus | undefined> {
-    try {
-        child.kill('SIGTERM');
-    }
-    catch (error) {
-        if (!(error instanceof TypeError)) {
-            throw error;
-        }
-    }
-    return await child.status.catch(() => undefined);
+    child: ReturnType<typeof Bun.spawn>
+): Promise<number | undefined> {
+    child.kill('SIGTERM');
+    return await child.exited.catch(() => undefined);
 }
 
 function delay(ms: number): Promise<void> {
@@ -221,4 +197,21 @@ function randomPort(): number {
     const buffer = new Uint32Array(1);
     crypto.getRandomValues(buffer);
     return PORT_RANGE_START + (buffer[0] % (PORT_RANGE_END - PORT_RANGE_START));
+}
+
+export function listenPort(
+    hostname: string,
+    port: number
+) {
+    return Bun.listen({
+        hostname,
+        port,
+        socket: {
+            data() {},
+            open() {},
+            close() {},
+            drain() {},
+            error() {}
+        }
+    });
 }

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -34,7 +35,7 @@ import {
 
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
-Deno.test('PGlite client connect conflicts when close commits after lifecycle read', async () => {
+test('PGlite client connect conflicts when close commits after lifecycle read', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const generationId = 'pglite-client-interleaved';
@@ -76,7 +77,7 @@ Deno.test('PGlite client connect conflicts when close commits after lifecycle re
     });
 });
 
-Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle read', async () => {
+test('PGlite group connect conflicts when cleanup commits after lifecycle read', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-group-interleaved';
@@ -141,7 +142,7 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
     });
 });
 
-Deno.test('PGlite group presence completion can precede its causal summary revision', async () => {
+test('PGlite group presence completion can precede its causal summary revision', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-delayed-presence-summary';
@@ -223,7 +224,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
     });
 });
 
-Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect row', async () => {
+test('PGlite client close tombstone suppresses a delayed AppInbox connect row', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const generationId = 'pglite-client-close-first';
@@ -258,7 +259,7 @@ Deno.test('PGlite client close tombstone suppresses a delayed AppInbox connect r
     });
 });
 
-Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect row', async () => {
+test('PGlite group cleanup tombstone suppresses a delayed presence connect row', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-cleanup-first';
@@ -319,7 +320,7 @@ Deno.test('PGlite group cleanup tombstone suppresses a delayed presence connect 
     });
 });
 
-Deno.test('PGlite lost-close group guard has bounded physical expiry before cleanup', async () => {
+test('PGlite lost-close group guard has bounded physical expiry before cleanup', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-independent-presence';
@@ -395,7 +396,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
     });
 });
 
-Deno.test('PGlite cleanup of another socket generation leaves the presence its own socket owns', async () => {
+test('PGlite cleanup of another socket generation leaves the presence its own socket owns', async () => {
     await withPGliteSql(async (sql) => {
         const harness = await createPGliteAppInboxWsCloseHarness(sql);
         const groupId = 'pglite-other-socket-presence';

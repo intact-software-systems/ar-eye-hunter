@@ -2,6 +2,7 @@ import { authenticationRequired } from '@shared-server/http/request-auth-service
 import type { PartyCommand } from '@shared-server/rallar-system/parties/party-command.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { registerPartyRoutes, type PartyRouteDependencies } from '../../src/parties/register-party-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
@@ -11,7 +12,7 @@ const ref = { ...scope, partyId: 'friends' };
 const path = '/api/parties/apps/game/workspaces/default';
 const request = { ref, expectedRosterRevision: null, intent: { action: 'create' } };
 
-Deno.test('party HTTP reads bind the caller and commands capture only authenticated authority', async () => {
+test('party HTTP reads bind the caller and commands capture only authenticated authority', async () => {
     const app = createTracedApiTestApp();
     const commands: PartyCommand[] = [];
     registerPartyRoutes(app, {
@@ -51,7 +52,7 @@ Deno.test('party HTTP reads bind the caller and commands capture only authentica
     }]);
 });
 
-Deno.test('party HTTP refuses unauthenticated access, cross-scope commands and injected authority', async () => {
+test('party HTTP refuses unauthenticated access, cross-scope commands and injected authority', async () => {
     const anonymous = createTracedApiTestApp();
     registerPartyRoutes(anonymous, { ...dependencies(), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
     assert.equal((await anonymous.request(path)).status, 401);

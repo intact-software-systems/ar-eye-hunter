@@ -43,8 +43,7 @@
     },
     "types": [
       "node",
-      "vitest/globals",
-      "deno"
+      "vitest/globals"
     ],
     "allowJs": true,
     "checkJs": false

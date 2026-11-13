@@ -1,3 +1,5 @@
+import process from 'node:process';
+
 import {
     parseBenchmarkOptions,
     type StateWriteBenchmarkOptions
@@ -27,5 +29,5 @@ async function runStateWriteBenchmarkMode(options: StateWriteBenchmarkOptions): 
 }
 
 if (import.meta.main) {
-    await runStateWriteBenchmarkMode(parseBenchmarkOptions(Deno.args));
+    await runStateWriteBenchmarkMode(parseBenchmarkOptions(process.argv.slice(2)));
 }

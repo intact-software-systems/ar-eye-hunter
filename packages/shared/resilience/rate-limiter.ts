@@ -1,5 +1,3 @@
-import { SlidingWindowCounter } from './sliding-window-counter.ts';
-
 export class RateLimiterPolicy {
     public readonly timebasedFilterMs: number;
     public readonly maxNumberToAllow: number;
@@ -14,15 +12,15 @@ export class RateLimiterPolicy {
 }
 
 export class RateLimiter {
-    public readonly slidingWindow: SlidingWindowCounter;
     public readonly policy: RateLimiterPolicy;
+    /** Tokens scaled by `timebasedFilterMs`, so integer instants refill without rounding drift. */
+    private scaledTokens: number;
+    private refilledAtMs: number;
 
-    constructor(
-        slidingWindow: SlidingWindowCounter,
-        policy: RateLimiterPolicy
-    ) {
-        this.slidingWindow = slidingWindow;
+    constructor(policy: RateLimiterPolicy, createdTs: number) {
         this.policy = policy;
+        this.scaledTokens = this.toScaledCapacity();
+        this.refilledAtMs = createdTs;
     }
 
     static init(timebasedFilterMs: number, maxNumberToAllow: number): RateLimiter {
@@ -34,14 +32,7 @@ export class RateLimiter {
         maxNumberToAllow: number,
         createdTs: number
     ): RateLimiter {
-        return new RateLimiter(
-            SlidingWindowCounter.initWithTs(
-                timebasedFilterMs,
-                Math.floor(timebasedFilterMs / 4),
-                createdTs
-            ),
-            new RateLimiterPolicy(timebasedFilterMs, maxNumberToAllow)
-        );
+        return new RateLimiter(new RateLimiterPolicy(timebasedFilterMs, maxNumberToAllow), createdTs);
     }
 
     static async tryToExecuteOrDefault<T>(
@@ -72,27 +63,33 @@ export class RateLimiter {
     }
 
     allowAt(nowEpochMs: number): boolean {
-        if (!this.isAllowedAt(nowEpochMs)) {
+        this.scaledTokens = this.computeScaledTokensAt(nowEpochMs);
+        this.refilledAtMs = Math.max(nowEpochMs, this.refilledAtMs);
+        if (this.scaledTokens < this.policy.timebasedFilterMs) {
             return false;
         }
 
-        SlidingWindowCounter.updateWithNow(this.slidingWindow, 1, this.toWindowNowMs(nowEpochMs));
+        this.scaledTokens -= this.policy.timebasedFilterMs;
         return true;
     }
 
     isAllowed(): boolean {
-        return this.slidingWindow.sumInWindow() < this.policy.maxNumberToAllow;
+        return this.isAllowedAt(Date.now());
     }
 
     /** Whether `allowAt` would allow at `nowEpochMs`, without spending. */
     isAllowedAt(nowEpochMs: number): boolean {
-        return SlidingWindowCounter.sumInWindowWithNow(this.slidingWindow, this.toWindowNowMs(nowEpochMs)) <
-            this.policy.maxNumberToAllow;
+        return this.computeScaledTokensAt(nowEpochMs) >= this.policy.timebasedFilterMs;
     }
 
-    /** The window has no bucket before its creation, so a clock that stepped back behind it reads as the creation. */
-    private toWindowNowMs(nowEpochMs: number): number {
-        return Math.max(nowEpochMs, this.slidingWindow.createdTs);
+    /** A clock that stepped back behind the last refill reads as that refill, so it neither refills nor throws. */
+    private computeScaledTokensAt(nowEpochMs: number): number {
+        const elapsedMs = Math.max(nowEpochMs, this.refilledAtMs) - this.refilledAtMs;
+        return Math.min(this.toScaledCapacity(), this.scaledTokens + elapsedMs * this.policy.maxNumberToAllow);
+    }
+
+    private toScaledCapacity(): number {
+        return this.policy.maxNumberToAllow * this.policy.timebasedFilterMs;
     }
 }
 

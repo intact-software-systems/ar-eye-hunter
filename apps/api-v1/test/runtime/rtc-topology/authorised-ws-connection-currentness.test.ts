@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
@@ -12,7 +13,7 @@ import {
 } from '../../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import { createClientSnapshot, TEST_SCOPE } from '../../client-state/client-state-route-test-runtime.ts';
 
-Deno.test('a socket is current only while its session entry names its own connection generation', async () => {
+test('a socket is current only while its session entry names its own connection generation', async () => {
     const connection = rememberConnection('session-1', 'generation-old');
     const snapshotNaming = (generationId: string) => async () => ({
         ...createClientSnapshot('alice'),
@@ -35,7 +36,7 @@ Deno.test('a socket is current only while its session entry names its own connec
     }
 });
 
-Deno.test('a socket without authorised connection facts is never current', async () => {
+test('a socket without authorised connection facts is never current', async () => {
     const socket = new TestWebSocket('ws://unregistered');
     socket.open();
     const connection = new ConnectionContext({ id: 'unregistered', socket, generationId: 'generation' });

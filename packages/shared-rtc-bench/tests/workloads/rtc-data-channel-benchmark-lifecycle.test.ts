@@ -13,9 +13,7 @@ import * as ErrorReference from '../../workloads/data-channel/rtc-data-channel-e
 import * as Replace from '../../workloads/data-channel/rtc-data-channel-replace-key-bench.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
-const denoPrefix = words(
-    'run --config=packages/shared-rtc-bench/deno.json --allow-read --allow-write'
-);
+const bunPrefix = words('run');
 const parseReplace = Replace.parseRtcDataChannelReplaceKeyArguments;
 const parseDrain = Drain.parseRtcDataChannelDrainArguments;
 const parseClose = Close.parseRtcDataChannelCloseRetentionArguments;
@@ -334,10 +332,10 @@ it('RTC-B02 diagnostics stay create-new beneath tmp/perf/results', () => {
     ];
     for (const [index, arguments_] of cases.entries()) {
         const output = join(directory, `${index}.json`);
-        const command = [...denoPrefix, ...arguments_, '--runs=1', `--out=${output}`];
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
+        const command = [...bunPrefix, ...arguments_, '--runs=1', `--out=${output}`];
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).toBe(0);
         const persisted = JSON.parse(readFileSync(output, 'utf8'));
         expect([persisted.schema, persisted.outcome]).toEqual([undefined, undefined]);
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).not.toBe(0);
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).not.toBe(0);
     }
 });

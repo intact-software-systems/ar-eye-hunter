@@ -1,9 +1,10 @@
 import { PSqlAdminSupportReader } from '@shared-server/rallar-system/admin-support/postgres/p-sql-admin-support-reader.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
-Deno.test('PSqlAdminSupportReader reads active queue and result rows by explicit QueueBox key', async () => {
+test('PSqlAdminSupportReader reads active queue and result rows by explicit QueueBox key', async () => {
     await withPGliteSql(async (sql) => {
         await seedQueueRows(sql);
         const reader = new PSqlAdminSupportReader(sql);
@@ -55,7 +56,7 @@ Deno.test('PSqlAdminSupportReader reads active queue and result rows by explicit
     });
 });
 
-Deno.test('PSqlAdminSupportReader only returns expired queue rows when includeExpired is true', async () => {
+test('PSqlAdminSupportReader only returns expired queue rows when includeExpired is true', async () => {
     await withPGliteSql(async (sql) => {
         await seedQueueRows(sql);
         const reader = new PSqlAdminSupportReader(sql);

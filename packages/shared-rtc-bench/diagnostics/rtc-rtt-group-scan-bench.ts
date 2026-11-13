@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
@@ -58,7 +60,7 @@ for (let run = 1; run <= RUNS; run++) {
     results.push(measureIndexed(run, findGroupStateSnapshotsBySessionIds, rtts));
 }
 
-await Deno.writeTextFile(
+await writeFile(
     OUT,
     JSON.stringify(
         {
@@ -80,7 +82,7 @@ await Deno.writeTextFile(
 console.log(`Wrote ${OUT}`);
 
 function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+    return process.argv.slice(2).find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
 }
 
 function measureLegacy(

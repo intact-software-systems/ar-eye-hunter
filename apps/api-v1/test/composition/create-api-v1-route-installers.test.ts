@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
@@ -17,7 +18,7 @@ import {
 } from '../../src/composition/create-api-v1-route-installers.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
-Deno.test('route installers mount representative API and websocket behavior in order', async () => {
+test('route installers mount representative API and websocket behavior in order', async () => {
     const app = new Hono();
     const installers = constructApiV1RouteInstallers(createInput(), TEST_OPERATIONS);
 
@@ -77,9 +78,7 @@ const TEST_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1RouteInstallerRuntime>
     requireApiAuthSession: rejectUnauthenticated,
     readWsConnectTicket: rejectUnusedOperation,
     readWsConnectSession: rejectUnusedOperation,
-    upgradeWebSocket: () => {
-        throw new Error('route dependency not used');
-    }
+    upgradeWebSocket: rejectUnusedOperation
 };
 
 function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRuntime, ApiV1RouteInstallerTopology> {

@@ -318,8 +318,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
 
     it.each([
         { executionMode: 'all-local', selectedJobs: ['all-local'] },
-        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] },
-        { executionMode: 'hetzner-control-cpu-gc', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
+        { executionMode: 'hetzner-control', selectedJobs: ['github-agents', 'operator', 'plan', 'prepare-hetzner'] }
     ])('routes $executionMode exclusively to its selected job family', async ({ executionMode, selectedJobs }) => {
         const jobs = required((await readWorkflow()).jobs, 'jobs');
         expect(resolveManualModeJobs(jobs, executionMode)).toEqual(selectedJobs);
@@ -331,7 +330,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(mode).toMatchObject({
             type: 'choice',
             default: 'hetzner-control',
-            options: ['hetzner-control', 'hetzner-control-cpu-gc', 'all-local']
+            options: ['hetzner-control', 'all-local']
         });
         const local = required(workflow.jobs?.['all-local'], 'all-local job');
         expect(local['runs-on']).toBe('ubuntu-latest');
@@ -343,7 +342,7 @@ node -e 'console.log(JSON.stringify({wsCapture: process.env.RALLAR_BLACK_BOX_CAP
         expect(checkout.with?.ref).toBe('${{ github.sha }}');
         expect(findStep(local, 'Setup local toolchains')).toMatchObject({
             uses: './.github/actions/release-gate-setup',
-            with: { deno: 'true', playwright: 'true' }
+            with: { bun: 'true', playwright: 'true' }
         });
     });
 
@@ -492,7 +491,7 @@ node -e 'console.log(JSON.stringify({capture: process.env.INPUT_RTC_CAPTURE_MODE
                 diskAvailableBytes: expect.any(Number),
                 os: expect.objectContaining({ platform: expect.any(String), release: expect.any(String), version: expect.any(String) }),
                 node: expect.stringMatching(/^v[0-9]+/),
-                deno: expect.stringMatching(/^deno [0-9]+/),
+                bun: expect.stringMatching(/^[0-9]+\.[0-9]+\.[0-9]+/),
                 chromium: expect.stringMatching(/^[A-Za-z ]+[0-9]+/)
             }));
             if (

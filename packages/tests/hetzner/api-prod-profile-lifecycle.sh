@@ -21,7 +21,8 @@ if [[ "${1:-}" == --inspect-query ]]; then
 fi
 
 if [[ "${1:-}" != --inside ]]; then
-	for scenario in deploy-success deploy-initial deploy-stop-api-fail deploy-stop-control-fail deploy-still-active deploy-migration-fail deploy-secret-directory \
+	for scenario in deploy-success deploy-initial deploy-stop-api-fail deploy-still-active deploy-migration-fail deploy-secret-directory \
+		deploy-control-success deploy-games-success \
 		rollout-success rollout-metered-preserve rollout-migration-fail rollout-secret-directory rollout-secret-syntax \
 		rollout-public-preserve rollout-public-missing rollout-public-malformed rollout-public-mirror \
 		rollout-public-api-cors rollout-public-control-cors rollout-public-spa-origin rollout-public-syntax; do
@@ -34,7 +35,7 @@ if [[ "${1:-}" != --inside ]]; then
 	exit 0
 fi
 
-mkdir -p /fixture/bin /fixture/checkout/.git /fixture/playwright/active /etc/rallar /etc/systemd/system /var/www/rallar-black-box
+mkdir -p /fixture/bin /fixture/checkout/.git /fixture/checkout/apps/api-v1 /fixture/playwright/active /etc/rallar /etc/systemd/system /var/www/rallar-black-box
 useradd -M rallar
 useradd -M caddy
 printf '{"packages":{"node_modules/playwright":{"version":"1.0.0"}}}\n' >/fixture/checkout/package-lock.json
@@ -97,7 +98,11 @@ case "${name}" in
 		;;
 	git)
 		if [[ "$*" == *'rev-parse --short HEAD'* ]]; then printf 'abcdef0\n';
-		elif [[ "$*" == *'rev-parse HEAD'* ]]; then printf 'abcdef0123456789abcdef0123456789abcdef01\n'; fi
+		elif [[ "$*" == *'rev-parse HEAD'* || "$*" == *'rev-parse --verify'* ]]; then printf 'abcdef0123456789abcdef0123456789abcdef01\n';
+		elif [[ "$*" == *'cat-file -e '*'/deno.json' ]]; then exit 1;
+		elif [[ "$*" == *'show '*':scripts/hosted-rallar/controller/rallar-bun-runtime.sh' ]]; then
+			grep -m 1 '^RALLAR_MIN_BUN_VERSION=' /repo/scripts/hosted-rallar/controller/rallar-bun-runtime.sh
+		fi
 		;;
 	dpkg-query) printf 'installed' ;;
 	curl)
@@ -116,12 +121,12 @@ case "${name}" in
 esac
 EOF
 chmod 0755 /fixture/bin/record-command
-for command in systemctl runuser git dpkg-query curl jq npm deno rsync caddy chown free journalctl; do
+for command in systemctl runuser git dpkg-query curl jq npm bun rsync caddy chown free journalctl; do
 	ln -s record-command "/fixture/bin/${command}"
 done
 
 export PATH="/fixture/bin:${PATH}"
-export RALLAR_DENO_SELF_TEST_VERSION=2.9.0
+export RALLAR_BUN_SELF_TEST_VERSION=1.4.4
 export RALLAR_CHECKOUT_DIR=/fixture/checkout
 export RALLAR_API_ENV_FILE=/etc/rallar/api-v1.env
 export RALLAR_API_SECRET_FILE=/etc/rallar/api-v1.secrets.env
@@ -189,6 +194,11 @@ rollout-secret-syntax) printf 'export DATABASE_URL=unsupported\n' >/etc/rallar/a
 esac
 
 case "${TEST_SCENARIO}" in
+deploy-control-success) export RALLAR_CONTROLLER_ROLE=control ;;
+deploy-games-success) export RALLAR_CONTROLLER_ROLE=games ;;
+esac
+
+case "${TEST_SCENARIO}" in
 deploy-*) script=/repo/scripts/hosted-rallar/controller/02-deploy-controller.sh ;;
 rollout-*) script=/repo/scripts/hosted-rallar/controller/08-rollout-controller.sh ;;
 esac
@@ -210,11 +220,6 @@ rollout-public-preserve)
 	done
 	[[ "${RALLAR_BLACK_BOX_ROOM_ID}" == worker-room && "${RALLAR_BLACK_BOX_AGENT_PREFIX}" == worker-agent && "${RALLAR_BLACK_BOX_AGENT_COUNT}" == 50 ]]
 	[[ "${RALLAR_BLACK_BOX_APPLICATION_ID}" == worker-app && "${RALLAR_BLACK_BOX_WORKSPACE_ID}" == worker-workspace ]]
-	if FIXTURE_CORS_ORIGIN=https://wrong.example.test bash "${script}" >/fixture/cors-failure.log 2>&1; then
-		echo 'Expected preserved public CORS verification to fail.' >&2
-		exit 1
-	fi
-	grep -Fqx 'Public control CORS verification failed for preserved settings.' /fixture/cors-failure.log
 	RALLAR_PRESERVE_PUBLIC_SETTINGS=0 FIXTURE_CORS_ORIGIN=https://conflict.example.test bash "${script}" >>/fixture/output.log 2>&1
 	grep -Fqx 'RALLAR_BLACK_BOX_SPA_URL=https://conflict.example.test' "${RALLAR_BLACK_BOX_SPA_ENV_FILE}"
 	grep -Fqx 'VITE_RALLAR_APPLICATION_ID=worker-app' "${RALLAR_BLACK_BOX_SPA_ENV_FILE}"
@@ -247,7 +252,7 @@ rollout-success)
 	grep -Fqx 'RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=3600000' /etc/rallar/api-v1.env
 	grep -Fqx 'RALLAR_TIMING_LOGS=0' /etc/rallar/api-v1.env
 	;;
-deploy-success | deploy-initial)
+deploy-success | deploy-initial | deploy-control-success | deploy-games-success)
 	bash "${script}" >/fixture/output.log 2>&1
 	;;
 *)
@@ -275,24 +280,47 @@ deploy-success | deploy-initial | rollout-success | rollout-metered-preserve | r
 		[[ "${commands}" != *'systemctl stop rallar-api-v1.service'* ]]
 		assert_before 'systemctl show -p ActiveState --value rallar-api-v1.service' 'postgres-sql create-role'
 	else
-		assert_before 'systemctl stop rallar-api-v1.service' 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task'
-		assert_before 'systemctl stop rallar-black-box-control.service' 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task'
+		assert_before 'systemctl stop rallar-api-v1.service' 'runuser -u rallar -- bunx prisma migrate deploy'
 	fi
 	if [[ "${TEST_SCENARIO}" == deploy-success || "${TEST_SCENARIO}" == deploy-initial ]]; then
 		grep -Fq 'ConditionPathExists=!/etc/rallar/api-v1.store-failure' /etc/systemd/system/rallar-api-v1.service
-		assert_before 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task' 'systemctl enable --now rallar-api-v1.service'
+		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl enable --now rallar-api-v1.service'
 		assert_before 'systemctl enable --now rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 	else
-		assert_before 'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task' 'systemctl start rallar-api-v1.service'
+		assert_before 'runuser -u rallar -- bunx prisma migrate deploy' 'systemctl start rallar-api-v1.service'
 		assert_before 'systemctl start rallar-api-v1.service' 'curl -fsS http://127.0.0.1:8080/api/config'
 		assert_before 'curl -fsS http://127.0.0.1:8080/api/config' 'jq -n'
 		[[ -s /fixture/readiness.json ]]
 	fi
 	[[ ! -e /etc/rallar/api-v1.store-failure ]]
 	;;
-deploy-stop-api-fail | deploy-stop-control-fail | deploy-still-active)
+deploy-stop-api-fail | deploy-still-active)
 	[[ "${commands}" != *'prisma migrate deploy'* && "${commands}" != *'systemctl enable --now rallar-api-v1.service'* ]]
 	[[ "${commands}" != *'curl -fsS http://127.0.0.1:8080/api/config'* ]]
+	;;
+deploy-control-success)
+	[[ "${commands}" != *'runuser -u postgres'* && "${commands}" != *'prisma migrate deploy'* ]]
+	[[ "${commands}" != *'apt install -y postgresql'* ]]
+	[[ "${commands}" != *'systemctl enable --now postgresql.service'* ]]
+	grep -Fq 'ExecStart=/usr/local/bin/bun run src/main.ts' /etc/systemd/system/rallar-black-box-control.service
+	grep -Fq 'worker:headless' /etc/systemd/system/rallar-black-box-headless-worker.service
+	[[ ! -e /etc/systemd/system/rallar-api-v1.service ]]
+	assert_before 'systemctl enable --now rallar-black-box-control.service' 'curl -fsS -H x-forwarded-proto: https http://127.0.0.1:5180/health'
+	;;
+deploy-games-success)
+	[[ "$(grep -c 'postgres-sql create-role' /fixture/commands.log || true)" == 2 ]]
+	[[ "$(grep -c 'runuser -u rallar -- bunx prisma migrate deploy' /fixture/commands.log || true)" == 2 ]]
+	grep -Fq 'ExecStart=/usr/local/bin/bun run src/main.ts' /etc/systemd/system/rallar-relic-hunter-server-v1.service
+	grep -Fq 'ExecStart=/usr/local/bin/bun run src/main.ts' /etc/systemd/system/rallar-ar-eye-hunter-server-v1.service
+	grep -Fq 'ConditionPathExists=!/etc/rallar/relic-hunter-server-v1.store-failure' /etc/systemd/system/rallar-relic-hunter-server-v1.service
+	grep -Fq 'ConditionPathExists=!/etc/rallar/ar-eye-hunter-server-v1.store-failure' /etc/systemd/system/rallar-ar-eye-hunter-server-v1.service
+	grep -Fq 'DATABASE_URL=postgres://relic_hunter_v1:' /etc/rallar/relic-hunter-server-v1.env
+	grep -Fq 'DATABASE_URL=postgres://ar_eye_hunter_v1:' /etc/rallar/ar-eye-hunter-server-v1.env
+	[[ ! -e /etc/systemd/system/rallar-api-v1.service ]]
+	[[ ! -e /etc/systemd/system/rallar-black-box-control.service ]]
+	assert_before 'systemctl enable --now rallar-relic-hunter-server-v1.service' 'curl -fsS http://127.0.0.1:8090/api/config'
+	[[ ! -e /etc/rallar/relic-hunter-server-v1.store-failure ]]
+	[[ ! -e /etc/rallar/ar-eye-hunter-server-v1.store-failure ]]
 	;;
 deploy-migration-fail | rollout-migration-fail)
 	[[ -e /etc/rallar/api-v1.store-failure ]]

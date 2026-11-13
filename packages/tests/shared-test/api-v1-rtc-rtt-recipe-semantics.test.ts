@@ -155,7 +155,7 @@ function toSeededOutputInteraction(output: string, value: JsonWireValue): JsonWi
 }
 
 function runRecipeCli(recipe: string, args: readonly string[]) {
-    return spawnSync('deno', ['run', '-A', CLI, '-w', RECIPE_ROOT, '-c', recipe, ...args], {
+    return spawnSync('bun', ['run', CLI, '-w', RECIPE_ROOT, '-c', recipe, ...args], {
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
         timeout: 30_000

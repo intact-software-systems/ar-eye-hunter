@@ -37,8 +37,8 @@ describe('Games Release Gate lanes', () => {
             const command of [
                 'npm run build:ar-eye-hunter-v1',
                 'npm run build:relic-hunters-v1',
-                '(cd apps/ar-eye-hunter-server-v1 && deno task check)',
-                '(cd apps/relic-hunter-server-v1 && deno task check)'
+                '(cd apps/ar-eye-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)',
+                '(cd apps/relic-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)'
             ]
         ) {
             expect(gamesRun).toContain(command);
@@ -48,14 +48,14 @@ describe('Games Release Gate lanes', () => {
 
     it('runs only the three game lanes', () => {
         expect(Object.keys(gamesReleaseGate.jobs).toSorted()).toEqual([
+            'bun-games',
             'checks-games',
-            'deno-games',
             'e2e-game-rooms'
         ]);
     });
 
-    it('routes game Deno tests through the split script', () => {
-        expect(gamesRun).toContain('npm run test:deno:games');
+    it('routes game Bun tests through the split script', () => {
+        expect(gamesRun).toContain('npm run test:bun:games');
     });
 
     it('runs the seven game-room browser lanes', () => {

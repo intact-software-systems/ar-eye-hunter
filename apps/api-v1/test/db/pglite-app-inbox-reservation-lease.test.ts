@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -35,7 +36,7 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 const SERVICE_ID = 'pglite-reservation-lease';
 const REQUEST_ID = 'reservation-lease-request';
 
-Deno.test('PGlite AppInbox reclaims a reservation abandoned past its lease and refuses the stale finisher', async () => {
+test('PGlite AppInbox reclaims a reservation abandoned past its lease and refuses the stale finisher', async () => {
     await withPGliteSql(async (sql) => {
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(inbox, Temporal.Now.instant);
@@ -113,7 +114,7 @@ Deno.test('PGlite AppInbox reclaims a reservation abandoned past its lease and r
     });
 });
 
-Deno.test('PGlite composed queue leases keep an AppInbox claim for 60 s and an outbox claim for five minutes', async () => {
+test('PGlite composed queue leases keep an AppInbox claim for 60 s and an outbox claim for five minutes', async () => {
     await withPGliteSql(async (sql) => {
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
         const queueBox = new PSqlQueueBox(inbox, Temporal.Now.instant);

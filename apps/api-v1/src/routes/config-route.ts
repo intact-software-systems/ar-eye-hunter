@@ -4,7 +4,7 @@ import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbo
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import type {
     ApiV1AuthenticationConfiguration,

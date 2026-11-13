@@ -23,6 +23,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../../../shared/native-websocket-fixture.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './rallar-middleware-test-runtime.ts';
 
 const invalidIngressCases = [
@@ -52,8 +53,8 @@ describe('middleware pre-admission', () => {
             const receiver = new SimulatedWebSocket('ws://receiver');
             await sender.open();
             await receiver.open();
-            socket.addConnection(new ConnectionContext({ id: 'sender', socket: sender }));
-            socket.addConnection(new ConnectionContext({ id: 'receiver', socket: receiver }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: 'sender', socket: sender }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: 'receiver', socket: receiver }));
             const duration = Temporal.Duration.from({ seconds: 10 });
             const resilience = ResourceInboxResilience.createDefault(new CircuitBreakerPolicy(10, duration, duration, duration));
             const fixture = createRallarMiddlewareTestRuntime({ resilience: { inbox: resilience, outbox: resilience, appOutbox: resilience } });

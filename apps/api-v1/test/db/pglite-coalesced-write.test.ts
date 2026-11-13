@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import postgres from 'postgres';
 
@@ -47,7 +48,7 @@ function computeAttemptedCoalescedEntry(groupId: string, terminal: boolean): Res
 
 for (const terminal of [false, true]) {
     for (const miss of [false, true]) {
-        Deno.test(`prepared ${terminal ? 'finished' : 'pending'} coalesced write preserves durable ${miss ? 'miss/successor' : 'replacement'}`, async () => {
+        test(`prepared ${terminal ? 'finished' : 'pending'} coalesced write preserves durable ${miss ? 'miss/successor' : 'replacement'}`, async () => {
             await withCoalescedSql(async (sql) => {
                 const repository = createPSqlResourceInboxRepository(sql, () => new Date());
                 const expected = computeAttemptedCoalescedEntry(`${terminal}-${miss}`, terminal);
@@ -110,7 +111,7 @@ for (const terminal of [false, true]) {
     }
 }
 
-Deno.test('invalid coalesced replacement identity and lifecycle fail before transaction entry', () => {
+test('invalid coalesced replacement identity and lifecycle fail before transaction entry', () => {
     const expected = computeInitialCoalescedEntry('invalid');
     const next = advanceCoalescedGeneration(expected, 2);
     const successor = { ...next, key: { ...next.key, resourceId: `${next.key.resourceId}:successor` } };
@@ -125,7 +126,7 @@ Deno.test('invalid coalesced replacement identity and lifecycle fail before tran
     }
 });
 
-Deno.test('coalesced writes preserve computed snapshots and PostgreSQL rollback', async () => {
+test('coalesced writes preserve computed snapshots and PostgreSQL rollback', async () => {
     await withCoalescedSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const expected = computeInitialCoalescedEntry('rollback');
@@ -150,7 +151,7 @@ Deno.test('coalesced writes preserve computed snapshots and PostgreSQL rollback'
     });
 });
 
-Deno.test('pending coalesced guards preserve changed content, type, and attempts and write the successor', async () => {
+test('pending coalesced guards preserve changed content, type, and attempts and write the successor', async () => {
     await withCoalescedSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         for (const changed of ['content', 'type', 'attempts'] as const) {
@@ -196,7 +197,7 @@ Deno.test('pending coalesced guards preserve changed content, type, and attempts
 });
 
 async function withCoalescedSql(run: (sql: PSqlSql) => Promise<void>): Promise<void> {
-    const databaseUrl = Deno.env.get('RALLAR_COALESCED_POSTGRES_URL');
+    const databaseUrl = process.env['RALLAR_COALESCED_POSTGRES_URL'];
     if (!databaseUrl) {
         await withPGliteSql(run);
         return;

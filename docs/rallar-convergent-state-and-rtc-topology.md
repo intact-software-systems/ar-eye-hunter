@@ -314,9 +314,10 @@ any other delta, a mesh's joins included, falls back to a full rebuild when it e
 `max(2, ceil(previous members / 4))` changes, and the invariant validator judges every evolved tree.
 With a leader, joins attach breadth-first from the leader, each to the shallowest session with spare
 degree (depth, then canonical order), so the leader stays within the depth bound as the tree grows.
-An RTT refinement of a leader-rooted tree keeps the accepted tree, evolved to the current members,
-unless the weighted rebuild shortens the leader's slowest measured path by at least 25 % and 10 ms;
-an unmeasured link weighs the slowest measured RTT.
+An RTT refinement of a tree keeps the accepted tree, evolved to the current members, unless the
+weighted rebuild shortens its slowest measured path by at least 25 % and 10 ms: the leader's slowest
+path in a leader-rooted tree, and the slowest path between any two members in a leaderless one. An
+unmeasured link weighs the slowest measured RTT.
 In a weighted room graph an unmeasured pair weighs the worst measured RTT plus its hashed canonical
 spread, so it never undercuts a measured link; with tree-edge reports a weighted tree keeps the director no deeper than
 the no-RTT tree rooted at it.
@@ -651,7 +652,7 @@ operation matrix to make a change pass. Its fixed assertions prove
 cross-process state/topology convergence.
 
 The API-v1 black-box runner keeps memory as a one-process mode. Its built-in
-Postgres cluster profiles instead manage three Deno API processes sharing one
+Postgres cluster profiles instead manage three Bun API processes sharing one
 Postgres database on ports 18080, 18081, and 18082. Inspect the isolated
 `api-v1-server.log`, `api-v1-server-secondary.log`, and
 `api-v1-server-tertiary.log` artifacts together; recipes-only mode is

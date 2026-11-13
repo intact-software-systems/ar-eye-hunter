@@ -1,13 +1,13 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createDefaultApiV1DatabaseLifecycle } from '../../src/db/api-v1-database-lifecycle.ts';
 
 /** API requests must not pay compilation cost on any pooled connection, even when a plan estimate is high. */
-Deno.test({
-    name: 'API PostgreSQL executes short requests without JIT on every application connection',
-    ignore: Deno.env.get('RALLAR_POSTGRES_INTEGRATION') !== '1',
-    fn: async () => {
-        const url = Deno.env.get('DATABASE_URL');
+test.skipIf(process.env['RALLAR_POSTGRES_INTEGRATION'] !== '1')(
+    'API PostgreSQL executes short requests without JIT on every application connection',
+    async () => {
+        const url = process.env['DATABASE_URL'];
         if (!url) {
             throw new Error('DATABASE_URL is required for PostgreSQL integration tests');
         }
@@ -63,4 +63,4 @@ Deno.test({
             await lifecycle.close();
         }
     }
-});
+);

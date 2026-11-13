@@ -108,7 +108,7 @@ const runtimeObservationShape = object({
     runtime: object({
         node: string(),
         npm: string(),
-        deno: string(),
+        bun: string(),
         playwright: string(),
         chromium: string()
     }),

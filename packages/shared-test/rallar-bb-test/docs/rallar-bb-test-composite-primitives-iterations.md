@@ -530,8 +530,8 @@ Verification:
 
 - `npm --workspace rallar-black-box run typecheck` passed.
 - `npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts` passed.
-- `deno test apps/rallar-black-box-control-server/test/control-service.test.ts` passed.
-- `deno check apps/rallar-black-box-control-server/src/main.ts apps/rallar-black-box-control-server/src/routes/swagger-routes.ts` passed.
+- `bun test apps/rallar-black-box-control-server/test/control-service.test.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit apps/rallar-black-box-control-server/src/main.ts apps/rallar-black-box-control-server/src/routes/swagger-routes.ts` passed.
 - `npx vitest run packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/schema-authoring.test.ts packages/tests/shared-test/rallar-bb-test.test.ts packages/tests/shared-test/rallar-companion-coverage.test.ts` passed.
 
 ## Iteration 8: Black-box Runner Inline Loop And Pacing Refinements
@@ -585,7 +585,7 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/shared-test/recipe-matrix.test.ts` passed.
-- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-inline-loop-pacing.json` passed.
+- `bun run packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-inline-loop-pacing.json` passed.
 
 ## Iteration 9: Schema, AI Prompting, Examples, And QA
 
@@ -956,7 +956,7 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/rallar-bb-test.test.ts -t "re-executes recipe children|wakes loop interval|cleans up browser WS"` passed.
-- `deno check packages/shared-test/rallar-bb-test/runtime.ts packages/shared-test/rallar-bb-test/browser-adapter.ts packages/shared-test/rallar-bb-test/types.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/rallar-bb-test/runtime.ts packages/shared-test/rallar-bb-test/browser-adapter.ts packages/shared-test/rallar-bb-test/types.ts` passed.
 
 ## Iteration 14: Composite Live Conformance Matrix
 

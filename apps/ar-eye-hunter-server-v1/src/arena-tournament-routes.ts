@@ -17,7 +17,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 export interface ArenaTournamentRouteDependencies {
     readonly snapshots: Pick<ArenaTournamentSnapshotReader, 'readSnapshot'>;

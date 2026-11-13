@@ -137,8 +137,8 @@ describe('API-v1 CRDT append-history black-box evidence', () => {
     it('strictly expands every case with its exact loop count', () => {
         for (const testCase of CRDT_APPEND_HISTORY_CASES) {
             const result = spawnSync(
-                'deno',
-                ['run', '-A', scenarioCli, '-c', recipePath, '--validate', '--strict'],
+                'bun',
+                ['run', scenarioCli, '-c', recipePath, '--validate', '--strict'],
                 {
                     cwd: repoRoot,
                     encoding: 'utf8',

@@ -7,8 +7,8 @@ import { decodePartyRequest } from '@shared/api/parties/party-request.ts';
 import { decodeStateScope } from '@shared/api/state-types.ts';
 import type { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context } from 'jsr:@hono/hono@4.11.9';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
+import type { Hono } from 'hono';
 import {
     toApiMutationFailureResponse,
     toApiMutationRateLimitResponse,

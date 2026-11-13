@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
@@ -32,22 +33,22 @@ interface LogoutProofSocket {
 }
 
 async function runLogoutClusterProof(): Promise<void> {
-    const options = parseApiV1BlackBoxArgs(Deno.args);
-    assert(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
-    const environment = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
+    const options = parseApiV1BlackBoxArgs(process.argv.slice(2));
+    assert.ok(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
+    const environment = toApiV1BlackBoxEnvironment(options, process.env);
     const artifactDir = resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!);
     const repoRootPath = fileURLToPath(new URL('../../../../', import.meta.url));
-    await Deno.mkdir(artifactDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
     await withManagedPostgresRunDatabase(environment.DATABASE_URL!, options.runId, async (databaseUrl) => {
         const env = { ...environment, DATABASE_URL: databaseUrl };
-        const migration = await new Deno.Command('npm', {
-            args: ['run', 'db:migrate'],
+        const migration = Bun.spawn({
+            cmd: ['npm', 'run', 'db:migrate'],
             cwd: repoRootPath,
             env,
-            stdout: 'null',
+            stdout: 'ignore',
             stderr: 'inherit'
-        }).output();
-        assertEquals(migration.code, 0);
+        });
+        assert.deepEqual(await migration.exited, 0);
         const plans = toManagedApiServerPlans(options, env, artifactDir).map((plan, index) => ({
             ...plan,
             env: { ...plan.env, RALLAR_API_QUEUE_WORKERS: index === 0 ? 'enabled' : 'disabled' }
@@ -58,7 +59,7 @@ async function runLogoutClusterProof(): Promise<void> {
             repoRootPath,
             artifactDir
         }, {
-            writeEmptyLogFile: (path) => Deno.writeTextFile(path, ''),
+            writeEmptyLogFile: (path) => writeFile(path, ''),
             startServer: startManagedApiServer,
             waitForReady: waitForManagedApiReady,
             toDiagnosticSecrets: managedApiDiagnosticSecrets,
@@ -72,7 +73,7 @@ async function runLogoutClusterProof(): Promise<void> {
 
 async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Promise<void> {
     const [primary, secondary, tertiary] = scenario.plans;
-    assert(primary && secondary && tertiary);
+    assert.ok(primary && secondary && tertiary);
     const api = new ApiV1RtcTopologyProofApi({
         alice: { username: 'alice', password: 'secret' },
         bob: { username: 'bob', password: 'secret' },
@@ -92,8 +93,8 @@ async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Pro
     });
     const target = await openLogoutProofSocket(api, recipient);
     const unrelated = await openLogoutProofSocket(api, outsider);
-    assertEquals(unrelated.socket.readyState, WebSocket.OPEN);
-    assertEquals(unrelated.closeCodes, []);
+    assert.deepEqual(unrelated.socket.readyState, WebSocket.OPEN);
+    assert.deepEqual(unrelated.closeCodes, []);
     const requestId = `auth-logout-proof-${crypto.randomUUID()}`;
     try {
         const delivery = waitForLogoutFrame(target.socket);
@@ -101,29 +102,29 @@ async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Pro
             method: 'POST',
             headers: { Authorization: `Bearer ${recipient.accessToken}`, 'x-client-id': recipient.clientId }
         });
-        assertEquals(response.status, 200);
-        assertEquals(await response.json(), { loggedOut: true });
+        assert.deepEqual(response.status, 200);
+        assert.deepEqual(await response.json(), { loggedOut: true });
         const frame = JSON.parse(await delivery);
-        assertEquals(frame.targets, { mode: 'unicast', toPeerId: recipient.sessionId });
-        assertEquals(JSON.parse(frame.payload.resource), {
+        assert.deepEqual(frame.targets, { mode: 'unicast', toPeerId: recipient.sessionId });
+        assert.deepEqual(JSON.parse(frame.payload.resource), {
             sessionId: recipient.sessionId,
             closeCode: 1000,
             reason: 'auth-logout'
         });
         const proof = await readLogoutProof(scenario.databaseUrl, requestId);
-        assertEquals(proof.messageId, frame.id.msgId);
+        assert.deepEqual(proof.messageId, frame.id.msgId);
         if (proof.target.kind !== 'exact-invalidated-session') {
             throw new Error(`Expected exact invalidated session proof, got ${proof.target.kind}`);
         }
-        assertEquals(proof.target.admittedAudience, [recipient.sessionId]);
+        assert.deepEqual(proof.target.admittedAudience, [recipient.sessionId]);
         await new Promise((resolve) => setTimeout(resolve, 500));
-        assertEquals(target.frames.filter((value) => JSON.parse(value).id?.msgId === frame.id.msgId).length, 1);
-        assertEquals(
+        assert.deepEqual(target.frames.filter((value) => JSON.parse(value).id?.msgId === frame.id.msgId).length, 1);
+        assert.deepEqual(
             unrelated.frames.filter((value) => JSON.parse(value).route?.topicId === 'auth.session.logout'),
             []
         );
-        assertEquals(unrelated.socket.readyState, WebSocket.OPEN);
-        assertEquals(unrelated.closeCodes, []);
+        assert.deepEqual(unrelated.socket.readyState, WebSocket.OPEN);
+        assert.deepEqual(unrelated.closeCodes, []);
         await writeLogoutEvidence(scenario, requestId, proof);
     }
     finally {
@@ -137,7 +138,7 @@ async function writeLogoutEvidence(
     requestId: string,
     proof: WsOutboxProvenance
 ): Promise<void> {
-    await Deno.writeTextFile(
+    await writeFile(
         `${scenario.artifactDir}/auth-logout-cluster-proof.json`,
         JSON.stringify(
             {
@@ -151,7 +152,8 @@ async function writeLogoutEvidence(
             },
             null,
             2
-        )
+        ),
+        'utf8'
     );
 }
 
@@ -199,7 +201,7 @@ async function readLogoutProof(databaseUrl: string, requestId: string): Promise<
             where outbox.ri_type_id = 'WS_OUTBOX' and outbox.ri_resource::jsonb->'route'->>'topicId' = 'auth.session.logout'
             and outbox.ri_resource::jsonb->'route'->>'resourceId' = ${requestId}
         `;
-        assertEquals(rows.length, 1, 'Exactly one committed logout row and proof');
+        assert.deepEqual(rows.length, 1, 'Exactly one committed logout row and proof');
         return decodeWsOutboxProvenance(JSON.parse(rows[0]!.proof));
     }
     finally {

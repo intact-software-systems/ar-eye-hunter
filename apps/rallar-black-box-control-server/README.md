@@ -1,14 +1,14 @@
 # Rallar black-box control server
 
-The Deno service that queues commands for browser black-box agents, dispatches them over WebSocket, keeps each
+The Bun service that queues commands for browser black-box agents, dispatches them over WebSocket, keeps each
 run's results, events, stats, reports and heartbeats, judges distributed runs and exports their artifacts. Its HTTP
 surface is documented by the server itself at `/swagger-ui`; the agent protocol lives in
 `packages/shared-test/rallar-bb-test/control-protocol.ts`.
 
 ```sh
 cd apps/rallar-black-box-control-server
-deno task check    # src/main.ts and test/
-deno task test
+bunx tsc -p tsconfig.json --noEmit    # src/main.ts and test/
+bun test
 ```
 
 The hosted controller's deployment, environment and operating runbook are in

@@ -48,12 +48,16 @@ describe('API recipe endpoint selection', () => {
 
     it('points every managed cluster target at its separately started server', () => {
         const options = parseApiV1BlackBoxArgs([
-            '--port=19080', '--secondary-port=19081', '--tertiary-port=19082'
+            '--port=19080',
+            '--secondary-port=19081',
+            '--tertiary-port=19082'
         ]);
         const env = toApiV1BlackBoxEnvironment(options, {});
         const plans = toManagedApiServerPlans(options, env, '/tmp/api-endpoint-plans');
         expect(plans.map((plan) => plan.baseUrl)).toEqual([
-            env.RALLAR_API_BASE_URL, env.RALLAR_API_BASE_URL_SECONDARY, env.RALLAR_API_BASE_URL_TERTIARY
+            env.RALLAR_API_BASE_URL,
+            env.RALLAR_API_BASE_URL_SECONDARY,
+            env.RALLAR_API_BASE_URL_TERTIARY
         ]);
         expect(plans.map((plan) => plan.port)).toEqual([19080, 19081, 19082]);
     });

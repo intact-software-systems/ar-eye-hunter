@@ -28,6 +28,7 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';
 
 describe('createWsServerTargetResolver state sync routing', () => {
@@ -811,9 +812,7 @@ function addOpenConnection(
     server: JsonWebSocketServer,
     connectionId: string
 ): void {
-    server.addConnection(
-        new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() })
-    );
+    attachTestWebSocket(server, new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() }));
 }
 
 interface CreateClientSnapshotInput {

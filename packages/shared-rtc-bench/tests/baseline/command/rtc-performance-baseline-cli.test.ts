@@ -463,7 +463,7 @@ describe('RTC baseline CLI application', () => {
 
     it('keeps imports side-effect free when import.meta.main is false', async () => {
         const writes: string[] = [];
-        vi.stubGlobal('Deno', {
+        vi.stubGlobal('Bun', {
             args: ['validate', '--baseline-id=20260807-0123456789ab-e1-local'],
             stdout: {
                 write: () => {

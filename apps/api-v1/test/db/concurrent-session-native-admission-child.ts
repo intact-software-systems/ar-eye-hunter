@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
@@ -50,7 +51,7 @@ interface NativeGroupSessionAuthorityObservation {
     readonly queueResults: ResourceInboxResultsRepository;
 }
 
-Deno.test('fifteen native same-user sessions complete concurrent room setup through default automatic queues', async () => {
+test('fifteen native same-user sessions complete concurrent room setup through default automatic queues', async () => {
     const fixture = await createNativeSessionTestFixture();
     const sockets: WebSocket[] = [];
     let primaryFailure: Error | undefined;

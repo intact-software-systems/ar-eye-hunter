@@ -1,4 +1,5 @@
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
     createAdminSession,
@@ -8,7 +9,7 @@ import {
     withPGliteSql
 } from './admin-operations-postgres-test-runtime.ts';
 
-Deno.test('admin state reader uses encoded runtime-state scope keys', async () => {
+test('admin state reader uses encoded runtime-state scope keys', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'ops app/1';
         const workspaceId = 'workspace:blue';
@@ -52,7 +53,7 @@ Deno.test('admin state reader uses encoded runtime-state scope keys', async () =
     });
 });
 
-Deno.test(
+test(
     'admin state reader reads the current underscore workspace identity',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -99,7 +100,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'admin state reader fails closed on wrong-scope group runtime values',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -132,7 +133,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'admin state reader rejects noncanonical group child-key aliases',
     async () => {
         for (
@@ -211,7 +212,7 @@ Deno.test(
     }
 );
 
-Deno.test('admin state reader treats encoded scope prefixes literally', async () => {
+test('admin state reader treats encoded scope prefixes literally', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'ops/app';
         const workspaceId = 'workspace:blue';
@@ -271,7 +272,7 @@ Deno.test('admin state reader treats encoded scope prefixes literally', async ()
     });
 });
 
-Deno.test(
+test(
     'admin state reader excludes inactive domain state from active counts',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -394,7 +395,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'admin state reader excludes expired retained sessions from active counts',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -488,7 +489,7 @@ Deno.test(
     }
 );
 
-Deno.test('admin state reader keeps online identity scoped globally', async () => {
+test('admin state reader keeps online identity scoped globally', async () => {
     await withPGliteSql(async (sql) => {
         for (
             const input of [
@@ -567,7 +568,7 @@ Deno.test('admin state reader keeps online identity scoped globally', async () =
     });
 });
 
-Deno.test(
+test(
     'admin state reader keeps colon-bearing identities distinct globally',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -615,7 +616,7 @@ Deno.test(
     }
 );
 
-Deno.test('admin state reader fails closed on corrupt global group rows', async () => {
+test('admin state reader fails closed on corrupt global group rows', async () => {
     await withPGliteSql(async (sql) => {
         await insertRawRuntimeState(sql, {
             namespace: 'group-state:members',
@@ -642,7 +643,7 @@ Deno.test('admin state reader fails closed on corrupt global group rows', async 
     });
 });
 
-Deno.test('admin state reader rejects global noncanonical group keys', async () => {
+test('admin state reader rejects global noncanonical group keys', async () => {
     for (
         const input of [
             {
@@ -704,7 +705,7 @@ Deno.test('admin state reader rejects global noncanonical group keys', async () 
     }
 });
 
-Deno.test(
+test(
     'admin state reader joins current group member and session identities globally',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -744,7 +745,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'admin state reader validates the three global group row families',
     async () => {
         await withPGliteSql(async (sql) => {

@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 
 import { distributedManifest } from './support/control-api-test-fixtures.ts';
 import { ADMIN_TOKEN, adminHeaders, canBindLoopback, startControlServer } from './support/control-api-test-server.ts';
@@ -109,7 +109,7 @@ const DISTRIBUTED_AND_FLEET_ROUTE_EXPECTATIONS: readonly RouteExpectation[] = [
 ];
 
 // The tables pin each route family's routing, authorization, and error-body contract end to end.
-Deno.test('control route families keep their statuses, authorization, and error bodies', async () => {
+test('control route families keep their statuses, authorization, and error bodies', async () => {
     if (!(await canBindLoopback())) {
         return;
     }
@@ -142,8 +142,8 @@ async function assertRouteExpectation(baseUrl: string, expectation: RouteExpecta
         redirect: 'manual'
     });
     const text = await response.text();
-    assertEquals(response.status, expectation.status, `${expectation.method} ${expectation.path}: ${text}`);
+    expect(response.status).toEqual(expectation.status);
     if (expectation.json) {
-        assertEquals(JSON.parse(text), expectation.json, `${expectation.method} ${expectation.path}`);
+        expect(JSON.parse(text)).toEqual(expectation.json);
     }
 }

@@ -116,7 +116,7 @@ export type AlmConformanceScenarioId =
 export type AlmConformanceTag = 'smoke' | 'full';
 
 /**
- * A connect's `RallarMessageSelector`, which this Deno-loaded catalog cannot import: the topic its lanes subscribe.
+ * A connect's `RallarMessageSelector`, which this browser-loaded catalog cannot import: the topic its lanes subscribe.
  * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
  */
 export interface AlmConformanceMessageSelector {

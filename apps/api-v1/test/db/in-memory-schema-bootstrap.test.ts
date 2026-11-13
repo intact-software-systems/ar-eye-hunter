@@ -1,4 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
     applyApiV1InMemorySchema,
@@ -7,7 +8,7 @@ import {
     readApiV1InMemorySchemaSql
 } from '../../src/db/in-memory-schema-bootstrap.ts';
 
-Deno.test('in-memory schema applies idempotently and creates expected tables/indexes', async () => {
+test('in-memory schema applies idempotently and creates expected tables/indexes', async () => {
     const db = new PGlite();
     try {
         const schemaSql = await readApiV1InMemorySchemaSql();
@@ -114,7 +115,7 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
     }
 });
 
-Deno.test('in-memory schema enforces RTC topology delivery identities and retention bounds', async () => {
+test('in-memory schema enforces RTC topology delivery identities and retention bounds', async () => {
     const db = new PGlite();
     try {
         await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
@@ -199,7 +200,7 @@ Deno.test('in-memory schema enforces RTC topology delivery identities and retent
     }
 });
 
-Deno.test('schema bootstrap only runs for PGlite backends', async () => {
+test('schema bootstrap only runs for PGlite backends', async () => {
     const calls: string[] = [];
     const client = {
         exec(sql: string): Promise<void> {
@@ -246,7 +247,7 @@ Deno.test('schema bootstrap only runs for PGlite backends', async () => {
     assert.equal(calls.length, 4);
 });
 
-Deno.test('runtime-state prefix ranges use the composite C-collated index', async () => {
+test('runtime-state prefix ranges use the composite C-collated index', async () => {
     const db = new PGlite();
     try {
         await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
@@ -287,7 +288,7 @@ Deno.test('runtime-state prefix ranges use the composite C-collated index', asyn
     }
 });
 
-Deno.test('a PGlite directory from the older schema swaps the namespace index for the reversed-key index on upgrade', async () => {
+test('a PGlite directory from the older schema swaps the namespace index for the reversed-key index on upgrade', async () => {
     const db = new PGlite();
     try {
         await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
@@ -314,7 +315,7 @@ Deno.test('a PGlite directory from the older schema swaps the namespace index fo
     }
 });
 
-Deno.test('runtime-state suffix ranges use the reversed-key C-collated index', async () => {
+test('runtime-state suffix ranges use the reversed-key C-collated index', async () => {
     const db = new PGlite();
     try {
         await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
@@ -341,7 +342,7 @@ Deno.test('runtime-state suffix ranges use the reversed-key C-collated index', a
     }
 });
 
-Deno.test('in-memory schema supports repository-shaped SQL smoke operations', async () => {
+test('in-memory schema supports repository-shaped SQL smoke operations', async () => {
     const db = new PGlite();
     try {
         await applyApiV1InMemorySchema(db);
@@ -357,7 +358,7 @@ Deno.test('in-memory schema supports repository-shaped SQL smoke operations', as
     }
 });
 
-Deno.test('PGlite bootstrap upgrades legacy queue tables for scoped keys', async () => {
+test('PGlite bootstrap upgrades legacy queue tables for scoped keys', async () => {
     const db = new PGlite();
     try {
         const legacySchemaSql = (await readApiV1InMemorySchemaSql())

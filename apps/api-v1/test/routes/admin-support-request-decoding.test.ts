@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -22,7 +23,7 @@ const QUEUE_KEY = {
     contextId: 'room-1'
 };
 
-Deno.test('admin support request decoders return complete current request contracts', () => {
+test('admin support request decoders return complete current request contracts', () => {
     assert.deepEqual(
         decodeAdminSupportExplainClientRequest({
             scope: SCOPE,
@@ -101,7 +102,7 @@ Deno.test('admin support request decoders return complete current request contra
     );
 });
 
-Deno.test('admin support request decoders reject fields outside the current contract', () => {
+test('admin support request decoders reject fields outside the current contract', () => {
     assert.throws(
         () =>
             decodeAdminSupportExplainGroupRequest({

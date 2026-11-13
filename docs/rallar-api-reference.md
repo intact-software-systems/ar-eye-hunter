@@ -1380,7 +1380,7 @@ Two tabs of one session share its durable stores, and one of them drains them:
 where the browser has the Locks API, the tab holding the session's
 durable-owner lock sends every tab's durable messages, and when it disconnects
 or closes the next tab takes over and sends what it left; a message the closed
-tab was still sending is retried once its lease ends, at most 19.1 s after.
+tab was still sending is retried once its lease ends, at most 16.6 s after.
 The server keeps one WebSocket per session, so only one tab of a session stays
 connected at a time; the hand-over is for close, reload and a tab that has no
 socket. Over `BroadcastChannel` a waiting tab's durable send reaches the owner

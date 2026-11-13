@@ -1,3 +1,5 @@
+import { test } from 'bun:test';
+
 import { decodeRetentionCleanupQuery } from '../src/retention-query.ts';
 import { assertJsonEquals } from './support/control-service-test-fixtures.ts';
 
@@ -5,12 +7,12 @@ function decode(query = '') {
     return decodeRetentionCleanupQuery(new URL(`http://control.test/retention/cleanup${query}`));
 }
 
-Deno.test('retention query preserves immediate mode and ignores unknown immediate fields', () => {
+test('retention query preserves immediate mode and ignores unknown immediate fields', () => {
     assertJsonEquals(decode().right, { mode: 'immediate' });
     assertJsonEquals(decode('?unknown=value&token=immediate-admin-query-token').right, { mode: 'immediate' });
 });
 
-Deno.test('retention query accepts only exact preview and guarded-confirm shapes', () => {
+test('retention query accepts only exact preview and guarded-confirm shapes', () => {
     assertJsonEquals(decode('?dryRun=true').right, { mode: 'preview' });
     assertJsonEquals(decode('?planToken=v1.abc.def_123-XYZ').right, {
         mode: 'confirm',
@@ -18,7 +20,7 @@ Deno.test('retention query accepts only exact preview and guarded-confirm shapes
     });
 });
 
-Deno.test('retention query rejects duplicates invalid values and incompatible modes', () => {
+test('retention query rejects duplicates invalid values and incompatible modes', () => {
     for (
         const [query, error] of [
             ['?dryRun=false', 'dryRun must be exactly true when provided.'],

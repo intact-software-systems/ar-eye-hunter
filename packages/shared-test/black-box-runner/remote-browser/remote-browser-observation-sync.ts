@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';

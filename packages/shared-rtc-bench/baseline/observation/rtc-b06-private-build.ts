@@ -1,5 +1,5 @@
 import type { RtcBaselineAttemptLocatorDto } from '../contracts/rtc-baseline-contracts.ts';
-import type { RtcBaselineDenoPort } from '../runtime/rtc-baseline-deno-port.ts';
+import type { RtcBaselineBunPort } from '../runtime/rtc-baseline-bun-port.ts';
 
 export interface RtcB06PrivateBuildInput {
     readonly repositoryRoot: string;
@@ -19,7 +19,7 @@ export interface RtcB06PrivateBuildOwnership {
 }
 
 export async function allocateRtcB06PrivateBuild(
-    runtime: Pick<RtcBaselineDenoPort, 'lstat' | 'mkdir' | 'errors'>,
+    runtime: Pick<RtcBaselineBunPort, 'lstat' | 'mkdir' | 'errors'>,
     input: RtcB06PrivateBuildInput
 ): Promise<RtcB06PrivateBuildOwnership> {
     const buildRoot = toRtcB06PrivateBuildDirectory(input);
@@ -55,7 +55,7 @@ export async function allocateRtcB06PrivateBuild(
 }
 
 async function readRtcB06PrivateBuildDirectoryIdentity(
-    runtime: Pick<RtcBaselineDenoPort, 'lstat'>,
+    runtime: Pick<RtcBaselineBunPort, 'lstat'>,
     path: string
 ): Promise<RtcB06PrivateBuildDirectoryIdentity> {
     const info = await runtime.lstat(path);
@@ -66,7 +66,7 @@ async function readRtcB06PrivateBuildDirectoryIdentity(
 }
 
 export async function verifyRtcB06PrivateBuildOwnership(
-    runtime: Pick<RtcBaselineDenoPort, 'lstat'>,
+    runtime: Pick<RtcBaselineBunPort, 'lstat'>,
     directories: readonly RtcB06PrivateBuildDirectoryIdentity[]
 ): Promise<void> {
     for (const expected of directories) {

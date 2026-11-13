@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -49,7 +50,7 @@ interface PersistedSnapshotResultRow {
     readonly ris_resource: string;
 }
 
-Deno.test(
+test(
     'compact normalizes one reason before compute and persists it atomically',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -121,7 +122,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'custom compact reason replaces snapshot input reason before command hashing',
     async () => {
         const inputSnapshot = {

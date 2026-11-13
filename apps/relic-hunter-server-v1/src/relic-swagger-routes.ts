@@ -1,19 +1,21 @@
 import { decodeOpenApiDocument, withPublicOpenApiServer } from '@shared-server/http/public-open-api-server.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { parse } from '@std/yaml';
 import type { Hono } from 'hono';
+import { load as loadYaml } from 'js-yaml';
+import { readFile } from 'node:fs/promises';
 
 const OPENAPI_URL = '/api/relic/openapi.json';
 
 async function loadRelicOpenApiYaml(): Promise<JsonWireObject> {
-    const yamlText = await Deno.readTextFile(
+    const yamlText = await readFile(
         new URL(
             '../resources/relic-hunter-server-v1-openapi.yaml',
             import.meta.url
-        )
+        ),
+        'utf8'
     );
     return decodeOpenApiDocument(
-        decodeJsonWireValue(parse(yamlText), 'Relic Hunter OpenAPI resource'),
+        decodeJsonWireValue(loadYaml(yamlText), 'Relic Hunter OpenAPI resource'),
         'Relic Hunter OpenAPI resource'
     );
 }

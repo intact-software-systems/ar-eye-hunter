@@ -82,4 +82,4 @@ runs:
           args+=("--shard=${{ inputs.shard }}")
         fi
 
-        deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"
+        bun run packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"

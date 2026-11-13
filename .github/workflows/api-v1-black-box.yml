@@ -41,9 +41,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.x
+          bun-version: 1.4.4
       - run: npm ci
       - name: Run API v1 black-box recipes
         uses: ./.github/actions/api-v1-black-box-test
@@ -90,9 +90,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.x
+          bun-version: 1.4.4
       - run: npm ci
       - name: Run deterministic topology replay proof
         uses: ./.github/actions/api-v1-black-box-test
@@ -126,9 +126,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.x
+          bun-version: 1.4.4
       - run: npm ci
       - name: Run API v1 black-box recipes
         uses: ./.github/actions/api-v1-black-box-test

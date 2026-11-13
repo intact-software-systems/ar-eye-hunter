@@ -2,10 +2,7 @@ const ordinaryStatusPattern = /^[ABDMRTXU]$/u;
 const copyOrRenameStatusPattern = /^[CR][0-9]{1,3}$/u;
 
 const distributedProtocolControllerHeadlessPaths = new Set([
-    'apps/api-v1/deno.json',
-    'apps/api-v1/deno.lock',
-    'deno.json',
-    'deno.lock',
+    'apps/api-v1/package.json',
     'package-lock.json',
     'package.json',
     'apps/rallar-black-box/package.json',

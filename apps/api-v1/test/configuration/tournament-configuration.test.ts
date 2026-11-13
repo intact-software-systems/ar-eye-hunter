@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
@@ -12,7 +13,7 @@ const profile = {
     gameLifecycleTopic: 'app:game:tournament-start'
 };
 
-Deno.test('tournament profiles are explicitly configured and retain their per-game no-show grace', () => {
+test('tournament profiles are explicitly configured and retain their per-game no-show grace', () => {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     const defaults = decodeApiV1Configuration(input);
     assert.deepEqual(defaults.tournaments, { profiles: [], rateLimit: { windowMs: 60000, requests: 60 } });
@@ -20,7 +21,7 @@ Deno.test('tournament profiles are explicitly configured and retain their per-ga
     assert.deepEqual(configured.tournaments.profiles, [profile]);
 });
 
-Deno.test('tournament configuration rejects ambiguous ownership and malformed profiles before startup', () => {
+test('tournament configuration rejects ambiguous ownership and malformed profiles before startup', () => {
     for (
         const tournaments of [
             { profiles: [profile, profile] },
@@ -37,9 +38,9 @@ Deno.test('tournament configuration rejects ambiguous ownership and malformed pr
     }
 });
 
-Deno.test('tournament profiles can be supplied by deployment environment without game-specific API code', () => {
+test('tournament profiles can be supplied by deployment environment without game-specific API code', () => {
     const environment = readApiV1ConfigurationEnvironment({
-        get: (name) => name === 'RALLAR_TOURNAMENT_PROFILES_JSON' ? JSON.stringify([profile]) : undefined
+        RALLAR_TOURNAMENT_PROFILES_JSON: JSON.stringify([profile])
     });
     assert.deepEqual(environment.environmentSource.tournaments, { profiles: [profile] });
 });

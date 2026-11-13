@@ -28,6 +28,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { createAppInboxTestResilience } from '../shared-server/rallar-system/app-inbox/test-support/app-inbox-resource-fixtures.ts';
 import { createTestAuthSession } from '../shared-server/rallar-system/group-state/group-state-test-runtime.ts';
 import { replayALOrderingObservation } from '../shared-web/al-runtime/al-ordering-frame-replay-test-support.ts';
+import { attachTestWebSocket } from '../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../shared/websocket/test-web-socket.ts';
 import { connectGameSession } from './relic-game-database-fixture.ts';
 import { createInboxFixture } from './relic-game-inbox-fixture.ts';
@@ -125,7 +126,7 @@ describe('Relic committed notifications', () => {
             // A same-principal socket arriving after commit is not part of the private event's fixed audience.
             const lateSocket = new TestWebSocket('ws://late-owner-session');
             lateSocket.open();
-            sockets.addConnection(new ConnectionContext({ id: 'late-owner-session', socket: lateSocket }));
+            attachTestWebSocket(sockets, new ConnectionContext({ id: 'late-owner-session', socket: lateSocket }));
             expect(peers.get(owner.sessionId)?.sent).toEqual([]);
             await engine.executeOnce();
             await expect.poll(async () => {
@@ -240,7 +241,7 @@ function toTrackSequences(messages: readonly ALMessage[]): Readonly<Record<strin
 function openSocket(sockets: JsonWebSocketServer, sessionId: string): TestWebSocket {
     const socket = new TestWebSocket(`ws://${sessionId}`);
     socket.open();
-    sockets.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    attachTestWebSocket(sockets, new ConnectionContext({ id: sessionId, socket }));
     return socket;
 }
 

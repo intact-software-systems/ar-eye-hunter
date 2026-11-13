@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
-import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Next } from 'hono';
 import type { ApiV1StateApiConfiguration } from '../configuration/api-v1-configuration.ts';
 import {
     toApiMutationRateLimitResponse,

@@ -1,4 +1,7 @@
-import type { ControlDistributedRunArtifactBundle, ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlRunSnapshotBounds
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 import { createControlDistributedRunArtifactBundle } from '../../src/control-artifacts.ts';
 import type { RallarBlackBoxControlService } from '../../src/control-service.ts';
@@ -11,6 +14,9 @@ export function createDistributedRunArtifactBundle(
 ): ControlDistributedRunArtifactBundle | undefined {
     const distributedRun = service.snapshotDistributedRun(distributedRunId);
     return distributedRun
-        ? createControlDistributedRunArtifactBundle(distributedRun, service.snapshotRun(distributedRun.controlRunId, bounds))
+        ? createControlDistributedRunArtifactBundle(
+            distributedRun,
+            service.snapshotRun(distributedRun.controlRunId, bounds)
+        )
         : undefined;
 }

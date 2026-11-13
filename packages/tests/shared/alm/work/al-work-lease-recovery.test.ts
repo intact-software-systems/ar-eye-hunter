@@ -75,7 +75,7 @@ describe('outbound lease recovery on the lane clock', () => {
         expect(run.finalizationSweepsAtMs).toEqual([START_MS]);
     });
 
-    it('recovers a crashed lease within its lease end plus 19.1 s when a send spent the window just before', async () => {
+    it('recovers a crashed lease within its lease end plus 16.6 s when a send spent the window just before', async () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
@@ -91,7 +91,7 @@ describe('outbound lease recovery on the lane clock', () => {
         expect(recoveredAtMs).toBeLessThanOrEqual(leaseEndMs + OUTBOUND_LEASE_RECOVERY_BOUND_MS);
     });
 
-    it('finalizes an exhausted reservation within its lease end plus 19.1 s when a send spent the window just before', async () => {
+    it('finalizes an exhausted reservation within its lease end plus 16.6 s when a send spent the window just before', async () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);
@@ -124,7 +124,7 @@ describe('outbound lease recovery on the lane clock', () => {
         expect(run.batchesAtMs.length - batchesBefore).toBeLessThanOrEqual(2);
     });
 
-    it('recovers a backlog of crashed leases larger than one sweep within its lease end plus 19.1 s', async () => {
+    it('recovers a backlog of crashed leases larger than one sweep within its lease end plus 16.6 s', async () => {
         const run = createLeaseRecoveryRun();
         await run.runtime.ready();
         await vi.advanceTimersByTimeAsync(13_000);

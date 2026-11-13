@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupLifecyclePolicyInput } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -37,63 +38,58 @@ interface TracedRow {
     readonly traceId: string;
 }
 
-Deno.test({
-    name: 'PGlite formation keeps the join trace from the presence evidence to the activation status publication',
-    sanitizeOps: false,
-    sanitizeResources: false,
-    fn: async () => {
-        const server = await createPGliteTracedRallarServer();
-        try {
-            const runtime = server.rallar.runtime;
-            const owner = await issueTracedTestSession(runtime, 'owner');
-            const joiner = await issueTracedTestSession(runtime, 'joiner');
-            await writeTracedRequest(server.app, owner, {
-                path: `${GROUP_PATH}/requests/formation-chain-create`,
-                method: 'POST',
-                traceId: 'trace-formation-create',
-                body: {
-                    groupId: GROUP_REF.groupId,
-                    displayName: GROUP_REF.groupId,
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: owner.clientId,
-                    lifecyclePolicy: PRESENCE_FORMATION_POLICY
-                }
-            });
-            await waitForQuiescentQueue(server.sql);
-            const watermark = await readRowWatermark(server.sql);
-
-            await writeTracedRequest(server.app, joiner, {
-                path: `${GROUP_PATH}/${GROUP_REF.groupId}/join/requests/formation-chain-join`,
-                method: 'POST',
-                traceId: CHAIN_TRACE_ID,
-                body: {}
-            });
-            await writeTracedRequest(server.app, joiner, {
-                path: `${GROUP_PATH}/${GROUP_REF.groupId}/sessions/${joiner.sessionId}/requests/formation-chain-presence`,
-                method: 'PUT',
-                traceId: CHAIN_TRACE_ID,
-                body: {
-                    principalId: joiner.clientId,
-                    generationId: 'joiner-generation',
-                    connectionGenerationId: 'joiner-generation',
-                    publicationKey: null
-                }
-            });
-            const activated = await waitForActivationStatus(runtime);
-
-            assert.equal(activated.group.lifecycleState, 'active');
-            const rows = await readRowsAfter(server.sql, watermark);
-            const inboxTypes = new Set(rows.filter((row) => row.type === 'APP_INBOX').map((row) => row.typeId));
-            for (const formationType of ['GROUP_FORMATION_AUTOMATION', 'GROUP_FORMATION_CRITERION', 'GROUP_ACTIVATION_STATUS']) {
-                assert.ok(inboxTypes.has(formationType), `the chain wrote a ${formationType} command`);
+test('PGlite formation keeps the join trace from the presence evidence to the activation status publication', async () => {
+    const server = await createPGliteTracedRallarServer();
+    try {
+        const runtime = server.rallar.runtime;
+        const owner = await issueTracedTestSession(runtime, 'owner');
+        const joiner = await issueTracedTestSession(runtime, 'joiner');
+        await writeTracedRequest(server.app, owner, {
+            path: `${GROUP_PATH}/requests/formation-chain-create`,
+            method: 'POST',
+            traceId: 'trace-formation-create',
+            body: {
+                groupId: GROUP_REF.groupId,
+                displayName: GROUP_REF.groupId,
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: owner.clientId,
+                lifecyclePolicy: PRESENCE_FORMATION_POLICY
             }
-            assert.ok(rows.some((row) => row.type === 'WS_OUTBOX'), 'the chain wrote WS publications');
-            assert.deepEqual(rows.filter((row) => row.traceId !== CHAIN_TRACE_ID), []);
+        });
+        await waitForQuiescentQueue(server.sql);
+        const watermark = await readRowWatermark(server.sql);
+
+        await writeTracedRequest(server.app, joiner, {
+            path: `${GROUP_PATH}/${GROUP_REF.groupId}/join/requests/formation-chain-join`,
+            method: 'POST',
+            traceId: CHAIN_TRACE_ID,
+            body: {}
+        });
+        await writeTracedRequest(server.app, joiner, {
+            path: `${GROUP_PATH}/${GROUP_REF.groupId}/sessions/${joiner.sessionId}/requests/formation-chain-presence`,
+            method: 'PUT',
+            traceId: CHAIN_TRACE_ID,
+            body: {
+                principalId: joiner.clientId,
+                generationId: 'joiner-generation',
+                connectionGenerationId: 'joiner-generation',
+                publicationKey: null
+            }
+        });
+        const activated = await waitForActivationStatus(runtime);
+
+        assert.equal(activated.group.lifecycleState, 'active');
+        const rows = await readRowsAfter(server.sql, watermark);
+        const inboxTypes = new Set(rows.filter((row) => row.type === 'APP_INBOX').map((row) => row.typeId));
+        for (const formationType of ['GROUP_FORMATION_AUTOMATION', 'GROUP_FORMATION_CRITERION', 'GROUP_ACTIVATION_STATUS']) {
+            assert.ok(inboxTypes.has(formationType), `the chain wrote a ${formationType} command`);
         }
-        finally {
-            await server.stop();
-        }
+        assert.ok(rows.some((row) => row.type === 'WS_OUTBOX'), 'the chain wrote WS publications');
+        assert.deepEqual(rows.filter((row) => row.traceId !== CHAIN_TRACE_ID), []);
+    }
+    finally {
+        await server.stop();
     }
 });
 

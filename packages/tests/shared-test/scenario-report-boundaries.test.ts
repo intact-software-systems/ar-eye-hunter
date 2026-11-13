@@ -278,9 +278,8 @@ describe('scenario result-name ownership', () => {
                     steps: ['constructor', '__proto__'].map((name) => ({ name, type: 'set', output: 'value', value: 1 }))
                 })
             );
-            const output = execFileSync('deno', [
+            const output = execFileSync('bun', [
                 'run',
-                '-A',
                 fileURLToPath(new URL('../../shared-test/black-box-runner/scenario-black-box.ts', import.meta.url)),
                 '-w',
                 directory,

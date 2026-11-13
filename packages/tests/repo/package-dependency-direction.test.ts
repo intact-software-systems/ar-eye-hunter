@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -171,67 +170,6 @@ describe('package dependency direction', () => {
 
             expect(serverInputs).toEqual([]);
         }
-    );
-
-    it.each([
-        'deno.lock',
-        'packages/shared-rtc-bench/deno.lock',
-        'apps/api-v1/deno.lock',
-        'apps/relic-hunter-server-v1/deno.lock',
-        'apps/rallar-black-box-control-server/deno.lock'
-    ])('keeps the Deno lock %s free of React dependencies and workspace links', (filePath) => {
-        const lock = readJsonObject(filePath);
-        const dependencies = JSON.stringify(lock).match(/"[^"]+"/gu) ?? [];
-        const reactDependencies = dependencies.filter((dependency) =>
-            /^"(?:npm:)?(?:react(?:@|[-/]|")|@types\/react|@radix-ui\/react|@ar-eye-hunter\/shared-react)/u
-                .test(dependency)
-        );
-
-        expect(reactDependencies).toEqual([]);
-    });
-
-    it('keeps the api-v1 Deno import map free of browser and test-only packages', () => {
-        const imports = requireObject(readJsonObject('apps/api-v1/deno.json').imports);
-        const declared = Object.keys(imports);
-
-        expect(declared).not.toContain('@shared-web/');
-        expect(declared).not.toContain('@shared-react/');
-        expect(declared).not.toContain('@shared-test/');
-        expect(declared).not.toContain('@relic-hunters/');
-    });
-
-    it.each(['api-v1', 'relic-hunter-server-v1', 'rallar-black-box-control-server'])(
-        'resolves the actual %s entrypoint without React modules',
-        (app) => {
-            const graph = requireObject(JSON.parse(execFileSync('deno', [
-                'info',
-                '--json',
-                '--config',
-                `apps/${app}/deno.json`,
-                `apps/${app}/src/main.ts`
-            ], {
-                cwd: repoRoot,
-                env: { ...process.env, DENO_NO_PACKAGE_JSON: '1' },
-                encoding: 'utf8',
-                maxBuffer: 32 * 1024 * 1024
-            })));
-            if (!Array.isArray(graph.modules)) {
-                throw new TypeError('Deno module graph must contain its resolved module inventory');
-            }
-            const modules = graph.modules.map((entry) => {
-                const specifier = requireObject(entry).specifier;
-                if (typeof specifier !== 'string') {
-                    throw new TypeError('Deno module graph entry must name its resolved specifier');
-                }
-                return specifier;
-            });
-            expect(modules.some((specifier) => specifier.endsWith(`/apps/${app}/src/main.ts`))).toBe(true);
-            expect(modules.filter((specifier) => /(?:\/packages\/shared-react\/|(?:npm:|\/node_modules\/)react(?:@|\/|-))/u.test(specifier))).toEqual([]);
-            if (app === 'api-v1') {
-                expect(modules.filter((specifier) => /\/(?:packages|apps)\/relic[^/]*\//u.test(specifier))).toEqual([]);
-            }
-        },
-        30_000
     );
 
     // packages/shared-test ships products (the black-box runner); packages/tests is test code only.

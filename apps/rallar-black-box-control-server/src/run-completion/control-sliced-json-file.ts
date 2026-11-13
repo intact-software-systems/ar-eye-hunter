@@ -1,3 +1,5 @@
+import { mkdir, open, rename, rm } from 'node:fs/promises';
+
 import { nowMs } from '@shared-server/rallar-system/observability/timing.ts';
 
 export interface SlicedJsonFileWriteInput {
@@ -35,24 +37,23 @@ export async function writeSlicedJsonFile(input: SlicedJsonFileWriteInput): Prom
     let serializeMs = 0;
     let writeMs = 0;
     try {
-        await Deno.mkdir(toDirectory(input.path), { recursive: true });
-        const file = await Deno.open(input.tempPath, { write: true, create: true, truncate: true });
-        const writer = file.writable.getWriter();
+        await mkdir(toDirectory(input.path), { recursive: true });
+        const file = await open(input.tempPath, 'w');
         const slices = toJsonSlices(input.pieces);
         for (let startedMs = nowMs(), slice = slices.next(); !slice.done; startedMs = nowMs(), slice = slices.next()) {
             const encoded = encoder.encode(slice.value);
             const encodedMs = nowMs();
             serializeMs += encodedMs - startedMs;
-            await writer.write(encoded);
+            await file.write(encoded);
             writeMs += nowMs() - encodedMs;
             bytes += encoded.length;
         }
-        await writer.close();
-        await Deno.rename(input.tempPath, input.path);
+        await file.close();
+        await rename(input.tempPath, input.path);
         return { written: true, bytes, serializeMs, writeMs, failure: undefined };
     }
     catch (error) {
-        Deno.remove(input.tempPath).catch(() => undefined);
+        rm(input.tempPath, { force: true }).catch(() => undefined);
         const failure = error instanceof Error ? error.message : String(error);
         return { written: false, bytes, serializeMs, writeMs, failure };
     }

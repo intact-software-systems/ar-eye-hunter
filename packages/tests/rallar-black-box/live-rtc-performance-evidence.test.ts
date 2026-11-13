@@ -61,7 +61,7 @@ const runtimeObservation = {
     runtime: {
         node: 'v24.0.0',
         npm: '11.0.0',
-        deno: '2.4.0',
+        bun: '2.4.0',
         playwright: '1.55.0',
         chromium: '140.0.0.0'
     },

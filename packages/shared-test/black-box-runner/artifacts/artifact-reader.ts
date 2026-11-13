@@ -1078,7 +1078,7 @@ function defaultCommands(
         {
             label: 'Direct scenario',
             command: [
-                'deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts',
+                'bun run packages/shared-test/black-box-runner/scenario-black-box.ts',
                 `-c packages/shared-test/black-box-runner/${recipePath}`,
                 mode === 'dry-run' ? '--dry-run' : ''
             ].filter(Boolean).join(' '),

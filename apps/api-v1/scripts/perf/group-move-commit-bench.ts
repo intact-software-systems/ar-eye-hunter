@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
+import process from 'node:process';
 import postgres from 'postgres';
 
 import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/postgres/postgres-timestamp-without-time-zone.ts';
@@ -25,11 +26,11 @@ import {
 } from './state-write/state-write-workload.ts';
 
 // Diagnostic cohort scaling only. The unchanged state-write comparator remains the regression gate.
-const databaseUrl = Deno.env.get('GROUP_MOVE_BENCH_DATABASE_URL');
+const databaseUrl = process.env.GROUP_MOVE_BENCH_DATABASE_URL;
 if (!databaseUrl) {
     throw new Error('GROUP_MOVE_BENCH_DATABASE_URL must explicitly select the diagnostic PostgreSQL database');
 }
-const output = Deno.args[0];
+const output = process.argv[2];
 if (!output) {
     throw new Error('Provide a fresh output JSON path');
 }
@@ -218,7 +219,7 @@ try {
         schema: 'rallar.group-move-commit-diagnostic.v1',
         commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
         dirty: execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim().length > 0,
-        runtime: Deno.version,
+        runtime: process.versions,
         postgres: (await sql`select version() as version`)[0].version,
         measurement:
             'One warmup and ten commits per cohort; setup and readback excluded, AppInbox pump cleanup included. Serial, no competing workload. Four database connections, JIT off. SQL and release observations from existing state-write instrumentation.',

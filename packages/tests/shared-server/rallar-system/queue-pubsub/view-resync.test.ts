@@ -5,6 +5,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { describe, expect, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 
 // LISTEN readiness must invalidate reads even when no new notification arrives after a subscriber reconnects.
@@ -16,8 +17,8 @@ describe('view recovery after a subscriber loses notifications', () => {
         native.open();
         unauthenticated.open();
         const connection = new ConnectionContext({ id: 'alice', socket: native });
-        socket.addConnection(connection);
-        socket.addConnection(new ConnectionContext({ id: 'anonymous', socket: unauthenticated }));
+        attachTestWebSocket(socket, connection);
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'anonymous', socket: unauthenticated }));
         const service = createDefaultWsQueueBoxServerService({
             name: 'server-b',
             socket,

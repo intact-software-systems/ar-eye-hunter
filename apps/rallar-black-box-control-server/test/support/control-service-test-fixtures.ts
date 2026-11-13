@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -15,7 +17,6 @@ import type {
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { assert } from '@std/assert';
 
 import type {
     CreateRallarBlackBoxControlServiceInput,
@@ -110,7 +111,7 @@ export function assertJsonEquals<TValue>(actual: TValue, expected: TValue): void
 }
 
 export function assertRight<TFailure, TValue>(result: Either<TFailure, TValue>): TValue {
-    assert(result.right !== undefined, `Expected success, got ${JSON.stringify(result.left)}.`);
+    assert(result.right !== undefined);
     return result.right;
 }
 

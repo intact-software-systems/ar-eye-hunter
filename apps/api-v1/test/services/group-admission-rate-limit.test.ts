@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -11,7 +12,7 @@ import {
     type GroupAdmissionRateLimitConfig
 } from '../../src/services/group-admission-rate-limit.ts';
 
-Deno.test('group admission rate limit config maps every resolved policy field', () => {
+test('group admission rate limit config maps every resolved policy field', () => {
     const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     assert.equal(config.joinAdmission.principal.maxNumberToAllow, 60);
     assert.equal(config.joinAdmission.group.maxNumberToAllow, 600);
@@ -22,7 +23,7 @@ Deno.test('group admission rate limit config maps every resolved policy field', 
     }
 });
 
-Deno.test('group admission rate limit config preserves non-default resolved limits', () => {
+test('group admission rate limit config preserves non-default resolved limits', () => {
     const config = toGroupAdmissionRateLimitConfig({
         windowMs: 12_500,
         joinPrincipal: 7,
@@ -39,7 +40,7 @@ Deno.test('group admission rate limit config preserves non-default resolved limi
     }
 });
 
-Deno.test('join-admission per-principal window exhausts exactly at the 61st request', () => {
+test('join-admission per-principal window exhausts exactly at the 61st request', () => {
     const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     const groupRef = uniqueGroupRef('principal-exhaustion');
     for (let attempt = 1; attempt <= 60; attempt++) {
@@ -65,7 +66,7 @@ Deno.test('join-admission per-principal window exhausts exactly at the 61st requ
     );
 });
 
-Deno.test('per-principal windows are independent per group and per principal', () => {
+test('per-principal windows are independent per group and per principal', () => {
     const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     const stormedGroup = uniqueGroupRef('independence-stormed');
     for (let attempt = 1; attempt <= 60; attempt++) {
@@ -108,7 +109,7 @@ Deno.test('per-principal windows are independent per group and per principal', (
     );
 });
 
-Deno.test('principals of a group with a 160+ character group key keep separate budgets', () => {
+test('principals of a group with a 160+ character group key keep separate budgets', () => {
     const config = toGroupAdmissionRateLimitConfig(defaultConfiguration());
     const groupRef = longGroupRef('long-group-key');
     assert.ok(`${groupRef.applicationId}:${groupRef.workspaceId}:${groupRef.groupId}`.length >= 160);
@@ -124,7 +125,7 @@ Deno.test('principals of a group with a 160+ character group key keep separate b
     );
 });
 
-Deno.test('the per-group window sheds every principal once the group budget is spent', () => {
+test('the per-group window sheds every principal once the group budget is spent', () => {
     const config = toTinyConfig({ joinPrincipal: 100, joinGroup: 2 });
     const groupRef = uniqueGroupRef('group-budget');
     assert.equal(decideJoin(groupRef, 'first-principal', config), 'allowed');
@@ -132,7 +133,7 @@ Deno.test('the per-group window sheds every principal once the group budget is s
     assert.equal(decideJoin(groupRef, 'third-principal', config), 'over-limit');
 });
 
-Deno.test('join-admission and presence-connect windows are separate families', () => {
+test('join-admission and presence-connect windows are separate families', () => {
     const config = toTinyConfig({ joinPrincipal: 1, joinGroup: 100 });
     const groupRef = uniqueGroupRef('family-separation');
     assert.equal(decideJoin(groupRef, 'probe', config), 'allowed');
@@ -149,7 +150,7 @@ Deno.test('join-admission and presence-connect windows are separate families', (
     );
 });
 
-Deno.test('over-limit requests do not consume the remaining group budget', () => {
+test('over-limit requests do not consume the remaining group budget', () => {
     const config = toTinyConfig({ joinPrincipal: 1, joinGroup: 2 });
     const groupRef = uniqueGroupRef('no-denied-consumption');
     assert.equal(decideJoin(groupRef, 'probe', config), 'allowed');
@@ -161,7 +162,7 @@ Deno.test('over-limit requests do not consume the remaining group budget', () =>
     );
 });
 
-Deno.test('the route guard answers over-limit with 429, Retry-After: 60, and a coded body', async () => {
+test('the route guard answers over-limit with 429, Retry-After: 60, and a coded body', async () => {
     const groupRef = uniqueGroupRef('route-shape');
     const quota = createGroupAdmissionQuota({
         ...defaultConfiguration(),
@@ -200,7 +201,7 @@ Deno.test('the route guard answers over-limit with 429, Retry-After: 60, and a c
     });
 });
 
-Deno.test('the typed rate-limited error carries the 429 contract values', () => {
+test('the typed rate-limited error carries the 429 contract values', () => {
     const error = new GroupAdmissionRateLimitedError('presence-connect', 13);
     assert.equal(error.status, 429);
     assert.equal(error.code, 'group-admission-rate-limited');

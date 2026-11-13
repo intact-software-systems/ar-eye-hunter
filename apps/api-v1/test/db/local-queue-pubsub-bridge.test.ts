@@ -1,5 +1,6 @@
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
     createDisabledQueuePubSubBridge,
@@ -11,7 +12,7 @@ interface CreateQueueBoxPubSubMessageOptions {
     readonly publisherId: string;
 }
 
-Deno.test('local queue pub/sub bridge delivers messages across publishers on the same bus', async () => {
+test('local queue pub/sub bridge delivers messages across publishers on the same bus', async () => {
     const bus = createLocalQueuePubSubBus();
     const localA = createLocalQueuePubSubBridge({
         ignoredPublisherId: 'publisher-a',
@@ -42,7 +43,7 @@ Deno.test('local queue pub/sub bridge delivers messages across publishers on the
     assert.deepEqual(receivedByB, [messageFromA]);
 });
 
-Deno.test('local queue pub/sub bridge isolates channels', async () => {
+test('local queue pub/sub bridge isolates channels', async () => {
     const bus = createLocalQueuePubSubBus();
     const bridge = createLocalQueuePubSubBridge({ bus });
     const received: JsonWireValue[] = [];
@@ -55,7 +56,7 @@ Deno.test('local queue pub/sub bridge isolates channels', async () => {
     assert.deepEqual(received, []);
 });
 
-Deno.test('local queue pub/sub bridge keeps independently composed buses isolated', async () => {
+test('local queue pub/sub bridge keeps independently composed buses isolated', async () => {
     const publisher = createLocalQueuePubSubBridge({
         bus: createLocalQueuePubSubBus()
     });
@@ -72,7 +73,7 @@ Deno.test('local queue pub/sub bridge keeps independently composed buses isolate
     assert.deepEqual(received, []);
 });
 
-Deno.test('disabled queue pub/sub bridge does not publish or subscribe', async () => {
+test('disabled queue pub/sub bridge does not publish or subscribe', async () => {
     const bridge = createDisabledQueuePubSubBridge();
     const received: JsonWireValue[] = [];
 

@@ -1,5 +1,4 @@
 // rallar-webrtc-runtime.ts
-// deno-lint-ignore-file no-explicit-any
 import {
     createRallarRtcProviderFromRuntime,
     decodeRallarRtcMessage,

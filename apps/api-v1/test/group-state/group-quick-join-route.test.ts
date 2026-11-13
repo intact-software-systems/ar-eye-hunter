@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -15,7 +16,7 @@ import {
 
 const PATH = '/api/state/apps/app-1/workspaces/workspace-1/groups/quick-join/requests/quick-request-123456789';
 
-Deno.test('Quick Join authenticates and forwards normalized scope selection with its path request ID', async () => {
+test('Quick Join authenticates and forwards normalized scope selection with its path request ID', async () => {
     const calls: Parameters<GroupStateInboxService['processQuickJoinUntilCompletion']>[] = [];
     const snapshot = createGroupStateRouteSnapshot('selected');
     const app = createTracedApiTestApp();
@@ -40,7 +41,7 @@ Deno.test('Quick Join authenticates and forwards normalized scope selection with
     assert.equal(calls[0][1].clientId, 'alice');
 });
 
-Deno.test('Quick Join returns unavailable as a successful durable result', async () => {
+test('Quick Join returns unavailable as a successful durable result', async () => {
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
@@ -53,7 +54,7 @@ Deno.test('Quick Join returns unavailable as a successful durable result', async
     assert.deepEqual(await response.json(), { status: 'unavailable' });
 });
 
-Deno.test('Quick Join rejects unknown fields and body/header request IDs before enqueue', async () => {
+test('Quick Join rejects unknown fields and body/header request IDs before enqueue', async () => {
     const app = createTracedApiTestApp();
     let calls = 0;
     registerGroupStateRoutes(app, {
@@ -75,7 +76,7 @@ Deno.test('Quick Join rejects unknown fields and body/header request IDs before 
     assert.equal(calls, 0);
 });
 
-Deno.test('Quick Join requires authentication even without outer state middleware', async () => {
+test('Quick Join requires authentication even without outer state middleware', async () => {
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies({
@@ -93,7 +94,7 @@ Deno.test('Quick Join requires authentication even without outer state middlewar
     assert.equal(response.status, 401);
 });
 
-Deno.test('Quick Join rate limits each principal within its scope before enqueue', async () => {
+test('Quick Join rate limits each principal within its scope before enqueue', async () => {
     const app = createTracedApiTestApp();
     let calls = 0;
     registerGroupStateRoutes(app, {

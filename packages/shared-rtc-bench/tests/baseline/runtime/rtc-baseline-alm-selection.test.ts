@@ -50,7 +50,7 @@ describe('RTC baseline ALM recording selection', () => {
                 initialized: {
                     ...result.value.observation,
                     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'feature', clean: true },
-                    runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '1' },
+                    runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '1' },
                     host: {
                         os: 'test',
                         kernel: 'test',

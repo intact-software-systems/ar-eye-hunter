@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -158,7 +159,7 @@ const EXPECTED_ADMISSION_COMMANDS = [
     }
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
-Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
+test('group admission commands retain every authenticated AppInbox envelope', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
     const commandBase = { authSession, scope: TEST_GROUP_SCOPE, traceId: GROUP_ROUTE_TRACE_ID, groupId: 'room-1' } as const;
     const forgedActor = { actorPrincipalId: 'forged-actor', actorSessionId: 'forged-session' };
@@ -231,7 +232,7 @@ Deno.test('group admission commands retain every authenticated AppInbox envelope
     ];
     assert.deepEqual(commands, EXPECTED_ADMISSION_COMMANDS);
 });
-Deno.test('group join-code response omits its event while preserving response fields', () => {
+test('group join-code response omits its event while preserving response fields', () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const response = toGroupStateResponse({
         kind: 'join-code',
@@ -252,7 +253,7 @@ Deno.test('group join-code response omits its event while preserving response fi
         snapshot
     });
 });
-Deno.test('group admission routes retain every AppInbox envelope and actor override', async () => {
+test('group admission routes retain every AppInbox envelope and actor override', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
@@ -305,7 +306,7 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
     }
     assert.deepEqual(enqueued, EXPECTED_ADMISSION_COMMANDS);
 });
-Deno.test('group join route enqueues explicit join intent with authenticated actor', async () => {
+test('group join route enqueues explicit join intent with authenticated actor', async () => {
     await withStrictGroupStateRouteReadAuth(false, async () => {
         const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
         const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -346,11 +347,11 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
         });
     });
 });
-Deno.test(
+test(
     'group invite routes enqueue safe invite workflows with authenticated actors',
     () => withStrictGroupStateRouteReadAuth(false, verifyGroupInviteRoutes)
 );
-Deno.test('group join-code route enqueues rotation workflow with authenticated actor', async () => {
+test('group join-code route enqueues rotation workflow with authenticated actor', async () => {
     await withStrictGroupStateRouteReadAuth(false, async () => {
         const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
         const responseBody = { joinCode: 'code-1', expiresAtEpochMs: 2_000, snapshot };

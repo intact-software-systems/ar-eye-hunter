@@ -1,0 +1,16 @@
+{
+  "extends": "../../shared-server/tsconfig.json",
+  "include": [
+    "**/*.ts",
+    "../../shared-server/**/*.d.ts"
+  ],
+  "compilerOptions": {
+    "types": [],
+    "paths": {
+      "@relic-hunters/*": ["../*"],
+      "@shared-server/*": ["../../shared-server/*"],
+      "@shared-graph/*": ["../../shared-graph/*"],
+      "@shared/*": ["../../shared/*"]
+    }
+  }
+}

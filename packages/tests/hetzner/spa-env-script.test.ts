@@ -20,6 +20,7 @@ import type { TestContext } from 'vitest';
 const repoRoot = path.resolve(__dirname, '../../..');
 const rolloutScript = path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh');
 const spaHelper = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-public-spa-env.sh');
+const roleHelper = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-controller-role.sh');
 const execFileAsync = promisify(execFile);
 
 async function createEnvironmentFixture(context: TestContext): Promise<string> {
@@ -90,37 +91,25 @@ describe('Hetzner SPA public env wiring', () => {
     it.for([
         { email: '', prefix: '' },
         { email: 'operator@example.test', prefix: '{\n\temail operator@example.test\n}\n\n' }
-    ])('writes the validated Caddy public routes with the optional ACME email $email', async ({ email, prefix }, context) => {
+    ])('writes the role-scoped Caddy routes with the optional ACME email $email', async ({ email, prefix }, context) => {
         const fixture = await createEnvironmentFixture(context);
         const caddy = path.join(fixture, 'caddy');
         await writeFile(caddy, '#!/usr/bin/env bash\nexit 0\n');
         await chmod(caddy, 0o755);
         const destination = path.join(fixture, 'Caddyfile');
-        await execFileAsync('bash', ['-c', `source '${spaHelper}'\nwrite_rallar_controller_caddyfile`], {
+        await execFileAsync('bash', ['-c', 'source "$1"\napply_rallar_controller_role\nwrite_rallar_role_caddyfile', 'bash', roleHelper], {
             env: {
                 PATH: `${fixture}:${process.env.PATH}`,
                 RALLAR_CADDYFILE: destination,
                 RALLAR_ACME_EMAIL: email,
+                RALLAR_CONTROLLER_ROLE: 'api',
                 RALLAR_API_HOST: 'api.example.test',
-                RALLAR_CONTROL_HOST: 'control.example.test',
-                RALLAR_BLACKBOX_HOST: 'spa.example.test',
-                RALLAR_BLACK_BOX_SPA_URL: 'https://spa.example.test'
+                RALLAR_BLACKBOX_HOST: 'spa.example.test'
             }
         });
         expect(await readFile(destination, 'utf8')).toBe(
             prefix + `api.example.test {
 \treverse_proxy 127.0.0.1:8080
-}
-
-control.example.test {
-\treverse_proxy 127.0.0.1:5180
-\thandle_errors {
-\t\theader Access-Control-Allow-Origin "https://spa.example.test"
-\t\theader Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
-\t\theader Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
-\t\theader Vary "Origin"
-\t\trespond "Rallar Black Box control upstream unavailable" 502
-\t}
 }
 
 spa.example.test {
@@ -130,6 +119,52 @@ spa.example.test {
 }
 `
         );
+    });
+
+    it.for([
+        {
+            role: 'control',
+            expected: `control.example.test {
+\treverse_proxy 127.0.0.1:5180
+\thandle_errors {
+\t\theader Access-Control-Allow-Origin "https://spa.example.test"
+\t\theader Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
+\t\theader Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
+\t\theader Vary "Origin"
+\t\trespond "Rallar Black Box control upstream unavailable" 502
+\t}
+}
+`
+        },
+        {
+            role: 'games',
+            expected: `relic.example.test {
+\treverse_proxy 127.0.0.1:8090
+}
+
+ar-eye.example.test {
+\treverse_proxy 127.0.0.1:8091
+}
+`
+        }
+    ])('writes only the $role role hosts into the Caddyfile', async ({ role, expected }, context) => {
+        const fixture = await createEnvironmentFixture(context);
+        const caddy = path.join(fixture, 'caddy');
+        await writeFile(caddy, '#!/usr/bin/env bash\nexit 0\n');
+        await chmod(caddy, 0o755);
+        const destination = path.join(fixture, 'Caddyfile');
+        await execFileAsync('bash', ['-c', 'source "$1"\napply_rallar_controller_role\nwrite_rallar_role_caddyfile', 'bash', roleHelper], {
+            env: {
+                PATH: `${fixture}:${process.env.PATH}`,
+                RALLAR_CADDYFILE: destination,
+                RALLAR_CONTROLLER_ROLE: role,
+                RALLAR_CONTROL_HOST: 'control.example.test',
+                RALLAR_RELIC_HOST: 'relic.example.test',
+                RALLAR_AR_EYE_HOST: 'ar-eye.example.test',
+                RALLAR_BLACK_BOX_SPA_URL: 'https://spa.example.test'
+            }
+        });
+        expect(await readFile(destination, 'utf8')).toBe(expected);
     });
 
     it('normalizes an existing API env file without logging secrets and keeps mode 0600', async (context) => {

@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -35,7 +36,7 @@ function createCapturingRuntime(enqueued: AuthenticatedGroupMutationEnqueue[], s
     return createGroupStateRouteTestRuntime({ processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot) });
 }
 
-Deno.test('the grant route enqueues GROUP_PUBLICATION_GRANT with the path requestId as resourceId', async () => {
+test('the grant route enqueues GROUP_PUBLICATION_GRANT with the path requestId as resourceId', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued, createGrantedSnapshot());
 
@@ -75,7 +76,7 @@ Deno.test('the grant route enqueues GROUP_PUBLICATION_GRANT with the path reques
     );
 });
 
-Deno.test('the revoke route enqueues GROUP_PUBLICATION_REVOKE', async () => {
+test('the revoke route enqueues GROUP_PUBLICATION_REVOKE', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued, createGroupStateRouteSnapshot('room-1', ['alice', 'bob']));
 
@@ -113,7 +114,7 @@ Deno.test('the revoke route enqueues GROUP_PUBLICATION_REVOKE', async () => {
     );
 });
 
-Deno.test('a forged actor in the body is replaced by the auth session', async () => {
+test('a forged actor in the body is replaced by the auth session', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued, createGroupStateRouteSnapshot('room-1', ['alice', 'bob']));
 
@@ -145,7 +146,7 @@ Deno.test('a forged actor in the body is replaced by the auth session', async ()
     ]);
 });
 
-Deno.test('malformed grant and revoke bodies are refused before enqueue', async () => {
+test('malformed grant and revoke bodies are refused before enqueue', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued, createGroupStateRouteSnapshot('room-1', ['alice', 'bob']));
     const malformedBodies = [
@@ -186,7 +187,7 @@ Deno.test('malformed grant and revoke bodies are refused before enqueue', async 
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('the response is the written GroupSnapshot', async () => {
+test('the response is the written GroupSnapshot', async () => {
     const snapshot = createGrantedSnapshot();
     const runtime = createCapturingRuntime([], snapshot);
 

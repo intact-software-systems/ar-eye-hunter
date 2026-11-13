@@ -1,12 +1,14 @@
+import { test } from 'bun:test';
+import assert from 'node:assert/strict';
+
 import type { ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import { assert } from '@std/assert';
 
 import { createRallarBlackBoxControlService, RallarBlackBoxControlService } from '../src/control-service.ts';
 import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
 
-Deno.test('control retention planning is passive and applies exact current prune order', () => {
+test('control retention planning is passive and applies exact current prune order', () => {
     let clockReads = 0;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => {
@@ -40,7 +42,7 @@ Deno.test('control retention planning is passive and applies exact current prune
     assert(service.snapshotRun('run-new'));
 });
 
-Deno.test('control retention planning detects same-time issued-token drift without exposing tokens', () => {
+test('control retention planning detects same-time issued-token drift without exposing tokens', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.restoreSnapshot(retentionSnapshot());
     const before = service.createRetentionPlan(1);
@@ -55,7 +57,7 @@ Deno.test('control retention planning detects same-time issued-token drift witho
     assert(!after.canonicalConsequence.includes(issued.token));
 });
 
-Deno.test('immediate prune preserves response order independently from bounded preview planning', () => {
+test('immediate prune preserves response order independently from bounded preview planning', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.restoreSnapshot(retentionSnapshot());
 
@@ -63,7 +65,7 @@ Deno.test('immediate prune preserves response order independently from bounded p
     assertJsonEquals(service.createRetentionPlan(1).deletedRunIds, []);
 });
 
-Deno.test('immediate prune preserves its disabled and already-bounded fast paths', () => {
+test('immediate prune preserves its disabled and already-bounded fast paths', () => {
     class PlanningProbe extends RallarBlackBoxControlService {
         planCalls = 0;
 
@@ -83,7 +85,7 @@ Deno.test('immediate prune preserves its disabled and already-bounded fast paths
     assertJsonEquals(service.planCalls, 0);
 });
 
-Deno.test('immediate prune remains available beyond bounded preview candidate limits', () => {
+test('immediate prune remains available beyond bounded preview candidate limits', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     const runs = Array.from(
         { length: 1_002 },
@@ -99,7 +101,7 @@ Deno.test('immediate prune remains available beyond bounded preview candidate li
     assert(service.snapshotRun('immediate-run-1001'));
 });
 
-Deno.test('the automatic sweep removes only completed runs past the cap and never a live one', () => {
+test('the automatic sweep removes only completed runs past the cap and never a live one', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.restoreSnapshot({
         runs: [
