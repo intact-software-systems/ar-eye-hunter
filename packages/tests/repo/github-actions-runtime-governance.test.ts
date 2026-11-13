@@ -23,6 +23,15 @@ interface WorkflowDocument {
     readonly jobs: Readonly<Record<string, WorkflowJob>>;
 }
 
+interface ObservationWorkflowJob extends WorkflowJob {
+    readonly 'continue-on-error'?: boolean;
+    readonly env?: Readonly<Record<string, string>>;
+}
+
+interface ObservationWorkflowDocument {
+    readonly jobs: Readonly<Record<string, ObservationWorkflowJob>>;
+}
+
 interface ActionInput {
     readonly default: string;
 }
@@ -89,17 +98,28 @@ describe('GitHub Actions runtime governance', () => {
         expect(releaseGate).not.toContain('npm run check:test-structure-coupling');
     });
 
-    it('observes IDE navigation after lane setup without weakening failures', async () => {
+    it('keeps the IDE navigation report out of the blocking Static checks lane', async () => {
         const releaseGate = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
         const steps = releaseGate.jobs.checks.steps;
         const setupIndex = steps.findIndex((step) => step.uses === LANE_SETUP_ACTION);
-        const navigationIndex = steps.findIndex((step) => step.run === 'npm run check:repo-style:navigation-details');
         const changedStyleIndex = steps.findIndex((step) => step.run?.startsWith('node scripts/check-changed-repo-style.mjs'));
 
+        expect(steps.map((step) => step.run)).not.toContain('npm run check:repo-style:navigation-details');
+        expect(setupIndex).toBeGreaterThan(-1);
+        expect(changedStyleIndex).toBeGreaterThan(setupIndex);
+    });
+
+    it('reports IDE navigation in a non-blocking reusable workflow after lane setup', async () => {
+        const observation = await readYaml<ObservationWorkflowDocument>('.github/workflows/navigation-report-observation.yml');
+        const job = observation.jobs['navigation-report'];
+        const steps = job.steps;
+        const setupIndex = steps.findIndex((step) => step.uses === LANE_SETUP_ACTION);
+        const navigationIndex = steps.findIndex((step) => step.run === 'npm run check:repo-style:navigation-details');
+
+        expect(job['continue-on-error']).toBe(true);
+        expect(job.env?.['NODE_OPTIONS']).toBe('--max-old-space-size=6144');
         expect(setupIndex).toBeGreaterThan(-1);
         expect(navigationIndex).toBeGreaterThan(setupIndex);
-        expect(changedStyleIndex).toBeGreaterThan(navigationIndex);
-        expect(steps[navigationIndex]).not.toHaveProperty('continue-on-error');
     });
 
     it('installs Bun through the shared setup action without a separate cache step', async () => {

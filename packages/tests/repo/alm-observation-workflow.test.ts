@@ -21,6 +21,7 @@ interface WorkflowDocument {
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const ALM_WORKFLOW = './.github/workflows/alm-conformance-observation.yml';
+const NAVIGATION_WORKFLOW = './.github/workflows/navigation-report-observation.yml';
 
 describe('ALM conformance observation workflow', () => {
     it('runs the observation lane in its own reusable workflow, outside the Release Gate', () => {
@@ -52,6 +53,33 @@ describe('ALM conformance observation workflow', () => {
         expect(workflow.jobs['alm-conformance-observation'].with?.candidate_ref).toBe('${{ github.sha }}');
         for (const [jobId, job] of Object.entries(workflow.jobs)) {
             expect(toNeeds(job), jobId).not.toContain('alm-conformance-observation');
+        }
+    });
+});
+
+describe('navigation report observation workflow', () => {
+    it('starts the report beside the Branch Release Gate without making its result wait for it', () => {
+        const workflow = readWorkflow('.github/workflows/branch-release-gate.yml');
+        const observation = workflow.jobs['navigation-report-observation'];
+
+        expect(observation.uses).toBe(NAVIGATION_WORKFLOW);
+        expect(observation.with?.candidate_ref).toBe('${{ github.event.pull_request.head.sha }}');
+        expect(observation.if).toContain('!cancelled()');
+        expect(observation.if).toContain('outputs.mode == \'broad\'');
+        for (const [jobId, job] of Object.entries(workflow.jobs)) {
+            expect(toNeeds(job), jobId).not.toContain('navigation-report-observation');
+        }
+    });
+
+    it('starts the report beside the main deploy without making a deployment wait for it', () => {
+        const workflow = readWorkflow('.github/workflows/deploy.yml');
+        const observation = workflow.jobs['navigation-report-observation'];
+
+        expect(observation.uses).toBe(NAVIGATION_WORKFLOW);
+        expect(observation.with?.candidate_ref).toBe('${{ github.sha }}');
+        expect(observation.if).toBe('${{ github.event_name != \'workflow_dispatch\' || inputs.skip_release_gate != true }}');
+        for (const [jobId, job] of Object.entries(workflow.jobs)) {
+            expect(toNeeds(job), jobId).not.toContain('navigation-report-observation');
         }
     });
 });
