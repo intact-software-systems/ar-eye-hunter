@@ -69,8 +69,22 @@ describe('PSqlQueueBox reservation claim', () => {
         await seedResourceInboxRow(sql, { resourceId: 'exhausted', status: EntityStatus.NEW, attempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts });
         await seedResourceInboxRow(sql, { resourceId: 'expired', status: EntityStatus.NEW, expired: true });
         await seedResourceInboxRow(sql, { resourceId: 'scheduled', status: EntityStatus.NEW, nextInSeconds: 60 });
-        await seedResourceInboxRow(sql, { resourceId: 'pending-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: 60 });
-        await seedResourceInboxRow(sql, { resourceId: 'due-retry', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
+        await seedResourceInboxRow(sql, {
+            resourceId: 'pending-retry',
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startedAgoSeconds: 5,
+            endedAgoSeconds: 4,
+            nextInSeconds: 60
+        });
+        await seedResourceInboxRow(sql, {
+            resourceId: 'due-retry',
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startedAgoSeconds: 5,
+            endedAgoSeconds: 4,
+            nextInSeconds: -1
+        });
         await seedResourceInboxRow(sql, { resourceId: 'new-a', status: EntityStatus.NEW });
         await seedResourceInboxRow(sql, { resourceId: 'new-b', status: EntityStatus.NEW });
 
@@ -82,8 +96,22 @@ describe('PSqlQueueBox reservation claim', () => {
     });
 
     it('claims a row exactly as starting its processing would and never past the attempt budget', async () => {
-        await seedResourceInboxRow(sql, { resourceId: 'by-claim', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
-        await seedResourceInboxRow(sql, { resourceId: 'by-start', status: EntityStatus.RETRY, attempts: 1, startedAgoSeconds: 5, endedAgoSeconds: 4, nextInSeconds: -1 });
+        await seedResourceInboxRow(sql, {
+            resourceId: 'by-claim',
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startedAgoSeconds: 5,
+            endedAgoSeconds: 4,
+            nextInSeconds: -1
+        });
+        await seedResourceInboxRow(sql, {
+            resourceId: 'by-start',
+            status: EntityStatus.RETRY,
+            attempts: 1,
+            startedAgoSeconds: 5,
+            endedAgoSeconds: 4,
+            nextInSeconds: -1
+        });
 
         const [claimed] = (await queue.reserveEntries({
             typeIds: INBOX_TYPES,

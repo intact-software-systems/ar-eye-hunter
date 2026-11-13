@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { toError } from '../../shared/resilience/to-error.ts';
@@ -301,7 +302,7 @@ catch (caught) {
 }
 
 async function writeArtifacts(report: ScenarioRunReport, dir: string): Promise<void> {
-    await Deno.mkdir(dir, {
+    await mkdir(dir, {
         recursive: true
     });
     const generatedAtEpochMs = now();
@@ -331,20 +332,22 @@ async function writeArtifacts(report: ScenarioRunReport, dir: string): Promise<v
         includeMetadata: input.includeMetadata,
         recipe: expandedInput
     }, resolvedVariables.redactions);
-    await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(boundedReport, null, 2));
-    await Deno.writeTextFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''));
-    await Deno.writeTextFile(
+    await writeFile(artifactPath(dir, 'report.json'), JSON.stringify(boundedReport, null, 2), 'utf8');
+    await writeFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''), 'utf8');
+    await writeFile(
         artifactPath(dir, 'failures.json'),
-        JSON.stringify(failureBundle(artifactReport), null, 2)
+        JSON.stringify(failureBundle(artifactReport), null, 2),
+        'utf8'
     );
-    await Deno.writeTextFile(artifactPath(dir, 'metadata.json'), JSON.stringify(metadata, null, 2));
-    await Deno.writeTextFile(artifactPath(dir, 'expanded-recipe.json'), JSON.stringify(expandedRecipe, null, 2));
-    await Deno.writeTextFile(
+    await writeFile(artifactPath(dir, 'metadata.json'), JSON.stringify(metadata, null, 2), 'utf8');
+    await writeFile(artifactPath(dir, 'expanded-recipe.json'), JSON.stringify(expandedRecipe, null, 2), 'utf8');
+    await writeFile(
         artifactPath(dir, 'artifact-index.json'),
-        JSON.stringify(redactBlackBoxData(selection.index, resolvedVariables.redactions), null, 2)
+        JSON.stringify(redactBlackBoxData(selection.index, resolvedVariables.redactions), null, 2),
+        'utf8'
     );
     if (trafficExpansion.artifact) {
-        await Deno.writeTextFile(
+        await writeFile(
             artifactPath(dir, 'expanded-plan.json'),
             JSON.stringify(
                 redactBlackBoxData(
@@ -353,7 +356,8 @@ async function writeArtifacts(report: ScenarioRunReport, dir: string): Promise<v
                 ),
                 null,
                 2
-            )
+            ),
+            'utf8'
         );
     }
 }

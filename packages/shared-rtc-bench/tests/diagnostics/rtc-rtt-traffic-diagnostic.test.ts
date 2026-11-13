@@ -21,8 +21,8 @@ interface RtcRttTrafficArtifact {
 
 it('keeps the maintained RTT traffic diagnostic checked', { timeout: 30_000 }, () => {
     const result = spawnSync(
-        'deno',
-        ['check', '--config', 'packages/shared-rtc-bench/deno.json', diagnosticPath],
+        'bunx',
+        ['tsc', '-p', 'packages/shared-rtc-bench/tsconfig.json', '--noEmit'],
         { encoding: 'utf8' }
     );
     expect(result.status, result.stderr).toBe(0);
@@ -33,12 +33,9 @@ it('reports durable RTT enqueue traffic without claiming mutation completion', {
     const outputPath = join(directory, 'metrics.json');
     try {
         const result = spawnSync(
-            'deno',
+            'bun',
             [
                 'run',
-                '--allow-write',
-                '--config',
-                'packages/shared-rtc-bench/deno.json',
                 diagnosticPath,
                 '--sessions=3',
                 `--out=${outputPath}`

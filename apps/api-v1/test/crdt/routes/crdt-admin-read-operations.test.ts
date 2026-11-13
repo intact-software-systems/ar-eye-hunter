@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import {
@@ -15,7 +16,7 @@ import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/cr
 
 import { registerCrdtAdminRoutes } from '../../../src/crdt/register-crdt-admin-routes.ts';
 
-Deno.test('CRDT admin routes expose read-only repository health operations', async () => {
+test('CRDT admin routes expose read-only repository health operations', async () => {
     const audit = new InMemoryRallarCrdtAuditSink();
     const repository = new InMemoryRallarCrdtLogRepository({
         now: () => 10_000,

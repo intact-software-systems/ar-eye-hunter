@@ -86,6 +86,14 @@ moved or changed test.
   "version": 1,
   "contracts": [
     {
+      "id": "bun-server-start-scripts-list-api-v1-env-files",
+      "domain": "Bun server env-file loading",
+      "owner": "Rallar platform maintainers",
+      "summary": "Starts outside apps/api-v1 pass the API-v1 env files as --env-file flags, lowest precedence first, because Bun reads only the working directory's files otherwise.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1",
+      "coverageRelation": "The flag lists are the developer-facing start commands themselves; the sibling Bun precedence cases in the same file prove what those flags make Bun load and that the process environment still wins."
+    },
+    {
       "id": "arena-spectator-controls-send-no-player-effects",
       "domain": "AR Eye Hunter spectator command isolation",
       "owner": "AR Eye Hunter maintainers",
@@ -1387,14 +1395,6 @@ moved or changed test.
       "coverageRelation": "Reads the canonical source fixture before independently injecting three executable scope violations; the real child stderr must identify each violation."
     },
     {
-      "id": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "domain": "Controlled controller lockfile repair",
-      "owner": "Rallar operations maintainers",
-      "summary": "The controlled rollout child restores the exact clean lockfile bytes before reporting its dirty-checkout guard outcome.",
-      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
-      "coverageRelation": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes."
-    },
-    {
       "id": "indexeddb-invalid-schema-no-open",
       "domain": "IndexedDB schema admission",
       "owner": "Rallar shared maintainers",
@@ -1724,14 +1724,6 @@ moved or changed test.
       "coverageRelation": "The test replaces the actual CRDT administrative route command-materialization call and executes the mutation-route inventory validator; reading that production route is the executable input that proves reservation construction cannot bypass canonical durable AppInbox command materialization."
     },
     {
-      "id": "package-dependency-direction-import-map",
-      "domain": "Package dependency direction",
-      "owner": "Rallar platform maintainers",
-      "summary": "The api-v1 Deno import map advertises no browser or test-only package to application source. Executable assertion: “keeps the api-v1 Deno import map free of browser and test-only packages”.",
-      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages",
-      "coverageRelation": "The import-direction suite executes the layering rule over every package source file; this config read covers the one surface that grants resolution before any import exists."
-    },
-    {
       "id": "queue-pubsub-admission-read-failure-no-send",
       "sharedCoverageGroup": "queue-pubsub-captured-admission-read-failure",
       "domain": "QueueBox pub/sub captured outbound admission",
@@ -2016,9 +2008,9 @@ moved or changed test.
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Dprint remains the sole formatter for repository TypeScript, including Deno-owned applications.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript",
-      "coverageRelation": "The executable test reads the actual Deno configurations and excludes fmt settings/tasks, then reads dprint exclusions to ensure those application trees remain covered."
+      "summary": "Dprint remains the sole formatter for repository TypeScript, including Bun-owned applications.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Bun-owned TypeScript",
+      "coverageRelation": "The executable test reads the actual Bun configurations and excludes fmt settings/tasks, then reads dprint exclusions to ensure those application trees remain covered."
     },
     {
       "id": "resource-inbox-reservation-bounded-indexed-read",
@@ -2314,12 +2306,12 @@ moved or changed test.
       "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README, locks the exact baseline grammar and code-derived setup, measured-operation, and timing claims, and independently verifies root Vitest discovery for the package test tree."
     },
     {
-      "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "domain": "Shared RTC benchmark diagnostic navigation",
       "owner": "Shared RTC benchmark maintainers",
-      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package Deno checking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and checked by Deno”.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno",
-      "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
+      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package typechecking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and typechecked by the package”.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package",
+      "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in package typechecking."
     },
     {
       "id": "shared-web-browser-bundle-boundary",
@@ -2840,9 +2832,9 @@ moved or changed test.
       "id": "typescript-seven-release-boundary",
       "domain": "TypeScript 7 release boundary",
       "owner": "Rallar repository maintainers",
-      "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications. Executable assertion: “keeps TypeScript and Deno checking as separate release gates”.",
-      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates",
-      "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from Deno checking; this workflow read is its exact release interface."
+      "summary": "Release automation checks pinned TypeScript workspaces separately from Bun-owned applications. Executable assertion: “keeps TypeScript checking as a separate release gate”.",
+      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript checking as a separate release gate",
+      "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from the Bun-owned application gate; this workflow read is its exact release interface."
     },
     {
       "id": "workbench-collection-served-paths",
@@ -4124,8 +4116,8 @@ moved or changed test.
       "domain": "RTC-B06 observation configuration and source provenance",
       "owner": "Shared RTC benchmark maintainers",
       "summary": "The existing RTC-B06 observation reports the finite default/all-scenarios/retention policies and SHA256 fingerprints of the actual configuration and fixture owners used by the current source tree.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
-      "coverageRelation": "The test runs createRtcBaselineDenoObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation",
+      "coverageRelation": "The test runs createRtcBaselineBunObservation with real repository-file hashing, checks emitted requests 20/20/101 and the 60000ms windows, and independently hashes the actual configuration, command, evidence, producer and fixture files to compare with observation sourceHashes. Expectations follow current bytes rather than a pinned source snapshot."
     },
     {
       "id": "resource-inbox-guarded-winner-materialization",
@@ -6081,9 +6073,106 @@ moved or changed test.
         "requiredConstraint": "commitOutsideAudience opens no write transaction when its fold changes nothing, when no pending receipt exists, or when the receipt is complete.",
         "failureRationale": "An identical rewrite leaves the readback row unchanged apart from its expiry, so the row snapshot alone cannot prove the sender version was not bumped and a concurrent dispatch was not forced into a conflict."
       }
+    },
+    {
+      "id": "rtc-baseline-finalization-publishes-summary-exactly-once",
+      "domain": "RTC baseline finalization summary publication",
+      "owner": "Rallar shared maintainers",
+      "summary": "A successful baseline finalization publishes the finalized summary exactly once before the evidence lock ends.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#finalizes a collected baseline by publishing its summary once inside the lock lifecycle",
+      "coverageRelation": "The finalizer acquires the lock, collects, partitions and summarizes, then publishes the summary once and ends the lock. The test asserts the publish port fires exactly once and the lock end is the final call.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcBaselineFinalizerDependencies.publishSummary",
+        "observableEffect": "Publishing writes the finalized summary artifact, which the catalog and later analysis consume as the authoritative baseline result.",
+        "requiredConstraint": "publishSummary is invoked exactly once for one successful finalization.",
+        "failureRationale": "A summary artifact produced twice would duplicate authoritative baseline evidence; zero would leave a finalization reported successful with no published summary."
+      }
+    },
+    {
+      "id": "rtc-baseline-finalization-no-publish-on-failure",
+      "domain": "RTC baseline finalization failure publishing",
+      "owner": "Rallar shared maintainers",
+      "summary": "A baseline finalization that fails raw-reference verification publishes no summary and writes a failure artifact instead.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reports a raw-reference mismatch as a failure without publishing a summary",
+      "coverageRelation": "When the raw reference byte length or SHA-256 mismatches the stored bytes, the finalizer writes a finalization-failure artifact and publishes no summary.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RtcBaselineFinalizerDependencies.publishSummary",
+        "observableEffect": "Publishing the summary would record a successful baseline for artifacts that failed verification.",
+        "requiredConstraint": "publishSummary is not invoked when raw-reference verification fails.",
+        "failureRationale": "A published summary could coexist with a failed verification if the failure write succeeded but a stray publish also ran; observing the publish port proves no success summary escaped."
+      }
+    },
+    {
+      "id": "rtc-baseline-finalization-raw-reference-read-once",
+      "domain": "RTC baseline finalization raw-reference verification",
+      "owner": "Rallar shared maintainers",
+      "summary": "The finalizer reads each raw reference's bytes exactly once to verify its stored length and SHA-256.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reads the raw reference bytes once before reporting a length mismatch",
+      "coverageRelation": "The finalizer reads the raw reference bytes to recompute SHA-256 and compare against the stored hash; the test asserts the read port fires exactly once per verification.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcBaselineFinalizerDependencies.readBytes",
+        "observableEffect": "Reading the raw bytes is the input to SHA-256 verification; a repeated read could hide a race or a non-idempotent read source.",
+        "requiredConstraint": "readBytes is invoked exactly once per raw reference verification.",
+        "failureRationale": "Zero reads would leave the hash unverified while reporting a mismatch; more than one read would make verification depend on a non-canonical read source."
+      }
+    },
+    {
+      "id": "rtc-benchmark-package-source-typecheck",
+      "domain": "shared-rtc-bench package source typechecking",
+      "owner": "Rallar shared maintainers",
+      "summary": "The shared-rtc-bench package's tsconfig includes its own source glob so the package typechecks its source, replacing the retired Deno-checked baseline catalog.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside the accepted baseline catalog and typechecked by the package",
+      "coverageRelation": "The test reads the package tsconfig and asserts it includes the **/*.ts source glob, proving the package typechecks its own source tree."
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-0d77ec7cc60473eb",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "production-source-read",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Reads the Relic package.json scripts, the start and dev commands that launch the Relic server outside apps/api-v1.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-bc10281bd6dc039c",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts in one observation that the root dev:rallar:api and start:rallar:api scripts and both Relic scripts carry their env-file lists, lowest precedence first.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-4ef0b4d443fb22d5",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts the Relic start script lists the API-v1 env files before its own, lowest precedence first.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
+    {
+      "id": "test-structure-coupling-552232e44bc63d77",
+      "path": "packages/tests/repo/bun-server-environment-files.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "bun-server-start-scripts-list-api-v1-env-files",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Rallar platform maintainers",
+      "rationale": "Asserts the Relic dev script lists the same env files as its start script.",
+      "semanticCoverage": "packages/tests/repo/bun-server-environment-files.test.ts#passes the API-v1 env files, lowest precedence first, to servers started outside apps/api-v1"
+    },
     {
       "id": "test-structure-coupling-6e72e4f321808af7",
       "path": "packages/tests/ar-eye-hunter-v1/arena-spectating.test.ts",
@@ -6418,12 +6507,12 @@ moved or changed test.
       "id": "test-structure-coupling-0ce4af5c7c62c033",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "production-source-read",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "Reads the accepted workload catalog so maintained diagnostics cannot silently become accepted baseline evidence producers.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package"
     },
     {
       "id": "test-structure-coupling-0fae9273cf2213d7",
@@ -6503,17 +6592,6 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
     },
     {
-      "id": "test-structure-coupling-a7aa023b12bd5a52",
-      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Shared RTC benchmark maintainers",
-      "rationale": "Requires each named maintained diagnostic entrypoint to remain in the package Deno check command while remaining absent from accepted evidence.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
-    },
-    {
       "id": "test-structure-coupling-d3a4973be65d4f48",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "symbol-assertion",
@@ -6528,12 +6606,12 @@ moved or changed test.
       "id": "test-structure-coupling-df5e57893203b500",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "production-source-read",
-      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-typechecked-by-the-package",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
-      "rationale": "Reads the package command contract that owns Deno checking for every maintained diagnostic entrypoint.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+      "rationale": "Reads the package command contract that owns typechecking for every maintained diagnostic entrypoint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and typechecked by the package"
     },
     {
       "id": "test-structure-coupling-f9dbd26ba9313d16",
@@ -7073,17 +7151,6 @@ moved or changed test.
       "owner": "Rallar operations maintainers",
       "rationale": "Reads the checked-in original fifteen-agent JSON bytes before CLI execution; its fixed digest and later exact byte comparison bind the actual workload without depending on implementation text.",
       "semanticCoverage": "packages/tests/hetzner/distributed-manifest-materialization.test.ts#keeps original fifteen-agent serialized arrivals consistent with isolated outgoing traffic"
-    },
-    {
-      "id": "test-structure-coupling-03bcfb46477d3a40",
-      "path": "packages/tests/hetzner/controller-deployment.test.ts",
-      "kind": "production-source-read",
-      "contract": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
-      "disposition": "durable-boundary",
-      "boundary": "security",
-      "owner": "Rallar operations maintainers",
-      "rationale": "Reads the lockfile written by the executed controlled rollout and compares it with the independently authored clean bytes.",
-      "semanticCoverage": "packages/tests/hetzner/controller-deployment.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
       "id": "test-structure-coupling-f27c417734abdf55",
@@ -8252,17 +8319,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
     },
     {
-      "id": "test-structure-coupling-7c0d79d76311c223",
-      "path": "packages/tests/repo/package-dependency-direction.test.ts",
-      "kind": "production-source-read",
-      "contract": "package-dependency-direction-import-map",
-      "disposition": "durable-boundary",
-      "boundary": "public",
-      "owner": "Rallar platform maintainers",
-      "rationale": "Reads the api-v1 Deno import map so a browser or test-only mapping cannot be reintroduced ahead of any import that would use it.",
-      "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages"
-    },
-    {
       "id": "test-structure-coupling-b7b21332a0365fdf",
       "path": "packages/tests/repo/repo-code-style-checker-integrity.test.ts",
       "kind": "production-source-read",
@@ -8270,8 +8326,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads the actual Deno configurations to prove they declare no competing fmt settings or task; the same test verifies dprint includes the Deno application trees.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Deno-owned TypeScript"
+      "rationale": "Reads the actual Bun configurations to prove they declare no competing fmt settings or task; the same test verifies dprint includes the Bun application trees.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#leaves dprint as the only formatter, including over Bun-owned TypeScript"
     },
     {
       "id": "test-structure-coupling-3b86bebc02da01e1",
@@ -8303,8 +8359,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Deno workflow gate.",
-      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates"
+      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Bun workflow gate.",
+      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript checking as a separate release gate"
     },
     {
       "id": "test-structure-coupling-009dd8ebc09f2356",
@@ -10991,15 +11047,15 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts#admits only the dependency-free finite ICE fixture data, without opening runner imports"
     },
     {
-      "id": "test-structure-coupling-ac5e6841bb61346d",
-      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts",
+      "id": "test-structure-coupling-cfabc651926a9fd3",
+      "path": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts",
       "kind": "production-source-read",
       "contract": "rtc-b06-current-configuration-source-provenance",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "The independent read of each current configuration owner supplies the expected SHA256 for the emitted observation artifact. It catches missing, stale or substituted provenance even when policy values agree; changing source bytes remains valid when the observation records their current fingerprint.",
-      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-deno-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/observation/rtc-b06-observation-bun-runtime.test.ts#records the finite case policies and hashes their real configuration owners in the existing observation"
     },
     {
       "id": "test-structure-coupling-513f1333780dca6a",
@@ -12925,6 +12981,50 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The stored-row keys the backend reads prove the dequeue wait reads its own row and the settled predecessor only: the absent sequences below a settled row are neither read nor pending, which bounds the wait's cost on a long client-state track.",
       "semanticCoverage": "packages/tests/shared/alm/outbound/admission/al-outbound-ordering-index.test.ts#reads the listed sequences' stored rows from the highest down to the first settled one, and none below it"
+    },
+    {
+      "id": "test-structure-coupling-085319d50380bd97",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-raw-reference-read-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The raw reference bytes are read exactly once to recompute SHA-256 against the stored hash; a repeated read would make verification depend on a non-canonical read source.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reads the raw reference bytes once before reporting a length mismatch"
+    },
+    {
+      "id": "test-structure-coupling-87a2a1fd0abe8439",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-publishes-summary-exactly-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The summary is published exactly once and the lock ends as the final call, so one successful finalization yields one authoritative summary artifact.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#finalizes a collected baseline by publishing its summary once inside the lock lifecycle"
+    },
+    {
+      "id": "test-structure-coupling-cc5922c319085118",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "kind": "symbol-assertion",
+      "contract": "rtc-benchmark-package-source-typecheck",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The tsconfig source glob is the package's typecheck boundary that replaced the Deno-checked baseline catalog; pinning it proves the package typechecks its own source.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside the accepted baseline catalog and typechecked by the package"
+    },
+    {
+      "id": "test-structure-coupling-f8a1aa65a087a4c1",
+      "path": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-baseline-finalization-no-publish-on-failure",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "A failed raw-reference verification must not publish a success summary; the failure artifact is the only output.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts#reports a raw-reference mismatch as a failure without publishing a summary"
     }
   ]
 }

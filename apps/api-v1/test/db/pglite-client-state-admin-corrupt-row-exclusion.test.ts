@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
@@ -6,7 +7,7 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
-Deno.test('PGlite global admin client metrics exclude noncanonical and mismatched rows', async () => {
+test('PGlite global admin client metrics exclude noncanonical and mismatched rows', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'global-corrupt-client-admin-state';
         await insertCorruptAdminClientRows(sql, applicationId);
@@ -21,7 +22,7 @@ Deno.test('PGlite global admin client metrics exclude noncanonical and mismatche
     });
 });
 
-Deno.test('PGlite scoped admin client metrics exclude noncanonical and mismatched rows', async () => {
+test('PGlite scoped admin client metrics exclude noncanonical and mismatched rows', async () => {
     await withPGliteSql(async (sql) => {
         const applicationId = 'scoped-corrupt-client-admin-state';
         await insertCorruptAdminClientRows(sql, applicationId);

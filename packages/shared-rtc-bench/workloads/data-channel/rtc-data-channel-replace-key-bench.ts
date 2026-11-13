@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { RtcBenchmarkNativeChannel } from '../native-rtc/rtc-benchmark-native-channel.ts';
 import {
     createRtcBenchmarkPeerConnection,
@@ -364,7 +366,7 @@ function isDiagnosticOutput(out: string): boolean {
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcDataChannelReplaceKeyArguments(Deno.args);
+    const parsed = parseRtcDataChannelReplaceKeyArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -389,7 +391,7 @@ async function main(): Promise<void> {
             ))
         });
     }
-    await Deno.writeTextFile(
+    await writeFile(
         parsed.value.out,
         `${
             JSON.stringify(
@@ -401,7 +403,7 @@ async function main(): Promise<void> {
                 2
             )
         }\n`,
-        { createNew: true }
+        { encoding: 'utf8', flag: 'wx' }
     );
     writeLine(`Wrote ${parsed.value.out}`);
 }

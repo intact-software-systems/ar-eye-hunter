@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -173,7 +174,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
     }
 ];
 
-Deno.test(
+test(
     'group state route registration matches all public method and path contracts',
     async () => {
         const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
@@ -191,7 +192,7 @@ Deno.test(
     }
 );
 
-Deno.test('group route auth retains token and timing shape', () => {
+test('group route auth retains token and timing shape', () => {
     const before = Date.now();
     const session = createLiveGroupStateRouteAuthSession('alice');
     const after = Date.now();
@@ -203,14 +204,14 @@ Deno.test('group route auth retains token and timing shape', () => {
     assert.ok(session.expiresAtEpochMs <= after + 60_000);
 });
 
-Deno.test('moved group snapshots retain first-active-principal ownership', () => {
+test('moved group snapshots retain first-active-principal ownership', () => {
     const snapshot = createOwnerGroupStateRouteSnapshot('room-2', ['bob']);
 
     assert.equal(snapshot.group.ownerPrincipalId, 'bob');
     assert.equal(snapshot.members[0]?.role, 'owner');
 });
 
-Deno.test('moved group route runtime rejects unexpected mutations by default', async () => {
+test('moved group route runtime rejects unexpected mutations by default', async () => {
     const { app } = createRejectingGroupStateRouteTestRuntime();
     const response = await app.request(mutationPath(API_BASE), {
         method: 'POST',

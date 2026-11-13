@@ -22,7 +22,7 @@ appendFileSync(
 if (command === 'node' && args[0]?.endsWith('capture-api-v1-state-write-environment.mjs')) {
     capture();
 }
-else if (command === 'npm' && args.includes('perf:api-v1:state-write') || command === 'deno' && args.includes('--cpu-prof')) {
+else if (command === 'npm' && args.includes('perf:api-v1:state-write') || command === 'bun' && args.includes('--cpu-prof')) {
     benchmark();
 }
 else if (command === 'docker') {
@@ -37,7 +37,7 @@ else if (command === 'git') {
     }
     else if (args[0] === 'ls-files') {
         console.log(
-            'package.json\npackage-lock.json\napps/api-v1/deno.json\napps/api-v1/deno.lock\ndocker-compose.perf-bench.yml\n.github/workflows/api-v1-state-write-pr-measurement.yml\napps/api-v1/scripts/perf/run-api-v1-state-write-measurement.mjs'
+            'package.json\npackage-lock.json\napps/api-v1/tsconfig.json\ndocker-compose.perf-bench.yml\n.github/workflows/api-v1-state-write-pr-measurement.yml\napps/api-v1/scripts/perf/run-api-v1-state-write-measurement.mjs'
         );
     }
     else if (
@@ -57,8 +57,10 @@ else if (command === 'git') {
         console.log(
             JSON.stringify({
                 scripts: {
-                    'perf:api-v1:state-write': failure === 'scripts' && args[1]?.startsWith(commit) ? 'changed script' : 'deno bench',
-                    'db:migrate': 'deno migrate'
+                    'perf:api-v1:state-write': failure === 'scripts' && args[1]?.startsWith(commit)
+                        ? 'changed script'
+                        : 'bun run apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
+                    'db:migrate': 'bunx prisma migrate deploy'
                 }
             })
         );
@@ -78,7 +80,7 @@ else if (command === 'nproc') {
     console.log(failure === 'cpu-invalid' ? 'unavailable' : failure === 'cpu' ? 2 : 4);
 }
 else if (command === 'ps') {
-    console.log(failure === 'overlap' ? 'deno run api-v1-state-write-concurrency-bench.ts' : 'idle');
+    console.log(failure === 'overlap' ? 'bun run api-v1-state-write-concurrency-bench.ts' : 'idle');
 }
 else {
     console.log('public toolchain fixture');

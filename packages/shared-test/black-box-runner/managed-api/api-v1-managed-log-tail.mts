@@ -1,3 +1,5 @@
+import { open } from 'node:fs/promises';
+
 export type BoundedLogTailFile = Readonly<{
     size: () => Promise<number>;
     readAt: (offset: number, target: Uint8Array) => Promise<number | null>;
@@ -21,7 +23,7 @@ export async function readBoundedLogTail(
 ): Promise<string> {
     let file: BoundedLogTailFile | undefined;
     try {
-        file = await (options.openFile ?? openDenoBoundedLogTailFile)(logPath);
+        file = await (options.openFile ?? openBoundedLogTailFile)(logPath);
         const size = Math.max(0, await file.size());
         const length = Math.min(size, LOG_TAIL_MAX_BYTES);
         if (length === 0) {
@@ -77,15 +79,15 @@ export async function readLogTailSafely(
     }
 }
 
-async function openDenoBoundedLogTailFile(path: string): Promise<BoundedLogTailFile> {
-    const file = await Deno.open(path, { read: true });
+async function openBoundedLogTailFile(path: string): Promise<BoundedLogTailFile> {
+    const file = await open(path, 'r');
     return {
         size: async () => (await file.stat()).size,
         readAt: async (offset, target) => {
-            await file.seek(offset, Deno.SeekMode.Start);
-            return await file.read(target);
+            const { bytesRead } = await file.read(target, 0, target.length, offset);
+            return bytesRead;
         },
-        close: () => file.close()
+        close: () => void file.close()
     };
 }
 

@@ -135,7 +135,7 @@ describe('hosted state-write admission', { timeout: 20000 }, () => {
             )
         ).toBe(false);
         expect(diagnostic.steps.filter((step) => step.run.includes(owner))).toHaveLength(1);
-        expect(diagnostic.steps.some((step) => step.run.includes('npm ci') && step.run.includes('deno check'))).toBe(true);
+        expect(diagnostic.steps.some((step) => step.run.includes('npm ci') && step.run.includes('bun build'))).toBe(true);
     });
 
     it.for(['dependencies', 'comparator', 'scripts'])('refuses comparison %s changes before preparing either measurement source', async (failure, context) => {
@@ -169,7 +169,7 @@ describe('hosted native CPU profiles', { timeout: 30000 }, () => {
         const acquisition = readJson(path.join(fixture.output, 'acquisition-source.json'));
         expectRecordedFile(decodeJsonRecord(acquisition.workflow).file, path.join(fixture.output, 'executing-workflow.yml'));
         expect(readCalls(fixture).some((call) => call.command === 'git' && call.args[1] === `${'d'.repeat(40)}:${workflowPath}`)).toBe(true);
-        const profiles = readCalls(fixture).filter((call) => call.command === 'deno' && call.args.includes('--cpu-prof'));
+        const profiles = readCalls(fixture).filter((call) => call.command === 'bun' && call.args.includes('--cpu-prof'));
         expect(profiles).toHaveLength(4);
         const commits = ['c'.repeat(40), candidate, candidate, 'c'.repeat(40)];
         for (const [index, profile] of profiles.entries()) {
@@ -179,9 +179,6 @@ describe('hosted native CPU profiles', { timeout: 30000 }, () => {
                 '--cpu-prof',
                 `--cpu-prof-dir=${fixture.output}/position-${position}-profile`,
                 `--cpu-prof-name=position-${position}.cpuprofile`,
-                '-A',
-                '--config',
-                'apps/api-v1/deno.json',
                 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
                 '--backend=postgres',
                 '--warmup=1',
@@ -280,7 +277,7 @@ describe('hosted native CPU profiles', { timeout: 30000 }, () => {
             expect(readJson(path.join(fixture.output, 'terminal.json'))).toMatchObject({ status: 'failed', mode: 'cpu-profile', acceptance: false });
             const calls = readCalls(fixture);
             expect(calls.filter((call) => call.command === 'docker' && call.args.includes('down'))).toHaveLength(failure === 'benchmark' ? 1 : 0);
-            expect(calls.filter((call) => call.command === 'deno' && call.args.includes('--cpu-prof'))).toHaveLength(failure === 'benchmark' ? 1 : 0);
+            expect(calls.filter((call) => call.command === 'bun' && call.args.includes('--cpu-prof'))).toHaveLength(failure === 'benchmark' ? 1 : 0);
         }
     );
 });
@@ -630,7 +627,7 @@ function createFixture(context: TestContext, mode: string, failure: string): Mea
 function createCommandPorts(root: string): void {
     mkdirSync(path.join(root, 'bin'));
     copyFileSync(path.join(repoRoot, 'packages/tests/repo/state-write-measurement-command-port.mjs'), path.join(root, 'port.mjs'));
-    for (const name of ['node', 'npm', 'docker', 'git', 'deno', 'nproc', 'ps', 'lscpu', 'free']) {
+    for (const name of ['node', 'npm', 'docker', 'git', 'bun', 'nproc', 'ps', 'lscpu', 'free']) {
         writeFileSync(
             path.join(root, 'bin', name),
             '#!/bin/bash\n' + (name === 'node' ? 'case "$1" in *run-api-v1-state-write-measurement.mjs) exec "$REAL_NODE" "$@";; esac\n' : '') +

@@ -31,20 +31,20 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
 
       - name: Build game apps
         run: |
           npm run build:ar-eye-hunter-v1
           npm run build:relic-hunters-v1
 
-      - name: Check game Deno servers
+      - name: Check game Bun servers
         run: |
-          (cd apps/ar-eye-hunter-server-v1 && deno task check)
-          (cd apps/relic-hunter-server-v1 && deno task check)
+          (cd apps/ar-eye-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)
+          (cd apps/relic-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)
 
-  deno-games:
-    name: Game Deno tests
+  bun-games:
+    name: Game Bun tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -61,10 +61,10 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
 
-      - name: Run game Deno tests
-        run: npm run test:deno:games
+      - name: Run game Bun tests
+        run: npm run test:bun:games
 
   e2e-game-rooms:
     name: Browser tests (game rooms ${{ matrix.lane }})
@@ -89,7 +89,7 @@ jobs:
       - name: Set up the lane
         uses: ./.github/actions/release-gate-setup
         with:
-          deno: 'true'
+          bun: 'true'
           playwright: 'true'
 
       - name: Record room journey source

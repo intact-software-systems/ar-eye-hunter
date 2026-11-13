@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
@@ -8,7 +9,7 @@ import { RecomputeApiAdminTopology } from '../../src/admin-operations/recompute-
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 
-Deno.test('admin topology recompute materializes the authenticated request facts', async () => {
+test('admin topology recompute materializes the authenticated request facts', async () => {
     let capturedCommand:
         | Readonly<{
             actor: Readonly<{ principalId: string; sessionId: string; }>;

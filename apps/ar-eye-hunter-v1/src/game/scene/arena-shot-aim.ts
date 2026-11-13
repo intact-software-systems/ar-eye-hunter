@@ -3,8 +3,8 @@ import { CreatePickingRay } from '@babylonjs/core/Culling/ray.core.js';
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 
 import type { ArenaSimulationState, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
-import type { TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
 import { blocksShot } from '@ar-eye-hunter/arena-layout.ts';
+import type { TournamentArena } from '@ar-eye-hunter/tournament-arena.ts';
 import type { RemotePlayer } from '../arena-contracts.ts';
 import {
     chooseTouchAimCandidate,
@@ -95,8 +95,9 @@ export function resolveTouchShotDirection(
     const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
     // Native snapshots may advance while graphics are delayed. Input uses accepted state immediately.
     const arenaState = tournamentState?.arena ?? runtime.arenaState;
-    const origin = tournamentState?.players.find((player) => player.principalId === localSessionId)?.simulation.position
-        ?? runtime.localPlayer.position;
+    const origin =
+        tournamentState?.players.find((player) => player.principalId === localSessionId)?.simulation.position ??
+            runtime.localPlayer.position;
     const candidate = chooseTouchAimCandidate({
         point,
         candidates: computeTouchAimCandidates({

@@ -9,7 +9,7 @@
 # workload's outcome in run.json, stops everything, drops the database and writes the growth verdict.
 #
 # Usage: apps/rallar-black-box/scripts/run-growth-proof.sh [--minutes 75] [--out <run-dir>]
-# Needs: the dev Postgres container running, Docker, Deno, Node, jq, lsof; nothing else listening on the ports below.
+# Needs: the dev Postgres container running, Docker, Bun, Node, jq, lsof; nothing else listening on the ports below.
 # Do not edit the worktree while it runs: the headless SPA serves from it. Launch it from a terminal whose Chromium
 # can connect WebRTC on the local network: where its mDNS host candidates do not resolve, every agent's RTC connect
 # times out and the manifest fails.
@@ -164,7 +164,7 @@ create_database() {
 	log "creating database $DATABASE_NAME"
 	psql_admin -c "create database ${DATABASE_NAME}" >/dev/null
 	DATABASE_CREATED=true
-	(cd apps/api-v1 && env DATABASE_URL="$RUN_DATABASE_URL" deno task db:migrate:deploy) >"$OUT_DIR/migrate.log" 2>&1
+	(cd apps/api-v1 && env DATABASE_URL="$RUN_DATABASE_URL" bun run db:migrate:deploy) >"$OUT_DIR/migrate.log" 2>&1
 }
 
 # The heap-sample timing lines to samples/api-heap.jsonl, every other timing line dropped, the console to its log.
@@ -217,14 +217,13 @@ start_api_process() {
 		RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$OPERATOR_TOKEN_SECRET" \
 		RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON="$CRDT_DOCUMENT_TYPE_POLICIES_JSON" \
 		RALLAR_GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES="$GROUP_CURRENT_SNAPSHOT_CACHE_MAX_ENTRIES" \
-		deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read --v8-flags=--expose-gc \
-		apps/api-v1/src/main.ts
+		bun run apps/api-v1/src/main.ts
 }
 
 start_control_server() {
 	log "starting the control server on $CONTROL_BASE_URL"
 	(cd apps/rallar-black-box-control-server &&
-		PORT="$CONTROL_PORT" RALLAR_BLACK_BOX_STORAGE_DIR="$OUT_DIR/control-storage" deno task start) \
+		PORT="$CONTROL_PORT" RALLAR_BLACK_BOX_STORAGE_DIR="$OUT_DIR/control-storage" bun run src/main.ts) \
 		>"$OUT_DIR/control-server.log" 2>&1 &
 	CONTROL_PID=$!
 	wait_for_url "$CONTROL_BASE_URL/health"
@@ -307,7 +306,7 @@ run_churn_loop() {
 			DATABASE_URL="$RUN_DATABASE_URL" \
 			RALLAR_AUTH_CREDENTIAL_SECRET="$AUTH_CREDENTIAL_SECRET" \
 			RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$OPERATOR_TOKEN_SECRET" \
-			deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts \
+			bun run packages/shared-test/black-box-runner/api-v1-black-box-run.mts \
 			--recipes-only \
 			--profile=api-v1-black-box-medium-scale \
 			--run-id="$run_id" \

@@ -315,7 +315,7 @@ function startMutationInfrastructure(input: StartMutationInfrastructureInput): v
         timing: runtime.outboxStageTiming,
         serviceId: runtime.serviceId,
         publisherId: runtime.queuePubSubPublisherId,
-        processId: Deno.pid,
+        processId: process.pid,
         processStartedAtEpochMs: performance.timeOrigin,
         transactionScope: 'root',
         readMonotonicMs: () => performance.now(),
@@ -327,7 +327,7 @@ function startMutationInfrastructure(input: StartMutationInfrastructureInput): v
             timing: runtime.outboxStageTiming,
             serviceId: runtime.serviceId,
             publisherId: runtime.queuePubSubPublisherId,
-            processId: Deno.pid,
+            processId: process.pid,
             processStartedAtEpochMs: performance.timeOrigin,
             readMonotonicMs: () => performance.now(),
             readEpochMs: runtime.nowEpochMs

@@ -21,6 +21,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createGroupDeltaProducer, type GroupDeltaProducerFixture } from './group-delta-producer-fixture.ts';
 import { toSummaryExpansion } from './group-presence-test-runtime.ts';
@@ -158,7 +159,7 @@ describe('group presence delta producer provenance', () => {
             const receiver = createGroupDeltaReceiver(producer);
             const late = new TestWebSocket('ws://late');
             late.open();
-            receiver.socket.addConnection(new ConnectionContext({ id: 'late-session', socket: late }));
+            attachTestWebSocket(receiver.socket, new ConnectionContext({ id: 'late-session', socket: late }));
             if (kind === 'wrong-scope') {
                 receiver.authentication.scope = { ...producer.ref, workspaceId: 'other' };
             }
@@ -168,7 +169,7 @@ describe('group presence delta producer provenance', () => {
             if (kind === 'replaced-session') {
                 const encode = receiver.socket.encode.bind(receiver.socket);
                 const spy = vi.spyOn(receiver.socket, 'encode').mockImplementation((message) => {
-                    receiver.socket.addConnection(new ConnectionContext({ id: 'session-alice', socket: late }));
+                    attachTestWebSocket(receiver.socket, new ConnectionContext({ id: 'session-alice', socket: late }));
                     return encode(message);
                 });
                 onTestFinished(() => spy.mockRestore());
@@ -203,7 +204,7 @@ function createGroupDeltaReceiver(producer: GroupDeltaProducerFixture): GroupDel
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://foreign-api');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'session-alice', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'session-alice', socket: native }));
     const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({

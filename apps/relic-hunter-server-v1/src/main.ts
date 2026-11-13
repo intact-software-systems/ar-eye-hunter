@@ -1,6 +1,6 @@
 import { serveApiApplication } from '@api-v1/src/runtime/serve-api-application.ts';
-import { loadSync } from '@std/dotenv';
 import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
@@ -19,13 +19,11 @@ import { readRelicHunterServerConfiguration } from './relic-hunter-server-config
 import { installRelicPlanningAiTopic } from './relic-planning-ai-topic.ts';
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 
-loadEnvironment();
-
 const app: Hono = new Hono();
 const configuration = await readRelicHunterServerConfiguration({
-    environment: Deno.env,
+    environment: process.env,
     hardwareConcurrency: navigator.hardwareConcurrency,
-    readTextFile: Deno.readTextFile,
+    readTextFile: (url) => readFile(url, 'utf8'),
     defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {
         dev: new URL('../../api-v1/resources/configuration/dev-config.json', import.meta.url),
@@ -112,26 +110,3 @@ initRelicGameRoutes(app, { relicGame, sessions: rallar.runtime.authSessionReposi
 
 await serveApiApplication({ app, rallar, configuration: configuration.apiV1 });
 console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
-
-function loadEnvironment(): void {
-    loadEnvFileIfPresent(new URL('../.env', import.meta.url));
-    loadEnvFileIfPresent(new URL('../.env.local', import.meta.url));
-    loadEnvFileIfPresent(new URL('../../api-v1/.env', import.meta.url));
-    loadEnvFileIfPresent(new URL('../../api-v1/.env.local', import.meta.url));
-}
-
-function loadEnvFileIfPresent(envPath: URL): void {
-    try {
-        loadSync({
-            envPath,
-            export: true
-        });
-    }
-    catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
-            return;
-        }
-
-        throw error;
-    }
-}

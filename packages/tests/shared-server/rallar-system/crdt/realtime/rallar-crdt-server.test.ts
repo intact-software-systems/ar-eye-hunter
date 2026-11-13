@@ -34,6 +34,7 @@ import {
     type RallarCrdtUpdateEnvelope,
     type WsServerTargetResolver
 } from '@shared/mod.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
 const roomRef = {
@@ -550,7 +551,7 @@ function createRouter(options?: Omit<ConstructorParameters<typeof RallarServerWs
     const socket = new RecordingJsonWebSocketServer();
     const native = new TestWebSocket('ws://crdt-peer');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'conn-1', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'conn-1', socket: native }));
     const outbox = new InMemoryQueueBox(new Map());
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,

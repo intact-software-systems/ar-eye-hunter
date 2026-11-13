@@ -131,8 +131,8 @@ Verification:
 - `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npm --workspace rallar-black-box run typecheck` passed.
 - `npm run build:rallar-black-box` passed.
-- `cd apps/rallar-black-box-control-server && deno task check` passed.
-- `cd apps/rallar-black-box-control-server && deno task test` passed.
+- `cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit` passed.
+- `cd apps/rallar-black-box-control-server && bun test` passed.
 
 ## Iteration 44: Distributed Run Contract
 
@@ -187,7 +187,7 @@ Verification:
 - `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npm --workspace rallar-black-box run typecheck` passed.
 - `npm run build:rallar-black-box` passed.
-- `cd apps/rallar-black-box-control-server && deno task check` passed.
+- `cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit` passed.
 - `git diff --check -- apps/rallar-black-box apps/rallar-black-box-control-server packages/shared-test packages/tests/shared-test packages/tests/rallar-black-box` passed.
 
 ## Iteration 45: Group Member To Control Agent Mapping
@@ -239,11 +239,11 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts` passed.
-- `cd apps/rallar-black-box-control-server && deno task test` passed.
+- `cd apps/rallar-black-box-control-server && bun test` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npm --workspace rallar-black-box run typecheck` passed.
-- `cd apps/rallar-black-box-control-server && deno task check` passed.
+- `cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit` passed.
 
 ## Iteration 46: Control Server Distributed Orchestrator
 
@@ -301,8 +301,8 @@ Results:
 
 Verification:
 
-- `cd apps/rallar-black-box-control-server && deno task check` passed.
-- `cd apps/rallar-black-box-control-server && deno task test` passed.
+- `cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit` passed.
+- `cd apps/rallar-black-box-control-server && bun test` passed.
 - `npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts` passed.
 
 ## Iteration 47: Distributed Recipes UI
@@ -501,7 +501,7 @@ Verification:
 - `npm --workspace rallar-black-box run typecheck` passed.
 - `npx vitest run packages/tests/rallar-black-box/control-bootstrap.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts`
   passed.
-- `deno test apps/rallar-black-box-control-server/test/control-service.test.ts` passed.
+- `bun test apps/rallar-black-box-control-server/test/control-service.test.ts` passed.
 - `npm run test:e2e:rallar-black-box:full-stack:real:distributed` passed with the live three-browser distributed ACK,
   WS receive, RTC connect, and realtime send path enabled.
 - `npx playwright test --config apps/rallar-black-box/playwright.full-stack.config.ts --list` discovered the new

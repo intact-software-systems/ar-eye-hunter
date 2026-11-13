@@ -42,6 +42,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const SNAPSHOT_VERSION = 7;
@@ -668,7 +669,7 @@ async function createReceiptFixture(options: ReceiptFixtureOptions): Promise<Rec
     const sockets = { a: new SimulatedWebSocket('ws://a'), b: new SimulatedWebSocket('ws://b'), c: new SimulatedWebSocket('ws://c') };
     for (const [peerId, socket] of Object.entries(sockets)) {
         await socket.open();
-        server.addConnection(new ConnectionContext({ id: peerId, socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: peerId, socket }));
     }
     const engine = new InboxOutboxEngine();
     engine.start();
@@ -756,7 +757,7 @@ async function createRemoteOriginInstance(
     const server = new JsonWebSocketServer();
     const origin = new SimulatedWebSocket('ws://a-on-remote');
     await origin.open();
-    server.addConnection(new ConnectionContext({ id: 'a', socket: origin }));
+    attachTestWebSocket(server, new ConnectionContext({ id: 'a', socket: origin }));
     const engine = new InboxOutboxEngine();
     engine.start();
     const remote = createDefaultWsQueueBoxServerService({

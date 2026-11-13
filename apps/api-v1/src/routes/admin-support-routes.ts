@@ -6,7 +6,7 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import type { AdminSupportNarrativeResponse } from '@shared/api/admin-support/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import {
     requireApiAdminSession as defaultRequireApiAdminSession,

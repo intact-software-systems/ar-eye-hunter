@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -89,7 +90,7 @@ async function readPage(response: Response): Promise<GroupDirectoryPage> {
     return await response.json() as GroupDirectoryPage;
 }
 
-Deno.test('group directory lists open groups the caller is not a member of as entries', async () => {
+test('group directory lists open groups the caller is not a member of as entries', async () => {
     const response = await readDirectory([openSnapshot('bobs-arena', ['bob'])]);
 
     assert.equal(response.status, 200);
@@ -123,13 +124,13 @@ Deno.test('group directory lists open groups the caller is not a member of as en
     ]);
 });
 
-Deno.test('group directory omits groups the caller already reads in full', async () => {
+test('group directory omits groups the caller already reads in full', async () => {
     const response = await readDirectory([openSnapshot('alices-arena', ['alice'])]);
 
     assert.deepEqual((await readPage(response)).entries, []);
 });
 
-Deno.test('group directory omits invite-only and deleted groups', async () => {
+test('group directory omits invite-only and deleted groups', async () => {
     const deleted = createDeletedGroupStateRouteSnapshot('deleted', 'bob');
     const inviteOnly = createGroupStateRouteSnapshot('private', ['bob']);
     const response = await readDirectory([
@@ -141,7 +142,7 @@ Deno.test('group directory omits invite-only and deleted groups', async () => {
     assert.deepEqual((await readPage(response)).entries, []);
 });
 
-Deno.test('group directory keeps forming rooms discoverable and searches both workspace names generically', async () => {
+test('group directory keeps forming rooms discoverable and searches both workspace names generically', async () => {
     const arena = openSnapshot('arena', ['bob']);
     const expedition = openSnapshot('expedition', ['bob']);
     const snapshots: readonly GroupSnapshot[] = [
@@ -156,7 +157,7 @@ Deno.test('group directory keeps forming rooms discoverable and searches both wo
     assert.equal(page.entries[0].lifecycleState, 'forming');
 });
 
-Deno.test('group directory hides rooms with nobody online unless includeEmpty is set', async () => {
+test('group directory hides rooms with nobody online unless includeEmpty is set', async () => {
     const snapshots = [openSnapshot('empty', ['bob'], 0), openSnapshot('busy', ['bob'], 1)];
 
     const hidden = await readPage(await readDirectory(snapshots));
@@ -166,7 +167,7 @@ Deno.test('group directory hides rooms with nobody online unless includeEmpty is
     assert.deepEqual(included.entries.map((entry) => entry.groupRef.groupId), ['busy', 'empty']);
 });
 
-Deno.test('group directory filters by name and orders by online count then id', async () => {
+test('group directory filters by name and orders by online count then id', async () => {
     const snapshots = [
         { ...openSnapshot('b', ['bob'], 2), group: { ...openSnapshot('b', ['bob']).group, displayName: 'Planning Team B' } },
         { ...openSnapshot('a', ['bob'], 2), group: { ...openSnapshot('a', ['bob']).group, displayName: 'Planning Team A' } },
@@ -179,7 +180,7 @@ Deno.test('group directory filters by name and orders by online count then id', 
     assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), ['c', 'a', 'b']);
 });
 
-Deno.test('group directory pages with a keyset cursor and a limit', async () => {
+test('group directory pages with a keyset cursor and a limit', async () => {
     const snapshots = ['a', 'b', 'c'].map((groupId) => openSnapshot(groupId, ['bob']));
 
     const first = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?limit=2` }));
@@ -193,7 +194,7 @@ Deno.test('group directory pages with a keyset cursor and a limit', async () => 
     assert.equal(second.nextCursor, null);
 });
 
-Deno.test('group directory rejects malformed query parameters', async () => {
+test('group directory rejects malformed query parameters', async () => {
     for (const query of ['limit=0', 'limit=201', 'limit=x', 'kind=lobby', 'includeEmpty=1', 'cursor=!!!', 'order=nearest']) {
         const response = await readDirectory([], { path: `${DIRECTORY_PATH}?${query}` });
         const body = await response.json() as { code: string; };
@@ -203,7 +204,7 @@ Deno.test('group directory rejects malformed query parameters', async () => {
     }
 });
 
-Deno.test('group directory reads RTT only for the authenticated session when opted in', async () => {
+test('group directory reads RTT only for the authenticated session when opted in', async () => {
     const reads: (readonly string[])[] = [];
     const rtcRttRepository: GroupStateRouteDependencies['rtcRttRepository'] = {
         listMeasurementEntriesForEndpoints: (sessionIds) => {
@@ -226,7 +227,7 @@ Deno.test('group directory reads RTT only for the authenticated session when opt
     assert.equal(page.entries[0].peerRttMs, null);
 });
 
-Deno.test('group directory returns measured peer RTT and revalidates on changed or expired evidence', async () => {
+test('group directory returns measured peer RTT and revalidates on changed or expired evidence', async () => {
     const nowEpochMs = 100_000;
     let repositoryNow = nowEpochMs;
     const runtime = new FakeRuntimeStateRepository();
@@ -265,7 +266,7 @@ Deno.test('group directory returns measured peer RTT and revalidates on changed 
     assert.equal((await readPage(expired)).entries[0].peerRttMs, null);
 });
 
-Deno.test('group directory reports an RTT storage outage as an uncached server error', async () => {
+test('group directory reports an RTT storage outage as an uncached server error', async () => {
     const response = await readDirectory([openSnapshot('bobs-arena', ['bob'])], {
         path: `${DIRECTORY_PATH}?order=peer-rtt`,
         headers: { 'if-none-match': '*' },
@@ -282,7 +283,7 @@ Deno.test('group directory reports an RTT storage outage as an uncached server e
         code: 'directory-latency-unavailable'
     });
 });
-Deno.test('group directory fails closed on corrupt persisted RTT instead of reporting unknown', async () => {
+test('group directory fails closed on corrupt persisted RTT instead of reporting unknown', async () => {
     const runtime = new FakeRuntimeStateRepository();
     const rtcRttRepository = new RtcRttRepository(runtime, { now: () => 100_000 });
     await rtcRttRepository.putMeasurementIfNewer({
@@ -333,7 +334,7 @@ function onlinePeerRoom(groupId: string, principalId: string): GroupSnapshot {
     };
 }
 
-Deno.test('group directory revalidates with an ETag and answers 304 when nothing changed', async () => {
+test('group directory revalidates with an ETag and answers 304 when nothing changed', async () => {
     const snapshots = [openSnapshot('bobs-arena', ['bob'])];
 
     const first = await readDirectory(snapshots, { headers: { origin: ALLOWED_ORIGIN } });
@@ -360,7 +361,7 @@ Deno.test('group directory revalidates with an ETag and answers 304 when nothing
     assert.equal(changed.status, 200);
 });
 
-Deno.test('group directory never conditionally caches authentication or query errors', async () => {
+test('group directory never conditionally caches authentication or query errors', async () => {
     const snapshots = [openSnapshot('bobs-arena', ['bob'])];
     const validator = (await readDirectory(snapshots)).headers.get('etag') ?? '';
     for (
@@ -386,7 +387,7 @@ Deno.test('group directory never conditionally caches authentication or query er
     }
 });
 
-Deno.test('group directory rechecks caller visibility despite a previous callers validator', async () => {
+test('group directory rechecks caller visibility despite a previous callers validator', async () => {
     const snapshots = [openSnapshot('bobs-arena', ['bob'])];
     const validator = (await readDirectory(snapshots)).headers.get('etag') ?? '';
     const response = await readDirectory(snapshots, {
@@ -399,7 +400,7 @@ Deno.test('group directory rechecks caller visibility despite a previous callers
     assert.deepEqual((await readPage(response)).entries, []);
 });
 
-Deno.test('group directory invalidates a validator when count capacity visibility or scope changes', async () => {
+test('group directory invalidates a validator when count capacity visibility or scope changes', async () => {
     const snapshot = openSnapshot('bobs-arena', ['bob']);
     const validator = (await readDirectory([snapshot])).headers.get('etag') ?? '';
     const changes: readonly GroupSnapshot[] = [
@@ -428,7 +429,7 @@ Deno.test('group directory invalidates a validator when count capacity visibilit
     }
 });
 
-Deno.test('unlisting removes a room despite an old ETag and relisting makes it discoverable again', async () => {
+test('unlisting removes a room despite an old ETag and relisting makes it discoverable again', async () => {
     const snapshot = openSnapshot('shared-link-room', ['bob']);
     const first = await readDirectory([snapshot]);
     const etag = first.headers.get('etag');
@@ -447,7 +448,7 @@ Deno.test('unlisting removes a room despite an old ETag and relisting makes it d
     assert.deepEqual((await readPage(restored)).entries.map((entry) => entry.groupRef.groupId), ['shared-link-room']);
 });
 
-Deno.test('unlisted and corrupt rooms expose neither directory data nor latency evidence reads', async () => {
+test('unlisted and corrupt rooms expose neither directory data nor latency evidence reads', async () => {
     const snapshot = openSnapshot('hidden', ['bob']);
     let rttReads = 0;
     const snapshots = ['unlisted', 'future-mode'].map((listing) => ({
@@ -469,19 +470,19 @@ Deno.test('unlisted and corrupt rooms expose neither directory data nor latency 
     assert.equal(rttReads, 0);
 });
 
-Deno.test('group directory denies cross-origin access to its response and validator for an untrusted origin', async () => {
+test('group directory denies cross-origin access to its response and validator for an untrusted origin', async () => {
     const response = await readDirectory([], { headers: { origin: 'https://untrusted.example' } });
     assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
-Deno.test('group directory without strict authorization lists open groups to an unauthenticated caller', async () => {
+test('group directory without strict authorization lists open groups to an unauthenticated caller', async () => {
     const response = await readDirectory([openSnapshot('bobs-arena', ['bob'])], { strict: false });
 
     assert.equal(response.status, 200);
     assert.equal((await readPage(response)).entries.length, 1);
 });
 
-Deno.test('group directory cursors survive group ids outside Latin-1', async () => {
+test('group directory cursors survive group ids outside Latin-1', async () => {
     const snapshots = ['arena-\u623f\u95f4', 'arena-\u{1f3af}', 'arena-z'].map((groupId) => openSnapshot(groupId, ['bob']));
 
     const first = await readPage(await readDirectory(snapshots, { path: `${DIRECTORY_PATH}?limit=1` }));
@@ -494,7 +495,7 @@ Deno.test('group directory cursors survive group ids outside Latin-1', async () 
     assert.equal(new Set([...first.entries, ...second.entries].map((entry) => entry.groupRef.groupId)).size, 3);
 });
 
-Deno.test('group directory applies the server default member cap when a group sets none', async () => {
+test('group directory applies the server default member cap when a group sets none', async () => {
     const snapshot = openSnapshot('crowded', ['bob', 'carol']);
     const crowded = { ...snapshot, group: { ...snapshot.group, maxMembers: null, activeMemberCount: 2 } };
 
@@ -504,13 +505,13 @@ Deno.test('group directory applies the server default member cap when a group se
     assert.equal(page.entries[0].isFull, true);
 });
 
-Deno.test('group directory authenticates before it validates the query', async () => {
+test('group directory authenticates before it validates the query', async () => {
     const response = await readDirectory([], { path: `${DIRECTORY_PATH}?limit=0`, authenticated: false });
 
     assert.equal(response.status, 401);
 });
 
-Deno.test('group directory lists an open group to a principal whose invitation expired', async () => {
+test('group directory lists an open group to a principal whose invitation expired', async () => {
     const invited = createGroupStateRouteSnapshotWithMember('invited-arena', 'alice', 'invited');
     const expired = {
         ...invited,
@@ -524,7 +525,7 @@ Deno.test('group directory lists an open group to a principal whose invitation e
     assert.deepEqual(page.entries.map((entry) => entry.groupRef.groupId), ['invited-arena']);
 });
 
-Deno.test('group directory answers 304 to weak and listed If-None-Match validators', async () => {
+test('group directory answers 304 to weak and listed If-None-Match validators', async () => {
     const snapshots = [openSnapshot('bobs-arena', ['bob'])];
     const etag = (await readDirectory(snapshots)).headers.get('etag') ?? '';
 

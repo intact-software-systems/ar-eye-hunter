@@ -1,6 +1,12 @@
-import { createRtcB05ObservationDenoRuntime } from '../observation/rtc-b05-observation-deno-runtime.ts';
+import { spawn } from 'node:child_process';
+import { writeSync, type Stats } from 'node:fs';
+import { lstat, mkdir, open, readdir, readFile, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
+import { availableParallelism, hostname, totalmem } from 'node:os';
+
+import { RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS } from '../evidence/rtc-baseline-writer-lock.ts';
+import { createRtcB05ObservationBunRuntime } from '../observation/rtc-b05-observation-bun-runtime.ts';
 import { createRtcB05ObservationRunner } from '../observation/rtc-b05-observation-runner.ts';
-import { createRtcB06ObservationDenoRuntime } from '../observation/rtc-b06-observation-deno-runtime.ts';
+import { createRtcB06ObservationBunRuntime } from '../observation/rtc-b06-observation-bun-runtime.ts';
 import { createRtcB06ObservationRunner } from '../observation/rtc-b06-observation-runner.ts';
 import { verifyRtcPerformanceObservationArchive } from '../observation/rtc-performance-observation-archive.ts';
 import {
@@ -12,13 +18,18 @@ import {
     runRtcPerformanceObservationCommand,
     type RtcPerformanceObservationCliDependencies
 } from '../observation/rtc-performance-observation-cli.ts';
+import { createBunRtcBaselineAdapters } from '../runtime/rtc-baseline-bun-adapters.ts';
+import type {
+    RtcBaselineBunFile,
+    RtcBaselineBunFileInfo,
+    RtcBaselineBunPort
+} from '../runtime/rtc-baseline-bun-port.ts';
+import { createRtcBaselineBunRuntime } from '../runtime/rtc-baseline-bun-runtime.ts';
 import {
     resolveRtcBaselineCaptureAdmission,
     RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
     type RtcBaselineCaptureAdmission
 } from '../runtime/rtc-baseline-capture-admission.ts';
-import { createDenoRtcBaselineAdapters } from '../runtime/rtc-baseline-deno-adapters.ts';
-import { createRtcBaselineDenoRuntime } from '../runtime/rtc-baseline-deno-runtime.ts';
 import type { RtcBaselineEnvelope } from '../runtime/rtc-baseline-envelope.ts';
 import { parseRtcBaselineCommand, type RtcBaselineParsedCommand } from './rtc-baseline-cli-grammar.ts';
 import { writeRtcBaselineCliOutput } from './write-rtc-baseline-cli-output.ts';
@@ -204,46 +215,263 @@ async function dispatchBaselineRead(
     };
 }
 
-function defaultRuntime() {
-    const deno = Deno;
+class RtcBaselineNotFound extends Error {}
+class RtcBaselineAlreadyExists extends Error {}
+class RtcBaselinePermissionDenied extends Error {}
+
+function translateNodeError(error: unknown): never {
+    if (error instanceof Error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') {
+            throw new RtcBaselineNotFound('File not found.');
+        }
+        if (code === 'EEXIST') {
+            throw new RtcBaselineAlreadyExists('File already exists.');
+        }
+        if (code === 'EACCES' || code === 'EPERM') {
+            throw new RtcBaselinePermissionDenied('Permission denied.');
+        }
+    }
+    throw error;
+}
+
+async function translateError<Value>(operation: () => Promise<Value>): Promise<Value> {
+    try {
+        return await operation();
+    }
+    catch (error) {
+        translateNodeError(error);
+    }
+}
+
+function toFileInfo(stat: Stats): RtcBaselineBunFileInfo {
     return {
-        envGet: (name: string) => deno.env.get(name),
+        isFile: stat.isFile(),
+        isDirectory: stat.isDirectory(),
+        isSymlink: stat.isSymbolicLink(),
+        dev: stat.dev,
+        ino: stat.ino,
+        size: stat.size
+    };
+}
+
+function toOpenFlags(options: { read: boolean; write: boolean; createNew?: boolean; }): string {
+    if (options.createNew) {
+        return options.read ? 'wx+' : 'wx';
+    }
+    if (options.read && options.write) {
+        return 'r+';
+    }
+    return options.read ? 'r' : 'w';
+}
+
+async function openNodeFile(
+    path: string,
+    options: { read: boolean; write: boolean; createNew?: boolean; }
+): Promise<RtcBaselineBunFile> {
+    try {
+        const handle = await open(path, toOpenFlags(options));
+        return wrapFileHandle(path, handle);
+    }
+    catch (error) {
+        translateNodeError(error);
+    }
+}
+
+function isAlreadyExists(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'EEXIST';
+}
+
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
+async function readLockAgeMs(lockDir: string): Promise<number> {
+    const lockStat = await stat(lockDir);
+    return Date.now() - lockStat.mtimeMs;
+}
+
+async function tryAcquireLock(lockDir: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            await mkdir(lockDir); // atomic: exactly one process succeeds
+            return true;
+        }
+        catch (error) {
+            if (!isAlreadyExists(error)) {
+                throw error;
+            }
+        }
+        // The holder may release between the failed mkdir and this stale check, so the
+        // lock dir can vanish before it is stat'd. Treat ENOENT as losing the race and
+        // retry the acquire loop.
+        try {
+            const ageMs = await readLockAgeMs(lockDir);
+            if (ageMs < RTC_BASELINE_WRITER_LOCK_STALE_AFTER_MS) {
+                return false; // live lock — never touch a fresh lock
+            }
+        }
+        catch (error) {
+            if (!isNotFound(error)) {
+                throw error;
+            }
+            continue;
+        }
+        try {
+            await rm(lockDir, { recursive: true, force: false }); // one reclaimer wins
+        }
+        catch {
+            // Lost the reclamation race; retry mkdir on the next loop.
+        }
+    }
+    return false;
+}
+
+export function wrapFileHandle(path: string, handle: FileHandle): RtcBaselineBunFile {
+    let position = 0;
+    let lockHeld = false;
+    const lockDir = `${path}.lock`;
+
+    async function acquireOrReclaimLock(): Promise<boolean> {
+        if (lockHeld) {
+            return true;
+        }
+        const acquired = await tryAcquireLock(lockDir);
+        lockHeld = acquired;
+        return acquired;
+    }
+
+    return {
+        stat: async () => toFileInfo(await handle.stat()),
+        async seek(offset, whence) {
+            if (whence === 0) {
+                position = offset;
+            }
+            else if (whence === 1) {
+                position += offset;
+            }
+            else {
+                position = (await handle.stat()).size + offset;
+            }
+            return position;
+        },
+        async read(buffer) {
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+            if (bytesRead === 0) {
+                return null;
+            }
+            position += bytesRead;
+            return bytesRead;
+        },
+        async write(bytes) {
+            const { bytesWritten } = await handle.write(bytes, 0, bytes.length, position);
+            position += bytesWritten;
+            return bytesWritten;
+        },
+        truncate: (length) => handle.truncate(length),
+        sync: () => handle.sync(),
+        async lock() {
+            while (!(await acquireOrReclaimLock())) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+        },
+        tryLock: () => acquireOrReclaimLock(),
+        async unlock() {
+            if (lockHeld) {
+                lockHeld = false;
+                await rm(lockDir, { recursive: true, force: true });
+            }
+        },
+        close: () => handle.close()
+    };
+}
+
+function runNodeCommand(
+    executable: string,
+    arguments_: readonly string[]
+): Promise<{ code: number; stdout: Uint8Array; stderr: Uint8Array; }> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(executable, [...arguments_], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+        child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+        child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+        child.on('error', reject);
+        child.on('close', (code) => {
+            resolve({
+                code: code ?? 0,
+                stdout: Buffer.concat(stdoutChunks),
+                stderr: Buffer.concat(stderrChunks)
+            });
+        });
+    });
+}
+
+function defaultRuntime() {
+    return {
+        envGet: (name: string) => process.env[name],
         get build() {
-            return deno.build;
+            return { os: process.platform, arch: process.arch };
         },
         get version() {
-            return deno.version;
+            return { bun: process.versions.bun ?? process.versions.node };
         },
         get pid() {
-            return deno.pid;
+            return process.pid;
         },
         get errors() {
-            return deno.errors;
+            return {
+                NotFound: RtcBaselineNotFound,
+                AlreadyExists: RtcBaselineAlreadyExists,
+                PermissionDenied: RtcBaselinePermissionDenied
+            };
         },
-        lstat: (path: string) => deno.lstat(path),
-        open: (path: string, options: Deno.OpenOptions) => deno.open(path, options),
-        mkdir: (path: string, options?: { recursive?: boolean; }) => deno.mkdir(path, options),
-        readFile: (path: string) => deno.readFile(path),
+        lstat: (path: string) => translateError(async () => toFileInfo(await lstat(path))),
+        open: (path: string, options: { read: boolean; write: boolean; createNew?: boolean; }) =>
+            openNodeFile(path, options),
+        mkdir: (path: string, options?: { recursive?: boolean; }) =>
+            translateError(async () => {
+                await mkdir(path, options);
+            }),
+        readFile: (path: string) => translateError(() => readFile(path)),
         writeFile: (path: string, bytes: Uint8Array, options?: { createNew?: boolean; }) =>
-            deno.writeFile(path, bytes, options),
-        remove: (path: string, options?: { recursive?: boolean; }) => deno.remove(path, options),
-        readDir: (path: string) => deno.readDir(path),
-        hostname: () => deno.hostname(),
-        randomUuid: () => crypto.randomUUID(),
-        kill: (processId: number, signal: Deno.Signal | number) => deno.kill(processId, signal),
-        async command(executable: string, arguments_: readonly string[]) {
-            return new deno.Command(executable, { args: [...arguments_] }).output();
+            translateError(() => writeFile(path, bytes, { flag: options?.createNew ? 'wx' : 'w' })),
+        remove: (path: string, options?: { recursive?: boolean; }) => translateError(() => rm(path, options)),
+        readDir: async function* (path: string) {
+            const entries = await translateError(() => readdir(path, { withFileTypes: true }));
+            for (const entry of entries) {
+                yield {
+                    name: entry.name,
+                    isFile: entry.isFile(),
+                    isDirectory: entry.isDirectory(),
+                    isSymlink: entry.isSymbolicLink()
+                };
+            }
         },
+        hostname: () => hostname(),
+        randomUuid: () => crypto.randomUUID(),
+        kill: (processId: number, signal: number) => {
+            try {
+                process.kill(processId, signal);
+            }
+            catch (error) {
+                if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+                    throw new RtcBaselineNotFound('Process not found.');
+                }
+                throw error;
+            }
+        },
+        command: (executable: string, arguments_: readonly string[]) => runNodeCommand(executable, arguments_),
         writeStdout: async (bytes: Uint8Array) => {
-            await deno.stdout.write(bytes);
+            writeSync(1, bytes);
         },
         writeStderr: async (bytes: Uint8Array) => {
-            await deno.stderr.write(bytes);
+            writeSync(2, bytes);
         },
         now: () => new Date(),
         performanceNow: () => performance.now(),
-        systemMemoryInfo: () => deno.systemMemoryInfo(),
-        availableParallelism: () => navigator.hardwareConcurrency
+        systemMemoryInfo: () => ({ total: totalmem() }),
+        availableParallelism: () => availableParallelism()
     };
 }
 
@@ -251,15 +479,15 @@ function createDefaultRtcBaselineCliComposition(
     captureAdmission: RtcBaselineCaptureAdmission | undefined
 ): RtcBaselineCliComposition {
     const runtime = defaultRuntime();
-    const adapters = createDenoRtcBaselineAdapters(runtime);
-    const envelope = createRtcBaselineDenoRuntime(adapters, captureAdmission);
-    const browserObservation = createRtcB05ObservationDenoRuntime({
+    const adapters = createBunRtcBaselineAdapters(runtime);
+    const envelope = createRtcBaselineBunRuntime(adapters, captureAdmission);
+    const browserObservation = createRtcB05ObservationBunRuntime({
         runtime,
         adapters,
         envelope
     });
-    const liveRtcObservation = createRtcB06ObservationDenoRuntime({
-        repositoryRoot: Deno.cwd(),
+    const liveRtcObservation = createRtcB06ObservationBunRuntime({
+        repositoryRoot: process.cwd(),
         runtime,
         adapters,
         envelope,
@@ -277,34 +505,36 @@ function createDefaultRtcBaselineCliComposition(
 }
 
 async function runDefaultRtcBaselineCli() {
-    const deno = Deno;
-    const parsed = isRtcPerformanceObservationCommand(deno.args[0])
-        ? parseRtcPerformanceObservationCommand(deno.args)
-        : parseRtcBaselineCommand(deno.args);
+    const arguments_ = process.argv.slice(2);
+    const stdoutWriter = { writeSync: (bytes: Uint8Array) => writeSync(1, bytes) };
+    const stderrWriter = { writeSync: (bytes: Uint8Array) => writeSync(2, bytes) };
+    const parsed = isRtcPerformanceObservationCommand(arguments_[0])
+        ? parseRtcPerformanceObservationCommand(arguments_)
+        : parseRtcBaselineCommand(arguments_);
     if (!parsed.ok) {
-        writeRtcBaselineCliOutput(deno.stderr, `${JSON.stringify(parsed.issues)}\n`);
+        writeRtcBaselineCliOutput(stderrWriter, `${JSON.stringify(parsed.issues)}\n`);
         return 64;
     }
     const admission = (parsed.value.kind === 'observe-live-rtc' || parsed.value.kind === 'capture-live-rtc')
         ? resolveRtcBaselineCaptureAdmission(
             parsed.value.rtcCaptureMode,
-            deno.env.get(RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME)
+            process.env[RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME]
         )
         : { ok: true as const, value: undefined };
     if (!admission.ok) {
-        writeRtcBaselineCliOutput(deno.stderr, `${JSON.stringify(admission.issues)}\n`);
+        writeRtcBaselineCliOutput(stderrWriter, `${JSON.stringify(admission.issues)}\n`);
         return 64;
     }
     const composition = createDefaultRtcBaselineCliComposition(admission.value);
     const code = await runRtcBaselineCli({
         command: parsed.value,
         ...composition,
-        writeStdout: (value) => writeRtcBaselineCliOutput(deno.stdout, value),
-        writeStderr: (value) => writeRtcBaselineCliOutput(deno.stderr, value)
+        writeStdout: (value) => writeRtcBaselineCliOutput(stdoutWriter, value),
+        writeStderr: (value) => writeRtcBaselineCliOutput(stderrWriter, value)
     });
     return code;
 }
 
 if (import.meta.main) {
-    Deno.exit(await runDefaultRtcBaselineCli());
+    process.exit(await runDefaultRtcBaselineCli());
 }

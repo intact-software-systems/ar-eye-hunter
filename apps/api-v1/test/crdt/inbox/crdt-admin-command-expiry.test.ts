@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -31,7 +32,7 @@ interface CrdtAdminExpiryCase {
     readonly request: JsonWireValue;
 }
 
-Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', async () => {
+test('CRDT admin commands retain the complete AppInbox retry horizon', async () => {
     const commands: CrdtMutationCommand[] = [];
     const reservationTraceIds: string[] = [];
     const stopAfterCapture = new Error('command captured');
@@ -98,7 +99,7 @@ Deno.test('CRDT admin commands retain the complete AppInbox retry horizon', asyn
     }
 });
 
-Deno.test('CRDT admin lifecycle rejects its value before exact document validation', async () => {
+test('CRDT admin lifecycle rejects its value before exact document validation', async () => {
     let clockReads = 0;
     let inboxWrites = 0;
     const mutations = createCrdtAdminMutations({

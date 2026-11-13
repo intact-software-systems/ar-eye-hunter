@@ -16,6 +16,7 @@ import {
 } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -138,7 +139,7 @@ function createIngressFixture(fanout: RallarServerWsFanout): IngressFixture {
     const sockets = { origin: new TestWebSocket('ws://origin'), receiver: new TestWebSocket('ws://receiver') };
     for (const [sessionId, socket] of Object.entries(sockets)) {
         socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: sessionId, socket }));
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage

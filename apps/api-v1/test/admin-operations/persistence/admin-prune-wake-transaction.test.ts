@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -23,18 +24,18 @@ import {
     RealEngineAdminPruneFixture
 } from './admin-prune-real-engine-fixture.ts';
 
-Deno.test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
+test('committed initial admin page work wakes the running queue engine into APP_OUTBOX processing', async () => {
     await withUtcPGliteSql(runRealEngineHandoffTest);
 });
 
-Deno.test('initial admin page work does not wake until its successful transaction commits', async () => {
+test('initial admin page work does not wake until its successful transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
         const fixture = await createDeferredAdminCommitFixture(sql);
         await assertDeferredAdminCommit(fixture, () => assert.equal(fixture.state.wakeCount, 0));
     });
 });
 
-Deno.test('failed admin commit assertion joins its held transaction and request before database cleanup', async () => {
+test('failed admin commit assertion joins its held transaction and request before database cleanup', async () => {
     await withUtcPGliteSql(async (sql) => {
         const fixture = await createDeferredAdminCommitFixture(sql);
         const primary = new Error('admin assertion before held commit release');
@@ -204,7 +205,7 @@ async function assertDeferredAdminCommit(fixture: DeferredAdminCommitFixture, as
     }
 }
 
-Deno.test('dry-run initial admin work does not wake after its transaction commits', async () => {
+test('dry-run initial admin work does not wake after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
@@ -260,7 +261,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
     });
 });
 
-Deno.test('rolled-back initial admin page work does not wake the queue', async () => {
+test('rolled-back initial admin page work does not wake the queue', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
@@ -337,7 +338,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
     });
 });
 
-Deno.test('rejected initial admin outbox write does not wake or persist page work', async () => {
+test('rejected initial admin outbox write does not wake or persist page work', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);

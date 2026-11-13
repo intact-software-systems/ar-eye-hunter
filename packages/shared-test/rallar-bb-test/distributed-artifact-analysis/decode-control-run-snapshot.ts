@@ -1,5 +1,8 @@
 import { Either } from '@shared/resilience/Either.ts';
-import { isAdmissibleControlRtcCaptureResult, toRetainedControlResultEnvelope } from '../control/control-rtc-capture-evidence.ts';
+import {
+    isAdmissibleControlRtcCaptureResult,
+    toRetainedControlResultEnvelope
+} from '../control/control-rtc-capture-evidence.ts';
 
 import {
     parseControlClientMessage,
@@ -87,14 +90,18 @@ export function decodeControlRunSnapshot(value: unknown): Either<string, Control
     if (agents.right === undefined || commands.right === undefined || evidence.right === undefined) {
         return Either.ofLeft(agents.left ?? commands.left ?? evidence.left ?? 'snapshot entries did not decode');
     }
-    const resultEnvelopes = evidence.right.results.map((envelope) => toRetainedControlResultEnvelope(envelope, commands.right ?? []));
+    const resultEnvelopes = evidence.right.results.map((envelope) =>
+        toRetainedControlResultEnvelope(envelope, commands.right ?? [])
+    );
     const invalid = resultEnvelopes.find((envelope) =>
-        envelope.runId !== runId || (commands.right?.some((command) => command.envelope.commandId === envelope.commandId) && !isAdmissibleControlRtcCaptureResult({
-            command: commands.right?.find((command) => command.envelope.commandId === envelope.commandId)?.envelope,
-            envelope,
-            commands: commands.right ?? [],
-            results: resultEnvelopes
-        }))
+        envelope.runId !== runId ||
+        (commands.right?.some((command) => command.envelope.commandId === envelope.commandId) &&
+            !isAdmissibleControlRtcCaptureResult({
+                command: commands.right?.find((command) => command.envelope.commandId === envelope.commandId)?.envelope,
+                envelope,
+                commands: commands.right ?? [],
+                results: resultEnvelopes
+            }))
     );
     return invalid === undefined
         ? Either.ofRight({

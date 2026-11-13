@@ -1,10 +1,11 @@
 import { PSqlAdminExpiredDataPruner } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-expired-data-pruner.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
-Deno.test('PostgreSQL admin expiry reader counts only expired supported rows', async () => {
+test('PostgreSQL admin expiry reader counts only expired supported rows', async () => {
     await withPGliteSql(async (sql) => {
         await seedSupportedPruneRows(sql);
         const pruner = new PSqlAdminExpiredDataPruner(sql);

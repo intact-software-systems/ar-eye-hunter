@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import postgres from 'postgres';
 
@@ -21,8 +22,8 @@ interface BenchmarkOptions {
 }
 
 async function main(): Promise<void> {
-    const options = readOptions(Deno.args);
-    const databaseUrl = Deno.env.get('DATABASE_URL') ?? DEFAULT_DATABASE_URL;
+    const options = readOptions(process.argv.slice(2));
+    const databaseUrl = process.env['DATABASE_URL'] ?? DEFAULT_DATABASE_URL;
     const postgresDatabase = postgres(databaseUrl, {
         max: RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.concurrency + 2,
         idle_timeout: 2
@@ -38,14 +39,14 @@ async function main(): Promise<void> {
             label: options.label,
             generatedAt: new Date().toISOString(),
             runtime: {
-                deno: Deno.version.deno,
+                bun: process.versions.bun ?? process.versions.node,
                 postgres: versionRows[0]?.version ?? 'unavailable'
             },
             policy: RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY,
             workloads
         };
-        await Deno.mkdir(dirname(options.outPath), { recursive: true });
-        await Deno.writeTextFile(options.outPath, `${JSON.stringify(artifact, null, 2)}\n`);
+        await mkdir(dirname(options.outPath), { recursive: true });
+        await writeFile(options.outPath, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
         console.log(JSON.stringify({ outPath: options.outPath, workloads }, null, 2));
     }
     finally {

@@ -228,60 +228,6 @@ verify_rallar_control_public_cors() {
 	echo "  ok: Access-Control-Allow-Origin=${allow_origin}"
 }
 
-write_rallar_controller_caddyfile() {
-	apply_rallar_public_spa_defaults
-
-	local caddyfile caddy_dir tmp_file spa_origin
-	caddyfile="${RALLAR_CADDYFILE:-/etc/caddy/Caddyfile}"
-	caddy_dir="${caddyfile%/*}"
-	if [[ "${caddy_dir}" == "${caddyfile}" ]]; then
-		caddy_dir="."
-	fi
-	spa_origin="$(rallar_public_url_origin "${RALLAR_BLACK_BOX_SPA_URL}" || printf 'https://%s' "${RALLAR_BLACKBOX_HOST}")"
-	tmp_file="$(mktemp)"
-
-	{
-		if [[ -n "${RALLAR_ACME_EMAIL:-}" ]]; then
-			printf '{\n\temail %s\n}\n\n' "${RALLAR_ACME_EMAIL}"
-		fi
-		cat <<EOF
-${RALLAR_API_HOST} {
-	reverse_proxy 127.0.0.1:8080
-}
-
-${RALLAR_CONTROL_HOST} {
-	reverse_proxy 127.0.0.1:5180
-	handle_errors {
-		header Access-Control-Allow-Origin "${spa_origin}"
-		header Access-Control-Allow-Methods "GET,POST,DELETE,OPTIONS"
-		header Access-Control-Allow-Headers "Content-Type,Authorization,X-Rallar-Run-Token"
-		header Vary "Origin"
-		respond "Rallar Black Box control upstream unavailable" 502
-	}
-}
-
-${RALLAR_BLACKBOX_HOST} {
-	root * /var/www/rallar-black-box
-	try_files {path} {path}/index.html /index.html
-	file_server
-}
-EOF
-	} >"${tmp_file}"
-
-	if ! caddy fmt --overwrite "${tmp_file}"; then
-		rm -f "${tmp_file}"
-		return 1
-	fi
-	if ! caddy validate --config "${tmp_file}" --adapter caddyfile; then
-		rm -f "${tmp_file}"
-		return 1
-	fi
-
-	install -d -m 0755 "${caddy_dir}"
-	install -m 0644 "${tmp_file}" "${caddyfile}"
-	rm -f "${tmp_file}"
-}
-
 build_rallar_black_box_spa() {
 	local checkout_dir="$1"
 

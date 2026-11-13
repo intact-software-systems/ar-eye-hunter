@@ -18,6 +18,7 @@ import {
     vi
 } from 'vitest';
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
+import { attachTestWebSocket } from './websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from './websocket/test-web-socket.ts';
 
 const RECIPIENT_SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -143,7 +144,7 @@ function createServerRuntime(): ServerRuntime {
     const native = new TestWebSocket('ws://readiness');
     native.open();
     const context = new ConnectionContext({ id: 'connection', socket: native });
-    server.addConnection(context);
+    attachTestWebSocket(server, context);
     const selectedRecipient = { peerId: 'peer', connectionId: context.id };
     // Owned externally so the test can force a pass with drainEngine(); started immediately so the
     // scheduled retries the readiness assertions depend on still fire the way an owned engine would.

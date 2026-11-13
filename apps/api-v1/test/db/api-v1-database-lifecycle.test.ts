@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql, PSqlTransactionWrite } from '@shared-server/postgres/p-sql-sql.ts';
@@ -15,7 +16,7 @@ import {
 } from '../../src/db/api-v1-database-lifecycle.ts';
 import { PostgresStatementCensus } from '../../src/db/postgres-statement-census.ts';
 
-Deno.test('PostgreSQL client adapter counts the statements of a complete current client and forwards its lifecycle', async () => {
+test('PostgreSQL client adapter counts the statements of a complete current client and forwards its lifecycle', async () => {
     const events: string[] = [];
     const client = fakePostgresClient(7, events);
 
@@ -47,7 +48,7 @@ Deno.test('PostgreSQL client adapter counts the statements of a complete current
     );
 });
 
-Deno.test('database lifecycle constructs PostgreSQL application and listener pools explicitly', async () => {
+test('database lifecycle constructs PostgreSQL application and listener pools explicitly', async () => {
     const events: string[] = [];
     const clients: ApiV1PostgresClient[] = [];
     const poolInputs: ApiV1PostgresClientInput[] = [];
@@ -96,7 +97,7 @@ Deno.test('database lifecycle constructs PostgreSQL application and listener poo
 });
 
 for (const mode of ['pglite-memory', 'pglite-file'] as const) {
-    Deno.test(`database lifecycle owns ${mode} readiness, bootstrap, evidence, and close`, async () => {
+    test(`database lifecycle owns ${mode} readiness, bootstrap, evidence, and close`, async () => {
         const events: string[] = [];
         const resource = fakePGliteResource(events);
         const database = fakeDatabase();
@@ -142,7 +143,7 @@ for (const mode of ['pglite-memory', 'pglite-file'] as const) {
 }
 
 for (const failure of ['listener', 'readiness', 'bootstrap', 'evidence'] as const) {
-    Deno.test(`database lifecycle closes partial resources when ${failure} setup fails`, async () => {
+    test(`database lifecycle closes partial resources when ${failure} setup fails`, async () => {
         const events: string[] = [];
         const clients: ApiV1PostgresClient[] = [];
         const resource = fakePGliteResource(events);
@@ -178,7 +179,7 @@ for (const failure of ['listener', 'readiness', 'bootstrap', 'evidence'] as cons
     });
 }
 
-Deno.test('PostgreSQL URL translation moves only the Prisma schema query to search_path', () => {
+test('PostgreSQL URL translation moves only the Prisma schema query to search_path', () => {
     assert.equal(
         toPostgresJsConnectionUrl('postgres://database.test/rallar?schema=tenant&sslmode=require'),
         'postgres://database.test/rallar?sslmode=require&search_path=tenant'
@@ -189,7 +190,7 @@ Deno.test('PostgreSQL URL translation moves only the Prisma schema query to sear
     );
 });
 
-Deno.test('with timing on, the application pool alone records into a statement census, whose emission stops with the lifecycle', async () => {
+test('with timing on, the application pool alone records into a statement census, whose emission stops with the lifecycle', async () => {
     const events: string[] = [];
     const poolInputs: ApiV1PostgresClientInput[] = [];
     const lifecycle = await createApiV1DatabaseLifecycle(
@@ -206,7 +207,7 @@ Deno.test('with timing on, the application pool alone records into a statement c
     assert.deepEqual(events.filter((event) => event.startsWith('timer:')), ['timer:schedule:5000', 'timer:cancel']);
 });
 
-Deno.test('a statement census whose pools fail to start stops its emission', async () => {
+test('a statement census whose pools fail to start stops its emission', async () => {
     const events: string[] = [];
     await assert.rejects(
         () =>

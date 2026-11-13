@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -25,7 +26,7 @@ import {
 
 const REQUEST_ID = 'ClientMutationRequest_012345';
 
-Deno.test('client mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
+test('client mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
     const processCalls: AppInboxEnqueueInput[] = [];
     const app = createClientRouteApp(createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -51,7 +52,7 @@ Deno.test('client mutation routes hand the request trace to the AppInbox enqueue
     assert.deepEqual(processCalls.map((enqueue) => enqueue.traceId), ['trace-client-route']);
 });
 
-Deno.test('a mutation route the timing middleware never traced fails as an unexpected 500, not a client error', async () => {
+test('a mutation route the timing middleware never traced fails as an unexpected 500, not a client error', async () => {
     const processCalls: AppInboxEnqueueInput[] = [];
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -73,7 +74,7 @@ Deno.test('a mutation route the timing middleware never traced fails as an unexp
     assert.deepEqual(processCalls, []);
 });
 
-Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
+test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
     const processCalls: AppInboxEnqueueInput[] = [];
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -155,7 +156,7 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
     assert.equal(processCalls.length, 0);
 });
 
-Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', async () => {
+test('client REST lifecycle accepts equal causal timestamp boundaries', async () => {
     const processCalls: AppInboxEnqueueInput[] = [];
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -214,7 +215,7 @@ Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', asy
     assert.equal(processCalls.length, 3);
 });
 
-Deno.test('client REST mutation preserves explicit terminal idempotency 409', async () => {
+test('client REST mutation preserves explicit terminal idempotency 409', async () => {
     const conflict = Object.assign(
         new Error('Client mutation command differs for request same-request'),
         {
@@ -260,7 +261,7 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
     assert.equal(processCount, 1);
 });
 
-Deno.test('a session heartbeat whose issued session expired before enqueue answers its typed 401, not 500', async () => {
+test('a session heartbeat whose issued session expired before enqueue answers its typed 401, not 500', async () => {
     const session = createAuthSession('alice');
     const expired = { ...session, expiresAtEpochMs: session.issuedAtEpochMs + 1 };
     const deps = createClientRouteDeps({
@@ -314,7 +315,7 @@ Deno.test('a session heartbeat whose issued session expired before enqueue answe
     });
 });
 
-Deno.test('client mutation routes hydrate the receiving node cache from remotely processed results', async () => {
+test('client mutation routes hydrate the receiving node cache from remotely processed results', async () => {
     const baseSnapshot = createClientSnapshot('alice');
     const snapshot: ClientSnapshot = {
         ...baseSnapshot,
@@ -405,7 +406,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
     assert.deepEqual(await readResponse.json(), snapshot);
 });
 
-Deno.test('client mutation routes preserve committed success when cache hydration fails', async () => {
+test('client mutation routes preserve committed success when cache hydration fails', async () => {
     const snapshot = createClientSnapshot('alice');
     const warnings: Parameters<typeof console.warn>[] = [];
     const originalWarn = console.warn;

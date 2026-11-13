@@ -61,12 +61,7 @@ interface RtcBaselineWorkloadInput {
     cases: readonly RtcBaselineWorkloadCase[];
 }
 
-const syntheticPrefix = [
-    'run',
-    '--config=packages/shared-rtc-bench/deno.json',
-    '--allow-read',
-    '--allow-write'
-];
+const syntheticPrefix = ['run'];
 
 function toRtcBaselineConfigurationDescriptor(
     input: RtcBaselineDescriptorInput
@@ -81,9 +76,9 @@ function toRtcBaselineSyntheticCase(input: RtcBaselineSyntheticCaseInput): RtcBa
     return {
         caseId,
         inputKey,
-        runtime: { executable: 'deno', prefixArguments: [...syntheticPrefix, sourcePath] },
+        runtime: { executable: 'bun', prefixArguments: [...syntheticPrefix, sourcePath] },
         sourcePaths: [sourcePath],
-        configPaths: ['packages/shared-rtc-bench/deno.json'],
+        configPaths: [],
         configuration: fields.map(([field, flag, kind, value]) =>
             toRtcBaselineConfigurationDescriptor({ caseKey, field, flag, scalarKind: kind, defaultValue: value })
         ),
@@ -456,14 +451,14 @@ const fullStackSourcePaths = [
     'packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts',
     'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-validation.ts',
     'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-decoding.ts',
-    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-runtime.ts',
+    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-bun-runtime.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-runner.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-performance-observation-cli-grammar.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-performance-observation-cli.ts',
     'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
     'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts',
     'packages/shared-rtc-bench/baseline/runtime/create-rtc-baseline-runtime-observation-input.ts',
-    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-deno-runtime.ts',
+    'packages/shared-rtc-bench/baseline/observation/rtc-b06-observation-bun-runtime.ts',
     'packages/shared-rtc-bench/baseline/observation/rtc-b06-private-build.ts',
     'packages/shared-rtc-bench/baseline/observation/read-rtc-b06-diagnostic-selection.ts',
     'packages/shared-rtc-bench/baseline/acceptance/validate-rtc-b06-browser-recording.ts',
@@ -500,7 +495,7 @@ const fullStackProductionSourcePaths = [
     'packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-production-proof.ts',
     'packages/shared-test/black-box-runner/fixtures/rtc-production/read-full-stack-rtc-build-tool-inputs.ts',
     'packages/shared-test/black-box-runner/fixtures/rtc-production/full-stack-rtc-build-tool-provenance.ts',
-    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-adapters.ts',
+    'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-bun-adapters.ts',
     'packages/shared-test/black-box-runner/fixtures/full-stack-rtc-ice-fixture-policy.ts',
     'packages/shared-test/black-box-runner/fixtures/read-full-stack-rtc-ice-fixture-requests.ts'
 ];

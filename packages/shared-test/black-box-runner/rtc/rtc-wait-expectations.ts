@@ -1,5 +1,3 @@
-import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
-// deno-lint-ignore-file no-explicit-any
 import {
     compareJson,
     COMPARISON,
@@ -12,6 +10,7 @@ import {
     toWaitCountBound,
     type WaitCountBound
 } from '../expectations/wait-count-bound.ts';
+import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
 
 export interface RtcWaitInput {
     readonly observations?: WaitObservationSource;

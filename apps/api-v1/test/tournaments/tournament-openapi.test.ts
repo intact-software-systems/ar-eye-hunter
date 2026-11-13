@@ -1,9 +1,10 @@
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import { installApiDocumentationRoutes } from '../../src/routes/swagger-routes.ts';
 
-Deno.test('published tournament API documents exact user intent without score upload or captured authority', async () => {
+test('published tournament API documents exact user intent without score upload or captured authority', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     assert.equal(response.status, 200);

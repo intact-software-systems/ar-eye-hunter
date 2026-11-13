@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -28,6 +29,7 @@ import {
     issueNativeWebSocketTicket,
     issueSameUserSessions,
     readAdmittedSnapshot,
+    readPresentGroupSnapshot,
     warmNativeGroupCreatePath,
     writeNativeGroupCreate,
     writeNativeGroupJoin,
@@ -103,7 +105,7 @@ class NativeSubjectAckHold {
     }
 }
 
-Deno.test('fourteen automatic receiver ACKs cross native API sockets and complete the exact origin receipt after release', async () => {
+test('fourteen automatic receiver ACKs cross native API sockets and complete the exact origin receipt after release', async () => {
     const fixture = await createNativeSessionTestFixture();
     const peers: NativeReceiptPeer[] = [];
     const registry = new BrowserRallarDeliveryRegistry({
@@ -166,9 +168,9 @@ Deno.test('fourteen automatic receiver ACKs cross native API sockets and complet
             admitted.activeSessions.map((session) => session.sessionId).sort(),
             sessions.map((session) => session.sessionId).sort()
         );
-        const presence = await fixture.runtime.groupsRepository.listPresenceSessions(groupRef);
+        const present = await readPresentGroupSnapshot(fixture.runtime, groupRef);
         assert.deepEqual(
-            presence.map((session) => session.sessionId).sort(),
+            present.activeSessions.map((session) => session.sessionId).sort(),
             sessions.map((session) => session.sessionId).sort()
         );
         const subject = createNativeReceiptEvent(originSession.sessionId, groupRef);

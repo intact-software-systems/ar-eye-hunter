@@ -1,3 +1,6 @@
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+
 import {
     parseControlServerMessage,
     type ControlClientIdentity,
@@ -5,7 +8,6 @@ import {
     type ControlResultEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
@@ -15,16 +17,16 @@ import { getJson, startControlServer } from './support/control-api-test-server.t
 import { toRegisterEnvelope } from './support/control-service-test-fixtures.ts';
 import { executeControlRuntimeCommand } from './support/execute-control-runtime-command.ts';
 
-Deno.test('the same socket cannot manufacture a later reload registration', async () => {
+test('the same socket cannot manufacture a later reload registration', async () => {
     const server = await startControlServer();
     const socket = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     try {
         const closed = waitForSocketClose(socket);
         socket.send(JSON.stringify(toRegisterEnvelope({ completedCommandIds: ['reload-id'] })));
-        assertEquals((await closed).code, 1008);
+        expect((await closed).code).toEqual(1008);
         const snapshot = await getJson<ControlRunSnapshot>(server.baseUrl, '/runs/run-1');
-        assertEquals(snapshot.agents[0].connectionSequence, 1);
-        assertEquals(snapshot.agents[0].resumeCompletedCommandIds, []);
+        expect(snapshot.agents[0].connectionSequence).toEqual(1);
+        expect(snapshot.agents[0].resumeCompletedCommandIds).toEqual([]);
     }
     finally {
         socket.close();
@@ -32,15 +34,15 @@ Deno.test('the same socket cannot manufacture a later reload registration', asyn
     }
 });
 
-Deno.test('socket result identity must match its registered run and agent', async () => {
+test('socket result identity must match its registered run and agent', async () => {
     const server = await startControlServer();
     const socket = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     try {
         const closed = waitForSocketClose(socket);
         socket.send(JSON.stringify({ kind: 'result', protocolVersion: 1, runId: 'run-1', agentId: 'agent-2', commandId: 'foreign', ok: true }));
-        assertEquals((await closed).code, 1008);
+        expect((await closed).code).toEqual(1008);
         const snapshot = await getJson<ControlRunSnapshot>(server.baseUrl, '/runs/run-1');
-        assertEquals(snapshot.results, []);
+        expect(snapshot.results).toEqual([]);
     }
     finally {
         socket.close();
@@ -48,14 +50,14 @@ Deno.test('socket result identity must match its registered run and agent', asyn
     }
 });
 
-Deno.test('an unregistered socket cannot inject a reload result', async () => {
+test('an unregistered socket cannot inject a reload result', async () => {
     const server = await startControlServer();
     const socket = new WebSocket(server.baseUrl.replace('http:', 'ws:') + '/control');
     try {
         await waitForSocketOpen(socket);
         const closed = waitForSocketClose(socket);
         socket.send(JSON.stringify({ kind: 'result', protocolVersion: 1, runId: 'run-1', agentId: 'agent-1', commandId: 'foreign', ok: true }));
-        assertEquals((await closed).code, 1008);
+        expect((await closed).code).toEqual(1008);
     }
     finally {
         socket.close();
@@ -63,7 +65,7 @@ Deno.test('an unregistered socket cannot inject a reload result', async () => {
     }
 });
 
-Deno.test('a new registered socket resumes the actual reload and receives only the suffix', async () => {
+test('a new registered socket resumes the actual reload and receives only the suffix', async () => {
     const server = await startControlServer();
     const original = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     let replacement: WebSocket | undefined;
@@ -89,7 +91,7 @@ Deno.test('a new registered socket resumes the actual reload and receives only t
                 }
             })
         });
-        assertEquals(response.status, 202);
+        expect(response.status).toEqual(202);
         await response.json();
         const prefix = await prefixArrives;
         const forgedRoot = await executeSocketCommand({ ...prefix, commandId: 'socket-root' });
@@ -97,28 +99,27 @@ Deno.test('a new registered socket resumes the actual reload and receives only t
         const reloadArrives = nextSocketCommand(original, { runId: 'run-1', agentId: 'agent-1' });
         original.send(JSON.stringify(await executeSocketCommand(prefix)));
         const reload = await reloadArrives;
-        assertEquals(reload.command.kind, 'agent.reload');
+        expect(reload.command.kind).toEqual('agent.reload');
         original.send(JSON.stringify(await executeSocketCommand(reload)));
         replacement = new WebSocket(server.baseUrl.replace('http:', 'ws:') + '/control');
         await waitForSocketOpen(replacement);
         const suffixArrives = nextSocketCommand(replacement, { runId: 'run-1', agentId: 'agent-1' });
         replacement.send(JSON.stringify(toRegisterEnvelope({ completedCommandIds: [reload.commandId] })));
         const suffix = await suffixArrives;
-        assertEquals(suffix.command.kind, 'recipe.run');
+        expect(suffix.command.kind).toEqual('recipe.run');
         if (suffix.command.kind === 'recipe.run') {
-            assertEquals(suffix.command.recipe?.commands.map((child) => child.commandId), ['before', 'reload', 'after']);
-            assertEquals(suffix.recipeExecution?.segment, { start: 2, end: 3, first: false });
+            expect(suffix.command.recipe?.commands.map((child) => child.commandId)).toEqual(['before', 'reload', 'after']);
+            expect(suffix.recipeExecution?.segment).toEqual({ start: 2, end: 3, first: false });
         }
         replacement.send(JSON.stringify(await executeSocketCommand(suffix)));
         const recorded = await waitForJsonl(server.baseUrl, '/runs/run-1/results.jsonl', JSON.stringify(suffix.commandId));
-        assertEquals(
+        expect(
             recorded.split('\n').filter(Boolean).some((line) => {
                 const row = decodeRecord(JSON.parse(line));
                 assert(typeof row.commandId === 'string', 'journal result row requires its command identity');
                 return row.commandId === 'socket-root';
-            }),
-            false
-        );
+            })
+        ).toEqual(false);
     }
     finally {
         original.close();
@@ -157,36 +158,36 @@ async function executeSocketCommand(command: ControlCommandEnvelope): Promise<Co
     };
 }
 
-Deno.test('NUL-containing run and agent identities keep distinct socket ownership and dispatch', async () => {
+test('NUL-containing run and agent identities keep distinct socket ownership and dispatch', async () => {
     const server = await startControlServer();
     const first = await registerAgent(server.baseUrl, 'a', 'b\u0000c');
     const second = await registerAgent(server.baseUrl, 'a\u0000b', 'c');
     try {
-        assertEquals(first.readyState, WebSocket.OPEN);
+        expect(first.readyState).toEqual(WebSocket.OPEN);
         const commandArrives = nextSocketCommand(first, { runId: 'a', agentId: 'b\u0000c' });
         const response = await fetch(server.baseUrl + '/runs/a/agents/b%00c/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ commandId: 'first-only', command: { kind: 'health' } })
         });
-        assertEquals(response.status, 202);
+        expect(response.status).toEqual(202);
         await response.json();
         const command = await commandArrives;
-        assertEquals([command.runId, command.agentId, command.commandId], ['a', 'b\u0000c', 'first-only']);
+        expect([command.runId, command.agentId, command.commandId]).toEqual(['a', 'b\u0000c', 'first-only']);
         const closed = waitForSocketClose(first);
         const deletion = await fetch(server.baseUrl + '/runs/a', { method: 'DELETE' });
         await deletion.text();
         await closed;
-        assertEquals(second.readyState, WebSocket.OPEN);
+        expect(second.readyState).toEqual(WebSocket.OPEN);
         const nextCommandArrives = nextSocketCommand(second, { runId: 'a\u0000b', agentId: 'c' });
         const nextResponse = await fetch(server.baseUrl + '/runs/a%00b/agents/c/commands', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ commandId: 'second-only', command: { kind: 'health' } })
         });
-        assertEquals(nextResponse.status, 202);
+        expect(nextResponse.status).toEqual(202);
         await nextResponse.json();
-        assertEquals((await nextCommandArrives).commandId, 'second-only');
+        expect((await nextCommandArrives).commandId).toEqual('second-only');
     }
     finally {
         first.close();

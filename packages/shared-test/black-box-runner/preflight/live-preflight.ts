@@ -1,5 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
-
 import { resolveVariableByEnv } from './resolve-variable-by-env.ts';
 
 type JsonRecord = Record<string, unknown>;

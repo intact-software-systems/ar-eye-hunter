@@ -18,13 +18,14 @@ import { Either } from '@shared/resilience/Either.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { SimulatedWebSocket } from '../../../../shared/native-websocket-fixture.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 
 describe('WS server inbound identity', () => {
     it('rejects a forged sender and preserves an exact matching non-CRDT message', async () => {
         const server = new JsonWebSocketServer();
         const socket = new SimulatedWebSocket('ws://test.invalid');
         await socket.open();
-        server.addConnection(new ConnectionContext({ id: 'session-attacker', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-attacker', socket }));
         const inboundDiagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -79,7 +80,7 @@ describe('WS server inbound identity', () => {
         const server = new JsonWebSocketServer();
         const socket = new SimulatedWebSocket('ws://test.invalid');
         await socket.open();
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket }));
         const admittedMessages: ALMessage[] = [];
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,

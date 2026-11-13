@@ -1,4 +1,4 @@
-import { assert } from '@std/assert';
+import assert from 'node:assert/strict';
 
 import type { RallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -113,7 +113,7 @@ export class AlmReloadPublicationLane {
         const msg = toLiveMessage(send, this.input.clock.nowMs());
         current.laneKeys.add(toALPublicationLaneKey(msg));
         const policy = send.command.publication;
-        assert(policy, 'a live send names its publication');
+        assert(policy);
         const result = current.stage.stage({
             msg,
             carrier: send.carrier,
@@ -156,7 +156,7 @@ export class AlmReloadPublicationLane {
                 clock.setNowMs(Math.max(clock.nowMs(), targetMs));
                 return;
             }
-            assert(nextMs > clock.nowMs(), `the lane did not run its opportunity due at ${nextMs}`);
+            assert(nextMs > clock.nowMs());
             clock.setNowMs(nextMs);
             await this.runDueOpportunities();
         }

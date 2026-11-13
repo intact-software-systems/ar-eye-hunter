@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
@@ -18,14 +20,14 @@ import type {
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 
 const CLIENTS = Number(
-    Deno.args.find((arg) => arg.startsWith('--clients='))?.slice('--clients='.length) ??
+    process.argv.slice(2).find((arg) => arg.startsWith('--clients='))?.slice('--clients='.length) ??
         '1000'
 );
 const RUNS = Number(
-    Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
+    process.argv.slice(2).find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
         '3'
 );
-const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
+const OUT = process.argv.slice(2).find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/client-list-fanout.json';
 
 const scope = {
@@ -397,8 +399,8 @@ const BENCHMARK_AUDIT_STAMP: AuditStamp = {
 await main();
 
 async function writeBenchmarkResults(results: readonly RunResult[]): Promise<void> {
-    await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
-    await Deno.writeTextFile(
+    await mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
+    await writeFile(
         OUT,
         `${
             JSON.stringify(

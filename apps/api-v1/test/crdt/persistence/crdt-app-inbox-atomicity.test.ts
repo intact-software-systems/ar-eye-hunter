@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { scheduler } from 'node:timers/promises';
 
@@ -52,6 +53,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
@@ -114,11 +116,11 @@ interface FanoutDequeueFixture {
     readonly service: WsQueueBoxServerService;
 }
 
-Deno.test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
+test('CRDT mutation CAS commits state and logical WS outbox atomically', async () => {
     await verifyAtomicMutationCommit();
 });
 
-Deno.test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
+test('committed CRDT append reply carries scoped producer authority for dequeue', async () => {
     await withPGliteSql(async (sql) => {
         const service = createMutationService(sql);
         const input = await command({
@@ -150,7 +152,7 @@ Deno.test('committed CRDT append reply carries scoped producer authority for deq
     });
 });
 
-Deno.test(
+test(
     'CRDT mutation rejects an identical final WS outbox collision and rolls back every write',
     async () => {
         await verifyIdenticalOutboxCollisionRollback();
@@ -159,7 +161,7 @@ Deno.test(
 
 for (const scope of ['room', 'principal', 'app'] as const) {
     for (const proofState of ['present', 'missing'] as const) {
-        Deno.test(`committed CRDT ${scope} fanout first dequeue with ${proofState} producer proof`, async () => {
+        test(`committed CRDT ${scope} fanout first dequeue with ${proofState} producer proof`, async () => {
             await withPGliteSql(async (sql) => {
                 const now = Date.now();
                 const document: RallarCrdtDocumentRef = {
@@ -275,7 +277,7 @@ function createFanoutDequeueFixture(sql: PGliteSql): FanoutDequeueFixture {
     ].map((id) => {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
-        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
         return { id, native };
     });
     const reader = new WsOutboxProvenanceReader({
@@ -602,7 +604,7 @@ async function closeFanoutDequeueFixture(
     }
 }
 
-Deno.test('CRDT fanout cleanup attempts every owned stage and joins the held engine after service failure', async () => {
+test('CRDT fanout cleanup attempts every owned stage and joins the held engine after service failure', async () => {
     const calls: string[] = [];
     const serviceFailure = new Error('fanout service disposal');
     const engineFailure = new Error('fanout engine stop');
@@ -667,7 +669,7 @@ Deno.test('CRDT fanout cleanup attempts every owned stage and joins the held eng
     assert.deepEqual(failure.errors, [serviceFailure, engineFailure, socketFailure]);
 });
 
-Deno.test('CRDT fanout cleanup preserves the exact assertion Error and reports actual secondary failures', async () => {
+test('CRDT fanout cleanup preserves the exact assertion Error and reports actual secondary failures', async () => {
     const primaryFailure = new Error('fanout wire assertion');
     const serviceFailure = new Error('fanout service disposal');
     const reports: AggregateError[] = [];

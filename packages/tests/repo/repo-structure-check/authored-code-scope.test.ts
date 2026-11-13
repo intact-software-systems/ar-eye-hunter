@@ -26,7 +26,6 @@ describe('repository structure authored-code scope', () => {
     it('explicitly excludes generated directories and tool-mandated files', () => {
         expect(generatedDirectoryExclusions).toEqual([
             '.cache',
-            '.deno',
             '.git',
             '.next',
             '.nx',
@@ -54,7 +53,7 @@ describe('repository structure authored-code scope', () => {
             'prisma.config',
             'vite.config',
             'vitest.config',
-            'vitest.deno.config',
+            'vitest.bun.config',
             'vitest.postgres-integration.config'
         ]);
         for (const directory of generatedDirectoryExclusions) {

@@ -5,7 +5,7 @@ import { decodeMatchmakingRequest } from '@shared/api/matchmaking/matchmaking-re
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { decodeStateScope } from '@shared/api/state-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
 import {
     toApiMutationFailureResponse,
     toApiMutationRateLimitResponse,

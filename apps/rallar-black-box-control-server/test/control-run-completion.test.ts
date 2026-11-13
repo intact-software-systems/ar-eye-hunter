@@ -1,9 +1,14 @@
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { CONTROL_RUN_COMPLETION_FILE_NAME } from '@shared-test/rallar-bb-test/control/control-run-completion.ts';
 import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
-import { assert, assertEquals } from '@std/assert';
 
 import { createManualTimers, type ManualTimers } from '../../../packages/tests/shared/resilience/manual-timers.ts';
 import {
@@ -134,7 +139,7 @@ function createRun(service: RallarBlackBoxControlService, { runId, agentIds, com
             payload: { topic: 'rallar.bb.test', index, padding: EVENT_PADDING }
         });
     }
-    assertEquals(service.snapshotDistributedRun(toDistributedRunId(runId))?.state, 'passed');
+    expect(service.snapshotDistributedRun(toDistributedRunId(runId))?.state).toEqual('passed');
     if (completed) {
         agentIds.forEach((agentId) => service.markAgentDisconnected(runId, agentId));
     }
@@ -150,13 +155,13 @@ function createRuns(service: RallarBlackBoxControlService, completedCount: numbe
 }
 
 async function readPersistedSnapshot(storageDir: string): Promise<ControlServerSnapshot> {
-    return JSON.parse(await Deno.readTextFile(`${storageDir}/control-snapshot.json`)).snapshot;
+    return JSON.parse(await readFile(`${storageDir}/control-snapshot.json`, 'utf8')).snapshot;
 }
 
 async function flush(fixture: CompletionFixture): Promise<string> {
     fixture.persistence.persist();
     await fixture.timers.advance(FLUSH_INTERVAL_MS * 2);
-    return await Deno.readTextFile(`${fixture.storageDir}/control-snapshot.json`);
+    return await readFile(`${fixture.storageDir}/control-snapshot.json`, 'utf8');
 }
 
 function toCompletionFilePath(storageDir: string, runId: string): string {
@@ -164,12 +169,12 @@ function toCompletionFilePath(storageDir: string, runId: string): string {
 }
 
 async function withStorageDir(prefix: string, run: (storageDir: string) => Promise<void>): Promise<void> {
-    const storageDir = await Deno.makeTempDir({ prefix: `rallar-control-completion-${prefix}-` });
+    const storageDir = await mkdtemp(join(tmpdir(), `rallar-control-completion-${prefix}-`));
     try {
         await run(storageDir);
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 }
 
@@ -185,7 +190,7 @@ function withSilencedConsole<T>(run: () => Promise<T>): Promise<{ value: T; warn
     });
 }
 
-Deno.test('the flushed snapshot carries completed runs as index entries and its revision moves only with the active run', async () => {
+test('the flushed snapshot carries completed runs as index entries and its revision moves only with the active run', async () => {
     await withStorageDir('index', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
@@ -207,40 +212,40 @@ Deno.test('the flushed snapshot carries completed runs as index entries and its 
         fixture.service.receiveClientEnvelope(toHeartbeatEnvelope({ runId: 'live-1', agentId: 'agent-1', atEpochMs: timers.nowMs() }));
         const revisionAfterActive = fixture.service.snapshotRevision().content;
 
-        assertEquals(archived.toSorted(), ['done-1', 'done-2', 'done-3', 'done-4']);
-        assertEquals(completed.length, 4);
+        expect(archived.toSorted()).toEqual(['done-1', 'done-2', 'done-3', 'done-4']);
+        expect(completed.length).toEqual(4);
         for (const run of completed) {
-            assertEquals([run.commands, run.results, run.events, run.stats, run.reports, run.heartbeats].map((rows) => rows.length), [0, 0, 0, 0, 0, 0]);
-            assertEquals(run.agents.length, 2, 'the index keeps the agents and their counters');
-            assertEquals(run.completion?.counts.events, EVENTS_PER_RUN);
-            assertEquals(run.completion?.counts.results, 4);
-            assertEquals(run.completion?.file.path, `runs/${toRunDirectoryName(run.runId)}/${CONTROL_RUN_COMPLETION_FILE_NAME}`);
-            assertEquals(run.completion?.file.state, 'present');
+            expect([run.commands, run.results, run.events, run.stats, run.reports, run.heartbeats].map((rows) => rows.length)).toEqual([0, 0, 0, 0, 0, 0]);
+            expect(run.agents.length).toEqual(2);
+            expect(run.completion?.counts.events).toEqual(EVENTS_PER_RUN);
+            expect(run.completion?.counts.results).toEqual(4);
+            expect(run.completion?.file.path).toEqual(`runs/${toRunDirectoryName(run.runId)}/${CONTROL_RUN_COMPLETION_FILE_NAME}`);
+            expect(run.completion?.file.state).toEqual('present');
             assert((run.completion?.file.bytes ?? 0) > EVENTS_PER_RUN * EVENT_PADDING.length);
-            assertEquals(run.completion?.completedAtEpochMs, completedAtEpochMs);
+            expect(run.completion?.completedAtEpochMs).toEqual(completedAtEpochMs);
         }
-        assertEquals(active?.events.length, EVENTS_PER_RUN);
-        assertEquals(active?.completion, undefined);
-        assert(indexedText.length * 3 < liveText.length, `${indexedText.length} bytes after, ${liveText.length} before`);
-        assertEquals(refused.accepted, false, 'a completed run refuses new envelopes');
-        assertEquals(revisionAfterRefusal, revisionBefore);
+        expect(active?.events.length).toEqual(EVENTS_PER_RUN);
+        expect(active?.completion).toEqual(undefined);
+        assert(indexedText.length * 3 < liveText.length);
+        expect(refused.accepted).toEqual(false);
+        expect(revisionAfterRefusal).toEqual(revisionBefore);
         assert(revisionAfterActive !== revisionBefore);
-        assertEquals(fixture.persistCalls(), 1, 'the archive asks for one flush per pass that archived a run');
+        expect(fixture.persistCalls()).toEqual(1);
         const completions = fixture.timings.filter((event) => event.operation === 'run.completion');
-        assertEquals(completions.length, 4);
+        expect(completions.length).toEqual(4);
         assert(completions.every((event) => event.status === 'ok' && ((event.details?.bytes ?? 0) as number) > 0));
         await fixture.archive.stop();
     });
 });
 
-Deno.test('restore loads the index and serves a completed run from its file, bounded like a live read', async () => {
+test('restore loads the index and serves a completed run from its file, bounded like a live read', async () => {
     await withStorageDir('restore', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const first = toFixture({ storageDir, timers });
         createRuns(first.service, 1, 1);
         const beforeArchive = first.service.snapshotRun('done-1', {});
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await first.archive.completeRuns(), ['done-1']);
+        expect(await first.archive.completeRuns()).toEqual(['done-1']);
         await first.persistence.stop();
         await first.archive.stop();
 
@@ -254,33 +259,33 @@ Deno.test('restore loads the index and serves a completed run from its file, bou
         const bounded = assertRight(await restored.archive.readRun('done-1', { events: 1, results: 2 }));
         const live = assertRight(await restored.archive.readRun('live-1', {}));
 
-        assertEquals(warnings, []);
-        assertEquals(index?.completion?.file.state, 'present');
-        assertEquals(index?.results.length, 0);
+        expect(warnings).toEqual([]);
+        expect(index?.completion?.file.state).toEqual('present');
+        expect(index?.results.length).toEqual(0);
         assertJsonEquals(full.results, beforeArchive?.results);
         assertJsonEquals(full.events, beforeArchive?.events);
-        assertEquals(full.agents, index?.agents);
-        assertEquals(full.completion, index?.completion, 'the served snapshot carries the index entry');
-        assertEquals(bounded.events.map((event) => event.eventId), [`done-1-event-${EVENTS_PER_RUN - 1}`]);
-        assertEquals(bounded.results.length, 2);
-        assertEquals(live.events.length, EVENTS_PER_RUN);
-        assertEquals(live.completion, undefined);
-        assertEquals((await restored.archive.readRun('unknown', {})).left?.code, 'run-not-found');
-        assertRight(decodeControlRunSnapshot(JSON.parse(await Deno.readTextFile(toCompletionFilePath(storageDir, 'done-1')))));
+        expect(full.agents).toEqual(index?.agents as typeof full.agents);
+        expect(full.completion).toEqual(index?.completion);
+        expect(bounded.events.map((event) => event.eventId)).toEqual([`done-1-event-${EVENTS_PER_RUN - 1}`]);
+        expect(bounded.results.length).toEqual(2);
+        expect(live.events.length).toEqual(EVENTS_PER_RUN);
+        expect(live.completion).toEqual(undefined);
+        expect((await restored.archive.readRun('unknown', {})).left?.code).toEqual('run-not-found');
+        assertRight(decodeControlRunSnapshot(JSON.parse(await readFile(toCompletionFilePath(storageDir, 'done-1'), 'utf8'))));
     });
 });
 
-Deno.test('a crash before the index is flushed leaves the run live in the snapshot and the next pass completes it again', async () => {
+test('a crash before the index is flushed leaves the run live in the snapshot and the next pass completes it again', async () => {
     await withStorageDir('crash', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const first = toFixture({ storageDir, timers });
         createRuns(first.service, 1, 0);
         const liveSnapshotText = await flush(first);
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await first.archive.completeRuns(), ['done-1']);
-        const firstFile = await Deno.stat(toCompletionFilePath(storageDir, 'done-1'));
+        expect(await first.archive.completeRuns()).toEqual(['done-1']);
+        const firstFile = await stat(toCompletionFilePath(storageDir, 'done-1'));
         // The process dies after the file write and before the index flush: the snapshot on disk still holds the rows.
-        await Deno.writeTextFile(`${storageDir}/control-snapshot.json`, liveSnapshotText);
+        await writeFile(`${storageDir}/control-snapshot.json`, liveSnapshotText, 'utf8');
 
         const restored = toFixture({ storageDir, timers });
         await withSilencedConsole(async () => {
@@ -288,20 +293,20 @@ Deno.test('a crash before the index is flushed leaves the run live in the snapsh
             await restored.archive.restore();
         });
         const liveAgain = assertRight(await restored.archive.readRun('done-1', {}));
-        assertEquals(restored.service.snapshotRun('done-1')?.completion, undefined);
-        assertEquals(liveAgain.events.length, EVENTS_PER_RUN);
+        expect(restored.service.snapshotRun('done-1')?.completion).toEqual(undefined);
+        expect(liveAgain.events.length).toEqual(EVENTS_PER_RUN);
 
         await timers.advance(1);
-        assertEquals(await restored.archive.completeRuns(), ['done-1']);
-        const rewritten = await Deno.stat(toCompletionFilePath(storageDir, 'done-1'));
+        expect(await restored.archive.completeRuns()).toEqual(['done-1']);
+        const rewritten = await stat(toCompletionFilePath(storageDir, 'done-1'));
         const fromFile = assertRight(await restored.archive.readRun('done-1', {}));
         assertJsonEquals(fromFile.events, liveAgain.events);
-        assertEquals(rewritten.size, firstFile.size);
-        assertEquals(restored.service.snapshotRun('done-1')?.completion?.file.state, 'present');
+        expect(rewritten.size).toEqual(firstFile.size);
+        expect(restored.service.snapshotRun('done-1')?.completion?.file.state).toEqual('present');
     });
 });
 
-Deno.test('an export during the hand-over reads the run live or from its file, never empty', async () => {
+test('an export during the hand-over reads the run live or from its file, never empty', async () => {
     await withStorageDir('handover', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
@@ -310,59 +315,59 @@ Deno.test('an export during the hand-over reads the run live or from its file, n
 
         const pass = fixture.archive.completeRuns();
         const during = assertRight(await fixture.archive.readRun('done-1', {}));
-        assertEquals(await pass, ['done-1']);
+        expect(await pass).toEqual(['done-1']);
         const after = assertRight(await fixture.archive.readRun('done-1', {}));
 
-        assertEquals(during.events.length, EVENTS_PER_RUN);
+        expect(during.events.length).toEqual(EVENTS_PER_RUN);
         assertJsonEquals(after.events, during.events);
         assertJsonEquals(after.results, during.results);
-        assertEquals(during.completion, undefined);
-        assertEquals(after.completion?.file.state, 'present');
+        expect(during.completion).toEqual(undefined);
+        expect(after.completion?.file.state).toEqual('present');
     });
 });
 
-Deno.test('a failed file write keeps the run live and in the flush, and the write is retried after the backoff', async () => {
+test('a failed file write keeps the run live and in the flush, and the write is retried after the backoff', async () => {
     await withStorageDir('write-failure', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
         createRuns(fixture.service, 1, 0);
         await timers.advance(COMPLETION_CONFIG.quietMs);
         // A regular file where the run directories live makes every completion write fail.
-        await Deno.writeTextFile(`${storageDir}/runs`, 'not a directory');
+        await writeFile(`${storageDir}/runs`, 'not a directory', 'utf8');
 
         const failed = await withSilencedConsole(() => fixture.archive.completeRuns());
         const stillLive = fixture.service.snapshotRun('done-1', {});
         const flushed = await flush(fixture);
         const skipped = await withSilencedConsole(() => fixture.archive.completeRuns());
-        await Deno.remove(`${storageDir}/runs`);
+        await rm(`${storageDir}/runs`, { force: true });
         const tooEarly = await withSilencedConsole(() => fixture.archive.completeRuns());
         await timers.advance(COMPLETION_CONFIG.retryBackoff.baseMs);
         const retried = await fixture.archive.completeRuns();
 
-        assertEquals(failed.value, []);
-        assertEquals(failed.warnings.length, 1);
-        assert(failed.warnings[0].includes('done-1'), failed.warnings[0]);
-        assertEquals(stillLive?.completion, undefined);
-        assertEquals(stillLive?.events.length, EVENTS_PER_RUN);
-        assert(flushed.includes(EVENT_PADDING), 'the flush keeps the live rows');
-        assertEquals(skipped.warnings, [], 'no attempt before the retry instant');
-        assertEquals(tooEarly.value, []);
-        assertEquals(retried, ['done-1']);
+        expect(failed.value).toEqual([]);
+        expect(failed.warnings.length).toEqual(1);
+        assert(failed.warnings[0].includes('done-1'));
+        expect(stillLive?.completion).toEqual(undefined);
+        expect(stillLive?.events.length).toEqual(EVENTS_PER_RUN);
+        assert(flushed.includes(EVENT_PADDING));
+        expect(skipped.warnings).toEqual([]);
+        expect(tooEarly.value).toEqual([]);
+        expect(retried).toEqual(['done-1']);
         const failure = fixture.timings.find((event) => event.operation === 'run.completion' && event.status === 'error');
         assert(failure);
-        assertEquals(fixture.service.snapshotRun('done-1')?.completion?.file.state, 'present');
+        expect(fixture.service.snapshotRun('done-1')?.completion?.file.state).toEqual('present');
     });
 });
 
-Deno.test('a missing file for an indexed run is reported on its index entry while the other runs are served', async () => {
+test('a missing file for an indexed run is reported on its index entry while the other runs are served', async () => {
     await withStorageDir('missing', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const first = toFixture({ storageDir, timers });
         createRuns(first.service, 2, 0);
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals((await first.archive.completeRuns()).toSorted(), ['done-1', 'done-2']);
+        expect((await first.archive.completeRuns()).toSorted()).toEqual(['done-1', 'done-2']);
         await first.persistence.stop();
-        await Deno.remove(toCompletionFilePath(storageDir, 'done-1'));
+        await rm(toCompletionFilePath(storageDir, 'done-1'), { force: true });
 
         const restored = toFixture({ storageDir, timers });
         const { warnings } = await withSilencedConsole(async () => {
@@ -373,21 +378,21 @@ Deno.test('a missing file for an indexed run is reported on its index entry whil
         const served = assertRight(await restored.archive.readRun('done-2', {}));
         const listed = restored.service.snapshot().runs.map((run) => [run.runId, run.completion?.file.state]);
 
-        assertEquals(warnings.length, 1);
-        assert(warnings[0].includes('done-1'), warnings[0]);
-        assertEquals(missing.left?.code, 'completed-run-file-missing');
-        assertEquals(served.events.length, EVENTS_PER_RUN);
-        assertEquals(listed, [['done-1', 'missing'], ['done-2', 'present']]);
+        expect(warnings.length).toEqual(1);
+        assert(warnings[0].includes('done-1'));
+        expect(missing.left?.code).toEqual('completed-run-file-missing');
+        expect(served.events.length).toEqual(EVENTS_PER_RUN);
+        expect(listed).toEqual([['done-1', 'missing'], ['done-2', 'present']]);
 
         // A file that disappears while the server runs is reported by the read that misses it.
-        await Deno.remove(toCompletionFilePath(storageDir, 'done-2'));
+        await rm(toCompletionFilePath(storageDir, 'done-2'), { force: true });
         const { value: lateMissing } = await withSilencedConsole(() => restored.archive.readRun('done-2', {}));
-        assertEquals(lateMissing.left?.code, 'completed-run-file-missing');
-        assertEquals(restored.service.snapshotRun('done-2')?.completion?.file.state, 'missing');
+        expect(lateMissing.left?.code).toEqual('completed-run-file-missing');
+        expect(restored.service.snapshotRun('done-2')?.completion?.file.state).toEqual('missing');
     });
 });
 
-Deno.test('retention beyond max runs deletes a completed run\'s file with its index entry', async () => {
+test('retention beyond max runs deletes a completed run\'s file with its index entry', async () => {
     await withStorageDir('retention', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => timers.nowMs() }));
@@ -400,32 +405,32 @@ Deno.test('retention beyond max runs deletes a completed run\'s file with its in
         const fixture = toFixture({ storageDir, timers, service, retentionMaxRuns: 1, recorder });
         createRun(service, { runId: 'done-1', agentIds: ['agent-1'], completed: true });
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await fixture.archive.completeRuns(), ['done-1']);
+        expect(await fixture.archive.completeRuns()).toEqual(['done-1']);
         await timers.advance(1);
         createRun(service, { runId: 'done-2', agentIds: ['agent-1'], completed: true });
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await fixture.archive.completeRuns(), ['done-2']);
+        expect(await fixture.archive.completeRuns()).toEqual(['done-2']);
 
         fixture.persistence.persist();
         await recorder.stop();
         await timers.advance(FLUSH_INTERVAL_MS * 2);
 
-        assertEquals(service.snapshotRun('done-1'), undefined);
-        assertEquals(service.snapshotRun('done-2')?.completion?.file.state, 'present');
+        expect(service.snapshotRun('done-1')).toEqual(undefined);
+        expect(service.snapshotRun('done-2')?.completion?.file.state).toEqual('present');
         await assertMissing(toCompletionFilePath(storageDir, 'done-1'));
         await assertMissing(`${storageDir}/runs/${toRunDirectoryName('done-1')}`);
-        await Deno.stat(toCompletionFilePath(storageDir, 'done-2'));
-        assertEquals((await readPersistedSnapshot(storageDir)).runs.map((run) => run.runId), ['done-2']);
+        await stat(toCompletionFilePath(storageDir, 'done-2'));
+        expect((await readPersistedSnapshot(storageDir)).runs.map((run) => run.runId)).toEqual(['done-2']);
     });
 });
 
-Deno.test('a completed run refuses new commands and distributed runs, and its agents cannot register again', async () => {
+test('a completed run refuses new commands and distributed runs, and its agents cannot register again', async () => {
     await withStorageDir('refusal', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
         createRuns(fixture.service, 1, 0);
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await fixture.archive.completeRuns(), ['done-1']);
+        expect(await fixture.archive.completeRuns()).toEqual(['done-1']);
         const revision = fixture.service.snapshotRevision().content;
 
         const register = fixture.service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'done-1', agentId: 'agent-1' }));
@@ -434,38 +439,38 @@ Deno.test('a completed run refuses new commands and distributed runs, and its ag
             toDistributedManifest({ distributedRunId: 'dist-late', controlRunId: 'done-1' })
         );
 
-        assertEquals(register.accepted, false);
-        assertEquals(command.left?.code, 'run-completed');
-        assertEquals(distributed.left?.code, 'run-completed');
-        assertEquals(fixture.service.snapshotRun('done-1')?.agents.every((agent) => !agent.connected), true);
-        assertEquals(fixture.service.snapshotRevision().content, revision);
+        expect(register.accepted).toEqual(false);
+        expect(command.left?.code).toEqual('run-completed');
+        expect(distributed.left?.code).toEqual('run-completed');
+        expect(fixture.service.snapshotRun('done-1')?.agents.every((agent) => !agent.connected)).toEqual(true);
+        expect(fixture.service.snapshotRevision().content).toEqual(revision);
     });
 });
 
-Deno.test('a completed run keeps its fleet report, generated before its rows left memory', async () => {
+test('a completed run keeps its fleet report, generated before its rows left memory', async () => {
     await withStorageDir('fleet', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
         createRuns(fixture.service, 1, 0);
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals(await fixture.archive.completeRuns(), ['done-1']);
+        expect(await fixture.archive.completeRuns()).toEqual(['done-1']);
 
         const report = fixture.service.snapshotFleetReport(toDistributedRunId('done-1'));
 
         assert(report);
-        assertEquals(report.timing.commands.count, 4, 'the stage and start durations came from the rows, not from the index entry');
-        assertEquals(report.agents.length, 2);
+        expect(report.timing.commands.count).toEqual(4);
+        expect(report.agents.length).toEqual(2);
     });
 });
 
-Deno.test('the run and distributed-run read routes serve a completed run from its file and report a missing file', async () => {
+test('the run and distributed-run read routes serve a completed run from its file and report a missing file', async () => {
     await withStorageDir('routes', async (storageDir) => {
         const timers = createManualTimers(START_EPOCH_MS);
         const fixture = toFixture({ storageDir, timers });
         createRuns(fixture.service, 2, 0);
         await timers.advance(COMPLETION_CONFIG.quietMs);
-        assertEquals((await fixture.archive.completeRuns()).toSorted(), ['done-1', 'done-2']);
-        await Deno.remove(toCompletionFilePath(storageDir, 'done-2'));
+        expect((await fixture.archive.completeRuns()).toSorted()).toEqual(['done-1', 'done-2']);
+        await rm(toCompletionFilePath(storageDir, 'done-2'), { force: true });
         const responses = createControlHttpResponses([]);
         const recorder = new ControlArtifactRecorder({
             storageDir: undefined,
@@ -488,36 +493,36 @@ Deno.test('the run and distributed-run read routes serve a completed run from it
         const distributedBundle = routeDistributedRunReadRequest(toUrl('/distributed-runs/dist-done-1/artifacts'), distributedDependencies);
 
         const served = JSON.parse(await run!.text()) as ControlRunSnapshot;
-        assertEquals(run?.status, 200);
-        assertEquals(served.events.length, EVENTS_PER_RUN);
-        assertEquals(served.completion?.file.state, 'present');
-        assertEquals((JSON.parse(await bounded!.text()) as ControlRunSnapshot).events.length, 3);
+        expect(run?.status).toEqual(200);
+        expect(served.events.length).toEqual(EVENTS_PER_RUN);
+        expect(served.completion?.file.state).toEqual('present');
+        expect((JSON.parse(await bounded!.text()) as ControlRunSnapshot).events.length).toEqual(3);
         const bundleReport = JSON.parse((JSON.parse(await bundle!.text()) as { files: Record<string, string>; }).files['report.json']);
-        assertEquals(bundleReport.summary.total, 4);
-        assertEquals(bundleReport.outputs.eventCount, EVENTS_PER_RUN);
-        assertEquals(resultsJsonl?.status, 200);
-        assertEquals((await resultsJsonl!.text()).trim().split('\n').length, 4);
-        assertEquals(JSON.parse(await failureBundle!.text()).summary.total, 4);
+        expect(bundleReport.summary.total).toEqual(4);
+        expect(bundleReport.outputs.eventCount).toEqual(EVENTS_PER_RUN);
+        expect(resultsJsonl?.status).toEqual(200);
+        expect((await resultsJsonl!.text()).trim().split('\n').length).toEqual(4);
+        expect(JSON.parse(await failureBundle!.text()).summary.total).toEqual(4);
         const listed = JSON.parse(await listing!.text()) as ControlServerSnapshot;
-        assertEquals(listed.runs.map((entry) => [entry.runId, entry.events.length, entry.completion?.file.state]), [
+        expect(listed.runs.map((entry) => [entry.runId, entry.events.length, entry.completion?.file.state])).toEqual([
             ['done-1', 0, 'present'],
             ['done-2', 0, 'present']
         ]);
-        assertEquals(missing?.status, 410);
+        expect(missing?.status).toEqual(410);
         assert((await missing!.text()).includes('done-2'));
-        assertEquals(absent?.status, 404);
+        expect(absent?.status).toEqual(404);
         const distributed = JSON.parse(await (await distributedBundle)!.text()) as { files: Record<string, string>; };
-        assertEquals((JSON.parse(distributed.files['control-run.json']) as ControlRunSnapshot).events.length, EVENTS_PER_RUN);
-        assertEquals(JSON.parse(distributed.files['report.json']).summary.total, 4);
+        expect((JSON.parse(distributed.files['control-run.json']) as ControlRunSnapshot).events.length).toEqual(EVENTS_PER_RUN);
+        expect(JSON.parse(distributed.files['report.json']).summary.total).toEqual(4);
     });
 });
 
 async function assertMissing(path: string): Promise<void> {
     try {
-        await Deno.stat(path);
+        await stat(path);
     }
     catch (error) {
-        assert(error instanceof Deno.errors.NotFound);
+        assert((error as NodeJS.ErrnoException).code === 'ENOENT');
         return;
     }
     throw new Error(`${path} still exists`);

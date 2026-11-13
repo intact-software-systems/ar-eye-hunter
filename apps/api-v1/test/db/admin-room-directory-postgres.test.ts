@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
@@ -11,7 +12,7 @@ import {
     withPGliteSql
 } from './admin-operations-postgres-test-runtime.ts';
 
-Deno.test('operator directory uses bounded PostgreSQL pages and isolates corrupt payloads from valid rooms', async () => {
+test('operator directory uses bounded PostgreSQL pages and isolates corrupt payloads from valid rooms', async () => {
     await withPGliteSql(async (sql) => {
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
         await insertRuntimeState(sql, {

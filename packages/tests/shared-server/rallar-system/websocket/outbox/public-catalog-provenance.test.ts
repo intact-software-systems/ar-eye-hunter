@@ -11,6 +11,7 @@ import { validateWsQueueBoxServerRecipientAuthority } from '@shared/services/ws-
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { expect, it, onTestFinished } from 'vitest';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -175,7 +176,7 @@ class PublicCatalogFixture {
             const native = new TestWebSocket(`ws://${id}`);
             native.open();
             this.sockets.set(id, native);
-            this.socket.addConnection(new ConnectionContext({ id, socket: native }));
+            attachTestWebSocket(this.socket, new ConnectionContext({ id, socket: native }));
         }
     }
 }

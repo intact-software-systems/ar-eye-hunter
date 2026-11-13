@@ -996,11 +996,12 @@ class RecordingWebSocket extends EventTarget implements WebSocket {
     readonly sent: string[] = [];
 
     close(): void {}
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('The JSON transport must send text');
         }
         this.sent.push(data);
+        return data.length;
     }
 }
 

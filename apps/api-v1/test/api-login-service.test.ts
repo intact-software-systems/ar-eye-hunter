@@ -8,12 +8,13 @@ import type {
     RuntimeStateTransactionalRepositoryLike,
     RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { login, register } from '../src/services/api-login-service.ts';
 
 const STATIC_CLIENTS = [{ username: 'admin', password: 'admin', clientId: 'admin' }];
 
-Deno.test('register prepares a mandatory user command without writing before AppInbox', async () => {
+test('register prepares a mandatory user command without writing before AppInbox', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const registered = await register({
         request: {
@@ -61,7 +62,7 @@ Deno.test('register prepares a mandatory user command without writing before App
     );
 });
 
-Deno.test('register rejects usernames reserved by static dev clients', async () => {
+test('register rejects usernames reserved by static dev clients', async () => {
     await assert.rejects(
         () =>
             register({
@@ -77,7 +78,7 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
     );
 });
 
-Deno.test('an explicitly empty static-client policy frees demo client names', async () => {
+test('an explicitly empty static-client policy frees demo client names', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const registered = await register({
         request: {

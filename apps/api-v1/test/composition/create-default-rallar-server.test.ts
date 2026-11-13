@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AppTopics } from '@shared/api/api-config.ts';
@@ -24,53 +25,43 @@ interface GroupDeltaRow {
     readonly ack: string | null;
 }
 
-Deno.test({
-    name: 'default server constructs the complete runtime from explicit operational configuration',
-    sanitizeOps: false,
-    sanitizeResources: false,
-    fn: async () => {
-        const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
-        try {
-            const server = await createDefaultRallarServer({
-                configuration: decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()),
-                databaseLifecycle,
-                ws: {
-                    allowImplicitUserTopics: false,
-                    defaultFanout: 'live-only'
-                }
-            });
+test('default server constructs the complete runtime from explicit operational configuration', async () => {
+    const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    try {
+        const server = await createDefaultRallarServer({
+            configuration: decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()),
+            databaseLifecycle,
+            ws: {
+                allowImplicitUserTopics: false,
+                defaultFanout: 'live-only'
+            }
+        });
 
-            assert.ok(server.runtime.authSessionRepository);
-            assert.ok(server.runtime.groupStateService);
-            assert.ok(server.runtime.backgroundTasks);
-            server.installSystemTopics().installWebSocketLifecycle();
-            await server.runtime.readiness;
-            await server.runtime.backgroundTasks.stop();
-        }
-        finally {
-            await databaseLifecycle.close();
-        }
+        assert.ok(server.runtime.authSessionRepository);
+        assert.ok(server.runtime.groupStateService);
+        assert.ok(server.runtime.backgroundTasks);
+        server.installSystemTopics().installWebSocketLifecycle();
+        await server.runtime.readiness;
+        await server.runtime.backgroundTasks.stop();
+    }
+    finally {
+        await databaseLifecycle.close();
     }
 });
 
 // A receiver acknowledges the peer that sent a delta, and the server counts only an ACK addressed to its WS service.
-Deno.test({
-    name: 'default server sends every group-state delta from its WS service peer, receiver-receipted',
-    sanitizeOps: false,
-    sanitizeResources: false,
-    fn: async () => {
-        const server = await createPGliteTracedRallarServer();
-        try {
-            const deltas = await writeGroupWithPresence(server);
+test('default server sends every group-state delta from its WS service peer, receiver-receipted', async () => {
+    const server = await createPGliteTracedRallarServer();
+    try {
+        const deltas = await writeGroupWithPresence(server);
 
-            assert.deepEqual(
-                deltas.filter((row) => row.senderId !== server.rallar.runtime.wsQBoxServerService.name || row.ack !== 'receiver'),
-                []
-            );
-        }
-        finally {
-            await server.stop();
-        }
+        assert.deepEqual(
+            deltas.filter((row) => row.senderId !== server.rallar.runtime.wsQBoxServerService.name || row.ack !== 'receiver'),
+            []
+        );
+    }
+    finally {
+        await server.stop();
     }
 });
 

@@ -1,4 +1,5 @@
 import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
@@ -105,7 +106,7 @@ const EXPECTED_PRESENCE_COMMANDS = [
     }
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
-Deno.test('group presence commands retain validation and authenticated envelopes', () => {
+test('group presence commands retain validation and authenticated envelopes', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
     const commandBase = {
         authSession,
@@ -163,7 +164,7 @@ Deno.test('group presence commands retain validation and authenticated envelopes
     assert.deepEqual(commands, EXPECTED_PRESENCE_COMMANDS);
 });
 
-Deno.test('group presence response retains the current snapshot', async () => {
+test('group presence response retains the current snapshot', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     let currentSnapshotReads = 0;
     const service = createPresenceResponseService(snapshot, () => {
@@ -198,7 +199,7 @@ Deno.test('group presence response retains the current snapshot', async () => {
     assert.equal(currentSnapshotReads, 1);
 });
 
-Deno.test('group presence response rejects before reading its current snapshot', async () => {
+test('group presence response rejects before reading its current snapshot', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     let currentSnapshotReads = 0;
     const service = createPresenceResponseService(snapshot, () => {
@@ -235,7 +236,7 @@ Deno.test('group presence response rejects before reading its current snapshot',
     assert.equal(currentSnapshotReads, 0);
 });
 
-Deno.test(
+test(
     'group presence routes retain every AppInbox envelope and post-receipt snapshot read',
     async () => {
         const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -295,7 +296,7 @@ Deno.test(
     }
 );
 
-Deno.test('a presence connect that names no WebSocket connection generation is rejected before it is enqueued', async () => {
+test('a presence connect that names no WebSocket connection generation is rejected before it is enqueued', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
 
@@ -314,7 +315,7 @@ Deno.test('a presence connect that names no WebSocket connection generation is r
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('a presence body without a public publication key is rejected before it is enqueued', async () => {
+test('a presence body without a public publication key is rejected before it is enqueued', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
     const privateKey = {
@@ -353,13 +354,13 @@ Deno.test('a presence body without a public publication key is rejected before i
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('a presence heartbeat whose client aborts mid-body answers a typed client status, not 500', async () => {
+test('a presence heartbeat whose client aborts mid-body answers a typed client status, not 500', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
     const abortedBody = new ReadableStream<Uint8Array>({
         start(controller) {
             controller.enqueue(new TextEncoder().encode('{"generationId":"generation-'));
-            controller.error(new Deno.errors.BadResource('Cannot read body'));
+            controller.error(new DOMException('Cannot read body', 'AbortError'));
         }
     });
 
@@ -374,7 +375,7 @@ Deno.test('a presence heartbeat whose client aborts mid-body answers a typed cli
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('a presence heartbeat body that fails for a reason other than the client stopping answers 500', async () => {
+test('a presence heartbeat body that fails for a reason other than the client stopping answers 500', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({ processGroupAppInbox: capturePresenceReceipt(enqueued) });
     const failingBody = new ReadableStream<Uint8Array>({
@@ -393,7 +394,7 @@ Deno.test('a presence heartbeat body that fails for a reason other than the clie
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('inactive group presence returns the current snapshot as a no-op', async () => {
+test('inactive group presence returns the current snapshot as a no-op', async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const inactiveResult: InactiveGroupPresenceResult = {
         status: 'inactive',
@@ -426,7 +427,7 @@ Deno.test('inactive group presence returns the current snapshot as a no-op', asy
     assert.equal(currentSnapshotReads, 1);
 });
 
-Deno.test('a presence connect naming a dead connection generation answers the stale-generation denial', async () => {
+test('a presence connect naming a dead connection generation answers the stale-generation denial', async () => {
     let currentSnapshotReads = 0;
     const runtime = createGroupStateRouteTestRuntime({
         groupService: {
@@ -470,7 +471,7 @@ Deno.test('a presence connect naming a dead connection generation answers the st
     assert.equal(currentSnapshotReads, 0);
 });
 
-Deno.test('group presence route rejects a receipt before its cleanup read', async () => {
+test('group presence route rejects a receipt before its cleanup read', async () => {
     let currentSnapshotReads = 0;
     const runtime = createGroupStateRouteTestRuntime({
         groupService: {
@@ -595,7 +596,7 @@ async function requestPresenceMutation(
     });
 }
 
-Deno.test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
+test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
     const processCalls: AuthenticatedGroupMutationEnqueue[] = [];
     const { app, sessionPath } = createPresenceValidationRuntime(processCalls);
 

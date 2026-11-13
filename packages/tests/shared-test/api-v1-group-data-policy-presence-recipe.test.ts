@@ -357,8 +357,9 @@ async function runPresenceRecipe(boundary: PresenceRecipeBoundary, http: Presenc
     const interactions = readPresenceRecipeInteractions(boundary);
     const physicalSend = TestWebSocket.prototype.send;
     vi.spyOn(TestWebSocket.prototype, 'send').mockImplementation(function (this: TestWebSocket, text) {
-        physicalSend.call(this, text);
+        const written = physicalSend.call(this, text);
         http.writeSocketFrame(this, String(text));
+        return written;
     });
     const pending = executeBlackBox(interactions, 0, {
         failFast: true,

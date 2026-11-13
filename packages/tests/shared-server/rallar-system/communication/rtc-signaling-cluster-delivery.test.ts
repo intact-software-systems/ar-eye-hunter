@@ -13,6 +13,7 @@ import {
     createServerIngressFixture,
     type ServerIngressFixture
 } from '../../../shared/services/ws-queue-box-server-ingress-fixture.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 
 const scope = { applicationId: 'app', workspaceId: 'workspace' };
 const CHANNEL = 'ws-channel';
@@ -273,7 +274,7 @@ async function installSubscriber(
 async function connectReceiver(fixture: ServerIngressFixture): Promise<SimulatedWebSocket> {
     const receiver = new SimulatedWebSocket('ws://receiver');
     await receiver.open();
-    fixture.server.addConnection(new ConnectionContext({ id: 'receiver', socket: receiver }));
+    attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'receiver', socket: receiver }));
     return receiver;
 }
 

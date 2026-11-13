@@ -2,11 +2,12 @@ import { computeSha256CanonicalJson } from '@shared-server/rallar-system/protoco
 import { encodeLiveWsNotice, type LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
+import { test } from 'bun:test';
 const PRODUCER_ID = 'snapshot-publisher';
 import assert from 'node:assert/strict';
 import { createPostgresLiveWsNoticeTransport } from '../../src/db/create-postgres-live-ws-notice-transport.ts';
 
-Deno.test('oversized native frame crosses bounded PostgreSQL notifications and emits only a complete, hash-checked notice', async () => {
+test('oversized native frame crosses bounded PostgreSQL notifications and emits only a complete, hash-checked notice', async () => {
     const groupRef = { applicationId: 'game-a', workspaceId: 'region-a', groupId: 'room' };
     const topic = AppTopics.serverRoomSnapshot;
     const message = newALBroadcastMessage(PRODUCER_ID, newALRoute(topic, 'room', 'game'), 'room', topic, { data: 'é'.repeat(8000) }, { groupRef, ttlMs: 5000 });

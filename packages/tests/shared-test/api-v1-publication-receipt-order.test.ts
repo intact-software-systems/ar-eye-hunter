@@ -13,9 +13,7 @@ it('lets the recipient acknowledge without waiting for the origin receipt', () =
 
     // Alice's admitted receipt can arrive after the receiver's deadline even when Bob got the data promptly.
     // No origin-side observation may block Bob's acknowledgement of that data.
-    const originWaits = steps.slice(publication, acknowledgement).filter((step) =>
-        step.connection === 'wsAliceTertiary' && step.expect !== undefined
-    );
+    const originWaits = steps.slice(publication, acknowledgement).filter((step) => step.connection === 'wsAliceTertiary' && step.expect !== undefined);
     expect(originWaits).toEqual([]);
     const admitted = steps.findIndex((step) => step.name === 'assertTheAdmittedReceiptExpectsBobAlone');
     const complete = steps.findIndex((step) => step.name === 'assertBobsAckCompletesTheReceipt');

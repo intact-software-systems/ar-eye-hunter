@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -26,7 +27,7 @@ import {
     withUtcPGliteSql
 } from '../../db/pglite-auth-test-harness.ts';
 
-Deno.test('PSQL queue release accepts the exact admin page completed in its deletion transaction', async () => {
+test('PSQL queue release accepts the exact admin page completed in its deletion transaction', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -119,7 +120,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
     });
 });
 
-Deno.test('admin prune conflicts and preserves runtime state replaced after the page read', async () => {
+test('admin prune conflicts and preserves runtime state replaced after the page read', async () => {
     await withUtcPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         const queueRepository = createPSqlResourceInboxRepository(sql, () => new Date());

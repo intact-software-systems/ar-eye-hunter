@@ -12,10 +12,12 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
 import { TEST_DISCONNECTED_SESSION_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/client-state/test-disconnected-session-retention.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import { createApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-background-task-lifecycle.ts';
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
@@ -34,7 +36,7 @@ import { waitFor } from '../db/pglite-traced-rallar-test-runtime.ts';
 
 const SCOPE = { applicationId: 'composition-app', workspaceId: 'default' };
 
-Deno.test('runtime rejects missing room bindings and invalid lease margins before SQL or background startup', () => {
+test('runtime rejects missing room bindings and invalid lease margins before SQL or background startup', () => {
     let effects = 0;
     const unreachable = (): never => {
         effects += 1;
@@ -58,7 +60,7 @@ Deno.test('runtime rejects missing room bindings and invalid lease margins befor
     assert.equal(effects, 0);
 });
 
-Deno.test('real runtime commits a party notice through AppInbox and sends only to its authenticated own account', async () => {
+test('real runtime commits a party notice through AppInbox and sends only to its authenticated own account', async () => {
     const fixture = await createFixture();
     try {
         const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);
@@ -104,13 +106,13 @@ Deno.test('real runtime commits a party notice through AppInbox and sends only t
     }
 });
 
-Deno.test('real runtime resubscribing either PostgreSQL listener resyncs unchanged authenticated sockets only', async () => {
+test('real runtime resubscribing either PostgreSQL listener resyncs unchanged authenticated sockets only', async () => {
     const fixture = await createFixture();
     try {
         const alice = await connectAccount(fixture.runtime, 'alice', fixture.releases);
         const anonymous = new TestWebSocket('ws://anonymous');
         anonymous.open();
-        fixture.runtime.wsQBoxServerService.socket.addConnection(new ConnectionContext({ id: 'anonymous', socket: anonymous }));
+        attachTestWebSocket(fixture.runtime.wsQBoxServerService.socket, new ConnectionContext({ id: 'anonymous', socket: anonymous }));
         const baseline = messages(alice.native, AppTopics.viewResync).length;
         for (
             const channel of [fixture.input.queuePubSubChannel, API_V1_LIVE_WS_NOTICE_CHANNEL, fixture.input.queuePubSubChannel, API_V1_LIVE_WS_NOTICE_CHANNEL]
@@ -204,7 +206,7 @@ async function connectAccount(runtime: ApiV1Runtime, principalId: string, releas
     native.open();
     const connection = new ConnectionContext({ id: session.sessionId, socket: native, generationId, generationStartedAtEpochMs: now });
     rememberAuthorisedWsConnection(session.sessionId, generationId, toAuthorisedWsClientConnection({ authSession: session, generationId, input }));
-    runtime.wsQBoxServerService.socket.addConnection(connection);
+    attachTestWebSocket(runtime.wsQBoxServerService.socket, connection);
     releases.push(() =>
         releaseAuthorisedWsCloseFacts({
             sessionId: session.sessionId,

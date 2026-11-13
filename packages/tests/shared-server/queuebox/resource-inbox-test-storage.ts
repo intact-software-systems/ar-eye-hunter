@@ -1,4 +1,3 @@
-import { PGlite } from '@electric-sql/pglite';
 import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
 
@@ -8,7 +7,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { EntityStatus, Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createPGliteSqlClient, PGlite } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import { toPSqlSql } from '../integration/postgres/test-support/postgres-sql-adapter.ts';
 
 export interface ResourceInboxTestStorage {

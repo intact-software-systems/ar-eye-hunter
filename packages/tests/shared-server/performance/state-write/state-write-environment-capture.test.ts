@@ -494,7 +494,7 @@ describe('state-write environment capture native image provenance', () => {
 
     it.each([
         { field: 'containersText', value: 'isolated-perf\nother-postgres', error: 'container_overlap_count must equal 0' },
-        { field: 'processesText', value: 'deno run api-v1-state-write-concurrency-bench.ts', error: 'benchmark_process_overlap_count must equal 0' }
+        { field: 'processesText', value: 'bun run api-v1-state-write-concurrency-bench.ts', error: 'benchmark_process_overlap_count must equal 0' }
     ])('rejects new postflight overlap from $field', async ({ field, value, error }) => {
         const fixture = await createCaptureFixture();
         try {
@@ -564,7 +564,7 @@ async function createCaptureFixture(): Promise<CaptureFixture> {
     try {
         const nativeDirectory = join(directory, 'native');
         await mkdir(nativeDirectory);
-        for (const command of ['docker', 'npm', 'deno', 'ps']) {
+        for (const command of ['docker', 'npm', 'bun', 'ps']) {
             await writeFile(join(nativeDirectory, command), await readFile(join(FIXTURES, 'native-capture-command.mjs')), { mode: 0o755 });
         }
         const archive = await writeCaptureArchive({ directory });

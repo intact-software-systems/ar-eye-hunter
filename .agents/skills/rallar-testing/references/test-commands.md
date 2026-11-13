@@ -98,13 +98,13 @@ npx tsc -p packages/shared-server/tsconfig.json --noEmit
 npm --workspace ar-eye-hunter-v1 run build
 npm --workspace relic-hunters-v1 run build
 npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles
-cd apps/api-v1 && deno task check
-cd apps/relic-hunter-server-v1 && deno task check
-cd apps/rallar-black-box-control-server && deno task check
+cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit
+cd apps/relic-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit
+cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/control-agent-board.test.ts packages/tests/rallar-black-box/world-fleet-distributed-manifests.test.ts packages/tests/rallar-black-box/world-fleet-runner.test.ts packages/tests/rallar-black-box/distributed-artifact-analysis.test.ts
 npx vitest run packages/tests/rallar-black-box-headless/headless-status-view.test.ts packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts
-cd apps/rallar-black-box-control-server && deno test --allow-run --allow-net --allow-env --allow-read --allow-write test/api-black-box.test.ts
+cd apps/rallar-black-box-control-server && bun test test/api-black-box.test.ts
 ```
 
 ## REST API Black-Box Practice
@@ -126,7 +126,7 @@ and `recipes` when validating against an already-running API.
 ### API-v1 Black-Box Topology And Artifacts
 
 `memory` manages one API process. Built-in Postgres cluster profiles manage
-three Deno API processes sharing one Postgres database on ports 18080, 18081,
+three Bun API processes sharing one Postgres database on ports 18080, 18081,
 and 18082. Their logs stay isolated as `api-v1-server.log`,
 `api-v1-server-secondary.log`, and `api-v1-server-tertiary.log` under the
 API-v1 artifact directory.
@@ -251,6 +251,6 @@ npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/pl
 
 ## Notes
 
-- Deno tasks are app-local; run them from the app directory unless the root script wraps them.
+- Bun tasks are app-local; run them from the app directory unless the root script wraps them.
 - Postgres and live RTC suites are opt-in and may need services/env vars.
 - Vite game builds commonly emit large chunk warnings; treat exit code as authoritative unless the task is performance-specific.

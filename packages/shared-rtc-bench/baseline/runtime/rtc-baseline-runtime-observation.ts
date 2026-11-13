@@ -8,11 +8,11 @@ import {
     createRtcBaselineRuntimeObservationInput,
     type RtcBaselineObservationInput
 } from './create-rtc-baseline-runtime-observation-input.ts';
+import type { BunRtcBaselineAdapters } from './rtc-baseline-bun-adapters.ts';
 import {
     RTC_BASELINE_CAPTURE_ENVIRONMENT_NAME,
     type RtcBaselineCaptureAdmission
 } from './rtc-baseline-capture-admission.ts';
-import type { DenoRtcBaselineAdapters } from './rtc-baseline-deno-adapters.ts';
 
 interface Dependencies {
     readGit(): Promise<RtcBaselineRuntimeObservationDto['git']>;
@@ -53,8 +53,8 @@ export type RtcBaselineCaptureObserver = (
     initialized?: RtcBaselineRuntimeObservationDto
 ) => Promise<RtcBaselineResult<RtcBaselineRuntimeObservationDto>>;
 
-type RtcBaselineDenoObservationAdapters = Pick<
-    DenoRtcBaselineAdapters,
+type RtcBaselineBunObservationAdapters = Pick<
+    BunRtcBaselineAdapters,
     'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
 >;
 
@@ -162,7 +162,7 @@ export function createRtcBaselineRuntimeObservation(
     };
 }
 
-function createDenoRuntimeObserver(adapters: RtcBaselineDenoObservationAdapters): RtcBaselineRuntimeObserver {
+function createBunRuntimeObserver(adapters: RtcBaselineBunObservationAdapters): RtcBaselineRuntimeObserver {
     function unwrap<T>(result: RtcBaselineResult<T>): T {
         if (!result.ok) {
             throw new Error(JSON.stringify(result.issues));
@@ -195,13 +195,13 @@ function createDenoRuntimeObserver(adapters: RtcBaselineDenoObservationAdapters)
             return {
                 node: await version('node'),
                 npm: await version('npm'),
-                deno: host.deno,
+                bun: host.bun,
                 playwright: await nodeValue('console.log(require(\'playwright/package.json\').version)'),
                 chromium: await nodeValue(chromiumVersionScript)
             };
         },
         readHost: async () => {
-            const { deno: _deno, ...host } = await adapters.runtimeHost.read();
+            const { bun: _bun, ...host } = await adapters.runtimeHost.read();
             return { ...host, executionContext: host.executionContext ?? 'local' };
         },
         readSourceHashes: async () => [],
@@ -210,14 +210,14 @@ function createDenoRuntimeObserver(adapters: RtcBaselineDenoObservationAdapters)
     });
 }
 
-export function createRtcBaselineDenoObservation(
+export function createRtcBaselineBunObservation(
     adapters: Pick<
-        DenoRtcBaselineAdapters,
+        BunRtcBaselineAdapters,
         'git' | 'runtimeHost' | 'process' | 'sourceConfigHashing' | 'environment' | 'clock'
     >,
     captureAdmission?: RtcBaselineCaptureAdmission
 ): RtcBaselineCaptureObserver {
-    const observe = createDenoRuntimeObserver(adapters);
+    const observe = createBunRuntimeObserver(adapters);
     let initializedDiagnosticEnvironment: Readonly<Record<string, string>> | undefined;
     return async (request, initialized) => {
         const environment = adapters.environment.readAllowlisted(RTC_BASELINE_ENVIRONMENT_NAMES);

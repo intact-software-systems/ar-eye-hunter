@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -34,7 +35,7 @@ interface GroupEventWorkspaceRow {
     readonly workspace_key: string;
 }
 
-Deno.test('PSql state event repositories page by snapshot cursor order', async () => {
+test('PSql state event repositories page by snapshot cursor order', async () => {
     await withPGliteSql(async (sql) => {
         const clientEvents = new PSqlClientStateEventRepository(sql);
         const groupEvents = new PSqlGroupStateEventRepository(sql);
@@ -238,7 +239,7 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     });
 });
 
-Deno.test(
+test(
     'PSql group events isolate ordinary and sentinel workspaces without event-id loss',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -298,7 +299,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite group event collision rolls back the authoritative mutation transaction',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -397,7 +398,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite group summary outbox collision rolls back state event and receipt atomically',
     async () => {
         await withPGliteSql(async (sql) => {

@@ -60,6 +60,7 @@ import { JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/w
 
 import { createTestGroup } from '../../../create-test-group.ts';
 import { drainEngine } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { isAppOutboxSidecarInsert } from '../app-inbox/test-support/create-app-inbox-test-database-sql.ts';
 import { createGroupDeltaProducer, readCommittedGroupDelta } from '../group-state/presence/group-delta-producer-fixture.ts';
 import { createDeltaEnvelopeFixture } from '../group-state/presence/group-state-delta-envelope-fixtures.ts';
@@ -732,7 +733,8 @@ function createCoalescedTopologyWork(
 
 function createSocket(): RecordingJsonWebSocketServer {
     const socket = new RecordingJsonWebSocketServer();
-    socket.addConnection(
+    attachTestWebSocket(
+        socket,
         socket.createConnectionContext(
             { id: 'session-alice', socket: createOpenTestWebSocket(), generationId: 'generation-alice', observedAtEpochMs: CREATED_AT_EPOCH_MS }
         )

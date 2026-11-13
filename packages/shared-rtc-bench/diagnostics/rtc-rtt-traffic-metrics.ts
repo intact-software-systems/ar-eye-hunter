@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import {
@@ -33,48 +35,13 @@ interface RtcRttTrafficMeasurements {
     readonly enqueuedVersions: readonly number[];
 }
 
-class RtcRttTrafficWebSocket extends EventTarget implements WebSocket {
-    readonly CONNECTING = WebSocket.CONNECTING;
-    readonly OPEN = WebSocket.OPEN;
-    readonly CLOSING = WebSocket.CLOSING;
-    readonly CLOSED = WebSocket.CLOSED;
-    readonly binaryType: BinaryType = 'blob';
-    readonly bufferedAmount = 0;
-    readonly extensions = '';
-    readonly protocol = '';
+class RtcRttTrafficWebSocket implements ConnectionContext.Socket {
     readonly readyState = WebSocket.OPEN;
-    readonly url = 'ws://rtc-rtt-traffic-diagnostic';
-    onclose = null;
-    onerror = null;
-    onmessage = null;
-    onopen = null;
-    private readonly messageListeners: EventListenerOrEventListenerObject[] = [];
-
-    override addEventListener(
-        type: string,
-        callback: EventListenerOrEventListenerObject | null,
-        options?: boolean | AddEventListenerOptions
-    ): void {
-        super.addEventListener(type, callback, options);
-        if (type === 'message' && callback !== null) {
-            this.messageListeners.push(callback);
-        }
-    }
 
     close(): void {}
 
-    send(): void {}
-
-    async receive(message: ALMessage): Promise<void> {
-        const event = new MessageEvent('message', { data: JSON.stringify(message) });
-        for (const listener of this.messageListeners) {
-            if (typeof listener === 'function') {
-                await listener.call(this, event);
-            }
-            else {
-                await listener.handleEvent(event);
-            }
-        }
+    send(): number {
+        return 1;
     }
 }
 
@@ -148,7 +115,7 @@ function createArtifact(
     };
 }
 
-const args = parseArgs(Deno.args);
+const args = parseArgs(process.argv.slice(2));
 
 const sessionIds = Array.from(
     { length: args.sessions },
@@ -157,12 +124,11 @@ const sessionIds = Array.from(
 const senderSessionId = sessionIds[0];
 const server = new JsonWebSocketServer();
 const diagnosticConnections = new WeakSet<ConnectionContext>();
-const sockets = new Map(sessionIds.map((id) => {
-    const socket = new RtcRttTrafficWebSocket();
-    const connection = new ConnectionContext({ id, socket });
+const connections = new Map(sessionIds.map((id) => {
+    const connection = new ConnectionContext({ id, socket: new RtcRttTrafficWebSocket() });
     diagnosticConnections.add(connection);
-    server.addConnection(connection);
-    return [id, socket] as const;
+    server.registerConnection(connection);
+    return [id, connection] as const;
 }));
 
 const service = createDefaultWsQueueBoxServerService({
@@ -188,17 +154,18 @@ installRtcRttSystemTopic(service, {
 
 const measurements = createCentralRttMeasurements(sessionIds, senderSessionId);
 for (const measurement of measurements) {
-    await sockets.get(measurement.sessionIdFrom)!.receive(
-        newALUntargetedMessage(
+    await server.dispatchConnectionMessage(
+        connections.get(measurement.sessionIdFrom)!,
+        JSON.stringify(newALUntargetedMessage(
             measurement.sessionIdFrom,
             newALEventRoute(AppTopics.rtt, measurement.sessionIdFrom, `rtt-${measurement.version}`),
             AppTopics.rtt,
             measurement
-        )
+        ))
     );
 }
 
-await Deno.writeTextFile(
+await writeFile(
     args.out,
     `${
         JSON.stringify(

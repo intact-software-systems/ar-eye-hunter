@@ -22,14 +22,14 @@ Daily local confidence:
 npm run test:ci
 ```
 
-That runs unit tests, Deno-native tests, app-local Playwright, and the
+That runs unit tests, Bun-native tests, app-local Playwright, and the
 self-contained Rallar full-stack memory gate.
 
 Focused test gates:
 
 ```sh
 npm run test:unit
-npm run test:deno
+npm run test:bun
 npm run test:e2e
 npm run test:full-stack
 ```

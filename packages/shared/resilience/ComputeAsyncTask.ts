@@ -1,7 +1,6 @@
 // ComputeAsyncTask.ts
 // A concurrency-limited async task pump with exponential backoff.
 // Designed for I/O promise-based tasks (fetch, ws/webrtc sends, db calls, etc.)
-// deno-lint-ignore-file
 
 export type SleepFn = (ms: number) => Promise<void>;
 export type NowMsFn = () => number;

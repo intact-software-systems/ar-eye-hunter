@@ -35,7 +35,7 @@ export interface RelicHunterServer {
     }>;
 }
 
-// deno-lint-ignore no-namespace -- Type-only vocabulary owned by the service.
+// Type-only vocabulary owned by the service.
 export namespace RelicHunterGameService {
     export type Session = Pick<IssuedAuthSession, 'sessionId' | 'clientId' | 'username' | 'issuedAtEpochMs'>;
 

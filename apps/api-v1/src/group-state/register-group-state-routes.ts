@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import { registerGroupLifecycleRoutes } from './register-group-lifecycle-routes.ts';
 import { registerGroupSessionRoutes } from './register-group-session-routes.ts';
 

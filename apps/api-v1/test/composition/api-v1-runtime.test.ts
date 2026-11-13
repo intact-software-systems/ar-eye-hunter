@@ -1,6 +1,7 @@
 import type { RallarServerAppInbox } from '@shared-server/mod.ts';
 import { ViewWatchRepository } from '@shared-server/rallar-system/view-watch/view-watch-repository.ts';
 import { ViewWatchService } from '@shared-server/rallar-system/view-watch/view-watch-service.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { createTestServerAppInbox } from '../../../../packages/tests/shared-server/rallar-server/create-test-server-app-inbox.ts';
 import { FakeRuntimeStateRepository } from '../../../../packages/tests/shared-server/runtime-state/test-support/fake-runtime-state-repository.ts';
@@ -22,7 +23,7 @@ import type { ApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-
 import { requireApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 
-Deno.test('requireApiV1Runtime preserves every complete API capability identity', () => {
+test('requireApiV1Runtime preserves every complete API capability identity', () => {
     const runtime = createRuntimeCandidate();
     const additions = createRuntimeAdditions();
 
@@ -60,7 +61,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     assert.equal(complete.topologyServices, additions.topologyServices);
 });
 
-Deno.test('requireApiV1Runtime rejects every incomplete shared runtime capability', () => {
+test('requireApiV1Runtime rejects every incomplete shared runtime capability', () => {
     const cases: readonly RuntimeFailureCase[] = [
         {
             name: 'cached client state service',

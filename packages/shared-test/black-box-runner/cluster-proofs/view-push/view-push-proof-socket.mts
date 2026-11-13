@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { decodeViewInvalidationMessage, decodeViewResync } from '@shared/api/views/view-invalidation.ts';
-import { assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
 import { ClusterProofSocket } from '../cluster-proof-socket.mts';
 
 /** Validates view frames and records room controls; the original socket survives the subscriber-loss phase. */
@@ -25,7 +25,7 @@ export class ViewPushProofSocket extends ClusterProofSocket {
             decodeViewInvalidationMessage(frame);
         }
         else if (frame.route.topicId === AppTopics.viewResync) {
-            assertEquals(frame.payload.typeId, AppTopics.viewResync);
+            assert.deepEqual(frame.payload.typeId, AppTopics.viewResync);
             decodeViewResync(JSON.parse(frame.payload.resource));
         }
     }

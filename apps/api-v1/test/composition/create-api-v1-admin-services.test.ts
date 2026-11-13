@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -22,7 +23,7 @@ const ADMIN_SESSION: AuthSession = {
     expiresAtEpochMs: NOW_EPOCH_MS + 1_000
 };
 
-Deno.test('admin services read current websocket status after construction', async () => {
+test('admin services read current websocket status after construction', async () => {
     const socket = new JsonWebSocketServer();
     const services = createApiV1AdminServices(
         createInput(() => readApiV1WebSocketStatus(socket))
@@ -72,7 +73,7 @@ Deno.test('admin services read current websocket status after construction', asy
     assert.equal(current.realtime.currentSessionOpen, true);
 });
 
-Deno.test(
+test(
     'admin services propagate websocket status failures without an empty ' +
         'fallback',
     async () => {
@@ -182,7 +183,7 @@ function rejectUnusedOperation<T>(): Promise<T> {
     return Promise.reject(new Error('operation not used'));
 }
 
-function createSocket(readyState: WebSocket['readyState']): WebSocket {
+function createSocket(readyState: WebSocket['readyState']): TestWebSocket {
     return new TestWebSocket(readyState);
 }
 
@@ -209,5 +210,7 @@ class TestWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 }

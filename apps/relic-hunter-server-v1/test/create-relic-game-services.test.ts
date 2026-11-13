@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -26,7 +27,7 @@ import {
     seedRelicTestRoom
 } from './relic-game-test-runtime.ts';
 
-Deno.test('a passive Relic producer admits new work and pending/completed replay while a cold active claimant owns execution and retention', async () => {
+test('a passive Relic producer admits new work and pending/completed replay while a cold active claimant owns execution and retention', async () => {
     await withPGliteSql(async (database) => {
         const now = Date.now();
         const producer = createRelicTestMutationRuntime(database, now);

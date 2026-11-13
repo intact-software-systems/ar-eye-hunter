@@ -1,4 +1,11 @@
 import {
+    mkdtemp,
+    rm,
+    writeFile
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
     describe,
     expect,
     it
@@ -128,7 +135,7 @@ describe('topology APP_OUTBOX worker process ownership', () => {
     });
 
     it('signals the canonical barrier and completes only after its release artifact exists', async () => {
-        const directory = await Deno.makeTempDir({ prefix: 'topology-worker-barrier-' });
+        const directory = await mkdtemp(join(tmpdir(), 'topology-worker-barrier-'));
         const barrier = { readyDirectoryPath: `${directory}/ready`, releaseFilePath: `${directory}/release` };
         let completed = false;
         const waiting = waitForPostgresWorkerBarrier(barrier, 'worker/1').then(() => {
@@ -138,7 +145,7 @@ describe('topology APP_OUTBOX worker process ownership', () => {
         try {
             await waitForPostgresAppInboxWorkerParticipants(barrier.readyDirectoryPath, 1, [waiting]);
             expect(completed).toBe(false);
-            await Deno.writeTextFile(barrier.releaseFilePath, 'release');
+            await writeFile(barrier.releaseFilePath, 'release', 'utf8');
             await waiting;
             expect(completed).toBe(true);
         }
@@ -148,10 +155,10 @@ describe('topology APP_OUTBOX worker process ownership', () => {
         }
         finally {
             const releaseResults = await Promise.allSettled([
-                Deno.writeTextFile(barrier.releaseFilePath, 'release'),
+                writeFile(barrier.releaseFilePath, 'release', 'utf8'),
                 waiting
             ]);
-            const removeResults = await Promise.allSettled([Deno.remove(directory, { recursive: true })]);
+            const removeResults = await Promise.allSettled([rm(directory, { recursive: true, force: true })]);
             const failures = [...releaseResults, ...removeResults]
                 .flatMap((result) => result.status === 'rejected' ? [result.reason] : []);
             if (!hasPrimaryFailure && failures.length > 0) {

@@ -1,5 +1,6 @@
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -21,7 +22,7 @@ import {
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
-Deno.test('PGlite runtime-state transactions isolate nested savepoint rollback', async () => {
+test('PGlite runtime-state transactions isolate nested savepoint rollback', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlRuntimeStateRepository(sql);
 
@@ -49,7 +50,7 @@ Deno.test('PGlite runtime-state transactions isolate nested savepoint rollback',
     });
 });
 
-Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally', async () => {
+test('PSqlRuntimeStateRepository treats encoded prefix characters literally', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlRuntimeStateRepository(sql);
         const literalPrefix = 'app=ops%2Fapp:ws=workspace%3Ablue';
@@ -96,7 +97,7 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
     });
 });
 
-Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async () => {
+test('PGlite runtime-state hierarchy isolates sibling key segments', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(runtime.sql));
@@ -175,7 +176,7 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
     });
 });
 
-Deno.test(
+test(
     'PGlite group-state reads fail closed on a directly seeded noncanonical wrong-scope row',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -252,7 +253,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite group-state reads reject complete-contract corruption across public boundaries',
     async () => {
         await withPGliteSql(async (sql) => {

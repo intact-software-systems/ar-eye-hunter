@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -35,7 +36,7 @@ function createApp(input: {
     return app;
 }
 
-Deno.test('room inspection denies missing, ordinary and revoked API authority', async () => {
+test('room inspection denies missing, ordinary and revoked API authority', async () => {
     const forbiddenDirectory = { read: () => Promise.reject(new Error('private-room-identity')) };
     const anonymous = createApp({
         requireSession: () => Promise.reject(authenticationRequired('Sign in required')),
@@ -58,7 +59,7 @@ Deno.test('room inspection denies missing, ordinary and revoked API authority', 
     assert.equal((await changing.request(path)).status, 401);
 });
 
-Deno.test('room inspection validates bounded requests and marks responses private and uncacheable', async () => {
+test('room inspection validates bounded requests and marks responses private and uncacheable', async () => {
     const app = createApp({ requireSession: () => Promise.resolve(session) });
     const response = await app.request(path);
     assert.equal(response.status, 200);
@@ -76,7 +77,7 @@ Deno.test('room inspection validates bounded requests and marks responses privat
     assert.equal((await app.request(path.replace('/default', '/bad%20workspace'))).status, 400);
 });
 
-Deno.test('room inspection does not leak internal read errors or misreport them as empty success', async () => {
+test('room inspection does not leak internal read errors or misreport them as empty success', async () => {
     const app = createApp({
         requireSession: () => Promise.resolve(session),
         directory: { read: () => Promise.reject(new TypeError('secret corrupted row body')) }
@@ -86,7 +87,7 @@ Deno.test('room inspection does not leak internal read errors or misreport them 
     assert.equal((await response.text()).includes('secret corrupted row body'), false);
 });
 
-Deno.test('room directory OpenAPI advertises admin authorization and bounded pagination', async () => {
+test('room directory OpenAPI advertises admin authorization and bounded pagination', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const schema = await response.json();

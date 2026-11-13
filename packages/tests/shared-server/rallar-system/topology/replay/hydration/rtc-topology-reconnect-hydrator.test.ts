@@ -20,6 +20,7 @@ import {
 } from 'vitest';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
+import { attachTestWebSocket } from '../../../../../shared/websocket/attach-test-web-socket.ts';
 
 describe('RtcTopologyReconnectHydrator', () => {
     afterEach(() => {
@@ -486,7 +487,7 @@ class ReconnectHydrationHarness implements RtcTopologyReconnectHydration.Topolog
         const webSocket = new FakeWebSocket();
         const context = new ConnectionContext({ id: sessionId, socket: webSocket, generationId, generationStartedAtEpochMs: 1_000 });
         this.#webSockets.set(context, webSocket);
-        this.socket.addConnection(context);
+        attachTestWebSocket(this.socket, context);
         return context;
     }
 
@@ -637,11 +638,12 @@ class FakeWebSocket extends EventTarget implements WebSocket {
     readyState: WebSocket['readyState'] = FakeWebSocket.OPEN;
     readonly sent: string[] = [];
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('Fake RTC topology WebSocket accepts text only');
         }
         this.sent.push(data);
+        return data.length;
     }
 
     close(_code?: number, _reason?: string): void {

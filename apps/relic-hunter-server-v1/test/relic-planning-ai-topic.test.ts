@@ -18,8 +18,7 @@ import type {
 import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarServerWsPublishInputDto } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { expect } from '@std/expect';
-import { describe, it } from '@std/testing/bdd';
+import { describe, expect, it } from 'bun:test';
 import { RELIC_PLANNING_AI_CONTEXT_FIXTURE } from '../../../packages/tests/relic-hunters/relic-planning-ai-context-fixture.ts';
 import { installRelicPlanningAiTopic } from '../src/relic-planning-ai-topic.ts';
 
