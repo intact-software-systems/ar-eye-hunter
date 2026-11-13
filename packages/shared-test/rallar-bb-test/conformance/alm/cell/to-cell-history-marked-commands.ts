@@ -6,9 +6,11 @@ import { toCommandId } from '../alm-conformance-step-identities.ts';
 /**
  * Starts every wait of the commands, nested ones included, at the first event of any of its own cell's commands, so no
  * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before
- * the command's result. The one exception, declared `historyFrom: 'page'` in the wait's metadata, is a store's recovery
- * that a fresh document reports during its first connect, pinned to that connect's session, so no earlier cell's
- * recovery can match it. Any other wait must follow at least one of its cell's own commands.
+ * the command's result. A wait that declares `historyFrom: 'page'` in its metadata reads the page's whole history, in
+ * two classes: a store's recovery that a fresh document reports during its first connect, pinned to that connect's
+ * session, so no earlier cell's recovery can match it; and the settle's wait for the room's head, whose applied
+ * revision is monotone per runtime and group, so an event an earlier cell left can only meet the floor if the page
+ * still holds that revision. Any other wait must follow at least one of its cell's own commands.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,

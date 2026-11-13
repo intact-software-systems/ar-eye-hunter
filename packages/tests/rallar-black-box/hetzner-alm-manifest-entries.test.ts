@@ -413,6 +413,21 @@ describe('ALM conformance combined blocks', () => {
             }
         }
     });
+
+    it('no combined block carries a settle command', () => {
+        const selections = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]
+            .flatMap((entry) => entry.manifest.recipes);
+        const isSettleCommand = (command: RallarBlackBoxTestCommand) =>
+            /-(formation-poll|formation-settled|head-read|head-applied)$/.test(command.commandId ?? '') ||
+            (command.kind === 'wait' && command.match.topic === 'rallar.browser.group_state.applied');
+
+        for (const selection of selections) {
+            const commands = toNestedCommands(selection.recipe!.commands);
+            expect(commands.length, selection.role).toBeGreaterThan(0);
+            // The hosted combined recipe shares one connect across its cells, so no cell of it settles a room of its own.
+            expect(commands.filter(isSettleCommand), selection.role).toEqual([]);
+        }
+    });
 });
 
 /** Each cell's block runs from its `start` barrier to the next cell's; the shared prologue precedes the first. */

@@ -37,8 +37,8 @@ interface AlmOrderingEntry {
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
  * The lane starts the sender last and each recipient only once its connect barrier released
- * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:103` `runRecipesOnAgents` with `toStartOrder` at :202,
- * `tests/playwright/rallar-black-box/full-stack-helpers.ts:686` `startRecipientRecipeRun`), so the sender principal's
+ * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:104` `runRecipesOnAgents` with `toStartOrder` at :203,
+ * `tests/playwright/rallar-black-box/full-stack-helpers.ts:706` `startRecipientRecipeRun`), so the sender principal's
  * track carries at least the sibling's connect event before the sender's own: the sender enters above seq 1, prior 0,
  * the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq is not the cell's: on one API the
  * track also carries every earlier lane connect of the principal.

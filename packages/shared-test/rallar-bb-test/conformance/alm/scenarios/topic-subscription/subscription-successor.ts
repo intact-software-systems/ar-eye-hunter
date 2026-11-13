@@ -6,6 +6,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
@@ -16,12 +17,7 @@ import {
     toUnsubscribeRequestCommand
 } from './topic-subscription-commands.ts';
 import { toRowsGenerationPollCommand } from './topic-subscription-generation-polls.ts';
-import {
-    toGenerationText,
-    toReadPollCommand,
-    toResultFact,
-    toResultTextWait
-} from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_PHASE_MS, toGenerationText, toResultTextWait } from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -83,10 +79,11 @@ function toOwnerPageCommands(owner: AlmConformanceStepInput): readonly RallarBla
         toReadPollCommand({
             step: owner,
             name: 'replaced',
-            read: (readName) => toTokenReadCommand(owner, readName),
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            reads: [{ name: 'read', read: (readName) => toTokenReadCommand(owner, readName) }],
             facts: [{
                 name: 'replaced-lapsed',
-                field: 'subscriptions.0.status',
+                source: { read: 'read', field: 'subscriptions.0.status' },
                 operator: 'equals',
                 expected: 'lapsed'
             }]

@@ -31,7 +31,8 @@ export interface CreateAlmConformanceRecipesInput {
     /**
      * Absent, no cell's roles meet before its body: the hosted combined recipe orders its blocks with barriers of its
      * own, and a caller without a started distributed run has no participants to meet. `barriered` makes every role but
-     * the successor meet at its cell's `connected` barrier between its prologue and its body.
+     * the successor settle its cell's room between its prologue and its body, at the cell's `connected`,
+     * `formation-settled` and `armed` barriers.
      */
     readonly cellSettle?: 'barriered';
 }

@@ -6,7 +6,11 @@ import {
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '@shared-test/rallar-bb-test/barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
+import {
+    CONNECT_READINESS_TIMEOUT_MS,
+    NON_EXPIRING_SEND_TIMEOUT_MS,
+    RESPONSE_MARGIN_MS
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
@@ -1637,15 +1641,17 @@ describe('alm-conformance cell parts', () => {
                         continue;
                     }
                     expect(recipe.commands.slice(0, prologue.length + 1), `${scenario.scenarioKey} ${role}`).toEqual([...prologue, barriers[0]]);
-                    expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual(['connected', 'armed'].map((phase) => ({
+                    expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual(SETTLE_BARRIER_PHASES.map((phase) => ({
                         kind: 'barrier',
                         commandId: `${cellPrefix}-${role}-${phase}`,
                         barrierId: `${cellPrefix}-${phase}`,
                         timeoutMs: expect.any(Number),
                         participants: settleRoles
                     })));
-                    expect(recipe.commands.filter((command) => command.kind !== 'barrier'), `${scenario.scenarioKey} ${role}`)
-                        .toEqual([...prologue, ...body]);
+                    expect(
+                        recipe.commands.filter((command) => command.kind !== 'barrier' && !isSettleCommand(command, `${cellPrefix}-${role}-`)),
+                        `${scenario.scenarioKey} ${role}`
+                    ).toEqual([...prologue, ...body]);
                 }
             }
         }
@@ -1658,7 +1664,7 @@ describe('alm-conformance cell parts', () => {
             );
             const barrierIds = barrierIdsByCell.flatMap((ids) => [...ids]);
 
-            expect(barrierIdsByCell.every((ids) => ids.size === 2), carrier).toBe(true);
+            expect(barrierIdsByCell.every((ids) => ids.size === SETTLE_BARRIER_PHASES.length), carrier).toBe(true);
             expect(new Set(barrierIds).size, carrier).toBe(barrierIds.length);
         }
     });
@@ -1831,7 +1837,7 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('every settle role of a barriered cell runs prologue, connected barrier, its arming run, armed barrier, the rest — in that order', () => {
+    it('every settle role of a barriered cell runs connected barrier, [receiver: formation poll], formation-settled barrier, head read, applied-revision floor wait, its leading faults, armed barrier — in that order, before its first other body command', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
                 const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
@@ -1839,43 +1845,171 @@ describe('alm-conformance cell parts', () => {
                     const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
                     const { prologue, body } = scenario.partsByRole[role]!;
                     const { arming, rest } = toAlmCellArming(body);
-                    const [connected, armed] = toBarrierCommands(recipe);
+                    const [connected, formationSettled, armed] = toBarrierCommands(recipe);
+                    const settle = toSettleCommands(recipe, `${cellPrefix}-${role}-`);
 
-                    expect(connected?.commandId).toBe(`${cellPrefix}-${role}-connected`);
-                    expect(armed?.commandId).toBe(`${cellPrefix}-${role}-armed`);
-                    expect(recipe.commands, `${scenario.scenarioKey} ${role}`)
-                        .toEqual([...prologue, connected, ...arming, armed, ...rest]);
+                    expect([connected, formationSettled, armed].map((barrier) => barrier?.commandId))
+                        .toEqual(SETTLE_BARRIER_PHASES.map((phase) => `${cellPrefix}-${role}-${phase}`));
+                    expect(settle.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
+                        .toEqual([...(role === 'receiver' ? ['loop'] : []), 'http.request', 'wait']);
+                    const [headRead, headApplied] = settle.slice(-2);
+                    expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([
+                        ...prologue,
+                        connected,
+                        ...settle.slice(0, -2),
+                        formationSettled,
+                        headRead,
+                        headApplied,
+                        ...arming,
+                        armed,
+                        ...rest
+                    ]);
                 }
             }
         }
     });
 
-    it('the armed barrier\'s timeout covers the other roles\' arming commands', () => {
-        const armedTimeoutOf = (scenario: AlmConformanceScenario, role: AlmConformanceRole) =>
-            toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[1]!.timeoutMs;
+    it('only the receiver polls', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
-                const settleRoles = scenario.roles.filter((role) => role !== 'successor');
-                const armingMs = (role: AlmConformanceRole) =>
-                    toAlmCellArming(scenario.partsByRole[role]!.body).arming.reduce((sum, command) => sum + command.timeoutMs!, 0);
-                const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + armingMs(other), 0));
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                const recipes = [
+                    ...scenario.roles.map((role) => toAlmConformanceRoleRecipe(scenario, role)!),
+                    ...(scenario.continuation ? [scenario.continuation.recipe] : [])
+                ];
+                const polls = recipes.flatMap((recipe) =>
+                    toNestedCommands(recipe.commands).filter((command) => command.commandId?.endsWith('-formation-poll'))
+                );
 
-                // One timeout per cell, never below the grace a barrier's verdict has to reach a late page.
-                expect(new Set(settleRoles.map((role) => armedTimeoutOf(scenario, role))), scenario.scenarioKey)
-                    .toEqual(new Set([Math.max(RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS, ...othersMs)]));
+                // Every cell has a receiver, which creates the room and owns it.
+                expect(scenario.roles, scenario.scenarioKey).toContain('receiver');
+                expect(polls.map((command) => command.commandId), scenario.scenarioKey)
+                    .toEqual([`${cellPrefix}-receiver-formation-poll`]);
+                expect(polls[0], scenario.scenarioKey).toMatchObject({
+                    kind: 'loop',
+                    until: 'first-success',
+                    intervalMs: 250,
+                    count: CONNECT_READINESS_TIMEOUT_MS / 250
+                });
             }
         }
-        // A cue subscription is two 5 000 ms commands and a fault 3 000 ms; the first arrival waits through the others'.
-        const timeoutOf = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
-            armedTimeoutOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver');
-        expect(timeoutOf('rtc', 'delivery-baseline')).toBe(10_000);
-        expect(timeoutOf('rtc', 'granted-rtc-delivered')).toBe(10_000);
-        expect(timeoutOf('rtc', 'receipted-relay-path')).toBe(20_000);
-        expect(timeoutOf('rtc', 'forged-recipient-ack')).toBe(23_000);
-        expect(timeoutOf('ws', 'subscription-delivery')).toBe(20_000);
     });
 
-    it('a cell created without cellSettle carries no armed barrier', () => {
+    it('the applied wait floors both revisions at the page\'s own head read and names the cell\'s group', () => {
+        const group = toConformanceInput('rtc').group;
+        const groupPath = `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}`;
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                for (const role of scenario.roles.filter((candidate) => candidate !== 'successor')) {
+                    const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    const [headRead, headApplied] = toSettleCommands(recipe, prefix).slice(-2);
+                    const head = `{resultCache.${prefix}head-read.value.body.causalRevision`;
+
+                    expect(headRead, `${scenario.scenarioKey} ${role}`).toMatchObject({
+                        kind: 'http.request',
+                        commandId: `${prefix}head-read`,
+                        request: { method: 'GET', path: groupPath },
+                        response: { body: 'json', acceptedStatusCodes: [200] }
+                    });
+                    expect(headApplied, `${scenario.scenarioKey} ${role}`).toEqual({
+                        kind: 'wait',
+                        commandId: `${prefix}head-applied`,
+                        // No connection: the bridged diagnostic carries none, and a wait refuses a mismatch.
+                        match: {
+                            kind: 'diagnostic',
+                            topic: 'rallar.browser.group_state.applied',
+                            payloadFields: {
+                                'data.change': 'held',
+                                'data.groupRef.applicationId': group.applicationId,
+                                'data.groupRef.workspaceId': group.workspaceId,
+                                'data.groupRef.groupId': group.groupId
+                            },
+                            payloadMinimums: {
+                                'data.groupRevision': `${head}.groupRevision}`,
+                                'data.presenceRevision': `${head}.presenceRevision}`
+                            }
+                        },
+                        timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
+                        metadata: { historyFrom: 'page' }
+                    });
+                    expect(validateRallarBlackBoxTestCommand(headApplied!), headApplied!.commandId).toMatchObject({ ok: true });
+                }
+            }
+        }
+    });
+
+    it('a barriered role recipe reads the page\'s history only in its head-applied wait and its fresh-document recoveries', () => {
+        const pageHistoryWaits = new Set<string>();
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                for (const role of scenario.roles) {
+                    const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
+                    // The prologue opens the cell's mark, so its waits read the page's history by construction.
+                    const afterPrologue = toAlmConformanceRoleRecipe(scenario, role)!.commands
+                        .slice(scenario.partsByRole[role]!.prologue.length);
+                    for (const wait of toWaitCommands(afterPrologue)) {
+                        const marked = wait.match.sinceCommandIdPrefix !== undefined;
+                        const pageHistory = wait.metadata?.historyFrom === 'page';
+                        // Exactly one of the two: the cell's mark, or the declaration that it reads the page's history.
+                        expect(marked !== pageHistory, wait.commandId).toBe(true);
+                        if (pageHistory) {
+                            pageHistoryWaits.add(wait.commandId!.slice(prefix.length));
+                        }
+                    }
+                }
+            }
+        }
+
+        // A further unmarked wait is a red test, not a silent drift.
+        expect(pageHistoryWaits).toEqual(
+            new Set([
+                'head-applied',
+                'recovered-original-store',
+                'recovered-checkpoint-store',
+                'recovered-session-inbound'
+            ])
+        );
+    });
+
+    it('the settle\'s timeouts are derived from the commands they wait out', () => {
+        const timeoutsOf = (scenario: AlmConformanceScenario, role: AlmConformanceRole) =>
+            toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!).map((barrier) => barrier.timeoutMs);
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                const settleRoles = scenario.roles.filter((role) => role !== 'successor');
+                const settleOf = (role: AlmConformanceRole) => toSettleCommands(toAlmConformanceRoleRecipe(scenario, role)!, `${cellPrefix}-${role}-`);
+                const formationMs = (role: AlmConformanceRole) => toCommandsMs(settleOf(role).slice(0, -2));
+                const armedMs = (role: AlmConformanceRole) =>
+                    toCommandsMs([...settleOf(role).slice(-2), ...toAlmCellArming(scenario.partsByRole[role]!.body).arming]);
+                const longestOthersMs = (toMs: (role: AlmConformanceRole) => number) =>
+                    Math.max(
+                        RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS,
+                        ...settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + toMs(other), 0))
+                    );
+
+                // One timeout per barrier of a cell, never below the grace a barrier's verdict has to reach a late page.
+                for (const role of settleRoles) {
+                    expect(timeoutsOf(scenario, role).slice(1), `${scenario.scenarioKey} ${role}`)
+                        .toEqual([longestOthersMs(formationMs), longestOthersMs(armedMs)]);
+                }
+            }
+        }
+        // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
+        // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms. The first arrival waits through
+        // every other role's commands.
+        const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
+            timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
+                .slice(1);
+        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([35_000, 35_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([35_000, 45_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([35_000, 90_000]);
+        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([35_000, 93_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([35_000, 125_000]);
+    });
+
+    it('a cell without cellSettle carries no poll, head read or settle barrier', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = [
                 ...createAlmConformanceRecipes(toConformanceInput(carrier)),
@@ -1883,9 +2017,12 @@ describe('alm-conformance cell parts', () => {
             ];
             for (const scenario of scenarios) {
                 for (const role of scenario.roles) {
-                    const commandIds = toNestedCommands(toAlmConformanceRoleRecipe(scenario, role)!.commands).map((command) => command.commandId);
-                    expect(commandIds.filter((commandId) => commandId?.endsWith(`-${role}-armed`)), `${scenario.scenarioKey} ${role}`)
-                        .toEqual([]);
+                    const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
+                    const commands = toNestedCommands(toAlmConformanceRoleRecipe(scenario, role)!.commands);
+                    expect(
+                        commands.filter((command) => isSettleCommand(command, prefix) || command.kind === 'barrier'),
+                        `${scenario.scenarioKey} ${role}`
+                    ).toEqual([]);
                 }
             }
         }
@@ -1913,4 +2050,23 @@ function toArmingRun(
     expect(connectedAt, `${recipe.recipeId} connected`).toBeGreaterThan(0);
     expect(armedAt, `${recipe.recipeId} armed`).toBeGreaterThan(connectedAt);
     return recipe.commands.slice(connectedAt + 1, armedAt);
+}
+
+/** The settle's barrier phases, in the order every settle role meets at them. */
+const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as const;
+
+/** The settle's command names: the receiver's formation poll, then each page's head read and its applied wait. */
+const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied'] as const;
+
+function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
+    return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`);
+}
+
+/** A role recipe's settle commands, in recipe order. */
+function toSettleCommands(recipe: RallarBlackBoxTestRecipe, rolePrefix: string): readonly RallarBlackBoxTestCommand[] {
+    return recipe.commands.filter((command) => isSettleCommand(command, rolePrefix));
+}
+
+function toCommandsMs(commands: readonly RallarBlackBoxTestCommand[]): number {
+    return commands.reduce((sum, command) => sum + command.timeoutMs!, 0);
 }

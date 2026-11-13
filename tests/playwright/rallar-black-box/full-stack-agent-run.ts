@@ -97,8 +97,9 @@ const CONTINUATION_GATE_TIMEOUT_MS = 180_000;
 /**
  * The receiver starts first: its prologue creates the run's group and owns it, so a role that leaves the group is
  * never its only owner, whose leave is refused, and the owner's grants name a room that exists. Every other recipient
- * starts once the one before it connected, and the sender last. A continuation starts on its role's agent after that
- * role's first recipe, once its gate passed.
+ * starts once the one before it connected, and the sender last. The order only keeps that ownership: a barriered
+ * cell's roles start their bodies once the cell's settle passed, whatever order they started in. A continuation starts
+ * on its role's agent after that role's first recipe, once its gate passed.
  */
 export async function runRecipesOnAgents(
     run: AgentRecipeRun,

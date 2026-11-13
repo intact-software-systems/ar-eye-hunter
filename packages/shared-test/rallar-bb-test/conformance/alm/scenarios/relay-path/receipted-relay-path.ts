@@ -18,9 +18,10 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';
-import { toReadPollCommand } from '../topic-subscription/topic-subscription-polls.ts';
+import { SUBSCRIPTION_PHASE_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -107,10 +108,14 @@ function toTreeInForcePollCommand(origin: AlmConformanceStepInput): RallarBlackB
     return toReadPollCommand({
         step: origin,
         name: 'tree-in-force',
-        read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) }),
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        reads: [{
+            name: 'read',
+            read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) })
+        }],
         facts: [{
             name: 'tree-in-force-topology',
-            field: 'rallar.formation.accepted.overlay.topology',
+            source: { read: 'read', field: 'rallar.formation.accepted.overlay.topology' },
             operator: 'equals',
             expected: 'tree'
         }]

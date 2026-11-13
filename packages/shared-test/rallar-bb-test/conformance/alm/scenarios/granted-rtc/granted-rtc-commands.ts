@@ -18,6 +18,7 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
+import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
     toSubscribeCommand,
     toTopicGrantCommand,
@@ -26,10 +27,7 @@ import {
 } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS,
-    toPollCommand,
-    toPollResult,
-    toResultFact
+    SUBSCRIPTION_PHASE_MS
 } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
@@ -103,10 +101,15 @@ export function toGrantedRtcOwnerCommands(
  */
 export function toPublishUntilCueCommand(step: AlmConformanceStepInput, cue: string): RallarBlackBoxTestCommand {
     const name = 'publish';
-    return toPollCommand(step, name, [
-        toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
-        { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
-    ]);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commands: [
+            toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
+            { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
+        ]
+    });
 }
 
 /** The publication reached the page as an RTC copy: only the receiver's own election records one. */
@@ -123,9 +126,14 @@ export function toRewritingPublisherCommands(
     return [
         ...toCueListenCommands(sender),
         // A forged principal resolves only once the page's room snapshot names its live session and key.
-        toPollCommand(sender, 'rewrite-hold', [
-            toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
-        ]),
+        toPollCommand({
+            step: sender,
+            name: 'rewrite-hold',
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            commands: [
+                toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
+            ]
+        }),
         toPublishUntilCueCommand(sender, 'refused'),
         toRtcRewriteFaultCommand(sender, { name: 'rewrite-release', rewrite, remaining: 0 })
     ];
@@ -184,26 +192,37 @@ export function toGrantedRefusalPollCommand(
     const name = 'refusal';
     const send = toCommandId(step, `${name}-send`);
     const verdict = toPollResult({ step, name, index: 1, childId: send });
-    return toPollCommand(step, name, [
-        {
-            kind: 'rtc.send',
-            commandId: send,
-            connection: toConnectionName(step),
-            transport: 'messages.rtc',
-            observe: 'rejected',
-            send: {
-                typeId: toScenarioTypeId(step),
-                topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
-                roomRef: toRoomRef(step.input.group),
-                payload: toPublicationPayload(step, PUBLICATION, 'publication'),
-                ...delivery
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commands: [
+            {
+                kind: 'rtc.send',
+                commandId: send,
+                connection: toConnectionName(step),
+                transport: 'messages.rtc',
+                observe: 'rejected',
+                send: {
+                    typeId: toScenarioTypeId(step),
+                    topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
+                    roomRef: toRoomRef(step.input.group),
+                    payload: toPublicationPayload(step, PUBLICATION, 'publication'),
+                    ...delivery
+                },
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
             },
-            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
-        },
-        ...facts.map(([fact, field, operator, expected]) =>
-            toResultFact({ step, name: `${name}-${fact}`, source: `${verdict}.message.${field}`, operator, expected })
-        )
-    ]);
+            ...facts.map(([fact, field, operator, expected]) =>
+                toResultFact({
+                    step,
+                    name: `${name}-${fact}`,
+                    source: `${verdict}.message.${field}`,
+                    operator,
+                    expected
+                })
+            )
+        ]
+    });
 }
 
 /**

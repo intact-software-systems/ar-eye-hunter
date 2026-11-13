@@ -6,6 +6,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -15,10 +16,7 @@ import {
     toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
-import {
-    toReadPollCommand,
-    toResultFact
-} from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -75,8 +73,14 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         toReadPollCommand({
             step: owner,
             name: 'rows-released',
-            read: (readName) => toSubscriptionRowsCommand(owner, readName),
-            facts: [{ name: 'rows-released-empty', field: 'body.subscriptions', operator: 'length', expected: 0 }]
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(owner, readName) }],
+            facts: [{
+                name: 'rows-released-empty',
+                source: { read: 'read', field: 'body.subscriptions' },
+                operator: 'length',
+                expected: 0
+            }]
         }),
         ...toCueSendCommands(owner, 'released'),
         toPublicationWait(owner, 'publication-2', true)

@@ -7,14 +7,21 @@ import type { AlmConformanceCellParts } from './alm-conformance-cell-parts.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';
 import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
+import { toAlmCellSettle, type AlmCellSettle } from './to-alm-cell-settle.ts';
+import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
 type AlmCellPartsByRole = ReadonlyMap<AlmConformanceRole, AlmConformanceCellParts>;
 
+/** The commands of one role that a barrier waits out. */
+type RoleCommandsSelector = (role: AlmConformanceRole) => readonly RallarBlackBoxTestCommand[];
+
 /**
- * What a role runs after its prologue: its body, or in a cell created `barriered` a settle role's body between the
- * cell's barriers. Every settle role meets at `connected` once every page connected, runs its arming run, and meets at
- * `armed`, so no role's body sends before every role armed its faults and its cue subscription. The successor connects
- * as a step of the cell and carries no barrier; the settle roles are every other role of the cell.
+ * What a role runs after its prologue: its body, or in a cell created `barriered` a settle role's body after the
+ * cell's settle. Every settle role meets at `connected` once every page connected; the receiver polls until the room
+ * settled, and every role meets at `formation-settled`; each page then waits until it applied the room's head, runs
+ * its arming run, and meets at `armed`, so no role's body sends before every page holds the settled room and every
+ * role armed its faults and its cue subscription. The successor connects as a step of the cell and carries no
+ * barrier; the settle roles are every other role of the cell.
  */
 export function toAlmCellSettledBody(
     step: AlmConformanceStepInput,
@@ -25,20 +32,25 @@ export function toAlmCellSettledBody(
         return body;
     }
     const settleRoles = step.roles.filter(isSettleRole);
-    const toBarrier = (phase: AlmCellBarrierPhase, timeoutMs: number) =>
+    const toBarrier = (phase: AlmCellBarrierPhase, toCommands: RoleCommandsSelector) =>
         toAlmCellBarrier({
             cellPrefix: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
             role: step.role,
             phase,
-            timeoutMs,
+            timeoutMs: computeBarrierTimeoutMs(phase, settleRoles, toCommands),
             participants: settleRoles
         });
-    const { arming, rest } = toAlmCellArming(body);
+    const settleOf = (role: AlmConformanceRole) => toMarkedSettle({ ...step, role });
+    const armingOf = (role: AlmConformanceRole) => toAlmCellArming(toRoleParts(role, partsByRole).body).arming;
+    const { formation, head } = settleOf(step.role);
     return [
-        toBarrier('connected', computeLongestOthersMs(settleRoles, (role) => toRoleParts(role, partsByRole).prologue)),
-        ...arming,
-        toBarrier('armed', computeArmedBarrierTimeoutMs(settleRoles, partsByRole)),
-        ...rest
+        toBarrier('connected', (role) => toRoleParts(role, partsByRole).prologue),
+        ...formation,
+        toBarrier('formation-settled', (role) => settleOf(role).formation),
+        ...head,
+        ...armingOf(step.role),
+        toBarrier('armed', (role) => [...settleOf(role).head, ...armingOf(role)]),
+        ...toAlmCellArming(body).rest
     ];
 }
 
@@ -46,17 +58,27 @@ function isSettleRole(role: AlmConformanceRole): boolean {
     return role !== 'successor';
 }
 
+/** Each settle command's waits read its own cell's history, except where a wait declares otherwise. */
+function toMarkedSettle(step: AlmConformanceStepInput): AlmCellSettle {
+    const { formation, head } = toAlmCellSettle(step);
+    return { formation: toCellHistoryMarkedCommands(step, formation), head: toCellHistoryMarkedCommands(step, head) };
+}
+
 /**
- * Every role leaves `connected` at once, so the first to arrive at `armed` waits at most through every other role's
- * arming run. The timeout never falls below the grace a barrier's verdict has to reach an agent, so a page that is
- * late leaving `connected`, as on a loaded machine, still arrives in time in a cell where few or no roles arm.
+ * A barrier covers every other role's commands since the barrier before it, or since the start for `connected`.
+ * Every role leaves a barrier at once, so a later barrier's first arrival waits at most through those commands, and
+ * its timeout never falls below the grace a barrier's verdict has to reach an agent: a page that is late leaving the
+ * barrier before, as on a loaded machine, still arrives in time in a cell where few or no roles run commands between.
  */
-function computeArmedBarrierTimeoutMs(
+function computeBarrierTimeoutMs(
+    phase: AlmCellBarrierPhase,
     settleRoles: readonly AlmConformanceRole[],
-    partsByRole: AlmCellPartsByRole
+    toCommands: RoleCommandsSelector
 ): number {
-    const armingOf = (role: AlmConformanceRole) => toAlmCellArming(toRoleParts(role, partsByRole).body).arming;
-    return Math.max(RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS, computeLongestOthersMs(settleRoles, armingOf));
+    const longestOthersMs = computeLongestOthersMs(settleRoles, toCommands);
+    return phase === 'connected'
+        ? longestOthersMs
+        : Math.max(RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS, longestOthersMs);
 }
 
 /**
@@ -65,7 +87,7 @@ function computeArmedBarrierTimeoutMs(
  */
 function computeLongestOthersMs(
     settleRoles: readonly AlmConformanceRole[],
-    toCommands: (role: AlmConformanceRole) => readonly RallarBlackBoxTestCommand[]
+    toCommands: RoleCommandsSelector
 ): number {
     const msByRole = settleRoles.map((role) => computeCommandsMs(role, toCommands(role)));
     const totalMs = msByRole.reduce((sum, ms) => sum + ms, 0);

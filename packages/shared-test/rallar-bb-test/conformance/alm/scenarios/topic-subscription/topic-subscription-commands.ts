@@ -13,13 +13,9 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
+import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import { toPrincipalPlaceholder } from '../../resolve-alm-conformance-principals.ts';
-import {
-    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    toPollCommand,
-    toPollResult,
-    toResultFact
-} from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
 
 /**
  * The granted-topic proof's carriers, which a cell narrows only for a reason of its own: over ws the server's
@@ -66,7 +62,7 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
             group: toRoomRef(step.input.group)
         }
     };
-    return toPollCommand(step, name, [request]);
+    return toPollCommand({ step, name, phaseMs: SUBSCRIPTION_PHASE_MS, commands: [request] });
 }
 
 /**
@@ -92,22 +88,27 @@ export function toFourRoleGrantCommands(owner: AlmConformanceStepInput): readonl
 export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId: string): RallarBlackBoxTestCommand {
     const name = `subscribe-${subscriptionId}`;
     const subscribe = toCommandId(step, `${name}-token`);
-    return toPollCommand(step, name, [
-        {
-            kind: 'messages.subscribe',
-            commandId: subscribe,
-            connection: toConnectionName(step),
-            subscriptionId,
-            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
-        },
-        toResultFact({
-            step,
-            name: `${name}-active`,
-            source: `${toPollResult({ step, name, index: 1, childId: subscribe })}.status`,
-            operator: 'equals',
-            expected: 'active'
-        })
-    ]);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commands: [
+            {
+                kind: 'messages.subscribe',
+                commandId: subscribe,
+                connection: toConnectionName(step),
+                subscriptionId,
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+            },
+            toResultFact({
+                step,
+                name: `${name}-active`,
+                source: `${toPollResult({ step, name, index: 1, childId: subscribe })}.status`,
+                operator: 'equals',
+                expected: 'active'
+            })
+        ]
+    });
 }
 
 export function toUnsubscribeCommands(

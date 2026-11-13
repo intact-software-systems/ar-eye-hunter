@@ -6,6 +6,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
@@ -18,7 +19,7 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import { toGenerationChangePollCommand } from './topic-subscription-generation-polls.ts';
-import { toReadPollCommand } from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
@@ -89,8 +90,14 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
         toReadPollCommand({
             step: sibling,
             name: 'rows-revoked',
-            read: (readName) => toSubscriptionRowsCommand(sibling, readName),
-            facts: [{ name: 'rows-revoked-empty', field: 'body.subscriptions', operator: 'length', expected: 0 }]
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(sibling, readName) }],
+            facts: [{
+                name: 'rows-revoked-empty',
+                source: { read: 'read', field: 'body.subscriptions' },
+                operator: 'length',
+                expected: 0
+            }]
         }),
         toProductSocketCommand(sibling, 'reopen'),
         toGenerationChangePollCommand({

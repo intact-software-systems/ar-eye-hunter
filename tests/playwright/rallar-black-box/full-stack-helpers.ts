@@ -660,11 +660,12 @@ export async function runRecipeOnAgent(
 
 /**
  * Authored paired reload roots are bound and enqueued together; control owns their causal checkpoints.
- * For ordinary recipes, the receiver subscribes at connect, so its recipe starts first and the sender waits until the
- * receiver's connect command reports an ok result. A connect that must see a ready peer cannot
+ * For ordinary recipes, the receiver's prologue creates the group and owns it, so its recipe starts first and the
+ * sender waits until the receiver's connect command reports an ok result. A connect that must see a ready peer cannot
  * report one before the sender exists, so entering the readiness wait — which the runtime records
- * only after the connection is established and subscribed — releases the barrier too, as does a
- * receiver recipe that has already settled.
+ * only after the connection is established and subscribed — releases the wait too, as does a
+ * receiver recipe that has already settled. The order is not what readies a barriered cell: its roles start their
+ * bodies once the cell's settle passed.
  */
 export async function runRecipePairOnTwoAgents(
     run: RecipePairRun,

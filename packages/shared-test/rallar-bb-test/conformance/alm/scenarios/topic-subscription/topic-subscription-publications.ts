@@ -14,14 +14,12 @@ import {
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import { ALM_CELL_CUE_SUBSCRIPTION_METADATA } from '../../cell/to-alm-cell-arming.ts';
+import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import { toGrantedSend } from './to-granted-send.ts';
 import {
     SUBSCRIPTION_ABSENCE_MS,
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS,
-    toPollCommand,
-    toPollResult,
-    toResultFact
+    SUBSCRIPTION_PHASE_MS
 } from './topic-subscription-polls.ts';
 
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
@@ -95,39 +93,44 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
     const observe = toCommandId(step, `${name}-observe`);
     const receipt = toPollResult({ step, name, index: 2, childId: observe });
-    return toPollCommand(step, name, [
-        {
-            ...toGrantedSend({
-                step,
-                payload: toPublicationPayload(step, name, publication.kind),
-                orderingKey: publication.orderingKey,
-                audience: publication.audience
-            }),
-            commandId: toCommandId(step, `${name}-send`),
-            handleId
-        },
-        {
-            kind: 'messages.observe',
-            commandId: observe,
-            connection: toConnectionName(step),
-            handleId,
-            state: ['acknowledged'],
-            timeoutMs: CONFIRMATION_WAIT_MS
-        },
-        ...([
-            ['expected', publication.confirmations + publication.outsideAudience],
-            ['confirmed', publication.confirmations],
-            ['outsideAudience', publication.outsideAudience]
-        ] as const).map(([list, expected]) =>
-            toResultFact({
-                step,
-                name: `${name}-${list}`,
-                source: `${receipt}.${list}RecipientPeerIds`,
-                operator: 'length',
-                expected
-            })
-        )
-    ]);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commands: [
+            {
+                ...toGrantedSend({
+                    step,
+                    payload: toPublicationPayload(step, name, publication.kind),
+                    orderingKey: publication.orderingKey,
+                    audience: publication.audience
+                }),
+                commandId: toCommandId(step, `${name}-send`),
+                handleId
+            },
+            {
+                kind: 'messages.observe',
+                commandId: observe,
+                connection: toConnectionName(step),
+                handleId,
+                state: ['acknowledged'],
+                timeoutMs: CONFIRMATION_WAIT_MS
+            },
+            ...([
+                ['expected', publication.confirmations + publication.outsideAudience],
+                ['confirmed', publication.confirmations],
+                ['outsideAudience', publication.outsideAudience]
+            ] as const).map(([list, expected]) =>
+                toResultFact({
+                    step,
+                    name: `${name}-${list}`,
+                    source: `${receipt}.${list}RecipientPeerIds`,
+                    operator: 'length',
+                    expected
+                })
+            )
+        ]
+    });
 }
 
 function toConfirmedCue(name: string): string {
