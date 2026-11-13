@@ -724,8 +724,7 @@ and it has no status list.
   before routing moves to them, is the complete fix for the RTT re-plan
   failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
   below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
-  lane determinism, ahead of publication figures, reproduced locally first and
-  with its own design put to the maintainer before any code (D644).
+  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
 - At 50 agents the RTC delivery fails after the connect. With #813 merged,
   manifests 07 and 09 connect every agent and then fail on delivery: manifest
   07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
@@ -739,9 +738,13 @@ and it has no status list.
   stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
   age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
   on make-before-break routing (D644) and caps both campaign rungs (D643).
-  Open: what triggered each re-plan (neither run records the server's planning
-  decision), the exact meaning of `unauthorized` (inferred), run 09's full
-  coverage (22 agents recorded) and a local reproduction, which is under way.
+  Reproduced in unit tests of the routing code; the `unauthorized` refusal is
+  confirmed from the code (`resolveRtcRoomEdgeDenial` in
+  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  server path produced the re-plans (neither run records the server's planning
+  decision; a tree's leader-rooting or update-failure rebuild and the
+  unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
+  agents recorded) and a browser-level reproduction, which needs a new spec.
 - The byte sizes the game fixtures send (the AR Eye and position frames) are
   stated nowhere. Measure them in one small task; the first campaign rung sends
   those sizes (D643).

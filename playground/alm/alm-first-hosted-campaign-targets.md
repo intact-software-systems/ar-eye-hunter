@@ -145,8 +145,21 @@ that does not yet build make-before-break routing. This was found by an analysis
   at any room size, including the first rung's 5-minute window.
 - Make-before-break routing, where a new layout's edges open before routing moves to them, is built as the next slice after
   lane determinism (D644). It is a prerequisite of the first rung and of the stretch rung.
-- Still open: what triggered each re-plan (neither run records the server's planning decision), the exact meaning of
-  `unauthorized` (inferred), run 09's full coverage (22 recorded agents), and a local reproduction, which is under way.
+- Reproduced in unit tests of the routing code, for an at-least-once and a best-effort frame: a browser routes only over
+  the layout it currently holds as accepted and keeps no copy of the previous one, and in an active or reconfiguring group
+  the new layout's edges are dialled only after the switch, so all three signatures appear while the previous edges are
+  still open (dropped links stay open for 15 s). With the layout switch removed from the same fixtures, every frame is
+  delivered.
+- The `unauthorized` refusal is confirmed from the code: a hop that is not a neighbour in the accepted layout is refused
+  with "RTC relay edge is not permitted by current server room topology", and no NACK is sent
+  (`resolveRtcRoomEdgeDenial` in `packages/shared/multicast/rtc-room-snapshot-admission.ts`).
+- Still open: which server path produced the two hosted re-plans, with neither run recording the server's planning
+  decision. Two paths can switch to a high-churn layout with no membership change and both skip #810's churn gate: the
+  rebuild used as it is when a tree's leader-rooting or an update failure asks for a full rebuild, and the mesh rebuild,
+  which is used unconditionally. Which applied is not verified. Also open: run 09's full coverage (22 recorded agents),
+  and a browser-level reproduction. Three browsers form a star, whose plan ignores RTT, and a leaderless tree on loopback
+  never passes #810's gate, so the only local trigger is an owner's topology reconfigure mid-stream, which needs a new
+  spec. There is no local figure for frames lost or for the gap's length.
 
 **First rung.** 15 agents, one room, one publisher at 2 messages a second, a 5-minute window, 3 API replicas; `rtc`,
 `ws` and `rtc-with-ws-fallback`, plus the two fault legs on `rtc` and `rtc-with-ws-fallback`.
@@ -175,7 +188,7 @@ It is not attempted until make-before-break routing is built. Other known limits
 From D642 and the addendum's "After Slice 9":
 
 1. **Lane determinism.** Every lane cell starts from a declared, settled room.
-2. **Make-before-break routing in the browser** (D644), reproduced locally first. A re-plan landing in a stream drops
+2. **Make-before-break routing in the browser** (D644). A re-plan landing in a stream drops
    sends and refuses frames without it (section 4), at any room size, so no rung can be read before it is built.
 3. **Publication figures.** Selection age, missed windows, drain usage, congestion duration in the stage, and one
    bounded histogram with a nearest-rank percentile in `packages/shared/measurement`. Without them the reported figures
@@ -205,7 +218,9 @@ From D642 and the addendum's "After Slice 9":
 - Whether a seeded loss command to the browser can run hosted without a controller step.
 - The byte sizes of the multicast position frame and the AR Eye fixtures.
 - How many agents a single GitHub-hosted runner can carry beyond 3 per job.
-- What triggered the re-plans of runs 43382453664 and 43383760956; neither run records the server's planning decision.
-- Whether `unauthorized` means that the sender is not a neighbour in the receiver's accepted layout (inferred).
+- Which server path produced the re-plans of runs 43382453664 and 43383760956; neither run records the server's
+  planning decision. The candidates are the rebuild used as it is for a tree's leader-rooting or update failure, and the
+  unconditional mesh rebuild; both skip #810's churn gate.
 - Run 09's full coverage: the recorded events cover 22 agents.
-- A local reproduction of the loss. One is under way.
+- A browser-level reproduction of the loss, and any local figure for frames lost or the gap's length. The routing code
+  reproduces it in unit tests only.
