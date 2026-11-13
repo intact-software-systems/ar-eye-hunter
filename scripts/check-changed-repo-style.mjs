@@ -454,6 +454,11 @@ function readBaseSources(input) {
     return [...sourceByPath.values()].sort((left, right) => left.file.localeCompare(right.file));
 }
 
+function readRevisionFile(revision, file) {
+    const result = runGitResult(['show', `${revision}:${file}`]);
+    return result.status === 0 ? result.stdout : undefined;
+}
+
 function readCommit(reference, role) {
     const result = runGitResult(['rev-parse', '--verify', `${reference}^{commit}`]);
     if (result.status === 0) {
