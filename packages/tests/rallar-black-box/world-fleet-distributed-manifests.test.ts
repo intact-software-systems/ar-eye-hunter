@@ -13,6 +13,7 @@ import { validateDistributedRunManifestContract } from '../../shared-test/rallar
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '../../shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 
 function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly RallarBlackBoxTestCommand[] {
     const walk = (commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] =>
@@ -107,7 +108,8 @@ describe('world fleet distributed manifest catalog', () => {
 
                 expect(command.rallar, entry.filePath).toEqual({
                     typeId: 'black-box.group.multicast.position',
-                    topicId: 'black-box.group.multicast.position'
+                    topicId: 'black-box.group.multicast.position',
+                    timeoutMs: 2 * API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS + 5_000
                 });
             }
         }

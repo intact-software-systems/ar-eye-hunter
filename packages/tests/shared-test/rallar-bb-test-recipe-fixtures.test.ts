@@ -28,6 +28,11 @@ import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '../../../packages/s
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+/** The SDK connect runs the ticket request and then the connect mutation, each bounded by the server's completion wait. */
+const EXPECTED_SDK_CONNECT_TIMEOUT_MS = 2 * API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS + 5_000;
+/** The SDK connect, the 45 s readiness wait and the 5 s completion margin, one after another. */
+const EXPECTED_CONNECT_COMMAND_TIMEOUT_MS = EXPECTED_SDK_CONNECT_TIMEOUT_MS + 45_000 + 5_000;
+
 const EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR = {
     typeId: 'black-box.group.multicast.position',
     topicId: 'black-box.group.multicast.position'
@@ -92,11 +97,11 @@ describe('rallar-bb-test recipe fixtures', () => {
             timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS),
             readiness: { timeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS }
         });
-        // The SDK's own 10 s connect default, the 45 s readiness wait and the 5 s completion margin, one after another.
-        expect(computeRtcEstablishAndReadyCommandTimeoutMs(45_000)).toBe(10_000 + 45_000 + 5_000);
-        // The recipe connects as an app does, inside the SDK's own connect default.
+        expect(EXPECTED_SDK_CONNECT_TIMEOUT_MS).toBe(30_000 + 30_000 + 5_000);
+        expect(computeRtcEstablishAndReadyCommandTimeoutMs(45_000)).toBe(EXPECTED_SDK_CONNECT_TIMEOUT_MS + 45_000 + 5_000);
+        // The recipe names the SDK connect bound it budgets for, so the SDK's shorter default cannot end the connect first.
         expect(receiverConnect?.kind === 'rtc.connect' ? receiverConnect.rallar : undefined)
-            .toEqual(EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR);
+            .toEqual({ ...EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR, timeoutMs: EXPECTED_SDK_CONNECT_TIMEOUT_MS });
         expect(sender.metadata?.expectedInboundMessages).toBeUndefined();
         expect(sender.metadata?.minExpectedInboundMessages).toBeUndefined();
         expect(receiver.metadata).toMatchObject({
@@ -192,7 +197,7 @@ describe('rallar-bb-test recipe fixtures', () => {
 
         // The receiver polls straight after its connect, so its window covers the connect spread, the sender's warmup,
         // the whole stream and the tail.
-        expect(windowMs).toBe(60_000 + 5_000 + 30_000 + 5_000);
+        expect(windowMs).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 30_000 + 5_000);
         expect(poll).toMatchObject({
             kind: 'loop',
             until: 'first-success',
@@ -240,19 +245,19 @@ describe('rallar-bb-test recipe fixtures', () => {
             intervalMs: 50,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
-            senderStreamRemainingAtPollStartMs: 60_000 + 5_000 + 30_000
+            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 30_000
         })).toBe(1_500 + 5_000);
         expect(principalHold).toMatchObject({ metadata: { purpose: 'relay-hold', relayHoldMs: 6_500 }, count: 8 });
         // Manifest 09: the 735-message shortfall exceeds one sender's 150 frames, so a sender may not have started when
-        // the receiver's poll starts after its own settle and stream; the latest sender, which connected up to the 60 s
+        // the receiver's poll starts after its own settle and stream; the latest sender, which connected up to the
         // connect spread later, streams that much longer.
         expect(computeRtcMessagesRelayHoldMs({
             frameCount: 150,
             intervalMs: 200,
             expectedInboundMessages: 7_350,
             minExpectedInboundMessages: 6_615,
-            senderStreamRemainingAtPollStartMs: 60_000
-        })).toBe(60_000 + 5_000);
+            senderStreamRemainingAtPollStartMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS
+        })).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000);
     });
 
     it('paces the principal delivery poll at the mid-stream stats interval and stays inside the command limits for long runs', () => {
@@ -268,7 +273,9 @@ describe('rallar-bb-test recipe fixtures', () => {
             (command): command is RallarBlackBoxTestLoopCommand => command.commandId === 'rtc-messages-principal-receiver-delivery-poll'
         );
 
-        expect(poll).toMatchObject({ until: 'first-success', intervalMs: 30_000, count: 160, maxCommands: 320 });
+        const pollCount = Math.ceil((EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 + 4_680_000 + 5_000) / 30_000) + 1;
+        expect(pollCount).toBe(162);
+        expect(poll).toMatchObject({ until: 'first-success', intervalMs: 30_000, count: pollCount, maxCommands: pollCount * 2 });
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, receiver).ok).toBe(true);
     });
 
@@ -366,7 +373,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         // Each peer polls only after its own settle and stream, which the latest other sender's settle and stream match,
         // so its window covers the connect spread and the tail, each phase once.
-        expect(pollWindowMs).toBe(60_000 + 5_000);
+        expect(pollWindowMs).toBe(EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000);
         const allPeerPollIndex = recipe.commands.findIndex(
             (command) => command.commandId === 'rtc-messages-all-peer-delivery-poll'
         );
@@ -374,9 +381,9 @@ describe('rallar-bb-test recipe fixtures', () => {
             kind: 'loop',
             commandId: 'rtc-messages-all-peer-relay-hold',
             intervalMs: 1_000,
-            count: 66,
-            maxCommands: 66,
-            metadata: { purpose: 'relay-hold', relayHoldMs: 65_000 },
+            count: (EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000) / 1_000 + 1,
+            maxCommands: (EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000) / 1_000 + 1,
+            metadata: { purpose: 'relay-hold', relayHoldMs: EXPECTED_CONNECT_COMMAND_TIMEOUT_MS + 5_000 },
             commands: [{ kind: 'stats', commandId: 'rtc-messages-all-peer-relay-hold-stats' }]
         });
         expect(recipe.commands[allPeerPollIndex + 2]).toMatchObject({
