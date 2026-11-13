@@ -20,6 +20,7 @@ import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conforma
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
+    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
@@ -1515,6 +1516,14 @@ const PAGE_HISTORY_WAITS = [
 
 const SESSION_PIN_PATTERN = /\{resultCache\.([^}]+)\.value\.sessionId\}/;
 
+function toBarrieredInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRecipesInput {
+    return { ...toConformanceInput(carrier), cellSettle: 'barriered' };
+}
+
+function toBarrierCommands(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestBarrierCommand[] {
+    return toNestedCommands(recipe.commands).filter((command): command is RallarBlackBoxTestBarrierCommand => command.kind === 'barrier');
+}
+
 function toWaitCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestWaitCommand[] {
     return toNestedCommands(commands).filter((command): command is RallarBlackBoxTestWaitCommand => command.kind === 'wait');
 }
@@ -1606,6 +1615,73 @@ describe('alm-conformance cell parts', () => {
                         wait.match.sinceCommandIdPrefix === `alm-ws-${scenario.scenarioKey}-${role}-`
                     )
                 ).toBe(true);
+            }
+        }
+    });
+
+    it('every settle role of a barriered cell meets at its cell\'s connected barrier right after its prologue, naming the cell\'s settle roles', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                const settleRoles = scenario.roles.filter((role) => role !== 'successor');
+                for (const role of scenario.roles) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    const { prologue, body } = scenario.partsByRole[role]!;
+                    const barriers = toNestedCommands(recipe.commands).filter((command) => command.kind === 'barrier');
+                    if (role === 'successor') {
+                        expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual([]);
+                        continue;
+                    }
+                    expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([...prologue, ...barriers, ...body]);
+                    expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual([{
+                        kind: 'barrier',
+                        commandId: `${cellPrefix}-${role}-connected`,
+                        barrierId: `${cellPrefix}-connected`,
+                        timeoutMs: expect.any(Number),
+                        participants: settleRoles
+                    }]);
+                }
+            }
+        }
+    });
+
+    it('barrier ids are unique per cell across a carrier\'s catalog', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const barrierIdsByCell = createAlmConformanceRecipes(toBarrieredInput(carrier)).map((scenario) =>
+                new Set(scenario.roles.flatMap((role) => toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)).map((barrier) => barrier.barrierId))
+            );
+            const barrierIds = barrierIdsByCell.flatMap((ids) => [...ids]);
+
+            expect(barrierIdsByCell.every((ids) => ids.size === 1), carrier).toBe(true);
+            expect(new Set(barrierIds).size, carrier).toBe(barrierIds.length);
+        }
+    });
+
+    it('a cell created without cellSettle carries no barrier', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = [
+                ...createAlmConformanceRecipes(toConformanceInput(carrier)),
+                createAlmDeliveryDiagnosticsRecipes(toConformanceInput(carrier), true)
+            ];
+            for (const scenario of scenarios) {
+                for (const role of scenario.roles) {
+                    expect(toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!), `${scenario.scenarioKey} ${role}`)
+                        .toEqual([]);
+                }
+            }
+        }
+    });
+
+    it('a connected barrier\'s timeout covers the other roles\' prologues', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const settleRoles = scenario.roles.filter((role) => role !== 'successor');
+                const prologueMs = (role: AlmConformanceRole) => scenario.partsByRole[role]!.prologue.reduce((sum, command) => sum + command.timeoutMs!, 0);
+                const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + prologueMs(other), 0));
+                const timeouts = settleRoles.map((role) => toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[0]!.timeoutMs);
+
+                // Every arrival names one timeout, or the control server refuses the later ones as conflicting.
+                expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs)]));
             }
         }
     });
