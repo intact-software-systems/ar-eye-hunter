@@ -8,6 +8,12 @@ export interface ALAcceptedOverlayAdjacency {
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
 }
 
+/** The layout an accepted layout replaced, while it is in force: this peer's neighbours in it and its whole adjacency. */
+export interface ALPreviousOverlayLayout {
+    readonly neighborPeerIds: readonly string[];
+    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
+}
+
 /**
  * The peers this peer owns as its children for one copy, reachable now or not: the immediate peer of a
  * unicast it does not address itself, or the overlay neighbours of a group message that are neither this
@@ -19,7 +25,8 @@ export interface ALAcceptedOverlayAdjacency {
  * path child its room, hint or visited set removes), each relay below it with a consistent layout sees every recipient
  * behind its sender and keeps every neighbour too, so one disagreement floods that whole subtree as before the
  * adjacency was kept, still at least once. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
- * already counted is the decision of the origin.
+ * already counted is the decision of the origin. While a replaced layout is in force, its children follow the accepted
+ * layout's, each layout's neighbours pruned over that layout's own adjacency, and a peer owned through both appears once.
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,
@@ -34,35 +41,63 @@ export function resolveALOwnedChildPeerIds(
             ? []
             : [immediatePeerId];
     }
+    const isOwnable = toALOwnableNeighborPredicate(msg, context);
+    const recipientPeerIds = resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds;
+    const layouts = [
+        {
+            neighborPeerIds: context.overlayNeighborPeerIds ?? [],
+            nextHopsBySessionId: context.overlayNextHopsBySessionId
+        },
+        ...(context.previousOverlayLayout === undefined ? [] : [context.previousOverlayLayout])
+    ];
+    const ownedPeerIds = layouts.flatMap((layout) =>
+        resolveALLayoutChildPeerIds(
+            layout.neighborPeerIds.filter(isOwnable),
+            toALAcceptedOverlayAdjacency(context.selfPeerId, layout.nextHopsBySessionId),
+            recipientPeerIds
+        )
+    );
+    return [...new Set(ownedPeerIds)];
+}
+
+function toALOwnableNeighborPredicate(
+    msg: ALMessage,
+    context: ALMessagePlanningContext
+): (peerId: string) => boolean {
     const excludedPeerIds = new Set([
         context.selfPeerId,
         ...(context.fromPeerId === undefined ? [] : [context.fromPeerId]),
         ...msg.diagnostics?.visitedPeerIds ?? [],
-        ...(msg.targets.mode === 'broadcast' ? msg.targets.exceptPeerIds ?? [] : [])
+        ...(msg.targets?.mode === 'broadcast' ? msg.targets.exceptPeerIds ?? [] : [])
     ]);
     const groupMemberPeerIds = new Set(context.groupMemberPeerIds ?? []);
-    const listedPeerIds = msg.targets.mode === 'broadcast' ? msg.targets.recipientPeerIds : undefined;
+    const listedPeerIds = msg.targets?.mode === 'broadcast' ? msg.targets.recipientPeerIds : undefined;
     const hintedNextHops = new Set(msg.forwarding?.nextHopPeerIds ?? []);
-    const neighbourPeerIds = (context.overlayNeighborPeerIds ?? []).filter((peerId) =>
+    return (peerId) =>
         !excludedPeerIds.has(peerId) &&
         (groupMemberPeerIds.size === 0 || groupMemberPeerIds.has(peerId)) &&
         (listedPeerIds === undefined || listedPeerIds.includes(peerId)) &&
-        (hintedNextHops.size === 0 || hintedNextHops.has(peerId))
-    );
-    const frozen = resolveALFrozenMulticastAudience(msg.targets);
-    if (frozen === undefined) {
-        return neighbourPeerIds;
+        (hintedNextHops.size === 0 || hintedNextHops.has(peerId));
+}
+
+/** One layout's children: every ownable neighbour, or for a frozen multicast those its adjacency leads to a recipient. */
+function resolveALLayoutChildPeerIds(
+    neighborPeerIds: readonly string[],
+    adjacency: ALAcceptedOverlayAdjacency | undefined,
+    recipientPeerIds: readonly string[] | undefined
+): readonly string[] {
+    if (recipientPeerIds === undefined) {
+        return neighborPeerIds;
     }
-    if (frozen.recipientPeerIds.length === 0) {
+    if (recipientPeerIds.length === 0) {
         return [];
     }
-    const towardRecipients = resolveALChildPeerIdsTowardRecipients(
-        neighbourPeerIds,
-        toALAcceptedOverlayAdjacency(context.selfPeerId, context.overlayNextHopsBySessionId),
-        frozen.recipientPeerIds
-    );
-    return towardRecipients.length === 0 && !frozen.recipientPeerIds.includes(context.selfPeerId)
-        ? neighbourPeerIds
+    if (adjacency === undefined) {
+        return neighborPeerIds;
+    }
+    const towardRecipients = resolveALChildPeerIdsTowardRecipients(neighborPeerIds, adjacency, recipientPeerIds);
+    return towardRecipients.length === 0 && !recipientPeerIds.includes(adjacency.selfPeerId)
+        ? neighborPeerIds
         : towardRecipients;
 }
 

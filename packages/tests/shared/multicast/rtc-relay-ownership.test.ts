@@ -15,6 +15,7 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import {
@@ -24,6 +25,7 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    SERVED_REPLACED_LAYOUT_OVERLAP_MS,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -428,6 +430,95 @@ describe('a relay re-parented away from a live parent (R-S2c-ii-14)', () => {
         expect(settled?.kind === 'acknowledgement' && settled.confirmedRecipientPeerIds.toSorted()).toEqual(['c', 'd', 'r']);
     });
 });
+
+describe('a relay across a layout promotion, for the session\'s replaced-layout overlap', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('a relay forwards to its previous child over the open edge inside the overlap, and not after it', async () => {
+        // The chain `a`, `b`, `c`, `d` is re-planned to `a`, `c`, `d`, `b`: `b` becomes a leaf below `d`.
+        const previousTree = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
+        const promotedTree = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
+        const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: previousTree });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
+        relay.acceptOverlay(createOriginOverlay(previousTree.b, previousTree));
+        const promoted = toPromotedLayout(snapshot, promotedTree.b, promotedTree);
+        relay.acceptSnapshot(promoted.snapshot);
+        relay.acceptOverlay(promoted.overlay);
+        const inside = createPromotionFrame(1);
+        const after = createPromotionFrame(2);
+        await enqueueAndDrain(origin.manager, inside);
+        await enqueueAndDrain(origin.manager, after);
+
+        await relay.receive(origin.channels.b!.sent[0]!, 'a');
+        await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS);
+        // After the overlap the copy reaches `b` from its new parent `d`; `c` is a child of the replaced layout only.
+        await relay.receive(origin.channels.b!.sent[1]!, 'd');
+
+        const sentToC = await relay.readSent('c');
+        expect(readCopies(sentToC, inside), JSON.stringify(relay.diagnostics.at(-1))).toBe(1);
+        expect(readCopies(relay.delivered, after)).toBe(1);
+        expect(readCopies(sentToC, after)).toBe(0);
+    });
+
+    it('a relay never forwards to a previous neighbour that left the room', async () => {
+        // `b` relayed to `c` and `d`; `c` left, and the re-plan hangs `d` below `a` and makes `b` a leaf.
+        const previousTree = { a: ['b'], b: ['a', 'c', 'd'], c: ['b'], d: ['b'] };
+        const promotedTree = { a: ['b', 'd'], b: ['a'], d: ['a'] };
+        const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: previousTree });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
+        relay.acceptOverlay(createOriginOverlay(previousTree.b, previousTree));
+        const promoted = toPromotedLayout(createOriginSnapshot(['a', 'b', 'd'], 5), promotedTree.b, promotedTree);
+        relay.acceptSnapshot(promoted.snapshot);
+        relay.acceptOverlay(promoted.overlay);
+        const frame = createPromotionFrame(1);
+        await enqueueAndDrain(origin.manager, frame);
+
+        await relay.receive(origin.channels.b!.sent[0]!, 'a');
+
+        expect(readCopies(await relay.readSent('d'), frame), JSON.stringify(relay.diagnostics.at(-1))).toBe(1);
+        expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
+    });
+});
+
+/** The re-plan keeps the causal revision the fixture's layout was planned from: only the layout version moves. */
+const PROMOTED_LAYOUT_IDENTITY = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
+
+/** The snapshot naming the re-planned layout accepted, and that layout as one session holds it. */
+function toPromotedLayout(
+    snapshot: GroupSnapshot,
+    nextHopSessionIds: readonly string[],
+    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>
+): { readonly snapshot: GroupSnapshot; readonly overlay: OverlayInfo; } {
+    return {
+        snapshot: { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: PROMOTED_LAYOUT_IDENTITY } },
+        overlay: {
+            ...createOriginOverlay(nextHopSessionIds, nextHopsBySessionId),
+            overlayVersion: PROMOTED_LAYOUT_IDENTITY.version
+        }
+    };
+}
+
+/** One frame of a position stream: best effort, no receipt, so no retry runs while the clock moves. */
+function createPromotionFrame(seq: number): ALMessage {
+    return newALMulticastMessage(
+        'a',
+        { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
+        ORIGIN_ROOM,
+        'position.frame.v1',
+        { seq },
+        { reliability: 'best-effort', ack: 'none', ttlMs: 60_000 }
+    );
+}
 
 /** The overlay of the origin gains `peerId` as a next hop, and the ack timeout retries through it. */
 async function retryThroughNewHop(origin: RtcOriginOverlayFixture, peerId: string): Promise<void> {

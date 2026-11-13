@@ -6,7 +6,7 @@ import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } fro
 import { toALSeqRangesText } from './al-seq-range.ts';
 
 import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos-policy.ts';
-import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
+import { resolveALOwnedChildPeerIds, type ALPreviousOverlayLayout } from './resolve-al-owned-child-peer-ids.ts';
 
 export {
     AL_DURABILITY_ALGOS,
@@ -233,6 +233,8 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly overlayNeighborPeerIds?: readonly string[];
     /** The accepted layout's whole adjacency; absent when the carrier holds no accepted layout. */
     readonly overlayNextHopsBySessionId?: Readonly<Record<string, readonly string[]>>;
+    /** The layout the accepted one replaced, while it is in force; absent when none is, and always on the WS carrier. */
+    readonly previousOverlayLayout?: ALPreviousOverlayLayout;
     readonly overloaded?: boolean;
     /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
     readonly backpressured?: boolean;

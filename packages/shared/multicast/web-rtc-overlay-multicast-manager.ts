@@ -15,10 +15,7 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import {
-    resolveALOwnedChildPeerIds,
-    toALAcceptedOverlayAdjacency
-} from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import { toALAcceptedOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -91,6 +88,7 @@ import {
     type RtcOutboundCarrierAvailability
 } from './compute-rtc-outbound-carrier-availability.ts';
 import { isRtcEnqueueBreakerSuccess } from './is-rtc-enqueue-breaker-success.ts';
+import { isRtcOriginRouteUnavailable } from './is-rtc-origin-route-unavailable.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
@@ -115,6 +113,7 @@ import {
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './room-authority/rtc-room-snapshot-admission.ts';
+import { toALPreviousOverlayLayout } from './room-authority/to-al-previous-overlay-layout.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-drop-reason-code-from-handling-plan.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
@@ -671,7 +670,8 @@ export class WebRtcOverlayMulticastManager {
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
             overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
-            overlayNextHopsBySessionId: input.overlay?.nextHopsBySessionId
+            overlayNextHopsBySessionId: input.overlay?.nextHopsBySessionId,
+            previousOverlayLayout: toALPreviousOverlayLayout(admission)
         };
         const policyMessage = fromPeerId !== undefined && msg.targets?.mode !== 'unicast'
             ? { ...msg, forwarding: { ...msg.forwarding, nextHopPeerIds: undefined } }
@@ -712,25 +712,12 @@ export class WebRtcOverlayMulticastManager {
     }
 
     private hasUnavailableOriginRoute(msg: ALMessage, availability: RtcOutboundCarrierAvailability): boolean {
-        if (
-            msg.id.senderId !== this.connectionService.input.sessionId ||
-            availability.kind !== 'available' || availability.admission.kind !== 'authorized' || !availability.context
-        ) {
-            return false;
-        }
-        const frozen = toRtcOriginFrozenMessage(msg, availability.context, {
+        return isRtcOriginRouteUnavailable({
+            message: msg,
+            availability,
             selfPeerId: this.connectionService.input.sessionId,
-            subscribeHolders: null
+            readyPeerIds: this.connectionService.readyPeerIdsForLane()
         });
-        const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
-            nowMs: availability.context.nowMs,
-            selfPeerId: this.connectionService.input.sessionId,
-            groupMemberPeerIds: availability.admission.memberPeerIds,
-            overlayNeighborPeerIds: availability.admission.forwardingPeerIds,
-            overlayNextHopsBySessionId: availability.context.overlay.nextHopsBySessionId
-        });
-        const readyPeerIds = this.connectionService.readyPeerIdsForLane();
-        return ownedChildPeerIds.length > 0 && ownedChildPeerIds.every((peerId) => !readyPeerIds.includes(peerId));
     }
 
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {

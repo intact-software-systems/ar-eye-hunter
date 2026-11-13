@@ -10,7 +10,6 @@ import type { OverlayInfo } from '../../api/api-config.ts';
 import { isSameGroupRef } from '../../api/api-type-utils.ts';
 import { resolveRallarGroupLeaderSessionId } from '../../api/group-director.ts';
 import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../../api/group-types.ts';
-import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type {
     RtcPublicationAdmitted,
@@ -24,7 +23,12 @@ import {
     type RtcRoomRosterPosition,
     type RtcRoomSessionObservation
 } from './resolve-rtc-room-peer-denial.ts';
-import { resolveRtcRoomRoutingEdges, type RtcRoomLayoutHistory } from './resolve-rtc-room-routing-edges.ts';
+import {
+    resolveRtcRoomRoutingEdges,
+    type RtcRoomLayoutEdges,
+    type RtcRoomLayoutHistory,
+    type RtcRoomRoutingEdges
+} from './resolve-rtc-room-routing-edges.ts';
 
 export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
@@ -46,6 +50,8 @@ export type RtcRoomSnapshotAdmission =
         /** The same sessions with their principals, from which an origin narrows a principal audience. */
         readonly memberSessions: readonly GroupPresenceSession[];
         readonly forwardingPeerIds: readonly string[];
+        /** The replaced layout's edges while it is in force, over which a sender and a relay also forward; else `null`. */
+        readonly previousForwarding: RtcRoomLayoutEdges | null;
         readonly snapshotVersion: number;
         /** The room's leader the snapshot appoints and holds present, to which a `group-leader` send narrows. */
         readonly leaderSessionId: string | undefined;
@@ -61,7 +67,14 @@ export interface RtcRoomSnapshotHandlingInput extends RtcRoomSnapshotAdmissionIn
 interface RtcRoomAdmissionAuthority extends RtcRoomSessionObservation {
     readonly authorizedSessions: readonly GroupPresenceSession[];
     readonly authorizedPeerIds: readonly string[];
+    readonly routingEdges: RtcRoomRoutingEdges;
 }
+
+const NO_RTC_ROOM_ROUTING_EDGES: RtcRoomRoutingEdges = {
+    accepted: { neighbourPeerIds: [], nextHopsBySessionId: undefined },
+    previous: null,
+    admittedEdgePeerIds: []
+};
 
 interface RtcRoomRefusal {
     readonly code: Extract<ALMessageDropReasonCode, 'not-yet-in-sync' | 'membership-fenced' | 'unauthorized'>;
@@ -84,7 +97,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     if (!snapshot) {
         return { kind: 'pending', reason: 'Awaiting a room authority observation' };
     }
-    const authority = toRtcRoomAdmissionAuthority(roomRef, snapshot, input.nowMs);
+    const authority = toRtcRoomAdmissionAuthority(input, roomRef, snapshot);
     const senderRoster = input.fromPeerId === undefined
         ? undefined
         : resolveRtcRoomRosterPosition(input.message, snapshot);
@@ -95,24 +108,28 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
 }
 
 function toRtcRoomAdmissionAuthority(
+    input: RtcRoomSnapshotAdmissionInput,
     roomRef: GroupRef,
-    snapshot: GroupSnapshot,
-    nowMs: number
+    snapshot: GroupSnapshot
 ): RtcRoomAdmissionAuthority {
     const observation = {
         roomRef,
-        nowMs,
+        nowMs: input.nowMs,
         sessions: new Map(snapshot.activeSessions.map((session) => [session.sessionId, session])),
         members: new Map(snapshot.members.map((member) => [member.principalId, member]))
     };
     const authorizedSessions = snapshot.activeSessions.filter((session) =>
         resolveRtcRoomPeerDenial(observation, session.sessionId) === undefined
     );
-    return {
-        ...observation,
-        authorizedSessions,
-        authorizedPeerIds: authorizedSessions.map((session) => session.sessionId)
-    };
+    const authorizedPeerIds = authorizedSessions.map((session) => session.sessionId);
+    const routingEdges = input.overlay === undefined ? NO_RTC_ROOM_ROUTING_EDGES : resolveRtcRoomRoutingEdges({
+        roomRef,
+        accepted: input.overlay,
+        history: input.layoutHistory,
+        authorizedPeerIds,
+        nowMs: input.nowMs
+    });
+    return { ...observation, authorizedSessions, authorizedPeerIds, routingEdges };
 }
 
 export function planRtcRoomSnapshotAdmission(input: RtcRoomSnapshotHandlingInput): ALMessageHandlingPlan {
@@ -280,16 +297,13 @@ function toAuthorizedRoomAdmission(
     authority: RtcRoomAdmissionAuthority,
     snapshot: GroupSnapshot
 ): RtcRoomSnapshotAdmission {
-    const { authorizedSessions, authorizedPeerIds } = authority;
-    const memberPeerIdSet = new Set(authorizedPeerIds);
-    const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, authority.roomRef)
-        ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
-        : [];
+    const { authorizedSessions, authorizedPeerIds, routingEdges } = authority;
     return {
         kind: 'authorized',
         memberPeerIds: authorizedPeerIds,
         memberSessions: authorizedSessions,
-        forwardingPeerIds,
+        forwardingPeerIds: routingEdges.accepted.neighbourPeerIds,
+        previousForwarding: routingEdges.previous,
         snapshotVersion: snapshot.group.snapshotVersion,
         leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot),
         deliversLocally: resolveALAdmittedRoomAudience(input.message, authorizedPeerIds).includes(input.selfPeerId)
@@ -361,14 +375,7 @@ function resolveRtcRoomLayoutEdgeDenial(
     if (!overlay || overlay.provenance !== 'server') {
         return { kind: 'pending', reason: 'Awaiting server room relay authority' };
     }
-    const edges = resolveRtcRoomRoutingEdges({
-        roomRef: authority.roomRef,
-        accepted: overlay,
-        history: input.layoutHistory,
-        authorizedPeerIds: authority.authorizedPeerIds,
-        nowMs: input.nowMs
-    });
-    return edges.admittedEdgePeerIds.includes(edgePeerId) ? undefined : {
+    return authority.routingEdges.admittedEdgePeerIds.includes(edgePeerId) ? undefined : {
         kind: 'unauthorized',
         cause: 'edge-unavailable',
         reason: 'RTC relay edge is not permitted by current server room topology'

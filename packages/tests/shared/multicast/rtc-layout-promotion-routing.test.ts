@@ -23,7 +23,7 @@ import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 /**
  * The server promotes a re-planned layout while a stream runs, with presence unchanged. Each browser switches its
  * routing to the promoted layout at once, while the edges the new layout adds are still being dialled and the edges
- * it drops are still open. These tests state what a viewer of the stream wants across that switch; today they fail.
+ * it drops are still open. These tests state what a viewer of the stream wants across that switch.
  */
 
 type PositionFrameReliability = 'at-least-once' | 'best-effort';
@@ -80,7 +80,6 @@ function readCopies(sent: readonly ALMessage[], message: ALMessage): number {
     return sent.filter((copy) => copy.id.msgId === message.id.msgId).length;
 }
 
-// The sender and relay cases are pinned as expected failures: Task 7 of the make-before-break slice makes them pass, and it.fails then turns red so the flip is visible.
 describe.each(['at-least-once', 'best-effort'] as const)(
     'routing a %s frame across a layout promotion while the promoted layout\'s new edges are still opening',
     (reliability) => {
@@ -94,7 +93,7 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             vi.useRealTimers();
         });
 
-        it.fails('a sender keeps delivering over its previous downstream edge until the new layout\'s edge is open', async () => {
+        it('a sender keeps delivering over its previous downstream edge until the new layout\'s edge is open', async () => {
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,
@@ -141,7 +140,7 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             expect(readCopies(receiver.delivered, frame), JSON.stringify(receiver.diagnostics.at(-1))).toBe(1);
         });
 
-        it.fails('a relay keeps forwarding to a previous child over the still-open edge until that child\'s new parent edge is open', async () => {
+        it('a relay keeps forwarding to a previous child over the still-open edge until that child\'s new parent edge is open', async () => {
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,

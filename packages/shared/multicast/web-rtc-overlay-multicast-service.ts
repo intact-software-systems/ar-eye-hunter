@@ -12,6 +12,7 @@ import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan
 } from './room-authority/rtc-room-snapshot-admission.ts';
+import { toALPreviousOverlayLayout } from './room-authority/to-al-previous-overlay-layout.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
@@ -66,7 +67,8 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
             overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
-            overlayNextHopsBySessionId: context.overlay.nextHopsBySessionId
+            overlayNextHopsBySessionId: context.overlay.nextHopsBySessionId,
+            previousOverlayLayout: toALPreviousOverlayLayout(admission)
         }, forwarding.qos);
         const handlingPlan = toRtcRoomSnapshotHandlingPlan(plan, admission, forwarding.fromPeerId);
         return {

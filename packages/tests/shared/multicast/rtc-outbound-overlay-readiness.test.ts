@@ -41,7 +41,16 @@ import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-co
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
-import { toOriginFrozenTargets } from './rtc-origin-overlay-fixture.ts';
+import {
+    createOriginOverlay,
+    createOriginSnapshot,
+    createRtcOriginOverlayFixture,
+    enqueueAndDrain,
+    ORIGIN_ROOM,
+    SERVED_REPLACED_LAYOUT_OVERLAP_MS,
+    toOriginFrozenTargets,
+    type RtcOriginOverlayFixture
+} from './rtc-origin-overlay-fixture.ts';
 import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
@@ -666,6 +675,70 @@ describe('RTC durable accepted-overlay readiness', () => {
         }
     );
 });
+
+describe.each(['at-least-once', 'best-effort'] as const)(
+    'an RTC origin sending a %s frame across a layout promotion',
+    (reliability) => {
+        it('an origin whose new edge is not open yet sends over its previous edge inside the overlap', async () => {
+            const origin = createPromotedOrigin(SERVED_REPLACED_LAYOUT_OVERLAP_MS);
+            const frame = createPromotionFrame(reliability);
+
+            const result = await enqueueAndDrain(origin.manager, frame);
+
+            expect(result.verdict).toMatchObject({ kind: 'admitted' });
+            expect(origin.channels.b!.sent.filter((copy) => copy.id.msgId === frame.id.msgId)).toHaveLength(1);
+            expect(origin.diagnostics.filter((event) => /planner-drop|no-route/.test(JSON.stringify(event)))).toEqual([]);
+        });
+
+        it('after the overlap, or with an overlap of zero, an origin with no ready accepted edge fails as today', async () => {
+            const expired = createPromotedOrigin(SERVED_REPLACED_LAYOUT_OVERLAP_MS);
+            await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS);
+            const unbounded = createPromotedOrigin(0);
+            const failure = reliability === 'at-least-once'
+                ? { kind: 'skipped', reason: 'planner-drop' }
+                : { kind: 'unroutable', reason: 'no-route' };
+
+            for (const origin of [expired, unbounded]) {
+                const result = await enqueueAndDrain(origin.manager, createPromotionFrame(reliability));
+
+                expect(result.verdict).toMatchObject(failure);
+                expect(origin.channels.b!.sent).toEqual([]);
+            }
+        });
+    }
+);
+
+/**
+ * The origin `a` of the chain `a`, `b`, `c`, `d` once the re-planned chain `a`, `c`, `d`, `b` is promoted: its edge to
+ * `b` that the promotion drops is still open, and its edge to `c` that the promotion adds is not open yet.
+ */
+function createPromotedOrigin(replacedLayoutOverlapMs: number): RtcOriginOverlayFixture {
+    const previousTree = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
+    const promotedTree = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
+    const promotedIdentity = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
+    const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+    const origin = createRtcOriginOverlayFixture({
+        snapshot,
+        nextHopPeerIds: previousTree.a,
+        nextHopsBySessionId: previousTree,
+        replacedLayoutOverlapMs
+    });
+    origin.groups.accept('room', { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: promotedIdentity } });
+    origin.acceptOverlay({ ...createOriginOverlay(promotedTree.a, promotedTree), overlayVersion: promotedIdentity.version });
+    origin.ready.peerIds = ['b'];
+    return origin;
+}
+
+function createPromotionFrame(reliability: 'at-least-once' | 'best-effort'): ALMessage {
+    return newALMulticastMessage(
+        'a',
+        { topicId: 'position', resourceId: `frame-${reliability}`, contextId: 'room' },
+        ORIGIN_ROOM,
+        'position.frame.v1',
+        { reliability },
+        { reliability, ack: 'none', ttlMs: 60_000 }
+    );
+}
 
 function toIneligibleMessage(message: ALMessage, denial: string): ALMessage {
     if (message.targets?.mode !== 'broadcast') {
