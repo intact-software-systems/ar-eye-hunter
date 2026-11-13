@@ -1,11 +1,9 @@
-import { PGlite } from '@electric-sql/pglite';
-import { readFile } from 'node:fs/promises';
 import { onTestFinished } from 'vitest';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
-import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient, type PGliteSql } from '../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import type { PGliteSql } from '../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql } from '../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 
 export interface PSqlAdmissionTestStorage {
     readonly sql: PGliteSql;
@@ -19,7 +17,6 @@ export async function createPSqlAdmissionTestStorage(): Promise<PSqlAdmissionTes
 }
 
 export async function createClosablePSqlAdmissionTestStorage(): Promise<PSqlAdmissionTestStorage> {
-    const sql = createPGliteSqlClient(new PGlite());
-    await sql.exec(await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8'));
+    const sql = await createApiV1SchemaPGliteSql();
     return { sql, repository: new PSqlRuntimeStateRepository(sql) };
 }

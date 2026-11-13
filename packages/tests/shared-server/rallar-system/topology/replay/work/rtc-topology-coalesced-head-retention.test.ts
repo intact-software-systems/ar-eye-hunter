@@ -1,6 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
 import { Temporal } from '@js-temporal/polyfill';
-import { readFileSync } from 'node:fs';
 import {
     describe,
     expect,
@@ -46,7 +44,7 @@ import {
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
-import { createPGliteSqlClient } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import {
     deletePostgresRunRows,
     NO_POSTGRES_RUN_ROWS,
@@ -183,9 +181,8 @@ describe.each(['memory', 'postgres'] as const)('the coalesced topology head near
 async function withHeadSql(backend: 'memory' | 'postgres', run: (harness: HeadHarness) => Promise<void>): Promise<void> {
     const applicationId = `head-retention-${crypto.randomUUID()}`;
     if (backend === 'memory') {
-        const sql = createPGliteSqlClient(new PGlite());
+        const sql = await createApiV1SchemaPGliteSql();
         try {
-            await sql.exec(readFileSync(new URL('../../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url), 'utf8'));
             await run(createHeadHarness(sql, applicationId));
         }
         finally {

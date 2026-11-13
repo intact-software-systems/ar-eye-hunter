@@ -7,7 +7,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { EntityStatus, Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient, PGlite } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql } from '../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import { toPSqlSql } from '../integration/postgres/test-support/postgres-sql-adapter.ts';
 
 export interface ResourceInboxTestStorage {
@@ -37,12 +37,11 @@ export async function createResourceInboxTestStorage(
     maxConnections = 1,
     backend: ResourceInboxTestBackend = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? 'postgres' : 'memory'
 ): Promise<ResourceInboxTestStorage> {
-    const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
     if (backend === 'memory') {
-        const sql = createPGliteSqlClient(new PGlite());
-        await sql.exec(schemaSql);
+        const sql = await createApiV1SchemaPGliteSql();
         return { sql, close: async () => await sql.close() };
     }
+    const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
     const schema = `${schemaPrefix}_${crypto.randomUUID().replaceAll('-', '')}`;
     const client = postgres(process.env.DATABASE_URL ?? 'postgres://app:app@localhost:5432/appdb', {
         max: maxConnections,

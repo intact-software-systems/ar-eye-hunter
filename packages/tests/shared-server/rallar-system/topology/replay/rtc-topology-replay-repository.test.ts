@@ -1,12 +1,10 @@
-import { readFileSync } from 'node:fs';
-
-import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
 
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { PSqlRtcTopologyReplayRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts';
-import { createPGliteSqlClient, type PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import type { PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 
 const CONSUMER = '00000000-0000-4000-8000-000000000001';
 const PUBLISHER_A = '00000000-0000-4000-8000-000000000002';
@@ -290,14 +288,8 @@ describe('PSqlRtcTopologyReplayRepository', () => {
 async function withReplayRepository(
     run: (sql: PGliteSql, repository: PSqlRtcTopologyReplayRepository) => Promise<void>
 ): Promise<void> {
-    const raw = new PGlite();
-    const sql = createPGliteSqlClient(raw);
+    const sql = await createApiV1SchemaPGliteSql();
     try {
-        const schema = readFileSync(
-            new URL('../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url),
-            'utf8'
-        );
-        await sql.exec(schema);
         await run(sql, new PSqlRtcTopologyReplayRepository(sql));
     }
     finally {
