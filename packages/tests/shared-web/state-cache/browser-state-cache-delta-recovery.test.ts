@@ -31,6 +31,9 @@ import {
     groupSnapshotResponse
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 describe('browser state cache delta recovery and bootstrap topology', () => {
     afterEach(() => vi.unstubAllGlobals());
     beforeEach(() => {
@@ -74,7 +77,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         browserStateCacheLifecycle.initialise({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: webSocketQueueBox,
             webRtcGroupManager: manager,
             clientData
@@ -124,7 +127,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
         });
 
         await browserStateCacheLifecycle.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],
@@ -184,7 +187,7 @@ describe('browser state cache delta recovery and bootstrap topology', () => {
             snapshotVersion: 5
         });
         await browserStateCacheLifecycle.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData,
             clientSnapshots: [],

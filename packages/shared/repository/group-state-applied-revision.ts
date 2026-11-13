@@ -18,7 +18,7 @@ export function createPassThroughGroupStateAppliedRevisionSink(): GroupStateAppl
     return () => {};
 }
 
-/** Undefined for a lease refresh and for a replacement that leaves every stated fact equal. */
+/** Undefined for a lease refresh and for a replacement that changes neither the causal revision nor the session count. */
 export function toGroupStateAppliedRevision(change: GroupStateSnapshotChange): GroupStateAppliedRevision | undefined {
     if (change.kind === ObservableValueEventType.Refreshed) {
         return undefined;
@@ -53,6 +53,5 @@ function toAppliedRevision(
 function isSameAppliedRevision(left: GroupStateAppliedRevision, right: GroupStateAppliedRevision): boolean {
     return left.groupRevision === right.groupRevision &&
         left.presenceRevision === right.presenceRevision &&
-        left.rosterVersion === right.rosterVersion &&
         left.activeSessionCount === right.activeSessionCount;
 }

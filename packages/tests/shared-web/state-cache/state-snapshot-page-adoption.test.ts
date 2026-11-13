@@ -21,6 +21,9 @@ import type { OnMessageCallback } from '@shared/services/queue-message-callbacks
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 interface LargeGroupPublication {
     readonly memberIds: readonly string[];
     readonly pages: readonly ALMessage[];
@@ -107,7 +110,7 @@ function createLargeGroupPublication(): LargeGroupPublication {
 function installInbox(): (message: ALMessage) => Promise<void> {
     let receiver: OnMessageCallback | undefined;
     browserStateCacheLifecycle.initialise({
-        groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+        groupStateDiagnostics: passThroughGroupStateDiagnostics,
         inbox: {
             onAllInboxMessagesDo(callback) {
                 receiver = callback;

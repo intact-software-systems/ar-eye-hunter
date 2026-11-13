@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 describe('group heartbeat snapshot reconciliation', () => {
     beforeEach(() => {
         configureTestCacheRepositories();
@@ -43,7 +46,7 @@ describe('group heartbeat snapshot reconciliation', () => {
 
         try {
             await browserStateCacheLifecycle.hydrate({
-                groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+                groupStateDiagnostics: passThroughGroupStateDiagnostics,
                 webRtcGroupManager: manager,
                 clientData: { clientId: 'session-a', sessionId: 'session-a', isOnline: true },
                 clientSnapshots: [],

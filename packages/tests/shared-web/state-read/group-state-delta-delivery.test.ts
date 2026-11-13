@@ -34,6 +34,9 @@ import {
     createDeltaEnvelopeFixtureGroupSnapshot
 } from '../../shared-server/rallar-system/group-state/presence/group-state-delta-envelope-fixtures.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 beforeEach(() => {
@@ -248,7 +251,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     constructor() {
         this.cache.initialise({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: this,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
@@ -291,7 +294,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
 
     async hydrate(snapshot: GroupSnapshot): Promise<void> {
         await this.cache.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],

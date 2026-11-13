@@ -154,11 +154,34 @@ on `rallar.browser.group_state.applied`; the event's `data` is the fact itself:
   dropped the group (the fields are then the removed snapshot's)
 
 Every adoption path states through the one cache change stream: a delta, a
-snapshot page, a point read, a heartbeat adoption, a reopen resync. A lease
-refresh states nothing, and neither does a replacement that leaves all four
-numbers equal, so one event names one change of the held tuple. The event is
-emitted after the cache write, so an event never precedes the state it names.
-A sink that throws is logged and changes no adoption.
+snapshot page, a point read, a heartbeat adoption, a reopen resync.
+
+- A `held` event is stated when the change moves `(groupRevision,
+  presenceRevision)` or `activeSessionCount`. A heartbeat that drops or restores
+  a session at an equal causal revision is therefore stated, with the new count.
+- A lease-only replacement or a lease refresh states nothing. `rosterVersion`
+  is carried but never decides: it cannot change while the causal revision stays
+  equal.
+- A `removed` event is stated for the explicit removals only: a heartbeat that
+  no longer returns the group (`missingGroups`), a collection reconciliation
+  that drops it, and a point read that finds the room missing.
+- A cache entry that lapses by its TTL states nothing; the RTC admission no
+  longer reads it.
+- A connect, disconnect or logout replaces the whole cache and states nothing
+  for the groups it held.
+
+So the last `held` event does not prove the group is still readable.
+
+The event is emitted after the cache write, so it never precedes the state it
+names. It may arrive after later writes: delivery of a change waits for the
+previous change's adoption. An event is a floor ("the cache holds at least this
+revision, until a removal"), not the current state. A sink that throws is
+logged and changes no adoption.
+
+The topic carries about one event per applied change per page; it grows with
+the room's writes, not with the messages a cell sends. The bridged event carries
+no connection, actor or lane context, so a consumer keys it by page; a reloaded
+page starts with an empty cache and states `held` afresh.
 
 ## Outbound Admission Diagnostics
 

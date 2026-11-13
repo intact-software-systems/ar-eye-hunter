@@ -8,7 +8,10 @@ import {
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import {
+    createPassThroughGroupStateAppliedRevisionSink,
+    type GroupStateAppliedRevision
+} from '@shared/repository/group-state-applied-revision.ts';
 import {
     onGroupStateSnapshotChange,
     setGroupStateSnapshots,
@@ -87,6 +90,34 @@ describe('Rallar state store', () => {
             stateStore.detachCache();
             stop();
         }
+    });
+
+    it('forwards the middleware sink when it hydrates, which states the hydrated revision once', async () => {
+        const stated: GroupStateAppliedRevision[] = [];
+        const context = {
+            session: createDefaultTestSession(),
+            middleware: {
+                webRtcGroupManager: createWebRtcGroupManager(),
+                groupStateDiagnostics: (revision: GroupStateAppliedRevision) => {
+                    stated.push(revision);
+                }
+            }
+        };
+        const { stateStore } = createStateStoreFixture({}, () => context.session);
+        const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+        const joined = createGroupSnapshotFixture({ ...scope, groupId: 'joined', sessionIds: ['session-1'] });
+
+        await stateStore.acceptSnapshots({ context, clients: [], groups: [joined], scope });
+        await waitForGroupStateSnapshotChangesIdle();
+
+        expect(stated).toEqual([{
+            group: { ...scope, groupId: 'joined' },
+            groupRevision: joined.causalRevision.groupRevision,
+            presenceRevision: joined.causalRevision.presenceRevision,
+            rosterVersion: joined.group.rosterVersion,
+            activeSessionCount: 1,
+            change: 'held'
+        }]);
     });
 
     it('emits room, people, then derived state observers', () => {

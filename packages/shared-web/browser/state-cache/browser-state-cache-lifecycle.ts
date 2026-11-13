@@ -269,7 +269,7 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     private observeGroupStateChanges(context: BrowserStateCacheLifecycle.ObserverContext): () => void {
         const { webRtcGroupManager, sessionId, bootstrapOverlayPolicy, groupStateDiagnostics } = context;
         return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
-            stateGroupStateAppliedRevision(change, groupStateDiagnostics);
+            publishGroupStateAppliedRevision(change, groupStateDiagnostics);
             const snapshot = change.snapshot ?? change.previous;
             if (
                 change.kind === ObservableValueEventType.Refreshed ||
@@ -341,7 +341,7 @@ function isSameObserverConnection(
 }
 
 /** The cache already holds what the fact names; a failing diagnostic must not reach the adoption. */
-function stateGroupStateAppliedRevision(
+function publishGroupStateAppliedRevision(
     change: groupStateSnapshotsRepository.GroupStateSnapshotChange,
     sink: GroupStateAppliedRevisionSink
 ): void {
@@ -353,7 +353,7 @@ function stateGroupStateAppliedRevision(
         sink(revision);
     }
     catch (error) {
-        console.error('Error stating an applied group revision', error);
+        console.error('Error publishing an applied group revision', error);
     }
 }
 

@@ -40,6 +40,9 @@ import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 describe('browser group-state delta reconciliation', () => {
     const diagnostics: BrowserStateReadDiagnosticEvent[] = [];
 
@@ -411,7 +414,7 @@ class StateCacheRuntime {
     private onInboxMessage: ((message: ALMessage) => Promise<void>) | undefined;
     constructor() {
         browserStateCacheLifecycle.initialise({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             inbox: {
                 onAllInboxMessagesDo: (callback) => {
                     this.onInboxMessage = async (message) => {
@@ -431,7 +434,7 @@ class StateCacheRuntime {
     }
     hydrate = async (snapshots: readonly GroupSnapshot[]): Promise<void> => {
         await browserStateCacheLifecycle.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: this.manager,
             clientData: this.clientData,
             clientSnapshots: [],

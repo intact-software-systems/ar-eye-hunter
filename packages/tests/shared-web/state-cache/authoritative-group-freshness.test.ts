@@ -21,6 +21,9 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
 describe('authoritative group observation freshness', () => {
@@ -28,7 +31,7 @@ describe('authoritative group observation freshness', () => {
         const snapshot = seedObservation();
         const manager = createWebRtcGroupManager();
         await browserStateCacheLifecycle.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData: { clientId: 'sender', sessionId: 'sender', isOnline: true },
             clientSnapshots: [],
@@ -125,7 +128,7 @@ describe('guarded authoritative session lease acquisition', () => {
         const expected = seedObservation();
         const manager = createWebRtcGroupManager();
         await browserStateCacheLifecycle.hydrate({
-            groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink(),
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: manager,
             clientData: { clientId: 'sender', sessionId: 'sender', isOnline: true },
             clientSnapshots: [],
