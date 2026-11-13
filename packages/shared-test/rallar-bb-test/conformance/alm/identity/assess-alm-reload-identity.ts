@@ -11,7 +11,6 @@ import { decodeJsonValue } from '../../../runtime/decode-runtime-result-values.t
 import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
 import { toAlmReloadCheckpoints, type AlmReloadCheckpoint } from '../alm-reload-pair.ts';
-import { toAlmCellAuthoredCommands } from '../cell/to-alm-cell-authored-commands.ts';
 import type { RecordedAlmConformanceParticipant } from './assess-alm-conformance-identity.ts';
 import { assessAlmReloadStorage } from './assess-alm-reload-storage.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
@@ -33,17 +32,12 @@ interface ReloadEvidence {
     readonly receiverNextIndex: number;
 }
 
-/**
- * The coordinator owns causal dispatch; these joins require its complete, exact authored-child transcript. They judge
- * each role's authored commands: a lane cell's settle runs in front of them and is the harness's, not the cell's.
- */
+/** The coordinator owns causal dispatch; these joins require its complete, exact authored-child transcript. */
 export function assessAlmReloadIdentity(
-    recordedSender: RecordedAlmConformanceParticipant,
-    recordedReceiver: RecordedAlmConformanceParticipant,
+    sender: RecordedAlmConformanceParticipant,
+    receiver: RecordedAlmConformanceParticipant,
     reloadSends: readonly RallarBlackBoxTestMessagesSendCommand[]
 ): readonly string[] {
-    const sender = toAuthoredParticipant(recordedSender);
-    const receiver = toAuthoredParticipant(recordedReceiver);
     const senderRecipe = sender.participant.recipe;
     const receiverRecipe = receiver.participant.recipe;
     const checkpoints = toAlmReloadCheckpoints(senderRecipe.metadata?.almReloadCheckpoints);
@@ -87,17 +81,6 @@ export function assessAlmReloadIdentity(
         receiverStart = evidence.receiverNextIndex;
     }
     return issues;
-}
-
-function toAuthoredParticipant(recorded: RecordedAlmConformanceParticipant): RecordedAlmConformanceParticipant {
-    const recipe = recorded.participant.recipe;
-    return {
-        ...recorded,
-        participant: {
-            ...recorded.participant,
-            recipe: { ...recipe, commands: toAlmCellAuthoredCommands(recipe.commands) }
-        }
-    };
 }
 
 interface ReadReloadEvidenceInput {

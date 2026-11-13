@@ -14,6 +14,7 @@ import { decodeJsonValue } from '../../../runtime/decode-runtime-result-values.t
 import { isJsonRecordValue } from '../../../schema/json-schema-validation.ts';
 import { isSameJsonValue } from '../../../wait/wait-event-match.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
+import { toAlmCellAuthoredCommands } from '../cell/to-alm-cell-authored-commands.ts';
 import { assessAlmAcknowledgedIdentity } from './assess-alm-acknowledged-identity.ts';
 import { assessAlmReceiptRoleIdentity, readAlmReceiptRolesEntries } from './assess-alm-receipt-role-identity.ts';
 import {
@@ -60,7 +61,7 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         toRecordedAlmConformanceParticipant(input.runId, participant)
     );
     const issues = EitherCollectors.toListFoldLefts(readings);
-    const recorded = EitherCollectors.toListFoldRights(readings);
+    const recorded = EitherCollectors.toListFoldRights(readings).map(toAuthoredParticipant);
     const sender = recorded.find((participant) => participant.participant.role === 'sender');
     const receiver = recorded.find((participant) => participant.participant.role === 'receiver');
     if (issues.length > 0 || !sender || !receiver) {
@@ -92,6 +93,22 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
 export function hasAlmIdentityEvidence(sender: RallarBlackBoxTestRecipe): boolean {
     return sender.commands.some(isIdentitySend) || readAlmReceiptRolesEntries(sender).length > 0 ||
         hasAlmRelayedReceiptPin(sender) || toTracedRequests(sender.commands).length > 0;
+}
+
+/**
+ * The participant with its recipe reduced to the cell's authored commands, the view every identity rule judges: a lane
+ * cell's settle runs in front of them and is the harness's. Whether the run is complete is read before, on the whole
+ * recipe.
+ */
+function toAuthoredParticipant(recorded: RecordedAlmConformanceParticipant): RecordedAlmConformanceParticipant {
+    const recipe = recorded.participant.recipe;
+    return {
+        ...recorded,
+        participant: {
+            ...recorded.participant,
+            recipe: { ...recipe, commands: toAlmCellAuthoredCommands(recipe.commands) }
+        }
+    };
 }
 
 /** Every scenario declares the sender and the receiver; each declared role has exactly one agent of its own. */
