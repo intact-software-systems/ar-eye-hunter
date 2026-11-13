@@ -49,6 +49,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             message: msg,
             snapshot: context.room,
             overlay: context.overlay,
+            layoutHistory: context.layoutHistory,
             selfPeerId,
             fromPeerId: forwarding.fromPeerId,
             recipientPeerId: undefined,

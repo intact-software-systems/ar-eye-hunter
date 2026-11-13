@@ -204,6 +204,7 @@ function createSnapshotAdmissionFixture(
                 selfPeerId: 'receiver',
                 overlay: undefined,
                 recipientPeerId: undefined,
+                layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
                 nowMs: observations.nowMs
             });
         },

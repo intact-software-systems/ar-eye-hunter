@@ -57,6 +57,7 @@ export function computeRtcOutboundCarrierAvailability(
         message,
         snapshot: observation.room,
         overlay,
+        layoutHistory: observation.layoutHistory,
         selfPeerId: input.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,

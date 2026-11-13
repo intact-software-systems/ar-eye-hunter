@@ -24,11 +24,13 @@ import {
     type RtcRoomRosterPosition,
     type RtcRoomSessionObservation
 } from './resolve-rtc-room-peer-denial.ts';
+import { resolveRtcRoomRoutingEdges, type RtcRoomLayoutHistory } from './resolve-rtc-room-routing-edges.ts';
 
 export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
     readonly snapshot: GroupSnapshot | undefined;
     readonly overlay: OverlayInfo | undefined;
+    readonly layoutHistory: RtcRoomLayoutHistory;
     readonly selfPeerId: string;
     readonly fromPeerId: string | undefined;
     readonly recipientPeerId: string | undefined;
@@ -56,6 +58,11 @@ export interface RtcRoomSnapshotHandlingInput extends RtcRoomSnapshotAdmissionIn
     readonly plan: ALMessageHandlingPlan;
 }
 
+interface RtcRoomAdmissionAuthority extends RtcRoomSessionObservation {
+    readonly authorizedSessions: readonly GroupPresenceSession[];
+    readonly authorizedPeerIds: readonly string[];
+}
+
 interface RtcRoomRefusal {
     readonly code: Extract<ALMessageDropReasonCode, 'not-yet-in-sync' | 'membership-fenced' | 'unauthorized'>;
     readonly dropReason: string;
@@ -77,12 +84,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     if (!snapshot) {
         return { kind: 'pending', reason: 'Awaiting a room authority observation' };
     }
-    const authority = {
-        roomRef,
-        nowMs: input.nowMs,
-        sessions: new Map(snapshot.activeSessions.map((session) => [session.sessionId, session])),
-        members: new Map(snapshot.members.map((member) => [member.principalId, member]))
-    };
+    const authority = toRtcRoomAdmissionAuthority(roomRef, snapshot, input.nowMs);
     const senderRoster = input.fromPeerId === undefined
         ? undefined
         : resolveRtcRoomRosterPosition(input.message, snapshot);
@@ -90,6 +92,27 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
         resolveRoomAuthorityDenial(input, authority, senderRoster) ??
         resolveRoomFloorDenial(input, snapshot, senderRoster) ??
         toAuthorizedRoomAdmission(input, authority, snapshot);
+}
+
+function toRtcRoomAdmissionAuthority(
+    roomRef: GroupRef,
+    snapshot: GroupSnapshot,
+    nowMs: number
+): RtcRoomAdmissionAuthority {
+    const observation = {
+        roomRef,
+        nowMs,
+        sessions: new Map(snapshot.activeSessions.map((session) => [session.sessionId, session])),
+        members: new Map(snapshot.members.map((member) => [member.principalId, member]))
+    };
+    const authorizedSessions = snapshot.activeSessions.filter((session) =>
+        resolveRtcRoomPeerDenial(observation, session.sessionId) === undefined
+    );
+    return {
+        ...observation,
+        authorizedSessions,
+        authorizedPeerIds: authorizedSessions.map((session) => session.sessionId)
+    };
 }
 
 export function planRtcRoomSnapshotAdmission(input: RtcRoomSnapshotHandlingInput): ALMessageHandlingPlan {
@@ -212,7 +235,7 @@ function toRtcRoomRefusal(denial: RtcRoomAuthorityDenial): RtcRoomRefusal {
  */
 function resolveRoomAuthorityDenial(
     input: RtcRoomSnapshotAdmissionInput,
-    authority: RtcRoomSessionObservation,
+    authority: RtcRoomAdmissionAuthority,
     senderRoster: RtcRoomRosterPosition | undefined
 ): RtcRoomAuthorityDenial | undefined {
     const senderId = input.message.id.senderId;
@@ -226,7 +249,7 @@ function resolveRoomAuthorityDenial(
             ? resolveRtcRoomPeerDenial(authority, senderId)
             : resolveRtcRoomSenderDenial(authority, senderId, senderRoster),
         ...Array.from(otherPeerIds, (peerId) => resolveRtcRoomPeerDenial(authority, peerId)),
-        resolveRtcRoomEdgeDenial(input, authority.roomRef)
+        resolveRtcRoomEdgeDenial(input, authority)
     ];
     return denials.find((candidate) => candidate?.kind === 'unauthorized') ??
         denials.find((candidate) => candidate !== undefined);
@@ -254,13 +277,10 @@ function resolveRoomFloorDenial(
 
 function toAuthorizedRoomAdmission(
     input: RtcRoomSnapshotAdmissionInput,
-    authority: RtcRoomSessionObservation,
+    authority: RtcRoomAdmissionAuthority,
     snapshot: GroupSnapshot
 ): RtcRoomSnapshotAdmission {
-    const authorizedSessions = snapshot.activeSessions.filter((session) =>
-        resolveRtcRoomPeerDenial(authority, session.sessionId) === undefined
-    );
-    const authorizedPeerIds = authorizedSessions.map((session) => session.sessionId);
+    const { authorizedSessions, authorizedPeerIds } = authority;
     const memberPeerIdSet = new Set(authorizedPeerIds);
     const forwardingPeerIds = isRoomLayoutOverlay(input.overlay, authority.roomRef)
         ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
@@ -304,7 +324,7 @@ export function resolveRoomObservationDenial(
 
 function resolveRtcRoomEdgeDenial(
     input: RtcRoomSnapshotAdmissionInput,
-    roomRef: GroupRef
+    authority: RtcRoomAdmissionAuthority
 ): RtcRoomAuthorityDenial | undefined {
     const nextHopPeerIds = input.message.forwarding?.nextHopPeerIds;
     if (
@@ -317,29 +337,40 @@ function resolveRtcRoomEdgeDenial(
             reason: 'RTC transport copy targets another immediate recipient'
         };
     }
-    const edgePeerId = input.recipientPeerId ??
-        (input.fromPeerId !== input.message.id.senderId ? input.fromPeerId : undefined);
     const overlay = input.overlay;
-    if (overlay && (overlay.state === 'removed' || !isSameGroupRef(overlay.groupRef, roomRef))) {
+    if (overlay && (overlay.state === 'removed' || !isSameGroupRef(overlay.groupRef, authority.roomRef))) {
         return {
             kind: 'unauthorized',
             cause: 'authority-rejected',
             reason: 'RTC room topology is removed or belongs to another scope'
         };
     }
+    return resolveRtcRoomLayoutEdgeDenial(input, authority);
+}
+
+function resolveRtcRoomLayoutEdgeDenial(
+    input: RtcRoomSnapshotAdmissionInput,
+    authority: RtcRoomAdmissionAuthority
+): RtcRoomAuthorityDenial | undefined {
+    const edgePeerId = input.recipientPeerId ??
+        (input.fromPeerId !== input.message.id.senderId ? input.fromPeerId : undefined);
     if (edgePeerId === undefined) {
         return undefined;
     }
+    const overlay = input.overlay;
     if (!overlay || overlay.provenance !== 'server') {
         return { kind: 'pending', reason: 'Awaiting server room relay authority' };
     }
-    // Removed/foreign overlays were rejected above; this is the current server layout's edge absence alone.
-    if (!overlay.nextHopSessionIds.includes(edgePeerId)) {
-        return {
-            kind: 'unauthorized',
-            cause: 'edge-unavailable',
-            reason: 'RTC relay edge is not permitted by current server room topology'
-        };
-    }
-    return undefined;
+    const edges = resolveRtcRoomRoutingEdges({
+        roomRef: authority.roomRef,
+        accepted: overlay,
+        history: input.layoutHistory,
+        authorizedPeerIds: authority.authorizedPeerIds,
+        nowMs: input.nowMs
+    });
+    return edges.admittedEdgePeerIds.includes(edgePeerId) ? undefined : {
+        kind: 'unauthorized',
+        cause: 'edge-unavailable',
+        reason: 'RTC relay edge is not permitted by current server room topology'
+    };
 }

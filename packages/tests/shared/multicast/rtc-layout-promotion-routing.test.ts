@@ -80,7 +80,7 @@ function readCopies(sent: readonly ALMessage[], message: ALMessage): number {
     return sent.filter((copy) => copy.id.msgId === message.id.msgId).length;
 }
 
-// Pinned as expected failures: Tasks 6 and 7 of the make-before-break slice make these cases pass, and it.fails then turns red so the flip is visible.
+// The sender and relay cases are pinned as expected failures: Task 7 of the make-before-break slice makes them pass, and it.fails then turns red so the flip is visible.
 describe.each(['at-least-once', 'best-effort'] as const)(
     'routing a %s frame across a layout promotion while the promoted layout\'s new edges are still opening',
     (reliability) => {
@@ -113,7 +113,7 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             expect(readCopies(origin.channels.b!.sent, frame), JSON.stringify(result.verdict)).toBe(1);
         });
 
-        it.fails('a receiver accepts a frame from its previous parent until its new parent\'s edge is open', async () => {
+        it('a receiver accepts a frame from its previous parent until its new parent\'s edge is open', async () => {
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,

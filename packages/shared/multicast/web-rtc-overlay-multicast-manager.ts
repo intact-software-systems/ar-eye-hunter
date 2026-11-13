@@ -639,12 +639,13 @@ export class WebRtcOverlayMulticastManager {
         const fromPeerId = source && source.kind !== 'trusted-server' ? source.peerId : undefined;
         const groupRef = readALTargetGroupRef(msg);
         const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
-        const overlayId = this.readOutboundObservation(msg).overlayId;
+        const { overlayId, layoutHistory } = this.readOutboundObservation(msg);
         const overlay = overlayId ? this.overlayCache.read(overlayId) : undefined;
         const admission = computeRtcRoomSnapshotAdmission({
             message: msg,
             snapshot,
             overlay,
+            layoutHistory,
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
             recipientPeerId: undefined,
@@ -1179,6 +1180,7 @@ export class WebRtcOverlayMulticastManager {
             message,
             snapshot: readALTargetGroupRef(message) ? observed.room : undefined,
             overlay: observed.overlay,
+            layoutHistory: observed.layoutHistory,
             selfPeerId,
             nowMs: observed.nowMs
         };
@@ -1282,11 +1284,12 @@ export class WebRtcOverlayMulticastManager {
         }
 
         const roomRef = readALTargetGroupRef(msg);
-        const overlayId = this.readOutboundObservation(msg).overlayId;
+        const { overlayId, layoutHistory } = this.readOutboundObservation(msg);
         const admission = computeRtcRoomSnapshotAdmission({
             message: msg,
             snapshot: roomRef ? this.readGroupSnapshotByRef(roomRef) : undefined,
             overlay: overlayId ? this.overlayCache.read(overlayId) : undefined,
+            layoutHistory,
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId: undefined,
             recipientPeerId: peerId,

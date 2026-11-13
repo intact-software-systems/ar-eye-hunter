@@ -403,6 +403,7 @@ function toOriginAdmission(snapshot: GroupSnapshot, message: ALMessage) {
         selfPeerId: 'a',
         fromPeerId: undefined,
         recipientPeerId: undefined,
+        layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
         nowMs: Date.now()
     });
     if (admission.kind !== 'authorized') {
