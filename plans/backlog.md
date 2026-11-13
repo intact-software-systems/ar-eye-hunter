@@ -722,16 +722,26 @@ and it has no status list.
   it.
 - Make-before-break routing in the browser, where a new layout's edges open
   before routing moves to them, is the complete fix for the RTT re-plan
-  failures of manifests 07, 09 and 21 and is not scheduled
-  (`plans/active/deno-to-bun-validation.md`).
+  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
+  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
+  lane determinism, ahead of publication figures, reproduced locally first and
+  with its own design put to the maintainer before any code (D644).
 - At 50 agents the RTC delivery fails after the connect. With #813 merged,
   manifests 07 and 09 connect every agent and then fail on delivery: manifest
-  07 (run 43382453664) leaves 2 of 49 receivers under the 95 % threshold, and
-  manifest 09 (run 43383760956) has 9 agents at 0.89 to 0.94 send success
-  against 0.95, with 2 to 3 s bursts of `RALLAR_BB_RTC_SEND_FAILED`. The cause
-  is not established, from one run per manifest (the comment on #813). It caps
-  the campaign's stretch rung (D643): 50 agents are not attempted until the
-  loss has a cause or the stretch load is shown clear of it.
+  07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
+  (the failing step named 2), and manifest 09 (run 43383760956) has 9 agents at
+  0.89 to 0.94 send success against 0.95, with 2 to 3 s bursts of
+  `RALLAR_BB_RTC_SEND_FAILED`. An analysis of the runs' recorded events found
+  the mechanism: a new tree layout was published in or just before the stream,
+  and each browser routed only over its edges before they were open, so for 0.7
+  to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
+  refused frames from the old parent (`unauthorized`) and a switched relay
+  stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
+  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
+  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  Open: what triggered each re-plan (neither run records the server's planning
+  decision), the exact meaning of `unauthorized` (inferred), run 09's full
+  coverage (22 agents recorded) and a local reproduction, which is under way.
 - The byte sizes the game fixtures send (the AR Eye and position frames) are
   stated nowhere. Measure them in one small task; the first campaign rung sends
   those sizes (D643).

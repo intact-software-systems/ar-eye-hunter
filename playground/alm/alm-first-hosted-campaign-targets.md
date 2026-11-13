@@ -41,15 +41,16 @@ informed is reported first and set afterwards.
 
 Logical deliveries per second are the manifest's `logicalFanoutMessages` divided by its run length.
 
-| Manifest                 | Agents | Shape                                          | Deliveries per second | Hosted result recorded                                                                                                                                    |
-| ------------------------ | ------ | ---------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 21 ALM conformance       | 50     | one director, 6 shots plus 2 lifecycle in 30 s | 392 / 30 = 13         | Passed (run 43131389341); failed once before it on an RTT re-plan (`plans/active/deno-to-bun-validation.md`)                                              |
-| 23 principal tree, 2 Hz  | 15     | 1 sender, 78 minutes                           | 131,040 / 4,680 = 28  | None found                                                                                                                                                |
-| 07 principal tree, 20 Hz | 50     | 1 sender, 30 s                                 | 29,400 / 30 = 980     | After #813 (run 43382453664): 2 of 49 receivers under 570 of 600 frames. See the comment on pull request #813                                             |
-| 09 all-peer tree, 5 Hz   | 50     | 50 senders, 30 s                               | 367,500 / 30 = 12,250 | After #813 (run 43383760956): 9 agents at 0.89 to 0.94 send success against 0.95, in 2 to 3 s bursts of `RALLAR_BB_RTC_SEND_FAILED`. See the same comment |
+| Manifest                 | Agents | Shape                                          | Deliveries per second | Hosted result recorded                                                                                                                                                                                            |
+| ------------------------ | ------ | ---------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 21 ALM conformance       | 50     | one director, 6 shots plus 2 lifecycle in 30 s | 392 / 30 = 13         | Passed (run 43131389341); failed once before it on an RTT re-plan (`plans/active/deno-to-bun-validation.md`)                                                                                                      |
+| 23 principal tree, 2 Hz  | 15     | 1 sender, 78 minutes                           | 131,040 / 4,680 = 28  | None found                                                                                                                                                                                                        |
+| 07 principal tree, 20 Hz | 50     | 1 sender, 30 s                                 | 29,400 / 30 = 980     | After #813 (run 43382453664): the failing step named 2 of 49 receivers under 570 of 600 frames; the recorded events show 8. A re-plan without make-before-break (section 4). See the comment on pull request #813 |
+| 09 all-peer tree, 5 Hz   | 50     | 50 senders, 30 s                               | 367,500 / 30 = 12,250 | After #813 (run 43383760956): 9 agents at 0.89 to 0.94 send success against 0.95, in 2 to 3 s bursts of `RALLAR_BB_RTC_SEND_FAILED`. The same cause (section 4). See the same comment                             |
 
 The evidence supports this pattern: 50 agents pass at about 13 deliveries per second and fail at 980 and 12,250. Whether
-50 agents pass at about 100 per second is not established.
+50 agents pass at about 100 per second is not established. The two failures are not a size limit: section 4 gives the
+cause, which applies at any room size.
 
 ## 2. Targets
 
@@ -125,6 +126,28 @@ Each of these is recorded with every run. None can fail a run until a level is s
 
 ## 4. First rung and stretch rung
 
+**What caps both rungs.** The 50-agent RTC delivery loss is a layout re-plan landing inside a running stream, in a browser
+that does not yet build make-before-break routing. This was found by an analysis of the recorded events of runs
+43382453664 (manifest 07) and 43383760956 (manifest 09); the repository itself cannot show it.
+
+- The server published a new tree layout around or inside the stream (layout 635 in run 07, 653 in run 09). Each browser
+  then routed only over the new layout's edges before those edges were open. For 0.7 to 2.4 s a sender or relay dropped
+  its own sends (`planner-drop`, "No downstream forwarding candidates resolved for group message", which is the recipe's
+  `RALLAR_BB_RTC_SEND_FAILED`), a receiver refused frames still arriving from its old parent (`unauthorized`), and a relay
+  that had switched stopped forwarding.
+- It was not a link drop, backpressure or CPU starvation. In run 07, 8 of 49 receivers ended under the delivery level, all
+  of them with a changed parent; six were still polling when the run ended, so the failing step named only 2.
+- It is not a 50-agent limit. The RTT re-plan minimum layout age defaults to 15 s (`rttReplanMinimumLayoutAgeMs` in
+  `apps/api-v1/resources/configuration/defaults-config.json`; environment name
+  `RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS`, read in
+  `apps/api-v1/src/configuration/read-api-v1-configuration-environment.ts`), and #810's churn gate was in the build. The
+  layouts replaced in the two runs were 32 s and 37 s old. A re-plan can therefore land inside any stream longer than 15 s,
+  at any room size, including the first rung's 5-minute window.
+- Make-before-break routing, where a new layout's edges open before routing moves to them, is built as the next slice after
+  lane determinism (D644). It is a prerequisite of the first rung and of the stretch rung.
+- Still open: what triggered each re-plan (neither run records the server's planning decision), the exact meaning of
+  `unauthorized` (inferred), run 09's full coverage (22 recorded agents), and a local reproduction, which is under way.
+
 **First rung.** 15 agents, one room, one publisher at 2 messages a second, a 5-minute window, 3 API replicas; `rtc`,
 `ws` and `rtc-with-ws-fallback`, plus the two fault legs on `rtc` and `rtc-with-ws-fallback`.
 
@@ -132,19 +155,17 @@ Each of these is recorded with every run. None can fail a run until a level is s
 - Formation at 15 passed hosted (D435).
 - Manifest 21 passed at 50 agents on this fleet at about 13 deliveries per second.
 - Browsers run on GitHub-hosted runners, off the api host.
+- It waits for make-before-break routing: a 5-minute window is long enough for a re-plan to land inside it.
 - Not established: that any 15-agent delivery manifest has a recorded hosted pass. The first action is to find or make
   one.
 
 **Stretch rung.** 50 agents as five rooms of ten, one publisher per room at 2 messages a second, 90 deliveries per
 second. Five publishers per room would be 450 per second, about half of manifest 07's failing load, and waits.
 
-It is not attempted until the 50-agent RTC delivery loss has a cause or this load is shown clear of it. Known limits:
+It is not attempted until make-before-break routing is built. Other known limits:
 
-- The 50-agent RTC delivery loss: 2 of 49 receivers under the delivery level (manifest 07) and send success of 0.89 to
-  0.94 (manifest 09), one run per manifest, cause not established (`plans/backlog.md`).
-- Make-before-break routing in the browser is not built. #810 added a churn gate to RTT re-plans of a leaderless tree,
-  but a re-plan in the middle of a window can still fail a run for a reason that is not the platform's service level
-  (`plans/backlog.md`; `plans/active/deno-to-bun-validation.md`).
+- A re-plan in the middle of a window can fail a run for a reason that is not the platform's service level until then
+  (`plans/active/deno-to-bun-validation.md`).
 - Hosted load generators vary run to run: 17 concurrent GitHub jobs at 50 agents, connect 32 to 69 s on the two runs
   above (see the comment on pull request #813).
 - No hosted fault step, and no relay-partition step.
@@ -154,23 +175,23 @@ It is not attempted until the 50-agent RTC delivery loss has a cause or this loa
 From D642 and the addendum's "After Slice 9":
 
 1. **Lane determinism.** Every lane cell starts from a declared, settled room.
-2. **Publication figures.** Selection age, missed windows, drain usage, congestion duration in the stage, and one
+2. **Make-before-break routing in the browser** (D644), reproduced locally first. A re-plan landing in a stream drops
+   sends and refuses frames without it (section 4), at any room size, so no rung can be read before it is built.
+3. **Publication figures.** Selection age, missed windows, drain usage, congestion duration in the stage, and one
    bounded histogram with a nearest-rank percentile in `packages/shared/measurement`. Without them the reported figures
    in section 2.4 have no numbers to read.
-3. **A local same-regime baseline.** An environment record and a comparator whose band is declared from two runs.
-4. **Delivered sample age from payload timestamps.** The workload carries a timestamp; no envelope field (D642).
-5. **Platform fault steps**, locally first: the runner `SERVER` step, the database-session cut, seeded loss and
+4. **A local same-regime baseline.** An environment record and a comparator whose band is declared from two runs.
+5. **Delivered sample age from payload timestamps.** The workload carries a timestamp; no envelope field (D642).
+6. **Platform fault steps**, locally first: the runner `SERVER` step, the database-session cut, seeded loss and
    jittered delay.
-6. **Receipt truth and the held-send path**, so a settled receipt in the recovery rule is true.
-7. **The publication workload family.** Rate, publisher count, group count, drain budgets, payload, subscription churn
+7. **Receipt truth and the held-send path**, so a settled receipt in the recovery rule is true.
+8. **The publication workload family.** Rate, publisher count, group count, drain budgets, payload, subscription churn
    and seeded loss as parameters, and a hosted manifest whose roles resolve their principals at run time
    (`plans/backlog.md`, the entry on the hosted four-agent manifest).
-8. **Probes at the owners**, so a miss can be assigned to an owner.
-9. **The byte sizes of the games' real frames**, measured once.
-10. **A hosted fault step in the controller scripts.** The replica stop of fault 1 needs a controller step over the api
+9. **Probes at the owners**, so a miss can be assigned to an owner.
+10. **The byte sizes of the games' real frames**, measured once.
+11. **A hosted fault step in the controller scripts.** The replica stop of fault 1 needs a controller step over the api
     role's systemd units (`RALLAR_ROLE_APP_SERVICES`). It does not exist (`plans/backlog.md`).
-11. **A cause for the 50-agent RTC delivery loss, or a stretch load shown clear of it.** Needed only for the stretch
-    rung.
 12. **The connect fix, met.** Pull request #813 is merged. On `main` at `2eb11a707`, manifests 07 and 09 failed at
     `rtc.connect` with a 10 s command timeout (the two `main` runs 43362135791 and 43363180415); the recipe now names a 65 s connect
     bound. Runs 43382453664 (manifest 07) and 43383760956 (manifest 09) connected every agent and failed later, on
@@ -184,4 +205,7 @@ From D642 and the addendum's "After Slice 9":
 - Whether a seeded loss command to the browser can run hosted without a controller step.
 - The byte sizes of the multicast position frame and the AR Eye fixtures.
 - How many agents a single GitHub-hosted runner can carry beyond 3 per job.
-- The cause of the 50-agent RTC delivery loss, from one run per manifest.
+- What triggered the re-plans of runs 43382453664 and 43383760956; neither run records the server's planning decision.
+- Whether `unauthorized` means that the sender is not a neighbour in the receiver's accepted layout (inferred).
+- Run 09's full coverage: the recorded events cover 22 agents.
+- A local reproduction of the loss. One is under way.
