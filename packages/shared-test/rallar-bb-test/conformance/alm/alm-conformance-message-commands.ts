@@ -21,9 +21,9 @@ import {
     toCommandId,
     toConnectionName,
     toRoomRef,
-    toScenarioTopicId,
     toScenarioTypeId,
-    toSendHandleId
+    toSendHandleId,
+    toSendTopicId
 } from './alm-conformance-step-identities.ts';
 
 interface AlmConformanceSendDelivery {
@@ -107,7 +107,7 @@ export function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTest
         connection: toConnectionName(send),
         carrier: input.carrier,
         typeId,
-        topicId: toScenarioTopicId(send),
+        topicId: toSendTopicId(send, delivery.scope),
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(

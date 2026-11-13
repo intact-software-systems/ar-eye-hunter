@@ -259,15 +259,6 @@ and it has no status list.
   and `scripts/hosted-rallar/controller/rallar-controller-lock.sh`, and no
   workflow under `.github/workflows` runs it. Format them in a commit listed in
   `.git-blame-ignore-revs` and give the check a lane.
-- `tests/playwright/**` is in no typecheck project (S8-i): a payload-shape
-  change there compiles unchecked.
-- The full-scope RTC ALM lane's pre-existing reds (S8-i): `capacity-tracks`,
-  `ordering-resync`, `repair-exhausted` and `granted-rtc-ordered-relay` fail on
-  `main` (`664ed19d5`) and on the Slice 8 branch at the same commands; cause
-  unproven. Re-check at `bdbf7b00c` before diagnosing; the cell files are
-  `capacity-tracks.ts`, `ordering-resync.ts`, `repair-exhausted.ts` and
-  `granted-rtc-ordered-relay.ts` under
-  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios`.
 - A logically receipted RTC unicast that names no room (S8-i, D585) is refused
   `unsupported`, since no presence row can key its addressee; before Slice 8
   it was admitted. No product caller sends one; one that did degrades to WS
@@ -330,21 +321,199 @@ and it has no status list.
   (`packages/shared/alm/inbound/admission/compute-al-inbound-duplicate-changes.ts`)
   is quadratic over the stored controls of a retried copy, up to about 512
   (S8-ii).
-- The ALM lane abandons a role's recipe at its 180 s deadline without
-  cancelling it (S8-ii; pre-existing): the abandoned recipe's later failure
-  cleanup can close a shared connection under the next cell
-  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`). The cell that
-  overruns is kept last in its family.
-- `granted-rtc-ordered-relay`'s authored worst case, a probe of about 95 s plus
-  a 90 s cue wait, exceeds the lane's 180 s role deadline (S8-ii).
-- A layout-independent post-run check for `receipted-relay-path` (S8-ii,
-  D604): at least one origin's ending receipt confirms two recipients through
-  one hop. Today the cell asserts neither which agent relays nor the hop count
-  (`receipted-relay-path.ts`), so a run whose two sends were routed under
-  different plans can go direct and stay green.
-- `toRoutedTypeIds` (`packages/tests/shared-test/alm-conformance-recipes.test.ts`)
-  ignores `message`-kind waits (S8-ii; pre-existing): cue and arrival waits are
-  isolated only by their payload marker, and nothing pins that.
+- The sum of a role recipe's authored timeouts exceeds the lane's 180 s role
+  deadline for 145 of 451 role recipes at `1021898da` (the four-role cells up
+  to about 35 minutes) while they run in seconds; the deadline is a guard, and
+  since S9-ii an overrun fails its own cell and its recipe is cancelled (D627,
+  D628).
+- Two group writes that commit about 20 to 30 ms apart can leave every page of
+  the room stale for up to 60 s (S9-ii): the server stamps a group-state delta
+  with the snapshot revision at expansion time
+  (`computeGroupStateDeltaEnvelope`,
+  `packages/shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts`)
+  but the delta carries only its own event's slice, so the first write's delta
+  can claim the second write's revision; the page applies it, then discards the
+  second write's delta as `no-op` at an equal revision
+  (`resolveGroupStateDeltaDisposition`,
+  `packages/shared-web/browser/state-cache/group-state-delta-application.ts`);
+  the next heartbeat then fails with `StateSnapshotRevisionConflictError`
+  (through `decideGroupSnapshotCausalRevision`) instead of re-reading
+  (`adoptGroupSnapshotsFromHeartbeat`,
+  `packages/shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts`),
+  so the stale snapshot lives until the 60 s cache expiry. It reds the
+  four-role cells `subscription-ordered-omission` and
+  `subscription-ordered-entry` over the RTC carriers (three of six in-memory
+  full runs, none of two on Postgres; alone on a fresh API one run in
+  fourteen). The warning
+  `State heartbeat failed ... revision conflict at revision N` is on all four
+  pages in every red run and in no green one; the delta frames are not
+  recorded, so the first two steps are read from the code and the page
+  revisions. Waits on its own fix, a product change in group-state
+  sync gated by the medium-scale run, not on a cell change.
+- `missing-recipient-retry` over `rtc` fails about one run in four, on `main`
+  too (S9-ii): the first copy is refused `not-yet-in-sync` at both recipients
+  and the honest retry lands inside the receiver's absence window. No page
+  diagnostic carries the snapshot version the refusal compares, so a recipe
+  cannot wait to be in sync, and a receipted warm-up cannot be placed in the
+  hosted combined recipe without loosening
+  `packages/tests/rallar-black-box/hetzner-alm-scenario-barriers.test.ts`.
+  Waits on a ruling: a product in-sync readiness signal a recipe can wait on,
+  or a general pre-start phase in the combiner
+  (`apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts`). Four
+  more cells survive the same refusal only by retry (`aggregated-receipt`,
+  `unknown-ack-version`, `unsigned-ack-refused`, `granted-rtc-not-subscribed`).
+- `repair-exhausted` over `rtc-with-ws-fallback` is not asserted (S9-ii, D630):
+  after the D56 hand-over the handed-over held send stayed non-terminal for the
+  cell's observe window. Waits on a product reading of what a held send does
+  when its carrier hands over.
+- A `ws` send the server leaves `not-admitted` (`storage-unavailable`) is never
+  resent (S9-ii, D640): the server sends no frame for it and the sender has no
+  receipt candidate before the server's `admitted` receipt.
+- The WS server's `business-socket-decision` timing record omits the
+  `not-admitted` reason (S9-ii; `recordSocketDecision` in
+  `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts`).
+- `capacity-tracks`' receiver role observes nothing (S9-ii, D641): it exists
+  only because every conformance scenario requires a receiver recipe and the
+  sender's connect waits for one ready peer; a scenario shape without a
+  receiver would remove it.
+- The conformance catalog's `scenarioId === 'world-routing'` branch in
+  `toScenarioTopicId` is a one-off the connect still depends on (S9-ii).
+- Hosted manifest 18 carries `ordering-resync`'s changed RTC sender commands
+  and has had no hosted run (S9-ii, D631): on its first run read the cost of
+  the held seq 299 being retried for up to 30 s into the next cell.
+- `receipted-relay-path`'s tree poll passed on its first iteration in every
+  recorded run and no run recorded a pre-request health read, so the poll is
+  not shown to ever wait (S9-ii, D634).
+- `cross-carrier-duplicate-rtc-then-ws` failed once on `main` over
+  `rtc-with-ws-fallback` (receiver `duplicate-outcome-ws`, a wait timeout) and
+  did not reproduce in the branch's fallback runs (S9-ii). In that run the
+  receiver's `admission-outcome` reads the WS copy `committed` / `admitted` and,
+  3 ms later, the RTC copy `not-handled` / `duplicate`: an arrival-order race
+  between the two carriers' copies, against the cell's premise that the RTC
+  copy commits first
+  (`packages/shared-test/rallar-bb-test/conformance/alm/scenarios/cross-carrier-duplicate.ts`).
+  Why the WS copy overtook the RTC one is unexplained; waits on a reproduction
+  that records both copies' arrival times.
+- `CLAUDE.md`'s lane table lists for `postgres-integration` neither the
+  view-push and ordering proofs nor the group-delta and auth-logout cluster
+  proofs (S9-ii, D636); the file is project instructions, the maintainer's to
+  edit.
+- Lane cells of the shared-room families, every family but four-role, which has
+  a room per cell (`toOwnRoomScenario` in
+  `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`),
+  inherit the room's grants, subscriptions, roster and topology from the cells
+  before them, and correct for it with revokes that assume the preceding cell
+  ran; `RALLAR_BLACK_BOX_ALM_SKIP` or the smoke scope changes a cell's start
+  state (S9-ii, D629). Waits on a declared start state per cell: an idempotent
+  grant and subscription reset at each granted cell's start.
+- The lane's fixed users keep principal-scoped server state across families and
+  runs (the principal ordering track; the memberships of every earlier room)
+  (S9-ii, D633). `server-ordered-entry` asserts relative to it; no other cell
+  is audited for it.
+- A cell's waits and absence waits read the page's whole event history, not the
+  cell's own (S9-ii): `server-ordered-entry`'s `no-before-entry` and the
+  sibling's `entered` hold only because that cell runs first on its pages.
+  Waits on a per-cell history start.
+- `toOrderingKey`
+  (`packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`)
+  is keyed by `scenarioId` while every other lane identity is keyed by
+  `scenarioKey` (S9-ii): a scenario with a second ordered variant would share
+  one ordering key.
+- `server-ordered-entry`'s principal-upsert request id carries no
+  `{runtimeIdentity}` (S9-ii): it is unique across runs only because the queue
+  context includes the session.
+- A full lane run issues about 160 room-create requests that the API refuses
+  `group-already-exists` (S9-ii): every role of every cell ensures its room, and
+  `alm-conformance-session-commands.ts` accepts the 409. Each costs one
+  AppInbox row and one transaction on the room's exclusion key. Waits on one
+  ensure per room per run.
+- A hosted run given an explicit `room_id` keeps the room, its members and its
+  grants across runs (S9-ii).
+- The 27 `(window as any).__*` reads in
+  `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts` and the cast in
+  `recipe-console-scale.spec.ts` (near line 323) are untyped page-global reads
+  (S9-ii, D637); a typed page-global declaration would close them.
+- `packages/shared-test/rallar-bb-test/scale-fixture.ts` types its artifact
+  `files` as `DistributedRunArtifactFiles`, whose values may be `undefined`
+  (S9-ii, D637), so `scaleUploads` in `recipe-console-scale.spec.ts` carries a
+  guard for a row the fixture never leaves absent; removing it needs
+  `Record<string, string>` there and a retyping of `ScaleArtifactRow`'s four
+  builders, whose `unknown` row type is a pre-existing `boundary.unknown`
+  finding.
+- On the WS server a conflicted drop of a receipted room send is retained
+  `pending-admission`, so the server starts its `admitted` receipt for a send
+  its replay then refuses (S9-ii, D640): the receipt can reach the origin after
+  the replay's NACK, re-create the receipt row the NACK ended and settle an
+  `acknowledgement` after `relay-rejected` (the handle reads `rejected`), and
+  the server's aggregate runs to `timed-out`. Waits on a ruling: whether a
+  retained admission withholds its `admitted` receipt until its replay commits
+  (`writeAdmittedReceipt`,
+  `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
+- A replayed inbound admission records no `admission-outcome` (S9-ii, D640):
+  `recordAdmissionOutcome` runs only at the admit entry
+  (`packages/shared/alm/inbound/al-inbound-message-runtime.ts`) and `replay`
+  discards the acceptance, so a drop retained on a commit conflict shows only
+  `pending` / `pending-admission`. The eleven catalog files that wait with
+  `toAdmissionOutcomeWait`, among them `ordering-resync`'s RTC receiver and both
+  `cross-carrier-duplicate` receivers, time out when a drop loses a commit race.
+  Waits on the product recording the replay's outcome; owner
+  `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts`.
+- Nothing pins that `packages/tests/tsconfig.json` includes
+  `tests/playwright/**` (S9-ii, D637):
+  `packages/tests/repo/tests-typecheck-gate.test.ts` reads the aliases, not the
+  include list, so dropping the line leaves `tests/playwright/**` untyped with
+  every gate green. Waits on a repo test that reads the include list.
+- `assessAlmRelayedReceipt`
+  (`packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-relayed-receipt.ts`)
+  is selected by metadata but assumes a three-page path: two recipients
+  confirmed through one hop (S9-ii, D634). A relayed cell of another shape
+  needs the claim without the shape: every expected recipient confirmed through
+  fewer hops than recipients.
+- `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts` decodes the
+  control server's bulk enqueue body with a decoder of its own beside
+  `decodeBulkCommandRequest`
+  (`apps/rallar-black-box-control-server/src/routes/command-request-codec.ts`)
+  (S9-ii, D637): the control protocol exports no body contract or decoder both
+  could use; its owner is
+  `packages/shared-test/rallar-bb-test/control-protocol.ts`.
+- `toSettledStateCommands` lives in
+  `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`
+  though five of its nine callers are not ordering cells (S9-ii). Its owner is
+  `alm-conformance-message-commands.ts`, whose 11 runtime exports make the
+  move a split review.
+- Two catalog tests keep a loop-only recipe flattener of their own
+  (`toFlatCommands` in
+  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts` and
+  `packages/tests/shared-test/alm-conformance-topic-subscription.test.ts`)
+  beside `toNestedCommands`
+  (`packages/tests/shared-test/to-nested-commands.ts`) (S9-ii). The shared one
+  also walks `parallel` children, so replacing them changes what each test
+  reads and needs its assertions checked, not a rename.
+- The ALM lane does not read a `recipe.cancel` command's own answer (S9-ii,
+  D628), so a cancel answered `target-not-exclusively-active` costs a needless
+  30 s before the family fails; owner
+  `tests/playwright/rallar-black-box/full-stack-helpers.ts`.
+- The reload pair's pin in
+  `packages/tests/rallar-black-box/full-stack-reload-pair.test.ts` sorts by
+  descending `agentId` to put the sender first (S9-ii); a sort by role would
+  state the intent.
+- The agent's `cleanupOwnedResources`
+  (`packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts`)
+  has no overall bound (S9-ii, D628): a cleanup longer than the lane's 30 s
+  grace makes the lane cancel a recipe that was already timing out, and the
+  cell reads `cancelled` instead of `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
+- A root still live when the ALM lane records a family's observation can add
+  events to it (S9-ii): `recordObservation` runs just before `run.close()` in
+  the same `finally`
+  (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`).
+- `closeTwoAgentParticipants`
+  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) calls
+  `cleanupRallarPage` before `context.close()`, so a cleanup that never settles
+  leaves the context open (S9-ii).
+- The `-ordering-resync-sender` entry of `HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES`
+  (`packages/tests/shared-test/alm-conformance-recipe-validation.test.ts`)
+  also exempts the `ws` sender recipe and any future unreleased fault in the
+  RTC sender (S9-ii, D631): the list's granularity is a recipe suffix.
 - Ordered subscription history (the addendum's later outcome after Slice 4):
   a latest-state snapshot with a fenced live cursor, and an authorized replay
   of retained history; Slice 4 delivers live entry and omissions only (D526).
@@ -368,8 +537,6 @@ and it has no status list.
   session that is not the principal's own; a dead co-member session stays
   recorded and expected on the row (harmless on an `ack: 'none'` event). A
   durable session-to-principal fact would let the dequeue judge it.
-- Two unwired cluster proofs (Q-B9, Slice 7): the group-delta and auth-logout
-  cluster proofs (`packages/shared-test/package.json:14-15`) run in no gate.
 - A server repair report per logical recipient over `ws` (S7-ii, D580): the WS
   server orders the track and is the one requester of its gaps, so the
   receivers never report a gap and `repair-exhausted` is unobservable over
@@ -380,10 +547,6 @@ and it has no status list.
   planner) finds the budget spent on a changed payload and states
   `repair-exhausted` once, as before S7-ii; a regression only if `maxRepairs`
   ever exceeds 1, and no cell exercises it.
-- The `ws` full-scope cells red regardless of the branch, hosted and local
-  (S7-ii): `capacity-tracks` and `server-ordered-entry` fail their typed-send
-  assertions and `ordering-resync` its `relay-resync-nack` wait; the recipe
-  budgets are the suspected cause, unproven.
 - A granted `receiver` RTC unicast to a non-holder (S6-i, D553) reads
   `acknowledged` with zero recipients over RTC, where WS reads `unauthorized`.
 - A frozen session that never subscribes after a hand-over (S6-i) stays

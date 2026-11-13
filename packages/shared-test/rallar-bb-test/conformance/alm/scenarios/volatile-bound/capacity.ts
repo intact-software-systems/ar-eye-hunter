@@ -8,6 +8,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toAdmissionCommands, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -16,7 +17,6 @@ import {
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
-    toAcknowledgedCommands,
     toBoundReconnectCommands,
     toBoundRefusalCommands,
     toReconnectedArrivalsCommand,
@@ -93,7 +93,7 @@ function toCapacitySenderCommands(
         ) => [toCapacitySend(sender, index), ...toAdmissionCommands({ ...sender, index })]),
         toCapacitySend(sender, REFUSED_INDEX),
         ...toBoundRefusalCommands(sender, REFUSED_INDEX, VOLATILE_BOUND_REFUSAL_FACTS),
-        ...ADMITTED_INDEXES.flatMap((index) => toAcknowledgedCommands(sender, index)),
+        ...ADMITTED_INDEXES.flatMap((index) => toSettledStateCommands({ ...sender, index }, 'acknowledged')),
         ...toBoundReconnectCommands(sender, 'restored', undefined)
     ];
 }

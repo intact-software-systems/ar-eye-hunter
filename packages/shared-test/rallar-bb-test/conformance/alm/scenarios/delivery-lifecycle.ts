@@ -14,6 +14,7 @@ import {
     toRetainedEvidenceCommands,
     toSendCommand
 } from '../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toPayloadWait } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
@@ -188,15 +189,7 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             delivery: { ack: 'receiver' }
         }),
         ...toAdmissionCommands({ ...sender, index: 4 }),
-        toObserveCommand({ ...sender, index: 3, state: 'superseded' }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-superseded-3',
-            resultName: 'observe-superseded-3',
-            field: 'state',
-            operator: 'equals',
-            expected: 'superseded'
-        }),
+        ...toSettledStateCommands({ ...sender, index: 3 }, 'superseded'),
         ...toHeldFaultCommands(sender, 'supersede-release', 0),
         ...toReplacementSubmittedCommands(sender)
     ];

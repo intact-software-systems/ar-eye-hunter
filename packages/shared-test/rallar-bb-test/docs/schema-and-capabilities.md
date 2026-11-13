@@ -689,14 +689,17 @@ window. The receiver DELETEs the config once it has read its own receipt and the
 sender has cued that it read its. Three sessions in a tree of degree at most two
 form a path, so whenever both sends route on one planned path at least one origin
 is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
-PUT only requests the reshape and the cell waits for no plan version, so two sends
-routed under different plans can both go direct: the cell asserts neither who
-relays nor the hop count, and each origin's receipt names the hops it confirmed
-through, which is where a run shows the relay. Its post-run identity pin describes
-the sender's send. It runs before `granted-rtc-relay-only` and
-`granted-rtc-ordered-relay`, so the cell that can outlast the lane's 180 s role
-deadline stays last in its family. No hosted manifest carries it, nor the two
-`receipted-audience` cells above.
+PUT only requests the reshape, so each origin reads its page's health until the
+accepted overlay is the tree, and only then sends. Each origin's receipt names the
+hops it confirmed through; the cell asserts neither which agent relays nor through
+which hop. After the run the identity assessment fails the cell unless at least one
+origin's ending receipt confirms both recipients through one hop: the sender
+recipe's metadata `almRelayedReceiptOrigins` names each origin by its role and the
+handle of its send, as `almReceiptRoles` names a send's recipient roles. Its
+`almReceiptRoles` pin describes the sender's send. It runs before
+`granted-rtc-relay-only` and `granted-rtc-ordered-relay`: the three close their
+family because each reshapes the room's topology until its own last step. No hosted
+manifest carries it, nor the two `receipted-audience` cells above.
 
 A scenario definition's optional `connect.minReadyPeers` sets the readiness its roles' connects wait for;
 absent, each connect waits for every other agent of the cell.
@@ -712,8 +715,13 @@ orders.
 The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
 seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
 first send once and never the second. The verdict on the gapped send is asserted where it is made.
-Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its own RTC
-`admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
+Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop, and an RTC frame states each
+recipient's prior (`ordering.priorSeqByRecipient`), so a bare jump from seq 1 to seq 300 reads as an
+omission there. The RTC sender therefore observes seq 1 `acknowledged` (the receiver holds position 1),
+holds seq 299 by the message id its send returned and never releases it (a late copy would be an
+omission; it expires held), and sends seq 300, whose record names 299, a sequence the receiver never
+received, 298 past its position. The receiver waits for its own RTC `admission-outcome` refusing the
+send as `not-handled`/`resync-required`. Over `ws` the WS server
 is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
 the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
 `control-admission` of that `al.control.nack.v3`, pinned on the gapped send's msgId through a wait
@@ -754,7 +762,7 @@ own to show). The cell has no `rtc-with-ws-fallback` variant: a hand-over moves
 one message of an ordering track to WS, whose relay never saw the track's other messages and gates the one it
 receives as its own gap, so the hand-over of an ordered message is a carried limit, not a cell.
 
-The `repair-exhausted` conformance scenario runs over the RTC carriers (`rtc` and `rtc-with-ws-fallback`), on
+The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
 released. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
 (`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
@@ -958,18 +966,24 @@ s wait alone cannot establish headroom because state can arrive after reconnect 
 check accounts for those late admissions and fails setup if headroom never becomes available. The limit is three fillers, so the two counted sends
 alone refuse the third, and the second keeps at least 9 180 bytes of headroom. Its receiver's window adds one readiness
 budget, the 31 s initial window and the 30 s headroom bound, since the sender reconnects and waits before it sends. In manifest 18 the three `capacity`
-blocks run after every other block. Two more cells of the family prove the age and track limits over every carrier, and
+blocks run after every other block. Two more cells of the family prove the age limit over every carrier and the track limit over `ws` and
+`rtc-with-ws-fallback`, and
 manifest 18 withholds both, so it stays as recorded. `capacity-age` keeps the sender's connection and constants and
 sends one message with `ttlMs` `AL_VOLATILE_SESSION_MAX_AGE_MS + 1_000` (301 000): it ends `rejected` with `failure: {
 kind: 'refused', reason: 'capacity', limit: 'age' }` and `attempts` 0, and the receiver proves for the whole window that
-nothing reaches it. `capacity-tracks` closes, reconnects with `rallar.almVolatileLimits` naming the four production
-limits but `maxTracks: 2` and sends three at-least-once messages with `ack: 'receiver'`, each `seq` 1 on an ordering key
-of its own (`alm-<carrier>-capacity-tracks-<index>`), so each would open one track: the third ends `rejected` with
+nothing reaches it. `capacity-tracks` fills the track bound with ordered world broadcasts: an ordered room send is minted on the
+durable lane (D529) and a peer send carries no ordering, so a world broadcast is the one browser send the outbound
+volatile track bound judges, and an RTC page sends none, so the cell runs over `ws` and `rtc-with-ws-fallback` only. It
+closes, reconnects with `rallar.almVolatileLimits` naming the four production limits but `maxTracks: 2` and sends three
+at-least-once world broadcasts on `app.alm-conformance.world` with `ack: 'none'` (a world broadcast names no logical
+recipient to acknowledge it), each `seq` 1 on an ordering key of its own (`alm-<carrier>-capacity-tracks-<index>`), so
+each would open one track: the third ends `rejected` with
 `limit: 'tracks'` and `attempts` 0; right after the refusal, while both sends still hold their tracks, it reads `stats`
 and asserts `rallar.alm.usage.tracks` 2, `rallar.alm.limits.maxTracks` 2 and `rallar.alm.overloaded` false (a ledger
-reading at a bound, as `own-share-under-inbound` reads its pools); the first two are acknowledged; then it reconnects
-without the field. A received message never opens a counted track, so it needs no wait for the rejoin's state sync, and
-its receiver's window adds only the readiness budget. The three cells live in
+reading at a bound, as `own-share-under-inbound` reads its pools); the first two end `transport-accepted`; then it
+reconnects without the field. A received message never opens a counted track, so it needs no wait for the rejoin's
+state sync. Its receiver listens on the room's topic, so it runs no command of its own: it completes the room the
+sender's connect waits for. The three cells live in
 `conformance/alm/scenarios/volatile-bound/`.
 
 The same-context family runs, in the full scope, as the `same-context family over <carrier>` Playwright test. Its

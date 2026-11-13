@@ -184,7 +184,7 @@ async function prepareApiWebSocket(page: Page, apiBaseUrl: string): Promise<Prep
         }
         return { config: await config.json() as unknown, ticket: await ticket.json() as unknown };
     }, { baseUrl: apiBaseUrl, session });
-    const config = decodeApiConfigResponse(response.config).fold(
+    const config = decodeApiConfigResponse(response.config, new URL('/api/config', apiBaseUrl)).fold(
         (issue) => {
             throw new Error(issue);
         },

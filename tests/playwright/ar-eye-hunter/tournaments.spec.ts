@@ -195,7 +195,7 @@ for (const completion of ['resolved', 'rejected'] as const) {
                 ...initial.arena,
                 players: initial.arena.players.map((player) => ({
                     ...player,
-                    combat: { ...player.combat, score: 1 }
+                    score: 1
                 }))
             }
         };

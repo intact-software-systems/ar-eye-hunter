@@ -12,10 +12,11 @@ import { toGrantedRtcOwnerCommands, toOverlayNextHopsCommand } from './granted-r
 
 /**
  * The owner reshapes the room into a path before the sender publishes, so a path leaf's connect waits for its one next
- * hop, and grants recipient-b `publish` alone. A cue reaches only a role whose own first cue opened its channel, so the
- * owner says the path is set only once the sender, which starts last, says it listens; it says it `received` once its
- * own `received` steps passed. The room's three-agent cells share it, so the owner resets the topology once every page
- * recorded its next hops, which name the layout the run drew.
+ * hop, and leaves recipient-b `publish` alone: it grants `publish` and revokes the `subscribe` an earlier cell granted,
+ * because a grant only adds permissions and the room's three-agent cells share it. A cue reaches only a role whose own
+ * first cue opened its channel, so the owner says the path is set only once the sender, which starts last, says it
+ * listens; it says it `received` once its own `received` steps passed. The room's three-agent cells share it, so the
+ * owner resets the topology once every page recorded its next hops, which name the layout the run drew.
  */
 export function toPathOwnerCommands(
     owner: AlmConformanceStepInput,
@@ -28,6 +29,11 @@ export function toPathOwnerCommands(
             grantee: 'recipient-b',
             publish: true,
             subscribe: false
+        }, {
+            operation: 'revoke',
+            grantee: 'recipient-b',
+            publish: false,
+            subscribe: true
         }]),
         toCueWait(owner, 'ready'),
         ...toCueSendCommands(owner, 'tree'),

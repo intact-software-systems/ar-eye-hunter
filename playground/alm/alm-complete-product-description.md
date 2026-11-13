@@ -1376,7 +1376,9 @@ own pool's share of it, half of each limit (500 messages, 2 MiB): own sends may
 use whatever the arrivals leave free, and once the total is at a limit they
 still have their share. A session sends no
 volatile message whose deadline lies more than 5 minutes ahead, and its own
-ordered sends hold at most 64 live ordering tracks (D179).
+ordered volatile sends hold at most 64 live ordering tracks (D179). An ordered
+room send is minted on the durable lane (D529) and a peer send carries no
+ordering, so from a browser the track bound judges an ordered world broadcast.
 A sent message is counted until its deadline, and its track until the last
 counted send on it reaches its deadline; a received one until the earlier of
 its deadline and 30 s after its arrival, and it never opens a counted track; a

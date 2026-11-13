@@ -36,7 +36,8 @@ import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestError,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
@@ -264,6 +265,13 @@ export interface ReadControlRunUntilNarrowingInput<T, A extends T> extends ReadC
     readonly accept: (value: T) => value is A;
 }
 
+/** A root the lane reads, and the cancel that stops it on its agent once it outlived its deadline and grace. */
+interface RecipeRunRoot {
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly cancel: RallarBlackBoxTestRecipeCancelCommand;
+}
+
 interface ReceiverConnectBarrierInput {
     readonly connectCommandId: string;
     readonly runCommandId: string;
@@ -324,6 +332,8 @@ const RUNNER_PANEL_TARGETS: Partial<Readonly<Record<ExhaustiveTabId, RunnerPanel
 const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
 const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
 const RECIPE_RUN_TIMEOUT_MS = 180_000;
+/** Covers the agent's dispatch latency (its deadline starts at dispatch, the lane's at enqueue) and its cleanup. */
+const RECIPE_RESULT_GRACE_MS = 30_000;
 const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
 const CONTROL_POLL_INTERVAL_MS = 250;
 const CONTROL_POLL_TIMERS = createDefaultTimers();
@@ -671,7 +681,10 @@ export async function runRecipePairOnTwoAgents(
     return requireRecipePairOutcome(await Promise.allSettled([senderRun.readOutcome(), receiverRun.readOutcome()]));
 }
 
-/** Accepts the root and captures its original result deadline without starting an unowned observer. */
+/**
+ * Accepts the root and captures its original result deadline without starting an unowned observer. Every reader shares
+ * the one read: a later read past the deadline and grace must not cancel a root that already ended.
+ */
 export async function startRecipeRun(
     run: RecipeRun,
     agent: RecipeRunAgent,
@@ -679,7 +692,13 @@ export async function startRecipeRun(
 ): Promise<StartedRecipeRun> {
     const commandId = await enqueueRecipeRun(run, agent, recipe);
     const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
-    return { commandId, readOutcome: () => readRecipeRunOutcome(run, commandId, deadlineAtMs) };
+    const root: RecipeRunRoot = {
+        agentId: agent.agentId,
+        commandId,
+        cancel: { kind: 'recipe.cancel', targetCommandId: commandId, reason: toRecipeCancelReason(commandId) }
+    };
+    let outcome: Promise<RecipeRunOutcome> | undefined;
+    return { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
@@ -1122,10 +1141,23 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
     const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
     return requireRecipePairOutcome(
         await Promise.allSettled([
-            readRecipeRunOutcome(run, pair.sender.commandId, deadlineAtMs),
-            readRecipeRunOutcome(run, pair.receiver.commandId, deadlineAtMs)
+            readRecipeRunOutcome(run, toReloadRunRoot(run.sender, pair.sender.commandId), deadlineAtMs),
+            readRecipeRunOutcome(run, toReloadRunRoot(run.receiver, pair.receiver.commandId), deadlineAtMs)
         ])
     );
+}
+
+/** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */
+function toReloadRunRoot(agent: RecipeRunAgent, commandId: string): RecipeRunRoot {
+    return {
+        agentId: agent.agentId,
+        commandId,
+        cancel: { kind: 'recipe.cancel', reason: toRecipeCancelReason(commandId) }
+    };
+}
+
+function toRecipeCancelReason(commandId: string): string {
+    return `${commandId} outlived its ${RECIPE_RUN_TIMEOUT_MS} ms deadline and ${RECIPE_RESULT_GRACE_MS} ms grace.`;
 }
 
 function requireRecipePairOutcome(
@@ -1140,28 +1172,53 @@ function requireRecipePairOutcome(
     return { sender: sender.value, receiver: receiver.value };
 }
 
+/**
+ * The agent bounds the recipe by the same deadline from its dispatch, so its own timeout result arrives within the
+ * grace. A root with no result by then is cancelled; one still live after the cancel's grace stops the family, since a
+ * live recipe's later cleanup closes connections under whatever cell runs next on its page.
+ */
 async function readRecipeRunOutcome(
+    run: RecipeRun,
+    root: RecipeRunRoot,
+    deadlineAtMs: number
+): Promise<RecipeRunOutcome> {
+    const result = await readRecipeRunResult(run, root.commandId, deadlineAtMs + RECIPE_RESULT_GRACE_MS) ??
+        await cancelRecipeRun(run, root);
+    return {
+        commandId: root.commandId,
+        ok: result.ok === true,
+        summary: toControlResultSummary(result)
+    };
+}
+
+async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<ControlResultEnvelope> {
+    await enqueueControlCommand({
+        request: run.request,
+        runId: run.runId,
+        agentId: root.agentId,
+        commandId: `cancel-${root.commandId}`,
+        command: root.cancel
+    });
+    const result = await readRecipeRunResult(run, root.commandId, CONTROL_POLL_TIMERS.nowMs() + RECIPE_RESULT_GRACE_MS);
+    if (result === undefined) {
+        throw new Error(
+            `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
+        );
+    }
+    return result;
+}
+
+async function readRecipeRunResult(
     run: RecipeRun,
     commandId: string,
     deadlineAtMs: number
-): Promise<RecipeRunOutcome> {
+): Promise<ControlResultEnvelope | undefined> {
     const read = await readControlRunUntil(run, {
         timeoutMs: deadlineAtMs - CONTROL_POLL_TIMERS.nowMs(),
         select: (snapshot) => findControlResult(snapshot, commandId),
         accept: (result) => result !== undefined
     });
-    if (read.kind === 'timed-out') {
-        return {
-            commandId,
-            ok: false,
-            summary: `no control result within ${RECIPE_RUN_TIMEOUT_MS} ms`
-        };
-    }
-    return {
-        commandId,
-        ok: read.value.ok === true,
-        summary: toControlResultSummary(read.value)
-    };
+    return read.kind === 'accepted' ? read.value : undefined;
 }
 
 async function waitForReceiverConnectBarrier(
@@ -1226,7 +1283,7 @@ async function enqueueRecipeRun(
         runId: run.runId,
         agentId: agent.agentId,
         commandId,
-        command: { kind: 'recipe.run', recipe }
+        command: { kind: 'recipe.run', recipe, timeoutMs: RECIPE_RUN_TIMEOUT_MS }
     });
     return commandId;
 }

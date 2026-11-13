@@ -78,7 +78,9 @@ const PUBLISH_ONLY: GrantedRtcSenderGrant = { publish: true, subscribe: false };
 
 /**
  * The receiver owns the room: it elects itself to receive and writes every further member's grant or revoke before it
- * grants the sender `senderGrant`, so the sender's snapshot names the grant only once the receiver can hear it.
+ * grants the sender `senderGrant`, so the sender's snapshot names the grant only once the receiver can hear it. A grant
+ * only adds permissions (D492): a cell that grants recipient-b `subscribe` alone revokes no `publish`, so recipient-b
+ * keeps the `publish` a path cell granted before it; no cell probes it.
  */
 export function toGrantedRtcOwnerCommands(
     owner: AlmConformanceStepInput,

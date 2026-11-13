@@ -1,6 +1,3 @@
-import * as Playwright from '@playwright/test';
-import { once } from 'node:events';
-import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -11,18 +8,50 @@ import {
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { parseControlServerMessage } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxTestError } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { runRecipePairOnTwoAgents, type RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
-interface PostedCommand {
-    readonly url: string;
-    readonly commandId: string;
-    readonly agentId: string;
-    readonly command: RallarBlackBoxTestCommand;
+import { openRecordingControlRequest, type RecordedControlCommand } from './recording-control-request-fixture.ts';
+
+function toRunSnapshot(results: readonly ControlResultEnvelope[]): ControlRunSnapshot {
+    return {
+        runId: 'actual-local-run',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 2,
+        agents: [],
+        commands: [],
+        results: [...results],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: []
+    };
 }
+
+function toRootResult(command: RecordedControlCommand, error: RallarBlackBoxTestError | undefined): ControlResultEnvelope {
+    return {
+        kind: 'result',
+        protocolVersion: 1,
+        runId: 'actual-local-run',
+        agentId: command.agentId,
+        commandId: command.commandId,
+        ok: error === undefined,
+        ...(error === undefined ? {} : { error })
+    };
+}
+
+const reloadScenario = createAlmConformanceRecipes({
+    group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+    carrier: 'ws',
+    typeId: 'probe',
+    senderConnection: 'sender',
+    receiverConnection: 'receiver',
+    deadlineMs: 18_000,
+    laneFamilies: ['two-agent'],
+    principalIdsByRole: {}
+}).find((candidate) => candidate.scenarioId === 'delivery-reload')!;
 
 describe('local paired reload enqueue', () => {
     for (const malformed of [false, true]) {
@@ -31,74 +60,18 @@ describe('local paired reload enqueue', () => {
                 ? 'rejects missing peer checkpoints before sending either root'
                 : 'binds both actual HTTP addresses before waiting for receiver readiness or a root outcome',
             async () => {
-                const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-                const scenario = createAlmConformanceRecipes({
-                    group,
-                    carrier: 'ws',
-                    typeId: 'probe',
-                    senderConnection: 'sender',
-                    receiverConnection: 'receiver',
-                    deadlineMs: 18_000,
-                    laneFamilies: ['two-agent'],
-                    principalIdsByRole: {}
-                }).find((candidate) => candidate.scenarioId === 'delivery-reload')!;
-                const posted: PostedCommand[] = [];
+                const scenario = reloadScenario;
                 let readBeforeBothEnqueued = false;
-                const server = createServer((_request, response) => {
-                    response.writeHead(202, { 'content-type': 'application/json' });
-                    response.end('{}');
-                });
-                server.listen(0, '127.0.0.1');
-                await once(server, 'listening');
-                const address = server.address();
-                if (address === null || typeof address === 'string') {
-                    throw new Error('Expected the owned HTTP server address.');
-                }
-                const request = await Playwright.request.newContext();
-                const post = request.post.bind(request);
-                const responseUrl = `http://127.0.0.1:${address.port}`;
-                vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-                    const data: unknown = options?.data;
-                    if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                        throw new Error('Expected the actual control HTTP command body.');
-                    }
-                    const agentId = decodeURIComponent(new URL(url).pathname.split('/').at(-2)!);
-                    const decoded = parseControlServerMessage(
-                        { kind: 'command', protocolVersion: 1, runId: 'actual-local-run', agentId, ...data },
-                        { runId: 'actual-local-run', agentId }
-                    );
-                    if (!decoded.ok) {
-                        throw new Error(decoded.error);
-                    }
-                    posted.push({ url, commandId: data.commandId, agentId, command: decoded.envelope.command });
-                    return await post(responseUrl, options);
-                });
+                const control = await openRecordingControlRequest('actual-local-run');
+                const posted = control.posted;
                 const run: RecipePairRun = {
-                    request,
+                    request: control.request,
                     runId: 'actual-local-run',
                     sender: { agentId: 'actual-sender' },
                     receiver: { agentId: 'actual-receiver' },
                     readSnapshot: async () => {
                         readBeforeBothEnqueued ||= posted.length !== 2;
-                        return {
-                            runId: 'actual-local-run',
-                            createdAtEpochMs: 1,
-                            updatedAtEpochMs: 2,
-                            agents: [],
-                            commands: [],
-                            results: posted.map((command): ControlResultEnvelope => ({
-                                kind: 'result',
-                                protocolVersion: 1,
-                                runId: 'actual-local-run',
-                                agentId: command.agentId,
-                                commandId: command.commandId,
-                                ok: true
-                            })),
-                            events: [],
-                            stats: [],
-                            reports: [],
-                            heartbeats: []
-                        };
+                        return toRunSnapshot(posted.map((command) => toRootResult(command, undefined)));
                     }
                 };
                 try {
@@ -131,10 +104,58 @@ describe('local paired reload enqueue', () => {
                 }
                 finally {
                     vi.restoreAllMocks();
-                    await request.dispose();
-                    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+                    await control.close();
                 }
             }
         );
     }
+
+    it('stops a reload pair with no result past its grace through each agent\'s untargeted recipe.cancel', async () => {
+        const control = await openRecordingControlRequest('actual-local-run');
+        const posted = control.posted;
+        let nowEpochMs = 1_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        const cancelledAgents = () => new Set(posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ agentId }) => agentId));
+        // Each read moves the clock 30 s; a root ends only once its own agent was told to cancel.
+        const run: RecipePairRun = {
+            request: control.request,
+            runId: 'actual-local-run',
+            sender: { agentId: 'actual-sender' },
+            receiver: { agentId: 'actual-receiver' },
+            readSnapshot: async () => {
+                nowEpochMs += 30_000;
+                const cancelled = cancelledAgents();
+                return toRunSnapshot(
+                    posted
+                        .filter(({ command, agentId }) => command.kind === 'recipe.run' && cancelled.has(agentId))
+                        .map((command) => toRootResult(command, { code: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED', message: 'Paired reload stopped.' }))
+                );
+            }
+        };
+        try {
+            const outcome = await runRecipePairOnTwoAgents(run, reloadScenario);
+
+            const senderRunId = `${reloadScenario.sender.recipeId}-run`;
+            const receiverRunId = `${reloadScenario.receiver.recipeId}-run`;
+            expect(
+                posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ commandId, agentId, command }) => ({
+                    commandId,
+                    agentId,
+                    targetCommandId: command.kind === 'recipe.cancel' ? command.targetCommandId : 'not a cancel'
+                })).toSorted((left, right) => right.agentId.localeCompare(left.agentId))
+            ).toEqual([
+                { commandId: `cancel-${senderRunId}`, agentId: 'actual-sender', targetCommandId: undefined },
+                { commandId: `cancel-${receiverRunId}`, agentId: 'actual-receiver', targetCommandId: undefined }
+            ]);
+            const cancelled = 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: Paired reload stopped.';
+            expect(outcome).toEqual({
+                sender: { commandId: senderRunId, ok: false, summary: cancelled },
+                receiver: { commandId: receiverRunId, ok: false, summary: cancelled }
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
 });

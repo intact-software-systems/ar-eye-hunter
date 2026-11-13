@@ -73,8 +73,9 @@ local default connection unless `DATABASE_URL` selects another server.
 The package `check:ts` command type checks these executable entries without
 starting services.
 
-No CI lane runs the group-delta or auth-logout proofs; those two are manual acceptance runs (owner: Knut-Helge Vik). They are not
-`*.test` files, so `tests/manual-suites.json`, which only claims test files, cannot list them.
+The PostgreSQL Release Gate (`postgres-integration`) runs the group-delta and auth-logout proofs too, through
+`npm run test:api-v1:black-box:postgres:group-delta` and `npm run test:api-v1:black-box:postgres:auth-logout`, and
+uploads their artifacts.
 
 ## Recipe execution and observations
 

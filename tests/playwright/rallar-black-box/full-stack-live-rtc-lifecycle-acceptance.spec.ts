@@ -10,6 +10,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import { MANUAL_TRIGGER_POLICY } from './create-group-formation-lifecycle-driver.ts';
 import {
+    almDiagnostics,
     apiBaseUrl,
     applicationId,
     CONTROL_BASE_URL,
@@ -51,6 +52,7 @@ const deliveryOperations = createLiveRtcDeliveryOperations({
     workspaceId,
     messagesRtcTypeId: 'manual.type',
     messagesRtcTopicId: 'manual.topic',
+    almDiagnostics,
     formation: formationOperations
 });
 
@@ -61,7 +63,7 @@ test.describe('live RTC lifecycle acceptance', () => {
         test.setTimeout(300_000);
         const scenario = await openScenario(browser, request, 'discovery');
         try {
-            const { control, runId, groupId, suffix, agents } = scenario;
+            const { agents } = scenario;
             await setupMembership(scenario);
             for (const agent of agents) {
                 await connectPresence(scenario, agent);
@@ -70,7 +72,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             await holdFor(agents[0], HOLD_MS);
 
             for (const agent of agents) {
-                const base = { control, runId, agent, groupId, suffix };
+                const base = agentInput(scenario, agent);
                 expect(await formationOperations.countPeerCreated(base)).toBe(0);
                 const health = await formationOperations.health(base);
                 expect(health.formation).toMatchObject({
@@ -297,7 +299,7 @@ test.describe('live RTC lifecycle acceptance', () => {
             );
             expectDormantAndEmpty(hydrated);
 
-            await reopened.refreshRoom({ timeoutMs: 15_000 });
+            await reopened.refreshRoom({ refresh: 'always', timeoutMs: 15_000 });
             const refreshed = await formationOperations.health(
                 agentInput(scenario, reopened)
             );
@@ -501,7 +503,7 @@ async function settleSurvivors(
 ): Promise<void> {
     for (const agent of scenario.agents) {
         if (agent.agentId !== reopened.agentId) {
-            await agent.refreshRoom({ timeoutMs: 20_000 });
+            await agent.refreshRoom({ refresh: 'always', timeoutMs: 20_000 });
         }
     }
 }

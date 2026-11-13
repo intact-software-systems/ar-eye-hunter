@@ -9,11 +9,13 @@ import {
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -23,7 +25,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
+import { createInboundTestAdmission, createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -345,6 +347,80 @@ it('replays a retained conflict in a batch the handler runs after the one alread
 
     await expect.poll(() => readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
 });
+
+it('retains a resync-required drop whose commit conflicted, and its replay commits the drop with its one NACK', async () => {
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const delivered: ALMessage[] = [];
+    const controls: ALMessage[] = [];
+    const dependencies = runtimeDependencies(stores, delivered, controls);
+    const runtime = new ALInboundMessageRuntime(dependencies);
+    onTestFinished(() => runtime.dispose());
+    await runtime.ready();
+    expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-first', seq: 1 }), PENDING_SOURCE)).right)
+        .toEqual({ kind: 'admitted' });
+    // The first send's own batch settles first, so the only write under the gapped send is the next send's commit.
+    await expect.poll(async () => {
+        await dependencies.queueEngine.executeOnce();
+        return delivered.length;
+    }).toBe(1);
+
+    // The next send of the track commits between the gapped send's read and its write, as two frames of one socket do.
+    const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+    vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE)).right)
+            .toEqual({ kind: 'admitted' });
+        return await commitBundle(bundle);
+    });
+    const gapped = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-gapped', seq: 300 }), PENDING_SOURCE);
+
+    expect(gapped.right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(async () => {
+        await dependencies.queueEngine.executeOnce();
+        return toSentNackResources(controls).length;
+    }).toBe(1);
+    for (let pass = 0; pass < 4; pass++) {
+        await dependencies.queueEngine.executeOnce();
+    }
+    expect(toSentNackResources(controls)).toEqual([expect.objectContaining({ msgId: 'track-gapped', reason: 'resync-required' })]);
+    expect(await readRetainedAdmissionStatus(stores)).toBe(EntityStatus.COMPLETED);
+});
+
+it('answers a drop that owes nothing with its own reason when its track moved under it: an empty bundle never meets the fence', async () => {
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const dependencies = runtimeDependencies(stores, [], []);
+    const runtime = new ALInboundMessageRuntime({
+        ...dependencies,
+        planIncomingMessage: (msg, source, observations) => ({
+            ...dependencies.planIncomingMessage(msg, source, observations),
+            dropReason: 'Room authorization was revoked'
+        })
+    });
+    onTestFinished(() => runtime.dispose());
+    await runtime.ready();
+    const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+    const dropped: ALInboundCommitBundle[] = [];
+    // Another send of the same track commits between the dropped send's read and its write.
+    vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        dropped.push(bundle);
+        const competing = await createInboundTestAdmission(stores)
+            .attempt(createInboundTestMessage({ msgId: 'track-winner', seq: 1 }), PENDING_SOURCE, dependencies.planIncomingMessage);
+        expect(competing.right).toMatchObject({ kind: 'completed', acceptance: { kind: 'admitted' } });
+        return await commitBundle(bundle);
+    });
+
+    const acceptance = await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'owed-nothing', seq: 1 }), PENDING_SOURCE);
+
+    expect(dropped.map((bundle) => [bundle.mutations, bundle.durableEffects])).toEqual([[[], []]]);
+    expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'Room authorization was revoked' });
+    expect(await readRetainedAdmissionStatus(stores)).toBeUndefined();
+});
+
+/** The resources of the NACK controls the runtime sent, in send order. */
+function toSentNackResources(controls: readonly ALMessage[]): readonly { readonly msgId: string; readonly reason: string; }[] {
+    return controls
+        .filter((control) => control.payload.typeId === AL_CONTROL_NACK_TYPE_ID)
+        .map((control) => JSON.parse(control.payload.resource));
+}
 
 /** The retained admission row under whichever key the queue gave it, with the status it now holds. */
 async function readRetainedAdmissionStatus(stores: ALInboundRuntimeStores): Promise<EntityStatus | undefined> {

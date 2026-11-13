@@ -273,6 +273,33 @@ describe('a typed send addressed to one peer over RTC (Q11, C7)', () => {
         }
     );
 
+    // Characterization: pins the refusal the WS peer send already pins, so no peer send over RTC carries a track.
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'refuses a peer send over %s that carries ordering, which a unicast cannot honour',
+        async (strategy) => {
+            const fixture = createBrowserMessageSenderFixture();
+            const admitted = captureCarrierAdmissions(fixture);
+
+            const sending = fixture.sender.sendTyped({
+                ...INTENT,
+                roomId: 'room',
+                peerId: DIRECTOR,
+                strategy,
+                orderingKey: 'k',
+                seq: 1
+            }, COMMAND_CHANNEL);
+
+            await expect(sending).rejects.toMatchObject({
+                issues: expect.arrayContaining([{
+                    path: '$.peerId',
+                    code: 'unsupported',
+                    message: 'A peer-addressed send carries no exclusions and no ordering.'
+                }])
+            });
+            expect(admitted).toEqual([]);
+        }
+    );
+
     it('refuses a peer send over RTC whose scope is not its room', async () => {
         const fixture = createBrowserMessageSenderFixture();
         const admitted = captureCarrierAdmissions(fixture);
