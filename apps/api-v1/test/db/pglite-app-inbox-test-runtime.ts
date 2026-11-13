@@ -143,6 +143,21 @@ export async function waitForPGliteQueueRetryDue(sql: PGliteSql, typeId: string)
     });
 }
 
+/** Runs one more pass when the one just run left a RETRY row of the type: it waits until the store sees it due. */
+export async function redeliverPGliteQueueRetries(
+    sql: PGliteSql,
+    typeId: string,
+    dequeue: () => Promise<number>
+): Promise<void> {
+    const [scheduled] = await sql<StringCountRow[]>`
+        select count(*) as count from resource_inbox where ri_type_id = ${typeId} and ri_status = 'RETRY'
+    `;
+    if (Number(scheduled?.count ?? 0) > 0) {
+        await waitForPGliteQueueRetryDue(sql, typeId);
+        await dequeue();
+    }
+}
+
 interface PGliteRetryEligibilityPoll {
     readonly scheduledRetry: string;
     readonly readEligibility: () => Promise<readonly RetryEligibilityRow[]>;

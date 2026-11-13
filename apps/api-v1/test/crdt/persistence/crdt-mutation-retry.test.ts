@@ -13,7 +13,7 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../../packages/te
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { redeliverPGliteQueueRetries, waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import {
     authorizeTestCrdtCommand,
@@ -53,6 +53,11 @@ async function verifyRealSqlCasConflictRetry(): Promise<void> {
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createApiV1TestQueueResilience()
         );
+        await redeliverPGliteQueueRetries(sql, 'APP_INBOX', () =>
+            scenario.inboxQueueReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                createApiV1TestQueueResilience()
+            ));
         await assertRetryMutationOutcome(sql, scenario.documentAuthorityReadCount());
     });
 }

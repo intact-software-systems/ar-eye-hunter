@@ -29,7 +29,7 @@ import { releaseAuthorisedWsCloseFacts } from '../../src/runtime/rtc-topology/au
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
-import { createPGliteAppInboxWsCloseHarness } from './pglite-app-inbox-ws-close-test-harness.ts';
+import { completePGliteAppInboxRetry, createPGliteAppInboxWsCloseHarness } from './pglite-app-inbox-ws-close-test-harness.ts';
 import { FUTURE_MS, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const UPGRADE_TRACE_ID = 'trace-ws-ticket-connect-upgrade';
@@ -321,6 +321,7 @@ test('a connect whose ticket was spent after its read conflicts on the guarded d
         await harness.secondReader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience());
         pause.resume();
         await staleAttempt;
+        await completePGliteAppInboxRetry(sql, harness.reader, staleKey);
 
         const conflicted = await harness.reader.inbox.getItem(staleKey);
         // Attempt one read the live ticket and lost the guarded delete; attempt two read it spent.
