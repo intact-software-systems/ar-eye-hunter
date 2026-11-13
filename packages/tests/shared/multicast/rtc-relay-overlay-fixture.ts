@@ -95,6 +95,8 @@ export interface RtcRelayOverlayFixture {
     enqueue(message: ALMessage): Promise<ALOutboundEnqueueResult>;
     /** Replaces the room this relay sees, as a membership change reaches it. */
     acceptSnapshot(snapshot: GroupSnapshot): void;
+    /** Replaces the layout this relay holds accepted, as the server's promotion of a new layout reaches it. */
+    acceptOverlay(overlay: OverlayInfo): void;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
@@ -112,6 +114,7 @@ export interface ObservedVolatileInboundPair {
 interface RtcRelayOverlayResources {
     readonly groups: LatestRepository<string, GroupSnapshot>;
     readonly overlays: LatestRepository<string, OverlayInfo>;
+    readonly overlayIds: readonly string[];
     readonly outboundResources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
     readonly multicast: shared.WebRtcOverlayMulticastManager;
 }
@@ -180,6 +183,12 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
 
     acceptSnapshot(snapshot: GroupSnapshot): void {
         this.dependencies.groups.accept('room', snapshot);
+    }
+
+    acceptOverlay(overlay: OverlayInfo): void {
+        for (const overlayId of this.dependencies.overlayIds) {
+            this.dependencies.overlays.accept(overlayId, overlay);
+        }
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
@@ -263,7 +272,8 @@ function createDefaultRelayOverlayResources(
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
     onTestFinished(() => overlays.dispose());
-    for (const overlayId of input.overlayIds ?? ['room']) {
+    const overlayIds = input.overlayIds ?? ['room'];
+    for (const overlayId of overlayIds) {
         overlays.accept(overlayId, createOriginOverlay(input.neighbourPeerIds));
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
@@ -293,5 +303,5 @@ function createDefaultRelayOverlayResources(
         selfPrincipalId: input.selfPeerId
     });
     onTestFinished(() => multicast.dispose());
-    return { groups, overlays, outboundResources, multicast };
+    return { groups, overlays, overlayIds, outboundResources, multicast };
 }
