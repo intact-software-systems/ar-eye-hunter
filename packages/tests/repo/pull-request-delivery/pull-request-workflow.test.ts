@@ -165,7 +165,7 @@ describe('pull-request release workflow', () => {
         expect(workflow.on).toEqual({
             pull_request: {
                 // `labeled`/`unlabeled` re-run the gate when the skip-changed-gates label is applied.
-                types: ['opened', 'synchronize', 'reopened', 'ready_for_review', 'labeled', 'unlabeled']
+                types: ['opened', 'synchronize', 'reopened', 'ready_for_review', 'converted_to_draft', 'labeled', 'unlabeled']
             }
         });
         expect(workflow.concurrency).toEqual({
