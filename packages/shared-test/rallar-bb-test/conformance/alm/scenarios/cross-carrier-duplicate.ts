@@ -95,9 +95,9 @@ function toCrossCarrierDuplicateSenderCommands(
  * The receiver refused the pair's second copy. rtc-then-ws pins that copy to WS: RTC `transport-accepted` is the
  * receiver's own hop ACK, so the RTC copy committed first. ws-then-rtc accepts either carrier, since WS
  * `transport-accepted` is only the server's: it reads the pair's latest `admission-outcome`, the second arrival's or,
- * when a copy's commit conflicted, its replay's verdict. Both run after the absence window, when the outcome is already in the event buffer, so a short budget
- * suffices. A receiver stays one linear transcript for the reload identity join, so the either-carrier case is a wait
- * and two assertions rather than a composite.
+ * when a copy's commit conflicted, its replay's verdict. Both run after the absence window, when the outcome is
+ * already in the event buffer, so a short budget suffices. A receiver stays one linear transcript for the reload
+ * identity join, so the either-carrier case is a wait and two assertions rather than a composite.
  */
 function toCrossCarrierDuplicateReceiverCommands(
     receiver: AlmConformanceStepInput,

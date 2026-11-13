@@ -587,7 +587,7 @@ it('bridges an applied group revision to rallar.browser.group_state.applied', as
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
     });
     const applied = {
-        group: { applicationId: 'app-1', workspaceId: 'default', groupId: 'room-1' },
+        groupRef: { applicationId: 'app-1', workspaceId: 'default', groupId: 'room-1' },
         groupRevision: 5,
         presenceRevision: 6,
         rosterVersion: 2,

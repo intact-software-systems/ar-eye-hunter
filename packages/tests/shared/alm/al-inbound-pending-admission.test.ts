@@ -473,6 +473,35 @@ it('a replay that admits states committed / admitted', async () => {
     ]);
 });
 
+it('a diagnostics sink that throws leaves a replay\'s delivery and its claim unchanged', async () => {
+    const deliveredWith = async (diagnostics: ALInboundMessageRuntime.Dependencies['diagnostics']) => {
+        const delivered: ALMessage[] = [];
+        const stores = createDefaultInMemoryALInboundRuntimeStores();
+        const dependencies = runtimeDependencies(stores, delivered, []);
+        const runtime = new ALInboundMessageRuntime({ ...dependencies, diagnostics });
+        onTestFinished(() => runtime.dispose());
+        await runtime.ready();
+        const message = createInboundTestMessage({ msgId: 'replay-sink-throws' });
+        setNextInboundCommitConflicted(stores.admissionStore);
+
+        expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+        await expect.poll(async () => {
+            await dependencies.queueEngine.executeOnce();
+            return delivered.length;
+        }).toBe(1);
+        return delivered.map((delivery) => delivery.id.msgId);
+    };
+    const reached: string[] = [];
+
+    const withThrowingSink = await deliveredWith((event) => {
+        reached.push(event.kind);
+        throw new Error('sink failed');
+    });
+
+    expect(reached).toContain('admission-outcome');
+    expect(withThrowingSink).toEqual(await deliveredWith(undefined));
+});
+
 it('a replay that conflicts again states pending again', async () => {
     const { runtime, stores, diagnostics, delivered, queueEngine } = createInboundTestRuntime({
         carrier: 'rtc',

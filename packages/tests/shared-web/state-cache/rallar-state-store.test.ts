@@ -111,7 +111,7 @@ describe('Rallar state store', () => {
         await waitForGroupStateSnapshotChangesIdle();
 
         expect(stated).toEqual([{
-            group: { ...scope, groupId: 'joined' },
+            groupRef: { ...scope, groupId: 'joined' },
             groupRevision: joined.causalRevision.groupRevision,
             presenceRevision: joined.causalRevision.presenceRevision,
             rosterVersion: joined.group.rosterVersion,

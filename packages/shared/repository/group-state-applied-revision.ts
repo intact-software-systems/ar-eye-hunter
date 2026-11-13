@@ -4,7 +4,7 @@ import type { GroupStateSnapshotChange } from './group-state-snapshots-repositor
 
 /** Which revision of which group a runtime's group cache now holds, or the revision it no longer holds. */
 export interface GroupStateAppliedRevision {
-    readonly group: GroupRef;
+    readonly groupRef: GroupRef;
     readonly groupRevision: number;
     readonly presenceRevision: number;
     readonly rosterVersion: number;
@@ -41,7 +41,7 @@ function toAppliedRevision(
     change: GroupStateAppliedRevision['change']
 ): GroupStateAppliedRevision {
     return {
-        group: toCanonicalGroupRef(snapshot.group),
+        groupRef: toCanonicalGroupRef(snapshot.group),
         groupRevision: snapshot.causalRevision.groupRevision,
         presenceRevision: snapshot.causalRevision.presenceRevision,
         rosterVersion: snapshot.group.rosterVersion,

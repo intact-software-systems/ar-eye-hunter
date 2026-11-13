@@ -353,7 +353,7 @@ function toALControlSubjectMsgId(msg: ALMessage): string | null {
     return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
-export interface ALInboundAdmissionDiagnostics {
+interface ALInboundAdmissionDiagnostics {
     readonly outcome: ALInboundAdmissionOutcome;
     readonly reason: string;
 }
@@ -363,7 +363,7 @@ export interface ALInboundAdmissionDiagnostics {
  * and sends no NACK; its captured diagnostic can distinguish that refusal from pending delivery.
  * Diagnostic absence alone establishes neither outcome.
  */
-export function toALInboundAdmissionDiagnostics(
+function toALInboundAdmissionDiagnostics(
     admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
 ): ALInboundAdmissionDiagnostics {
     return admitted.fold(toRejectionDiagnostics, toAcceptanceDiagnostics);

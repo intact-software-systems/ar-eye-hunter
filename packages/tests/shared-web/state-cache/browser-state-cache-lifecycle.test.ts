@@ -1061,7 +1061,7 @@ describe('browser state cache lifecycle applied group revisions', () => {
             activeSessionCount: 2,
             change: 'held'
         })));
-        expect(stated.every(({ group }) => group.groupId === 'room-applied')).toBe(true);
+        expect(stated.every(({ groupRef }) => groupRef.groupId === 'room-applied')).toBe(true);
     });
 
     it('states a heartbeat that changes the session count at an equal tuple, once per change', async () => {

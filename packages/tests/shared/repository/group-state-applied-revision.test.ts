@@ -44,7 +44,7 @@ describe('the applied group revision a runtime states', () => {
         const advanced = createGroupSnapshot(5, ['session-a', 'session-b']);
 
         expect(toGroupStateAppliedRevision(toChange(ObservableValueEventType.Created, { named: created, snapshot: created }))).toEqual({
-            group: toCanonicalGroupRef(created.group),
+            groupRef: toCanonicalGroupRef(created.group),
             groupRevision: 4,
             presenceRevision: 1,
             rosterVersion: 1,
@@ -56,7 +56,7 @@ describe('the applied group revision a runtime states', () => {
                 toChange(ObservableValueEventType.Updated, { named: advanced, snapshot: advanced, previous: created })
             )
         ).toEqual({
-            group: toCanonicalGroupRef(advanced.group),
+            groupRef: toCanonicalGroupRef(advanced.group),
             groupRevision: 5,
             presenceRevision: 2,
             rosterVersion: 1,
@@ -77,7 +77,7 @@ describe('the applied group revision a runtime states', () => {
         const removed = createGroupSnapshot(6, ['session-a', 'session-b']);
 
         expect(toGroupStateAppliedRevision(toChange(ObservableValueEventType.Deleted, { named: removed, previous: removed }))).toEqual({
-            group: toCanonicalGroupRef(removed.group),
+            groupRef: toCanonicalGroupRef(removed.group),
             groupRevision: 6,
             presenceRevision: 2,
             rosterVersion: 1,
@@ -104,7 +104,7 @@ describe('the applied group revision a runtime states', () => {
                 toChange(ObservableValueEventType.Updated, { named: restored, snapshot: restored, previous: reduced })
             )
         ).toEqual({
-            group: toCanonicalGroupRef(restored.group),
+            groupRef: toCanonicalGroupRef(restored.group),
             groupRevision: 4,
             presenceRevision: 2,
             rosterVersion: 1,

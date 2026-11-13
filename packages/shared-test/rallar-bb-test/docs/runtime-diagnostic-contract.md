@@ -145,7 +145,7 @@ each time the connect's group cache changes what it holds: the cache the RTC
 admission reads when it compares a frame's room floor. The harness publishes it
 on `rallar.browser.group_state.applied`; the event's `data` is the fact itself:
 
-- `group`: the `GroupRef` (`applicationId`, `workspaceId`, `groupId`)
+- `groupRef`: the `GroupRef` (`applicationId`, `workspaceId`, `groupId`)
 - `groupRevision` and `presenceRevision`: the held snapshot's causal revision;
   `groupRevision` is the `snapshotVersion` a room send's floor names
 - `rosterVersion`: the held group's roster version
