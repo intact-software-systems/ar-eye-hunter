@@ -53,8 +53,9 @@ const roomEventMocks = await vi.hoisted(async () => {
     };
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: roomEventMocks.initialiseMiddleware
+    initialiseMiddleware: createInitialiseMiddlewareDouble(roomEventMocks.initialiseMiddleware)
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), (): Partial<StateEventHttpApiModule> => ({

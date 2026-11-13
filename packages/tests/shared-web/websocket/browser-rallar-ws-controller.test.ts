@@ -104,14 +104,15 @@ const webRtcConnectionService = vi.mocked(
 const webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
 const webSocketClient = vi.mocked(mocks.ctx.middleware.webSocketQueueBox.socket);
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({
+        initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
             checkpoints: []
-        })
+        }))
     })
 );
 

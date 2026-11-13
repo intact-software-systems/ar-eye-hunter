@@ -1,6 +1,4 @@
-import { PGlite } from '@electric-sql/pglite';
 import { Temporal } from '@js-temporal/polyfill';
-import { readFileSync } from 'node:fs';
 import {
     describe,
     expect,
@@ -62,7 +60,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
-import { createPGliteSqlClient } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import {
     createLifecycleSql,
     createRuntimeStatePostgresSql,
@@ -75,6 +73,9 @@ import {
 } from './group-mutation-test-runtime.ts';
 
 describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%s)', (backend) => {
+    if (backend === 'memory') {
+        initApiV1SchemaPGliteTemplate();
+    }
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
 
     sqlIt('rolls back a late outbox collision, commits the exact latch with group/plan, and rejects stale replay', async () => {
@@ -291,9 +292,8 @@ async function seedConnectWrite(sql: PSqlSql, applicationId: string): Promise<Co
 async function withConnectSql(backend: 'memory' | 'postgres', run: (sql: PSqlSql, applicationId: string) => Promise<void>): Promise<void> {
     const applicationId = `connect-sql-${crypto.randomUUID()}`;
     if (backend === 'memory') {
-        const sql = createPGliteSqlClient(new PGlite());
+        const sql = await createApiV1SchemaPGliteSql();
         try {
-            await sql.exec(readFileSync(new URL('../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url), 'utf8'));
             await run(sql, applicationId);
         }
         finally {

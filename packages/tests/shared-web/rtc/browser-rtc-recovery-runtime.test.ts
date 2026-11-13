@@ -93,14 +93,15 @@ const mocks = await vi.hoisted(async () => {
     };
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({
+        initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
             checkpoints: []
-        })
+        }))
     })
 );
 

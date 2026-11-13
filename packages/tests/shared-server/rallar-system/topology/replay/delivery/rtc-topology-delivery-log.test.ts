@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-
-import { PGlite } from '@electric-sql/pglite';
 import {
     describe,
     expect,
@@ -19,9 +16,12 @@ import {
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-delivery-repository.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { createPGliteSqlClient, type PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import type { PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 
 describe('RTC topology delivery log boundary', () => {
+    initApiV1SchemaPGliteTemplate();
+
     it('accepts only non-negative safe integer database values without coercion', () => {
         expect(readRtcTopologyDeliverySafeInteger(0, 'HEAD')).toBe(0);
         expect(readRtcTopologyDeliverySafeInteger(Number.MAX_SAFE_INTEGER, 'HEAD')).toBe(
@@ -428,14 +428,8 @@ describe('RTC topology delivery log boundary', () => {
 async function withDeliveryRepository(
     run: (sql: PGliteSql, repository: PSqlRtcTopologyDeliveryRepository) => Promise<void>
 ): Promise<void> {
-    const raw = new PGlite();
-    const sql = createPGliteSqlClient(raw);
+    const sql = await createApiV1SchemaPGliteSql();
     try {
-        const schema = readFileSync(
-            new URL('../../../../../../../apps/api-v1/src/db/in-memory-schema.sql', import.meta.url),
-            'utf8'
-        );
-        await sql.exec(schema);
         await run(sql, new PSqlRtcTopologyDeliveryRepository(sql));
     }
     finally {

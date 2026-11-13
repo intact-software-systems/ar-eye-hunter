@@ -58,8 +58,9 @@ const peopleEventMocks = await vi.hoisted(async () => {
     };
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: peopleEventMocks.initialiseMiddleware
+    initialiseMiddleware: createInitialiseMiddlewareDouble(peopleEventMocks.initialiseMiddleware)
 }));
 
 vi.mock(import('@shared-web/browser/state-read/state-event-http-api.ts'), () => ({

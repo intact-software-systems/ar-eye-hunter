@@ -56,9 +56,10 @@ const mocks = await vi.hoisted(async () => {
         getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
     };
 });
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => ({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] })
+    initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({ middleware: mocks.apiMiddleware.middleware, rtcCaptureReceipt, checkpoints: [] }))
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),

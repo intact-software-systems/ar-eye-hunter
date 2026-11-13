@@ -22,16 +22,17 @@ const rallarFacadeMocks = await vi.hoisted(async () => {
         deliverySettlements: undefined as BrowserDeliverySettlements.Carriers | undefined
     };
 });
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async (_session, _rtcSignalingTopicId, options) => {
+    initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _rtcSignalingTopicId, options) => {
         rallarFacadeMocks.deliverySettlements = options.deliverySettlements;
         return {
             middleware: rallarFacadeMocks.apiMiddleware.middleware,
             rtcCaptureReceipt: rallarFacadeMocks.rtcCaptureReceipt,
             checkpoints: []
         };
-    }
+    })
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),

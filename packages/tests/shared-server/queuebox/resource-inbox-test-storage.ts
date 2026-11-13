@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -6,8 +5,8 @@ import { createPostgresTimestampWithoutTimeZoneTextType } from '@shared-server/p
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { EntityStatus, Key } from '@shared/queuebox/ResourceEntry.ts';
 
-import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient, PGlite } from '../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { readApiV1InMemorySchemaSql } from '../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import { toPSqlSql } from '../integration/postgres/test-support/postgres-sql-adapter.ts';
 
 export interface ResourceInboxTestStorage {
@@ -28,6 +27,12 @@ export interface ResourceInboxTestRow {
 
 export type ResourceInboxTestBackend = 'memory' | 'postgres';
 
+const DEFAULT_BACKEND: ResourceInboxTestBackend = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? 'postgres' : 'memory';
+
+if (DEFAULT_BACKEND === 'memory') {
+    initApiV1SchemaPGliteTemplate();
+}
+
 /**
  * The API-v1 schema on PGlite, or on the integration PostgreSQL in its own schema, through a pool of `maxConnections`
  * there. Without an explicit backend, PostgreSQL is chosen when `RALLAR_POSTGRES_INTEGRATION=1`.
@@ -35,14 +40,13 @@ export type ResourceInboxTestBackend = 'memory' | 'postgres';
 export async function createResourceInboxTestStorage(
     schemaPrefix: string,
     maxConnections = 1,
-    backend: ResourceInboxTestBackend = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? 'postgres' : 'memory'
+    backend: ResourceInboxTestBackend = DEFAULT_BACKEND
 ): Promise<ResourceInboxTestStorage> {
-    const schemaSql = await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
     if (backend === 'memory') {
-        const sql = createPGliteSqlClient(new PGlite());
-        await sql.exec(schemaSql);
+        const sql = await createApiV1SchemaPGliteSql();
         return { sql, close: async () => await sql.close() };
     }
+    const schemaSql = await readApiV1InMemorySchemaSql();
     const schema = `${schemaPrefix}_${crypto.randomUUID().replaceAll('-', '')}`;
     const client = postgres(process.env.DATABASE_URL ?? 'postgres://app:app@localhost:5432/appdb', {
         max: maxConnections,
