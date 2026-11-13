@@ -11,6 +11,7 @@ import type {
 import {
     computeRallarBlackBoxRtcStreamPlan,
     computeRallarBlackBoxRtcStreamResultValue,
+    RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS,
     toRallarBlackBoxRtcStreamFramePayload,
     toRallarBlackBoxRtcStreamObservationSample,
     type RallarBlackBoxRtcStreamPlaceholderContext,
@@ -66,7 +67,6 @@ interface StreamOutcome {
 }
 
 const DEFAULT_MAX_IN_FLIGHT = 64;
-const DEFAULT_DRAIN_TIMEOUT_MS = 5_000;
 const DEFAULT_PROGRESS_EVERY_MS = 1_000;
 const DRAIN_POLL_MS = 25;
 
@@ -115,7 +115,7 @@ export class BrowserRtcStream {
         this.maxInFlight = toPositiveInteger(command.maxInFlight, DEFAULT_MAX_IN_FLIGHT);
         this.drainTimeoutMs = command.drainTimeoutMs !== undefined && command.drainTimeoutMs >= 0
             ? command.drainTimeoutMs
-            : DEFAULT_DRAIN_TIMEOUT_MS;
+            : RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS;
         this.progressEveryMs = toPositiveInteger(command.progressEveryMs, DEFAULT_PROGRESS_EVERY_MS);
         this.lastProgressAtEpochMs = this.streamStartedAtEpochMs;
     }

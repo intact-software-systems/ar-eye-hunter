@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
@@ -17,17 +17,18 @@ describe('RTC RTT refinement service', () => {
     it('accumulates one predicted delta per durable observation and reuses decisions on retry', () => {
         let nowEpochMs = 1_000;
         let predictedDistanceMs = 0;
-        const observeRtt = vi.fn(() => {
-            predictedDistanceMs += 4;
-            return true;
-        });
+        const observed: RttMeasurementInfo[] = [];
         const service = new RtcRttRefinementService({
             gate: new RtcRttRefinementGate({
                 minIntervalMs: 0,
                 vivaldiDeltaThresholdMs: 10
             }),
             nowEpochMs: () => nowEpochMs,
-            observeRtt,
+            observeRtt: (rtt) => {
+                observed.push(rtt);
+                predictedDistanceMs += 4;
+                return true;
+            },
             readPredictedNodeData: () => predictedNodes(predictedDistanceMs)
         });
 
@@ -35,32 +36,33 @@ describe('RTC RTT refinement service', () => {
         expect(claim(service, 'observation-2', 'work-2', { ...RTT, version: 2 })).toBe(false);
         expect(claim(service, 'observation-3', 'work-3', { ...RTT, version: 3 })).toBe(true);
         expect(claim(service, 'observation-3', 'work-3', { ...RTT, version: 3 })).toBe(true);
-        expect(observeRtt).toHaveBeenCalledTimes(3);
+        expect(observed.map((rtt) => rtt.version)).toEqual([1, 2, 3]);
 
         nowEpochMs = 70_000;
         expect(claim(service, 'observation-3', 'work-3', { ...RTT, version: 3 }, 60_000)).toBe(false);
-        expect(observeRtt).toHaveBeenCalledTimes(4);
+        expect(observed.map((rtt) => rtt.version)).toEqual([1, 2, 3, 3]);
     });
 
     it('observes one receipt once and applies its delta independently to every affected group', () => {
         let predictedDistanceMs = 0;
-        const observeRtt = vi.fn(() => {
-            predictedDistanceMs = 6;
-            return true;
-        });
+        const observed: RttMeasurementInfo[] = [];
         const service = new RtcRttRefinementService({
             gate: new RtcRttRefinementGate({
                 minIntervalMs: 0,
                 vivaldiDeltaThresholdMs: 5
             }),
             nowEpochMs: () => 1_000,
-            observeRtt,
+            observeRtt: (rtt) => {
+                observed.push(rtt);
+                predictedDistanceMs = 6;
+                return true;
+            },
             readPredictedNodeData: () => predictedNodes(predictedDistanceMs)
         });
 
         expect(claim(service, 'receipt-1', 'work-a', RTT, 60_000, 'group-a')).toBe(true);
         expect(claim(service, 'receipt-1', 'work-b', RTT, 60_000, 'group-b')).toBe(true);
-        expect(observeRtt).toHaveBeenCalledOnce();
+        expect(observed).toEqual([RTT]);
     });
 
     // #240: the prune used to scan both maps on every claim, O(N^2) across N live
@@ -80,7 +82,7 @@ describe('RTC RTT refinement service', () => {
         expect(service.readRetainedEntryCounts()).toEqual({ observations: 1, decisions: 1 });
 
         // Past every earlier entry's expiry, so an eager prune would empty both maps.
-        nowEpochMs = 70_000;
+        nowEpochMs = 60_500;
         for (const index of [2, 3, 4, 5]) {
             claim(service, `observation-${index}`, `work-${index}`, { ...RTT, version: index }, 120_000);
         }
@@ -92,24 +94,27 @@ describe('RTC RTT refinement service', () => {
 
     it('never answers a claim from an expired entry while the prune is rate limited', () => {
         let nowEpochMs = 1_000;
-        const observeRtt = vi.fn(() => true);
+        const observed: RttMeasurementInfo[] = [];
         const service = new RtcRttRefinementService({
             gate: new RtcRttRefinementGate({ minIntervalMs: 30_000, vivaldiDeltaThresholdMs: 0 }),
             nowEpochMs: () => nowEpochMs,
-            observeRtt,
+            observeRtt: (rtt) => {
+                observed.push(rtt);
+                return true;
+            },
             readPredictedNodeData: () => predictedNodes(0),
             pruneLimit: { windowMs: 60_000, maxPerWindow: 1 }
         });
 
         expect(claim(service, 'observation-1', 'work-1', RTT)).toBe(true);
-        expect(observeRtt).toHaveBeenCalledTimes(1);
+        expect(observed).toEqual([RTT]);
 
         // Same identities after expiry. The entries are still in the maps because
         // the prune budget is spent, so only the read-time expiry check can stop
         // the stale decision being replayed.
-        nowEpochMs = 70_000;
+        nowEpochMs = 60_500;
         expect(claim(service, 'observation-1', 'work-1', RTT)).toBe(true);
-        expect(observeRtt).toHaveBeenCalledTimes(2);
+        expect(observed).toEqual([RTT, RTT]);
     });
 
     // Prune cadence is driven by moving the injected clock, not by sleeping;

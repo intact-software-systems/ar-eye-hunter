@@ -1,6 +1,5 @@
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
-import { SlidingWindowCounter } from '@shared/resilience/sliding-window-counter.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
 const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
@@ -40,13 +39,7 @@ export function readRequestClientKey(request: HeaderReader): string {
 }
 
 function createRateLimiter(policy: RateLimiterPolicy): RateLimiter {
-    return new RateLimiter(
-        SlidingWindowCounter.init(
-            policy.timebasedFilterMs,
-            Math.floor(policy.timebasedFilterMs / 4)
-        ),
-        policy
-    );
+    return new RateLimiter(policy, Date.now());
 }
 
 function toLimiterKey(

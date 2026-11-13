@@ -119,6 +119,35 @@ describe('rallar-bb-test loop until first-success', () => {
         expect(value.iterations).toBe(3);
     });
 
+    it('surfaces the delivery assert\'s actual and expected from a stats + assert poll that never passes', async () => {
+        const { runtime } = createPollingRuntime();
+
+        const result = await runtime.execute({
+            kind: 'loop',
+            commandId: 'delivery-poll',
+            until: 'first-success',
+            count: 3,
+            intervalMs: 5,
+            commands: [
+                { kind: 'stats', commandId: 'delivery-stats' },
+                {
+                    kind: 'assert',
+                    commandId: 'delivery-threshold',
+                    source: 'stats.counters.messages',
+                    operator: 'gte',
+                    expected: 570
+                }
+            ]
+        });
+
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED');
+        const last = (result.error?.details as { lastFailedChildResult: { commandId: string; result: object; }; })
+            .lastFailedChildResult;
+        expect(last.commandId).toContain('delivery-threshold');
+        expect(JSON.stringify(last.result)).toContain('570');
+        expect(JSON.stringify(last.result)).toMatch(/actual/);
+    });
+
     it('applies exponential backoff between failed attempts', async () => {
         const { runtime, sleptDurations } = createPollingRuntime();
 

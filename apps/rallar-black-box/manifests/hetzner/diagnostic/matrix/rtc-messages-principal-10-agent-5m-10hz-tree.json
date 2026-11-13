@@ -108,7 +108,7 @@
               "typeId": "black-box.group.multicast.position",
               "topicId": "black-box.group.multicast.position"
             },
-            "timeoutMs": 50000,
+            "timeoutMs": 60000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -264,7 +264,7 @@
         "schemaVersion": 1,
         "recipeId": "rtc-messages-principal-multicast-receiver",
         "name": "RTC messages principal multicast receiver",
-        "description": "Connect RTC messages, hold for 300s, and assert principal multicast delivery.",
+        "description": "Connect RTC messages, poll up to the delivery window around a 300s stream, and assert principal multicast delivery.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-messages-principal-multicast-receiver",
@@ -360,7 +360,7 @@
               "typeId": "black-box.group.multicast.position",
               "topicId": "black-box.group.multicast.position"
             },
-            "timeoutMs": 50000,
+            "timeoutMs": 60000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -384,10 +384,11 @@
           },
           {
             "kind": "loop",
-            "commandId": "rtc-messages-principal-receiver-stats-loop",
-            "count": 62,
+            "commandId": "rtc-messages-principal-receiver-delivery-poll",
+            "count": 75,
             "intervalMs": 5000,
-            "maxCommands": 62,
+            "maxCommands": 150,
+            "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
               "transport": "messages.rtc",
@@ -401,12 +402,91 @@
               "expectedInboundMessages": 3000,
               "minExpectedInboundMessages": 2850,
               "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 27000
+              "logicalFanoutMessages": 27000,
+              "purpose": "delivery-poll",
+              "pollWindowMs": 370000
             },
             "commands": [
               {
                 "kind": "stats",
                 "commandId": "rtc-messages-principal-receiver-stats",
+                "metadata": {
+                  "profile": "rtc-messages-principal-multicast-receiver",
+                  "transport": "messages.rtc",
+                  "participantCount": 10,
+                  "senderCount": 1,
+                  "receiverCount": 9,
+                  "rateHz": 10,
+                  "intervalMs": 100,
+                  "durationSeconds": 300,
+                  "frameCount": 3000,
+                  "expectedInboundMessages": 3000,
+                  "minExpectedInboundMessages": 2850,
+                  "minReceiveRatio": 0.95,
+                  "logicalFanoutMessages": 27000
+                }
+              },
+              {
+                "kind": "assert",
+                "commandId": "rtc-messages-principal-receiver-delivery-threshold",
+                "source": "stats.counters.messages",
+                "operator": "gte",
+                "expected": 2850,
+                "metadata": {
+                  "profile": "rtc-messages-principal-multicast-receiver",
+                  "transport": "messages.rtc",
+                  "participantCount": 10,
+                  "senderCount": 1,
+                  "receiverCount": 9,
+                  "rateHz": 10,
+                  "intervalMs": 100,
+                  "durationSeconds": 300,
+                  "frameCount": 3000,
+                  "expectedInboundMessages": 3000,
+                  "minExpectedInboundMessages": 2850,
+                  "minReceiveRatio": 0.95,
+                  "logicalFanoutMessages": 27000,
+                  "receiverDelivery": {
+                    "expectedInboundMessages": 3000,
+                    "minExpectedInboundMessages": 2850,
+                    "minReceiveRatio": 0.95
+                  },
+                  "roomRef": {
+                    "applicationId": "rallar-server",
+                    "workspaceId": "default",
+                    "groupId": "hetzner-headless-room"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "kind": "loop",
+            "commandId": "rtc-messages-principal-receiver-relay-hold",
+            "count": 21,
+            "intervalMs": 1000,
+            "maxCommands": 21,
+            "metadata": {
+              "profile": "rtc-messages-principal-multicast-receiver",
+              "transport": "messages.rtc",
+              "participantCount": 10,
+              "senderCount": 1,
+              "receiverCount": 9,
+              "rateHz": 10,
+              "intervalMs": 100,
+              "durationSeconds": 300,
+              "frameCount": 3000,
+              "expectedInboundMessages": 3000,
+              "minExpectedInboundMessages": 2850,
+              "minReceiveRatio": 0.95,
+              "logicalFanoutMessages": 27000,
+              "purpose": "relay-hold",
+              "relayHoldMs": 20000
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-principal-receiver-relay-hold-stats",
                 "metadata": {
                   "profile": "rtc-messages-principal-multicast-receiver",
                   "transport": "messages.rtc",
@@ -442,38 +522,6 @@
               "minExpectedInboundMessages": 2850,
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 27000
-            }
-          },
-          {
-            "kind": "assert",
-            "commandId": "rtc-messages-principal-receiver-delivery-threshold",
-            "source": "stats.counters.messages",
-            "operator": "gte",
-            "expected": 2850,
-            "metadata": {
-              "profile": "rtc-messages-principal-multicast-receiver",
-              "transport": "messages.rtc",
-              "participantCount": 10,
-              "senderCount": 1,
-              "receiverCount": 9,
-              "rateHz": 10,
-              "intervalMs": 100,
-              "durationSeconds": 300,
-              "frameCount": 3000,
-              "expectedInboundMessages": 3000,
-              "minExpectedInboundMessages": 2850,
-              "minReceiveRatio": 0.95,
-              "logicalFanoutMessages": 27000,
-              "receiverDelivery": {
-                "expectedInboundMessages": 3000,
-                "minExpectedInboundMessages": 2850,
-                "minReceiveRatio": 0.95
-              },
-              "roomRef": {
-                "applicationId": "rallar-server",
-                "workspaceId": "default",
-                "groupId": "hetzner-headless-room"
-              }
             }
           }
         ]
@@ -587,7 +635,6 @@
     "receiverCount": 9,
     "rateHz": 10,
     "expectedDurationSeconds": 300,
-    "recommendedTerminalTimeoutSeconds": 600,
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "51"
     },
@@ -599,7 +646,8 @@
     "loadEstimate": {
       "streamFrames": 3000,
       "logicalFanoutMessages": 27000
-    }
+    },
+    "recommendedTerminalTimeoutSeconds": 565
   },
   "description": "Diagnostic 10-agent principal RTC messages multicast run at 10 Hz for 5m through a forced tree topology."
 }

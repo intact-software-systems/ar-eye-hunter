@@ -282,8 +282,8 @@ describe('Hetzner controller contracts and effects', () => {
         });
 
         expect(stdout).toContain('normalizedApiEnvironment=true');
+        // Each replica unit sets its own PORT, so a shared PORT in the env file only misleads and is dropped.
         expect((await readFile(envFile, 'utf8')).trim().split('\n')).toEqual([
-            'PORT=8080',
             'RALLAR_TIMING_LOGS=1',
             'RALLAR_APP_INBOX_PHASE_TIMING=true',
             'RALLAR_API_CONFIGURATION_PROFILE=prod',

@@ -1,4 +1,4 @@
-import { access, chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,11 +12,10 @@ const scriptPath = path.join(
 );
 
 describe('configure Metered TURN Hetzner script', () => {
-    it('writes Metered secrets to a root-only env file and keeps them out of output and systemd drop-ins', async (context) => {
+    it('writes Metered secrets to a root-only env file, keeps them out of output and restarts every API replica', async (context) => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-metered-turn-'));
         context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const etcDir = path.join(tmp, 'etc/rallar');
-        const systemdDir = path.join(tmp, 'etc/systemd/system');
         const binDir = path.join(tmp, 'bin');
         const systemctlLog = path.join(tmp, 'systemctl.log');
         const fakeSystemctl = path.join(binDir, 'systemctl');
@@ -31,7 +30,6 @@ describe('configure Metered TURN Hetzner script', () => {
         const result = await runScript(context, {
             RALLAR_REQUIRE_ROOT: '0',
             RALLAR_ETC_DIR: etcDir,
-            RALLAR_SYSTEMD_DIR: systemdDir,
             RALLAR_SYSTEMCTL_BIN: fakeSystemctl,
             SYSTEMCTL_LOG: systemctlLog,
             METERED_APP_NAME: 'prod-metered-app',
@@ -54,17 +52,10 @@ describe('configure Metered TURN Hetzner script', () => {
         const secretMode = (await stat(secretFile)).mode & 0o777;
         expect(secretMode).toBe(0o600);
 
-        const dropInFile = path.join(
-            systemdDir,
-            'rallar-api-v1.service.d/10-metered-turn.conf'
+        // Each replica reads the secret file only at start, so a rotation restarts every replica.
+        await expect(readFile(systemctlLog, 'utf8')).resolves.toBe(
+            'restart rallar-api-v1.service rallar-api-v1-2.service rallar-api-v1-3.service\n'
         );
-        const dropIn = await readFile(dropInFile, 'utf8');
-        expect(dropIn).toContain(`[Service]\nEnvironmentFile=-${secretFile}\n`);
-        expect(dropIn).not.toContain('super-secret-metered-key');
-
-        const systemctlCalls = await readFile(systemctlLog, 'utf8');
-        expect(systemctlCalls).toContain('daemon-reload\n');
-        expect(systemctlCalls).toContain('restart rallar-api-v1.service\n');
     });
 
     it('keeps prompted values on one assignment line without exposing the key in output', async (context) => {
@@ -80,7 +71,6 @@ describe('configure Metered TURN Hetzner script', () => {
                     ...process.env,
                     RALLAR_REQUIRE_ROOT: '0',
                     RALLAR_ETC_DIR: etcDir,
-                    RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
                     METERED_APP_NAME: '',
                     METERED_API_KEY: '',
                     PROMPT_APP: 'prompted-app',
@@ -115,7 +105,6 @@ describe('configure Metered TURN Hetzner script', () => {
                     ...process.env,
                     RALLAR_REQUIRE_ROOT: '0',
                     RALLAR_ETC_DIR: etcDir,
-                    RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
                     METERED_APP_NAME: 'prompted-app',
                     METERED_API_KEY: '',
                     PROMPT_KEY: 'invalid prompted key',
@@ -140,7 +129,6 @@ describe('configure Metered TURN Hetzner script', () => {
             RALLAR_REQUIRE_ROOT: '0',
             RALLAR_RESTART_SERVICE: '0',
             RALLAR_ETC_DIR: etcDir,
-            RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
             METERED_APP_NAME: 'replacement-app',
             METERED_API_KEY: 'replacement-key'
         })).rejects.toMatchObject({ stderr: expect.stringContaining('Unsupported assignment') });
@@ -148,26 +136,23 @@ describe('configure Metered TURN Hetzner script', () => {
         expect(await readFile(secretFile, 'utf8')).toBe(original);
     });
 
-    it('refuses an unreadable secret path before writing the systemd drop-in', async (context) => {
+    it('refuses an unreadable secret path without replacing it', async (context) => {
         const fixture = await mkdtemp(path.join(tmpdir(), 'rallar-metered-unreadable-'));
         context.onTestFinished(() => rm(fixture, { recursive: true, force: true }));
         const etcDir = path.join(fixture, 'etc/rallar');
         const secretFile = path.join(etcDir, 'api-v1.secrets.env');
-        const systemdDir = path.join(fixture, 'etc/systemd/system');
         await mkdir(secretFile, { recursive: true });
 
         await expect(runScript(context, {
             RALLAR_REQUIRE_ROOT: '0',
             RALLAR_RESTART_SERVICE: '0',
             RALLAR_ETC_DIR: etcDir,
-            RALLAR_SYSTEMD_DIR: systemdDir,
             METERED_APP_NAME: 'replacement-app',
             METERED_API_KEY: 'replacement-key'
         })).rejects.toThrow();
 
         expect((await stat(secretFile)).isDirectory()).toBe(true);
         expect(await readdir(etcDir)).toEqual(['api-v1.secrets.env']);
-        await expect(access(path.join(systemdDir, 'rallar-api-v1.service.d/10-metered-turn.conf'))).rejects.toThrow();
     });
 
     it('does not replace a valid secret file with an unsupported new Metered assignment', async (context) => {
@@ -183,7 +168,6 @@ describe('configure Metered TURN Hetzner script', () => {
             RALLAR_REQUIRE_ROOT: '0',
             RALLAR_RESTART_SERVICE: '0',
             RALLAR_ETC_DIR: etcDir,
-            RALLAR_SYSTEMD_DIR: path.join(fixture, 'etc/systemd/system'),
             METERED_APP_NAME: 'unsupported app name',
             METERED_API_KEY: 'replacement-key'
         })).rejects.toThrow();

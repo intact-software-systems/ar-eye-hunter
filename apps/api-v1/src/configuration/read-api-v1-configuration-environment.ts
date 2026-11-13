@@ -178,9 +178,19 @@ const ENVIRONMENT_SETTINGS: readonly EnvironmentSetting[] = [
         apply: (source, value) => source.group.roomOwnedAppDataBindings = value
     },
     {
+        name: 'RALLAR_HTTP_HOSTNAME',
+        decode: decodeString,
+        apply: (source, value) => source.http.hostname = value
+    },
+    {
         name: 'PORT',
         decode: decodeNumber,
         apply: (source, value) => source.http.port = value
+    },
+    {
+        name: 'RALLAR_API_REPLICA_COUNT',
+        decode: decodeNumber,
+        apply: (source, value) => source.http.replicaCount = value
     },
     {
         name: 'RALLAR_SHUTDOWN_DEADLINE_MS',

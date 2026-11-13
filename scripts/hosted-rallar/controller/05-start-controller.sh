@@ -43,7 +43,9 @@ fi
 
 case "${RALLAR_CONTROLLER_ROLE}" in
 api)
-	wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
+	for api_replica_port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+		wait_for_url "API-v1 config ${api_replica_port}" "http://127.0.0.1:${api_replica_port}/api/config"
+	done
 	;;
 control)
 	wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"

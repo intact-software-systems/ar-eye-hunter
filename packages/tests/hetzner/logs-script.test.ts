@@ -4,6 +4,7 @@ import {
     mkdtemp,
     readFile,
     rm,
+    symlink,
     writeFile
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -23,6 +24,9 @@ import { runOwnedTestProcess } from './owned-test-process.ts';
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
 const logsScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/15-logs.sh');
+const roleHelperPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-controller-role.sh');
+/** The api role's replica units, in the order the role installs them. */
+const API_REPLICA_UNITS = 'rallar-api-v1.service,rallar-api-v1-2.service,rallar-api-v1-3.service';
 
 const runDry = async (args: readonly string[] = []) => {
     const { stdout } = await execFileAsync('bash', [logsScriptPath, ...args], {
@@ -59,7 +63,7 @@ describe('Hetzner logs script', () => {
 
         expect(stdout).toContain('mode=dry-run');
         expect(stdout).toContain(
-            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service'
+            `units=${API_REPLICA_UNITS},rallar-black-box-control.service,rallar-black-box-headless-worker.service`
         );
         expect(stdout).toContain('lines=120');
         expect(stdout).toContain('follow=0');
@@ -95,8 +99,41 @@ describe('Hetzner logs script', () => {
         const stdout = await runDry(['--services', 'all']);
 
         expect(stdout).toContain(
-            'units=rallar-api-v1.service,rallar-black-box-control.service,rallar-black-box-headless-worker.service,caddy.service'
+            `units=${API_REPLICA_UNITS},rallar-black-box-control.service,rallar-black-box-headless-worker.service,caddy.service`
         );
+    });
+
+    // Hosts run the script through the /usr/local/bin/rallar-logs symlink, away from its sibling role helper.
+    it('reads the api replica units from the role helper when run through a symlink', async (context) => {
+        const directory = await mkdtemp(path.join(tmpdir(), 'rallar-logs-link-'));
+        context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
+        const link = path.join(directory, 'rallar-logs');
+        await symlink(logsScriptPath, link);
+
+        const { stdout } = await execFileAsync('bash', [link, '--services', 'api'], {
+            env: { ...process.env, RALLAR_LOGS_SELF_TEST: '1' }
+        });
+
+        expect(stdout).toContain(`units=${API_REPLICA_UNITS}\n`);
+    });
+
+    // A workflow streams the script over SSH stdin, where no sibling role helper exists, so the helper streams ahead of it.
+    it('reads every api replica unit when streamed after its role helper', async (context) => {
+        const outcome = await runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'cat "$1" "$2" | bash -s -- --services api', 'streamed-logs', roleHelperPath, logsScriptPath],
+            options: { env: { ...process.env, RALLAR_LOGS_SELF_TEST: '1' } }
+        });
+
+        expect(outcome.stdout).toContain(`units=${API_REPLICA_UNITS}\n`);
+    });
+
+    it('refuses to read the api units when streamed without its role helper', async (context) => {
+        await expect(runOwnedTestProcess(context, {
+            executable: 'bash',
+            args: ['-c', 'bash -s -- --services api <"$1"', 'streamed-logs', logsScriptPath],
+            options: { env: { ...process.env, RALLAR_LOGS_SELF_TEST: '1' } }
+        })).rejects.toMatchObject({ stderr: expect.stringContaining('rallar-controller-role.sh') });
     });
 
     it('reports missing option values clearly', async () => {

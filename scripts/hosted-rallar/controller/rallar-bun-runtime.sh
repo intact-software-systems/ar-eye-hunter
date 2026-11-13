@@ -176,34 +176,6 @@ EOF
 	done
 }
 
-write_rallar_api_v1_unit() {
-	local checkout_dir="$1"
-	local store_failure_file="$2"
-
-	cat >"${RALLAR_SYSTEMD_UNIT_DIR:-/etc/systemd/system}/rallar-api-v1.service" <<EOF
-[Unit]
-Description=Rallar API-v1 controller
-After=network-online.target postgresql.service
-Wants=network-online.target postgresql.service
-ConditionPathExists=!${store_failure_file}
-
-[Service]
-Type=simple
-User=rallar
-Group=rallar
-WorkingDirectory=${checkout_dir}/apps/api-v1
-EnvironmentFile=/etc/rallar/api-v1.env
-EnvironmentFile=-/etc/rallar/api-v1.secrets.env
-ExecStart=/usr/local/bin/bun run src/main.ts
-Restart=always
-RestartSec=5
-$(print_rallar_bun_service_hardening)
-
-[Install]
-WantedBy=multi-user.target
-EOF
-}
-
 write_rallar_control_server_unit() {
 	local checkout_dir="$1"
 	local storage_dir="$2"
