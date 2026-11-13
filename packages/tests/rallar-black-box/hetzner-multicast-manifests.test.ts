@@ -95,8 +95,9 @@ describe('Hetzner multicast workloads', () => {
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
             // Manifest 07: ack 30 s + barrier 15 s + the receiver's ensure-group and ensure-member 35 s each, connect
-            // 60 s, 20 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
-            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + 60 + 100 + 7,
+            // 115 s (two 30 s server completion waits and a 5 s margin for the SDK connect, 45 s readiness, 5 s margin),
+            // 31 delivery-poll pauses of 5 s and 7 relay-hold pauses of 1 s.
+            recommendedTerminalTimeoutSeconds: 30 + 15 + 35 + 35 + (65 + 45 + 5) + 155 + 7,
             transport: 'messages.rtc',
             participantCount: 50,
             rateHz: 20,
@@ -122,10 +123,10 @@ describe('Hetzner multicast workloads', () => {
         expect(allPeerShort?.manifest.metadata).toMatchObject({
             topologyProfile: 'tree',
             expectedDurationSeconds: 30,
-            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 60 s, 5 settle
-            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 13 delivery-poll pauses of 5 s and 65
+            // Manifest 09: ack 30 s + barrier 15 s + ensure-group and ensure-member 35 s each, connect 115 s, 5 settle
+            // pauses of 1 s, the 29.8 s stream schedule and its 5 s drain, 24 delivery-poll pauses of 5 s and 120
             // relay-hold pauses of 1 s, rounded up to the second.
-            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + 60 + 5 + 29.8 + 5 + 65 + 65),
+            recommendedTerminalTimeoutSeconds: Math.ceil(30 + 15 + 35 + 35 + (65 + 45 + 5) + 5 + 29.8 + 5 + 120 + 120),
             receiverDelivery: {
                 expectedInboundMessages: 7350,
                 minExpectedInboundMessages: 6615,
@@ -289,7 +290,7 @@ describe('Hetzner multicast workloads', () => {
         expect(receiver?.recipe?.commands.find((command) => command.kind === 'loop')).toMatchObject({
             commandId: 'rtc-messages-principal-receiver-delivery-poll',
             until: 'first-success',
-            count: 160,
+            count: 162,
             intervalMs: 30_000
         });
         for (const selection of entry?.manifest.recipes ?? []) {

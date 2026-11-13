@@ -107,6 +107,16 @@ describe('Release Gate lanes', () => {
         }
     });
 
+    it('runs the api-v1 Bun test files in four workers that each keep one global, then the receipts latency test alone', () => {
+        // That test asserts a 5000 ms HTTP allowance under its own fourteen-receiver load, so it must not share cores.
+        const parallelLeg =
+            'cd apps/api-v1 && bun test --timeout=240000 --parallel=4 --no-isolate --path-ignore-patterns=\'**/native-receiver-receipts.test.ts\' test/';
+        const aloneLeg = 'bun test --timeout=240000 test/db/native-receiver-receipts.test.ts';
+
+        expect(scripts['test:bun:platform']).toContain(`${parallelLeg} && ${aloneLeg} && cd ../rallar-black-box-control-server`);
+        expect(scripts['test:bun:platform']).not.toMatch(/ --isolate\b/u);
+    });
+
     it('runs every blocking lane with the in-memory configuration profile and no credential secret', () => {
         for (const job of blockingLanes) {
             expect(job.env?.RALLAR_API_CONFIGURATION_PROFILE).toBe('prod-in-memory');

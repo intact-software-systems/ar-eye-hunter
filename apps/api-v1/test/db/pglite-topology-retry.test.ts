@@ -34,7 +34,7 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests
 import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
-import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import { redeliverPGliteQueueRetries, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
 import {
@@ -447,6 +447,11 @@ test('PGlite AppGroup rereads lifecycle after a retryable topology conflict', as
         await inboxReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createApiV1TestQueueResilience()
+        );
+        await redeliverPGliteQueueRetries(
+            sql,
+            'APP_INBOX',
+            () => inboxReader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createApiV1TestQueueResilience())
         );
         const result = await pending;
         assert.match(result.left?.message ?? '', /active|archived|lifecycle|forbidden/i);

@@ -86,17 +86,18 @@ and it has no status list.
   `openIndexedDbAdmissionStorage` refuses it with `ALStorageSchemaMismatchError`
   and keeps the rows, so nothing reclaims it; the `reset-blocked` cause and the
   `schema-id-mismatch` and `store-schema-mismatch` reset reasons have no
-  producer, and the QoS plan's sections 2 and 8 still describe deletion. A
-  ruling picks one and aligns D3, those types and the QoS plan (roadmap F9,
-  PC10).
+  producer, and the QoS plan's sections 2 and 8 still describe deletion. Ruled
+  (D642): delete all three, and align D3 and the QoS plan to "refuse and keep"
+  (roadmap F9, PC10).
 - `packages/shared/alm/al-runtime-state-stores.ts` holds only snapshot
   interfaces and keeps its name (S9-i, D624): 26 importers and a `mod.ts` line
   would change for a name alone. Rename it for what it holds, with its
   importers, in a slice that touches them.
 - `packages/shared/api/auth.ts` keeps one module-global session over Web
   Storage (S9-R2, D610). Replacing it with an injected session-store port, the
-  browser Storage implementation in shared-web, needs a ruling: 25 importers
-  across both games and the black-box app read it.
+  browser Storage implementation in shared-web, is ruled its own slice for
+  both games with no compatibility global (D642): 25 importers across both
+  games and the black-box app read it.
 - The black-box proofs keep three raw WebSocket clients, `ClusterProofSocket`,
   `ApiV1RtcTopologyProofSocket` and the inline `LogoutProofSocket` in
   `api-v1-auth-logout-cluster-proof.mts` (S9-R5, D613). Their waits differ,
@@ -322,30 +323,6 @@ and it has no status list.
   to about 35 minutes) while they run in seconds; the deadline is a guard, and
   since S9-ii an overrun fails its own cell and its recipe is cancelled (D627,
   D628).
-- Two group writes that commit about 20 to 30 ms apart can leave every page of
-  the room stale for up to 60 s (S9-ii): the server stamps a group-state delta
-  with the snapshot revision at expansion time
-  (`computeGroupStateDeltaEnvelope`,
-  `packages/shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts`)
-  but the delta carries only its own event's slice, so the first write's delta
-  can claim the second write's revision; the page applies it, then discards the
-  second write's delta as `no-op` at an equal revision
-  (`resolveGroupStateDeltaDisposition`,
-  `packages/shared-web/browser/state-cache/group-state-delta-application.ts`);
-  the next heartbeat then fails with `StateSnapshotRevisionConflictError`
-  (through `decideGroupSnapshotCausalRevision`) instead of re-reading
-  (`adoptGroupSnapshotsFromHeartbeat`,
-  `packages/shared-web/browser/state-cache/group-heartbeat-snapshot-adoption.ts`),
-  so the stale snapshot lives until the 60 s cache expiry. It reds the
-  four-role cells `subscription-ordered-omission` and
-  `subscription-ordered-entry` over the RTC carriers (three of six in-memory
-  full runs, none of two on Postgres; alone on a fresh API one run in
-  fourteen). The warning
-  `State heartbeat failed ... revision conflict at revision N` is on all four
-  pages in every red run and in no green one; the delta frames are not
-  recorded, so the first two steps are read from the code and the page
-  revisions. Waits on its own fix, a product change in group-state
-  sync gated by the medium-scale run, not on a cell change.
 - `missing-recipient-retry` over `rtc` fails about one run in four, on `main`
   too (S9-ii): the first copy is refused `not-yet-in-sync` at both recipients
   and the honest retry lands inside the receiver's absence window. A page now
@@ -441,9 +418,9 @@ and it has no status list.
   its replay then refuses (S9-ii, D640): the receipt can reach the origin after
   the replay's NACK, re-create the receipt row the NACK ended and settle an
   `acknowledgement` after `relay-rejected` (the handle reads `rejected`), and
-  the server's aggregate runs to `timed-out`. Waits on a ruling: whether a
-  retained admission withholds its `admitted` receipt until its replay commits
-  (`writeAdmittedReceipt`,
+  the server's aggregate runs to `timed-out`. Ruled (D642): a retained
+  admission withholds its `admitted` receipt until its replay commits, in the
+  receipt-truth slice (`writeAdmittedReceipt`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
 - Nothing pins that `packages/tests/tsconfig.json` includes
   `tests/playwright/**` (S9-ii, D637):
@@ -723,3 +700,74 @@ and it has no status list.
   `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction, because the runner keeps no record of each
   command's first event ordinal. Such a record would make the wait exact under `recent`; nothing needs it while every
   lane runs a `full` history.
+- No read states that a group's presence-summary work is outstanding, so a
+  page or a lane cannot tell a settled room from one whose summary delta is
+  still due. The formation view carries the group's causal revision and
+  nothing about summary work. Ruled its own slice (D642): the server exposes
+  it, as a read-time count on the formation read.
+- The nearest-rank percentile stays copied in four `.mjs` scripts
+  (`apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs`,
+  `apps/api-v1/scripts/perf/pool-api-v1-state-write-results.mjs`,
+  `apps/api-v1/scripts/perf/compare-api-v1-crdt-append-history-results.mjs`,
+  `scripts/platform/perf/summarize-runtime-results.mjs`), which cannot import
+  TypeScript; D642 folds only the identical TypeScript copies into
+  `packages/shared/measurement`. They fold when those scripts become
+  TypeScript.
+- Delivered sample age is measured from application payload timestamps in the
+  workload family, not by ALM (D642): a receiver cannot compute it from the
+  envelope, which carries only `expiresAtMs`
+  (`packages/shared/al-contracts/al-contract.ts`).
+- The platform fault steps of D642 reach only managed API processes of a
+  local black-box run. A hosted leg needs a controller step over the api
+  role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
+  `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
+  campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
+- A relay partition, one RTC edge cut while the others stay, has no fault
+  step: `TransportFaultPort.decideSend` sees a carrier and a message, not an
+  edge. It needs per-edge control in the transport fault port.
+- The distributed-recipe and headless workflows run their workers on the
+  single `HETZNER_HOST`, the api role's host
+  (`plans/active/deno-to-bun-validation.md`), so a hosted measurement shares
+  the API's machine with its load generator. A campaign needs the workers off
+  it.
+- Make-before-break routing in the browser, where a new layout's edges open
+  before routing moves to them, is the complete fix for the RTT re-plan
+  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
+  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
+  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
+- At 50 agents the RTC delivery fails after the connect. With #813 merged,
+  manifests 07 and 09 connect every agent and then fail on delivery: manifest
+  07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
+  (the failing step named 2), and manifest 09 (run 43383760956) has 9 agents at
+  0.89 to 0.94 send success against 0.95, with 2 to 3 s bursts of
+  `RALLAR_BB_RTC_SEND_FAILED`. An analysis of the runs' recorded events found
+  the mechanism: a new tree layout was published in or just before the stream,
+  and each browser routed only over its edges before they were open, so for 0.7
+  to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
+  refused frames from the old parent (`unauthorized`) and a switched relay
+  stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
+  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
+  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  Reproduced in unit tests of the routing code; the `unauthorized` refusal is
+  confirmed from the code (`resolveRtcRoomEdgeDenial` in
+  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  server path produced the re-plans (neither run records the server's planning
+  decision; a tree's leader-rooting or update-failure rebuild and the
+  unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
+  agents recorded) and a browser-level reproduction, which needs a new spec.
+- The byte sizes the game fixtures send (the AR Eye and position frames) are
+  stated nowhere. Measure them in one small task; the first campaign rung sends
+  those sizes (D643).
+- The changed-range style check (`scripts/check-changed-repo-style.mjs`) scans
+  the whole base and the whole head for its per-file rules. A range that
+  touches a navigation product source also builds the type-checked program at
+  both (`navigationProductChanged` in `computeChangedFindings`). Ruled by the
+  maintainer (2026-11-13): scan the changed files only, then scan base and head
+  in parallel.
+- A queue retry's due time (`next_ts`) is written from the application clock
+  (`PSqlQueueBox.releaseEntries`, `Temporal.Now.instant`) and compared with the
+  database's `now()` by the claim predicate (`toEligibleRowPredicate`). Two
+  clocks that disagree delay or advance a retry by their difference; the retry
+  still runs, so it is latency, not correctness. It matters when the API and its
+  database run on hosts whose clocks drift by more than the retry backoff, and
+  not before.

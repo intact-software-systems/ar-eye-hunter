@@ -39,7 +39,7 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 
 import { RTC_TOPOLOGY_OUTBOX_TOPIC } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
+import { readPGliteDatabaseEpochMs, waitForPGliteQueueRetryDue } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
 import {
@@ -409,16 +409,29 @@ test(
             });
             await sql.begin((transaction) => writeCoalescedAppOutboxWork(transaction, topologyWork));
 
-            await outboxReader.dequeueOutbox(
-                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                createApiV1TestQueueResilience()
-            );
-
-            const [work] = await sql<ResourceInboxAttemptStatusRow[]>`
+            const readWork = async (): Promise<ResourceInboxAttemptStatusRow | undefined> => {
+                const [row] = await sql<ResourceInboxAttemptStatusRow[]>`
       select ri_attempts, ri_status from resource_inbox
       where ri_type_id = 'APP_OUTBOX'
         and ri_topic_id = ${APP_OUTBOX_RTC_TOPOLOGY_TOPIC}
     `;
+                return row;
+            };
+            await outboxReader.dequeueOutbox(
+                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+                createApiV1TestQueueResilience()
+            );
+            const afterConflict = await readWork();
+            assert.equal(retryReleaseCount, 1);
+            if (afterConflict?.ri_status === EntityStatus.RETRY) {
+                assert.equal(Number(afterConflict.ri_attempts), 1);
+                await waitForPGliteQueueRetryDue(sql, 'APP_OUTBOX');
+                await outboxReader.dequeueOutbox(
+                    OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+                    createApiV1TestQueueResilience()
+                );
+            }
+            const work = await readWork();
             assert.equal(retryReleaseCount, 1);
             assert.equal(Number(work?.ri_attempts), 2);
             assert.equal(work?.ri_status, EntityStatus.COMPLETED);

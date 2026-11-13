@@ -1505,7 +1505,7 @@ two red, and `rtc-with-ws-fallback` two green and one red. With Postgres on a
 fresh database per run, one run per carrier gave three green. The three reds are
 the four-role family, `subscription-ordered-omission` and
 `subscription-ordered-entry`, from one group-state sync race outside ALM
-(recorded as a backlog line): the `ws` carrier is green in every run, and the
+(since fixed on `main`): the `ws` carrier is green in every run, and the
 RTC carriers are green except that family, which failed in three of six
 in-memory runs and none of two on Postgres. Every cell S9-ii corrected was green
 in all twelve runs, and no role ended `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
@@ -1521,6 +1521,25 @@ carrier across ordinary branch work with no rerun, the hosted observation
 completing typed `ws` sends and cold RTC handshakes inside the recipe budgets
 on the Postgres API, and a per-cell flake ledger whose entries each carry a
 root cause (D639).
+
+### After Slice 9
+
+The nine slices deliver the advertised modes: browser publications over `ws`,
+`rtc` and `rtc-with-ws-fallback`, with grants, subscriptions, signed
+publishers and receipts, ordered entry and pacing. What the addendum still owes
+for those modes is its measurement half (§9) and the maintainer's adoption
+(§6). The next outcomes, in this order, are a lane whose cells each start from a
+declared, settled room; publication figures in the stage, with one shared
+histogram and the local half of a same-regime baseline; and a platform fault
+vocabulary, with an API instance stopped, paused or restarted, its database
+sessions cut, and seeded loss and delay on a browser carrier, that recipes can
+name. Receipt truth and the held-send path follow, proven with those steps; a
+retained admission then starts its `admitted` receipt only once its replay
+commits. With the figures in place and the contracts adopted, the addendum is
+complete for its advertised modes. The later outcomes below that no
+application needs yet move to the backlog, and the work continues as real-world
+testing, outside this document: a publication workload family, probes at the
+owners and a first campaign on the three-replica fleet.
 
 ### Later outcomes
 
@@ -1557,9 +1576,9 @@ root cause (D639).
   overload with bounded memory and accurate outcome evidence; server-side
   ordered sends are measured by the 6b probe on room rows (counts in the Release 14
   record; the principal path is unmeasured). The path to it, as outcomes in
-  order: a full-scope lane green on every carrier; a fault-step vocabulary for
-  the platform; publication figures in the stage with one shared histogram; a
-  same-regime baseline protocol; a publication workload family on the scale
+  order: a full-scope lane green on every carrier; publication figures in the
+  stage with one shared histogram; a same-regime baseline protocol; a
+  fault-step vocabulary for the platform; a publication workload family on the scale
   builder; bottleneck probes at the owners; and a first campaign on the
   three-replica fleet.
 
