@@ -37,7 +37,8 @@ ids start `alm-successor-`, which the snapshot decoder does not attribute, so it
 
 The control run snapshot also carries each page's `rallar.browser.state-read` events (the state-read
 diagnostics of the runtime diagnostic contract), so a cell can tell when a page pulled or reconciled
-group state by `operation` and `result`.
+group state by `operation` and `result`, and its `rallar.browser.group_state.applied` events, which
+state the group revision the page's cache holds.
 
 They live beside the per-test output directories rather than inside one, because Playwright deletes
 a passing test's own directory at the end of the run. A failed cell additionally attaches its

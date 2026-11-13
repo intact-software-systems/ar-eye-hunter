@@ -167,16 +167,21 @@ snapshot page, a point read, a heartbeat adoption, a reopen resync.
   no longer returns the group (`missingGroups`), a collection reconciliation
   that drops it, and a point read that finds the room missing.
 - A cache entry that lapses by its TTL states nothing; the RTC admission no
-  longer reads it.
+  longer reads it, and a write that restores it at the same revision and
+  session count states nothing either.
 - A disconnect or logout leaves the cache as it is and states nothing; the next
   connect replaces the whole cache and states nothing for the groups it held.
 
 So the last `held` event does not prove the group is still readable.
 
+The topic is published only on a connection whose configuration yields
+connection defaults (an application scope or an RTC capture mode): the ports
+reach the SDK through them, so any other connection states nothing.
+
 The event is emitted after the cache write, so it never precedes the state it
 names. It may arrive after later writes: delivery of a change waits for the
 previous change's adoption. An event is a floor ("the cache holds at least this
-revision, until a removal"), not the current state. A sink that throws is
+revision, until a removal, a lapse or the next connect"), not the current state. A sink that throws is
 logged and changes no adoption.
 
 The topic carries about one event per applied change per page; it grows with
@@ -586,13 +591,18 @@ publication succeed. The event's `data` is the event itself:
     (`malformed`, for example), with the code as the reason.
 
   A replay whose authority asks for a retry, or that shutdown cut short, states
-  nothing. No field marks an event as a replay's. A later arrival of the same
+  nothing, even when its commit landed: a replay cut by shutdown states no
+  verdict, and its row's next replay reads `duplicate`. A replay's event
+  states its first retained arrival's carrier, which a second copy on the other
+  carrier does not change (that copy states `pending` under its own carrier). A
+  retained control's replay states no `admission-outcome`: only its ingress
+  stated `pending` / `pending-admission`. No field marks an event as a replay's. A later arrival of the same
   `msgId` (a copy on the other carrier, a retried copy) states its own event
   too, so the latest event for a `msgId` is not by itself where the message
   stopped. On one carrier, only the order separates a replay's verdict from a
   re-arrival's: the first event after a `pending` / `pending-admission` that
   is not itself `pending` is that retained arrival's verdict, unless another
-  arrival on the carrier was stated in between
+  arrival on the carrier was stated in between, or its replay stated nothing
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control

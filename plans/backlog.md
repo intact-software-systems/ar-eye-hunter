@@ -352,9 +352,9 @@ and it has no status list.
   sync gated by the medium-scale run, not on a cell change.
 - `missing-recipient-retry` over `rtc` fails about one run in four, on `main`
   too (S9-ii): the first copy is refused `not-yet-in-sync` at both recipients
-  and the honest retry lands inside the receiver's absence window. No page
-  diagnostic carries the snapshot version the refusal compares, so a recipe
-  cannot wait to be in sync, and a receipted warm-up cannot be placed in the
+  and the honest retry lands inside the receiver's absence window. A page now
+  states the revision its cache holds (`rallar.browser.group_state.applied`);
+  the cell does not wait on it yet. A receipted warm-up cannot be placed in the
   hosted combined recipe without loosening
   `packages/tests/rallar-black-box/hetzner-alm-scenario-barriers.test.ts`.
   Waits on a ruling: a product in-sync readiness signal a recipe can wait on,
@@ -500,7 +500,7 @@ and it has no status list.
 - The browser's state-read diagnostics sink is a process-wide setter
   (`setBrowserStateReadDiagnosticsSink`,
   `packages/shared-web/browser/state-read/diagnostics.ts`) with last-writer-wins
-  and an unconditional clear on close (slice 10-2, Task 4 review), against the
+  and an unconditional clear on close (lane signals), against the
   visible-construction rule. The correct shape is an install that returns a
   release clearing only its own sink, or the sink threaded through the
   runtime's diagnostics ports like `groupStateDiagnostics`; a shared-web
@@ -508,9 +508,17 @@ and it has no status list.
 - A page that recovers a group's content at an unchanged causal revision (the
   re-read after the group cache lifetime lapses, seen at 75–76 s in a four-role
   cell) emits neither a `rallar.browser.state-read` event nor
-  `rallar.browser.group_state.applied` (slice 10-2), so an artifact cannot
+  `rallar.browser.group_state.applied` (lane signals), so an artifact cannot
   attribute the recovery. Waits on naming the recovery path's read as a
   state-read operation.
+- A retained inbound control's replay records no `admission-outcome` (lane
+  signals): its ingress states `pending` / `pending-admission`, and
+  `replayControl` (`packages/shared/alm/inbound/lane/al-inbound-store-lane.ts`)
+  hands the acceptance on without stating one, so the control half of a
+  retained admission never reaches a verdict a lane can read.
+- `playground/alm/tools/lifecycle-latency.mjs` takes a message's first
+  `admission-outcome` as its admission time (lane signals); for a retained
+  message that is now the `pending`, not the verdict its replay states.
 - `closeTwoAgentParticipants`
   (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) calls
   `cleanupRallarPage` before `context.close()`, so a cleanup that never settles
