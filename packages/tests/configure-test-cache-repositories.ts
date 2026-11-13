@@ -8,7 +8,8 @@ import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 const MINUTE_MS = 60_000;
 
 export function configureTestCacheRepositories(
-    manager: RepositoryManager = defaultRepositoryManager
+    manager: RepositoryManager = defaultRepositoryManager,
+    nowEpochMs: () => number = Date.now
 ): void {
     configureSharedStateRepositories(
         {
@@ -21,7 +22,8 @@ export function configureTestCacheRepositories(
     configureOverlayRepositories(
         {
             plannedOverlays: { ttlMs: MINUTE_MS },
-            acceptedOverlays: { ttlMs: MINUTE_MS }
+            acceptedOverlays: { ttlMs: MINUTE_MS },
+            nowEpochMs
         },
         manager
     );

@@ -17,7 +17,7 @@ import { createFormationSnapshot, createLayoutOverlay } from './room-formation-t
 describe('room formation subscriptions', () => {
     beforeEach(() => {
         resetRoomWorkflowTestRuntime();
-        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     });
 
     it('emits the current status once, then only observable changes', async () => {

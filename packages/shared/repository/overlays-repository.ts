@@ -1,5 +1,5 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     isSameGroupLayoutIdentity,
     resolveGroupLayoutRole,
@@ -12,6 +12,7 @@ import {
     readObservableLatestRepositoryValue,
     requireObservableLatestRepository
 } from '@shared/cache/configure-latest-repository.ts';
+import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import {
     type ObservableLatestRepository,
     type ObservableLatestRepositoryOptions
@@ -22,9 +23,10 @@ import {
     type ReadableKeyedValues
 } from '@shared/cache/RepositoryInterfaces.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
+import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
+import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
 
 export interface OverlayRepositoryOptions
     extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
@@ -34,6 +36,7 @@ export interface OverlayRepositoryOptions
 export interface OverlayRepositoryCacheConfiguration {
     readonly plannedOverlays: OverlayRepositoryOptions;
     readonly acceptedOverlays: OverlayRepositoryOptions;
+    readonly nowEpochMs: () => number;
 }
 
 export interface OverlayRepositoryChange {
@@ -60,6 +63,13 @@ interface SetOverlayInput {
 interface ReconcileAcceptedOverlayIdentityInput {
     readonly overlayId: string;
     readonly acceptedIdentity: GroupLayoutIdentity | undefined;
+    readonly manager?: RepositoryManager;
+}
+
+interface RecordLayoutTransitionInput {
+    readonly overlayId: string;
+    readonly replaced: OverlayInfo | undefined;
+    readonly replacement: OverlayInfo;
     readonly manager?: RepositoryManager;
 }
 
@@ -90,6 +100,18 @@ const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string
     'Accepted overlay repository is not configured'
 );
 
+const layoutTransitionRepositoryToken = newObservableLatestRepositoryToken<string, OverlayLayoutTransition>(
+    'shared.repository.layout-transitions',
+    'Layout transition repository is not configured'
+);
+
+const overlayRepositoryClockToken = new RepositoryToken<() => number>(
+    'shared.repository.overlay-clock',
+    () => {
+        throw new Error('Overlay repository clock is not configured');
+    }
+);
+
 export function configureOverlayRepositories(
     config: OverlayRepositoryCacheConfiguration,
     manager?: RepositoryManager
@@ -104,6 +126,16 @@ export function configureOverlayRepositories(
         config.acceptedOverlays,
         manager
     );
+    configureObservableLatestRepository(
+        layoutTransitionRepositoryToken,
+        {
+            ttlMs: config.acceptedOverlays.ttlMs,
+            maxEntries: config.acceptedOverlays.maxEntries,
+            deleteExpiredIntervalMs: config.acceptedOverlays.deleteExpiredIntervalMs
+        },
+        manager
+    );
+    (manager ?? defaultRepositoryManager).set(overlayRepositoryClockToken, config.nowEpochMs);
 }
 
 export function onPlannedOverlayChange(
@@ -142,6 +174,12 @@ export function readableAcceptedOverlayCache(
     manager?: RepositoryManager
 ): ReadableKeyedValues<string, OverlayInfo> {
     return requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).readable();
+}
+
+export function readableLayoutTransitionCache(
+    manager?: RepositoryManager
+): ReadableKeyedValues<string, OverlayLayoutTransition> {
+    return requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).readable();
 }
 
 export function hasPlannedServerOverlayRecordByGroupRef(
@@ -300,6 +338,11 @@ export function removePlannedOverlayByIdIfIdentity(
 export function reconcileAcceptedOverlayIdentity(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
+    const replaced = readObservableLatestRepositoryValue(
+        acceptedOverlayRepositoryToken,
+        input.overlayId,
+        input.manager
+    );
     let changed = removeMismatchedAcceptedOverlay(input);
     if (input.acceptedIdentity === undefined) {
         return changed;
@@ -322,7 +365,10 @@ export function reconcileAcceptedOverlayIdentity(
         planned,
         input.manager
     );
-    changed = didOverlayAdoptionChange(outcome) || changed;
+    if (didOverlayAdoptionChange(outcome)) {
+        recordLayoutTransition({ overlayId: input.overlayId, replaced, replacement: planned, manager: input.manager });
+        changed = true;
+    }
     changed = removePlannedOverlayById(input.overlayId, input.manager) || changed;
     return changed;
 }
@@ -455,9 +501,37 @@ function adoptOverlay(
     repository: ObservableLatestRepository<string, OverlayInfo>,
     outcome: OverlayAdoptionOutcome
 ): OverlayAdoptionOutcome {
+    const replaced = repository.read(input.overlayId);
     emitOverlayAdoption(input.overlayId, outcome);
     repository.set(input.overlayId, input.overlay);
+    if (input.token === acceptedOverlayRepositoryToken) {
+        recordLayoutTransition({
+            overlayId: input.overlayId,
+            replaced,
+            replacement: input.overlay,
+            manager: input.manager
+        });
+    }
     return outcome;
+}
+
+function recordLayoutTransition(input: RecordLayoutTransitionInput): void {
+    const replaced = input.replaced;
+    if (
+        replaced?.provenance !== 'server' ||
+        input.replacement.provenance !== 'server' ||
+        !isSameGroupRef(replaced.groupRef, input.replacement.groupRef) ||
+        compareOverlayInfoIdentity(input.replacement, replaced) !== 'dominates'
+    ) {
+        return;
+    }
+
+    const nowEpochMs = (input.manager ?? defaultRepositoryManager).require(overlayRepositoryClockToken);
+    requireObservableLatestRepository(layoutTransitionRepositoryToken, input.manager).set(input.overlayId, {
+        replaced,
+        replacedBy: toOverlayLayoutIdentity(input.replacement),
+        replacedAtEpochMs: nowEpochMs()
+    });
 }
 
 function reportOverlayDrop(

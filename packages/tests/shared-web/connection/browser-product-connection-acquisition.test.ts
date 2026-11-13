@@ -27,7 +27,7 @@ beforeEach(async () => {
     await resetAuthSessionContractMocks();
     configureApiClient({ apiBaseUrl: 'https://api.example.test' });
     const snapshot = createGroupSnapshotFixture({ ...roomRef, workspaceId: 'capture-workspace', sessionIds: [mocks.ctx.session.sessionId] });
-    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     const topology = {
         groupRef: roomRef,
         overlayId: toScopedOverlayId(roomRef),

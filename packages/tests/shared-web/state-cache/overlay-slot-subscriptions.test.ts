@@ -19,7 +19,7 @@ import {
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
 function configureRepositories(): void {
-    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     rebindOverlaySlotSubscriptions();
 }
 

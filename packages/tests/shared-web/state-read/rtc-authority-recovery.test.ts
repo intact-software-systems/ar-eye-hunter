@@ -975,7 +975,7 @@ function assembleLeaseObservation(snapshot: GroupSnapshot, lastHeartbeatAtEpochM
 async function refreshNormalRoom(): Promise<void> {
     const clients = configureClientStateSnapshotRepository({ ttlMs: 60_000 });
     onTestFinished(() => clients.dispose());
-    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     const context = createDefaultApiMiddlewareTestDouble({
         session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: 300_000 },
         middleware: {

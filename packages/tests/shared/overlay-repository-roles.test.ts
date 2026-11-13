@@ -29,7 +29,8 @@ describe('overlay repository roles', () => {
     beforeEach(() => {
         configureOverlayRepositories({
             plannedOverlays: { ttlMs: 60_000 },
-            acceptedOverlays: { ttlMs: 60_000 }
+            acceptedOverlays: { ttlMs: 60_000 },
+            nowEpochMs: Date.now
         });
     });
 
