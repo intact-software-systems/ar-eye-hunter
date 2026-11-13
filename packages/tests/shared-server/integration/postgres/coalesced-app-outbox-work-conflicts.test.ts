@@ -179,7 +179,7 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         const ref = toRunGroupRef('parked-successor');
         await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
         const reserved = await reserveHead(ref);
-        const parked = computeRevisionWork(ref, reserved, 'automatic');
+        const parked = computeParkedRevisionWork(ref, reserved);
         expect(await writeInTransaction(parked)).toBe('written');
         await finishInTransaction(reserved);
 
@@ -199,7 +199,7 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         const ref = toRunGroupRef('settled-successor');
         await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
         const reserved = await reserveHead(ref);
-        const parked = computeRevisionWork(ref, reserved, 'automatic');
+        const parked = computeParkedRevisionWork(ref, reserved);
         expect(await writeInTransaction(parked)).toBe('written');
         await finishInTransaction(reserved);
         const repository = createPSqlResourceInboxRepository(requireSql(), () => new Date());
@@ -321,6 +321,25 @@ function computeRevisionWork(
         senderId: 'coalesced-conflicts',
         origin,
         previousEntry
+    });
+}
+
+/**
+ * A replan parked behind the reserved head with a debounce still running: the successor waits as RETRY with a future
+ * retry time, so no worker of another test file claims it before this file reads and cleans it up.
+ */
+function computeParkedRevisionWork(ref: GroupRef, reservedHead: ResourceEntry): ComputedCoalescedAppOutboxWork {
+    const requestedAtEpochMs = Date.now();
+    return computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-coalesced-app-outbox-work-conflicts',
+        aggregateRef: ref,
+        groupSnapshot: topologyGroupSnapshot(ref),
+        requestedAtEpochMs,
+        expireAtEpochMs: requestedAtEpochMs + 60_000,
+        timing: { window: { debounceMs: 30_000, maxWaitMs: 30_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
+        senderId: 'coalesced-conflicts',
+        origin: 'automatic',
+        previousEntry: reservedHead
     });
 }
 
