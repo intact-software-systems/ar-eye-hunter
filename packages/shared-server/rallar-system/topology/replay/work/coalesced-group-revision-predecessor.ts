@@ -95,6 +95,30 @@ export function decodeCurrentCoalescedGroupRevisionWork(
     }
 }
 
+/**
+ * The overlay a stored row replans when it is group-revision work that carries no current coalesced timing: a
+ * per-command row (an explicit reconfigure or a topology-config receipt) decodes through the work codec, and a coalesced
+ * row in an unsupported envelope version yields its overlay from its coalescing envelope. Any other row, RTT-refresh
+ * work included, is null.
+ */
+export function decodeGroupRevisionWorkOverlayId(entry: ResourceEntry): string | null {
+    try {
+        const decoded = decodeRtcTopologyWorkEntry(entry);
+        if (decoded.left?.code === 'unsupported') {
+            const data = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry)?.data;
+            return data?.kind === 'group-revision' && typeof data.overlayId === 'string' ? data.overlayId : null;
+        }
+        if (decoded.left) {
+            return null;
+        }
+        const work = readRtcTopologyWorkEnvelope(decoded.right!, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
+        return work.kind === 'group-revision' ? work.overlayId : null;
+    }
+    catch {
+        return null;
+    }
+}
+
 function decodeUnsupportedCoalescedGeneration(entry: ResourceEntry): number {
     const generation = tryReadCoalescedAppOutboxWorkEnvelope(entry)?.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
     if (generation === undefined || !Number.isSafeInteger(generation) || generation < 1) {

@@ -42,6 +42,7 @@ import type { TopologyReplanWindow } from '../../planning/resolve-topology-repla
 import {
     decodeCoalescedGroupRevisionPredecessor,
     decodeCurrentCoalescedGroupRevisionWork,
+    decodeGroupRevisionWorkOverlayId,
     type CoalescedMessageIdentity,
     type CurrentCoalescedGroupRevisionPredecessor,
     type PreviousCoalescedGroupRevisionWork,
@@ -284,14 +285,16 @@ export function toCoalescedGroupRevisionKey(groupRef: GroupRef): Key {
  * longer decodes still reports queued, with a null due time and generation,
  * rather than hiding work the queue will attempt.
  *
- * A replan written while the head executes parks on a causal-suffixed
- * successor row, which outlives the head's completion as ordinary queued
- * work. So when the head is not pending, the group's pending rows of the
- * topology topic are read, and the earliest-due one that decodes as this
- * room's coalesced group-revision work answers. Deliberate tradeoff: a row
- * that does not decode as that is ignored, because it cannot be told apart
- * from RTT-refresh work, and counting it would make `pending` wait on RTT
- * refinement; RTT-refresh work is therefore never reported.
+ * When the head is not pending, the group's pending rows of the topology
+ * topic answer instead, because group-revision work also waits elsewhere: a
+ * replan written while the head executes parks on a causal-suffixed
+ * successor row that outlives the head's completion, and an explicit
+ * reconfigure or a topology-config write queues a plain per-command row.
+ * Current coalesced work of this room answers with the earliest due time
+ * and that row's own generation. Failing that, a per-command row, or a
+ * coalesced row in an older envelope version, reports queued with a null due
+ * time and generation, as an undecodable head does. RTT-refresh work is
+ * never reported: it is periodic refinement of a layout, not a queued replan.
  */
 export async function readPendingTopologyReplan(
     reader: PendingTopologyReplanReader,
@@ -303,10 +306,10 @@ export async function readPendingTopologyReplan(
         return toPendingTopologyReplan(decodeCurrentCoalescedGroupRevisionWork(head));
     }
     const rows = await reader.readPendingByTopicAndContextId(headKey.topicId, headKey.contextId);
-    return toPendingTopologyReplanFromParkedRows(rows, toScopedOverlayId(groupRef));
+    return resolveParkedTopologyReplan(rows, toScopedOverlayId(groupRef));
 }
 
-function toPendingTopologyReplanFromParkedRows(
+function resolveParkedTopologyReplan(
     rows: readonly ResourceEntry[],
     overlayId: string
 ): PendingTopologyReplan | null {
@@ -314,7 +317,11 @@ function toPendingTopologyReplanFromParkedRows(
         .map(decodeCurrentCoalescedGroupRevisionWork)
         .filter((work): work is PreviousCoalescedGroupRevisionWork => work?.envelope.data.overlayId === overlayId)
         .toSorted((left, right) => toCoalescedDueAtEpochMs(left) - toCoalescedDueAtEpochMs(right));
-    return earliest === undefined ? null : toPendingTopologyReplan(earliest);
+    if (earliest !== undefined) {
+        return toPendingTopologyReplan(earliest);
+    }
+    const untimed = rows.some((row) => decodeGroupRevisionWorkOverlayId(row) === overlayId);
+    return untimed ? toPendingTopologyReplan(null) : null;
 }
 
 function toPendingTopologyReplan(work: PreviousCoalescedGroupRevisionWork | null): PendingTopologyReplan {

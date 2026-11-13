@@ -970,12 +970,6 @@ describe('readPendingTopologyReplan', () => {
         });
     });
 
-    it('keeps the head\'s answer while the head is queued', async () => {
-        await expect(readPendingTopologyReplan(headOnlyReader(computedEntry()), GROUP_REF)).resolves.toEqual(
-            toQueuedReplan(computedEntry())
-        );
-    });
-
     it('reads a pending successor when the head has settled', async () => {
         const successor = parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100);
         await expect(readPendingTopologyReplan(settledHeadReader([successor]), GROUP_REF)).resolves.toEqual(
@@ -992,18 +986,88 @@ describe('readPendingTopologyReplan', () => {
         );
     });
 
-    it('ignores an undecodable row and an RTT-refresh row of the same topic and context', async () => {
-        const undecodable = { ...parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), resource: '{}' };
+    it('answers a tie on due time from the first row in queue order', async () => {
+        const settledHead = { ...computedEntry(), status: EntityStatus.COMPLETED };
+        const revivedHead = computeRevisionWork(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100, settledHead).entryWrite.entry;
+        const successor = parkedSuccessor(createGroupSnapshot(6, 3), BASE_EPOCH_MS + 100);
+        expect(toQueuedReplan(revivedHead).dueAtEpochMs).toBe(toQueuedReplan(successor).dueAtEpochMs);
+        expect(toQueuedReplan(revivedHead).generation).not.toBe(toQueuedReplan(successor).generation);
+        await expect(readPendingTopologyReplan(settledHeadReader([revivedHead, successor]), GROUP_REF)).resolves
+            .toEqual(toQueuedReplan(revivedHead));
+        await expect(readPendingTopologyReplan(settledHeadReader([successor, revivedHead]), GROUP_REF)).resolves
+            .toEqual(toQueuedReplan(successor));
+    });
+
+    it('reads a successor that is executing behind a settled head', async () => {
+        const executing = {
+            ...parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100),
+            status: EntityStatus.RESERVED,
+            dequeueAudit: { attempts: 1 }
+        };
+        await expect(readPendingTopologyReplan(settledHeadReader([executing]), GROUP_REF)).resolves.toEqual(
+            toQueuedReplan(executing)
+        );
+    });
+
+    it('reports a per-command replan as queued with an unknown due time', async () => {
         await expect(
-            readPendingTopologyReplan(settledHeadReader([undecodable, createRttRefreshEntry()]), GROUP_REF)
-        ).resolves.toBeNull();
+            readPendingTopologyReplan(settledHeadReader([createPerCommandEntry(createGroupSnapshot(5, 3))]), GROUP_REF)
+        ).resolves.toEqual({ reconfigureQueued: true, dueAtEpochMs: null, generation: null });
+    });
+
+    it('reports a coalesced row in an older envelope version as queued with an unknown due time', async () => {
+        const older = toEntryWithEnvelopeVersion(parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), 3);
+        await expect(readPendingTopologyReplan(settledHeadReader([older]), GROUP_REF)).resolves.toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: null,
+            generation: null
+        });
+    });
+
+    it('answers from current coalesced work ahead of a per-command row', async () => {
+        const perCommand = createPerCommandEntry(createGroupSnapshot(5, 3));
+        const successor = parkedSuccessor(createGroupSnapshot(6, 3), BASE_EPOCH_MS + 100);
+        await expect(readPendingTopologyReplan(settledHeadReader([perCommand, successor]), GROUP_REF)).resolves
+            .toEqual(toQueuedReplan(successor));
+    });
+
+    it('does not report RTT-refresh work', async () => {
+        await expect(readPendingTopologyReplan(settledHeadReader([createRttRefreshEntry()]), GROUP_REF)).resolves
+            .toBeNull();
+    });
+
+    it('ignores a row that does not decode as RTC topology work', async () => {
+        const undecodable = { ...parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), resource: '{}' };
+        await expect(readPendingTopologyReplan(settledHeadReader([undecodable]), GROUP_REF)).resolves.toBeNull();
     });
 
     it('ignores group-revision work of another room', async () => {
-        const otherRoom = parkedSuccessor(toOtherRoomSnapshot(createGroupSnapshot(5, 3)), BASE_EPOCH_MS + 100);
-        await expect(readPendingTopologyReplan(settledHeadReader([otherRoom]), GROUP_REF)).resolves.toBeNull();
+        const otherRoom = toOtherRoomSnapshot(createGroupSnapshot(5, 3));
+        const rows = [parkedSuccessor(otherRoom, BASE_EPOCH_MS + 100), createPerCommandEntry(otherRoom)];
+        await expect(readPendingTopologyReplan(settledHeadReader(rows), GROUP_REF)).resolves.toBeNull();
     });
 });
+
+/** A per-command group-revision row, as an explicit reconfigure or a topology-config receipt queues it. */
+function createPerCommandEntry(group: GroupSnapshot): ResourceEntry {
+    const commandId = 'command-explicit-reconfigure';
+    return computeRtcTopologyOutboxInsert({
+        traceId: 'trace-rtc-topology-coalesced-group-revision-work',
+        commandId,
+        resourceId: `${commandId}:rtc-topology-recompute:explicit`,
+        aggregateRef: group.group,
+        acceptedCausalRevision: group.causalRevision,
+        groupSnapshot: group,
+        effectKind: 'rtc-topology-recompute',
+        payloadKind: 'group-revision',
+        origin: 'commanded',
+        createdAtEpochMs: BASE_EPOCH_MS,
+        expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+        senderId: 'alice',
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true
+    }).entry;
+}
 
 function createRttRefreshEntry(): ResourceEntry {
     const group = createGroupSnapshot(5, 3);

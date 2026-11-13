@@ -468,6 +468,53 @@
       }
     },
     {
+      "name": "aCommandedReconfigureQueuesAReplan",
+      "description": "An explicit reconfigure queues a per-command group-revision replan, which pending reports with a null due time and generation while it waits. Whether a read catches it waiting is a race, so the proof that it is reported is the PGlite test that queues one through the same mutation; this step and the next pin only that the room settles again.",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/topology/reconfigure/requests/pending-commanded-reconfigure-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "publish": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "formationSettlesAfterTheCommandedReconfigure",
+      "description": "Polls until the commanded replan has run: no replan pending and the layout not stale. No timing or stability is asserted.",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "pending": null,
+          "layoutStale": false
+        }
+      }
+    },
+    {
       "name": "absentPolicyJoinAdmitsInstantly",
       "type": "http",
       "connection": "primary",
