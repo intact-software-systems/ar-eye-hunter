@@ -310,17 +310,11 @@ function toPendingTopologyReplanFromParkedRows(
     rows: readonly ResourceEntry[],
     overlayId: string
 ): PendingTopologyReplan | null {
-    let earliest: PreviousCoalescedGroupRevisionWork | null = null;
-    for (const row of rows) {
-        const work = decodeCurrentCoalescedGroupRevisionWork(row);
-        if (work === null || work.envelope.data.overlayId !== overlayId) {
-            continue;
-        }
-        if (earliest === null || toCoalescedDueAtEpochMs(work) < toCoalescedDueAtEpochMs(earliest)) {
-            earliest = work;
-        }
-    }
-    return earliest === null ? null : toPendingTopologyReplan(earliest);
+    const [earliest] = rows
+        .map(decodeCurrentCoalescedGroupRevisionWork)
+        .filter((work): work is PreviousCoalescedGroupRevisionWork => work?.envelope.data.overlayId === overlayId)
+        .toSorted((left, right) => toCoalescedDueAtEpochMs(left) - toCoalescedDueAtEpochMs(right));
+    return earliest === undefined ? null : toPendingTopologyReplan(earliest);
 }
 
 function toPendingTopologyReplan(work: PreviousCoalescedGroupRevisionWork | null): PendingTopologyReplan {
