@@ -23,11 +23,18 @@ import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts'
 import { readALInboundMessageAuthorization, toALInboundReceiver } from './read-al-inbound-message-authorization.ts';
 import { signALInboundReceiptControls } from './receipt-proof/sign-al-inbound-receipt-controls.ts';
 
-/** A replay that never reached a commit wrote nothing, so it has no work to announce. */
-const REPLAY_COMPLETED_WITHOUT_WORK: ALInboundMessageAdmission.ReplayResult = {
+/** A replay past its deadline wrote nothing, so it has no work to announce. */
+const REPLAY_EXPIRED: ALInboundMessageAdmission.ReplayResult = {
     outcome: 'completed',
-    wroteWork: false
+    wroteWork: false,
+    admission: Either.ofRight({ kind: 'not-admitted', reason: 'expired' })
 };
+
+/** The verdict of a replay whose current authority refuses the message: the drop an ingress would state. */
+const REPLAY_UNAUTHORIZED_ADMISSION: Either<ALMessageRejection, ALInboundMessageRuntime.Admission> = Either.ofRight({
+    kind: 'not-admitted',
+    reason: 'unauthorized'
+});
 
 /** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
 const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
@@ -70,6 +77,8 @@ export namespace ALInboundMessageAdmission {
         readonly outcome: ReplayOutcome;
         /** The replay's own commit persisted work behind the page its batch read; nothing else announces it. */
         readonly wroteWork: boolean;
+        /** The verdict this replay reached; `undefined` when it reached none: its authority asked for a retry, or shutdown. */
+        readonly admission: Either<ALMessageRejection, ALInboundMessageRuntime.Admission> | undefined;
     }
 
     export type Attempt =
@@ -256,17 +265,22 @@ export class ALInboundMessageAdmission {
         const authority = await this.dependencies.readPendingAdmissionAuthority?.(pending.msg, pending.source) ??
             { kind: 'authorized', source: pending.source };
         if (pending.msg.constraints.expiresAtMs <= this.dependencies.clock.nowMs()) {
-            return REPLAY_COMPLETED_WITHOUT_WORK;
+            return REPLAY_EXPIRED;
         }
         if (authority.kind !== 'authorized') {
             return authority.kind === 'retry'
-                ? { outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs }, wroteWork: false }
-                : REPLAY_COMPLETED_WITHOUT_WORK;
+                ? {
+                    outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs },
+                    wroteWork: false,
+                    admission: undefined
+                }
+                : { outcome: 'completed', wroteWork: false, admission: REPLAY_UNAUTHORIZED_ADMISSION };
         }
         if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
             return {
                 outcome: { kind: 'non-retryable', reason: 'Stored WS client scope does not authorize delivery' },
-                wroteWork: false
+                wroteWork: false,
+                admission: REPLAY_UNAUTHORIZED_ADMISSION
             };
         }
         const authorization = await readALInboundMessageAuthorization(
@@ -279,18 +293,34 @@ export class ALInboundMessageAdmission {
             )
         );
         if (authorization.left) {
-            return { outcome: { kind: 'non-retryable', reason: authorization.left.message }, wroteWork: false };
+            return {
+                outcome: { kind: 'non-retryable', reason: authorization.left.message },
+                wroteWork: false,
+                admission: Either.ofLeft(authorization.left)
+            };
         }
         const result = await this.attempt(pending.msg, authority.source, this.dependencies.planIncomingMessage);
         if (result.left) {
-            return { outcome: { kind: 'non-retryable', reason: result.left.message }, wroteWork: false };
+            return {
+                outcome: { kind: 'non-retryable', reason: result.left.message },
+                wroteWork: false,
+                admission: Either.ofLeft(result.left)
+            };
         }
         const attempt = result.right!;
         return {
             outcome: attempt.kind === 'conflict' || this.shutdown.signal.aborted ? 'retry' : 'completed',
-            wroteWork: attempt.kind === 'completed' && attempt.wroteWork
+            wroteWork: attempt.kind === 'completed' && attempt.wroteWork,
+            admission: this.shutdown.signal.aborted ? undefined : toReplayedAdmission(attempt)
         };
     }
+}
+
+/** A replay that conflicts again is retained still, so it states pending again. */
+function toReplayedAdmission(
+    attempt: ALInboundMessageAdmission.Attempt
+): Either<ALMessageRejection, ALInboundMessageRuntime.Admission> {
+    return Either.ofRight(attempt.kind === 'conflict' ? { kind: 'pending-admission' } : attempt.acceptance);
 }
 
 function toAdmissionAcceptance(plan: ALMessageHandlingPlan): ALInboundMessageRuntime.Acceptance {

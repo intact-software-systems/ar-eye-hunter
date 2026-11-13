@@ -144,6 +144,9 @@ records what the runner was doing while the cell ran:
   `rtc` with a reason starting `not-yet-in-sync`. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
+    the count is of events, not messages: a retained admission's replay states its own event, so a
+    message whose commit conflicted counts its ingress `pending`, a further `pending` for each replay
+    that conflicted again, and its replay's verdict;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
     `admission-outcome` event, because a percentage over zero outcomes is not a measurement. The
     drain medians beside it are still reported in that case.

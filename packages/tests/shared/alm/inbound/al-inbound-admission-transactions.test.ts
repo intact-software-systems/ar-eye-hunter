@@ -395,7 +395,11 @@ it('retains a conflicted admission and replays it to completion', async () => {
 
     expect(await admission.retainPending(pending)).toEqual({ kind: 'pending-admission' });
     // The replay's own commit wrote the dispatch its batch's page read could not see.
-    expect(await admission.replay(pending)).toEqual({ outcome: 'completed', wroteWork: true });
+    expect(await admission.replay(pending)).toEqual({
+        outcome: 'completed',
+        wroteWork: true,
+        admission: expect.objectContaining({ right: { kind: 'admitted' } })
+    });
 });
 
 it('retains and replays a conflicted admission in 1 guarded row and 1 second attempt', async () => {
@@ -410,7 +414,11 @@ it('retains and replays a conflicted admission in 1 guarded row and 1 second att
     const recorded = recordIndexedDbTransactions();
     await admission.retainPending(pending);
     // Inside the measured window, and opening nothing: the count below is a successful replay's.
-    expect(await admission.replay(pending), 'the measured replay').toEqual({ outcome: 'completed', wroteWork: true });
+    expect(await admission.replay(pending), 'the measured replay').toEqual({
+        outcome: 'completed',
+        wroteWork: true,
+        admission: expect.objectContaining({ right: { kind: 'admitted' } })
+    });
 
     expect(recorded.modes(), 'retainPending then replay').toEqual(RETAIN_THEN_REPLAY);
 });

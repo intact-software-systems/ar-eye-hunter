@@ -25,7 +25,12 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
-import { createInboundTestAdmission, createInboundTestMessage, setNextInboundCommitConflicted } from './inbound-runtime-test-fixture.ts';
+import {
+    createInboundTestAdmission,
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    setNextInboundCommitConflicted
+} from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
@@ -414,6 +419,88 @@ it('answers a drop that owes nothing with its own reason when its track moved un
     expect(acceptance.right).toEqual({ kind: 'not-admitted', reason: 'Room authorization was revoked' });
     expect(await readRetainedAdmissionStatus(stores)).toBeUndefined();
 });
+
+it('a drop retained on a commit conflict states pending first and its replay\'s drop second, under one msgId and trace', async () => {
+    const stores = createDefaultInMemoryALInboundRuntimeStores();
+    const controls: ALMessage[] = [];
+    const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const dependencies = runtimeDependencies(stores, [], controls);
+    const runtime = new ALInboundMessageRuntime({ ...dependencies, diagnostics: (event) => diagnostics.push(event) });
+    onTestFinished(() => runtime.dispose());
+    await runtime.ready();
+    expect((await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-first', seq: 1 }), PENDING_SOURCE)).right)
+        .toEqual({ kind: 'admitted' });
+    const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
+    vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+        await runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'track-next', seq: 2 }), PENDING_SOURCE);
+        return await commitBundle(bundle);
+    });
+    const gapped = createInboundTestMessage({ msgId: 'track-gapped', seq: 300, traceId: 'trace-track-gapped' });
+
+    expect((await runtime.admitIncomingMessage(gapped, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(async () => {
+        await dependencies.queueEngine.executeOnce();
+        return toSentNackResources(controls).length;
+    }).toBe(1);
+
+    expect(toAdmissionOutcomes(diagnostics, gapped)).toEqual([
+        { workerId: dependencies.effectWorkerId, outcome: 'pending', reason: 'pending-admission', traceId: 'trace-track-gapped', corrId: 'track-gapped' },
+        { workerId: dependencies.effectWorkerId, outcome: 'not-handled', reason: 'resync-required', traceId: 'trace-track-gapped', corrId: 'track-gapped' }
+    ]);
+});
+
+it('a replay that admits states committed / admitted', async () => {
+    const { runtime, stores, diagnostics, delivered } = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        effectWorkerId: 'replay-admits-worker'
+    });
+    await runtime.ready();
+    const message = createInboundTestMessage({ msgId: 'replay-admits', traceId: 'trace-replay-admits' });
+    setNextInboundCommitConflicted(stores.admissionStore);
+
+    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(() => delivered).toEqual(['dispatched']);
+
+    expect(toAdmissionOutcomes(diagnostics, message)).toEqual([
+        { workerId: 'replay-admits-worker', outcome: 'pending', reason: 'pending-admission', traceId: 'trace-replay-admits', corrId: 'replay-admits' },
+        { workerId: 'replay-admits-worker', outcome: 'committed', reason: 'admitted', traceId: 'trace-replay-admits', corrId: 'replay-admits' }
+    ]);
+});
+
+it('a replay that conflicts again states pending again', async () => {
+    const { runtime, stores, diagnostics, delivered, queueEngine } = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        effectWorkerId: 'replay-conflicts-worker'
+    });
+    await runtime.ready();
+    const message = createInboundTestMessage({ msgId: 'replay-conflicts' });
+    setNextInboundCommitConflicted(stores.admissionStore);
+    // The replay's own write meets the fence again, as when another arrival moved the surface once more.
+    vi.spyOn(stores.admissionStore, 'commitBundle').mockResolvedValueOnce('conflict');
+
+    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(async () => {
+        await queueEngine.executeOnce();
+        return delivered;
+    }).toEqual(['dispatched']);
+
+    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+        { outcome: 'pending', reason: 'pending-admission' },
+        { outcome: 'pending', reason: 'pending-admission' },
+        { outcome: 'committed', reason: 'admitted' }
+    ]);
+});
+
+/** The `admission-outcome` events stated about one message, in the order they were stated. */
+function toAdmissionOutcomes(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
+    return diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && event.msgId === message.id.msgId
+            ? [{ workerId: event.workerId, outcome: event.outcome, reason: event.reason, traceId: event.traceId, corrId: event.corrId }]
+            : []
+    );
+}
 
 /** The resources of the NACK controls the runtime sent, in send order. */
 function toSentNackResources(controls: readonly ALMessage[]): readonly { readonly msgId: string; readonly reason: string; }[] {

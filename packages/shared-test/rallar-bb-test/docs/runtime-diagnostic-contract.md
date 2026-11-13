@@ -540,13 +540,20 @@ publication succeed. The event's `data` is the event itself:
   call returns and guarded projection/publication succeeds. Disposed ingress, a
   value that never decodes, or a thrown business path can emit none; disabled or
   failed diagnostics can also lose this event. Its absence does not establish an
-  admission outcome
+  admission outcome. A retained data admission's replay states one more event
+  per replay that reaches a verdict, under the same `msgId`, trace and runtime
+  `workerId` (never `…/volatile`): the acceptance its commit reached, `pending` /
+  `pending-admission` again when it conflicts again, `rejected` / `expired`
+  past its deadline, or `unauthorized` when its current authority refuses it.
+  A replay whose authority asks for a retry, or that shutdown cut short, states
+  nothing. So one message can read `pending` and then its verdict, and the
+  latest event for a `msgId` is the one that says where it stopped
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
   the runtime handled), `pending` (retained for an asynchronous authority
   recheck or conditional control replay, or a data admission retained on a
-  commit conflict, whose verdict its replay does not record), `unauthorized`
+  commit conflict), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
   (duplicate, resync-required, disposed, an unhandled control, or a control

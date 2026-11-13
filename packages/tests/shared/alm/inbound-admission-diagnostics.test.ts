@@ -41,6 +41,7 @@ interface InboundDiagnosticsFixtureInput {
 
 afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
 });
 
 function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntime {
@@ -246,12 +247,17 @@ it.each(['memory', 'indexeddb'] as const)(
 
 it.each(
     [
-        ['not-ready', async () => ({ kind: 'retry', retryAfterMs: 60_000 })],
-        ['non-retryable', async () => ({ kind: 'authorized', source: { kind: 'rtc-peer', peerId: 'impostor' } })]
-    ] as const satisfies readonly (readonly [string, ReadInboundPendingAuthority])[]
+        ['not-ready', async () => ({ kind: 'retry', retryAfterMs: 60_000 }), []],
+        [
+            'non-retryable',
+            async () => ({ kind: 'authorized', source: { kind: 'rtc-peer', peerId: 'impostor' } }),
+            [{ outcome: 'unauthorized', reason: 'unauthorized' }]
+        ],
+        ['completed', async () => ({ kind: 'rejected' }), [{ outcome: 'unauthorized', reason: 'unauthorized' }]]
+    ] as const satisfies readonly (readonly [string, ReadInboundPendingAuthority, readonly object[]])[]
 )(
     'settles a retained admission as %s and names the message it replayed',
-    async (outcome, readPendingAdmissionAuthority) => {
+    async (outcome, readPendingAdmissionAuthority, replayVerdicts) => {
         const { runtime, stores, diagnostics } = createRuntime({
             kind: 'memory',
             readPendingAdmissionAuthority
@@ -280,8 +286,40 @@ it.each(
             traceId: `trace-retained-${outcome}`,
             corrId: `retained-${outcome}`
         });
+        // A retry is no verdict, so only the retention is stated; a refusal states its own verdict after it.
+        expect(admissionOutcomesOf(diagnostics).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+            { outcome: 'pending', reason: 'pending-admission' },
+            ...replayVerdicts
+        ]);
     }
 );
+
+it('an expired retained admission states rejected / expired once', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_800_000_000_000);
+    const { runtime, stores, diagnostics, delivered } = createRuntime({
+        kind: 'memory',
+        // The replay's authority answers only after the retained deadline, the message's 60 s ttl, has passed.
+        readPendingAdmissionAuthority: async (_msg, source) => {
+            vi.setSystemTime(Date.now() + 60_000);
+            return { kind: 'authorized', source };
+        }
+    });
+    const message = createInboundTestMessage({ msgId: 'retained-expired', traceId: 'trace-retained-expired' });
+
+    await runtime.ready();
+    setNextInboundCommitConflicted(stores.admissionStore);
+    const admitted = await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+
+    expect(admitted.right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
+    expect(admissionOutcomesOf(diagnostics).map(({ workerId, msgId, outcome, reason, traceId }) => ({ workerId, msgId, outcome, reason, traceId })))
+        .toEqual([
+            { workerId: DIAGNOSTICS_WORKER_ID, msgId: 'retained-expired', outcome: 'pending', reason: 'pending-admission', traceId: 'trace-retained-expired' },
+            { workerId: DIAGNOSTICS_WORKER_ID, msgId: 'retained-expired', outcome: 'rejected', reason: 'expired', traceId: 'trace-retained-expired' }
+        ]);
+    expect(delivered).toEqual([]);
+});
 
 it.each(['memory', 'indexeddb'] as const)(
     'names an unauthorized drop that writes nothing, sends no NACK and returns no error over %s',

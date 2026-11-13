@@ -915,6 +915,14 @@ without admission metadata or receipts. Temporary authority catch-up uses the
 existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`, preserving the
 processing attempt count.
 
+Each replay that reaches a verdict states its own `admission-outcome`, after the
+`pending` / `pending-admission` its ingress stated, under the same `msgId` and trace and
+the runtime's own `workerId` on either lane: the attempt's acceptance when it commits,
+`pending` / `pending-admission` again when it conflicts again, `rejected` / `expired` past
+its deadline, and `unauthorized` when its current authority, its stored WS client scope or
+its ingress authorization refuses it. A replay whose authority asks for a retry, and one
+cut short by shutdown, reached no verdict and states nothing.
+
 The deadline is captured before pending retention and checked again after awaited
 authority reads. Changed policy, restart, and retry cannot extend it. Conditional
 write conflicts consume ordinary processing attempts; QueueBox owns their bounded

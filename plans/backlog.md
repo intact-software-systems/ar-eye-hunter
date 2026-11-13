@@ -449,15 +449,6 @@ and it has no status list.
   retained admission withholds its `admitted` receipt until its replay commits
   (`writeAdmittedReceipt`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
-- A replayed inbound admission records no `admission-outcome` (S9-ii, D640):
-  `recordAdmissionOutcome` runs only at the admit entry
-  (`packages/shared/alm/inbound/al-inbound-message-runtime.ts`) and `replay`
-  discards the acceptance, so a drop retained on a commit conflict shows only
-  `pending` / `pending-admission`. The eleven catalog files that wait with
-  `toAdmissionOutcomeWait`, among them `ordering-resync`'s RTC receiver and both
-  `cross-carrier-duplicate` receivers, time out when a drop loses a commit race.
-  Waits on the product recording the replay's outcome; owner
-  `packages/shared/alm/inbound/lane/al-inbound-store-lane.ts`.
 - Nothing pins that `packages/tests/tsconfig.json` includes
   `tests/playwright/**` (S9-ii, D637):
   `packages/tests/repo/tests-typecheck-gate.test.ts` reads the aliases, not the
