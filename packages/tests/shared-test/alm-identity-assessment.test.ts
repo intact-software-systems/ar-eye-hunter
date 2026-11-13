@@ -19,6 +19,7 @@ import {
     type AlmConformanceIdentityInput,
     type AlmConformanceIdentityParticipant
 } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -168,6 +169,9 @@ describe('ALM recipe identity assessment', () => {
 
             expect(barriered.map(([key]) => key)).toEqual(plain.map(([key]) => key));
             expect(plain.length).toBeGreaterThan(0);
+            // The plain transcript must assess clean, or the comparison would pass where both fail alike.
+            expect(Object.fromEntries(plain.map(([key, input]) => [key, assessAlmConformanceIdentity(input)])))
+                .toEqual(Object.fromEntries(plain.map(([key]) => [key, []])));
             for (const [index, [key, input]] of barriered.entries()) {
                 expect(assessAlmConformanceIdentity(input), key).toEqual(assessAlmConformanceIdentity(plain[index]![1]));
             }
@@ -934,16 +938,7 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         };
     }
     if (command.kind === 'messages.receipts') {
-        return {
-            handleId: command.handleId,
-            confirmedHopPeerIds: ['receiver-session'],
-            unconfirmedHopPeerIds: [],
-            // The addressed family pins its receipt to the receiver, which reads the expected list too.
-            expectedRecipientPeerIds: ['receiver-session'],
-            confirmedRecipientPeerIds: ['receiver-session'],
-            unconfirmedRecipientPeerIds: [],
-            outsideAudienceRecipientPeerIds: []
-        };
+        return toTranscriptReceiptValue(command.handleId, sender);
     }
     if (command.kind === 'messages.received') {
         return {
@@ -990,6 +985,25 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
         };
     }
     return {};
+}
+
+/**
+ * The sender's ending receipt names, in each recipient list, the sessions of the roles its pin declares for the
+ * handle; a send the sender pins no roles for confirms the receiver alone, as the addressed family reads it.
+ */
+function toTranscriptReceiptValue(handleId: string, sender: RallarBlackBoxTestRecipe): ApiJsonObject {
+    const pinned = readAlmReceiptRolesEntries(sender).find((entry) => entry.handleId === handleId);
+    const sessions = (roles: readonly string[]) => roles.map((role) => `${role}-session`);
+    const roles = pinned ?? { confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] };
+    return {
+        handleId,
+        confirmedHopPeerIds: ['receiver-session'],
+        unconfirmedHopPeerIds: [],
+        expectedRecipientPeerIds: sessions([...roles.confirmed, ...roles.unconfirmed, ...roles.outsideAudience]),
+        confirmedRecipientPeerIds: sessions(roles.confirmed),
+        unconfirmedRecipientPeerIds: sessions(roles.unconfirmed),
+        outsideAudienceRecipientPeerIds: sessions(roles.outsideAudience)
+    };
 }
 
 /** A traced request's response echoes its trace; the admin read lists one receipt per traced sender request. */
