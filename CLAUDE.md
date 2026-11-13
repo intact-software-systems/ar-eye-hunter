@@ -288,7 +288,7 @@ lanes run in parallel:
 
 | Lane                   | Runs                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checks`               | navigation report, changed style and coupling (PR only), test reachability, `typecheck`, `rallar` build, Bun checks (shared-test, api-v1, control-server)  |
+| `checks`               | changed style and coupling (PR only), test reachability, `typecheck`, `rallar` build, Bun checks (shared-test, api-v1, control-server)                     |
 | `unit`                 | `test:unit:main` (Vitest project `unit`)                                                                                                                   |
 | `unit-tooling`         | `test:unit:tooling` (Vitest project `tooling`)                                                                                                             |
 | `bun`                  | `test:bun:platform` (api-v1 + control-server + shared-test)                                                                                                |
@@ -317,7 +317,10 @@ fails if a lane drops a suite or a Vitest project.
 
 The non-blocking ALM conformance observation is not a lane of `release-gate.yml`. It lives in
 `alm-conformance-observation.yml`, which `branch-release-gate.yml` and `deploy.yml` start beside the
-gate; neither `Branch Release Gate result` nor any deployment waits for it.
+gate; neither `Branch Release Gate result` nor any deployment waits for it. The IDE navigation report
+(`npm run check:repo-style:navigation-details`, which always exits 0) runs the same way in
+`navigation-report-observation.yml`, started beside the gate by `branch-release-gate.yml` and by
+`deploy.yml` on a `main` push.
 
 The two changed-range checks — `check-changed-repo-style.mjs` and `check-test-structure-coupling.mjs
 --changed` — run only when `release-gate.yml` receives a non-empty `changed_repo_style_base`. The

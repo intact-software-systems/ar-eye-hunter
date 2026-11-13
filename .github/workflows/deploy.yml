@@ -59,3 +59,11 @@ jobs:
     uses: ./.github/workflows/alm-conformance-observation.yml
     with:
       candidate_ref: ${{ github.sha }}
+
+  # Observation beside the gate: no deployment waits for it, so it never delays a release.
+  navigation-report-observation:
+    name: IDE navigation report observation
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
+    uses: ./.github/workflows/navigation-report-observation.yml
+    with:
+      candidate_ref: ${{ github.sha }}

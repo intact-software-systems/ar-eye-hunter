@@ -27,8 +27,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
-      # The repo-style navigation scan approaches the runner's default V8 old-space limit; the Deno → Bun
-      # migration grew the import graph enough to tip it over. Give the observational scan headroom.
+      # The repo-style changed check builds the same navigation program, which approaches the runner's
+      # default V8 old-space limit; the Deno → Bun migration grew the import graph enough to tip it over.
       NODE_OPTIONS: --max-old-space-size=6144
 
     steps:
@@ -42,9 +42,6 @@ jobs:
         uses: ./.github/actions/release-gate-setup
         with:
           bun: 'true'
-
-      - name: Report IDE navigation details
-        run: npm run check:repo-style:navigation-details
 
       - name: Resolve immutable changed-review range
         id: changed_review_range
