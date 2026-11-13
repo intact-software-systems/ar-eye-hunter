@@ -159,11 +159,14 @@ export type GroupTopologyManagementView = Readonly<{
     pending: PendingTopologyReplan | null;
 }>;
 
-/** Decision 11's transient half: a replan is queued and due at T. */
+/**
+ * Decision 11's transient half: a group-revision replan is queued and due at T, read off the coalesced head row or,
+ * when the head has settled, the earliest-due replan parked behind it. RTT-refresh work is not reported.
+ */
 export interface PendingTopologyReplan {
     readonly reconfigureQueued: boolean;
     readonly dueAtEpochMs: number | null;
-    /** Up by one for every change merged into the queued replan; null when the queued row no longer decodes. */
+    /** Up by one for every change merged into the reported replan; null when the queued head row no longer decodes. */
     readonly generation: number | null;
 }
 

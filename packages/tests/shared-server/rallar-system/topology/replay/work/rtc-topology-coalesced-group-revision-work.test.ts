@@ -11,7 +11,14 @@ import {
     type CoalescedAppOutboxWorkData,
     type CoalescedAppOutboxWorkEnvelope
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
-import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    toRtcRttMutationReceiptId,
+    toRtcRttTopologyOutboxId
+} from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    type RtcTopologyGroupRevisionWork
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { resolveTopologyReplanWindow, type TopologyReplanWindow } from '@shared-server/rallar-system/topology/planning/resolve-topology-replan-window.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
@@ -49,6 +56,7 @@ import {
 } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { toEarlierALEnvelopeVersionResource } from '../../../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
+import { createRtcTopologyRttMeasurement } from '../../rtc-topology-test-fixtures.ts';
 
 const GROUP_REF = {
     applicationId: 'app-1',
@@ -861,68 +869,175 @@ function withSessions(snapshot: GroupSnapshot, sessionIds: readonly string[]): G
 }
 
 describe('readPendingTopologyReplan', () => {
-    function computedEntry(): ResourceEntry {
+    const HEAD_KEY = computeRevisionWork(createGroupSnapshot(4, 3), BASE_EPOCH_MS, null).entryWrite.entry.key;
+
+    function computeRevisionWork(
+        groupSnapshot: GroupSnapshot,
+        requestedAtEpochMs: number,
+        previousEntry: ResourceEntry | null
+    ) {
         return computeCoalescedRtcTopologyGroupRevisionWork({
             traceId: 'trace-rtc-topology-coalesced-group-revision-work',
-            aggregateRef: GROUP_REF,
-            groupSnapshot: createGroupSnapshot(4, 3),
-            requestedAtEpochMs: BASE_EPOCH_MS,
+            aggregateRef: groupSnapshot.group,
+            groupSnapshot,
+            requestedAtEpochMs,
             expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
             timing: createServerTopologyReplanTiming(DEBOUNCE_MS),
             senderId: 'server-1',
             origin: 'automatic',
-            previousEntry: null
-        }).entryWrite.entry;
+            previousEntry
+        });
+    }
+
+    function computedEntry(): ResourceEntry {
+        return computeRevisionWork(createGroupSnapshot(4, 3), BASE_EPOCH_MS, null).entryWrite.entry;
+    }
+
+    /** A successor written behind the executing head, as the coalesced writer parks it. */
+    function parkedSuccessor(groupSnapshot: GroupSnapshot, requestedAtEpochMs: number): ResourceEntry {
+        const head = computeRevisionWork(groupSnapshot, BASE_EPOCH_MS, null).entryWrite.entry;
+        const reserved = { ...head, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+        const parked = computeRevisionWork(groupSnapshot, requestedAtEpochMs, reserved);
+        expect(parked.operation).toBe('write-successor');
+        return parked.successorWrite.entry;
+    }
+
+    function toQueuedReplan(entry: ResourceEntry) {
+        const metadata = readPersistedGroupRevisionEnvelope(entry).data[COALESCED_APP_OUTBOX_WORK_FIELD];
+        return { reconfigureQueued: true, dueAtEpochMs: metadata.dueAtEpochMs, generation: metadata.generation };
+    }
+
+    function settledHeadReader(rows: readonly ResourceEntry[]) {
+        return {
+            findByKey: async () => ({ ...computedEntry(), status: EntityStatus.COMPLETED }),
+            readPendingByTopicAndContextId: async () => rows
+        };
+    }
+
+    function headOnlyReader(head: ResourceEntry | null) {
+        return {
+            findByKey: async () => head,
+            readPendingByTopicAndContextId: () => Promise.reject(new Error('a pending head answers alone'))
+        };
     }
 
     it('reads a queued replan and its due time off the coalesced row', async () => {
-        await expect(
-            readPendingTopologyReplan({ findByKey: async () => computedEntry() }, GROUP_REF)
-        ).resolves.toEqual({
+        await expect(readPendingTopologyReplan(headOnlyReader(computedEntry()), GROUP_REF)).resolves.toEqual({
             reconfigureQueued: true,
             dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS,
             generation: 1
         });
     });
 
-    it('reads null when no row exists and asks with the stored row\'s exact key', async () => {
+    it('reads null when no row exists, asking with the head\'s exact key and then its topic and context', async () => {
         const keys: Key[] = [];
+        const scopes: [string, string][] = [];
         await expect(
             readPendingTopologyReplan({
                 findByKey: async (key) => {
                     keys.push(key);
                     return null;
+                },
+                readPendingByTopicAndContextId: async (topicId, contextId) => {
+                    scopes.push([topicId, contextId]);
+                    return [];
                 }
             }, GROUP_REF)
         ).resolves.toBeNull();
-        expect(keys).toEqual([computedEntry().key]);
+        expect(keys).toEqual([HEAD_KEY]);
+        expect(scopes).toEqual([[HEAD_KEY.topicId, HEAD_KEY.contextId]]);
     });
 
     it('reads an executing (reserved) row as still queued', async () => {
         const reserved = { ...computedEntry(), status: EntityStatus.RESERVED };
-        await expect(
-            readPendingTopologyReplan({ findByKey: async () => reserved }, GROUP_REF)
-        ).resolves.toEqual({
+        await expect(readPendingTopologyReplan(headOnlyReader(reserved), GROUP_REF)).resolves.toEqual({
             reconfigureQueued: true,
             dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS,
             generation: 1
         });
     });
 
-    it('reads a settled row as no pending work', async () => {
-        const settled = { ...computedEntry(), status: EntityStatus.COMPLETED };
+    it('reads a settled row with nothing behind it as no pending work', async () => {
+        await expect(readPendingTopologyReplan(settledHeadReader([]), GROUP_REF)).resolves.toBeNull();
+    });
+
+    it('reports a queued replan with an unknown due time when the head\'s envelope no longer decodes', async () => {
+        const corrupt = { ...computedEntry(), resource: '{"not":"an-envelope"}' };
+        await expect(readPendingTopologyReplan(headOnlyReader(corrupt), GROUP_REF)).resolves.toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: null,
+            generation: null
+        });
+    });
+
+    it('keeps the head\'s answer while the head is queued', async () => {
+        await expect(readPendingTopologyReplan(headOnlyReader(computedEntry()), GROUP_REF)).resolves.toEqual(
+            toQueuedReplan(computedEntry())
+        );
+    });
+
+    it('reads a pending successor when the head has settled', async () => {
+        const successor = parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100);
+        await expect(readPendingTopologyReplan(settledHeadReader([successor]), GROUP_REF)).resolves.toEqual(
+            toQueuedReplan(successor)
+        );
+    });
+
+    it('answers from the earliest-due of two pending successors', async () => {
+        const earlier = parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100);
+        const later = parkedSuccessor(createGroupSnapshot(6, 3), BASE_EPOCH_MS + 300);
+        expect(toQueuedReplan(earlier).dueAtEpochMs).toBeLessThan(toQueuedReplan(later).dueAtEpochMs);
+        await expect(readPendingTopologyReplan(settledHeadReader([later, earlier]), GROUP_REF)).resolves.toEqual(
+            toQueuedReplan(earlier)
+        );
+    });
+
+    it('ignores an undecodable row and an RTT-refresh row of the same topic and context', async () => {
+        const undecodable = { ...parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), resource: '{}' };
         await expect(
-            readPendingTopologyReplan({ findByKey: async () => settled }, GROUP_REF)
+            readPendingTopologyReplan(settledHeadReader([undecodable, createRttRefreshEntry()]), GROUP_REF)
         ).resolves.toBeNull();
     });
 
-    it('reports a queued replan with an unknown due time when the envelope no longer decodes', async () => {
-        const corrupt = { ...computedEntry(), resource: '{"not":"an-envelope"}' };
-        await expect(
-            readPendingTopologyReplan({ findByKey: async () => corrupt }, GROUP_REF)
-        ).resolves.toEqual({ reconfigureQueued: true, dueAtEpochMs: null, generation: null });
+    it('ignores group-revision work of another room', async () => {
+        const otherRoom = parkedSuccessor(toOtherRoomSnapshot(createGroupSnapshot(5, 3)), BASE_EPOCH_MS + 100);
+        await expect(readPendingTopologyReplan(settledHeadReader([otherRoom]), GROUP_REF)).resolves.toBeNull();
     });
 });
+
+function createRttRefreshEntry(): ResourceEntry {
+    const group = createGroupSnapshot(5, 3);
+    const rtt = createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-1', sessionIdTo: 'peer-2', rttMs: 40, version: 1 });
+    const receiptId = toRtcRttMutationReceiptId(rtt);
+    const resourceId = toRtcRttTopologyOutboxId(receiptId, group.group, `sha256:${'a'.repeat(64)}`);
+    return computeRtcTopologyOutboxInsert({
+        traceId: 'trace-rtc-topology-coalesced-group-revision-work',
+        commandId: resourceId,
+        aggregateRef: group.group,
+        acceptedCausalRevision: group.causalRevision,
+        groupSnapshot: group,
+        effectKind: 'rtc-topology-recompute',
+        createdAtEpochMs: BASE_EPOCH_MS,
+        expireAtEpochMs: EXPIRE_AT_EPOCH_MS,
+        senderId: 'server-1',
+        resourceId,
+        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+        publish: true,
+        payloadKind: 'rtt-refresh',
+        rtt,
+        refinementObservationId: receiptId
+    }).entry;
+}
+
+function toOtherRoomSnapshot(snapshot: GroupSnapshot): GroupSnapshot {
+    const groupId = 'room-2';
+    return {
+        ...snapshot,
+        group: { ...snapshot.group, groupId },
+        members: snapshot.members.map((member) => ({ ...member, groupId })),
+        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, groupId }))
+    };
+}
 
 describe('computeTopologyReplanDueAt', () => {
     const timing: TopologyReplanTiming = {

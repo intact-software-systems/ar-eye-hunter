@@ -6,15 +6,22 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
     readIsObservedCoalescedSuccessorStored,
+    tryReadCoalescedAppOutboxWorkEnvelope,
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
+    readPendingTopologyReplan,
     resolveQueuedRtcTopologySuccessor,
     toCoalescedGroupRevisionKey
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import {
+    computeRtcTopologyReservationFinish,
+    finishRtcTopologyReservation
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -167,6 +174,41 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         }
     );
 
+    // A replan written while the head executes parks on a successor row; the head's own completion leaves that row queued.
+    postgresIt('the pending replan read reports a successor parked behind a head that has since completed', async () => {
+        const ref = toRunGroupRef('parked-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        const reserved = await reserveHead(ref);
+        const parked = computeRevisionWork(ref, reserved, 'automatic');
+        expect(await writeInTransaction(parked)).toBe('written');
+        await finishInTransaction(reserved);
+
+        const entries = createPSqlResourceInboxRepository(requireSql(), () => new Date()).entries;
+        expect((await entries.findByKey(toCoalescedGroupRevisionKey(ref)))?.status).toBe(EntityStatus.COMPLETED);
+        const parkedWork = tryReadCoalescedAppOutboxWorkEnvelope(parked.successorWrite.entry)!.data[
+            COALESCED_APP_OUTBOX_WORK_FIELD
+        ];
+        expect(await readPendingTopologyReplan(entries, ref)).toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: parkedWork.dueAtEpochMs,
+            generation: parkedWork.generation
+        });
+    });
+
+    postgresIt('the pending replan read reports nothing once the successor has completed too', async () => {
+        const ref = toRunGroupRef('settled-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        const reserved = await reserveHead(ref);
+        const parked = computeRevisionWork(ref, reserved, 'automatic');
+        expect(await writeInTransaction(parked)).toBe('written');
+        await finishInTransaction(reserved);
+        const repository = createPSqlResourceInboxRepository(requireSql(), () => new Date());
+        const successor = (await repository.reservations.startProcessingEntity(parked.successorWrite.entry)).right;
+        await finishInTransaction(successor!);
+
+        expect(await readPendingTopologyReplan(repository.entries, ref)).toBeNull();
+    });
+
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {
         const ref = toRunGroupRef('plain-duplicate');
         const work = computeRevisionWork(ref, null, 'automatic');
@@ -189,6 +231,11 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
             requireSql(),
             async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
         );
+    }
+
+    async function finishInTransaction(reserved: ResourceEntry): Promise<void> {
+        const finish = computeRtcTopologyReservationFinish(reserved, new Date());
+        await runInPSqlTransaction(requireSql(), async (transaction) => await finishRtcTopologyReservation(transaction, finish));
     }
 
     async function guardInTransaction(observed: ResourceEntry): Promise<boolean> {

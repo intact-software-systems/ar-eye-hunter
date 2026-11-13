@@ -314,7 +314,9 @@ layout that appears and disappears before the browser observes it raises no even
 `formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
 `layoutStale`, `pending`, the attempt budget, both status axes, the coverage basis and the group's
 `causalRevision` that `layoutStale` and `condition` were derived at) and decodes
-it against the bound room, rejecting a body that is malformed or names another group. Readiness
+it against the bound room, rejecting a body that is malformed or names another group. `pending`
+reports a queued group-revision replan, including one parked behind a head that has settled;
+RTT-refresh work is not reported. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.
 
