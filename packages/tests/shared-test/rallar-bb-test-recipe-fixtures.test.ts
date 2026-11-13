@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcSmokeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
@@ -12,7 +13,12 @@ import {
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import type {
+    RallarBlackBoxTestLoopCommand,
+    RallarBlackBoxTestRtcConnectCommand
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '../../../packages/shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -27,6 +33,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         const setup = recipe.commands.filter((command) => command.kind === 'http.request');
 
         expect(setup[0]).toMatchObject({
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
             request: {
                 body: { kind: 'room' }
             },
@@ -35,10 +42,15 @@ describe('rallar-bb-test recipe fixtures', () => {
             }
         });
         expect(setup[1]).toMatchObject({
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
             response: {
                 acceptedStatusCodes: [200, 201]
             }
         });
+    });
+
+    it('gives each ensure command a budget that outlasts the server\'s mutation completion wait', () => {
+        expect(RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS).toBeGreaterThan(API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS);
     });
 
     it('builds principal messages.rtc multicast sender and receiver recipes for 50-agent runs', () => {
@@ -75,8 +87,8 @@ describe('rallar-bb-test recipe fixtures', () => {
             timeoutMs: 50_000,
             readiness: { timeoutMs: 45_000 }
         });
-        expect((sender.metadata as Record<string, unknown>).expectedInboundMessages).toBeUndefined();
-        expect((sender.metadata as Record<string, unknown>).minExpectedInboundMessages).toBeUndefined();
+        expect(sender.metadata?.expectedInboundMessages).toBeUndefined();
+        expect(sender.metadata?.minExpectedInboundMessages).toBeUndefined();
         expect(receiver.metadata).toMatchObject({
             profile: 'rtc-messages-principal-multicast-receiver',
             transport: 'messages.rtc',
@@ -130,7 +142,7 @@ describe('rallar-bb-test recipe fixtures', () => {
                 }
             }
         });
-        expect((senderStream as { metadata?: Record<string, unknown>; } | undefined)?.metadata?.receiverDelivery)
+        expect(senderStream?.metadata?.receiverDelivery)
             .toBeUndefined();
         expect(receiverConnect).toMatchObject({
             kind: 'rtc.connect',
@@ -185,7 +197,9 @@ describe('rallar-bb-test recipe fixtures', () => {
         });
         const connect = recipe.commands.find((command) => command.kind === 'rtc.connect');
         const connectIndex = recipe.commands.findIndex((command) => command.kind === 'rtc.connect');
-        const settleLoop = recipe.commands.find((command) => command.commandId === 'rtc-messages-all-peer-settle-stats-loop');
+        const settleLoop = recipe.commands.find(
+            (command): command is RallarBlackBoxTestLoopCommand => command.commandId === 'rtc-messages-all-peer-settle-stats-loop'
+        );
         const settleLoopIndex = recipe.commands.findIndex((command) => command.commandId === 'rtc-messages-all-peer-settle-stats-loop');
         const stream = recipe.commands.find((command) => command.kind === 'rtc.stream');
         const streamIndex = recipe.commands.findIndex((command) => command.kind === 'rtc.stream');
@@ -232,16 +246,12 @@ describe('rallar-bb-test recipe fixtures', () => {
                 commandId: 'rtc-messages-all-peer-settle-stats'
             }]
         });
-        const settleLoopRecord = settleLoop as {
-            metadata?: Record<string, unknown>;
-            commands?: readonly { metadata?: Record<string, unknown>; }[];
-        } | undefined;
-        expect(settleLoopRecord?.metadata?.expectedInboundMessages).toBeUndefined();
-        expect(settleLoopRecord?.metadata?.minExpectedInboundMessages).toBeUndefined();
-        expect(settleLoopRecord?.metadata?.minReceiveRatio).toBeUndefined();
-        expect(settleLoopRecord?.commands?.[0]?.metadata?.expectedInboundMessages).toBeUndefined();
-        expect(settleLoopRecord?.commands?.[0]?.metadata?.minExpectedInboundMessages).toBeUndefined();
-        expect(settleLoopRecord?.commands?.[0]?.metadata?.minReceiveRatio).toBeUndefined();
+        expect(settleLoop?.metadata?.expectedInboundMessages).toBeUndefined();
+        expect(settleLoop?.metadata?.minExpectedInboundMessages).toBeUndefined();
+        expect(settleLoop?.metadata?.minReceiveRatio).toBeUndefined();
+        expect(settleLoop?.commands?.[0]?.metadata?.expectedInboundMessages).toBeUndefined();
+        expect(settleLoop?.commands?.[0]?.metadata?.minExpectedInboundMessages).toBeUndefined();
+        expect(settleLoop?.commands?.[0]?.metadata?.minReceiveRatio).toBeUndefined();
         expect(stream).toMatchObject({
             kind: 'rtc.stream',
             commandId: 'rtc-messages-all-peer-multicast-stream',
@@ -291,12 +301,14 @@ describe('rallar-bb-test recipe fixtures', () => {
 
     it('keeps default local fixtures flexible without forced readiness', () => {
         const realtime = createRallarBlackBoxRtcRealtimeRecipe();
-        const connect = realtime.commands.find((command) => command.kind === 'rtc.connect');
+        const connect = realtime.commands.find(
+            (command): command is RallarBlackBoxTestRtcConnectCommand => command.kind === 'rtc.connect'
+        );
         const stream = createRallarBlackBoxRtcRealtimeRecipe({ executionMode: 'stream' })
             .commands.find((command) => command.kind === 'rtc.stream');
 
         expect(connect).toMatchObject({ kind: 'rtc.connect' });
-        expect((connect as { readiness?: unknown; } | undefined)?.readiness).toBeUndefined();
+        expect(connect?.readiness).toBeUndefined();
         expect(realtime.metadata).toMatchObject({
             rateHz: 20,
             intervalMs: 50,

@@ -159,7 +159,7 @@ function computeObservationInventory(request: RtcBaselineCaptureRequestDto): Rtc
         ...entry.sourcePaths.map((path) => ({ path, kind: 'source' as const })),
         ...entry.configPaths.map((path) => ({ path, kind: 'config' as const }))
     ]).filter((entry, index, all) => all.findIndex((candidate) => candidate.path === entry.path) === index);
-    const runtime = cases[0]?.runtime ?? { executable: 'deno', prefixArguments: [] };
+    const runtime = cases[0]?.runtime ?? { executable: 'bun', prefixArguments: [] };
     return {
         files,
         descriptors: cases.flatMap((entry) => entry.configuration),

@@ -36,7 +36,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-all-peer-ensure-group",
-            "timeoutMs": 5000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the backend group exists before RTC room join.",
               "idempotent": true,
@@ -68,7 +68,7 @@
           {
             "kind": "http.request",
             "commandId": "rtc-messages-all-peer-ensure-member",
-            "timeoutMs": 5000,
+            "timeoutMs": 35000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
               "idempotent": true,

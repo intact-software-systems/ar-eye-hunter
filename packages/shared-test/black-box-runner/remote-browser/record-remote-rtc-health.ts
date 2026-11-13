@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { Either } from '../../../shared/resilience/Either.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';

@@ -11,7 +11,6 @@ import {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AL_RECEIPT_DEADLINE_GRACE_MS,
-    newALAckControlMessage,
     newALReceiptControlMessage
 } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -35,13 +34,12 @@ import {
     createClusterInstance,
     installClock,
     readSentReceipts,
+    receiverAck,
     roomMessage,
     runReceiptWorkerHandoff,
     type ClusterInstance,
     type ReceiptClock
 } from './ws-queue-box-server-receipt-fixture.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 const SNAPSHOT_VERSION = 7;
 const ROOM_MESSAGE_LIFETIME_MS = 30_000;
@@ -84,9 +82,17 @@ describe('WS server receipt row across a cluster', () => {
             outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), () => clock.nowMs)
         });
         const bus = createBridgeBus();
-        const local = await createClusterInstance({ name: 'server', outboundStores, bus, publisherId: 'local', engine: new InboxOutboxEngine() });
+        const roomPeerIds = ['a', 'b', 'c'];
+        const local = await createClusterInstance({ name: 'server', outboundStores, bus, publisherId: 'local', engine: new InboxOutboxEngine(), roomPeerIds });
         local.engine.start();
-        const remote = await createClusterInstance({ name: 'remote-server', outboundStores, bus, publisherId: 'remote', engine: new InboxOutboxEngine() });
+        const remote = await createClusterInstance({
+            name: 'remote-server',
+            outboundStores,
+            bus,
+            publisherId: 'remote',
+            engine: new InboxOutboxEngine(),
+            roomPeerIds
+        });
         remote.engine.start();
         const sockets = { a: await connect(local, 'a'), b: await connect(local, 'b'), c: await connect(local, 'c') };
         const origin = await createOriginClient();
@@ -189,22 +195,6 @@ async function relayFrames(socket: SimulatedWebSocket, origin: OriginClient): Pr
     for (const frame of socket.sent) {
         await origin.service.acceptIncomingMessage(JSON.parse(frame));
     }
-}
-
-function receiverAck(recipient: 'b' | 'c', nowMs: number): ALMessage {
-    return newALAckControlMessage(
-        { v: 4, msgId: `ack-${recipient}`, senderId: recipient, ts: nowMs, traceId: 'trace-ws-queue-box-server-receipt-row' },
-        toTestALAckPayload({
-            ackedMsgId: 'room-message-1',
-            fromPeerId: recipient,
-            toPeerId: 'a',
-            originPeerId: 'a',
-            logicalRecipientPeerId: recipient,
-            carrier: 'ws',
-            status: 'delivered',
-            observedAtEpochMs: nowMs
-        })
-    );
 }
 
 function receiptMessage(input: ReceiptMessageInput): ALMessage {

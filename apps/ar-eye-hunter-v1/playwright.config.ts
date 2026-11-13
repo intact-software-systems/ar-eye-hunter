@@ -9,7 +9,7 @@ const fullStackEnabled = process.env.RALLAR_ARENA_FULL_STACK === '1';
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
         ? [{
-            command: 'cd ../ar-eye-hunter-server-v1 && deno task start',
+            command: 'cd ../ar-eye-hunter-server-v1 && bun run src/main.ts',
             env: {
                 PORT: '8080',
                 RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',

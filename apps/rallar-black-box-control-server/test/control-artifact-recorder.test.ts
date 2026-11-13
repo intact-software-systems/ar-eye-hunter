@@ -1,4 +1,9 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, mock, test } from 'bun:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import * as realFsPromises from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -15,6 +20,42 @@ import {
 import { toRunDirectoryName } from '../src/control-artifact-storage.ts';
 
 const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
+
+// Captured before any `mock.module` installs a fake, so mocks can delegate to the real filesystem.
+const realAppendFile = realFsPromises.appendFile;
+const realMkdir = realFsPromises.mkdir;
+const realRm = realFsPromises.rm;
+
+// One installed mock serves the whole file; the helpers below switch its behaviour through shared state. This keeps
+// nested stalls composable, where re-mocking per helper would drop the outer stall.
+let onAppend: ((path: string) => void) | undefined;
+let onMkdir: (() => void) | undefined;
+let appendBlocker: { started: () => void; released: Promise<void>; } | undefined;
+const rmStalls = new Map<string, { announce: () => void; released: Promise<void>; }>();
+
+mock.module('node:fs/promises', () => ({
+    ...realFsPromises,
+    appendFile: async (...args: Parameters<typeof realAppendFile>) => {
+        onAppend?.(String(args[0]));
+        if (appendBlocker) {
+            appendBlocker.started();
+            await appendBlocker.released;
+        }
+        return realAppendFile(...args);
+    },
+    mkdir: async (...args: Parameters<typeof realMkdir>) => {
+        onMkdir?.();
+        return realMkdir(...args);
+    },
+    rm: async (...args: Parameters<typeof realRm>) => {
+        const stall = rmStalls.get(String(args[0]));
+        if (stall) {
+            stall.announce();
+            await stall.released;
+        }
+        return realRm(...args);
+    }
+}));
 
 function emptyRunSnapshot(runId: string): ControlRunSnapshot {
     return {
@@ -53,18 +94,18 @@ function eventsTextForRun(
 
 async function readTextFileOrEmpty(path: string): Promise<string> {
     try {
-        return await Deno.readTextFile(path);
+        return await readFile(path, 'utf8');
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
             return '';
         }
         throw error;
     }
 }
 
-Deno.test('artifact recorder keeps "%" and "_25" run ids on separate disk paths', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-percent-' });
+test('artifact recorder keeps "%" and "_25" run ids on separate disk paths', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-percent-'));
     try {
         const recorder = new ControlArtifactRecorder({
             storageDir,
@@ -84,12 +125,12 @@ Deno.test('artifact recorder keeps "%" and "_25" run ids on separate disk paths'
         assert(!underscoreEvents.includes('percent-marker'));
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-slash-' });
+test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-slash-'));
     try {
         const recorder = new ControlArtifactRecorder({
             storageDir,
@@ -109,12 +150,12 @@ Deno.test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths'
         assert(!literalEvents.includes('slash-marker'));
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('deleting one colliding run id leaves the other run\'s stored marker intact', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-' });
+test('deleting one colliding run id leaves the other run\'s stored marker intact', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-delete-'));
     try {
         const recorder = new ControlArtifactRecorder({
             storageDir,
@@ -134,15 +175,15 @@ Deno.test('deleting one colliding run id leaves the other run\'s stored marker i
         assert(underscoreEvents.includes('underscore-marker'));
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('recording and deleting "." and ".." run ids stays inside their own runs/ directory', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-dots-' });
+test('recording and deleting "." and ".." run ids stays inside their own runs/ directory', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-dots-'));
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     try {
-        await Deno.writeTextFile(snapshotPath, 'root-marker');
+        await writeFile(snapshotPath, 'root-marker', 'utf8');
         const recorder = new ControlArtifactRecorder({
             storageDir,
             commandSnapshots: NO_COMMAND_SNAPSHOTS,
@@ -164,23 +205,23 @@ Deno.test('recording and deleting "." and ".." run ids stays inside their own ru
         // also waits for both queued deletes above to finish before the direct fs read below.
         const siblingEventsAfterDelete = await eventsTextForRun(recorder, 'sibling-run');
 
-        assertEquals(await readTextFileOrEmpty(snapshotPath), 'root-marker');
+        expect(await readTextFileOrEmpty(snapshotPath)).toEqual('root-marker');
         assert(siblingEventsAfterDelete.includes('sibling-marker'));
         assert(!(await eventsTextForRun(recorder, '..')).includes('dotdot-marker'));
         assert(!(await eventsTextForRun(recorder, '.')).includes('dot-marker'));
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true }).catch(() => undefined);
+        await rm(storageDir, { recursive: true, force: true }).catch(() => undefined);
     }
 });
 
-Deno.test('toRunDirectoryName resolves "A" and "a" to different directory names', () => {
-    assertEquals(toRunDirectoryName('A') === toRunDirectoryName('a'), false);
-    assertEquals(toRunDirectoryName('Run'), '_0052un');
-    assertEquals(toRunDirectoryName('run'), 'run');
+test('toRunDirectoryName resolves "A" and "a" to different directory names', () => {
+    expect(toRunDirectoryName('A') === toRunDirectoryName('a')).toEqual(false);
+    expect(toRunDirectoryName('Run')).toEqual('_0052un');
+    expect(toRunDirectoryName('run')).toEqual('run');
 });
 
-Deno.test('toRunDirectoryName is injective and its output alphabet is [a-z0-9_-]', () => {
+test('toRunDirectoryName is injective and its output alphabet is [a-z0-9_-]', () => {
     const samples = [
         'run /1',
         '_25',
@@ -200,13 +241,13 @@ Deno.test('toRunDirectoryName is injective and its output alphabet is [a-z0-9_-]
     const outputs = samples.map(toRunDirectoryName);
 
     for (const output of outputs) {
-        assert(/^[a-z0-9_-]+$/.test(output), `output alphabet must be [a-z0-9_-], got: ${output}`);
+        assert(/^[a-z0-9_-]+$/.test(output));
     }
-    assertEquals(new Set(outputs).size, outputs.length);
+    expect(new Set(outputs).size).toEqual(outputs.length);
 
-    assertEquals(toRunDirectoryName('run /1'), 'run_0020_002f1');
-    assertEquals(toRunDirectoryName('_25'), '_005f25');
-    assertEquals(toRunDirectoryName('..'), '_002e_002e');
+    expect(toRunDirectoryName('run /1')).toEqual('run_0020_002f1');
+    expect(toRunDirectoryName('_25')).toEqual('_005f25');
+    expect(toRunDirectoryName('..')).toEqual('_002e_002e');
 });
 
 function resultEnvelope(commandId: string, value: object): ControlClientEnvelope {
@@ -237,29 +278,25 @@ interface FileWriteCounts {
 
 /** Counts the recorder's file appends and directory creations: each is one disk operation the batching bounds. */
 async function countFileWrites<T>(run: (counts: FileWriteCounts) => Promise<T>): Promise<T> {
-    const writeTextFile = Deno.writeTextFile;
-    const mkdir = Deno.mkdir;
     const counts: FileWriteCounts = { writes: 0, directories: 0 };
-    Deno.writeTextFile = (...args: Parameters<typeof writeTextFile>) => {
+    onAppend = () => {
         counts.writes += 1;
-        return writeTextFile(...args);
     };
-    Deno.mkdir = (...args: Parameters<typeof mkdir>) => {
+    onMkdir = () => {
         counts.directories += 1;
-        return mkdir(...args);
     };
     try {
         return await run(counts);
     }
     finally {
-        Deno.writeTextFile = writeTextFile;
-        Deno.mkdir = mkdir;
+        onAppend = undefined;
+        onMkdir = undefined;
     }
 }
 
 // Before batching, each result was serialized twice and cost two appends and a directory creation of its own.
-Deno.test('1,000 recorded results are serialized once each and appended in one write per run file', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-batch-' });
+test('1,000 recorded results are serialized once each and appended in one write per run file', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-batch-'));
     const timers = createManualTimers(0);
     let serializations = 0;
     try {
@@ -285,18 +322,18 @@ Deno.test('1,000 recorded results are serialized once each and appended in one w
             return counts;
         });
         const runDirectory = `${storageDir}/runs/${toRunDirectoryName('batched-run')}`;
-        const resultRows = (await Deno.readTextFile(`${runDirectory}/results.jsonl`)).trim().split('\n').map((line) => JSON.parse(line));
-        const eventRows = (await Deno.readTextFile(`${runDirectory}/events.jsonl`)).trim().split('\n').map((line) => JSON.parse(line));
+        const resultRows = (await readFile(`${runDirectory}/results.jsonl`, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+        const eventRows = (await readFile(`${runDirectory}/events.jsonl`, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
 
-        assertEquals(serializations, 1_000, 'each received result is serialized once for both rows');
-        assertEquals(counts, { writes: 2, directories: 1 });
-        assertEquals(resultRows.length, 1_000);
-        assertEquals(resultRows[999].actual, { probe: 'probe-999' });
-        assertEquals(eventRows.map((row) => row.kind), Array.from({ length: 1_000 }, () => 'step-result'));
-        assertEquals(eventRows[0].actual, { probe: 'probe-0' });
+        expect(serializations).toEqual(1_000);
+        expect(counts).toEqual({ writes: 2, directories: 1 });
+        expect(resultRows.length).toEqual(1_000);
+        expect(resultRows[999].actual).toEqual({ probe: 'probe-999' });
+        expect(eventRows.map((row) => row.kind)).toEqual(Array.from({ length: 1_000 }, () => 'step-result'));
+        expect(eventRows[0].actual).toEqual({ probe: 'probe-0' });
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
@@ -310,27 +347,27 @@ function resultEnvelopeForRun(runId: string, commandId: string, marker: string):
 
 /** Holds every file append until `release` runs, as a disk that stops answering would. */
 async function withStalledWrites<T>(run: (release: () => void, writesStarted: () => number) => Promise<T>): Promise<T> {
-    const writeTextFile = Deno.writeTextFile;
     let started = 0;
     let release = () => undefined as void;
     const released = new Promise<void>((resolve) => release = resolve);
-    Deno.writeTextFile = async (...args: Parameters<typeof writeTextFile>) => {
-        started += 1;
-        await released;
-        return writeTextFile(...args);
+    appendBlocker = {
+        started: () => {
+            started += 1;
+        },
+        released
     };
     try {
         return await run(release, () => started);
     }
     finally {
         release();
-        Deno.writeTextFile = writeTextFile;
+        appendBlocker = undefined;
     }
 }
 
 // Before rows stayed pending during a write, every tick queued its rows behind the stalled write and nothing was dropped.
-Deno.test('while a write stalls, rows stay pending under the cap and the oldest of the recording run are dropped', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-stall-' });
+test('while a write stalls, rows stay pending under the cap and the oldest of the recording run are dropped', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-stall-'));
     const timers = createManualTimers(0);
     const maxPendingBytes = 4_000;
     const warn = console.warn;
@@ -363,8 +400,8 @@ Deno.test('while a write stalls, rows stay pending under the cap and the oldest 
             return { writesDuringStall: writes, stalledRows: rows };
         });
         const runDirectory = `${storageDir}/runs/${toRunDirectoryName('stalled-run')}`;
-        const resultsText = await Deno.readTextFile(`${runDirectory}/results.jsonl`);
-        const eventsText = await Deno.readTextFile(`${runDirectory}/events.jsonl`);
+        const resultsText = await readFile(`${runDirectory}/results.jsonl`, 'utf8');
+        const eventsText = await readFile(`${runDirectory}/events.jsonl`, 'utf8');
         const results = readJsonlRows(resultsText);
         const events = readJsonlRows(eventsText);
         const [inFlight, overflow, ...kept] = results;
@@ -373,27 +410,23 @@ Deno.test('while a write stalls, rows stay pending under the cap and the oldest 
             .reduce((total, line) => total + line.length + 1, 0);
         const overflowValue = overflow.value as Record<string, number>;
 
-        assertEquals(writesDuringStall, 1, 'one batch is in flight and no later batch queues behind it');
-        assertEquals(inFlight.commandId, 'in-flight');
-        assertEquals(overflow.kind, 'control-artifact-overflow');
-        assertEquals(events[1], overflow, 'the same overflow row heads both files');
-        assert(keptBytes <= maxPendingBytes, `${keptBytes} pending bytes outlived the stall`);
-        assertEquals(overflowValue.omittedResults + kept.length, stalledRows.length);
-        assertEquals(kept.map((row) => row.commandId), stalledRows.slice(overflowValue.omittedResults), 'the oldest rows are dropped');
-        assertEquals(
-            events.slice(2).map((row) => row.commandId),
-            stalledRows.slice(overflowValue.omittedResults),
-            'each kept result keeps its step-result row'
-        );
+        expect(writesDuringStall).toEqual(1);
+        expect(inFlight.commandId).toEqual('in-flight');
+        expect(overflow.kind).toEqual('control-artifact-overflow');
+        expect(events[1]).toEqual(overflow);
+        assert(keptBytes <= maxPendingBytes);
+        expect(overflowValue.omittedResults + kept.length).toEqual(stalledRows.length);
+        expect(kept.map((row) => row.commandId)).toEqual(stalledRows.slice(overflowValue.omittedResults));
+        expect(events.slice(2).map((row) => row.commandId)).toEqual(stalledRows.slice(overflowValue.omittedResults));
     }
     finally {
         console.warn = warn;
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('a run over the cap drops only its own rows; a quiet run keeps all of its rows', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-cap-' });
+test('a run over the cap drops only its own rows; a quiet run keeps all of its rows', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-cap-'));
     const timers = createManualTimers(0);
     const warnings: string[] = [];
     const warn = console.warn;
@@ -417,18 +450,18 @@ Deno.test('a run over the cap drops only its own rows; a quiet run keeps all of 
         const [overflow, ...kept] = readJsonlRows(await eventsTextForRun(recorder, 'noisy-run'));
         const overflowValue = overflow.value as Record<string, number>;
 
-        assertEquals(quiet.map((row) => row.value), [0, 1, 2, 3, 4].map((index) => `quiet-marker-${index}`));
-        assertEquals([overflow.kind, overflow.agentId, overflow.atEpochMs], ['control-artifact-overflow', 'control-server', 250]);
-        assertEquals(overflowValue.omittedEventRows + kept.length, 100, 'every row is either written or counted');
-        assertEquals(overflowValue.omittedResults, 0);
-        assertEquals(kept.at(-1)?.value, 'marker-99', 'the newest rows are kept');
-        assertEquals(kept[0].name, `event-${overflowValue.omittedEventRows}`, 'the oldest rows are dropped');
-        assertEquals(warnings.length, 1);
-        assert(warnings[0].includes(`dropped ${overflowValue.omittedEventRows} pending rows`), warnings[0]);
+        expect(quiet.map((row) => row.value)).toEqual([0, 1, 2, 3, 4].map((index) => `quiet-marker-${index}`));
+        expect([overflow.kind, overflow.agentId, overflow.atEpochMs]).toEqual(['control-artifact-overflow', 'control-server', 250]);
+        expect(overflowValue.omittedEventRows + kept.length).toEqual(100);
+        expect(overflowValue.omittedResults).toEqual(0);
+        expect(kept.at(-1)?.value).toEqual('marker-99');
+        expect(kept[0].name).toEqual(`event-${overflowValue.omittedEventRows}`);
+        expect(warnings.length).toEqual(1);
+        assert(warnings[0].includes(`dropped ${overflowValue.omittedEventRows} pending rows`));
     }
     finally {
         console.warn = warn;
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
@@ -436,11 +469,11 @@ async function waitForFileWrite(writesStarted: () => number): Promise<void> {
     for (let turn = 0; writesStarted() === 0 && turn < 1_000; turn += 1) {
         await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    assert(writesStarted() > 0, 'the scheduled artifact write must reach the disk port');
+    assert(writesStarted() > 0);
 }
 
-Deno.test('a stalled artifact write leaves no periodic retry timers while rows stay pending', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-idle-timers-' });
+test('a stalled artifact write leaves no periodic retry timers while rows stay pending', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-idle-timers-'));
     const timers = createManualTimers(0);
     const recorder = new ControlArtifactRecorder({
         storageDir,
@@ -456,7 +489,7 @@ Deno.test('a stalled artifact write leaves no periodic retry timers while rows s
             try {
                 const pending = recorder.record(eventEnvelope('timer-run', 'pending', 'pending-marker'));
                 await timers.advanceTo(1_250);
-                assertEquals(timers.pendingCount(), 0, 'a stalled write cannot make progress on a retry tick');
+                expect(timers.pendingCount()).toEqual(0);
                 release();
                 await recorder.stop();
                 await Promise.all([first, pending]);
@@ -467,16 +500,16 @@ Deno.test('a stalled artifact write leaves no periodic retry timers while rows s
                 await recorder.stop();
             }
         });
-        const text = await Deno.readTextFile(`${storageDir}/runs/timer-run/events.jsonl`);
-        assertEquals(readJsonlRows(text).map((row) => row.value), ['first-marker', 'pending-marker']);
+        const text = await readFile(`${storageDir}/runs/timer-run/events.jsonl`, 'utf8');
+        expect(readJsonlRows(text).map((row) => row.value)).toEqual(['first-marker', 'pending-marker']);
     }
     finally {
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('a read barrier drains arriving rows without residual timers and allows later recording', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-drain-' });
+test('a read barrier drains arriving rows without residual timers and allows later recording', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-drain-'));
     const timers = createManualTimers(0);
     const recorder = new ControlArtifactRecorder({
         storageDir,
@@ -492,29 +525,30 @@ Deno.test('a read barrier drains arriving rows without residual timers and allow
             const arriving = recorder.record(eventEnvelope('barrier-run', 'arriving', 'arriving-marker'));
             release();
             const text = await reading;
-            assertEquals(readJsonlRows(text).map((row) => row.value), ['first-marker', 'arriving-marker']);
+            expect(readJsonlRows(text).map((row) => row.value)).toEqual(['first-marker', 'arriving-marker']);
             await Promise.all([first, arriving]);
-            assertEquals(timers.pendingCount(), 0, 'the barrier must leave no wakeup for already drained rows');
+            expect(timers.pendingCount()).toEqual(0);
         });
         const later = recorder.record(eventEnvelope('barrier-run', 'later', 'later-marker'));
         await timers.advanceTo(249);
-        assertEquals(readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/barrier-run/events.jsonl`)).length, 2);
+        expect(readJsonlRows(await readFile(`${storageDir}/runs/barrier-run/events.jsonl`, 'utf8')).length).toEqual(2);
         await timers.advanceTo(250);
         await later;
-        assertEquals(
-            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/barrier-run/events.jsonl`)).map((row) => row.value),
-            ['first-marker', 'arriving-marker', 'later-marker']
-        );
-        assertEquals(timers.pendingCount(), 0);
+        expect(readJsonlRows(await readFile(`${storageDir}/runs/barrier-run/events.jsonl`, 'utf8')).map((row) => row.value)).toEqual([
+            'first-marker',
+            'arriving-marker',
+            'later-marker'
+        ]);
+        expect(timers.pendingCount()).toEqual(0);
     }
     finally {
         await recorder.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('deleting in-flight and pending runs preserves file order and another run capture', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-ordered-delete-' });
+test('deleting in-flight and pending runs preserves file order and another run capture', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-ordered-delete-'));
     const timers = createManualTimers(0);
     const recorder = new ControlArtifactRecorder({
         storageDir,
@@ -535,20 +569,17 @@ Deno.test('deleting in-flight and pending runs preserves file order and another 
             await ticking;
             await recorder.stop();
             await first;
-            assertEquals((await deleted).left, 'The run was deleted before durable capture completed.');
-            assertEquals((await kept).right, []);
+            expect((await deleted).left).toEqual('The run was deleted before durable capture completed.');
+            expect((await kept).right).toEqual([]);
         });
-        assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-flight/events.jsonl`), '');
-        assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-pending/events.jsonl`), '');
-        assertEquals(
-            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
-            ['kept-marker']
-        );
-        assertEquals(timers.pendingCount(), 0);
+        expect(await readTextFileOrEmpty(`${storageDir}/runs/deleted-flight/events.jsonl`)).toEqual('');
+        expect(await readTextFileOrEmpty(`${storageDir}/runs/deleted-pending/events.jsonl`)).toEqual('');
+        expect(readJsonlRows(await readFile(`${storageDir}/runs/kept-run/events.jsonl`, 'utf8')).map((row) => row.value)).toEqual(['kept-marker']);
+        expect(timers.pendingCount()).toEqual(0);
     }
     finally {
         await recorder.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
@@ -556,29 +587,22 @@ async function withStalledRemoval<T>(
     path: string,
     run: (entered: Promise<void>, release: () => void) => Promise<T>
 ): Promise<T> {
-    const remove = Deno.remove;
     let announce = () => {};
     let release = () => {};
     const entered = new Promise<void>((resolve) => announce = resolve);
     const released = new Promise<void>((resolve) => release = resolve);
-    Deno.remove = async (...args: Parameters<typeof remove>) => {
-        if (args[0] === path) {
-            announce();
-            await released;
-        }
-        return remove(...args);
-    };
+    rmStalls.set(path, { announce, released });
     try {
         return await run(entered, release);
     }
     finally {
         release();
-        Deno.remove = remove;
+        rmStalls.delete(path);
     }
 }
 
-Deno.test('a barrier includes recording that arrives while its queued deletion is stalled', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-barrier-' });
+test('a barrier includes recording that arrives while its queued deletion is stalled', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-delete-barrier-'));
     const timers = createManualTimers(0);
     const recorder = new ControlArtifactRecorder({
         storageDir,
@@ -601,24 +625,21 @@ Deno.test('a barrier includes recording that arrives while its queued deletion i
                 });
             release();
             await stopping;
-            assert(captured, 'the barrier must settle capture that arrived during deletion');
-            assertEquals(timers.pendingCount(), 0);
-            assertEquals((await capture).right, []);
-            assertEquals(
-                readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
-                ['arriving-marker']
-            );
-            assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/deleted-run/events.jsonl`), '');
+            assert(captured);
+            expect(timers.pendingCount()).toEqual(0);
+            expect((await capture).right).toEqual([]);
+            expect(readJsonlRows(await readFile(`${storageDir}/runs/kept-run/events.jsonl`, 'utf8')).map((row) => row.value)).toEqual(['arriving-marker']);
+            expect(await readTextFileOrEmpty(`${storageDir}/runs/deleted-run/events.jsonl`)).toEqual('');
         });
     }
     finally {
         await recorder.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });
 
-Deno.test('a barrier follows continued arrivals and appended deletions until the file boundary is idle', async () => {
-    const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-followup-' });
+test('a barrier follows continued arrivals and appended deletions until the file boundary is idle', async () => {
+    const storageDir = await mkdtemp(join(tmpdir(), 'rallar-artifact-recorder-delete-followup-'));
     const timers = createManualTimers(0);
     const recorder = new ControlArtifactRecorder({
         storageDir,
@@ -643,28 +664,28 @@ Deno.test('a barrier follows continued arrivals and appended deletions until the
                 for (let turn = 0; turn < 10; turn += 1) {
                     await Promise.resolve();
                 }
-                assertEquals(stopped, false, 'the appended deletion is still part of the read barrier');
+                expect(stopped).toEqual(false);
                 const second = recorder.record(eventEnvelope('kept-run', 'second', 'second-marker'));
                 const deleted = recorder.record(eventEnvelope('deleted-pending', 'pending', 'pending-marker'));
                 recorder.deleteRun('deleted-pending');
                 releaseSecond();
                 await stopping;
-                assertEquals(timers.pendingCount(), 0);
-                assertEquals((await first).right, []);
-                assertEquals((await second).right, []);
-                assertEquals((await deleted).left, 'The run was deleted before durable capture completed.');
+                expect(timers.pendingCount()).toEqual(0);
+                expect((await first).right).toEqual([]);
+                expect((await second).right).toEqual([]);
+                expect((await deleted).left).toEqual('The run was deleted before durable capture completed.');
             });
         });
-        assertEquals(
-            readJsonlRows(await Deno.readTextFile(`${storageDir}/runs/kept-run/events.jsonl`)).map((row) => row.value),
-            ['first-marker', 'second-marker']
-        );
+        expect(readJsonlRows(await readFile(`${storageDir}/runs/kept-run/events.jsonl`, 'utf8')).map((row) => row.value)).toEqual([
+            'first-marker',
+            'second-marker'
+        ]);
         for (const runId of ['deleted-first', 'deleted-second', 'deleted-pending']) {
-            assertEquals(await readTextFileOrEmpty(`${storageDir}/runs/${runId}/events.jsonl`), '');
+            expect(await readTextFileOrEmpty(`${storageDir}/runs/${runId}/events.jsonl`)).toEqual('');
         }
     }
     finally {
         await recorder.stop();
-        await Deno.remove(storageDir, { recursive: true });
+        await rm(storageDir, { recursive: true, force: true });
     }
 });

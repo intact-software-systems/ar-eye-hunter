@@ -226,7 +226,7 @@ explicit skip, blank default 1/1, preserved legacy navigation 29/29,
 responsive/accessibility/operational/CSS 48/48, production chunk/Advanced
 13/13, and all eight Direction A baselines without updates. Non-browser proof
 passes 294/294 focused and 1,568/1,568 complete app tests, a 777-module build,
-shared/app/server/API type and Deno checks, control-server 79/79, PGlite 13/13,
+shared/app/server/API type and Bun checks, control-server 79/79, PGlite 13/13,
 real PostgreSQL prefix/planner 3/3, and an up-to-date 15-migration schema.
 Independent final review is clean.
 
@@ -306,7 +306,7 @@ contract changed; one deterministic request-ID helper export is additive.
   suite across 93 files is qualified green: 881 passed in the restricted
   sandbox and the only two denied IPC/loopback cases then passed in their exact
   nine-test file with required permission. Shared-test TypeScript and all seven
-  Deno entries, app TypeScript, a 580-module build, chunk proof, 137 available
+  Bun entries, app TypeScript, a 580-module build, chunk proof, 137 available
   Recipe Console browser tests, 28/28 legacy navigation/ticket tests, and 57/57
   control-server tests passed. One configured-live browser owner was skipped.
   Independent shared, app/state, browser/accessibility, and cutover re-reviews
@@ -357,7 +357,7 @@ contract changed; one deterministic request-ID helper export is additive.
   retained filters through copy/reset/back/forward. Cancel and `409` drift do
   not issue or repeat destructive cleanup.
 - Fresh qualification passed 330/330 focused tests, 1,066/1,066 app tests,
-  shared/app TypeScript, seven shared Deno entries, the 616-module build and
+  shared/app TypeScript, seven shared Bun entries, the 616-module build and
   chunk assertion, 79/79 control-server tests, 147 Recipe Console browser
   cases with one configured-live skip, and 28/28 legacy navigation/ticket
   cases. Independent state, UI/accessibility, traceability, and final visual
@@ -438,7 +438,7 @@ contract changed; one deterministic request-ID helper export is additive.
   deferred because measured pressure was rows/options and repeated derivation,
   not a dense plot.
 - Fresh qualification passed 1,385/1,385 app tests, shared/app TypeScript,
-  seven shared Deno entries, a 699-module build and reciprocal chunk proof,
+  seven shared Bun entries, a 699-module build and reciprocal chunk proof,
   169 available Recipe Console browser cases, and 28/28 legacy navigation/
   ticket cases. Four independent reviews are clean after focused fixes for
   selector fidelity and live-shrink inspector focus. Direction A remains
@@ -478,7 +478,7 @@ contract changed; one deterministic request-ID helper export is additive.
   motion, long/bidi evidence, operational states, zero document overflow,
   both CSS load orders, chunk separation, and five reviewed baselines.
 - Fresh qualification passed 279/279 focused tests across 18 files, shared/app
-  TypeScript, shared configured and direct Fleet Deno checks, the 758-module
+  TypeScript, shared configured and direct Fleet Bun checks, the 758-module
   production build and reciprocal chunk assertion, and 1,472/1,472 complete
   app tests across 139 files. Browser evidence passes Fleet 7/7, visual
   no-update 3/3, broader Recipe Console 65/65, the complete Recipe Console
@@ -523,7 +523,7 @@ contract changed; one deterministic request-ID helper export is additive.
   identity. It never grants operation authority, persists credentials, or
   accepts an arbitrary return URL.
 - Fresh qualification passes 1,564/1,564 app tests, shared/app TypeScript,
-  seven shared Deno entries plus the direct classifier/module check, a
+  seven shared Bun entries plus the direct classifier/module check, a
   776-module build, reciprocal chunk assertion, 190 complete Recipe Console
   browser cases, 30 preserved legacy cases, 31 responsive/CSS cases, and four
   no-update Advanced baselines. One Recipe Console configured-live case and

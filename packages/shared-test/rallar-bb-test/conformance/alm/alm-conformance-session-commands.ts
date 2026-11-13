@@ -241,7 +241,7 @@ export function toStatsCommand(step: AlmConformanceStepInput, name: string): Ral
 const RECOVERY_MARGIN_MS = 60_000;
 
 /**
- * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this Deno-loaded catalog
+ * The browser's store ids, `<prefix>:<sessionId>` (`browser-al-runtime-identity.ts`, which this browser-loaded catalog
  * cannot import). The session inbound store batches every engine round. An outbound store reports when its first work
  * batch runs, which for a store without work can be long after the connect or never before the document ends, so a
  * wait names the store that holds the original.

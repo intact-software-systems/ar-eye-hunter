@@ -1,14 +1,15 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { buildAuthenticatedWsUrl, readAuthenticatedWsSmokeConfig, validateAuthenticatedWsConfig } from './authenticated-ws-smoke.ts';
 
-Deno.test('authenticated WS smoke config is disabled until credentials are configured', () => {
+test('authenticated WS smoke config is disabled until credentials are configured', () => {
     const config = readAuthenticatedWsSmokeConfig(fakeEnv({}));
 
     assert.equal(config.enabled, false);
     assert.match(config.reason ?? '', /RALLAR_SMOKE_USERNAME/);
 });
 
-Deno.test('authenticated WS smoke config reads public API and blackbox defaults', () => {
+test('authenticated WS smoke config reads public API and blackbox defaults', () => {
     const config = readAuthenticatedWsSmokeConfig(
         fakeEnv({
             RALLAR_API_HOST: 'api.example.test',
@@ -28,7 +29,7 @@ Deno.test('authenticated WS smoke config reads public API and blackbox defaults'
     });
 });
 
-Deno.test('authenticated WS smoke rejects insecure ws for an HTTPS API', () => {
+test('authenticated WS smoke rejects insecure ws for an HTTPS API', () => {
     assert.throws(
         () =>
             validateAuthenticatedWsConfig(
@@ -49,7 +50,7 @@ Deno.test('authenticated WS smoke rejects insecure ws for an HTTPS API', () => {
     );
 });
 
-Deno.test('authenticated WS smoke builds the ticketed websocket URL', () => {
+test('authenticated WS smoke builds the ticketed websocket URL', () => {
     assert.equal(
         buildAuthenticatedWsUrl(
             {

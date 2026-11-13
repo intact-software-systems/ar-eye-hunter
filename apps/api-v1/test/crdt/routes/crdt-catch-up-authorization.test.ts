@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -43,7 +44,7 @@ const UNUSED_CRDT_ADMIN_MUTATIONS = {
     writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))
 };
 
-Deno.test(
+test(
     'durable CRDT catch-up denies an authenticated non-member without reading the log',
     async () => {
         let logReads = 0;
@@ -74,7 +75,7 @@ Deno.test(
     }
 );
 
-Deno.test('durable CRDT catch-up serves the log for an authorized caller', async () => {
+test('durable CRDT catch-up serves the log for an authorized caller', async () => {
     const app = new Hono();
     const authorizeInputs: CatchUpAuthorizationInput[] = [];
     const update = createCatchUpUpdate();
@@ -131,7 +132,7 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
     assert.equal(authorizeInputs[0].session.sessionId, 'alice-session');
 });
 
-Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async () => {
+test('durable CRDT catch-up rejects a missing bearer token with 401', async () => {
     const app = new Hono();
     crdtAdminRoutes.registerCrdtAdminRoutes(app, {
         repository: createCrdtReadRepository({
@@ -151,7 +152,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
     assert.equal((await readJsonRecord(response)).error, 'Unauthorized: Missing bearer token');
 });
 
-Deno.test(
+test(
     'CRDT admin middleware denies a non-admin with 403 on the authenticated route',
     async () => {
         const app = new Hono();

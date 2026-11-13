@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createDeterministicRtcTopologyGroupSnapshot } from './create-deterministic-rtc-topology-group-snapshot.ts';
 
@@ -262,7 +264,7 @@ function isDiagnosticOutput(out: string): boolean {
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcTopologyStarArguments(Deno.args);
+    const parsed = parseRtcTopologyStarArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -281,10 +283,10 @@ async function main(): Promise<void> {
         run: index + 1,
         ...runRtcTopologyStar(parsed.value.input.sessions)
     }));
-    await Deno.writeTextFile(
+    await writeFile(
         parsed.value.out,
         `${JSON.stringify({ input: parsed.value.input, results }, null, 2)}\n`,
-        { createNew: true }
+        { encoding: 'utf8', flag: 'wx' }
     );
     console.log(`Wrote ${parsed.value.out}`);
 }

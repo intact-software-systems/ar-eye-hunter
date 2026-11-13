@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 export interface ValidateRemoteDestinationInput {
     readonly request: any;
     readonly context: any;

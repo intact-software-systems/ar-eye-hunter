@@ -1,7 +1,8 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { runRuntimeStateExpiryStartupBarrier } from '../../src/services/runtime-state-expiry-startup.ts';
 
-Deno.test('runtime-state expiry runs specialised cleanup before generic eviction', async () => {
+test('runtime-state expiry runs specialised cleanup before generic eviction', async () => {
     const calls: string[] = [];
     await runRuntimeStateExpiryStartupBarrier({
         initialiseRuntimeStateExpiryEviction: () => {
@@ -16,7 +17,7 @@ Deno.test('runtime-state expiry runs specialised cleanup before generic eviction
     assert.deepEqual(calls, ['rtc-family-cleanup', 'eviction']);
 });
 
-Deno.test('runtime-state expiry starts protected generic eviction when RTC family cleanup reports corruption', async () => {
+test('runtime-state expiry starts protected generic eviction when RTC family cleanup reports corruption', async () => {
     const failure = new Error('RTC family cleanup failed');
     let evictionInitialisations = 0;
 
@@ -33,7 +34,7 @@ Deno.test('runtime-state expiry starts protected generic eviction when RTC famil
     assert.equal(evictionInitialisations, 1);
 });
 
-Deno.test('runtime-state expiry surfaces specialized corruption while protected generic eviction remains long-running', async () => {
+test('runtime-state expiry surfaces specialized corruption while protected generic eviction remains long-running', async () => {
     const failure = new Error('RTC family cleanup is corrupt');
     let genericStarted = false;
     let settled: Readonly<{ status: 'rejected'; error: unknown; }> | undefined;
@@ -56,7 +57,7 @@ Deno.test('runtime-state expiry surfaces specialized corruption while protected 
     assert.deepEqual(settled, { status: 'rejected', error: failure });
 });
 
-Deno.test('runtime-state expiry lifecycle retains, replaces, and stops rejected cleanup handles', async () => {
+test('runtime-state expiry lifecycle retains, replaces, and stops rejected cleanup handles', async () => {
     const module = await import(
         '../../src/services/runtime-state-expiry-startup.ts'
     ) as unknown as Record<string, unknown>;
@@ -94,7 +95,7 @@ Deno.test('runtime-state expiry lifecycle retains, replaces, and stops rejected 
     assert.equal(secondStops, 1);
 });
 
-Deno.test('runtime-state expiry lifecycle generation-fences delayed older startup handles', async () => {
+test('runtime-state expiry lifecycle generation-fences delayed older startup handles', async () => {
     const module = await import(
         '../../src/services/runtime-state-expiry-startup.ts'
     ) as unknown as Record<string, unknown>;
@@ -127,7 +128,7 @@ Deno.test('runtime-state expiry lifecycle generation-fences delayed older startu
     assert.deepEqual({ oldStops, newStops }, { oldStops: 1, newStops: 1 });
 });
 
-Deno.test('runtime-state expiry lifecycle generation-fences and owns generic eviction handles', async () => {
+test('runtime-state expiry lifecycle generation-fences and owns generic eviction handles', async () => {
     const module = await import(
         '../../src/services/runtime-state-expiry-startup.ts'
     ) as unknown as Record<string, unknown>;

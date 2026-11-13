@@ -243,7 +243,7 @@ Shared packages are the reusable surface. Apps are consumers.
 - `packages/shared-graph` owns topology generation.
 - `packages/shared-test` owns black-box recipes, the control protocol, and
   artifact analysis.
-- `apps/api-v1` is the generic Rallar server shell (Deno, Hono, Postgres). It
+- `apps/api-v1` is the generic Rallar server shell (Bun, Hono, Postgres). It
   is not a game server. See `apps/api-v1/README.md`.
 - `apps/ar-eye-hunter-v1` is the broad browser game: rooms, RTC, game
   authority, Motion, and a RallarAI director.

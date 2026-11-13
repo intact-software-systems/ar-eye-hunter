@@ -4,7 +4,7 @@ import type { TournamentReader } from '@shared-server/rallar-system/tournaments/
 import type { TournamentService } from '@shared-server/rallar-system/tournaments/tournament-service.ts';
 import type { TournamentMutationResult } from '@shared/api/tournaments/tournament-mutation-result.ts';
 import type { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import { changeTournament } from './change-tournament.ts';
 import { readTournament } from './read-tournament.ts';
 

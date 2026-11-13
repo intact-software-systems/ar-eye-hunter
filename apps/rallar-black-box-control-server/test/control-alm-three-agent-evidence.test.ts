@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -26,17 +27,14 @@ interface ReceiptPin {
     readonly outsideAudience: readonly string[];
 }
 
-Deno.test('the generated 3-agent ALM manifest passes when every receipt names the sessions of its pinned roles', () => {
-    assertEquals(toThreeAgentOutcome(false), { state: 'passed', ok: true, reason: undefined });
+test('the generated 3-agent ALM manifest passes when every receipt names the sessions of its pinned roles', () => {
+    expect(toThreeAgentOutcome(false)).toEqual({ state: 'passed', ok: true, reason: undefined });
 });
 
-Deno.test('the generated 3-agent ALM manifest fails when a receipt confirms the wrong recipient (D45)', () => {
+test('the generated 3-agent ALM manifest fails when a receipt confirms the wrong recipient (D45)', () => {
     const outcome = toThreeAgentOutcome(true);
-    assertEquals({ state: outcome.state, ok: outcome.ok }, { state: 'failed', ok: false });
-    assert(
-        outcome.reason?.includes('alm-ws-missing-recipient-retry-send-1: the confirmed recipients do not name the sessions of receiver.'),
-        outcome.reason
-    );
+    expect({ state: outcome.state, ok: outcome.ok }).toEqual({ state: 'failed', ok: false });
+    assert(outcome.reason?.includes('alm-ws-missing-recipient-retry-send-1: the confirmed recipients do not name the sessions of receiver.'));
 });
 
 /** Stages, releases and starts the unmodified 3-agent manifest, then answers each role root with receipt evidence. */
@@ -58,7 +56,7 @@ function toThreeAgentOutcome(swapRecipients: boolean) {
     const pins = toReceiptPins(sender);
     agents.forEach((agentId) => {
         const [root] = takeAgentDispatchableCommands(service, runId, agentId);
-        assert(root?.command.kind === 'recipe.run' && root.command.recipe, `${agentId} must start its role recipe`);
+        assert(root?.command.kind === 'recipe.run' && root.command.recipe);
         service.receiveClientEnvelope(toResultEnvelope(root, { recipe: root.command.recipe, pins, swapRecipients }));
     });
     const completed = service.snapshotDistributedRun(manifest.distributedRunId);
@@ -68,7 +66,7 @@ function toThreeAgentOutcome(swapRecipients: boolean) {
 
 function toReceiptPins(sender: RallarBlackBoxTestRecipe): readonly ReceiptPin[] {
     const pins = sender.metadata?.almReceiptRoles;
-    assert(Array.isArray(pins) && pins.length > 0, 'the combined sender must pin its receipts');
+    assert(Array.isArray(pins) && pins.length > 0);
     return pins.filter(isJsonRecordValue).map((pin) => ({
         handleId: String(pin.handleId),
         confirmed: pin.confirmed as readonly string[],

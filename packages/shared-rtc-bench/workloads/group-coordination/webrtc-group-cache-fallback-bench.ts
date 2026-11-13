@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -518,7 +519,7 @@ function toRawEvidence(result: WebRtcGroupCacheFallbackResult): RtcBaselineJson 
 }
 
 async function main(): Promise<void> {
-    const parsed = parseWebRtcGroupCacheFallbackArguments(Deno.args);
+    const parsed = parseWebRtcGroupCacheFallbackArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -549,8 +550,8 @@ async function main(): Promise<void> {
         },
         results
     };
-    await Deno.mkdir(dirname(diagnostic.out), { recursive: true });
-    await Deno.writeTextFile(diagnostic.out, JSON.stringify(output, null, 2));
+    await mkdir(dirname(diagnostic.out), { recursive: true });
+    await writeFile(diagnostic.out, JSON.stringify(output, null, 2), 'utf8');
     console.log(`Wrote ${diagnostic.out}`);
 }
 

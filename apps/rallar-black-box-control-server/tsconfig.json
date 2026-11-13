@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "ESNext",
+    "lib": ["ES2024", "DOM"],
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["bun"],
+    "paths": {
+      "@shared/*": ["../../packages/shared/*"],
+      "@shared-server/*": ["../../packages/shared-server/*"],
+      "@shared-test/*": ["../../packages/shared-test/*"],
+      "@shared-graph/*": ["../../packages/shared-graph/*"],
+      "@shared-web/*": ["../../packages/shared-web/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

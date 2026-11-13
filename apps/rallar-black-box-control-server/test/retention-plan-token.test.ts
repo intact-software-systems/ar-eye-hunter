@@ -1,3 +1,5 @@
+import { test } from 'bun:test';
+
 import assert from 'node:assert/strict';
 
 import { createRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
@@ -5,7 +7,7 @@ import { createRetentionPlanTokenAdapter } from '../src/retention-plan-token.ts'
 const KEY_A = new Uint8Array(32).fill(0x11);
 const KEY_B = new Uint8Array(32).fill(0x22);
 
-Deno.test('retention plan tokens are bounded process-bound and consequence-bound', async () => {
+test('retention plan tokens are bounded process-bound and consequence-bound', async () => {
     let nowEpochMs = 1_000;
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
@@ -35,7 +37,7 @@ Deno.test('retention plan tokens are bounded process-bound and consequence-bound
     assert.deepEqual(await adapter.verify(token, 'candidate-content-a'), false);
 });
 
-Deno.test('retention plan token verification rejects malformed and oversized values', async () => {
+test('retention plan token verification rejects malformed and oversized values', async () => {
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => 10_000,
@@ -58,7 +60,7 @@ Deno.test('retention plan token verification rejects malformed and oversized val
     }
 });
 
-Deno.test('retention plan token verification rejects noncanonical equivalent signatures', async () => {
+test('retention plan token verification rejects noncanonical equivalent signatures', async () => {
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => 10_000,
@@ -78,7 +80,7 @@ Deno.test('retention plan token verification rejects noncanonical equivalent sig
     assert.deepEqual(await adapter.verify(noncanonical, 'candidate-content'), false);
 });
 
-Deno.test('retention plan token verification accepts only the unpadded base64url form of a 32-byte signature', async () => {
+test('retention plan token verification accepts only the unpadded base64url form of a 32-byte signature', async () => {
     const adapter = createRetentionPlanTokenAdapter({
         key: KEY_A,
         now: () => 10_000,
@@ -105,7 +107,7 @@ Deno.test('retention plan token verification accepts only the unpadded base64url
     }
 });
 
-Deno.test('retention plan token verification rechecks expiry after async crypto', async () => {
+test('retention plan token verification rechecks expiry after async crypto', async () => {
     let nowEpochMs = 1_000;
     const delegate = crypto.subtle;
     const subtle = {

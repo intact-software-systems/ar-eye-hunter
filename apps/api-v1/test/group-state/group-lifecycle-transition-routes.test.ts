@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -11,7 +12,7 @@ import {
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
 
-Deno.test('eight lifecycle routes normalize authority and preserve command identity', async () => {
+test('eight lifecycle routes normalize authority and preserve command identity', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
@@ -55,7 +56,7 @@ Deno.test('eight lifecycle routes normalize authority and preserve command ident
     }
 });
 
-Deno.test('connect refuses missing and malformed layout identities before enqueue', async () => {
+test('connect refuses missing and malformed layout identities before enqueue', async () => {
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: () => Promise.reject(new Error('must not enqueue'))
     });
@@ -77,7 +78,7 @@ Deno.test('connect refuses missing and malformed layout identities before enqueu
     }
 });
 
-Deno.test('retired lifecycle URLs cannot enter authority', async () => {
+test('retired lifecycle URLs cannot enter authority', async () => {
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: () => Promise.reject(new Error('must not enqueue'))
     });
@@ -87,7 +88,7 @@ Deno.test('retired lifecycle URLs cannot enter authority', async () => {
     }
 });
 
-Deno.test('reconfigure rejects caller epoch fields before enqueue without erasing them', async () => {
+test('reconfigure rejects caller epoch fields before enqueue without erasing them', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
@@ -103,7 +104,7 @@ Deno.test('reconfigure rejects caller epoch fields before enqueue without erasin
     assert.deepEqual(enqueued, []);
 });
 
-Deno.test('reconfigure preserves omission and null landing with authenticated identity', async () => {
+test('reconfigure preserves omission and null landing with authenticated identity', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
@@ -124,7 +125,7 @@ Deno.test('reconfigure preserves omission and null landing with authenticated id
     }
 });
 
-Deno.test('group lifecycle transition routes reject malformed actor fields', async () => {
+test('group lifecycle transition routes reject malformed actor fields', async () => {
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: () => Promise.reject(new Error('must not enqueue'))
     });

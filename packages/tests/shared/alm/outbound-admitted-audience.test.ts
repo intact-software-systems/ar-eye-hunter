@@ -56,6 +56,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import '../../setup-browser-indexeddb.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 // Corruption scenarios deliberately replace the stored reference after the row is written.
 interface CapturedAudienceStoredMessage extends Omit<ALStoredOutboundMessage, 'reference'> {
@@ -259,7 +260,7 @@ describe('captured outbound audience read', () => {
         const socket = new JsonWebSocketServer();
         const recipient = new TestWebSocket('ws://session-a');
         recipient.open();
-        socket.addConnection(new ConnectionContext({ id: 'session-a', socket: recipient }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: 'session-a', socket: recipient }));
         const live = new WsQueueBoxServerLiveDelivery({
             socket,
             clock,

@@ -33,6 +33,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createRecordingLiveWsPublication } from './recording-live-ws-publication.ts';
 
@@ -298,7 +299,7 @@ function createCarrierFixture(
     const socketServer = new JsonWebSocketServer();
     const receiver = new TestWebSocket('ws://receiver');
     receiver.open();
-    socketServer.addConnection(new ConnectionContext({ id: 'receiver', socket: receiver }));
+    attachTestWebSocket(socketServer, new ConnectionContext({ id: 'receiver', socket: receiver }));
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({
         decodePrepared: decodeWsQueueBoxServerPreparedMessage
     });

@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 
 import { toAgentReloadResult } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
@@ -42,7 +43,7 @@ import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable
 const SUCCESSOR_PRINCIPAL_IDS = { sender: 'principal-alice', receiver: 'principal-bob' } as const;
 
 for (const replacesDocument of [true, false]) {
-    Deno.test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
+    test(`unmodified combined ALM runs every checkpoint and trailing scenario through restored runtime evidence (fresh document=${replacesDocument})`, async () => {
         const manifest = createAlmConformance2AgentEntry().manifest;
         const ports = new AlmReloadPorts(replacesDocument, createFixtureParticipants(false));
         const receiverRecipe = manifest.recipes.find((entry) => entry.role === 'receiver')?.recipe;
@@ -71,7 +72,7 @@ for (const replacesDocument of [true, false]) {
         const senderRoot = started.commandLinks.find((link) => link.phase === 'start' && link.role === 'sender')!.commandId;
         const root = service.snapshotRun(runId)!.commands.find((command) => command.envelope.commandId === senderRoot)!.envelope;
         const pair = toAlmReloadPair(root.command)!;
-        assertEquals(pair.checkpoints.length, 3);
+        expect(pair.checkpoints.length).toEqual(3);
         for (const checkpoint of pair.checkpoints) {
             const [prefix] = takeAgentDispatchableCommands(service, runId, agents[0]);
             const [ready] = takeAgentDispatchableCommands(service, runId, agents[1]);
@@ -82,16 +83,16 @@ for (const replacesDocument of [true, false]) {
             const pending = executeSegment(service, ports.receiver, absence);
             await entered;
             try {
-                assertEquals(takeAgentDispatchableCommands(service, runId, agents[0]), [], 'an unfinished real absence wait cannot authorize page replacement');
+                expect(takeAgentDispatchableCommands(service, runId, agents[0])).toEqual([]);
             }
             finally {
                 ports.finishAbsence();
                 await pending;
             }
             const snapshot = service.snapshotForPersistence({ commands: 1, results: 1 });
-            assert(snapshot.runs[0].results.some((result) => result.commandId === prefix.commandId), 'pending actual prefix evidence survives low bounds');
+            assert(snapshot.runs[0].results.some((result) => result.commandId === prefix.commandId));
             const [reload] = takeAgentDispatchableCommands(service, runId, agents[0]);
-            assertEquals(reload.command.kind, 'agent.reload');
+            expect(reload.command.kind).toEqual('agent.reload');
             assert(reload.command.kind === 'agent.reload');
             const result = toAgentReloadResult({
                 commandId: reload.commandId,
@@ -108,7 +109,7 @@ for (const replacesDocument of [true, false]) {
             const [suffix] = takeAgentDispatchableCommands(service, runId, agents[0]);
             assert(suffix.command.kind === 'recipe.run');
             assert(suffix.recipeExecution?.segment);
-            assertEquals(suffix.command.recipe?.commands[suffix.recipeExecution.segment.end - 1]?.commandId, checkpoint.senderSuffixEnd);
+            expect(suffix.command.recipe?.commands[suffix.recipeExecution.segment.end - 1]?.commandId).toEqual(checkpoint.senderSuffixEnd);
             await executeSegment(service, ports.sender, suffix);
             const [recovery] = takeAgentDispatchableCommands(service, runId, agents[1]);
             await executeSegment(service, ports.receiver, recovery);
@@ -121,13 +122,11 @@ for (const replacesDocument of [true, false]) {
         const [senderTrailing] = takeAgentDispatchableCommands(service, runId, agents[0]);
         await executeSegment(service, ports.sender, senderTrailing);
         const senderCompleted = service.snapshotForPersistence({ commands: 1, results: 1 });
-        assert(senderCompleted.runs[0].results.some((result) => result.commandId === senderRoot), 'real sender root survives until receiver assessment');
+        assert(senderCompleted.runs[0].results.some((result) => result.commandId === senderRoot));
         const senderValue = senderCompleted.runs[0].results.find((entry) => entry.commandId === senderRoot)?.result?.value;
         assert(isJsonRecordValue(senderValue) && Array.isArray(senderValue.results));
-        assertEquals(
-            senderValue.results.map((entry) => isJsonRecordValue(entry) ? entry.commandId : undefined),
-            manifest.recipes.find((entry) => entry.role === 'sender')!.recipe!.commands.map((command) => command.commandId),
-            'logical aggregation preserves every actual authored child identity'
+        expect(senderValue.results.map((entry) => isJsonRecordValue(entry) ? entry.commandId : undefined)).toEqual(
+            manifest.recipes.find((entry) => entry.role === 'sender')!.recipe!.commands.map((command) => command.commandId)
         );
         service = createRallarBlackBoxControlService(input);
         service.restoreSnapshot(senderCompleted);
@@ -135,28 +134,18 @@ for (const replacesDocument of [true, false]) {
         const [receiverTrailing] = takeAgentDispatchableCommands(service, runId, agents[1]);
         await executeSegment(service, ports.receiver, receiverTrailing);
         const completed = service.snapshotDistributedRun(manifest.distributedRunId);
-        assertEquals(completed?.state, replacesDocument ? 'passed' : 'failed', JSON.stringify(completed?.rollup));
+        expect(completed?.state).toEqual(replacesDocument ? 'passed' : 'failed');
         if (!replacesDocument) {
-            assert(
-                completed?.rollup.failures.some((failure) => failure.error?.code === 'RALLAR_BB_ALM_IDENTITY_FAILED'),
-                'the actual hosted rollup must reject unchanged document facts despite successful command results'
-            );
+            assert(completed?.rollup.failures.some((failure) => failure.error?.code === 'RALLAR_BB_ALM_IDENTITY_FAILED'));
         }
-        assertEquals(
-            ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'delivery-reload').length,
-            3,
-            'restored suffixes and roots never resend an original'
-        );
-        assertEquals(
-            service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length,
-            1,
-            'terminal evidence returns to the configured finite bounds'
-        );
+        expect(ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'delivery-reload').length)
+            .toEqual(3);
+        expect(service.snapshotForPersistence({ commands: 1, results: 1 }).runs[0].results.length).toEqual(1);
     });
 }
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-    Deno.test(`the ${carrier} takeover's three recipes run end to end against the fixture's takeover model`, async () => {
+    test(`the ${carrier} takeover's three recipes run end to end against the fixture's takeover model`, async () => {
         const scenario = createAlmConformanceRecipes({
             group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
             carrier,
@@ -172,24 +161,22 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
 
         const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
         const held = ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'durable-takeover');
-        assertEquals(held.map((message) => message.submitted), [false], 'the owner\'s hold keeps its original from the carrier');
+        expect(held.map((message) => message.submitted)).toEqual([false]);
         ports.replaceSenderDocument();
         const successor = await ports.sender.execute(toRecipeRun(scenario.successor));
         const receiver = await ports.receiver.execute(toRecipeRun(scenario.receiver));
 
         for (const [role, result] of [['owner', owner], ['successor', successor], ['receiver', receiver]] as const) {
-            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+            expect(result.ok).toEqual(true);
         }
-        assertEquals(held.map((message) => message.submitted), [true], 'the successor sends the original once');
-        assertEquals(
-            held.map((message) => [message.carrierFallback?.to, message.attemptCarriers.includes('ws')]),
-            [carrier === 'rtc-with-ws-fallback' ? ['ws', true] : [undefined, false]],
-            'only the fallback owner waits for its hand-over and the WS attempt that follows it'
-        );
+        expect(held.map((message) => message.submitted)).toEqual([true]);
+        expect(held.map((message) => [message.carrierFallback?.to, message.attemptCarriers.includes('ws')])).toEqual([
+            carrier === 'rtc-with-ws-fallback' ? ['ws', true] : [undefined, false]
+        ]);
     });
 }
 
-Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never hands over to WS', async () => {
+test('the rtc-with-ws-fallback owner fails while its held RTC leg never hands over to WS', async () => {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
         carrier: 'rtc-with-ws-fallback',
@@ -206,7 +193,7 @@ Deno.test('the rtc-with-ws-fallback owner fails while its held RTC leg never han
 
     const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
 
-    assertEquals(owner.ok, false, JSON.stringify(owner));
+    expect(owner.ok).toEqual(false);
 });
 
 function toCatalogInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRecipesInput {
@@ -224,7 +211,7 @@ function toCatalogInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRec
 
 function findCatalogScenario(input: CreateAlmConformanceRecipesInput, scenarioId: string): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(input).find((candidate) => candidate.scenarioId === scenarioId);
-    assert(scenario, `${scenarioId} over ${input.carrier}`);
+    assert(scenario);
     return scenario;
 }
 
@@ -241,7 +228,7 @@ function findMarked(ports: AlmReloadPorts, marker: string): readonly PortMessage
 }
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-    Deno.test(`the ${carrier} checkpoint-recovery pair restores the interval's checkpoint across the reload`, async () => {
+    test(`the ${carrier} checkpoint-recovery pair restores the interval's checkpoint across the reload`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-recovery');
         const [checkpoint] = toAlmReloadCheckpoints(sender.metadata?.almReloadCheckpoints) ?? [];
         assert(checkpoint);
@@ -259,29 +246,29 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
         );
 
         for (const result of results) {
-            assertEquals(result.ok, true, JSON.stringify(result));
+            expect(result.ok).toEqual(true);
         }
-        assertEquals(findMarked(ports, 'checkpoint-recovery').map((message) => message.submitted), [true], 'the restored original is sent once');
+        expect(findMarked(ports, 'checkpoint-recovery').map((message) => message.submitted)).toEqual([true]);
     });
 
-    Deno.test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
+    test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-lag');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
 
-        assertEquals(owner.ok, true, JSON.stringify(owner));
-        assertEquals(received.ok, true, JSON.stringify(received));
-        assertEquals(
-            findMarked(ports, 'checkpoint-lag').map((message) => [message.state, message.failure]),
-            [['acknowledged', undefined], ['failed', { kind: 'storage-unavailable', cause: 'checkpoint-lag' }], ['acknowledged', undefined]]
-        );
+        expect(owner.ok).toEqual(true);
+        expect(received.ok).toEqual(true);
+        expect(findMarked(ports, 'checkpoint-lag').map((message) => [message.state, message.failure])).toEqual([['acknowledged', undefined], ['failed', {
+            kind: 'storage-unavailable',
+            cause: 'checkpoint-lag'
+        }], ['acknowledged', undefined]]);
     });
 }
 
 for (const carrier of ['ws', 'rtc'] as const) {
-    Deno.test(`the ${carrier} flush-on-hide successor restores what the owner's lifecycle flush saved`, async () => {
+    test(`the ${carrier} flush-on-hide successor restores what the owner's lifecycle flush saved`, async () => {
         const { sender, receiver, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
@@ -293,12 +280,12 @@ for (const carrier of ['ws', 'rtc'] as const) {
         const received = await ports.receiver.execute(toRecipeRun(receiver));
 
         for (const [role, result] of [['owner', owner], ['successor', restored], ['receiver', received]] as const) {
-            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+            expect(result.ok).toEqual(true);
         }
-        assertEquals(findMarked(ports, 'flush-on-hide').map((message) => message.submitted), [true]);
+        expect(findMarked(ports, 'flush-on-hide').map((message) => message.submitted)).toEqual([true]);
     });
 
-    Deno.test(`the ${carrier} flush-on-hide successor restores nothing when the owner's page ends unflushed inside the interval`, async () => {
+    test(`the ${carrier} flush-on-hide successor restores nothing when the owner's page ends unflushed inside the interval`, async () => {
         const { sender, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
@@ -307,47 +294,43 @@ for (const carrier of ['ws', 'rtc'] as const) {
         ports.replaceSenderDocument();
         const restored = await ports.sender.execute(toRecipeRun(successor));
 
-        assertEquals(restored.ok, false, JSON.stringify(restored));
-        assertEquals(findMarked(ports, 'flush-on-hide').map((message) => message.submitted), [false], 'the unsaved admission is lost with its page');
+        expect(restored.ok).toEqual(false);
+        expect(findMarked(ports, 'flush-on-hide').map((message) => message.submitted)).toEqual([false]);
     });
 }
 
 for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
-    Deno.test(`the ${carrier} ordering-gap-repair pair holds the second frame, reads the range NACK and delivers all three in order`, async () => {
+    test(`the ${carrier} ordering-gap-repair pair holds the second frame, reads the range NACK and delivers all three in order`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'ordering-gap-repair');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
 
-        assertEquals(sent.ok, true, JSON.stringify(sent));
-        assertEquals(received.ok, true, JSON.stringify(received));
+        expect(sent.ok).toEqual(true);
+        expect(received.ok).toEqual(true);
         const messages = findMarked(ports, 'ordering-gap-repair');
-        assertEquals(messages.map((message) => [message.command.seq, message.buffered, message.failure]), [
+        expect(messages.map((message) => [message.command.seq, message.buffered, message.failure])).toEqual([
             [1, false, undefined],
             [2, false, undefined],
             [3, false, undefined]
         ]);
-        assertEquals(
-            [...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq),
-            [1, 2, 3],
-            'the channel read the sequences in order once the gap closed'
-        );
-        assertEquals(messages[1].repairAttempts, 1, 'the one gap report spent one retransmit');
+        expect([...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq)).toEqual([1, 2, 3]);
+        expect(messages[1].repairAttempts).toEqual(1);
     });
 }
 
 for (const carrier of ALM_CONFORMANCE_RTC_CARRIERS) {
-    Deno.test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
+    test(`the ${carrier} repair-exhausted pair keeps the hold, spends the budget and reads the second send skipped`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
 
         const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
 
-        assertEquals(sent.ok, true, JSON.stringify(sent));
-        assertEquals(received.ok, true, JSON.stringify(received));
-        assertEquals(findMarked(ports, 'repair-exhausted').map((message) => [message.command.seq, message.state, message.buffered, message.failure]), [
+        expect(sent.ok).toEqual(true);
+        expect(received.ok).toEqual(true);
+        expect(findMarked(ports, 'repair-exhausted').map((message) => [message.command.seq, message.state, message.buffered, message.failure])).toEqual([
             [1, 'acknowledged', false, undefined],
             [2, 'failed', false, { kind: 'skipped', reason: 'repair-exhausted' }],
             [3, 'transport-accepted', true, undefined],
@@ -358,7 +341,7 @@ for (const carrier of ALM_CONFORMANCE_RTC_CARRIERS) {
 
 for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
     // The receiver connects before the sender starts, as the sender's readiness wait orders the lane.
-    Deno.test(`the ${carrier} ordering-resync receiver with a recording owner reads the owner's invocation and its cursor`, async () => {
+    test(`the ${carrier} ordering-resync receiver with a recording owner reads the owner's invocation and its cursor`, async () => {
         const { sender, receiver } = findCatalogScenario({ ...toCatalogInput(carrier), recoveryOwner: 'record' }, 'ordering-resync');
         const connectId = `${receiver.recipeId}-connect`;
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
@@ -368,14 +351,14 @@ for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
         const received = await ports.receiver.execute(toRecipeRun(toSegment(receiver, connectId, undefined)));
 
         for (const [role, result] of [['receiver connect', connected], ['sender', sent], ['receiver', received]] as const) {
-            assertEquals(result.ok, true, `${role}: ${JSON.stringify(result)}`);
+            expect(result.ok).toEqual(true);
         }
-        assertEquals(ports.recoveryOwnerInstalled, true);
+        expect(ports.recoveryOwnerInstalled).toEqual(true);
     });
 }
 
 for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
-    Deno.test(`the ${carrier} fenced-delivery trio delivers the member's send stamped with the group's roster`, async () => {
+    test(`the ${carrier} fenced-delivery trio delivers the member's send stamped with the group's roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-delivery');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -387,9 +370,9 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         ];
 
         for (const result of results) {
-            assertEquals(result.ok, true, JSON.stringify(result));
+            expect(result.ok).toEqual(true);
         }
-        assertEquals(findMarked(ports, 'fenced-delivery').map((message) => [message.submitted, message.rosterVersion]), [[true, 4]]);
+        expect(findMarked(ports, 'fenced-delivery').map((message) => [message.submitted, message.rosterVersion])).toEqual([[true, 4]]);
         const [message] = findMarked(ports, 'fenced-delivery');
         assert(message.command.handleId);
         const receipt = await ports.sender.execute({
@@ -398,14 +381,14 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             handleId: message.command.handleId
         });
         assert(receipt.ok && isJsonRecordValue(receipt.value));
-        assertEquals(receipt.value.expectedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
-        assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
-        assertEquals(receipt.value.unconfirmedRecipientPeerIds, []);
-        assertEquals(receipt.value.state, 'acknowledged');
+        expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
+        expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
+        expect(receipt.value.unconfirmedRecipientPeerIds).toEqual([]);
+        expect(receipt.value.state).toEqual('acknowledged');
     });
 
     // The sender runs before recipient-b, which leaves on the cue; the receiver reads what followed.
-    Deno.test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
+    test(`the ${carrier} fenced-catch-up trio delivers the floored send once recipient-b's leave moves the roster`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -417,14 +400,10 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         ];
 
         for (const result of results) {
-            assertEquals(result.ok, true, JSON.stringify(result));
+            expect(result.ok).toEqual(true);
         }
-        assertEquals([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]], [8, 5, ['recipient-b']]);
-        assertEquals(
-            findMarked(ports, 'fenced-catch-up').map((message) => [message.floor, message.submitted]),
-            [[8, true], [undefined, true]],
-            'the floored send waited for the move, the cue did not'
-        );
+        expect([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]]).toEqual([8, 5, ['recipient-b']]);
+        expect(findMarked(ports, 'fenced-catch-up').map((message) => [message.floor, message.submitted])).toEqual([[8, true], [undefined, true]]);
         const message = findMarked(ports, 'fenced-catch-up').find((message) => message.floor !== undefined);
         assert(message?.command.handleId);
         const receipt = await ports.sender.execute({
@@ -433,14 +412,14 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             handleId: message.command.handleId
         });
         assert(receipt.ok && isJsonRecordValue(receipt.value));
-        assertEquals(receipt.value.expectedRecipientPeerIds, ['receiver-stored-session', 'recipient-b-stored-session']);
-        assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
-        assertEquals(receipt.value.unconfirmedRecipientPeerIds, ['recipient-b-stored-session']);
-        assertEquals(receipt.value.submitted, true);
-        assertEquals(receipt.value.state, 'transport-accepted');
+        expect(receipt.value.expectedRecipientPeerIds).toEqual(['receiver-stored-session', 'recipient-b-stored-session']);
+        expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+        expect(receipt.value.unconfirmedRecipientPeerIds).toEqual(['recipient-b-stored-session']);
+        expect(receipt.value.submitted).toEqual(true);
+        expect(receipt.value.state).toEqual('transport-accepted');
     });
 
-    Deno.test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
+    test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
         const floored = `${receiver.recipeId}-received-floored`;
@@ -453,10 +432,10 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
-        assertEquals(received.ok, false, JSON.stringify(received));
-        assertEquals(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted), [false, true]);
+        expect(received.ok).toEqual(false);
+        expect(findMarked(ports, 'fenced-catch-up').map((message) => message.submitted)).toEqual([false, true]);
     });
-    Deno.test(`the ${carrier} fenced-catch-up trio fails when recipient-b owns the group, whose only owner cannot leave`, async () => {
+    test(`the ${carrier} fenced-catch-up trio fails when recipient-b owns the group, whose only owner cannot leave`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -472,13 +451,13 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         const mover = await ports.recipientB.execute(toRecipeRun(recipientB));
         const received = await ports.receiver.execute(toRecipeRun(shortened));
 
-        assertEquals(mover.ok, false, JSON.stringify(mover));
-        assertEquals(received.ok, false, JSON.stringify(received));
-        assertEquals([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]], [7, 4, []]);
+        expect(mover.ok).toEqual(false);
+        expect(received.ok).toEqual(false);
+        expect([ports.group.snapshotVersion, ports.group.rosterVersion, [...ports.group.left]]).toEqual([7, 4, []]);
     });
 }
 
-Deno.test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced rejection and delivers nothing', async () => {
+test('the ws fenced-rejection trio reads the trusted server\'s membership-fenced rejection and delivers nothing', async () => {
     const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput('ws'), 'fenced-rejection');
     assert(recipientB);
     const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
@@ -490,12 +469,12 @@ Deno.test('the ws fenced-rejection trio reads the trusted server\'s membership-f
     ];
 
     for (const result of results) {
-        assertEquals(result.ok, true, JSON.stringify(result));
+        expect(result.ok).toEqual(true);
     }
-    assertEquals(
-        findMarked(ports, 'fenced-rejection').map((message) => [message.state, message.submitted, message.relayRejection]),
-        [['rejected', false, { relay: 'trusted-server', reason: 'membership-fenced' }]]
-    );
+    expect(findMarked(ports, 'fenced-rejection').map((message) => [message.state, message.submitted, message.relayRejection])).toEqual([['rejected', false, {
+        relay: 'trusted-server',
+        reason: 'membership-fenced'
+    }]]);
 });
 
 function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommand {
@@ -503,14 +482,14 @@ function toRecipeRun(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestComman
 }
 
 async function executeSegment(service: RallarBlackBoxControlService, runtime: RallarBlackBoxTestRuntime, envelope: ControlCommandEnvelope): Promise<void> {
-    assert(envelope, 'expected an actual control dispatch');
+    assert(envelope);
     const result = await executeControlRuntimeCommand(runtime, envelope);
-    assertEquals(result.ok, true, JSON.stringify(result));
+    expect(result.ok).toEqual(true);
     recordResult(service, envelope, result);
 }
 
 function recordResult(service: RallarBlackBoxControlService, envelope: ControlCommandEnvelope, result: RallarBlackBoxTestResult): void {
-    assertEquals(
+    expect(
         service.receiveClientEnvelope({
             kind: 'result',
             protocolVersion: 1,
@@ -519,12 +498,11 @@ function recordResult(service: RallarBlackBoxControlService, envelope: ControlCo
             commandId: envelope.commandId,
             ok: result.ok,
             result
-        }).accepted,
-        true
-    );
+        }).accepted
+    ).toEqual(true);
 }
 
-Deno.test('a dropped RTC leg followed by WS delivery confirms logical recipients without an RTC hop', async () => {
+test('a dropped RTC leg followed by WS delivery confirms logical recipients without an RTC hop', async () => {
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     const sent = await ports.sender.execute({
         kind: 'messages.send',
@@ -542,15 +520,15 @@ Deno.test('a dropped RTC leg followed by WS delivery confirms logical recipients
         handleId: 'fallback-current'
     });
     assert(receipt.ok && isJsonRecordValue(receipt.value));
-    assertEquals(receipt.value.attemptCarriers, ['rtc', 'ws']);
-    assertEquals(receipt.value.attemptOutcomes, ['not-ready', 'sent']);
-    assertEquals(receipt.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
-    assertEquals(receipt.value.state, 'acknowledged');
-    assertEquals(receipt.value.confirmedHopPeerIds, []);
-    assertEquals(receipt.value.unconfirmedHopPeerIds, []);
+    expect(receipt.value.attemptCarriers).toEqual(['rtc', 'ws']);
+    expect(receipt.value.attemptOutcomes).toEqual(['not-ready', 'sent']);
+    expect(receipt.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+    expect(receipt.value.state).toEqual('acknowledged');
+    expect(receipt.value.confirmedHopPeerIds).toEqual([]);
+    expect(receipt.value.unconfirmedHopPeerIds).toEqual([]);
 });
 
-Deno.test('cancelled held fallback retains its terminal evidence through repeated receipt reads', async () => {
+test('cancelled held fallback retains its terminal evidence through repeated receipt reads', async () => {
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     const held = await ports.sender.execute({
         kind: 'fault.inject',
@@ -581,15 +559,15 @@ Deno.test('cancelled held fallback retains its terminal evidence through repeate
             handleId: 'cancel-held'
         });
         assert(receipt.ok && isJsonRecordValue(receipt.value));
-        assertEquals(receipt.value.state, 'cancelled');
-        assertEquals(receipt.value.submitted, false);
-        assertEquals(receipt.value.carrierFallback, undefined);
-        assertEquals(receipt.value.attemptCarriers, []);
-        assertEquals(receipt.value.confirmedRecipientPeerIds, []);
+        expect(receipt.value.state).toEqual('cancelled');
+        expect(receipt.value.submitted).toEqual(false);
+        expect(receipt.value.carrierFallback).toEqual(undefined);
+        expect(receipt.value.attemptCarriers).toEqual([]);
+        expect(receipt.value.confirmedRecipientPeerIds).toEqual([]);
     }
 });
 
-Deno.test('requesting expiry preserves a future-TTL acknowledged terminal message', async () => {
+test('requesting expiry preserves a future-TTL acknowledged terminal message', async () => {
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     assert(
         (await ports.sender.execute({
@@ -611,12 +589,12 @@ Deno.test('requesting expiry preserves a future-TTL acknowledged terminal messag
         timeoutMs: 1
     });
     assert(observed.ok && isJsonRecordValue(observed.value));
-    assertEquals(observed.value.state, 'acknowledged');
-    assertEquals(observed.value.confirmedRecipientPeerIds, ['receiver-stored-session']);
-    assertEquals(ports.now, 1_000);
+    expect(observed.value.state).toEqual('acknowledged');
+    expect(observed.value.confirmedRecipientPeerIds).toEqual(['receiver-stored-session']);
+    expect(ports.now).toEqual(1_000);
 });
 
-Deno.test('an expiry wait times out on a live future deadline and later observes elapsed admission time', async () => {
+test('an expiry wait times out on a live future deadline and later observes elapsed admission time', async () => {
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     assert(
         (await ports.sender.execute({
@@ -648,9 +626,9 @@ Deno.test('an expiry wait times out on a live future deadline and later observes
         state: ['expired'],
         timeoutMs: 1
     });
-    assertEquals(premature.ok, false);
-    assertEquals(ports.messages[0].state, 'accepted');
-    assertEquals(ports.now, 1_001);
+    expect(premature.ok).toEqual(false);
+    expect(ports.messages[0].state).toEqual('accepted');
+    expect(ports.now).toEqual(1_001);
     assert(
         (await ports.sender.execute({ kind: 'wait', commandId: 'live-clock', match: { topic: 'unexpected-clock-event' }, absent: true, timeoutMs: 59_999 })).ok
     );
@@ -660,12 +638,12 @@ Deno.test('an expiry wait times out on a live future deadline and later observes
         handleId: 'live'
     });
     assert(elapsed.ok && isJsonRecordValue(elapsed.value));
-    assertEquals(elapsed.value.state, 'expired');
-    assertEquals(elapsed.value.failure, { kind: 'expired' });
-    assertEquals(elapsed.value.submitted, false);
+    expect(elapsed.value.state).toEqual('expired');
+    expect(elapsed.value.failure).toEqual({ kind: 'expired' });
+    expect(elapsed.value.submitted).toEqual(false);
 });
 
-Deno.test('an observation waits only to the actual held message deadline', async () => {
+test('an observation waits only to the actual held message deadline', async () => {
     const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
     assert(
         (await ports.sender.execute({
@@ -698,14 +676,14 @@ Deno.test('an observation waits only to the actual held message deadline', async
         timeoutMs: 100
     });
     assert(observed.ok && isJsonRecordValue(observed.value));
-    assertEquals(observed.value.state, 'expired');
-    assertEquals(observed.value.failure, { kind: 'expired' });
-    assertEquals(observed.durationMs, 50);
-    assertEquals(ports.now, 1_050);
+    expect(observed.value.state).toEqual('expired');
+    expect(observed.value.failure).toEqual({ kind: 'expired' });
+    expect(observed.durationMs).toEqual(50);
+    expect(ports.now).toEqual(1_050);
 });
 
 for (const retirement of ['cancelled', 'deadline'] as const) {
-    Deno.test(`a ${retirement} persistent held original is neither claimed nor redelivered after replacement and reconnect`, async () => {
+    test(`a ${retirement} persistent held original is neither claimed nor redelivered after replacement and reconnect`, async () => {
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
         assert(
             (await ports.sender.execute({
@@ -741,17 +719,16 @@ for (const retirement of ['cancelled', 'deadline'] as const) {
         ports.replaceSenderDocument();
         assert((await ports.sender.execute({ kind: 'rtc.connect', commandId: 'retired-connect' })).ok);
         const [message] = ports.messages;
-        assertEquals(message.state, retirement === 'cancelled' ? 'cancelled' : 'expired');
-        assertEquals(message.submitted, false);
-        assertEquals(message.deliveredRecipientRoles, []);
+        expect(message.state).toEqual(retirement === 'cancelled' ? 'cancelled' : 'expired');
+        expect(message.submitted).toEqual(false);
+        expect(message.deliveredRecipientRoles).toEqual([]);
         const recoveries = ports.sender.state().events.filter((event) => event.topic === 'rallar.browser.alm.storage');
-        assertEquals(recoveries.length, 6);
+        expect(recoveries.length).toEqual(6);
         for (const event of recoveries) {
             assert(isJsonRecordValue(event.payload) && isJsonRecordValue(event.payload.data));
             assert(isJsonRecordValue(event.payload.data.outcome));
-            assertEquals(event.payload.data.outcome.claimed, 0);
-            assertEquals(
-                event.payload.data.outcome.expired,
+            expect(event.payload.data.outcome.claimed).toEqual(0);
+            expect(event.payload.data.outcome.expired).toEqual(
                 retirement === 'deadline' && event.payload.data.storeId === 'browser-rtc-overlay:sender-stored-session' ? 1 : 0
             );
         }
@@ -764,7 +741,7 @@ for (const retirement of ['cancelled', 'deadline'] as const) {
             windowMs: 1
         });
         assert(received.ok && isJsonRecordValue(received.value));
-        assertEquals(received.value.observed, 0);
+        expect(received.value.observed).toEqual(0);
     });
 }
 

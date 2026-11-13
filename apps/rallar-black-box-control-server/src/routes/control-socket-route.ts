@@ -1,7 +1,9 @@
+import type { Server, WebSocketHandler } from 'bun';
+
 import { parseControlClientMessage, type ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import type { ControlAgentSockets } from '../control-agent-sockets.ts';
+import type { ControlAgentSocket, ControlAgentSockets } from '../control-agent-sockets.ts';
 import type { ControlArtifactRecorder } from '../control-artifact-recorder.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlSnapshotPersistence } from '../control-snapshot-persistence.ts';
@@ -23,8 +25,13 @@ export interface ControlSocketRouteDependencies {
     readonly responses: ControlHttpResponses;
 }
 
+/** Per-connection state handed to `server.upgrade` and read back from `ws.data`. */
+export interface ControlSocketData {
+    readonly socketToken: string | undefined;
+}
+
 interface ControlSocketMessage {
-    readonly socket: WebSocket;
+    readonly socket: ControlAgentSocket;
     readonly socketToken: string | undefined;
     readonly frameText: Either<ControlHttpRejection, string>;
 }
@@ -33,26 +40,41 @@ const MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
 const UNSUPPORTED_DATA_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 
-export function openControlSocket(request: Request, dependencies: ControlSocketRouteDependencies): Response {
+export function openControlSocket(
+    request: Request,
+    server: Server<ControlSocketData>,
+    dependencies: ControlSocketRouteDependencies
+): Response | undefined {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
         return dependencies.responses.rejection({ status: 426, message: 'Expected WebSocket upgrade.' });
     }
 
     const socketToken = toControlRequestToken(request, new URL(request.url));
-    const { socket, response } = Deno.upgradeWebSocket(request);
-    socket.onmessage = (event) => {
-        void decodeControlMessageText(event.data, dependencies.requestBody.maxRequestBytes).then((frameText) =>
-            receiveControlSocketMessage({ socket, socketToken, frameText }, dependencies)
-        );
-    };
-    socket.onclose = () => {
-        const agent = dependencies.agentSockets.release(socket);
-        if (agent) {
-            dependencies.controlService.markAgentDisconnected(agent.runId, agent.agentId);
-            dependencies.persistence.persist();
+    const upgraded = server.upgrade(request, { data: { socketToken } });
+    if (!upgraded) {
+        return dependencies.responses.rejection({ status: 426, message: 'Expected WebSocket upgrade.' });
+    }
+    return undefined;
+}
+
+export function createControlWebSocketHandlers(
+    dependencies: ControlSocketRouteDependencies
+): WebSocketHandler<ControlSocketData> {
+    return {
+        message(ws, message) {
+            const { socketToken } = ws.data;
+            void decodeControlMessageText(toControlFrameText(message), dependencies.requestBody.maxRequestBytes).then(
+                (frameText) => receiveControlSocketMessage({ socket: ws, socketToken, frameText }, dependencies)
+            );
+        },
+        close(ws) {
+            const agent = dependencies.agentSockets.release(ws);
+            if (agent) {
+                dependencies.controlService.markAgentDisconnected(agent.runId, agent.agentId);
+                dependencies.persistence.persist();
+            }
         }
     };
-    return response;
 }
 
 function receiveControlSocketMessage(
@@ -92,7 +114,7 @@ function receiveControlSocketMessage(
 }
 
 function acceptControlClientEnvelope(
-    socket: WebSocket,
+    socket: ControlAgentSocket,
     envelope: ControlClientEnvelope,
     { agentSockets, artifactRecorder, controlService, persistence }: ControlSocketRouteDependencies
 ): void {
@@ -115,4 +137,12 @@ function acceptControlClientEnvelope(
         agentSockets.sendDispatchableCommandsForRun(received.runId);
     }
     persistence.persist();
+}
+
+/** Bun delivers text frames as strings and binary frames as `Buffer`; the decoder reads string or `ArrayBuffer`. */
+function toControlFrameText(frame: string | Buffer): string | ArrayBuffer {
+    if (typeof frame === 'string') {
+        return frame;
+    }
+    return frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) as ArrayBuffer;
 }

@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect } from 'bun:test';
+import assert from 'node:assert/strict';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
@@ -263,7 +264,7 @@ export class AlmReloadPorts {
 
     finishAbsence(): void {
         assert(this.absence);
-        assertEquals(this.absence.duration, 17_000, 'the authored absence window is unchanged');
+        expect(this.absence.duration).toEqual(17_000);
         this.absence.release();
         this.absence = undefined;
     }
@@ -320,7 +321,7 @@ export class AlmReloadPorts {
         this.settleCheckpoints();
         const document = { origin: 'https://fixture.test', timeOrigin: role === 'sender' ? this.senderDocument : 50 };
         const participant = this.participants.find((participant) => participant.role === role);
-        assert(participant, `${role} is not a participant of this fixture cell`);
+        assert(participant);
         const session = { clientId: role, sessionId: participant.sessionId };
         switch (command.kind) {
             case 'http.request':
@@ -333,7 +334,7 @@ export class AlmReloadPorts {
                 }
                 if (role === 'sender') {
                     const limits = decodeAlmReloadPublicationLimits(command.rallar?.almPublicationLimits);
-                    assert(limits.right, limits.left);
+                    assert(limits.right);
                     this.publicationLane.connect(limits.right);
                 }
                 this.reportStoreRecoveries(role, session.sessionId);
@@ -392,7 +393,7 @@ export class AlmReloadPorts {
 
     private readFormationReadiness(role: PortRole): RallarBlackBoxTestCommandOutcome {
         const acceptedHeldSinceEpochMs = this.acceptedLayoutSince.get(role);
-        assert(acceptedHeldSinceEpochMs !== undefined, 'readiness requires a connected participant');
+        assert(acceptedHeldSinceEpochMs !== undefined);
         return {
             status: 'ok',
             value: {
@@ -409,7 +410,7 @@ export class AlmReloadPorts {
         if (role === 'sender') {
             for (const fault of this.receiverBarrierFaults.get(barrierId) ?? []) {
                 const result = await this.receiver.execute(fault);
-                assert(result.ok, `recipient preparation failed at ${fault.commandId}`);
+                assert(result.ok);
             }
         }
         // Control-recipe-barrier.test.ts proves the real control barrier; this owner supplies paired external facts.
@@ -449,7 +450,7 @@ export class AlmReloadPorts {
             return isALDeliveryTerminal(lifecycle) || command.state.includes(lifecycle.state);
         };
         if (!reached()) {
-            assert(command.timeoutMs !== undefined, 'an external observation has an authored timeout');
+            assert(command.timeoutMs !== undefined);
             const budgetMs = Math.min(command.timeoutMs, Math.max(0, (command.deadlineEpochMs ?? Infinity) - this.now));
             const expiresAtMs = this.readDeliveryLifecycle(message).expiresAtMs ?? Infinity;
             await this.publicationLane.advanceTo(
@@ -815,7 +816,7 @@ export class AlmReloadPorts {
 
     private findMessage(msgId: string): PortMessage {
         const message = this.messages.find((candidate) => candidate.msgId === msgId);
-        assert(message, `no send of this run returned ${msgId}`);
+        assert(message);
         return message;
     }
 
@@ -1093,7 +1094,7 @@ export class AlmReloadPorts {
      * refuse the send first, so the fixture models the server's verdict only.
      */
     private refuseFenced(message: PortMessage): void {
-        assertEquals(message.command.carrier, 'ws', 'only the server judges a sender that left the group');
+        expect(message.command.carrier).toEqual('ws');
         const rejection: ALDeliveryRelayRejection = { relay: 'trusted-server', reason: 'membership-fenced' };
         this.recordSenderNack(message, 'committed');
         message.state = 'rejected';
@@ -1278,7 +1279,7 @@ export class AlmReloadPorts {
         if ('msgId' in match && typeof match.msgId === 'string') {
             const sendCommandId = HOLD_MSG_ID_REFERENCE.exec(match.msgId)?.[1];
             const sent = this.messages.find((message) => message.command.commandId === sendCommandId);
-            assert(sent, `the hold names ${match.msgId}, which no send of this run returned`);
+            assert(sent);
             return { kind: 'message', msgId: sent.msgId };
         }
         return 'typeId' in match && typeof match.typeId === 'string'

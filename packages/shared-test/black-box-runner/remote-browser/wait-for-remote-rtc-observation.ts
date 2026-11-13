@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';

@@ -7,7 +7,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
     describe,
     expect,
@@ -23,7 +22,6 @@ const LAUNCH_DATABASE_URL = 'postgres://fixture-launch:fixture@127.0.0.1:1/fixtu
 const FILE_DATABASE_URL = 'postgres://fixture-file:fixture@127.0.0.1:1/fixture-file';
 const METERED_ENVIRONMENT_NAMES = ['METERED_APP_NAME', 'METERED_API_KEY', 'METERED_REGION'];
 const FIXTURE_METERED_LINES = ['METERED_APP_NAME=fixture-app', 'METERED_API_KEY=fixture-key', 'METERED_REGION=global'];
-const API_DENO_CONFIG = 'apps/api-v1/deno.json';
 const API_ENTRY_POINT = 'apps/api-v1/src/main.ts';
 const repositoryRoot = new URL('../../../', import.meta.url);
 
@@ -142,11 +140,9 @@ async function readPostgresApiLaunchObservation(input: PostgresApiLaunchInput): 
 }
 
 function toProbeCommand(command: string, probePath: string): string {
-    expect(command).toContain(`--config ${API_DENO_CONFIG} `);
+    expect(command).toContain(`bun --no-env-file run ${API_ENTRY_POINT}`);
     expect(command.endsWith(` ${API_ENTRY_POINT}`)).toBe(true);
-    return command
-        .replace(`--config ${API_DENO_CONFIG} `, `--config ${fileURLToPath(new URL(API_DENO_CONFIG, repositoryRoot))} `)
-        .replace(` ${API_ENTRY_POINT}`, ` ${probePath}`);
+    return command.replace(` ${API_ENTRY_POINT}`, ` ${probePath}`);
 }
 
 function toInheritedEnvironment(): NodeJS.ProcessEnv {
@@ -161,14 +157,15 @@ function toApiConfigurationProbe(): string {
     const configurationModule = new URL('apps/api-v1/src/configuration/read-api-v1-configuration.ts', repositoryRoot);
     const resources = new URL('apps/api-v1/resources/', repositoryRoot);
     return `
+        import { readFile } from "node:fs/promises";
         import { readApiV1Configuration } from ${JSON.stringify(configurationModule.href)};
         const resource = (name: string) => new URL(name, ${JSON.stringify(resources.href)});
         const meteredNames = ${JSON.stringify(METERED_ENVIRONMENT_NAMES)};
         try {
             const configuration = await readApiV1Configuration({
-                environment: { get: (name) => Deno.env.get(name) },
+                environment: process.env,
                 hardwareConcurrency: 4,
-                readTextFile: (url) => Deno.readTextFile(url),
+                readTextFile: (url) => readFile(url, 'utf8'),
                 defaultsUrl: resource('configuration/defaults-config.json'),
                 profileUrls: {
                     dev: resource('configuration/dev-config.json'),
@@ -183,8 +180,8 @@ function toApiConfigurationProbe(): string {
                 iceMode: configuration.ice.mode,
                 databaseMode: configuration.database.mode,
                 databaseUrlFromLaunch: 'url' in configuration.database && configuration.database.url === ${JSON.stringify(LAUNCH_DATABASE_URL)},
-                iceModeVariable: Deno.env.get('RALLAR_ICE_MODE') ?? null,
-                receivedMeteredNames: meteredNames.filter((name) => Deno.env.get(name) !== undefined)
+                iceModeVariable: process.env['RALLAR_ICE_MODE'] ?? null,
+                receivedMeteredNames: meteredNames.filter((name) => process.env[name] !== undefined)
             }));
         } catch (error) {
             console.log(JSON.stringify({ outcome: 'rejected', message: String(error) }));

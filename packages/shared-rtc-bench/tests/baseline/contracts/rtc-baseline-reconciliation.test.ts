@@ -11,14 +11,14 @@ describe('RTC baseline semantic JSON reconciliation', () => {
         expect(validateRtcBaselineReconciliation(
             {
                 workerCommand: {
-                    redactedArgv: { executable: 'deno', arguments: ['run', 'worker.ts'] },
+                    redactedArgv: { executable: 'bun', arguments: ['run', 'worker.ts'] },
                     projection: { ['\u00e9']: 'first', ['e\u0301']: 'second' }
                 }
             },
             {
                 workerCommand: {
                     projection: { ['e\u0301']: 'second', ['\u00e9']: 'first' },
-                    redactedArgv: { arguments: ['run', 'worker.ts'], executable: 'deno' }
+                    redactedArgv: { arguments: ['run', 'worker.ts'], executable: 'bun' }
                 }
             }
         )).toEqual([]);
@@ -57,8 +57,8 @@ describe('RTC baseline semantic JSON reconciliation', () => {
             ]],
             ['source hash', 'sourceHashes', [{ path: 'worker.ts', sha256: 'a'.repeat(64) }], [{ path: 'worker.ts', sha256: 'b'.repeat(64) }]],
             ['source order', 'sourceHashes', [{ path: 'first.ts' }, { path: 'second.ts' }], [{ path: 'second.ts' }, { path: 'first.ts' }]],
-            ['argv order', 'workerCommand', { redactedArgv: { executable: 'deno', arguments: ['run', 'worker.ts'] } }, {
-                redactedArgv: { executable: 'deno', arguments: ['worker.ts', 'run'] }
+            ['argv order', 'workerCommand', { redactedArgv: { executable: 'bun', arguments: ['run', 'worker.ts'] } }, {
+                redactedArgv: { executable: 'bun', arguments: ['worker.ts', 'run'] }
             }]
         ] as const
     )('rejects changed %s', (_change, field, initialized, current) => {

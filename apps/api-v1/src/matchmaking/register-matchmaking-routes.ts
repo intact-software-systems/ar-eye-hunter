@@ -2,9 +2,9 @@ import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { MatchmakingReader } from '@shared-server/rallar-system/matchmaking/matchmaking-reader.ts';
 import type { MatchmakingService } from '@shared-server/rallar-system/matchmaking/matchmaking-service.ts';
 import type { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { readMatchmaking } from './read-matchmaking.ts';
+import type { Hono } from 'hono';
 import { changeMatchmaking } from './change-matchmaking.ts';
+import { readMatchmaking } from './read-matchmaking.ts';
 
 export interface MatchmakingRouteDependencies {
     readonly reader: Pick<MatchmakingReader, 'read'>;

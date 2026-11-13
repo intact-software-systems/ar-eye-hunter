@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
@@ -8,14 +10,14 @@ import defaults from '../../../apps/api-v1/resources/configuration/defaults-conf
 import { CountingRuntimeStateRepository } from './counting-runtime-state-repository.ts';
 
 const GROUPS = Number(
-    Deno.args.find((arg) => arg.startsWith('--groups='))?.slice('--groups='.length) ??
+    process.argv.slice(2).find((arg) => arg.startsWith('--groups='))?.slice('--groups='.length) ??
         '1000'
 );
 const RUNS = Number(
-    Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
+    process.argv.slice(2).find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
         '3'
 );
-const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
+const OUT = process.argv.slice(2).find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/group-list-fanout.json';
 
 const scope = {
@@ -103,8 +105,8 @@ async function main(): Promise<void> {
         });
     }
 
-    await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
-    await Deno.writeTextFile(
+    await mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
+    await writeFile(
         OUT,
         `${
             JSON.stringify(

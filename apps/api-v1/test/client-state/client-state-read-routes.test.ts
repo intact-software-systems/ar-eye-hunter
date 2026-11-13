@@ -1,8 +1,9 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createAuthSession, createClientEvent, createClientRouteApp, createClientRouteDeps, createClientSnapshot } from './client-state-route-test-runtime.ts';
 
-Deno.test('non-strict state read routes preserve authenticated non-self client reads', async () => {
+test('non-strict state read routes preserve authenticated non-self client reads', async () => {
     const snapshot = createClientSnapshot('bob');
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -22,7 +23,7 @@ Deno.test('non-strict state read routes preserve authenticated non-self client r
     assert.equal(deps.authCallCount(), 1);
 });
 
-Deno.test('strict state read routes reject non-self client snapshot and event reads', async () => {
+test('strict state read routes reject non-self client snapshot and event reads', async () => {
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
         strictReadAuthorization: true,
@@ -53,7 +54,7 @@ Deno.test('strict state read routes reject non-self client snapshot and event re
     });
 });
 
-Deno.test('client point reads expose authoritative metadata and forward scalar floors', async () => {
+test('client point reads expose authoritative metadata and forward scalar floors', async () => {
     const snapshot = { ...createClientSnapshot('alice'), stateRevision: 7 };
     const calls: unknown[] = [];
     const deps = createClientRouteDeps({
@@ -78,7 +79,7 @@ Deno.test('client point reads expose authoritative metadata and forward scalar f
     }]);
 });
 
-Deno.test('client point reads return typed 400 and 409 responses', async () => {
+test('client point reads return typed 400 and 409 responses', async () => {
     const snapshot = createClientSnapshot('alice');
     const deps = createClientRouteDeps({
         session: createAuthSession('alice'),
@@ -104,7 +105,7 @@ Deno.test('client point reads return typed 400 and 409 responses', async () => {
     assert.equal(shortfall.headers.get('retry-after'), null);
 });
 
-Deno.test('strict client collection reads the authenticated self from durable current state', async () => {
+test('strict client collection reads the authenticated self from durable current state', async () => {
     const snapshot = createClientSnapshot('alice');
     let currentReads = 0;
     const deps = createClientRouteDeps({

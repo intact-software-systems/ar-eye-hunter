@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -22,7 +23,7 @@ import {
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import { API_V1_TEST_WS_OUTBOUND_ADMISSION_NAMESPACE } from '../api-v1-test-ws-outbound-admission-namespace.ts';
 
-Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
+test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
     const mutation = createProbedMutationRuntime(databaseProbe.database);
 
@@ -33,7 +34,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
 });
 
 /** One status batch per tick covers every waiter of the process only while they all read through one entries repository. */
-Deno.test('mutation runtime gives every AppInbox service it composes the one entries repository of its queue', () => {
+test('mutation runtime gives every AppInbox service it composes the one entries repository of its queue', () => {
     const mutation = createProbedMutationRuntime(createDatabaseProbe().database);
     const services = createComposedInboxServices(mutation);
 

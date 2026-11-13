@@ -110,3 +110,43 @@ EOF_ENV
 	mv "${tmp_env_file}" "${destination}" || exit $?
 	chmod 0600 "${destination}" || exit $?
 )
+
+# Writes the headless worker systemd unit. The control-role deploy installs the unit so the host
+# is ready; 09-start-headless-workers.sh rewrites it with the current npm path and env file before
+# starting. The worker no longer depends on api-v1, which lives on its own server.
+write_rallar_headless_worker_unit() {
+	local service_name="$1"
+	local env_file="$2"
+	local checkout_dir="$3"
+	local npm_bin
+
+	npm_bin="$(command -v npm)"
+	cat >"/etc/systemd/system/${service_name}" <<EOF_SERVICE
+[Unit]
+Description=Rallar Black Box headless browser worker
+After=network-online.target rallar-black-box-control.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rallar
+Group=rallar
+WorkingDirectory=${checkout_dir}
+Environment=CI=1
+Environment=HOME=/opt/rallar
+EnvironmentFile=${env_file}
+ExecStart=${npm_bin} --workspace rallar-black-box run worker:headless
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=45
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF_SERVICE
+
+	systemctl daemon-reload
+	systemctl enable "${service_name}" >/dev/null
+}

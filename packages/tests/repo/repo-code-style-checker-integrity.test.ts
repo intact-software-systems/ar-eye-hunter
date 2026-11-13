@@ -138,34 +138,33 @@ describe('repo code style checker integrity', () => {
         });
     });
 
-    it('leaves dprint as the only formatter, including over Deno-owned TypeScript', () => {
-        // `deno fmt` was retired in favour of a single formatter. A reintroduced `fmt` block or task
-        // would silently reclaim these trees and fight dprint over the same TypeScript.
+    it('leaves dprint as the only formatter, including over Bun-owned TypeScript', () => {
+        // A reintroduced `fmt` script would reclaim these trees and fight dprint over the same TypeScript.
         for (
-            const denoConfigPath of [
-                'deno.json',
-                'apps/api-v1/deno.json',
-                'apps/rallar-black-box-control-server/deno.json',
-                'apps/relic-hunter-server-v1/deno.json'
+            const appPackageJsonPath of [
+                'package.json',
+                'apps/api-v1/package.json',
+                'apps/rallar-black-box-control-server/package.json',
+                'apps/relic-hunter-server-v1/package.json',
+                'apps/ar-eye-hunter-server-v1/package.json'
             ]
         ) {
-            const deno = readJson(denoConfigPath) as {
-                fmt?: unknown;
-                tasks?: Readonly<Record<string, string>>;
+            const appManifest = readJson(appPackageJsonPath) as {
+                scripts?: Readonly<Record<string, string>>;
             };
-            expect(deno.fmt, denoConfigPath).toBeUndefined();
-            expect(Object.keys(deno.tasks ?? {}), denoConfigPath).not.toContain('fmt');
+            expect(Object.keys(appManifest.scripts ?? {}), appPackageJsonPath).not.toContain('fmt');
         }
 
         const dprint = readJson('dprint.json') as { excludes?: readonly string[]; };
         for (
-            const denoAppPath of [
+            const appPath of [
                 'apps/api-v1/**',
                 'apps/rallar-black-box-control-server/**',
-                'apps/relic-hunter-server-v1/**'
+                'apps/relic-hunter-server-v1/**',
+                'apps/ar-eye-hunter-server-v1/**'
             ]
         ) {
-            expect(dprint.excludes).not.toContain(denoAppPath);
+            expect(dprint.excludes).not.toContain(appPath);
         }
 
         expectAll(readRepo(canonicalStylePath), ['`dprint.json`']);

@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import { decodeQuickJoinGroupRequest } from '@shared-server/rallar-system/group-state/quick-join/group-quick-join-codec.ts';
 import type { QuickJoinGroupRequest } from '@shared/api/mutation/group-quick-join.ts';

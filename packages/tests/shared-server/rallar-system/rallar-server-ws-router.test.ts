@@ -48,6 +48,7 @@ import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-serv
 
 import { createTestGroup } from '../../create-test-group.ts';
 import { waitForSettledALInboundWork } from '../../shared/wait-for-al-inbound-work.ts';
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 
 describe('RallarServerWsRouter', () => {
     it.each([-1, 0, 1])('retains the admitted policy deadline between handlers at deadline %+i ms', async (offsetMs) => {
@@ -1316,7 +1317,7 @@ function createIngressRouter(
 ): IngressRouterFixture {
     const server = new JsonWebSocketServer();
     const socket = new RouterIngressWebSocket();
-    server.addConnection(new ConnectionContext({ id: 'conn-1', socket }));
+    attachTestWebSocket(server, new ConnectionContext({ id: 'conn-1', socket }));
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,
         outbox: new InMemoryQueueBox(new Map()),
@@ -1370,7 +1371,7 @@ function createAudienceRouter(input: AudienceRouterInput): AudienceRouterFixture
         ['peer-1', 'peer-2', 'peer-3', 'peer-4'].map((sessionId) => [sessionId, new RouterIngressWebSocket()])
     );
     for (const [sessionId, socket] of Object.entries(sockets)) {
-        server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
@@ -1426,7 +1427,7 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
     const server = new JsonWebSocketServer();
     const sockets = Object.fromEntries(sessionIds.map((sessionId) => [sessionId, new RouterIngressWebSocket()]));
     for (const [sessionId, socket] of Object.entries(sockets)) {
-        server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
     const service = createDefaultWsQueueBoxServerService({
@@ -1518,11 +1519,12 @@ class RouterIngressWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('Router ingress test expects JSON text');
         }
         this.sent.push(decodePersistedALMessage(data));
+        return data.length;
     }
 
     async receive(message: ALMessage): Promise<void> {
@@ -1629,8 +1631,9 @@ function createRecordingWsServer(options: RecordingWsServerInput = {}): Recordin
                 throw new TypeError('Router fixture expects a serialized AL frame');
             }
             sent.push({ connectionId, data: decodePersistedALMessage(data) });
+            return data.length;
         };
-        server.addConnection(new ConnectionContext({ id: connectionId, socket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: connectionId, socket }));
     }
     return Object.assign(server, { sent });
 }

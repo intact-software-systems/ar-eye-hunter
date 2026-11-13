@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { createRallarStubRtcProvider } from '../create-rallar-stub-rtc-provider.ts';
 import { createRallarBrowserRtcProvider } from '../rallar-browser-rtc-provider.ts';
 import {

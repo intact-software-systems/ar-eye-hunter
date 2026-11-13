@@ -2,10 +2,11 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-RALLAR_MIN_DENO_VERSION="${RALLAR_MIN_DENO_VERSION:-2.9.0}"
-source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
 source "${SCRIPT_DIR}/rallar-apt-sources.sh"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+apply_rallar_controller_role
 
 RALLAR_APT_PROFILE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rallar-apt-profiles.XXXXXX")"
 trap 'rm -rf -- "${RALLAR_APT_PROFILE_DIR}"' EXIT
@@ -57,11 +58,11 @@ write_rallar_apt_profile nodesource "${nodesource_apt_config}"
 env APT_CONFIG="${nodesource_apt_config}" apt update
 env APT_CONFIG="${nodesource_apt_config}" apt install -y nodejs
 
-echo "==> Installing Deno >= ${RALLAR_MIN_DENO_VERSION} into /usr/local/bin"
-export DENO_INSTALL=/usr/local
-curl -fsSL https://deno.land/install.sh | sh
+echo "==> Installing Bun ${RALLAR_MIN_BUN_VERSION} into /usr/local/bin"
+export BUN_INSTALL=/usr/local
+curl -fsSL https://bun.sh/install | bash -s "bun-v${RALLAR_MIN_BUN_VERSION}"
 hash -r
-require_rallar_min_deno_version
+require_rallar_min_bun_version
 
 echo "==> Installing Caddy from the official stable apt repository"
 curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" |
@@ -74,8 +75,12 @@ write_rallar_apt_profile caddy "${caddy_apt_config}"
 env APT_CONFIG="${caddy_apt_config}" apt update
 env APT_CONFIG="${caddy_apt_config}" apt install -y caddy
 
-echo "==> Installing the API-v1 PostgreSQL server"
-install_rallar_api_postgres_server
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	echo "==> Installing the PostgreSQL server for role ${RALLAR_CONTROLLER_ROLE}"
+	install_rallar_api_postgres_server
+else
+	echo "==> Skipping the PostgreSQL server (role ${RALLAR_CONTROLLER_ROLE} does not use Postgres)"
+fi
 
 echo "==> Creating Rallar service user and directories"
 if ! id rallar >/dev/null 2>&1; then
@@ -84,15 +89,16 @@ fi
 
 install -d -m 0755 -o rallar -g rallar /opt/rallar
 install -d -m 0700 -o root -g root /etc/rallar
-install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 install -d -m 0755 -o rallar -g rallar /var/lib/rallar-black-box-control
 install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box
 
 echo "==> Versions"
 node -v
 npm -v
-deno --version
+bun --version
 caddy version
-psql --version
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	psql --version
+fi
 
 echo "Runtime installation complete."

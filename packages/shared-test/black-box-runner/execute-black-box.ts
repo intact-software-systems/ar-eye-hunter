@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { Either } from '../../shared/resilience/Either.ts';
 
 import { evaluateScenarioTransform } from './execution/black-box-output-transform.ts';

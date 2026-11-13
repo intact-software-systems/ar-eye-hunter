@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/app-data/postgres/p-sql-app-data-repository.ts';
@@ -20,7 +21,7 @@ const BINDING = { applicationId: REF.applicationId, workspaceId: REF.workspaceId
 const KEY = { namespace: BINDING.namespace, storeName: BINDING.storeName, key: REF.groupId };
 const SEVEN_DAYS = 604_800_000;
 
-Deno.test('an API-only process deletes configured saves exactly at seven archived days and preserves other stores and scopes', async () => {
+test('an API-only process deletes configured saves exactly at seven archived days and preserves other stores and scopes', async () => {
     await withPGliteSql(async (database) => {
         const fixture = await createArchivedRoom(database);
         const otherStore = { ...KEY, storeName: 'independent' };
@@ -44,7 +45,7 @@ Deno.test('an API-only process deletes configured saves exactly at seven archive
     });
 });
 
-Deno.test('API-only purge rolls back the group retirement when save CAS loses and retries from a fresh read', async () => {
+test('API-only purge rolls back the group retirement when save CAS loses and retries from a fresh read', async () => {
     await withPGliteSql(async (database) => {
         const fixture = await createArchivedRoom(database);
         const retention = fixture.runtime.groupStateService.retention;
@@ -71,7 +72,7 @@ Deno.test('API-only purge rolls back the group retirement when save CAS loses an
     });
 });
 
-Deno.test('API-only purge wins the group CAS fence and a stale save cannot resurrect a deleted room or store', async () => {
+test('API-only purge wins the group CAS fence and a stale save cannot resurrect a deleted room or store', async () => {
     await withPGliteSql(async (database) => {
         const fixture = await createArchivedRoom(database);
         const before = await fixture.runtime.groupsRepository.findGroupEntry(REF);

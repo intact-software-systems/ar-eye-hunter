@@ -263,8 +263,8 @@ migration decision above.
 ## Formatting and spacing
 
 The root dprint configuration (`dprint.json`) is the only formatter, and it owns every tree in the
-repository including the Deno applications. `deno fmt` is retired: no `deno.json` declares a `fmt`
-block or `fmt` task, so there is no second formatter to fight over the same TypeScript. Suppress a
+repository including the Bun applications. No `package.json` declares a `fmt`
+script, so there is no second formatter to fight over the same TypeScript. Suppress a
 node with `// dprint-ignore`, or a whole file with `// dprint-ignore-file`.
 
 `dprint.json` is the sole authority for indentation, line width, quotes, semicolons, trailing
@@ -845,7 +845,7 @@ compatible with `erasableSyntaxOnly`. Do not introduce new TypeScript enums; pre
 unions. Contracts owned by a function-based use case keep flat feature-prefixed names such as
 `InvoiceInputDto`.
 
-The detailed rules, examples, Deno lint boundary, and alias-refactoring guidance live in
+The detailed rules, examples, type-check boundary, and alias-refactoring guidance live in
 [typescript-type-organization.md](./typescript-type-organization.md). The checker warns by default
 for rename-only aliases (`types.rename-alias`), runtime namespace members
 (`types.runtime-namespace`), and `enum` declarations (`types.enum-declaration`); canonical-name

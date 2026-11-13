@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
@@ -7,7 +8,7 @@ import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgre
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
-Deno.test('PGlite close high-water converges after a stale write and extends replay expiry', async () => {
+test('PGlite close high-water converges after a stale write and extends replay expiry', async () => {
     await withPGliteSql(async (sql) => {
         const lifecycle = createWsSessionGenerationLifecycleService(
             new PSqlRuntimeStateRepository(sql)

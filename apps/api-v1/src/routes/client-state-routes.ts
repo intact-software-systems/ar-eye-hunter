@@ -5,7 +5,7 @@ import {
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { Hono } from 'hono';
 import { authorizationDenied } from '../services/request-auth-service.ts';
 import {
     registerClientStateMutationRoutes,

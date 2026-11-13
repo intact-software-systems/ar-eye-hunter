@@ -2,6 +2,7 @@ import { authenticationRequired } from '@shared-server/http/request-auth-service
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
@@ -11,7 +12,7 @@ const BASE = '/api/state/apps/app-1/workspaces/workspace-1';
 const PATH = `${BASE}/groups/room-1/session`;
 const REQUEST_ID = 'session-request-123456789';
 
-Deno.test('session previews authenticate and use only the current account', async () => {
+test('session previews authenticate and use only the current account', async () => {
     const calls: { readonly ref: GroupRef; readonly principalId: string; }[] = [];
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
@@ -35,7 +36,7 @@ Deno.test('session previews authenticate and use only the current account', asyn
     assert.deepEqual(await list.json(), { sessions: [], nextKey: null });
 });
 
-Deno.test('session writes bind path identity and authority and return no member roster', async () => {
+test('session writes bind path identity and authority and return no member roster', async () => {
     const app = createTracedApiTestApp();
     const calls: AuthenticatedGroupMutationEnqueue[] = [];
     registerGroupStateRoutes(app, {
@@ -68,7 +69,7 @@ Deno.test('session writes bind path identity and authority and return no member 
     });
 });
 
-Deno.test('session routes reject unauthenticated reads and writes', async () => {
+test('session routes reject unauthenticated reads and writes', async () => {
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),

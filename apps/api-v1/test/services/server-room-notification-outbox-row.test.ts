@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -18,42 +19,37 @@ interface OutboxRow {
 const RESOURCE_INBOX_CREATED_BY_WIDTH = 16;
 
 // A server notification is sent by the WS server's own peer id, which is wider than the stored creator column.
-Deno.test({
-    name: 'a server notification from a peer id wider than the creator column is stored and dispatched',
-    sanitizeOps: false,
-    sanitizeResources: false,
-    fn: async () => {
-        const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+test('a server notification from a peer id wider than the creator column is stored and dispatched', async () => {
+    const databaseLifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    try {
+        const server = await createDefaultRallarServer({
+            configuration: decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()),
+            databaseLifecycle,
+            ws: { allowImplicitUserTopics: false, defaultFanout: 'live-only' }
+        });
         try {
-            const server = await createDefaultRallarServer({
-                configuration: decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()),
-                databaseLifecycle,
-                ws: { allowImplicitUserTopics: false, defaultFanout: 'live-only' }
+            server.installSystemTopics().installWebSocketLifecycle();
+            await server.runtime.readiness;
+            const serverPeerId = server.ws.serverPeerId;
+            assert.ok(serverPeerId.length > RESOURCE_INBOX_CREATED_BY_WIDTH);
+
+            const published = await server.ws.publish({
+                message: toServerNotification(serverPeerId),
+                fanout: 'outbox'
             });
-            try {
-                server.installSystemTopics().installWebSocketLifecycle();
-                await server.runtime.readiness;
-                const serverPeerId = server.ws.serverPeerId;
-                assert.ok(serverPeerId.length > RESOURCE_INBOX_CREATED_BY_WIDTH);
 
-                const published = await server.ws.publish({
-                    message: toServerNotification(serverPeerId),
-                    fanout: 'outbox'
-                });
-
-                assert.equal(published?.status, 'queued-outbox');
-                const row = await waitForCompletedOutboxRow(databaseLifecycle.database);
-                assert.equal(row.created_by, toAppQueueCreatedBy(serverPeerId));
-                assert.ok(row.created_by.length <= RESOURCE_INBOX_CREATED_BY_WIDTH);
-                assert.equal(JSON.parse(row.ri_resource).audit.createdBy, serverPeerId);
-            }
-            finally {
-                await server.runtime.backgroundTasks.stop();
-            }
+            assert.equal(published?.status, 'queued-outbox');
+            const row = await waitForCompletedOutboxRow(databaseLifecycle.database);
+            assert.equal(row.created_by, toAppQueueCreatedBy(serverPeerId));
+            assert.ok(row.created_by.length <= RESOURCE_INBOX_CREATED_BY_WIDTH);
+            assert.equal(JSON.parse(row.ri_resource).audit.createdBy, serverPeerId);
         }
         finally {
-            await databaseLifecycle.close();
+            await server.runtime.backgroundTasks.stop();
         }
+    }
+    finally {
+        await databaseLifecycle.close();
     }
 });
 

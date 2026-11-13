@@ -1,4 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -44,7 +45,7 @@ interface CrdtAdminRoutingFixture {
     readonly mutationCalls: readonly CrdtAdminMutationCall[];
 }
 
-Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay direct', async () => {
+test('CRDT admin mutating routes use AppCrdt while read operations stay direct', async () => {
     const fixture = createCrdtAdminRoutingFixture();
     await exerciseCrdtAdminReadRoutes(fixture.app);
     await exerciseCrdtAdminMutationRoutes(fixture.app);
@@ -182,7 +183,7 @@ function createRecordingCrdtReadRepository(
     });
 }
 
-Deno.test('CRDT admin routes never fall back to direct mutation methods', async () => {
+test('CRDT admin routes never fall back to direct mutation methods', async () => {
     let directMutationCalls = 0;
     const app = createTracedApiTestApp();
     crdtAdminRoutes.registerCrdtAdminRoutes(app, {
@@ -228,7 +229,7 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
     assert.equal(directMutationCalls, 0);
 });
 
-Deno.test('CRDT admin routes preserve retryable mutation failure status', async () => {
+test('CRDT admin routes preserve retryable mutation failure status', async () => {
     for (const status of [429, 503] as const) {
         const app = createTracedApiTestApp();
         crdtAdminRoutes.registerCrdtAdminRoutes(app, {

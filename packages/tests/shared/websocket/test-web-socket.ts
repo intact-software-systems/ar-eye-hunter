@@ -72,16 +72,19 @@ export class TestWebSocket extends EventTarget implements WebSocket {
         return accepted;
     }
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    /** Returns Bun's server-socket status: the bytes written, or 0 for a frame a closed socket drops. */
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('The JSON transport must send text');
         }
         if (this.readyState === TestWebSocket.CONNECTING) {
             throw new DOMException('WebSocket is still connecting', 'InvalidStateError');
         }
-        if (this.readyState === TestWebSocket.OPEN) {
-            this.sent.push(data);
+        if (this.readyState !== TestWebSocket.OPEN) {
+            return 0;
         }
+        this.sent.push(data);
+        return data.length;
     }
 
     close(code?: number, reason?: string): void {

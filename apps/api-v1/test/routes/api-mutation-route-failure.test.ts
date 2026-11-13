@@ -1,9 +1,10 @@
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { toApiMutationRouteFailure } from '../../src/routes/api-mutation-route-failure.ts';
 
-Deno.test('current AppInbox failures retain JSON-safe details in API responses', () => {
+test('current AppInbox failures retain JSON-safe details in API responses', () => {
     const failure: AppInboxFailure = {
         type: 'app-inbox-failure',
         code: 'payment-denied',

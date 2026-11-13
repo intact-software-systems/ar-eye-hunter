@@ -2,7 +2,8 @@ import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSpaStatisticsResponse, MyRealtimeSpaStatisticsResponse, WorkspaceSpaStatisticsResponse } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import * as spaStatisticsRoutes from '../../src/routes/spa-statistics-routes.ts';
 
@@ -19,7 +20,7 @@ const AUTH_SESSION: AuthSession = {
     expiresAtEpochMs: NOW_EPOCH_MS + 60_000
 };
 
-Deno.test('SPA statistics routes require route-local auth for workspace stats', async () => {
+test('SPA statistics routes require route-local auth for workspace stats', async () => {
     let serviceCalled = false;
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token')),
@@ -42,7 +43,7 @@ Deno.test('SPA statistics routes require route-local auth for workspace stats', 
     assert.equal(serviceCalled, false);
 });
 
-Deno.test('SPA statistics workspace route forwards scope and disables response caching', async () => {
+test('SPA statistics workspace route forwards scope and disables response caching', async () => {
     const calls: unknown[] = [];
     const app = createApp({
         statistics: {
@@ -74,7 +75,7 @@ Deno.test('SPA statistics workspace route forwards scope and disables response c
     ]);
 });
 
-Deno.test('SPA statistics group route preserves group policy error payloads', async () => {
+test('SPA statistics group route preserves group policy error payloads', async () => {
     const app = createApp({
         statistics: {
             readGroupStats: () =>
@@ -108,7 +109,7 @@ Deno.test('SPA statistics group route preserves group policy error payloads', as
     });
 });
 
-Deno.test('SPA statistics group route forwards scoped group refs', async () => {
+test('SPA statistics group route forwards scoped group refs', async () => {
     const calls: unknown[] = [];
     const app = createApp({
         statistics: {
@@ -143,7 +144,7 @@ Deno.test('SPA statistics group route forwards scoped group refs', async () => {
     ]);
 });
 
-Deno.test('SPA statistics my realtime route returns self-only readiness status', async () => {
+test('SPA statistics my realtime route returns self-only readiness status', async () => {
     const app = createApp({
         statistics: {
             readMyRealtimeStatus: () => Promise.resolve(createMyRealtimeStatus())

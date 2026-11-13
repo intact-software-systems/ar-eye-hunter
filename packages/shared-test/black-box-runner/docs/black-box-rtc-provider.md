@@ -53,7 +53,7 @@ Provider-mode examples:
 | `examples/rtc-rallar-browser-messages-rtc-multicast.json` | Send one app-level `messages.rtc` payload to a room and assert two peers receive it.              |
 | `examples/rtc-rallar-browser-provider-mode-parity.json`   | Parameterize the RTC provider so the same recipe runs locally or through `rallar-remote-browser`. |
 | `examples/rtc-rallar-browser-scoped-workspaces.json`      | Pass scoped `roomRef` values through browser RTC and assert same-room-id workspace isolation.     |
-| `examples/rtc-rallar-browser-not-yet-in-sync.json`        | Pass `minSnapshotVersion` and assert the receiver’s correlated `not-yet-in-sync` rejection.                        |
+| `examples/rtc-rallar-browser-not-yet-in-sync.json`        | Pass `minSnapshotVersion` and assert the receiver’s correlated `not-yet-in-sync` rejection.       |
 | `examples/rtc-rallar-browser-readiness-diagnostics.json`  | Wait for browser-provider readiness diagnostics and health.                                       |
 | `examples/rtc-rallar-browser-timeout-diagnostics.json`    | Intentionally fail a diagnostic wait to show timeout diagnostics.                                 |
 | `examples/rtc-rallar-memory-delivery-semantics.json`      | Deterministically assert direct and room broadcast delivery metadata.                             |
@@ -62,7 +62,7 @@ Provider-mode examples:
 Live validation command:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=both \
   --transport=both \
   --record-dir=.artifacts/rallar-browser-rtc

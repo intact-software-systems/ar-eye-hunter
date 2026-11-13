@@ -1,10 +1,12 @@
+import { writeFile } from 'node:fs/promises';
+
 import type { WsOutboxProvenance } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { decodeFriendsView, type FriendsView } from '@shared/api/friends/friends-view.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { decodeViewInvalidationMessage } from '@shared/api/views/view-invalidation.ts';
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
 import type {
     ManagedApiServerLifecycleControls,
     ManagedApiServerPlan
@@ -49,7 +51,7 @@ export class ViewPushClusterScenario {
             await this.#writeEvidence(await this.#runScenario());
         }
         catch (error) {
-            await Deno.writeTextFile(
+            await writeFile(
                 `${this.#input.artifactDir}/view-push-cluster-failure.json`,
                 JSON.stringify(
                     {
@@ -62,7 +64,8 @@ export class ViewPushClusterScenario {
                     },
                     null,
                     2
-                )
+                ),
+                'utf8'
             );
             throw error;
         }
@@ -92,8 +95,8 @@ export class ViewPushClusterScenario {
         const frame = await target.waitForFrame((message) => message.id.traceId === live.requestId);
         await disconnected.waitForFrame((message) => message.id.traceId === live.requestId);
         const proof = await this.#database.waitForPublication(live.requestId);
-        assertEquals(frame.id.msgId, proof.messageId);
-        assertEquals(decodeViewInvalidationMessage(frame), {
+        assert.deepEqual(frame.id.msgId, proof.messageId);
+        assert.deepEqual(decodeViewInvalidationMessage(frame), {
             version: 1,
             resource: 'friends',
             scope: null,
@@ -124,7 +127,7 @@ export class ViewPushClusterScenario {
     }
 
     async #writeEvidence(evidence: ClusterEvidence): Promise<void> {
-        await Deno.writeTextFile(
+        await writeFile(
             `${this.#input.artifactDir}/view-push-cluster-proof.json`,
             JSON.stringify(
                 {
@@ -135,7 +138,8 @@ export class ViewPushClusterScenario {
                 },
                 null,
                 2
-            )
+            ),
+            'utf8'
         );
     }
 
@@ -172,10 +176,10 @@ export class ViewPushClusterScenario {
         const response = await fetch(`${session.apiBaseUrl}${scopePath}/clients/${session.clientId}`, {
             headers: authHeaders(session)
         });
-        assertEquals(response.status, 200);
+        assert.deepEqual(response.status, 200);
         const snapshot = parseAuthoritativeClientSnapshot(await response.text(), this.#scope);
         const connected = snapshot.activeSessions.find((candidate) => candidate.sessionId === session.sessionId);
-        assert(connected, 'Current websocket has canonical client presence');
+        assert.ok(connected, 'Current websocket has canonical client presence');
         const requestId = `view-push-presence-${crypto.randomUUID()}`;
         const presence = await fetch(
             `${session.apiBaseUrl}${scopePath}/groups/${this.#scope.groupId}/sessions/${session.sessionId}/requests/${requestId}`,
@@ -190,7 +194,7 @@ export class ViewPushClusterScenario {
                 })
             }
         );
-        assertEquals(presence.status, 200, 'Live room presence joins the authenticated socket generation');
+        assert.deepEqual(presence.status, 200, 'Live room presence joins the authenticated socket generation');
         await presence.body?.cancel();
         await socket.waitForFrame((frame) =>
             frame.route.topicId === AppTopics.groupStateEvent && frame.id.traceId === requestId
@@ -201,7 +205,8 @@ export class ViewPushClusterScenario {
         const node = this.#input.plans[2]!;
         input.socket.assertOpen();
         await this.#assertVisibility({ ...input.session, apiBaseUrl: node.baseUrl }, !input.shareOnline);
-        await this.#input.controls.stop(node.port);
+        // Abrupt death, as a crashed process gives no close frame and no drain; recovery must not depend on either.
+        await this.#input.controls.stop(node.port, 'crash');
         await waitForProofCondition(() => input.socket.closeCodes.length === 1, 'C socket closes during process stop');
         const change = await this.#changeVisibility(input.session, input.shareOnline);
         await this.#database.waitForPublication(change.requestId);
@@ -230,7 +235,11 @@ export class ViewPushClusterScenario {
         await input.socket.waitForFrame((frame) => frame.route.topicId === AppTopics.viewResync, frameBaseline);
         input.socket.assertOpen();
         const replacementPid = await this.#database.readListener(applicationName);
-        assertEquals(replacementPid === previousPid, false, 'Subscriber must reconnect after actual notification loss');
+        assert.deepEqual(
+            replacementPid === previousPid,
+            false,
+            'Subscriber must reconnect after actual notification loss'
+        );
         await this.#assertVisibility({ ...input.session, apiBaseUrl: node.baseUrl }, input.shareOnline);
         return {
             previousPid,
@@ -248,7 +257,7 @@ export class ViewPushClusterScenario {
             headers: { ...authHeaders(session), 'Content-Type': 'application/json', 'x-request-id': requestId },
             body: JSON.stringify({ action: 'visibility', shareOnline })
         });
-        assertEquals(response.status, 200, 'Visibility mutation applies through AppInbox');
+        assert.deepEqual(response.status, 200, 'Visibility mutation applies through AppInbox');
         await response.body?.cancel();
         return { requestId };
     }
@@ -260,12 +269,12 @@ export class ViewPushClusterScenario {
                 headers: authHeaders(session)
             }
         );
-        assertEquals(response.status, 200);
+        assert.deepEqual(response.status, 200);
         return decodeFriendsView(await response.json());
     }
 
     async #assertVisibility(session: ProofSession, expected: boolean): Promise<void> {
-        assertEquals(
+        assert.deepEqual(
             (await this.#readView(session)).shareOnline,
             expected,
             'Canonical GET recovers committed visibility'
@@ -307,5 +316,5 @@ interface ClusterEvidence {
 async function assertNoPrivateViews(socket: ViewPushProofSocket): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 500));
     socket.assertOpen();
-    assertEquals(socket.frames.filter((message) => message.route.topicId === AppTopics.viewInvalidated), []);
+    assert.deepEqual(socket.frames.filter((message) => message.route.topicId === AppTopics.viewInvalidated), []);
 }

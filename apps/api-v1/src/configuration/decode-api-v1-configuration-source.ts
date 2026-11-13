@@ -90,7 +90,7 @@ const OVERLAY_TOP_LEVEL_KEYS = new Set([
 
 const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> = {
     profile: new Set(['productionHardening']),
-    http: new Set(['port', 'corsOrigins', 'preflightMaxAgeSeconds']),
+    http: new Set(['port', 'corsOrigins', 'preflightMaxAgeSeconds', 'shutdownDeadlineMs']),
     publicApi: new Set(['apiBaseUrl', 'wsBaseUrl']),
     database: new Set([
         'mode',
@@ -213,6 +213,7 @@ const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> 
 
 const ENVIRONMENT_NAME_BY_PATH: Readonly<Record<string, string>> = {
     'http.port': 'PORT',
+    'http.shutdownDeadlineMs': 'RALLAR_SHUTDOWN_DEADLINE_MS',
     'http.corsOrigins': 'CORS_ORIGINS',
     'publicApi.apiBaseUrl': 'RALLAR_API_BASE_URL',
     'publicApi.wsBaseUrl': 'RALLAR_WS_BASE_URL',

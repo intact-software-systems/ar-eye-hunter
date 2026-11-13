@@ -1,11 +1,13 @@
+import { test } from 'bun:test';
+import assert from 'node:assert/strict';
+
 import { ControlRetentionPlanLimitError, type ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
-import { assert } from '@std/assert';
 
 import { applyRetentionCleanup } from '../src/retention-cleanup.ts';
 import type { RetentionPlanTokenAdapter } from '../src/retention-plan-token.ts';
 import { assertJsonEquals } from './support/control-service-test-fixtures.ts';
 
-Deno.test('retention cleanup authorizes before validating queries or reading plans', async () => {
+test('retention cleanup authorizes before validating queries or reading plans', async () => {
     let serviceCalls = 0;
     const result = await applyRetentionCleanup({
         url: url('?dryRun=false&planToken=invalid'),
@@ -42,7 +44,7 @@ Deno.test('retention cleanup authorizes before validating queries or reading pla
     assertJsonEquals(serviceCalls, 0);
 });
 
-Deno.test('retention preview whitelists safe consequence fields and never mutates', async () => {
+test('retention preview whitelists safe consequence fields and never mutates', async () => {
     let applyCalls = 0;
     let persistCalls = 0;
     const result = await applyRetentionCleanup({
@@ -89,7 +91,7 @@ Deno.test('retention preview whitelists safe consequence fields and never mutate
     assertJsonEquals(persistCalls, 0);
 });
 
-Deno.test('retention confirmation rejects crypto-race drift without deletion', async () => {
+test('retention confirmation rejects crypto-race drift without deletion', async () => {
     let current = plan('before-verify');
     let applyCalls = 0;
     let persistCalls = 0;
@@ -124,7 +126,7 @@ Deno.test('retention confirmation rejects crypto-race drift without deletion', a
     assertJsonEquals(persistCalls, 0);
 });
 
-Deno.test('retention confirmation replans compares and applies without an await gap', async () => {
+test('retention confirmation replans compares and applies without an await gap', async () => {
     let planCalls = 0;
     let microtaskRan = false;
     let persistCalls = 0;
@@ -165,7 +167,7 @@ Deno.test('retention confirmation replans compares and applies without an await 
     assertJsonEquals(microtaskRan, true);
 });
 
-Deno.test('retention immediate mode preserves exact cleanup shape and sequence', async () => {
+test('retention immediate mode preserves exact cleanup shape and sequence', async () => {
     const calls: string[] = [];
     const result = await applyRetentionCleanup({
         url: url('?unknown=value'),
@@ -194,7 +196,7 @@ Deno.test('retention immediate mode preserves exact cleanup shape and sequence',
     });
 });
 
-Deno.test('retention planning limits fail closed without changing immediate cleanup', async () => {
+test('retention planning limits fail closed without changing immediate cleanup', async () => {
     const boundedService = {
         createRetentionPlan: () => {
             throw new ControlRetentionPlanLimitError('candidates', 1_000);

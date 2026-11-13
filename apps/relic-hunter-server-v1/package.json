@@ -1,0 +1,23 @@
+{
+  "name": "@ar-eye-hunter/relic-hunter-server-v1",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun --env-file=../api-v1/.env --env-file=../api-v1/.env.local --env-file=.env --env-file=.env.local run src/main.ts",
+    "dev": "bun --watch --env-file=../api-v1/.env --env-file=../api-v1/.env.local --env-file=.env --env-file=.env.local run src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test test/"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.4",
+    "@js-temporal/polyfill": "^0.5.1",
+    "graphology": "0.26.0",
+    "hono": "4.11.9",
+    "js-yaml": "^5.3.0",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4"
+  }
+}

@@ -90,7 +90,7 @@ export class SimulatedWebSocket extends EventTarget implements WebSocket {
         this.readyState = SimulatedWebSocket.CLOSED;
     }
 
-    send(data: Parameters<WebSocket['send']>[0]): void {
+    send(data: Parameters<WebSocket['send']>[0]): number {
         if (this.readyState !== SimulatedWebSocket.OPEN) {
             throw new Error('Native WebSocket is not open');
         }
@@ -98,6 +98,7 @@ export class SimulatedWebSocket extends EventTarget implements WebSocket {
             throw new Error('Binary WebSocket sends are outside this fixture');
         }
         this.sent.push(data);
+        return data.length;
     }
 
     private async deliver(event: Event): Promise<void> {

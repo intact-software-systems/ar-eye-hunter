@@ -15,7 +15,6 @@ const repositoryRoot = path.resolve(__dirname, '../../..');
 const expectedTypeScriptVersion = '7.0.2';
 const ignoredDirectoryNames = new Set([
     '.claude',
-    '.deno',
     '.git',
     '.pnpm-store',
     '.superpowers',
@@ -115,14 +114,14 @@ describe('native TypeScript 7 repository boundaries', () => {
     });
 
     it('uses only TS7-compatible npm TypeScript configurations', () => {
-        const denoOnlyConfigs = [
+        const migratedAppConfigs = [
             'apps/api-v1/tsconfig.json',
             'apps/rallar-black-box-control-server/tsconfig.json',
             'apps/relic-hunter-server-v1/tsconfig.json'
         ];
 
         expect(
-            denoOnlyConfigs.filter((configPath) => existsSync(path.join(repositoryRoot, configPath)))
+            migratedAppConfigs.filter((configPath) => !existsSync(path.join(repositoryRoot, configPath)))
         ).toEqual([]);
 
         const configProblems = findFilesMatching(repositoryRoot, (entry) => /^tsconfig(?:\..+)?\.json$/.test(entry)).flatMap((configPath) => {
@@ -190,7 +189,7 @@ describe('native TypeScript 7 repository boundaries', () => {
         expect(importedBy).toEqual([]);
     });
 
-    it('keeps TypeScript and Deno checking as separate release gates', () => {
+    it('keeps TypeScript checking as a separate release gate', () => {
         const sharedTestManifest = readJson<PackageManifest>(
             path.join(repositoryRoot, 'packages/shared-test/package.json')
         );
@@ -201,7 +200,7 @@ describe('native TypeScript 7 repository boundaries', () => {
 
         expect(sharedTestManifest.scripts?.typecheck).toBe('npm run check:ts');
         expect(releaseGate).toContain(
-            'npm --workspace @ar-eye-hunter/shared-test run check:deno'
+            'npm --workspace @ar-eye-hunter/shared-test run check'
         );
     });
 });

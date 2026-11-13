@@ -571,7 +571,7 @@ workflow and B06 semantic suites as those surfaces change. Use visible-control P
 coverage for UI behavior.
 
 Then run affected shared/shared-web/shared-server TypeScript checks, shared-test and
-shared-rtc-bench checks, test typecheck, black-box/headless builds, control Deno check,
+shared-rtc-bench checks, test typecheck, black-box/headless builds, control Bun check,
 shared-web public API snapshots and browser-bundle boundaries, and game consumer builds
 where the browser surface is consumed. API snapshots inventory exports; compiler and
 serialization tests prove required field contracts. No production benchmark dependency

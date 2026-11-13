@@ -1,5 +1,5 @@
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';

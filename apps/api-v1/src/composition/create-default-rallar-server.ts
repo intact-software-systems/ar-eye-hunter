@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import type { FriendsRouteDependencies } from '../friends/register-friends-routes.ts';
 import type { MatchmakingRouteDependencies } from '../matchmaking/register-matchmaking-routes.ts';
 import type { PartyRouteDependencies } from '../parties/register-party-routes.ts';
@@ -168,7 +168,7 @@ function startConfiguredApiTiming(
         serviceId: myServerId,
         intervalMs: observability.heapSampleIntervalMs,
         collectGarbage: resolveExposedGarbageCollector(globalThis),
-        readMemoryUsage: Deno.memoryUsage,
+        readMemoryUsage: () => process.memoryUsage(),
         readUptimeMs: () => performance.now()
     }));
     return timing;

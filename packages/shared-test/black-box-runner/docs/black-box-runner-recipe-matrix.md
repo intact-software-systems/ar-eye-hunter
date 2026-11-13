@@ -119,7 +119,7 @@ The `api-v1-idempotency-contract` matrix entry is the focused three-node
 strict-mutation gate. Run it against an already provisioned cluster with:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts \
+bun run packages/shared-test/black-box-runner/recipe-matrix.mts \
   --profile=api-v1-black-box-cluster \
   --id=api-v1-idempotency-contract \
   --require-gates \
@@ -137,7 +137,7 @@ also captures `apps/api-v1` server logs.
 ## API-v1 Managed Topologies
 
 Memory mode manages one API process. Built-in Postgres cluster profiles manage
-three Postgres-backed API processes: three Deno API processes sharing one
+three Postgres-backed API processes: three Bun API processes sharing one
 Postgres database on ports 18080, 18081, and 18082. They write isolated logs named `api-v1-server.log`,
 `api-v1-server-secondary.log`, and `api-v1-server-tertiary.log`.
 The topology-replay profile also retains

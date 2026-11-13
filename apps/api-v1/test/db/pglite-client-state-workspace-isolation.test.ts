@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { PSqlAdminStateReader } from '@shared-server/rallar-system/admin-operations/postgres/p-sql-admin-state-reader.ts';
@@ -17,7 +18,7 @@ const WORKSPACE_CASES = [
     { workspaceId: 'a%3Ab', workspaceKey: 'a%253Ab' }
 ] as const;
 
-Deno.test('PGlite client events isolate lookalike workspace keys across every read shape', async () => {
+test('PGlite client events isolate lookalike workspace keys across every read shape', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlClientStateEventRepository(sql);
         const applicationId = 'client-event-workspace-isolation';
@@ -115,7 +116,7 @@ Deno.test('PGlite client events isolate lookalike workspace keys across every re
     });
 });
 
-Deno.test('PGlite admin state scopes recent events while system totals stay global', async () => {
+test('PGlite admin state scopes recent events while system totals stay global', async () => {
     await withPGliteSql(async (sql) => {
         const nowEpochMs = 1_700_000_000_000;
         const applicationId = 'admin-client-event-workspace-isolation';
@@ -152,7 +153,7 @@ Deno.test('PGlite admin state scopes recent events while system totals stay glob
     });
 });
 
-Deno.test('PGlite admin online principals exclude omitted persisted workspace identity', async () => {
+test('PGlite admin online principals exclude omitted persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
             keyWorkspace: '_',
@@ -171,7 +172,7 @@ Deno.test('PGlite admin online principals exclude omitted persisted workspace id
     });
 });
 
-Deno.test('PGlite admin online principals exclude empty persisted workspace identity', async () => {
+test('PGlite admin online principals exclude empty persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
             keyWorkspace: '_',
@@ -191,7 +192,7 @@ Deno.test('PGlite admin online principals exclude empty persisted workspace iden
     });
 });
 
-Deno.test('PGlite admin online principals exclude non-string persisted workspace identity', async () => {
+test('PGlite admin online principals exclude non-string persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
             keyWorkspace: '_',
@@ -211,7 +212,7 @@ Deno.test('PGlite admin online principals exclude non-string persisted workspace
     });
 });
 
-Deno.test('PGlite scoped admin state starts events before facts and shares activity cutoff', async () => {
+test('PGlite scoped admin state starts events before facts and shares activity cutoff', async () => {
     await withPGliteSql(async (sql) => {
         const recentEventWindowMs = 100;
         const activityCutoffEpochMs = 3_000;
@@ -269,7 +270,7 @@ Deno.test('PGlite scoped admin state starts events before facts and shares activ
     });
 });
 
-Deno.test('PGlite global admin state preserves independent query and response clocks', async () => {
+test('PGlite global admin state preserves independent query and response clocks', async () => {
     await withPGliteSql(async (sql) => {
         const recentEventWindowMs = 100;
         const applicationId = 'global-query-clocks';

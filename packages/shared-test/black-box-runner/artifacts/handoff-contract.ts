@@ -324,7 +324,7 @@ function toCommandSnippets(entry: BlackBoxRunnerRecipeMatrixEntry): readonly Bla
     snippets.push({
         label: 'Direct scenario',
         command: [
-            'deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts',
+            'bun run packages/shared-test/black-box-runner/scenario-black-box.ts',
             `-c packages/shared-test/black-box-runner/${entry.recipe}`,
             entry.mode === 'dry-run' ? '--dry-run' : '',
             `--artifact-dir=.artifacts/shared-test/${entry.artifactName || entry.id}`

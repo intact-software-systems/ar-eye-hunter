@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -9,7 +10,7 @@ import {
     type NativeAdmissionTestCleanup
 } from './native-admission-test-cleanup.ts';
 
-Deno.test('native cleanup retains the body failure while attempting and reporting every failing owned stage', async () => {
+test('native cleanup retains the body failure while attempting and reporting every failing owned stage', async () => {
     const primaryFailure = new Error('room assertion failed');
     const failures = new Map([
         ['socket', new Error('socket failed')],
@@ -50,7 +51,7 @@ Deno.test('native cleanup retains the body failure while attempting and reportin
     );
 });
 
-Deno.test('native cleanup exposes labelled cleanup-only failures without replacing their causes', async () => {
+test('native cleanup exposes labelled cleanup-only failures without replacing their causes', async () => {
     const listenerFailure = new Error('listener failed');
     const passFailure = new Error('engine stop failed');
     const fixture = createNativeAdmissionCleanupFixture(
@@ -77,7 +78,7 @@ Deno.test('native cleanup exposes labelled cleanup-only failures without replaci
     assert.equal(fixture.secondaryFailures.length, 0);
 });
 
-Deno.test('native cleanup awaits every socket closure and the final background join', async () => {
+test('native cleanup awaits every socket closure and the final background join', async () => {
     const fixture = createNativeAdmissionCleanupFixture(new Map(), undefined);
     const socketFinished = Promise.withResolvers<void>();
     const backgroundFinished = Promise.withResolvers<void>();
@@ -119,7 +120,7 @@ Deno.test('native cleanup awaits every socket closure and the final background j
     assert.ok(fixture.calls.includes('background'));
 });
 
-Deno.test('native cleanup releases the database barrier and awaits shutdown after failed engine completion', async () => {
+test('native cleanup releases the database barrier and awaits shutdown after failed engine completion', async () => {
     const passFailure = new Error('final pass failed');
     const fixture = createNativeAdmissionCleanupFixture(new Map([['engine-stop', passFailure]]), undefined);
 
@@ -132,7 +133,7 @@ Deno.test('native cleanup releases the database barrier and awaits shutdown afte
     assert.deepEqual(fixture.calls.slice(-3), ['engine-stop', 'engine-barrier-released', 'background']);
 });
 
-Deno.test('native database close survives both progress failures and remains awaited by runtime shutdown', async () => {
+test('native database close survives both progress failures and remains awaited by runtime shutdown', async () => {
     const primaryFailure = new Error('room assertion failed');
     const progressFailure = new Error('progress output failed');
     const fixture = createNativeAdmissionCleanupFixture(new Map(), primaryFailure);
@@ -190,7 +191,7 @@ Deno.test('native database close survives both progress failures and remains awa
     assert.equal(backgroundFailure.cause.errors[1].cause, progressFailure);
 });
 
-Deno.test('native database close failure remains observable beside progress failure and body primary', async () => {
+test('native database close failure remains observable beside progress failure and body primary', async () => {
     const primaryFailure = new Error('room assertion failed');
     const closeFailure = new Error('database close failed');
     const progressFailure = new Error('progress output failed');
@@ -295,7 +296,7 @@ function createNativeAdmissionTransportCleanupFixture(
             }
         },
         listener: {
-            shutdown: () => {
+            stop: () => {
                 calls.push('listener');
                 const failure = failures.get('listener');
                 if (failure) {
@@ -342,7 +343,7 @@ function createNativeAdmissionQueueCleanupFixture(
     };
 }
 
-Deno.test('native receipt registry failure preserves the original body Error and attempts every peer and fixture', async () => {
+test('native receipt registry failure preserves the original body Error and attempts every peer and fixture', async () => {
     const primaryFailure = new Error('original body');
     const registryFailure = new Error('registry release failed');
     const peerFailure = new Error('peer failed');
@@ -381,7 +382,7 @@ Deno.test('native receipt registry failure preserves the original body Error and
     assert.ok(secondary[0].errors.some((failure) => failure === registryFailure || failure.cause === registryFailure));
 });
 
-Deno.test('native cleanup keeps database closure behind real engine computation and resource release', async () => {
+test('native cleanup keeps database closure behind real engine computation and resource release', async () => {
     const fixture = createNativeAdmissionCleanupFixture(new Map(), undefined);
     const engine = new InboxOutboxEngine();
     const computation = Promise.withResolvers<void>();

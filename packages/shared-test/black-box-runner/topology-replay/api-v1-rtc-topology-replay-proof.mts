@@ -241,7 +241,8 @@ export async function runApiV1RtcTopologyReplayProof(
         );
 
         phase = 'stop-passive-c';
-        await input.controls.stop(input.tertiaryPlan.port);
+        // Abrupt death: the restarted consumer must replay from its durable cursor, with no graceful stop to lean on.
+        await input.controls.stop(input.tertiaryPlan.port, 'crash');
         phase = 'restart-a-while-c-stopped';
         const laterA = await withManagedApiServerSuspended(
             input.controls,

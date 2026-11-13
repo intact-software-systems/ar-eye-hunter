@@ -1,5 +1,7 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -11,14 +13,14 @@ import { createLocalIceConfig, registerIceRoutes } from '../src/routes/ice-route
 import { requireApiAuthSession } from '../src/services/request-auth-service.ts';
 import { withPGliteSql } from './db/pglite-auth-test-harness.ts';
 
-Deno.test('local ICE configuration uses the resolved cache lifetime', () => {
+test('local ICE configuration uses the resolved cache lifetime', () => {
     assert.deepEqual(createLocalIceConfig(1_000, 300_000), {
         iceServers: [],
         expiresAtEpochMs: 301_000
     });
 });
 
-Deno.test('ICE route applies resolved authentication and request-rate policy', async () => {
+test('ICE route applies resolved authentication and request-rate policy', async () => {
     const app = new Hono();
     const session = testSession();
     registerIceRoutes(app, {
@@ -42,7 +44,7 @@ Deno.test('ICE route applies resolved authentication and request-rate policy', a
     assert.equal(second.status, 429);
 });
 
-Deno.test('Metered ICE route caches one provider response for the resolved lifetime', async () => {
+test('Metered ICE route caches one provider response for the resolved lifetime', async () => {
     const app = new Hono();
     let providerCalls = 0;
     registerIceRoutes(app, {
@@ -74,7 +76,7 @@ Deno.test('Metered ICE route caches one provider response for the resolved lifet
     });
 });
 
-Deno.test('ICE route advertises at least 30 seconds of validity near the end of the cache window', async () => {
+test('ICE route advertises at least 30 seconds of validity near the end of the cache window', async () => {
     await withMutableClock(300_000, async (clock) => {
         const app = new Hono();
         registerIceRoutes(app, {
@@ -99,7 +101,7 @@ Deno.test('ICE route advertises at least 30 seconds of validity near the end of 
     });
 });
 
-Deno.test('ICE route refreshes the provider only after the cache window really ends', async () => {
+test('ICE route refreshes the provider only after the cache window really ends', async () => {
     await withMutableClock(300_000, async (clock) => {
         const app = new Hono();
         let providerCalls = 0;
@@ -134,7 +136,7 @@ Deno.test('ICE route refreshes the provider only after the cache window really e
     });
 });
 
-Deno.test('canonical retention ICE budget admits 101 requests and denies 102 for one authenticated principal', async () => {
+test('canonical retention ICE budget admits 101 requests and denies 102 for one authenticated principal', async () => {
     await withPGliteSql(async (sql) => {
         const configuration = await readFixtureConfiguration('101');
         const repository = new AuthSessionRepository(new PSqlRuntimeStateRepository(sql));
@@ -164,7 +166,7 @@ Deno.test('canonical retention ICE budget admits 101 requests and denies 102 for
     });
 });
 
-Deno.test('canonical default ICE budget preserves authentication, client isolation and window expiry', async () => {
+test('canonical default ICE budget preserves authentication, client isolation and window expiry', async () => {
     await withPGliteSql(async (sql) => {
         const configuration = await readFixtureConfiguration();
         const repository = new AuthSessionRepository(new PSqlRuntimeStateRepository(sql));
@@ -222,9 +224,9 @@ function readFixtureConfiguration(requests?: string) {
         environment.RALLAR_ICE_RATE_LIMIT_REQUESTS = requests;
     }
     return readApiV1Configuration({
-        environment: { get: (name) => environment[name] },
+        environment,
         hardwareConcurrency: 4,
-        readTextFile: (url) => Deno.readTextFile(url),
+        readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resource('defaults'),
         profileUrls: { dev: resource('dev'), prod: resource('prod'), 'prod-hardened': resource('prod-hardened'), 'prod-in-memory': resource('prod-in-memory') },
         staticClientsUrl: new URL('../resources/authorised-clients.json', import.meta.url)

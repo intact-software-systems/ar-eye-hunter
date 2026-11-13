@@ -534,7 +534,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
                 'metadata.json': JSON.stringify({
                     artifactSchemaVersion: 1,
                     execution: 'run',
-                    command: ['deno', 'run', 'scenario-black-box.ts']
+                    command: ['bun', 'run', 'scenario-black-box.ts']
                 }),
                 'events.jsonl': ''
             },

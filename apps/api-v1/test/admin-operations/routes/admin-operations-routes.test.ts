@@ -1,6 +1,7 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import type { AdminOperationReadRequest, AdminOperationWriteRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
@@ -54,7 +55,7 @@ const CRDT_METADATA: RallarCrdtDocumentMetadata = {
     projectionIds: []
 };
 
-Deno.test('admin operations routes reject unauthenticated requests with 401', async () => {
+test('admin operations routes reject unauthenticated requests with 401', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token'))
     });
@@ -67,7 +68,7 @@ Deno.test('admin operations routes reject unauthenticated requests with 401', as
     });
 });
 
-Deno.test('admin operations routes reject authenticated non-admin requests with 403', async () => {
+test('admin operations routes reject authenticated non-admin requests with 403', async () => {
     const app = createApp({
         requireApiAuthSession: () =>
             Promise.resolve({
@@ -89,7 +90,7 @@ Deno.test('admin operations routes reject authenticated non-admin requests with 
     });
 });
 
-Deno.test('admin operations overview returns the service overview payload', async () => {
+test('admin operations overview returns the service overview payload', async () => {
     const app = createApp();
 
     const response = await app.request('/api/admin/operations/overview', {
@@ -108,7 +109,7 @@ Deno.test('admin operations overview returns the service overview payload', asyn
     });
 });
 
-Deno.test(
+test(
     'admin operations scoped state route forwards application and workspace scope',
     async () => {
         const calls: AdminOperationReadRequest[] = [];
@@ -158,7 +159,7 @@ Deno.test(
     }
 );
 
-Deno.test('admin operations metrics reset forwards request body and admin session', async () => {
+test('admin operations metrics reset forwards request body and admin session', async () => {
     const calls: AdminOperationWriteRequest<{ readonly requestId?: string; }>[] = [];
     const app = createApp({
         operations: {
@@ -213,7 +214,7 @@ Deno.test('admin operations metrics reset forwards request body and admin sessio
     ]);
 });
 
-Deno.test('admin prune pending completion preserves its typed 503 response', async () => {
+test('admin prune pending completion preserves its typed 503 response', async () => {
     const recording = createRecordingOperations({
         pruneExpired: () => Promise.resolve(Either.ofLeft(toUnavailableAppInboxFailure()))
     });
@@ -254,7 +255,7 @@ Deno.test('admin prune pending completion preserves its typed 503 response', asy
     });
 });
 
-Deno.test(
+test(
     'admin topology recompute materializes winner facts once across renewed credentials',
     async () => {
         const completed = new Map<
@@ -341,7 +342,7 @@ Deno.test(
     }
 );
 
-Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', async () => {
+test('admin CRDT routes preserve compact lifecycle and erase operations', async () => {
     const recording = createRecordingOperations();
     const app = createApp({
         operations: {

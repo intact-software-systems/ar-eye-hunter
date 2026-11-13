@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
     createRallarRtcClientFromRuntime,
@@ -9,7 +9,7 @@ import {
     type RallarRtcMessageCodec
 } from '../../../shared-test/black-box-runner/rallar-rtc-provider.ts';
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory sends encoded messages and decodes received messages', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory sends encoded messages and decodes received messages', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
     let closeCalled = false;
@@ -69,11 +69,11 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory sends encoded messages a
 
     await client.close();
 
-    assertEquals(sentWireMessages, [
+    expect(sentWireMessages).toEqual([
         '{"topic":"chat.message","payload":{"text":"hello"}}'
     ]);
 
-    assertEquals(receivedMessages, [
+    expect(receivedMessages).toEqual([
         {
             topic: 'chat.message',
             payload: {
@@ -82,13 +82,13 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory sends encoded messages a
         }
     ]);
 
-    assertEquals(closeCalled, true);
-    assertEquals((receivedCloseEvents[0] as any).reason, 'normal close');
-    assertEquals((receivedCloseEvents[0] as any).code, 1000);
-    assertEquals((receivedCloseEvents[0] as any).phase, 'close');
+    expect(closeCalled).toEqual(true);
+    expect((receivedCloseEvents[0] as any).reason).toEqual('normal close');
+    expect((receivedCloseEvents[0] as any).code).toEqual(1000);
+    expect((receivedCloseEvents[0] as any).phase).toEqual('close');
 });
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory supports onmessage and onclose fallback handlers', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory supports onmessage and onclose fallback handlers', async () => {
     const sentWireMessages: string[] = [];
     let closeCalled = false;
 
@@ -139,23 +139,23 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory supports onmessage and o
 
     await client.close();
 
-    assertEquals(sentWireMessages, [
+    expect(sentWireMessages).toEqual([
         '{"topic":"chat.message"}'
     ]);
 
-    assertEquals(receivedMessages, [
+    expect(receivedMessages).toEqual([
         {
             topic: 'fallback.message'
         }
     ]);
 
-    assertEquals(closeCalled, true);
-    assertEquals((receivedCloseEvents[0] as any).reason, 'closed through onclose fallback');
-    assertEquals((receivedCloseEvents[0] as any).code, 1000);
-    assertEquals((receivedCloseEvents[0] as any).phase, 'close');
+    expect(closeCalled).toEqual(true);
+    expect((receivedCloseEvents[0] as any).reason).toEqual('closed through onclose fallback');
+    expect((receivedCloseEvents[0] as any).code).toEqual(1000);
+    expect((receivedCloseEvents[0] as any).phase).toEqual('close');
 });
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory maps data channel error to close event', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory maps data channel error to close event', async () => {
     const dataChannel = {
         readyState: 'closing',
         send: (_data: string) => {
@@ -189,7 +189,7 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory maps data channel error 
         message: 'data channel error'
     });
 
-    assertEquals(receivedCloseEvents, [
+    expect(receivedCloseEvents).toEqual([
         {
             event: {
                 message: 'data channel error'
@@ -202,7 +202,7 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory maps data channel error 
     ]);
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory supports scenario execution through data channel', async () => {
+test('createRallarRtcProviderFromDataChannelFactory supports scenario execution through data channel', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
 
@@ -300,17 +300,17 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory supports scenario execu
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(sentWireMessages).toEqual([
         '{"topic":"chat.message","payload":{"text":"hello through data channel provider"}}'
     ]);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data, payload);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesEcho[0].actual.matchedMessage.data).toEqual(payload);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory supports custom wire message codec', async () => {
+test('createRallarRtcProviderFromDataChannelFactory supports custom wire message codec', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
     const sentWireMessages: string[] = [];
 
@@ -396,15 +396,15 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory supports custom wire me
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(sentWireMessages).toEqual([
         'wire:{"topic":"chat.message","payload":{"text":"hello through custom codec"}}'
     ]);
-    assertEquals(report.resultsByName.aliceSendsAndReceivesCustomCodecEcho[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAndReceivesCustomCodecEcho[0].actual.matchedMessage.data, payload);
+    expect(report.resultsByName.aliceSendsAndReceivesCustomCodecEcho[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAndReceivesCustomCodecEcho[0].actual.matchedMessage.data).toEqual(payload);
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory records close event when custom decode fails', async () => {
+test('createRallarRtcProviderFromDataChannelFactory records close event when custom decode fails', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const dataChannel = {
@@ -479,16 +479,16 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory records close event whe
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceSendsBadWireMessage[0].status, 'SUCCESS');
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].error, true);
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].phase, 'decode');
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].message, 'custom decode failed');
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].readyState, 'open');
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].event.error, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceSendsBadWireMessage[0].status).toEqual('SUCCESS');
+    expect(report.rtcCloseEvents.aliceRtc[0].error).toEqual(true);
+    expect(report.rtcCloseEvents.aliceRtc[0].phase).toEqual('decode');
+    expect(report.rtcCloseEvents.aliceRtc[0].message).toEqual('custom decode failed');
+    expect(report.rtcCloseEvents.aliceRtc[0].readyState).toEqual('open');
+    expect(report.rtcCloseEvents.aliceRtc[0].event.error).toEqual(true);
 });
 
-Deno.test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close with flattened close fields', async () => {
+test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close with flattened close fields', async () => {
     const provider = createRallarRtcProviderFromRuntime({
         connect: (_args, dispatcher) => {
             return {
@@ -568,16 +568,13 @@ Deno.test('createRallarRtcProviderFromRuntime supports rtc.wait expect.close wit
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.waitForFlattenedRuntimeClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForFlattenedRuntimeClose[0].actual.matchedCloseEvent.phase, 'close');
-    assertEquals(
-        report.resultsByName.waitForFlattenedRuntimeClose[0].actual.matchedCloseEvent.event.reason,
-        'closed by flattened runtime provider'
-    );
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.waitForFlattenedRuntimeClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForFlattenedRuntimeClose[0].actual.matchedCloseEvent.phase).toEqual('close');
+    expect(report.resultsByName.waitForFlattenedRuntimeClose[0].actual.matchedCloseEvent.event.reason).toEqual('closed by flattened runtime provider');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory reports failure when data channel is not open', async () => {
+test('createRallarRtcProviderFromDataChannelFactory reports failure when data channel is not open', async () => {
     const dataChannel = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -637,16 +634,13 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory reports failure when da
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsTooEarly[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsTooEarly[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsTooEarly[0].actual.exception,
-        'Rallar RTC data channel is not open. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsTooEarly[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsTooEarly[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsTooEarly[0].actual.exception).toEqual('Rallar RTC data channel is not open. readyState=connecting');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory reports failure when message cannot be encoded', async () => {
+test('createRallarRtcProviderFromDataChannelFactory reports failure when message cannot be encoded', async () => {
     const dataChannel = {
         readyState: 'open',
         send: (_data: string) => {
@@ -704,16 +698,13 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory reports failure when me
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsUndefined[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsUndefined[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsUndefined[0].actual.exception,
-        'Rallar RTC message cannot be encoded as JSON'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsUndefined[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsUndefined[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsUndefined[0].actual.exception).toEqual('Rallar RTC message cannot be encoded as JSON');
 });
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channel open during connect', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channel open during connect', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const dataChannel = {
@@ -752,10 +743,10 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channe
 
     await connectPromise;
 
-    assertEquals(dataChannel.readyState, 'open');
+    expect(dataChannel.readyState).toEqual('open');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel open times out', async () => {
+test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel open times out', async () => {
     const dataChannel = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -797,16 +788,13 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
-        'Rallar RTC data channel did not open within 50ms. readyState=connecting'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('Rallar RTC data channel did not open within 50ms. readyState=connecting');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel closes before open', async () => {
+test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel closes before open', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const dataChannel = {
@@ -863,16 +851,15 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual(
         'Rallar RTC data channel closed before open. readyState=closed, code=1006, reason=closed while connecting'
     );
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel errors before open', async () => {
+test('createRallarRtcProviderFromDataChannelFactory reports connect failure when data channel errors before open', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const dataChannel = {
@@ -928,16 +915,15 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory reports connect failure
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAlice[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual(
         'Rallar RTC data channel failed before open. readyState=closing, message=ICE failed while connecting'
     );
 });
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channel onopen fallback during connect', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channel onopen fallback during connect', async () => {
     const dataChannel = {
         readyState: 'connecting',
         send: (_data: string) => {
@@ -971,10 +957,10 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory can wait for data channe
 
     await connectPromise;
 
-    assertEquals(dataChannel.readyState, 'open');
+    expect(dataChannel.readyState).toEqual('open');
 });
 
-Deno.test('createRallarRtcRuntimeFromDataChannelFactory can use request waitForOpen settings', async () => {
+test('createRallarRtcRuntimeFromDataChannelFactory can use request waitForOpen settings', async () => {
     const listeners: Record<string, Array<(event: any) => void>> = {};
 
     const dataChannel = {
@@ -1014,10 +1000,10 @@ Deno.test('createRallarRtcRuntimeFromDataChannelFactory can use request waitForO
 
     await connectPromise;
 
-    assertEquals(dataChannel.readyState, 'open');
+    expect(dataChannel.readyState).toEqual('open');
 });
 
-Deno.test('createRallarRtcProviderFromDataChannelFactory preserves fallback close handler after waitForOpen', async () => {
+test('createRallarRtcProviderFromDataChannelFactory preserves fallback close handler after waitForOpen', async () => {
     const sentWireMessages: string[] = [];
 
     const dataChannel = {
@@ -1139,12 +1125,12 @@ Deno.test('createRallarRtcProviderFromDataChannelFactory preserves fallback clos
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsAfterOpen[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForDataChannelClose[0].status, 'SUCCESS');
-    assertEquals(sentWireMessages, [
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsAfterOpen[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForDataChannelClose[0].status).toEqual('SUCCESS');
+    expect(sentWireMessages).toEqual([
         '{"topic":"chat.message","payload":{"text":"hello after open"}}'
     ]);
 });

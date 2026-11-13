@@ -22,6 +22,7 @@ import {
 } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createOpenTestWebSocket } from '../../../../packages/tests/shared-server/rallar-system/websocket/test-support/open-test-websocket.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
 import { createRoomStateTestRuntime, type RoomStateTestRuntime } from './ws-room-test-runtime.ts';
 
@@ -56,8 +57,9 @@ export function createLiveRoomRuntime(nowEpochMs: number): LiveRoomTestRuntime {
         webSocket.send = (data) => {
             assert.ok(typeof data === 'string');
             sent.push({ sessionId, encoded: data });
+            return data.length;
         };
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: webSocket }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: webSocket }));
     }
     const service = createDefaultWsQueueBoxServerService({
         inboundVolatileStores: undefined,

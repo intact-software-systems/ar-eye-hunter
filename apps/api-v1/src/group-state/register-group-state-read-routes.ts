@@ -2,8 +2,8 @@ import {
     Hono,
     type Context,
     type Next
-} from 'jsr:@hono/hono@4.11.9';
-import { etag, RETAINED_304_HEADERS } from 'jsr:@hono/hono@4.11.9/etag';
+} from 'hono';
+import { etag, RETAINED_304_HEADERS } from 'hono/etag';
 
 import { computeGroupDirectoryPage } from '@shared-server/rallar-system/group-state/directory/compute-group-directory-page.ts';
 import {
