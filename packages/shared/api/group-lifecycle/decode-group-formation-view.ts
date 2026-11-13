@@ -2,7 +2,7 @@ import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonObject, ApiJsonValue } from '../api-json-value.ts';
 import { isSameGroupRef } from '../api-type-utils.ts';
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
-import type { GroupRef } from '../group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
 import { validateRallarGroupRef, validateRallarNonNegativeInteger } from '../rallar-validation.ts';
 import {
     GROUP_ACTIVATION_CONDITIONS,
@@ -67,6 +67,10 @@ const FIELD_CHECKS = {
     coverageBasisLayoutIdentity: {
         message: 'Coverage basis must be null or a layout identity',
         isValid: isNullOr(isGroupLayoutIdentity)
+    },
+    causalRevision: {
+        message: 'Causal revision must carry non-negative group and presence revisions',
+        isValid: isCausalRevision
     }
 } satisfies Record<keyof GroupFormationView, GroupFormationViewFieldCheck>;
 
@@ -172,4 +176,10 @@ function isPendingTopologyReplan(value: unknown): value is PendingTopologyReplan
         typeof value.reconfigureQueued === 'boolean' &&
         (value.dueAtEpochMs === null || isNonNegativeInteger(value.dueAtEpochMs)) &&
         (value.generation === null || isNonNegativeInteger(value.generation));
+}
+
+function isCausalRevision(value: unknown): value is GroupStateCausalRevision {
+    return isRecordValue(value) &&
+        isNonNegativeInteger(value.groupRevision) &&
+        isNonNegativeInteger(value.presenceRevision);
 }

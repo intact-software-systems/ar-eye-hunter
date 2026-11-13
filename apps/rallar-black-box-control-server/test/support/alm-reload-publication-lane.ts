@@ -8,7 +8,6 @@ import {
     computeALMessageEnvelopeBytes
 } from '@shared/al-contracts/al-message-resource-limits.ts';
 import {
-    AL_PUBLICATION_STAGE_LIMITS,
     decodeALPublicationStageLimits,
     type ALPublicationStageLimits
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
@@ -42,6 +41,8 @@ export interface AlmReloadPublicationLaneInput {
     readonly submit: (msgIds: readonly string[]) => void;
     readonly settle: ALDeliverySettlementSink;
     readonly diagnostics: ALOutboundRuntimeDiagnosticsSink;
+    /** The limits the lane reports before its first connect. */
+    readonly idleLimits: ALPublicationStageLimits;
 }
 
 /** A live send's command with the options its channel decides itself (D466, D467). */
@@ -63,11 +64,8 @@ export function toAlmReloadLiveCommand(command: RallarBlackBoxTestMessagesSendCo
     return { ...command, ack: defaults.ack, ttlMs: command.ttlMs ?? defaults.ttlMs };
 }
 
-/** A connect's `rallar.almPublicationLimits` as the harness decodes it; absent, the product's own. */
+/** The `rallar.almPublicationLimits` a connect names, as the harness decodes it. */
 export function decodeAlmReloadPublicationLimits(value: unknown): Either<string, ALPublicationStageLimits> {
-    if (value === undefined) {
-        return Either.ofRight(AL_PUBLICATION_STAGE_LIMITS);
-    }
     return decodeALPublicationStageLimits(value, '$.rallar.almPublicationLimits').mapLeft((issues) =>
         issues.map((issue) => `${issue.path}: ${issue.message}`).join(' ')
     );
@@ -87,12 +85,13 @@ interface AlmReloadConnectStage {
  */
 export class AlmReloadPublicationLane {
     private readonly input: AlmReloadPublicationLaneInput;
-    private limits: ALPublicationStageLimits = AL_PUBLICATION_STAGE_LIMITS;
+    private limits: ALPublicationStageLimits;
     private current: AlmReloadConnectStage | undefined;
     private readonly failures: Error[] = [];
 
     constructor(input: AlmReloadPublicationLaneInput) {
         this.input = input;
+        this.limits = input.idleLimits;
     }
 
     /** A new connect starts its stage under its own limits; the stage before it stops, as its epoch closes. */

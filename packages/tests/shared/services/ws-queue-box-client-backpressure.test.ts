@@ -55,6 +55,7 @@ async function openBackpressureClient(
     engine.start();
     onTestFinished(() => engine.stop());
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         socket,
         sessionId: 'self',
         serverPeerId: 'server',

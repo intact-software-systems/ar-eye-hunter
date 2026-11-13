@@ -71,4 +71,27 @@ describe('group formation view decoding', () => {
             ).left
         ).toBeUndefined();
     });
+
+    it('rejects a view that does not state the causal revision it was derived at', () => {
+        const { causalRevision: _causalRevision, ...withoutRevision } = createFormationView(groupRef);
+
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutRevision)), groupRef).left).toEqual([
+            { path: 'causalRevision', code: 'missing-field', message: 'Formation view is missing causalRevision' }
+        ]);
+    });
+
+    it('refuses a causal revision without two non-negative integers and accepts one the schema permits', () => {
+        const view = createFormationView(groupRef);
+
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: { groupRevision: -1, presenceRevision: 0 } })))
+            .toEqual(['causalRevision']);
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: { groupRevision: 1 } }))).toEqual([
+            'causalRevision'
+        ]);
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: null }))).toEqual(['causalRevision']);
+        expect(issuePaths(JSON.stringify({
+            ...view,
+            causalRevision: { groupRevision: 1, presenceRevision: 1, observedAtEpochMs: 5 }
+        }))).toEqual([]);
+    });
 });

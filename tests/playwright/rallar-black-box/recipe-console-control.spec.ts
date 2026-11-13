@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page, type Route } from '@playwright/test';
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
@@ -27,7 +28,7 @@ const TARGET_REASONS = {
 
 type ControlMockStep =
     | Readonly<{ kind: 'snapshot'; snapshot: ControlServerSnapshot; }>
-    | Readonly<{ kind: 'raw-snapshot'; snapshot: unknown; }>
+    | Readonly<{ kind: 'raw-snapshot'; snapshot: ApiJsonObject; }>
     | Readonly<{ kind: 'http-error'; status: number; message: string; }>
     | Readonly<{ kind: 'network-error'; }>;
 
@@ -65,7 +66,9 @@ function controlAgent(
                 groupId: options.groupId ?? GROUP.groupId,
                 providerMode: 'browser-rallar',
                 browserName: 'chromium',
-                region: 'eu-north'
+                region: 'eu-north',
+                sessionLabel: `${agentId}:${agentId}-session`,
+                updatedAtEpochMs: atEpochMs
             },
         connectionSequence: 1,
         reconnectCount: 0,
@@ -140,6 +143,9 @@ function activeDistributedRun(
                 recipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []
@@ -165,16 +171,18 @@ function liveBoardSnapshot(): ControlServerSnapshot {
 async function fulfillJson(
     route: Route,
     status: number,
-    body: unknown
+    body: ControlServerSnapshot | ControlRunSnapshot | Pick<ControlServerSnapshot, 'distributedRuns'>
 ): Promise<void> {
-    await route.fulfill({
-        status,
-        contentType: 'application/json',
-        headers: {
-            'access-control-allow-origin': '*'
-        },
-        body: JSON.stringify(body)
-    });
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+/** An error body, a deliberately malformed snapshot or the untrusted token broker's reply: no control DTO. */
+async function fulfillRawJson(route: Route, status: number, body: ApiJsonValue): Promise<void> {
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+function toJsonFulfillment(status: number, body: string) {
+    return { status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body };
 }
 
 async function installControlRouteMock(
@@ -182,12 +190,12 @@ async function installControlRouteMock(
     steps: readonly ControlMockStep[],
     options: Readonly<{
         distributedRunsFallback?: readonly ControlDistributedRunSnapshot[];
-        distributedRunsPayload?: unknown;
+        distributedRunsPayload?: ApiJsonValue;
         distributedRunsStatus?: number;
     }> = {}
 ): Promise<ControlRouteMock> {
     let runRequestCount = 0;
-    let latestSnapshot: unknown;
+    let latestSnapshot: ControlServerSnapshot | ApiJsonObject | undefined;
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -199,7 +207,7 @@ async function installControlRouteMock(
                 return;
             }
             if (step.kind === 'http-error') {
-                await fulfillJson(route, step.status, { error: step.message });
+                await fulfillRawJson(route, step.status, { error: step.message });
                 return;
             }
             latestSnapshot = step.snapshot;
@@ -210,29 +218,28 @@ async function installControlRouteMock(
         if (request.method() === 'GET' && runDetailMatch) {
             const runId = decodeURIComponent(runDetailMatch[1]);
             const run = controlRunFromSnapshot(latestSnapshot, runId);
-            await fulfillJson(
-                route,
-                run ? 200 : 404,
-                run ?? {
-                    error: 'Control run not found.'
-                }
-            );
+            if (run) {
+                await fulfillJson(route, 200, run);
+            }
+            else {
+                await fulfillRawJson(route, 404, { error: 'Control run not found.' });
+            }
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             const status = options.distributedRunsStatus ?? 200;
-            await fulfillJson(
-                route,
-                status,
-                status === 200
-                    ? options.distributedRunsPayload ?? {
-                        distributedRuns: options.distributedRunsFallback ?? []
-                    }
-                    : { error: 'Distributed-run context unavailable.' }
-            );
+            if (status !== 200) {
+                await fulfillRawJson(route, status, { error: 'Distributed-run context unavailable.' });
+            }
+            else if (options.distributedRunsPayload !== undefined) {
+                await fulfillRawJson(route, status, options.distributedRunsPayload);
+            }
+            else {
+                await fulfillJson(route, status, { distributedRuns: options.distributedRunsFallback ?? [] });
+            }
             return;
         }
-        await fulfillJson(route, 404, {
+        await fulfillRawJson(route, 404, {
             error: `Unhandled ${request.method()} ${url.pathname}`
         });
     });
@@ -240,22 +247,14 @@ async function installControlRouteMock(
 }
 
 function controlRunFromSnapshot(
-    snapshot: unknown,
+    snapshot: ControlServerSnapshot | ApiJsonObject | undefined,
     runId: string
 ): ControlRunSnapshot | undefined {
-    if (!snapshot || typeof snapshot !== 'object') {
-        return undefined;
-    }
-    const runs = (snapshot as { runs?: unknown; }).runs;
+    const runs = snapshot?.runs;
     if (!Array.isArray(runs)) {
         return undefined;
     }
-    return runs.find((run): run is ControlRunSnapshot =>
-        Boolean(
-            run && typeof run === 'object' &&
-                (run as { runId?: unknown; }).runId === runId
-        )
-    );
+    return runs.find((run): run is ControlRunSnapshot => isApiJsonObject(run) && run.runId === runId);
 }
 
 function commandContextItem(page: Page, label: string) {
@@ -572,7 +571,7 @@ test('retains partial authorization when the configured token broker is unavaila
             return;
         }
         brokerAuthorizations.push(route.request().headers().authorization ?? 'missing');
-        await fulfillJson(route, 503, { error: 'Configured token broker unavailable.' });
+        await fulfillRawJson(route, 503, { error: 'Configured token broker unavailable.' });
     });
     await installControlRouteMock(context, [{
         kind: 'snapshot',
@@ -795,11 +794,11 @@ test('keeps stored credentials away from URL-selected control and API origins', 
             await fulfillJson(route, 200, { runs: [], distributedRuns: [] });
             return;
         }
-        await fulfillJson(route, 401, { error: 'Operator token required.' });
+        await fulfillRawJson(route, 401, { error: 'Operator token required.' });
     });
     await context.route('https://untrusted-api.test/**', async (route) => {
         brokerAuthorizations.push(route.request().headers().authorization ?? null);
-        await fulfillJson(route, 200, {
+        await fulfillRawJson(route, 200, {
             tokenType: 'Bearer',
             token: 'brokered-operator-secret',
             issuedAtEpochMs: Date.now(),
@@ -946,9 +945,9 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         const nativeClearTimeout = window.clearTimeout.bind(window);
         Object.defineProperty(window, 'setTimeout', {
             configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]): number => {
+            value: (...[handler, timeout, ...args]: Parameters<typeof nativeSetTimeout>): number => {
                 let id = 0;
-                const wrapped = (...callbackArgs: unknown[]): void => {
+                const wrapped = (...callbackArgs: typeof args): void => {
                     active.delete(id);
                     if (typeof handler === 'function') {
                         handler(...callbackArgs);
@@ -977,11 +976,13 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         });
     });
     const activePolls = (): Promise<number> =>
-        page.evaluate(() =>
-            (window as Window & {
-                __recipeConsoleTimeoutProbe: { activePolls(): number; };
-            }).__recipeConsoleTimeoutProbe.activePolls()
-        );
+        page.evaluate(() => {
+            const probe = window.__recipeConsoleTimeoutProbe;
+            if (probe === undefined) {
+                throw new Error('The timeout probe init script did not run in this page.');
+            }
+            return probe.activePolls();
+        });
     const mock = await installControlRouteMock(context, [{
         kind: 'snapshot',
         snapshot: liveBoardSnapshot()

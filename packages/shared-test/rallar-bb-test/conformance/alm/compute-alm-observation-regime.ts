@@ -102,7 +102,10 @@ export interface ALMObservationInboundClaimWaits {
     readonly sendControlClaimCount: number;
 }
 
-/** A `pendingSharePercent` over zero `admission-outcome` events is not a measurement. */
+/**
+ * A share of `admission-outcome` events, a replay's own among them, not of messages. A `pendingSharePercent` over
+ * zero events is not a measurement.
+ */
 export type ALMObservationInboundPendingShare =
     | Readonly<{ outcome: 'measured'; pendingSharePercent: number; outcomeCount: number; }>
     | Readonly<{ outcome: 'unmeasured'; }>;

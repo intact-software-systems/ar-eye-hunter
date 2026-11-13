@@ -90,7 +90,9 @@ describe('Release Gate lanes', () => {
             'test:rallar:full-stack:postgres:rest',
             'test:rallar:full-stack:postgres:control',
             'test:api-v1:black-box:postgres:view-push',
-            'test:api-v1:black-box:postgres:ordering'
+            'test:api-v1:black-box:postgres:ordering',
+            'test:api-v1:black-box:postgres:group-delta',
+            'test:api-v1:black-box:postgres:auth-logout'
         ]));
         for (
             const bunCheck of [

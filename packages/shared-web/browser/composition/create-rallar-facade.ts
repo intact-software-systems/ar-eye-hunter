@@ -3,7 +3,6 @@ import { browserDeliveryComposition } from './browser-delivery-composition.ts';
 
 import {
     createBrowserMediaComposition,
-    createBrowserRealtimeCoreComposition,
     type BrowserMediaComposition,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
@@ -25,8 +24,7 @@ import {
     type BrowserRoomsComposition
 } from './browser-product-composition.ts';
 import {
-    createBrowserRuntimeFoundation,
-    createBrowserStateComposition,
+    createDefaultBrowserRuntimeFoundation,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
@@ -39,7 +37,7 @@ import {
     type BrowserSessionCoreComposition,
     type BrowserStartupComposition
 } from './browser-session-composition.ts';
-import { createBrowserSessionMessaging } from './create-browser-session-messaging.ts';
+import { createBrowserParticipantCore, type BrowserParticipantCore } from './create-browser-participant-core.ts';
 
 interface BrowserFacadeCompositions {
     readonly session: BrowserSessionCoreComposition;
@@ -56,14 +54,14 @@ interface BrowserFacadeCompositions {
 }
 
 export function createRallarFacade(): RallarFacade {
-    const foundation = createBrowserRuntimeFoundation();
-    const state = createBrowserStateComposition({
-        runtime: foundation.runtime,
-        stateRuntime: foundation.stateRuntime
+    const foundation = createDefaultBrowserRuntimeFoundation();
+    const core = createBrowserParticipantCore({
+        foundation,
+        delivery: browserDeliveryComposition,
+        ...createDefaultBrowserSessionQosInputs()
     });
-    const delivery = browserDeliveryComposition;
-    const compositions = createBrowserFacadeCompositions(foundation, state, delivery);
-    registerBrowserFacadeLifecycle(foundation, state, compositions);
+    const compositions = createBrowserFacadeCompositions(core);
+    registerBrowserFacadeLifecycle(foundation, core.state, compositions);
     return createBrowserFacadeAssembly({
         session: compositions.session,
         startup: compositions.startup,
@@ -78,24 +76,9 @@ export function createRallarFacade(): RallarFacade {
     });
 }
 
-function createBrowserFacadeCompositions(
-    foundation: BrowserRuntimeFoundation,
-    state: BrowserStateComposition,
-    delivery: typeof browserDeliveryComposition
-): BrowserFacadeCompositions {
-    const { session, stateEvents, messaging } = createBrowserSessionMessaging({
-        foundation,
-        state,
-        delivery,
-        ...createDefaultBrowserSessionQosInputs()
-    });
+function createBrowserFacadeCompositions(core: BrowserParticipantCore): BrowserFacadeCompositions {
+    const { state, session, stateEvents, messaging, realtime } = core;
     const sessionPort = session.session;
-    const realtime = createBrowserRealtimeCoreComposition({
-        runtime: foundation.runtime,
-        transportRuntime: foundation.transportRuntime,
-        state,
-        session: sessionPort
-    });
     const media = createBrowserMediaComposition({ session: sessionPort });
     const rooms = createBrowserRoomsComposition({
         state,

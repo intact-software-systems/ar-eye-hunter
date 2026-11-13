@@ -105,7 +105,13 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
             const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
             if (replay) {
                 expect(await admission.replay({ kind: 'admit-message', msg: decodeALDeadlinedMessage(message), source }))
-                    .toEqual({ outcome: 'completed', wroteWork: offset < 0 });
+                    .toEqual({
+                        outcome: 'completed',
+                        wroteWork: offset < 0,
+                        admission: expect.objectContaining({
+                            right: offset < 0 ? { kind: 'admitted' } : { kind: 'not-admitted', reason: 'expired' }
+                        })
+                    });
             }
             else {
                 const outcome = await admission.attempt(message, source, planner);

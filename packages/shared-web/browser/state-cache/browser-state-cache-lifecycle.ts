@@ -13,6 +13,7 @@ import {
 } from '@shared/api/state-types.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import type { GroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import {
@@ -78,6 +79,7 @@ export namespace BrowserStateCacheLifecycle {
         readonly webRtcGroupManager: RtcGroupPort;
         readonly clientData: ClientInfo;
         readonly options?: StateCacheScopeOptions;
+        readonly groupStateDiagnostics: GroupStateSnapshotChangeSink;
     }
 
     export interface HydrateInput {
@@ -86,6 +88,7 @@ export namespace BrowserStateCacheLifecycle {
         readonly clientSnapshots: readonly ClientSnapshot[];
         readonly groupSnapshots: readonly GroupSnapshot[];
         readonly options?: StateCacheScopeOptions;
+        readonly groupStateDiagnostics: GroupStateSnapshotChangeSink;
     }
 
     export interface ObserverContext {
@@ -96,6 +99,7 @@ export namespace BrowserStateCacheLifecycle {
         readonly rereadGroupSnapshots?: (
             scope: StateScope
         ) => Promise<readonly GroupSnapshot[]>;
+        readonly groupStateDiagnostics: GroupStateSnapshotChangeSink;
     }
 }
 
@@ -129,7 +133,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             sessionId: myOwnClientData.sessionId,
             scope: initialScope,
             bootstrapOverlayPolicy: resolveBootstrapOverlayPolicy(options.groupFormation, myOwnClientData.sessionId),
-            rereadGroupSnapshots: options.rereadGroupSnapshots
+            rereadGroupSnapshots: options.rereadGroupSnapshots,
+            groupStateDiagnostics: input.groupStateDiagnostics
         });
 
         webSocketQueueBox.onAllInboxMessagesDo({
@@ -180,7 +185,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
             sessionId: clientData.sessionId,
             scope,
             bootstrapOverlayPolicy: resolveBootstrapOverlayPolicy(options.groupFormation, clientData.sessionId),
-            rereadGroupSnapshots: options.rereadGroupSnapshots
+            rereadGroupSnapshots: options.rereadGroupSnapshots,
+            groupStateDiagnostics: input.groupStateDiagnostics
         });
         acceptClientStateSnapshots(clientSnapshots, scope);
         await acceptGroupStateSnapshotsOrRecompute(
@@ -233,7 +239,8 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
                 context.bootstrapOverlayPolicy,
                 next.bootstrapOverlayPolicy
             ) &&
-            context.rereadGroupSnapshots === next.rereadGroupSnapshots;
+            context.rereadGroupSnapshots === next.rereadGroupSnapshots &&
+            context.groupStateDiagnostics === next.groupStateDiagnostics;
     }
 
     private observeClientStateChanges(
@@ -257,8 +264,9 @@ export class BrowserStateCacheLifecycle implements BrowserStateCacheLifecyclePor
     }
 
     private observeGroupStateChanges(context: BrowserStateCacheLifecycle.ObserverContext): () => void {
-        const { webRtcGroupManager, sessionId, bootstrapOverlayPolicy } = context;
+        const { webRtcGroupManager, sessionId, bootstrapOverlayPolicy, groupStateDiagnostics } = context;
         return groupStateSnapshotsRepository.onGroupStateSnapshotChange((change) => {
+            publishGroupStateSnapshotChange(change, groupStateDiagnostics);
             const snapshot = change.snapshot ?? change.previous;
             if (
                 change.kind === ObservableValueEventType.Refreshed ||
@@ -327,6 +335,19 @@ function isSameObserverConnection(
     return left.webRtcGroupManager === right.webRtcGroupManager &&
         left.sessionId === right.sessionId &&
         isSameStateScope(left.scope, right.scope);
+}
+
+/** The cache already holds the change; a failing diagnostic must not reach the adoption. */
+function publishGroupStateSnapshotChange(
+    change: groupStateSnapshotsRepository.GroupStateSnapshotChange,
+    sink: GroupStateSnapshotChangeSink
+): void {
+    try {
+        sink(change);
+    }
+    catch (error) {
+        console.error('Error publishing a group state change', error);
+    }
 }
 
 function resolveStateCacheScope(options: StateCacheScopeOptions): StateScope {

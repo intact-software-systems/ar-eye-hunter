@@ -353,7 +353,7 @@ function toALControlSubjectMsgId(msg: ALMessage): string | null {
     return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
-export interface ALInboundAdmissionDiagnostics {
+interface ALInboundAdmissionDiagnostics {
     readonly outcome: ALInboundAdmissionOutcome;
     readonly reason: string;
 }
@@ -363,7 +363,7 @@ export interface ALInboundAdmissionDiagnostics {
  * and sends no NACK; its captured diagnostic can distinguish that refusal from pending delivery.
  * Diagnostic absence alone establishes neither outcome.
  */
-export function toALInboundAdmissionDiagnostics(
+function toALInboundAdmissionDiagnostics(
     admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
 ): ALInboundAdmissionDiagnostics {
     return admitted.fold(toRejectionDiagnostics, toAcceptanceDiagnostics);
@@ -404,6 +404,35 @@ function toAcceptanceDiagnostics(
             return { outcome: 'not-handled', reason: acceptance.kind };
     }
 }
+
+export interface ALInboundAdmissionOutcomeInput {
+    /** The runtime's own worker id, which a replay on the volatile lane states too. */
+    readonly workerId: string;
+    readonly msg: ALMessage;
+    /** The carrier the message arrived on; a replay states its retained first arrival's. */
+    readonly carrier: ALDeliveryCarrier;
+    readonly admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>;
+}
+
+/** One `admission-outcome` per verdict: an ingress states one, and so does each replay of a retained admission. */
+export function recordALInboundAdmissionOutcome(
+    sink: ALInboundRuntimeDiagnosticsSink | undefined,
+    input: ALInboundAdmissionOutcomeInput
+): void {
+    try {
+        sink?.({
+            kind: 'admission-outcome',
+            workerId: input.workerId,
+            msgId: input.msg.id.msgId,
+            typeId: input.msg.payload.typeId,
+            carrier: input.carrier,
+            ...toALInboundAdmissionDiagnostics(input.admitted),
+            ...toALMessageTrace(input.msg)
+        });
+    }
+    catch { /* Optional diagnostics cannot change mandatory work. */ }
+}
+
 /** Diagnostics are supplemental: a failed sink must not change delivery or replace its original error. */
 export function recordALInboundDiagnostic(
     sink: ALInboundRuntimeDiagnosticsSink | undefined,

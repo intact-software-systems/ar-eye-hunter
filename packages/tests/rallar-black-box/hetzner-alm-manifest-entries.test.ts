@@ -6,8 +6,8 @@ import {
 
 import {
     ALM_CONFORMANCE_CARRIERS,
-    ALM_CONFORMANCE_RTC_CARRIERS,
-    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS
+    ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
+    ALM_CONFORMANCE_WORLD_SEND_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
@@ -175,16 +175,14 @@ function toStartedCells(entry: ReturnType<typeof createAlmConformance2AgentEntry
 }
 
 describe('ALM conformance hosted lane families', () => {
-    it('withholds exactly the named cells: both checkpoint cells and the age and track bound cells everywhere, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
+    it('withholds exactly the named cells: both checkpoint cells and the age bound cell everywhere, the track bound cell where it runs, the gap repair, the congestion, the fairness, and the reply and the server-originated cells where they run', () => {
         const defined = toFamilyCells(['two-agent', 'addressed']);
         // Removing a withheld cell from hosted manifest 18 is a deliberate act: the checkpoint, repair, volatile
         // bound, congestion and fairness cells keep manifest 18 as recorded.
+        const withheldEverywhere = ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age'];
         const withheld = [
-            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-                ['checkpoint-recovery', 'checkpoint-lag', 'capacity-age', 'capacity-tracks'].map((
-                    key
-                ) => `alm-${carrier}-${key}`)
-            ),
+            ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => withheldEverywhere.map((key) => `alm-${carrier}-${key}`)),
+            ...ALM_CONFORMANCE_WORLD_SEND_CARRIERS.map((carrier) => `alm-${carrier}-capacity-tracks`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`),
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
@@ -236,7 +234,7 @@ describe('ALM conformance hosted lane families', () => {
             // A hosted run proves the paced send shape on three agents first (D481).
             ...ALM_CONFORMANCE_CARRIERS.map((carrier) => `alm-${carrier}-paced-isolation-lists`),
             // The exhausted repair's lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
-            ...ALM_CONFORMANCE_RTC_CARRIERS.map((carrier) => `alm-${carrier}-repair-exhausted`),
+            'alm-rtc-repair-exhausted',
             'alm-rtc-unsigned-ack-refused',
             'alm-rtc-with-ws-fallback-unsigned-ack-refused',
             'alm-rtc-forged-recipient-ack',

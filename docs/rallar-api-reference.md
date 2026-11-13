@@ -312,7 +312,8 @@ as the differences between consecutive statuses: a bootstrap or tombstoned slot 
 layout that appears and disappears before the browser observes it raises no event, and
 `layoutAccepted` fires once the accepted slot and the snapshot name the same layout.
 `formation.readView(options?)` fetches the server's `GroupFormationView` (readiness, managers,
-`layoutStale`, `pending`, the attempt budget, both status axes and the coverage basis) and decodes
+`layoutStale`, `pending`, the attempt budget, both status axes, the coverage basis and the group's
+`causalRevision` that `layoutStale` and `condition` were derived at) and decodes
 it against the bound room, rejecting a body that is malformed or names another group. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.
@@ -848,10 +849,11 @@ receives. Half of each limit is the own share
 (`AL_VOLATILE_SESSION_OWN_SHARE`, 0.5, rounded down: 500 messages and 2 MiB). The
 age limit admits a deadline at most 5 minutes ahead
 (`AL_VOLATILE_SESSION_MAX_AGE_MS`). The track limit holds 64 live ordering
-tracks of the session's own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`).
-A send opens a track when it states a `seq`: on its `orderingKey`, or, for an
-RTC room send that names none, on the room's default ordering key. A send
-without a `seq` opens none. A sent message counts until its deadline, and its
+tracks of the session's own ordered volatile sends
+(`AL_VOLATILE_SESSION_MAX_TRACKS`, D179). An ordered room send is minted on the
+durable lane (D529) and a peer send carries no ordering, so from a browser the
+track limit judges an ordered world broadcast, which opens a track on its
+`orderingKey`; a send without a `seq` opens none. A sent message counts until its deadline, and its
 track until the last counted send on it reaches its deadline. A received
 message counts until the earlier of its deadline and 30 s after it arrives; it
 never opens a counted track and is never refused.

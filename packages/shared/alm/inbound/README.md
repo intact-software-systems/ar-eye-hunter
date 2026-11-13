@@ -154,7 +154,9 @@ never refused for capacity (D74, D78). It counts in the ledger's inbound pool (D
 its count, its bytes and the age of the oldest counted admission, but never the track count, since the ledger records
 it with no ordering track (D179). The session's own send is refused, and `overloaded` read, only once the totals are at
 the limit and the own pool at its share as well, so arrivals alone refuse no own send. A duplicate, a rejected arrival and a message whose sender named no
-deadline count nothing. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
+deadline count nothing, except a duplicate or a rejected arrival whose admission conflicted at the commit: it is retained
+`pending-admission` (D640) and counts as an admission does, until the earlier of its deadline and 30 s after its
+arrival, whatever its replay decides. The platform's own state sync admitted on the volatile pair counts as well (R-S3c-ii-7). An
 inbound plan never reads `overloaded` (R-S3c-ii-8), nor `backpressured` (D184): at its bound a session still delivers a best-effort arrival at
 once, still forwards it to the children it owns and still sends its ACKs and NACKs.
 
@@ -591,7 +593,7 @@ Web and API deploy together.
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Data ingress                    | `ALInboundMessageAdmission.attempt` reads observations, computes the admission bundle, validates it, then calls `commitBundle`. The store compares the original message, ordering, supersedence, receipt, and delivery observations before writing state and work together.                                                                                                                                                                                | A commit that wrote work announces it; one that wrote none leaves that round unannounced — the rotation reads a page every engine round either way.                                                                                                        |
-| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline. Retention checks exact content and identity on reuse.                                                                                                                                                                                                                                                              | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. No success receipt is earned by pending storage.                                                                                                 |
+| Initial data admission conflict | A fully validated message is retained as `admit-message` in the same inbound QueueBox namespace, with its source and original deadline, whether its plan admitted or dropped it: a bundle that writes nothing never meets the fence, so the rolled-back one carried rows or effects (a drop's NACK among them) that the replay plans afresh against the winner. Retention checks exact content and identity on reuse.                                      | The caller receives `pending-admission`; the worker later calls `replay` for one fresh admission attempt. Pending storage earns no ACK; the WS server still starts its `admitted` receipt.                                                                 |
 | Control ingress                 | [`ALInboundControlAdmission`](./control/al-inbound-control-admission.ts) reads the tracked message and expected control peer, then [`computeALInboundControlAdmission`](./control/compute-al-inbound-control-admission.ts) and [`validateALInboundControlAdmission`](./control/validate-al-inbound-control-admission.ts) decide the candidate before a conditional commit of its state and effects. Unknown controls cannot create a pending data message. | A commit that wrote work announces it, and the configured control callback receives the acceptance. A commit conflict retains `admit-control` work, answers `pending-admission`, and the worker's replay reports the acceptance through the same callback. |
 | Admitted delivery               | `ALInboundAdmittedDelivery` decides on the surface its eligibility read carried, and reads that surface itself — the retained message and its stored planning state, from one session — for a claim that carries none. It then re-checks expiry and ordering before it dispatches locally or forwards through the supplied port.                                                                                                                           | The worker completes or reschedules the claimed QueueBox entry.                                                                                                                                                                                            |
 | Buffered release                | [`ALInboundOrderedDelivery`](./al-inbound-ordered-delivery.ts) reads progress and buffered work, computes a permitted release or resynchronization result, and commits the observed transition.                                                                                                                                                                                                                                                            | Local dispatch occurs only after the required release decision; the same batch promotes the track's next release (D190), and later work becomes eligible through the same worker.                                                                          |
@@ -768,18 +770,22 @@ reads the exclusive-claim row at `<namespace>:claim:<key>` beside the dedup key,
 commit: its value is the holder's peer id and its liveness is the row's own expiry, which every backend applies on
 read. The planning observation `claimHolderPeerId` carries the holder, and `resolveMessageDrop`, right after the
 duplicate check, drops an exclusive message whose key another peer holds with the code `held-by-other`; `planNack`
-answers it with a NACK of that reason to the sender, so nothing is delivered and a dropped claim starts no receipt. An
-admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own deadline as expiry, in
-the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the expiry, and an exclusive
-claim past its message's deadline leaves the key free for the next claimant. A message with no deadline of its
-own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies (`durableEffectTtlMs`,
-the store's retention default); every browser send carries a `ttlMs`. Two claimants that both read a free key
-conflict at the commit, and the loser's retained admission is replayed and planned against the winner. A claim
-retained on a conflict may have started its `admitted` receipt; the `held-by-other` NACK of its replay then ends
-the origin's receipt, because the origin reads that NACK as a refusal of the whole send whatever its receipt (the
-server's own aggregate runs to its deadline, and its late `timed-out` receipt changes nothing). A
-`shared` message neither reads nor writes an exclusive claim, and an `rtc-peer` or `trusted-server` admission never
-reads or writes one, so a browser never drops a message for it.
+answers it with a NACK of that reason to the sender, so nothing is delivered and a claim dropped at its first attempt
+starts no receipt. An admitted exclusive message writes the `set-claim` mutation, its sender as holder and its own
+deadline as expiry, in the transaction that commits its dedup, ordering and ACK rows: the holder's re-send moves the
+expiry, and an exclusive claim past its message's deadline leaves the key free for the next claimant. A message with no
+deadline of its own (no `expiresAtMs`, no expiry policy) holds the key until the deadline its admission implies
+(`durableEffectTtlMs`, the store's retention default); every browser send carries a `ttlMs`. Two claimants that both
+read a free key conflict at the commit, and the loser's retained admission is replayed and planned against the winner.
+Every conflicted admission is retained (D640), so on the WS server every replayed drop of a receipted room send, a
+`held-by-other` claim, a `resync-required` gap or any other drop its replay NACKs, first answers `pending-admission` and
+starts its `admitted` receipt. The replay's NACK ends the origin's receipt, because the origin reads a NACK as a refusal
+of the whole send whatever its receipt, and the handle reads `rejected`. The `admitted` receipt can reach the origin
+before or after that NACK: after it, the receipt re-creates the receipt row the NACK ended, which lives until the
+message deadline, and settles an `acknowledgement` after `relay-rejected`; the handle still reads `rejected`. The
+server's own aggregate runs to its deadline and ends `timed-out`. A `shared` message neither reads nor writes an
+exclusive claim, and an `rtc-peer` or `trusted-server` admission never reads or writes one, so a browser never drops a
+message for it.
 
 A commit announces the work it wrote, and only that. A data or control replay whose own
 commit persisted work, and an inline control admission whose commit wrote a row, announce
@@ -797,8 +803,8 @@ reservations keep their turn. A retained
 conflict announces for the same reason, and only when retention left a claimable row: a message
 already past its deadline is rejected before the write or as a row written already expired, and a
 row that is already terminal holds nothing to claim. An admission that wrote no row announces nothing, because
-there is nothing for the worker to claim, and a conflict the plan does not retain wrote no
-row at all.
+there is nothing for the worker to claim; a bundle that writes nothing commits without meeting
+the fence, so it never conflicts and is never retained.
 
 ## The admission directory
 
@@ -908,6 +914,12 @@ room's fanout; the server never forwards it. Revocation retires pending work
 without admission metadata or receipts. Temporary authority catch-up uses the
 existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`, preserving the
 processing attempt count.
+
+Each replay that reaches a verdict states its own `admission-outcome` after the
+`pending` / `pending-admission` its ingress stated; a replay whose authority asks for a retry,
+and one cut short by shutdown, states nothing. The mapping is stated once, in the
+[runtime diagnostic contract](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md)
+(`admission-outcome`).
 
 The deadline is captured before pending retention and checked again after awaited
 authority reads. Changed policy, restart, and retry cannot extend it. Conditional

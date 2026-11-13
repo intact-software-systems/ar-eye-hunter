@@ -1,6 +1,4 @@
 import * as Playwright from '@playwright/test';
-import { once } from 'node:events';
-import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -11,10 +9,11 @@ import {
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import type { RecipePairRun } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+
+import { openRecordingControlRequest } from './recording-control-request-fixture.ts';
 
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -101,29 +100,9 @@ describe('same-context ALM run', () => {
                 return session;
             });
             ownerPage.on('crash', () => order.push('crashed'));
-            const server = createServer((_request, response) => {
-                response.writeHead(202, { 'content-type': 'application/json' });
-                response.end('{}');
-            });
-            server.listen(0, '127.0.0.1');
-            await once(server, 'listening');
-            const address = server.address();
-            if (address === null || typeof address === 'string') {
-                throw new Error('Expected the owned HTTP server address.');
-            }
-            const request = await Playwright.request.newContext();
-            const post = request.post.bind(request);
-            const responseUrl = `http://127.0.0.1:${address.port}`;
-            vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-                const data = options?.data;
-                if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                    throw new Error('Expected the actual control HTTP command body.');
-                }
-                order.push(data.commandId);
-                return await post(responseUrl, options);
-            });
+            const control = await openRecordingControlRequest('same-context-run', ({ commandId }) => order.push(commandId));
             const run: RecipePairRun = {
-                request,
+                request: control.request,
                 runId: 'same-context-run',
                 sender: { agentId: 'owner-agent' },
                 receiver: { agentId: 'receiver-agent' },
@@ -167,8 +146,7 @@ describe('same-context ALM run', () => {
             }
             finally {
                 vi.restoreAllMocks();
-                await request.dispose();
-                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+                await control.close();
                 await browser.close();
             }
         }
@@ -253,32 +231,13 @@ it('rejects without starting the successor when the owner\'s gate neither passes
     }).find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
     const successor = { ...baseline.sender, recipeId: `${baseline.sender.recipeId}-successor` };
     const ownerRunId = `${baseline.sender.recipeId}-run`;
-    const posted: string[] = [];
     let nowEpochMs = 1_000;
     vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
-    const server = createServer((_request, response) => {
-        response.writeHead(202, { 'content-type': 'application/json' });
-        response.end('{}');
-    });
-    server.listen(0, '127.0.0.1');
-    await once(server, 'listening');
-    const address = server.address();
-    if (address === null || typeof address === 'string') {
-        throw new Error('Expected the owned HTTP server address.');
-    }
-    const request = await Playwright.request.newContext();
-    const post = request.post.bind(request);
-    vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
-        const data = options?.data;
-        if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-            throw new Error('Expected the actual control HTTP command body.');
-        }
-        posted.push(data.commandId);
-        return await post(`http://127.0.0.1:${address.port}`, options);
-    });
+    const control = await openRecordingControlRequest('same-context-gate-timeout');
+    const posted = () => control.posted.map(({ commandId }) => commandId);
     // Each read moves the clock 30 s: the owner's recipe never records its gate or its end.
     const run: RecipePairRun = {
-        request,
+        request: control.request,
         runId: 'same-context-gate-timeout',
         sender: { agentId: 'owner-agent' },
         receiver: { agentId: 'receiver-agent' },
@@ -294,7 +253,7 @@ it('rejects without starting the successor when the owner\'s gate neither passes
                 stats: [],
                 reports: [],
                 heartbeats: [],
-                results: posted.filter((commandId) => commandId !== ownerRunId).map((commandId) => ({
+                results: posted().filter((commandId) => commandId !== ownerRunId).map((commandId) => ({
                     kind: 'result',
                     protocolVersion: 1,
                     runId: 'same-context-gate-timeout',
@@ -313,11 +272,10 @@ it('rejects without starting the successor when the owner\'s gate neither passes
             { owner: { ...run.sender, page: ownerPage }, successor: { agentId: 'successor-agent' }, ownerEnd: 'close', successorGate: 'owner-gate' },
             { sender: baseline.sender, receiver: baseline.receiver, successor }
         )).rejects.toThrow('owner-gate: the gate did not pass within 90000 ms.');
-        expect(posted).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
+        expect(posted()).toEqual([`${baseline.receiver.recipeId}-run`, ownerRunId]);
     }
     finally {
         vi.restoreAllMocks();
-        await request.dispose();
-        await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await control.close();
     }
 });

@@ -2,6 +2,7 @@ import { expect } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -19,6 +20,7 @@ import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-ev
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -40,6 +42,7 @@ import {
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { AlmReloadLiveArrivals } from './alm-reload-live-arrivals.ts';
 import {
@@ -198,13 +201,15 @@ export class AlmReloadPorts {
     readonly messages: PortMessage[] = [];
     readonly handles = new Map<string, PortMessage>();
     readonly holds = new Map<string, PortHold>();
+    /** The handles of the sends a recipient page made itself. */
+    private readonly memberSendHandles = new Set<string>();
     /** Whether the receiver's connect installed the recording recovery owner on its channel. */
     recoveryOwnerInstalled = false;
     private deliveries = 0;
     private readonly volatileSessions: Readonly<Record<PortRole, AlmReloadVolatileSession>> = {
-        sender: new AlmReloadVolatileSession(),
-        receiver: new AlmReloadVolatileSession(),
-        'recipient-b': new AlmReloadVolatileSession()
+        sender: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        receiver: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        'recipient-b': new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS)
     };
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
@@ -235,7 +240,8 @@ export class AlmReloadPorts {
             clock: { nowMs: () => this.now, setNowMs: (nowMs) => this.now = nowMs },
             submit: (msgIds) => msgIds.forEach((msgId) => this.routeAdmitted(this.findMessage(msgId))),
             settle: (settlement) => this.settleStaged(settlement),
-            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event)
+            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event),
+            idleLimits: AL_PUBLICATION_STAGE_LIMITS
         });
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
@@ -327,15 +333,24 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
-                this.volatileSessions[role].connect(command);
+                this.volatileSessions[role].connect(
+                    decodeBlackBoxRallarConfigFields(command.rallar ?? {}).almVolatileLimits ??
+                        AL_VOLATILE_SESSION_LIMITS
+                );
                 this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
                 if (role === 'sender') {
-                    const limits = decodeAlmReloadPublicationLimits(command.rallar?.almPublicationLimits);
-                    assert(limits.right);
-                    this.publicationLane.connect(limits.right);
+                    const namedLimits = command.rallar?.almPublicationLimits;
+                    if (namedLimits === undefined) {
+                        this.publicationLane.connect(AL_PUBLICATION_STAGE_LIMITS);
+                    }
+                    else {
+                        const limits = decodeAlmReloadPublicationLimits(namedLimits);
+                        assert(limits.right);
+                        this.publicationLane.connect(limits.right);
+                    }
                 }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);
@@ -378,7 +393,7 @@ export class AlmReloadPorts {
         if (command.absent === true) {
             return undefined;
         }
-        const runtime = role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+        const runtime = this.toRuntime(role);
         const matched = (): boolean => resolveLatestWaitEvent(runtime.state().events, command.match) !== undefined;
         if (command.match.topic === 'rallar.browser.alm.outbound_diagnostics') {
             const deadline = computeWaitDeadlineEpochMs(command, this.now);
@@ -428,6 +443,9 @@ export class AlmReloadPorts {
                 if ('replayOnCarrier' in command) {
                     return this.replay(command);
                 }
+                if (role !== 'sender') {
+                    return this.publishMemberSend(role, command);
+                }
                 return command.purpose === 'live' ? this.stageLive(command) : this.send(command);
             case 'messages.observe':
                 return await this.observe(command);
@@ -440,7 +458,41 @@ export class AlmReloadPorts {
         }
     }
 
+    /**
+     * A recipient page's own send is a WS room publication, a cue: every other page of the room reads it at once and
+     * its handle has left the page. It rides no ordering track and holds no receipt, so the sender's model never sees
+     * it; a recipient send of any other shape is one this port does not model.
+     */
+    private publishMemberSend(
+        role: PortRole,
+        command: RallarBlackBoxTestMessagesSendCommand
+    ): RallarBlackBoxTestCommandOutcome {
+        assert(command.handleId);
+        assert(
+            command.carrier === 'ws' && command.ack === 'none' && command.orderingKey === undefined &&
+                command.seq === undefined && command.toPeer === undefined && command.recipientPeers === undefined,
+            `${command.commandId}: a recipient's send is modelled only as an unordered, unreceipted WS room cue`
+        );
+        this.memberSendHandles.add(command.handleId);
+        const msgId = `port-member-message-${command.handleId}`;
+        for (const { role: reader } of this.participants.filter((participant) => participant.role !== role)) {
+            this.toRuntime(reader).recordEvent(toMemberMessageEvent(reader, msgId, command));
+        }
+        return {
+            status: 'ok',
+            value: { msgId, handleId: command.handleId, carrier: command.carrier, status: 'accepted' }
+        };
+    }
+
+    private toRuntime(role: PortRole): RallarBlackBoxTestRuntime {
+        return role === 'sender' ? this.sender : role === 'receiver' ? this.receiver : this.recipientB;
+    }
+
     private async observe(command: PortCommand<'messages.observe'>): Promise<RallarBlackBoxTestCommandOutcome> {
+        if (this.memberSendHandles.has(command.handleId)) {
+            const observation = toPortDeliveryObservation(command.handleId, undefined);
+            return { status: 'ok', value: { ...observation, state: 'transport-accepted', submitted: true } };
+        }
         const message = this.handles.get(command.handleId);
         if (message === undefined) {
             return { status: 'ok', value: toPortDeliveryObservation(command.handleId, message) };
@@ -1358,6 +1410,20 @@ export class AlmReloadPorts {
         }
         message.deliveredRecipientRoles = deliveredRecipientRoles;
     }
+}
+
+/** A member's own publication as another page's channel records it. */
+function toMemberMessageEvent(
+    reader: PortRole,
+    msgId: string,
+    command: RallarBlackBoxTestMessagesSendCommand
+): RallarBlackBoxTestRuntimeEventInput {
+    return {
+        kind: 'message',
+        connection: reader === 'sender' ? 'almConformanceSender' : 'almConformanceReceiver',
+        topic: 'typed',
+        payload: { data: { msgId, typeId: command.typeId, transport: 'ws', payload: command.payload } }
+    };
 }
 
 /** The arrival as the recipient's page records it, with the roster its room target carried. */

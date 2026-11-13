@@ -34,10 +34,12 @@ import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
 import {
+    recordALInboundAdmissionOutcome,
     toALInboundClaimIdentity,
     toALInboundClaimTrace,
     type ALInboundDeferredEffect
 } from '../al-inbound-runtime-diagnostics.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
@@ -182,7 +184,7 @@ export class ALInboundStoreLane {
         this.commitWork();
     }
 
-    /** A message its store cannot persist is not admitted: it wrote nothing, and its sender's receipt retries it. */
+    /** A message its store cannot persist is not admitted, and it wrote nothing. */
     async admitData(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
@@ -205,7 +207,13 @@ export class ALInboundStoreLane {
         }
         const result = attempt.right!;
         if (result.kind === 'conflict') {
-            return Either.ofRight(await this.retainConflictedAdmission(result.pending));
+            // Every conflicted admission is retained, a dropped one included: a bundle that writes nothing never
+            // meets the fence, so the rolled-back one carried rows or effects — a NACK among them — that its
+            // replay plans afresh against the winner. Only a retention that left a claimable row is announced —
+            // `pending-admission`, whether this call wrote the row or found one a previous attempt wrote; a
+            // message past its deadline is rejected before the write, or as a row written already expired; and a
+            // row in a terminal status holds no work for the worker.
+            return Either.ofRight(this.announceRetention(await this.admission.retainPending(result.pending)));
         }
         if (result.wroteWork) {
             this.input.stores.storageHealth?.recordRecoveryPoint(this.readNowMs());
@@ -284,21 +292,6 @@ export class ALInboundStoreLane {
             this.commitWork();
         }
         return admitted;
-    }
-
-    /**
-     * Only a retention that left a claimable row is announced — `pending-admission`, whether this call
-     * wrote the row or found one a previous attempt wrote. A conflict the plan does not retain never
-     * reaches retention; a message past its deadline is rejected before the write, or as a row written
-     * already expired; and a row in a terminal status holds no work for the worker.
-     */
-    private async retainConflictedAdmission(
-        pending: ALInboundPendingAdmission | undefined
-    ): Promise<ALInboundMessageRuntime.Acceptance> {
-        if (pending === undefined) {
-            return { kind: 'not-admitted', reason: 'conflict' };
-        }
-        return this.announceRetention(await this.admission.retainPending(pending));
     }
 
     private announceRetention(acceptance: ALInboundMessageRuntime.Acceptance): ALInboundMessageRuntime.Acceptance {
@@ -506,6 +499,21 @@ export class ALInboundStoreLane {
         catch { /* Optional diagnostics cannot change mandatory work. */ }
     }
 
+    /** Under the runtime's worker id, as its ingress stated the retention, on either lane. */
+    private recordReplayedAdmission(
+        pending: ALInboundPendingAdmission,
+        admitted: ALInboundMessageAdmission.ReplayResult['admission']
+    ): void {
+        if (admitted !== undefined) {
+            recordALInboundAdmissionOutcome(this.dependencies.diagnostics, {
+                workerId: this.input.runtime.effectWorkerId,
+                msg: pending.msg,
+                carrier: toALDeliveryCarrier(pending.source),
+                admitted
+            });
+        }
+    }
+
     /**
      * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
      * batch already read. Announcing it here gives that work a head read in the batch this batch's
@@ -518,6 +526,7 @@ export class ALInboundStoreLane {
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
             const replayed = await this.admission.replay(payload);
+            this.recordReplayedAdmission(payload, replayed.admission);
             if (replayed.wroteWork) {
                 this.commitWork();
             }

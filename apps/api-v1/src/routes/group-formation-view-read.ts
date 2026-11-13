@@ -89,7 +89,8 @@ export async function readGroupFormationView(
         maxFormationAttempts: policy === null ? null : policy.activation.maxFormationAttempts,
         condition: status.condition,
         remediation: status.remediation,
-        coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity
+        coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity,
+        causalRevision: authority.group.causalRevision
     };
 }
 

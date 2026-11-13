@@ -332,7 +332,8 @@ describe('Rallar facade default scope behavior', () => {
                     indexedDbOperationObserver,
                     outboundDiagnostics: expect.any(Function),
                     inboundDiagnostics: expect.any(Function),
-                    storage: expect.any(Function)
+                    storage: expect.any(Function),
+                    groupStateDiagnostics: expect.any(Function)
                 }
             })
         );

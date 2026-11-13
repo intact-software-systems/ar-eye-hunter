@@ -28,6 +28,8 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 
+import { toConformanceInput } from './alm-conformance-test-input.ts';
+
 // These are external evidence transcripts for the pure assessor, not native delivery or persistence proof.
 describe('ALM recipe identity assessment', () => {
     it('joins lifecycle sender IDs and exact receiver envelopes', () => {
@@ -566,6 +568,16 @@ describe('ALM recipe identity assessment', () => {
         const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
         const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
         expect(hasAlmIdentityEvidence({ ...sender, metadata })).toBe(false);
+    });
+
+    it('counts a sender whose only evidence is a relayed receipt pin', () => {
+        const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
+        const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
+        const relayedPin = createAlmConformanceRecipes(toConformanceInput('rtc'))
+            .find((scenario) => scenario.scenarioKey === 'receipted-relay-path')?.sender.metadata?.almRelayedReceiptOrigins;
+
+        expect(relayedPin).toBeDefined();
+        expect(hasAlmIdentityEvidence({ ...sender, metadata: { ...metadata, almRelayedReceiptOrigins: relayedPin } })).toBe(true);
     });
 
     it('raises nothing for a non-fallback identity send whose receiver count lists no copy', () => {

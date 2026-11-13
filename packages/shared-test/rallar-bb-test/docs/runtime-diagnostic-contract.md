@@ -137,6 +137,92 @@ The summary is a projection, not a pass-through. It drops the peers array, the
 lane id, the reason and the read-time clock the room status carries, so a pin
 never asserts on a value that changes with every read.
 
+## Group State Diagnostics
+
+The browser's `RallarDiagnosticsPorts.groupStateDiagnostics` port receives the
+raw `GroupStateSnapshotChange` (`packages/shared/repository/group-state-snapshots-repository.ts`)
+each time the connect's group cache changes what it holds: the cache the RTC
+admission reads when it compares a frame's room floor. The product builds no fact
+from it. The harness's bridge
+(`packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts`)
+projects each change with `toGroupStateAppliedRevision`
+(`packages/shared/repository/group-state-applied-revision.ts`) into a
+`GroupStateAppliedRevision` and publishes it on
+`rallar.browser.group_state.applied` when the projection returns one; the
+event's `data` is the fact itself:
+
+- `groupRef`: the `GroupRef` (`applicationId`, `workspaceId`, `groupId`)
+- `groupRevision` and `presenceRevision`: the held snapshot's causal revision;
+  `groupRevision` is the `snapshotVersion` a room send's floor names
+- `rosterVersion`: the held group's roster version
+- `activeSessionCount`: the held snapshot's active sessions
+- `change`: `held` when the cache now holds this revision, `removed` when it
+  dropped the group (the fields are then the removed snapshot's)
+
+Every adoption path states through the one cache change stream: a delta, a
+snapshot page, a point read, a heartbeat adoption, a reopen resync.
+
+- A `held` event is stated when the change moves `(groupRevision,
+  presenceRevision)` or `activeSessionCount`. A heartbeat that drops or restores
+  a session at an equal causal revision is therefore stated, with the new count.
+- A lease-only replacement or a lease refresh states nothing. `rosterVersion`
+  is carried but never decides: a consistent server does not change it at an
+  equal causal revision. A point read that replaces content at an equal revision
+  states nothing for a roster-only change.
+- A `removed` event is stated for the explicit removals only: a heartbeat that
+  no longer returns the group (`missingGroups`), a collection reconciliation
+  that drops it, and a point read that finds the room missing.
+- A cache entry that lapses by its TTL states nothing; the RTC admission no
+  longer reads it, and a write that restores it at the same revision and
+  session count states nothing either.
+- A disconnect or logout leaves the cache as it is and states nothing; the next
+  connect replaces the whole cache and states nothing for the groups it held.
+
+So the last `held` event does not prove the group is still readable.
+
+The topic is published only on a connection whose configuration yields
+connection defaults (an application scope or an RTC capture mode): the ports
+reach the SDK through them, so any other connection states nothing.
+
+The event is emitted after the cache write, so it never precedes the state it
+names. It may arrive after later writes: delivery of a change waits for the
+previous change's adoption. An event is a floor ("the cache holds at least this
+revision, until a removal, a lapse or the next connect"), not the current state. A sink that throws is
+logged and changes no adoption.
+
+The topic carries about one event per applied change per page; it grows with
+the room's writes, not with the messages a cell sends. The bridged event carries
+no connection, actor or lane context, so a consumer keys it by page; a reloaded
+page starts with an empty cache and states `held` afresh.
+
+## State Read Diagnostics
+
+The browser's `BrowserStateReadDiagnosticEvent`
+(`packages/shared-web/browser/state-read/diagnostics.ts`) reaches the harness
+through the process-wide `setBrowserStateReadDiagnosticsSink`. The harness
+installs its sink when it configures an idle connection and clears it when the
+runtime closes, and publishes each event on `rallar.browser.state-read`; the
+event's `data` is the event itself:
+
+- `name`: always `rallar.browser.state-read`
+- `feature`: `client` or `group`
+- `operation`: `point`, `heartbeat`, `collection`, `topology-read-through`,
+  `reopen-resync` or `delta-apply`
+- `result`: `found`, `not-found`, `error`, `removed`, `preserved`, `adopted`,
+  `applied`, `no-op`, `gap-pull`, `no-overlay`, `revision-conflict`,
+  `read-failed`, `resynced` or `stale-generation`
+- `source`: the read's `StateSnapshotReadSource`, when the operation has one
+- `durationMs`: how long the read or application took
+
+The type is the authority for the members; the harness adds nothing to the
+event. The bridged event carries no connection, actor or lane context, so a
+consumer keys it by page. A page that never closes its runtime leaves its sink
+installed; a second runtime in the same process replaces it, and the first
+runtime's close then clears the sink the second installed (the close clears it
+unconditionally, `black-box-rallar-close-operation.ts`), so in a realm with two
+runtimes the survivor records no state reads. No production realm holds two:
+one runtime per window or page.
+
 ## Outbound Admission Diagnostics
 
 `rallar.browser.alm.outbound_diagnostics` carries one AL outbound runtime
@@ -494,12 +580,41 @@ publication succeed. The event's `data` is the event itself:
   call returns and guarded projection/publication succeeds. Disposed ingress, a
   value that never decodes, or a thrown business path can emit none; disabled or
   failed diagnostics can also lose this event. Its absence does not establish an
-  admission outcome
+  admission outcome. A retained data admission's replay states one more event
+  per replay that reaches a verdict, under the same `msgId`, trace, carrier
+  and runtime `workerId` (never `…/volatile`):
+  - the acceptance its commit reached, mapped as an ingress's is;
+  - `pending` / `pending-admission` again when it conflicts again;
+  - `rejected` / `expired` past its deadline;
+  - `unauthorized` / `unauthorized` when its current authority refuses the
+    message, or when that authority's source no longer covers the scope a
+    stored WS client admission names. That scope is checked at dispatch, not at
+    ingress: an admission that was not retained reads `committed` here and its
+    refusal shows only at dispatch, while a retained one's replay reads
+    `unauthorized`;
+  - a rejection, by its ingress authorization or by the attempt, as an ingress
+    states one: `unauthorized` for code `unauthorized`, otherwise `rejected`
+    (`malformed`, for example), with the code as the reason.
+
+  A replay whose authority asks for a retry, or that shutdown cut short, states
+  nothing, even when its commit landed: a replay cut by shutdown states no
+  verdict, and its row's next replay reads `duplicate`. A replay's event
+  states its first retained arrival's carrier, which a second copy on the other
+  carrier does not change (that copy states `pending` under its own carrier). A
+  retained control's replay states no `admission-outcome`: only its ingress
+  stated `pending` / `pending-admission`. No field marks an event as a replay's. A later arrival of the same
+  `msgId` (a copy on the other carrier, a retried copy) states its own event
+  too, so the latest event for a `msgId` is not by itself where the message
+  stopped. On one carrier, only the order separates a replay's verdict from a
+  re-arrival's: the first event after a `pending` / `pending-admission` that
+  is not itself `pending` is that retained arrival's verdict, unless another
+  arrival on the carrier was stated in between, or its replay stated nothing
 - `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
   ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
   the runtime handled), `pending` (retained for an asynchronous authority
-  recheck or conditional control replay), `unauthorized`
+  recheck or conditional control replay, or a data admission retained on a
+  commit conflict), `unauthorized`
   (ingress authority or the plan refused it), `rejected` (decode, validation,
   expiry, or a plan drop that is not an authority refusal), or `not-handled`
   (duplicate, resync-required, disposed, an unhandled control, or a control

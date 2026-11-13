@@ -62,6 +62,8 @@ const roomWorkflowMocks = await vi.hoisted(async () => {
     };
 });
 
+// The real store under fake-indexeddb cannot stand in: its operations run on timers, so a test on fake timers
+// (join-room's recovery-read bounds) never receives the key.
 vi.mock(import('@shared-web/browser/composition/create-default-publication-key-store.ts'), async () => {
     const { InMemoryPublicationKeyStore } = await import('../../shared/signature/publication-key-store-fixtures.ts');
     const store = new InMemoryPublicationKeyStore();

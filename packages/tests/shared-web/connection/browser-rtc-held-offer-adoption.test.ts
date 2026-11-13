@@ -103,6 +103,7 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
     const queueEngine = new InboxOutboxEngine();
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const queueBoxClient = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         queueEngine,
         socket: new JsonWebSocketClient('ws://signaling-test', createPassThroughTransportFaultPort()),
         outbox: new InMemoryQueueBox(),

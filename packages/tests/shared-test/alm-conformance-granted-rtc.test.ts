@@ -102,6 +102,16 @@ function toRequests(recipe: RallarBlackBoxTestRecipe | undefined): readonly Rall
     return toFlatCommands(recipe).filter((command): command is RallarBlackBoxTestHttpRequestCommand => command.kind === 'http.request');
 }
 
+/** A path cell grants recipient-b `publish` alone and revokes the `subscribe` an earlier cell granted, before the sender's grant. */
+function expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver: RallarBlackBoxTestRecipe | undefined): void {
+    const recipientBGrants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'));
+    expect(recipientBGrants.map(({ request }) => [request.path?.includes('/revoke/'), request.body])).toEqual([
+        [false, { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }],
+        [true, { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }]
+    ]);
+    expect(toStepIndex(receiver, '-revoke-recipient-b-s-request')).toBeLessThan(toStepIndex(receiver, '-grant-sender-p-request'));
+}
+
 function toPublicationAbsences(recipe: RallarBlackBoxTestRecipe | undefined): readonly string[] {
     return toFlatCommands(recipe).flatMap((command) =>
         command.kind === 'wait' && command.absent === true && command.match.kind === 'message' && isJsonRecordValue(command.match.equals)
@@ -435,7 +445,6 @@ describe('the granted rtc cells', () => {
     it('reshapes the room into a path before the sender publishes, and proves the publisher-only member never delivers', () => {
         const { sender, receiver, recipientB } = toGrantedRtcScenario('granted-rtc-relay-only');
         const topology = toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'));
-        const recipientBGrants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'));
 
         expect(topology.map(({ request }) => [request.method, request.body])).toEqual([
             ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
@@ -446,9 +455,7 @@ describe('the granted rtc cells', () => {
         expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-tree-received'));
         expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
         expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
-        expect(recipientBGrants.map(({ request }) => request.body)).toEqual([
-            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
-        ]);
+        expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver);
         expect(toFlatCommands(sender).find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
         expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
@@ -461,6 +468,12 @@ describe('the granted rtc cells', () => {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
                 .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
         }
+    });
+
+    it('revokes the subscribe an earlier cell granted recipient-b before the ordered-relay sender is granted', () => {
+        const { receiver } = toGrantedRtcScenario('granted-rtc-ordered-relay');
+
+        expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver);
     });
 
     it('publishes a minted receipted track over the path and holds p2 until its repair was dispatched, then releases it', () => {
@@ -550,7 +563,10 @@ describe('the granted rtc cells', () => {
         expect(
             toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'))
                 .map(({ request }) => request.body)
-        ).toEqual([{ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }]);
+        ).toEqual([
+            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false },
+            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
+        ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['p1', 'p2', 'p3']);
         // The first absence's window for a late copy covers the others, which read the history alone.
         const [absenceWindow, ...historyReads] = toAbsenceTimeouts(recipientB);

@@ -27,6 +27,7 @@ describe('WS outbound callback deadline', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient(() => 'ws://deadline-test', createPassThroughTransportFaultPort());
         const service = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             socket,
             sessionId: 'self',
             serverPeerId: 'server',

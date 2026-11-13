@@ -1,6 +1,3 @@
-import * as Playwright from '@playwright/test';
-import { once } from 'node:events';
-import { createServer } from 'node:http';
 import {
     describe,
     expect,
@@ -12,7 +9,6 @@ import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformanc
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { ALM_CONFORMANCE_LANE_FAMILIES } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import {
     closeAgentConnections,
@@ -20,6 +16,8 @@ import {
     toAgentRunPrincipalIds,
     type AgentRecipeRun
 } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
+
+import { openRecordingControlRequest } from './recording-control-request-fixture.ts';
 
 const group = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 
@@ -75,7 +73,6 @@ describe('ALM run on an agent per role', () => {
                 'receipted-relay-path'
             ],
             'rtc-with-ws-fallback': [
-                'repair-exhausted',
                 'paced-isolation-lists',
                 ...fallbackScenarioKeys,
                 'leader-confirms',
@@ -145,29 +142,10 @@ describe('ALM run on an agent per role', () => {
             publisherB: `${publisherB.recipeId}-run`,
             sender: `${baseline.sender.recipeId}-run`
         };
-        const posted: string[] = [];
         const receiverConnected = Promise.withResolvers<void>();
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        const responseUrl = `http://127.0.0.1:${address.port}`;
-        vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-            const data = options?.data;
-            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                throw new Error('Expected the actual control HTTP command body.');
-            }
-            posted.push(data.commandId);
-            return await post(responseUrl, options);
-        });
+        const control = await openRecordingControlRequest('agent-run');
+        const request = control.request;
+        const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
         const run: AgentRecipeRun = {
             request,
             runId: 'agent-run',
@@ -189,7 +167,7 @@ describe('ALM run on an agent per role', () => {
                     stats: [],
                     reports: [],
                     heartbeats: [],
-                    results: posted.map((commandId) => ({
+                    results: posted().map((commandId) => ({
                         kind: 'result',
                         protocolVersion: 1,
                         runId: 'agent-run',
@@ -211,14 +189,14 @@ describe('ALM run on an agent per role', () => {
                 ]),
                 undefined
             );
-            await vi.waitFor(() => expect(posted).toContain(runIds.receiver));
+            await vi.waitFor(() => expect(posted()).toContain(runIds.receiver));
             await new Promise((resolve) => setTimeout(resolve, 10));
-            expect(posted).toEqual([runIds.receiver]);
+            expect(posted()).toEqual([runIds.receiver]);
 
             receiverConnected.resolve();
             const outcome = await running;
 
-            expect(posted).toEqual([runIds.receiver, runIds.publisherB, runIds.sibling, runIds.sender]);
+            expect(posted()).toEqual([runIds.receiver, runIds.publisherB, runIds.sibling, runIds.sender]);
             expect(outcome.continuation).toBeUndefined();
             expect(Object.fromEntries(outcome.roles)).toEqual({
                 sender: { commandId: runIds.sender, ok: true, summary: 'ok' },
@@ -229,8 +207,7 @@ describe('ALM run on an agent per role', () => {
         }
         finally {
             vi.restoreAllMocks();
-            await request.dispose();
-            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            await control.close();
         }
     });
 
@@ -247,31 +224,11 @@ describe('ALM run on an agent per role', () => {
         const continuationRunId = `${continuation.recipe.recipeId}-run`;
         // The sibling copies the receiver's recipe, so one passed connect releases both barriers.
         const connect = sibling.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
-        const posted: string[] = [];
-        const agentsByCommand = new Map<string, string>();
         let gateOpen = false;
         let siblingDone = false;
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(async (url, options) => {
-            const data = options?.data;
-            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                throw new Error('Expected the actual control HTTP command body.');
-            }
-            posted.push(data.commandId);
-            agentsByCommand.set(data.commandId, decodeURIComponent(String(url).split('/agents/')[1]?.split('/')[0] ?? ''));
-            return await post(`http://127.0.0.1:${address.port}`, options);
-        });
+        const control = await openRecordingControlRequest('gated-run');
+        const request = control.request;
+        const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
         const toPassedEvent = (agentId: string, commandId: string) => ({
             kind: 'event' as const,
             protocolVersion: 1 as const,
@@ -304,7 +261,7 @@ describe('ALM run on an agent per role', () => {
                 stats: [],
                 reports: [],
                 heartbeats: [],
-                results: posted.filter((commandId) => (gateOpen || commandId !== receiverRunId) && (siblingDone || commandId !== siblingRunId)).map((
+                results: posted().filter((commandId) => (gateOpen || commandId !== receiverRunId) && (siblingDone || commandId !== siblingRunId)).map((
                     commandId
                 ) => ({
                     kind: 'result',
@@ -322,52 +279,33 @@ describe('ALM run on an agent per role', () => {
                 new Map([['sender', baseline.sender], ['receiver', baseline.receiver], ['sibling', sibling]]),
                 continuation
             );
-            await vi.waitFor(() => expect(posted).toContain(siblingRunId));
+            await vi.waitFor(() => expect(posted()).toContain(siblingRunId));
             await new Promise((resolve) => setTimeout(resolve, 600));
-            expect(posted).not.toContain(continuationRunId);
+            expect(posted()).not.toContain(continuationRunId);
 
             // The gate passed, but the continuation is the sibling's later steps: its first recipe must end first.
             gateOpen = true;
             await new Promise((resolve) => setTimeout(resolve, 600));
-            expect(posted).not.toContain(continuationRunId);
+            expect(posted()).not.toContain(continuationRunId);
 
             siblingDone = true;
             const outcome = await running;
 
-            expect(posted.at(-1)).toBe(continuationRunId);
-            expect(agentsByCommand.get(continuationRunId)).toBe('sibling-agent');
+            expect(posted().at(-1)).toBe(continuationRunId);
+            expect(control.posted.find(({ commandId }) => commandId === continuationRunId)?.agentId).toBe('sibling-agent');
             expect(outcome.continuation).toEqual({ commandId: continuationRunId, ok: true, summary: 'ok' });
             expect([...outcome.roles.keys()].toSorted()).toEqual(['receiver', 'sender', 'sibling']);
         }
         finally {
             vi.restoreAllMocks();
-            await request.dispose();
-            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            await control.close();
         }
     });
 
     it('closes every agent\'s room connection before the next cell, and returns once each close passed', async () => {
-        const posted: { readonly commandId: string; readonly command: string; }[] = [];
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
-            const data = options?.data;
-            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                throw new Error('Expected the actual control HTTP command body.');
-            }
-            posted.push({ commandId: data.commandId, command: JSON.stringify(data.command) });
-            return await post(`http://127.0.0.1:${address.port}`, options);
-        });
+        const control = await openRecordingControlRequest('four-role-run');
+        const request = control.request;
+        const posted = () => control.posted.map(({ commandId, command }) => ({ commandId, command: JSON.stringify(command) }));
         const run: AgentRecipeRun = {
             request,
             runId: 'four-role-run',
@@ -385,7 +323,7 @@ describe('ALM run on an agent per role', () => {
                 stats: [],
                 reports: [],
                 heartbeats: [],
-                results: posted.map(({ commandId }) => ({
+                results: posted().map(({ commandId }) => ({
                     kind: 'result',
                     protocolVersion: 1,
                     runId: 'four-role-run',
@@ -398,40 +336,90 @@ describe('ALM run on an agent per role', () => {
         try {
             await closeAgentConnections(run, 'subscription-delivery');
 
-            expect(posted).toEqual([
+            expect(posted()).toEqual([
                 { commandId: 'close-subscription-delivery-sender-agent', command: '{"kind":"close"}' },
                 { commandId: 'close-subscription-delivery-receiver-agent', command: '{"kind":"close"}' }
             ]);
         }
         finally {
             vi.restoreAllMocks();
-            await request.dispose();
-            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            await control.close();
+        }
+    });
+
+    it('fails the family before the next cell when a role\'s recipe is still live after its cancel', async () => {
+        const baseline = toScenarios('ws').find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+        const receiverRunId = `${baseline.receiver.recipeId}-run`;
+        const senderRunId = `${baseline.sender.recipeId}-run`;
+        const connect = baseline.receiver.commands.find((command) => command.kind === 'rtc.connect')!.commandId!;
+        const control = await openRecordingControlRequest('stale-run');
+        const request = control.request;
+        const posted = () => control.posted.map(({ commandId, command }) => ({ commandId, kind: command.kind }));
+        let nowEpochMs = 1_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
+        // Each read moves the clock 30 s. The receiver connects and its recipe never ends, cancelled or not.
+        const run: AgentRecipeRun = {
+            request,
+            runId: 'stale-run',
+            agents: new Map([
+                ['sender', { agentId: 'sender-agent' }],
+                ['receiver', { agentId: 'receiver-agent' }]
+            ]),
+            readSnapshot: async () => {
+                nowEpochMs += 30_000;
+                return {
+                    runId: 'stale-run',
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 2,
+                    agents: [],
+                    commands: [],
+                    events: [{
+                        kind: 'event',
+                        protocolVersion: 1,
+                        runId: 'stale-run',
+                        agentId: 'receiver-agent',
+                        atEpochMs: 1,
+                        eventId: 'receiver-connected',
+                        commandId: connect,
+                        payload: { kind: 'result', topic: 'rallar.bb.command.result', commandId: connect, payload: { ok: true } }
+                    }],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                    results: posted().filter(({ commandId }) => commandId === senderRunId).map(({ commandId }) => ({
+                        kind: 'result',
+                        protocolVersion: 1,
+                        runId: 'stale-run',
+                        agentId: 'sender-agent',
+                        commandId,
+                        ok: true
+                    }))
+                };
+            }
+        };
+        try {
+            await expect(runRecipesOnAgents(
+                run,
+                new Map([['sender', baseline.sender], ['receiver', baseline.receiver]]),
+                undefined
+            )).rejects.toThrow(`${receiverRunId} is still running after its deadline and cancellation`);
+
+            expect(posted()).toEqual([
+                { commandId: receiverRunId, kind: 'recipe.run' },
+                { commandId: senderRunId, kind: 'recipe.run' },
+                { commandId: `cancel-${receiverRunId}`, kind: 'recipe.cancel' }
+            ]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
         }
     });
 
     it('throws when an agent\'s close has not passed within the close timeout, reading no snapshot after it', async () => {
-        const posted: string[] = [];
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(async (_url, options) => {
-            const data = options?.data;
-            if (!isJsonRecordValue(data) || typeof data.commandId !== 'string') {
-                throw new Error('Expected the actual control HTTP command body.');
-            }
-            posted.push(data.commandId);
-            return await post(`http://127.0.0.1:${address.port}`, options);
-        });
+        const control = await openRecordingControlRequest('close-timeout-run');
+        const request = control.request;
+        const posted = (): readonly string[] => control.posted.map(({ commandId }) => commandId);
         let nowEpochMs = 1_000;
         let reads = 0;
         vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
@@ -456,7 +444,7 @@ describe('ALM run on an agent per role', () => {
                     stats: [],
                     reports: [],
                     heartbeats: [],
-                    results: posted.map((commandId) => ({
+                    results: posted().map((commandId) => ({
                         kind: 'result',
                         protocolVersion: 1,
                         runId: 'close-timeout-run',
@@ -475,8 +463,7 @@ describe('ALM run on an agent per role', () => {
         }
         finally {
             vi.restoreAllMocks();
-            await request.dispose();
-            await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+            await control.close();
         }
     });
 });

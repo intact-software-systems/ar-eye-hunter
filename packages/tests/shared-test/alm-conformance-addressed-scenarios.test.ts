@@ -35,7 +35,8 @@ const VOLATILE_BOUND_KEYS = ['capacity', 'capacity-age', 'capacity-tracks'];
 const ADDRESSED_KEYS = ['ws-unicast-receipt', 'unicast-fallback', 'server-command', ...VOLATILE_BOUND_KEYS];
 const ADDRESSED_KEYS_BY_CARRIER: Readonly<Record<AlmConformanceCarrier, readonly string[]>> = {
     ws: ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS],
-    rtc: ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS],
+    // An RTC page cannot author the ordered world broadcast that capacity-tracks fills the track bound with (D641).
+    rtc: ['ws-unicast-receipt', 'capacity', 'capacity-age'],
     'rtc-with-ws-fallback': ['ws-unicast-receipt', 'unicast-fallback', ...VOLATILE_BOUND_KEYS]
 };
 const ADMITTED = 'state matches ^(accepted|queued|transport-accepted|acknowledged)$';
@@ -298,8 +299,11 @@ describe('the addressed-send family (C11)', () => {
         }
     });
 
-    it('reconnects with two tracks, refuses the send opening a third capacity/tracks with no attempt, reads the ledger at the bound, and restores them', () => {
-        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+    it('fills the track bound with ordered world broadcasts over the carriers whose page can author one, refuses the third capacity/tracks with no attempt, reads the ledger at the bound, and restores it', () => {
+        // Since D529 every ordered room send is minted on the durable lane and a peer send carries no ordering, so
+        // only an ordered world broadcast reaches the outbound volatile track bound; an RTC page sends no world send.
+        expect(() => scenarioOf('rtc', 'capacity-tracks')).toThrow('rtc must run capacity-tracks.');
+        for (const carrier of ['ws', 'rtc-with-ws-fallback'] as const) {
             const scenario = scenarioOf(carrier, 'capacity-tracks');
             const body = bodyOf(scenario.sender);
 
@@ -322,8 +326,9 @@ describe('the addressed-send family (C11)', () => {
                 'rallar.alm.usage.tracks equals 2',
                 'rallar.alm.limits.maxTracks equals 2',
                 'rallar.alm.overloaded equals false',
-                'state equals acknowledged',
-                'state equals acknowledged'
+                // A world broadcast has no logical recipient to acknowledge it, so its terminal state is the transport's.
+                'state equals transport-accepted',
+                'state equals transport-accepted'
             ]);
             const connects = body.flatMap((command) => command.kind === 'rtc.connect' ? [command] : []);
             expect(connects.map((command) => command.rallar?.almVolatileLimits), carrier)
@@ -331,23 +336,18 @@ describe('the addressed-send family (C11)', () => {
             // Each send is the first of its own ordering key, so each would open one track.
             expect(
                 body.filter(isRallarBlackBoxTestMessagesSendCommand)
-                    .map((send) => [send.orderingKey, send.seq, send.reliability, send.ack]),
+                    .map((send) => [send.scope, send.topicId, send.orderingKey, send.seq, send.reliability, send.ack]),
                 carrier
             ).toEqual([1, 2, 3].map((index) => [
+                'world',
+                'app.alm-conformance.world',
                 `alm-${carrier}-capacity-tracks-${index}`,
                 1,
                 'at-least-once',
-                'receiver'
+                'none'
             ]));
-            const [arrivals, ...rest] = bodyOf(scenario.receiver);
-            expect(rest, carrier).toEqual([]);
-            // The sender reconnects before it sends, so the receiver's positive wait owns one readiness budget.
-            expect(arrivals, carrier).toMatchObject({
-                kind: 'messages.received',
-                count: 2,
-                windowMs: 57_000,
-                timeoutMs: 58_000
-            });
+            // The world topic is not the receiver's channel: the receiver only completes the room the sender joins.
+            expect(bodyOf(scenario.receiver), carrier).toEqual([]);
         }
     });
 });

@@ -7,11 +7,14 @@ import {
     type RallarStateCacheReadPort
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     onGroupStateSnapshotChange,
     setGroupStateSnapshots,
-    waitForGroupStateSnapshotChangesIdle
+    waitForGroupStateSnapshotChangesIdle,
+    type GroupStateSnapshotChange
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     beforeEach,
@@ -33,7 +36,10 @@ describe('Rallar state store', () => {
     it.each([false, true])('preserves explicit selection during attached-cache hydration with session superseded=%s', async (superseded) => {
         const context = {
             session: createDefaultTestSession(),
-            middleware: { webRtcGroupManager: createWebRtcGroupManager() }
+            middleware: {
+                webRtcGroupManager: createWebRtcGroupManager(),
+                groupStateDiagnostics: createPassThroughGroupStateSnapshotChangeSink()
+            }
         };
         const { roomStateStore, stateStore } = createStateStoreFixture({}, () => context.session);
         const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -83,6 +89,32 @@ describe('Rallar state store', () => {
             stateStore.detachCache();
             stop();
         }
+    });
+
+    it('forwards the middleware sink when it hydrates, which receives the hydrated group change once', async () => {
+        const stated: GroupStateSnapshotChange[] = [];
+        const context = {
+            session: createDefaultTestSession(),
+            middleware: {
+                webRtcGroupManager: createWebRtcGroupManager(),
+                groupStateDiagnostics: (change: GroupStateSnapshotChange) => {
+                    stated.push(change);
+                }
+            }
+        };
+        const { stateStore } = createStateStoreFixture({}, () => context.session);
+        const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+        const joined = createGroupSnapshotFixture({ ...scope, groupId: 'joined', sessionIds: ['session-1'] });
+
+        await stateStore.acceptSnapshots({ context, clients: [], groups: [joined], scope });
+        await waitForGroupStateSnapshotChangesIdle();
+
+        expect(stated).toEqual([expect.objectContaining({
+            kind: ObservableValueEventType.Created,
+            groupRef: expect.objectContaining({ ...scope, groupId: 'joined' }),
+            snapshot: joined,
+            previous: undefined
+        })]);
     });
 
     it('emits room, people, then derived state observers', () => {

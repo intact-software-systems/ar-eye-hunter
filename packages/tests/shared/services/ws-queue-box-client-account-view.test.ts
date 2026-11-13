@@ -29,6 +29,7 @@ function fixture(): AccountViewFixture {
     let principalId: string | undefined = 'alice';
     const delivered: ALMessage[] = [];
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(),
         socket: new JsonWebSocketClient('ws://configured-server', createPassThroughTransportFaultPort()),
         sessionId: 'session-alice',

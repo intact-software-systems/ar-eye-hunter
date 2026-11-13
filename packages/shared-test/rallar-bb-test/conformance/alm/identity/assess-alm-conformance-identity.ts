@@ -23,6 +23,7 @@ import {
     type AlmFallbackMarker,
     type AlmReceivedTraceIdentityInput
 } from './assess-alm-received-trace-identity.ts';
+import { assessAlmRelayedReceipt, hasAlmRelayedReceiptPin } from './assess-alm-relayed-receipt.ts';
 import { assessAlmReloadIdentity } from './assess-alm-reload-identity.ts';
 import { assessAlmServerOriginatedIdentity, toTracedRequests } from './assess-alm-server-originated-identity.ts';
 import { toAlmJsonPathValue, toRecordedAlmResultValue } from './to-recorded-alm-result-value.ts';
@@ -66,13 +67,17 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         return issues;
     }
     if (!hasAlmIdentityEvidence(sender.participant.recipe)) {
-        return ['ALM lifecycle, reload, fallback, pinned receipt or traced request sender evidence is missing.'];
+        return [
+            'ALM lifecycle, reload, fallback, pinned receipt, relayed receipt pin or traced request sender evidence ' +
+            'is missing.'
+        ];
     }
     const sends = sender.participant.recipe.commands.filter(isIdentitySend);
     issues.push(...assessAlmReceiptRoleIdentity({
         sender,
         recipients: recorded.filter((participant) => participant !== sender)
     }));
+    issues.push(...assessAlmRelayedReceipt({ sender, participants: recorded }));
     issues.push(...assessSendIdentities({ sends, sender, receiver }));
     issues.push(...assessAlmReloadIdentity(
         sender,
@@ -86,7 +91,7 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
 /** The one decision of which sender recipes this assessment joins; the local ALM lane selects its cells with it. */
 export function hasAlmIdentityEvidence(sender: RallarBlackBoxTestRecipe): boolean {
     return sender.commands.some(isIdentitySend) || readAlmReceiptRolesEntries(sender).length > 0 ||
-        toTracedRequests(sender.commands).length > 0;
+        hasAlmRelayedReceiptPin(sender) || toTracedRequests(sender.commands).length > 0;
 }
 
 /** Every scenario declares the sender and the receiver; each declared role has exactly one agent of its own. */

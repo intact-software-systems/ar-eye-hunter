@@ -411,6 +411,38 @@ jobs:
           path: .artifacts/api-v1-black-box/ordering
           if-no-files-found: error
 
+      - name: Run group delta cluster proof
+        id: group_delta
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/group-delta
+          git rev-parse HEAD > .artifacts/api-v1-black-box/group-delta/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/group-delta/validated-tree.txt
+          npm run test:api-v1:black-box:postgres:group-delta -- --artifact-dir=../../.artifacts/api-v1-black-box/group-delta --run-id=${{ github.run_id }}-${{ github.run_attempt }}-group-delta
+
+      - name: Upload group delta proof artifacts
+        if: ${{ !cancelled() && steps.group_delta.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-group-delta-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/group-delta
+          if-no-files-found: error
+
+      - name: Run auth logout cluster proof
+        id: auth_logout
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/auth-logout
+          git rev-parse HEAD > .artifacts/api-v1-black-box/auth-logout/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/auth-logout/validated-tree.txt
+          npm run test:api-v1:black-box:postgres:auth-logout -- --artifact-dir=../../.artifacts/api-v1-black-box/auth-logout --run-id=${{ github.run_id }}-${{ github.run_attempt }}-auth-logout
+
+      - name: Upload auth logout proof artifacts
+        if: ${{ !cancelled() && steps.auth_logout.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-auth-logout-${{ github.sha }}
+          path: .artifacts/api-v1-black-box/auth-logout
+          if-no-files-found: error
+
       - name: Run Postgres full-stack smoke tests
         run: |
           npm run test:rallar:full-stack:postgres:rest

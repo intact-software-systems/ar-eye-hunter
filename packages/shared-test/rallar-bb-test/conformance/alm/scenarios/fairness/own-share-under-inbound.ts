@@ -16,6 +16,7 @@ import {
 } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
@@ -25,7 +26,6 @@ import {
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
-    toAcknowledgedCommands,
     toBoundReconnectCommands,
     toReconnectedArrivalsCommand
 } from '../volatile-bound/volatile-bound-commands.ts';
@@ -86,7 +86,7 @@ function toOwnShareReceiverCommands(
         toReadyCommand(receiver),
         toReceivedCommand({ ...receiver, index: 1, count: FLOOD_COUNT, absent: false }),
         toRoomSend(receiver, OWN_INDEX, 'receiver'),
-        ...toAcknowledgedCommands(receiver, OWN_INDEX),
+        ...toSettledStateCommands({ ...receiver, index: OWN_INDEX }, 'acknowledged'),
         ...toOwnShareLedgerCommands(receiver),
         ...toBoundReconnectCommands(receiver, 'restored', undefined)
     ];

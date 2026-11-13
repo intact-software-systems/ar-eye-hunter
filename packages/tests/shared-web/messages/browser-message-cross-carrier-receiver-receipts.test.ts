@@ -454,6 +454,7 @@ async function createReceiptLoopPeer(
     const settlements: ALDeliverySettlement[] = [];
     const firstSubmission = Promise.withResolvers<void>();
     const ws = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(),
         socket,
         sessionId: peerId,

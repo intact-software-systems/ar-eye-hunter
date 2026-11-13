@@ -1,5 +1,8 @@
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
-import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
+import {
+    createBrowserRuntimeFoundation,
+    createDefaultBrowserRuntimeFoundation
+} from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     normalizeALQosPolicy,
@@ -27,6 +30,7 @@ import {
 
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-key-store-fixtures.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -80,9 +84,75 @@ describe('browser runtime construction', () => {
     });
 
     it('keeps browser runtime state isolated per completed facade foundation', () => {
-        const foundation = createBrowserRuntimeFoundation();
+        const foundation = createDefaultBrowserRuntimeFoundation();
 
         expect(foundation.connectionRuntime.readMiddleware()).toBeUndefined();
+    });
+
+    it('composes the foundation from the platform inputs it is given, not from the page', () => {
+        const publicationKeyStore = new InMemoryPublicationKeyStore();
+
+        const foundation = createBrowserRuntimeFoundation({ subtle: undefined, publicationKeyStore });
+
+        expect(globalThis.crypto.subtle).toBeDefined();
+        expect(foundation.subtle).toBeUndefined();
+        expect(foundation.publicationKeyStore).toBe(publicationKeyStore);
+    });
+
+    it('gives the default foundation the page\'s WebCrypto', () => {
+        expect(createDefaultBrowserRuntimeFoundation().subtle).toBe(globalThis.crypto.subtle);
+    });
+
+    it('connects the participant core with the foundation, key store and session QoS inputs it is given, reading no session while composing', async () => {
+        const { createBrowserParticipantCore } = await import('@shared-web/browser/composition/create-browser-participant-core.ts');
+        const { browserDeliveryComposition } = await import('@shared-web/browser/composition/browser-delivery-composition.ts');
+        const publicationKeyStore = new InMemoryPublicationKeyStore();
+        const foundation = createBrowserRuntimeFoundation({ subtle: globalThis.crypto.subtle, publicationKeyStore });
+        const qosProvider: ALQosInputProvider = {};
+        const volatileLimits: ALVolatileSessionLimits = { ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3 };
+        const stageLimits: ALPublicationStageLimits = { ...AL_PUBLICATION_STAGE_LIMITS, maxStagedValues: 2 };
+        let composed = false;
+        const recorded: [ALQosInputProvider, ALVolatileSessionLimits, ALPublicationStageLimits, string][] = [];
+        runtime.readSession.mockImplementation(() => {
+            if (!composed) {
+                throw new Error('The session was read before the participant core was composed.');
+            }
+            return runtime.middleware.session;
+        });
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            const publicationCrypto = await options.publicationCrypto;
+            recorded.push([
+                options.qosProvider,
+                options.readVolatileSessionLimits(),
+                options.readPublicationStageLimits(),
+                publicationCrypto.kind === 'available' ? publicationCrypto.keyPair.keyId : publicationCrypto.kind
+            ]);
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+        });
+
+        const core = createBrowserParticipantCore({
+            foundation,
+            delivery: browserDeliveryComposition,
+            qosProvider,
+            readVolatileSessionLimits: () => volatileLimits,
+            readPublicationStageLimits: () => stageLimits
+        });
+        composed = true;
+        await core.session.session.connect();
+
+        expect(foundation.connectionRuntime.readMiddleware()?.middleware).toBe(runtime.middleware.middleware);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0][0]).toBe(qosProvider);
+        expect(recorded[0][1]).toBe(volatileLimits);
+        expect(recorded[0][2]).toBe(stageLimits);
+        expect(recorded[0][3]).toBe(publicationKeyStore.pairs.get(runtime.middleware.session.sessionId)?.keyId);
+        const health = runtime.middleware.middleware.webSocketQueueBox.readHealth();
+        expect(core.realtime.wsController.facade.status()).toMatchObject({
+            connectState: foundation.connectionRuntime.readConnectState(),
+            url: health.url,
+            maxReconnectAttempts: health.maxReconnectAttempts
+        });
+        await core.session.session.disconnect();
     });
 
     it('selects the conformance policy at black-box construction while ordinary facade construction keeps defaults', async () => {

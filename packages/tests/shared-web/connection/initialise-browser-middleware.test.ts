@@ -257,6 +257,7 @@ describe('browser RTC layout adoption composition', () => {
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
             const queueBox = createDefaultWsQueueBoxClientService({
+                qosProvider: {},
                 sessionId: input.clientData.sessionId,
                 serverPeerId: input.serverPeerId,
                 socket: input.socket,
@@ -681,6 +682,7 @@ describe('failed browser startup owns acquired transport completion', () => {
             const socketClosed = vi.fn();
             vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
                 const service = createDefaultWsQueueBoxClientService({
+                    qosProvider: {},
                     sessionId: input.clientData.sessionId,
                     serverPeerId: input.serverPeerId,
                     socket: input.socket,

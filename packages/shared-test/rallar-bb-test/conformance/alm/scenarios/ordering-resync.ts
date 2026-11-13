@@ -9,7 +9,9 @@ import {
     toDiagnosticWait,
     toVerdictTimeoutMs
 } from '../alm-conformance-diagnostic-waits.ts';
+import { toHeldSendCommands } from '../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
+import { toOrderedSendCommands, toOrderingKey, toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
@@ -18,7 +20,15 @@ import {
 } from '../alm-conformance-scenario-definition.ts';
 
 const RESYNC_GAP_SEQ = 300;
+/** The frame the receiver never receives over RTC: seq 300's record names it as the receiver's prior. */
+const RESYNC_PRIOR_SEQ = RESYNC_GAP_SEQ - 1;
 
+/**
+ * A gap wider than the repair window is refused `resync-required` where the track is ordered. Over `ws` the WS server
+ * orders it and refuses the jump from seq 1 to seq 300. Over the RTC carriers the receiver orders it, and the frame's
+ * record states the receiver's prior (D525, D527): a bare jump reads as an omission there, so the sender holds seq 299
+ * for good and seq 300 names it, 298 past the receiver's position.
+ */
 export const orderingResync: AlmConformanceScenarioDefinition = {
     scenarioId: 'ordering-resync',
     scenarioKey: 'ordering-resync',
@@ -30,12 +40,32 @@ export const orderingResync: AlmConformanceScenarioDefinition = {
     toRecipientCommands: toOrderingResyncReceiverCommands
 };
 
-/** Over ws the WS server is the relay that refuses the gapped send, so its NACK is the verdict, witnessed at the sender. */
 function toOrderingResyncSenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    const orderingKey = `alm-${sender.input.carrier}-${sender.scenarioId}`;
-    const commands = [
+    return sender.input.carrier === 'ws' ? toRelayResyncSenderCommands(sender) : toPriorGapSenderCommands(sender);
+}
+
+/**
+ * The gap opens only once the receiver acknowledged seq 1, so it holds a position when seq 300 arrives: a receiver
+ * with none enters the track at seq 300. The hold of seq 299 is never released, since a late copy would be an
+ * omission; the frame expires held.
+ */
+function toPriorGapSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        ...toOrderedSendCommands(sender, 1),
+        ...toSettledStateCommands({ ...sender, index: 1 }, 'acknowledged'),
+        ...toHeldSendCommands({ ...sender, index: RESYNC_PRIOR_SEQ }, toOrderedSendCommands(sender, RESYNC_PRIOR_SEQ)),
+        ...toOrderedSendCommands(sender, RESYNC_GAP_SEQ)
+    ];
+}
+
+/** Over ws the WS server is the relay that refuses the gapped send, so its NACK is the verdict, witnessed at the sender. */
+function toRelayResyncSenderCommands(
+    sender: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    const orderingKey = toOrderingKey(sender);
+    return [
         toSendCommand({
             ...sender,
             index: 1,
@@ -49,9 +79,9 @@ function toOrderingResyncSenderCommands(
             payload: { marker: sender.scenarioId, seq: RESYNC_GAP_SEQ },
             delivery: { reliability: 'at-least-once', orderingKey, seq: RESYNC_GAP_SEQ }
         }),
-        ...toAdmissionCommands({ ...sender, index: 2 })
+        ...toAdmissionCommands({ ...sender, index: 2 }),
+        toRelayResyncNackWait(sender)
     ];
-    return sender.input.carrier === 'ws' ? [...commands, toRelayResyncNackWait(sender)] : commands;
 }
 
 /**
@@ -104,8 +134,7 @@ function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly Ralla
             step: receiver,
             name: 'recovery-owner-invoked',
             topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
-            contains:
-                `"kind":"recovery-owner-invoked","orderingKey":"alm-${receiver.input.carrier}-${receiver.scenarioId}",`
+            contains: `"kind":"recovery-owner-invoked","orderingKey":"${toOrderingKey(receiver)}",`
         }),
         toDiagnosticWait({
             step: receiver,

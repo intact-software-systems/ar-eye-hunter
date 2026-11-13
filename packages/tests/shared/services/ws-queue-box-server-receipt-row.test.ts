@@ -180,6 +180,7 @@ async function createOriginClient(): Promise<OriginClient> {
     await connected;
     const settlements: ALDeliverySettlement[] = [];
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(new Map()),
         socket: client,
         sessionId: 'a',

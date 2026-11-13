@@ -114,7 +114,6 @@ const CARRIER_SCENARIO_IDS = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks',
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -168,7 +167,6 @@ const CARRIER_SCENARIO_IDS = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
-        'repair-exhausted',
         'cross-carrier-duplicate',
         'cross-carrier-duplicate',
         'not-yet-in-sync',
@@ -228,13 +226,15 @@ function toPageRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBo
  * leaves and rejoins past the expiry; the hold matches only that scenario's type id, so no later block sees it.
  * The takeover's and the flush's senders hold their carrier until the lane ends their page, which no later block shares.
  * The exhausted repair's sender holds its second message through every retransmission: a release would let it reach
- * a receiver inside its absence window; the hold matches that one message id, so no later block sees it.
+ * a receiver inside its absence window; the hold matches that one message id, so no later block sees it. The RTC
+ * resync sender holds seq 299 the same way: a release would let it reach the receiver as an omission.
  */
 const HELD_UNTIL_PAGE_ENDS_RECIPE_SUFFIXES = [
     '-frozen-audience-membership-recipient-b',
     '-durable-takeover-sender',
     '-flush-on-hide-sender',
-    '-repair-exhausted-sender'
+    '-repair-exhausted-sender',
+    '-ordering-resync-sender'
 ];
 
 /**

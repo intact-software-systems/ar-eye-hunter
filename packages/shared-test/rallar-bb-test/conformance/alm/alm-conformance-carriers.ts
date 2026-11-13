@@ -20,3 +20,9 @@ export const ALM_CONFORMANCE_SINGLE_HOP_CARRIERS: readonly AlmConformanceCarrier
 
 /** A cell whose leg under test a WS fallback would complete and hide: the `rtc` strategy alone. */
 export const ALM_CONFORMANCE_RTC_ALONE_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
+
+/**
+ * The carriers that send `capacity-tracks`' ordered world broadcasts: an RTC page cannot send one, and both of these
+ * send them over WS (D641).
+ */
+export const ALM_CONFORMANCE_WORLD_SEND_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc-with-ws-fallback'];
