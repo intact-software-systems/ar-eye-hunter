@@ -1,12 +1,25 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readFile,
+    rm,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { describe, expect, it, type TestContext } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    type TestContext
+} from 'vitest';
+
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { toError } from '../../shared/resilience/to-error.ts';
+
 import { runOwnedTestProcess } from './owned-test-process.ts';
 
 interface DeadlineFixtureInput {
@@ -22,7 +35,9 @@ function toDeadlineFixture(input: DeadlineFixtureInput): string {
     const vitestPath = path.join(repoRoot, 'node_modules/vitest/dist/index.js');
     const observationPath = path.join(input.directory, 'observation.json');
     const workspacePath = path.join(input.directory, 'workspace');
-    const childScript = `const fs = require('node:fs'); fs.writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 20);`;
+    const childScript = `const fs = require('node:fs');
+fs.writeFileSync(process.argv[1], String(process.pid));
+setInterval(() => {}, 20);`;
     return `import { it } from ${JSON.stringify(vitestPath)};
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import { toError } from ${JSON.stringify(toErrorPath)};
@@ -33,9 +48,21 @@ it('deadline cancels child before deleting its workspace', async (context) => {
     let outcomeError;
     context.onTestFinished(async () => {
         const pid = Number(await readFile(pidPath, 'utf8'));
-        if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Child must publish its positive process ID.');
+        if (!Number.isSafeInteger(pid) || pid <= 0) {
+            throw new Error('Child must publish its positive process ID.');
+        }
         let childGone = false;
-        try { process.kill(pid, 0); } catch (error) { if (error instanceof Error && 'code' in error && error.code === 'ESRCH') childGone = true; else throw toError(error); }
+        try {
+            process.kill(pid, 0);
+        }
+        catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+                childGone = true;
+            }
+            else {
+                throw toError(error);
+            }
+        }
         await writeFile(${
         JSON.stringify(observationPath)
     }, JSON.stringify({ pid, childGone, outcomeAccounted: outcomeError instanceof Error && outcomeError.cause === context.signal.reason, aborted: context.signal.aborted, abortReason: context.signal.reason instanceof Error ? context.signal.reason.message : null }));
@@ -50,6 +77,7 @@ it('deadline cancels child before deleting its workspace', async (context) => {
 }
 
 async function runDeadlineFixture(context: TestContext, input: DeadlineFixtureInput): Promise<string> {
+    const reportPath = path.join(input.directory, 'report.json');
     await mkdir(path.join(input.directory, 'workspace'));
     await writeFile(path.join(input.directory, 'fixture.test.ts'), toDeadlineFixture(input));
     await writeFile(path.join(input.directory, 'vitest.config.mjs'), `export default { test: { include: ['fixture.test.ts'], environment: 'node' } };`);
@@ -61,7 +89,9 @@ async function runDeadlineFixture(context: TestContext, input: DeadlineFixtureIn
         '--config',
         path.join(input.directory, 'vitest.config.mjs'),
         '--maxWorkers=1',
-        '--reporter=json'
+        '--reporter=json',
+        '--outputFile',
+        reportPath
     ], { cwd: repoRoot, signal: context.signal, encoding: 'utf8' });
     const closed = new Promise<void>((resolve) => execution.child.once('close', () => resolve()));
     const outcome = execution.then((result) => result.stdout, (error: unknown) => {
@@ -77,7 +107,8 @@ async function runDeadlineFixture(context: TestContext, input: DeadlineFixtureIn
         await closed;
         await outcome;
     });
-    return await outcome;
+    await outcome;
+    return await readFile(reportPath, 'utf8');
 }
 
 describe('Owned test child processes', () => {
