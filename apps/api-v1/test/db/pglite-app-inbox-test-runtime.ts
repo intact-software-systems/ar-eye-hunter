@@ -115,37 +115,47 @@ export async function waitForPGliteQueueRow(
 }
 
 export async function waitForPGliteFirstRetryEligibility(sql: PGliteSql, key: Key): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-        const [row] = await sql<RetryEligibilityRow[]>`
-            select next_ts <= (now() at time zone 'UTC')
-                and expire_ts > (now() at time zone 'UTC') as eligible
-            from resource_inbox where ri_topic_id = ${key.topicId}
-            and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
-            and ri_type_id = 'APP_INBOX' and ri_status = 'RETRY'
-            and ri_attempts = 1 and next_ts is not null
-        `;
-        assert.ok(row, 'Expected the exact one-attempt scheduled AppInbox retry');
-        if (row.eligible) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error('Timed out waiting for the exact AppInbox retry SQL eligibility');
+    await pollPGliteRetryEligibility({
+        scheduledRetry: 'the exact one-attempt scheduled AppInbox retry',
+        readEligibility: () =>
+            sql<RetryEligibilityRow[]>`
+                select next_ts <= (now() at time zone 'UTC')
+                    and expire_ts > (now() at time zone 'UTC') as eligible
+                from resource_inbox where ri_topic_id = ${key.topicId}
+                and ri_resource_id = ${key.resourceId} and fk_ext_bank_id = ${key.contextId}
+                and ri_type_id = 'APP_INBOX' and ri_status = 'RETRY'
+                and ri_attempts = 1 and next_ts is not null
+            `
+    });
 }
 
+/** For a test whose store holds exactly one RETRY row of the type: it returns once some RETRY row of the type is due. */
 export async function waitForPGliteQueueRetryDue(sql: PGliteSql, typeId: string): Promise<void> {
+    await pollPGliteRetryEligibility({
+        scheduledRetry: `a scheduled ${typeId} retry`,
+        readEligibility: () =>
+            sql<RetryEligibilityRow[]>`
+                select next_ts <= (now() at time zone 'UTC')
+                    and expire_ts > (now() at time zone 'UTC') as eligible
+                from resource_inbox
+                where ri_type_id = ${typeId} and ri_status = 'RETRY' and next_ts is not null
+            `
+    });
+}
+
+interface PGliteRetryEligibilityPoll {
+    readonly scheduledRetry: string;
+    readonly readEligibility: () => Promise<readonly RetryEligibilityRow[]>;
+}
+
+async function pollPGliteRetryEligibility(poll: PGliteRetryEligibilityPoll): Promise<void> {
     for (let attempt = 0; attempt < 100; attempt += 1) {
-        const rows = await sql<RetryEligibilityRow[]>`
-            select next_ts <= (now() at time zone 'UTC')
-                and expire_ts > (now() at time zone 'UTC') as eligible
-            from resource_inbox
-            where ri_type_id = ${typeId} and ri_status = 'RETRY' and next_ts is not null
-        `;
-        assert.ok(rows.length > 0, `Expected a scheduled ${typeId} retry`);
+        const rows = await poll.readEligibility();
+        assert.ok(rows.length > 0, `Expected ${poll.scheduledRetry}`);
         if (rows.some((row) => row.eligible)) {
             return;
         }
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    throw new Error(`Timed out waiting for a ${typeId} retry to become due`);
+    throw new Error(`Timed out waiting for ${poll.scheduledRetry} to become due`);
 }
