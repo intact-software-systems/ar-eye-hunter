@@ -73,12 +73,12 @@ same hazard `absent: true` carries in the other direction.
 
 ## Wait History From A Command
 
-`wait.match.sinceCommandIdPrefix` starts the wait's history at the first retained event whose `commandId` starts
-with the prefix, and at the next event when none does yet. It resolves once, when the wait starts. Conformance cells
-that share one page name their commands under a cell prefix, so a wait sees only its own cell's history rather than
-an earlier cell's traffic. Beside an owner's own history start, such as a barrier's, the later of the two wins. When
-events were evicted and no retained event carries the prefix, the wait fails with
-`RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`.
+`wait.match.sinceCommandIdPrefix` starts the wait's history at the first event whose `commandId` starts with the
+prefix, and at the next event when none does yet. It resolves once, when the wait starts. Conformance cells that share
+one page name their commands under a cell prefix, so a wait sees only its own cell's history rather than an earlier
+cell's traffic. Beside an owner's own history start, such as a barrier's, the later of the two wins. A prefix wait needs
+a history that has evicted nothing: retained events cannot prove that the oldest retained event of the prefix was its
+first, so under a `recent` history the wait fails with `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction.
 
 ## Wait Numeric Floors
 

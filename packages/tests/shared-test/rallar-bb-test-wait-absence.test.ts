@@ -451,11 +451,13 @@ describe('rallar-bb-test wait history from a command prefix', () => {
         expect(result.status).toBe('ok');
     });
 
-    it('reports the history unavailable when events were evicted and none of the prefix\'s is retained', async () => {
+    // Retained events cannot prove that the oldest retained event of the prefix was its first, so a start read from them
+    // could open the window late and hide a forbidden event recorded in between.
+    it('a wait with a command prefix is history-unavailable once events were evicted, even when a later event of the prefix is retained', async () => {
         const runtime = createClockedRuntime({ mode: 'recent', maxEvents: 2 });
-        for (let index = 0; index < 3; index++) {
-            runtime.recordEvent({ kind: 'event', topic: 'cell.noise', commandId: `cell-a:${index}` });
-        }
+        runtime.recordEvent({ kind: 'event', topic: 'cell.started', commandId: 'cell-b:start' });
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:late' });
+        runtime.recordEvent({ kind: 'event', topic: 'cell.sent', commandId: 'cell-b:send' });
 
         const result = await runtime.execute(toPrefixedAbsence('cell-b:quiet', 'cell-b:'));
 

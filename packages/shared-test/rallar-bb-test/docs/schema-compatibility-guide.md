@@ -1031,10 +1031,10 @@ wait.match could bound its history only by wall clock (sinceEpochMs) and compare
 (payloadFields, equals) or text containment (contains).
 
 New shape:
-wait.match.sinceCommandIdPrefix (string) starts the wait's history at the first retained event whose commandId
-starts with it, else at the next event; beside an owner's history start, such as a barrier's, the later one wins.
-When events were evicted and no retained event carries the prefix, the wait fails with
-RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE. wait.match.payloadMinimums maps payload paths to floors: each path must reach
+wait.match.sinceCommandIdPrefix (string) starts the wait's history at the first event whose commandId starts with
+it, else at the next event; beside an owner's history start, such as a barrier's, the later one wins. It needs a
+history that has evicted nothing: once any event was evicted the wait fails with RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE.
+wait.match.payloadMinimums maps payload paths to floors: each path must reach
 a number at or above its floor in the same event. A floor is a finite number or exactly one
 {resultCache.<commandId>.<path>} reference, the timeoutFrom grammar; a reference naming no finite number fails the
 wait with RALLAR_BLACK_BOX_WAIT_INVALID, and a reference to a released result with RALLAR_BLACK_BOX_RESULT_RELEASED.

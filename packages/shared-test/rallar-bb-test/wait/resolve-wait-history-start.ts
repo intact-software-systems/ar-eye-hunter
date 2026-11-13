@@ -12,20 +12,21 @@ export interface WaitHistoryStartInput {
 }
 
 /**
- * A command prefix starts the history at the first retained event of that command, else at the next event; beside an
- * owner's start the later of the two wins. With events evicted and none of the prefix retained, the start is unknown.
+ * A command prefix starts the history at the first event of that command, else at the next event; beside an owner's
+ * start the later of the two wins. Once any event was evicted the start is unknown, since retained events cannot prove
+ * that the oldest retained event of the prefix was its first.
  */
 export function resolveWaitHistoryStart(
     input: WaitHistoryStartInput
 ): Either<RallarBlackBoxEventHistory, RallarBlackBoxEventHistorySequence> {
     const { sinceCommandIdPrefix, history, ownerStart } = input;
+    if (history.evictedEvents > 0) {
+        return Either.ofLeft(history);
+    }
     const first = input.events.find((event) =>
         event.commandId?.startsWith(sinceCommandIdPrefix) === true && event.history?.runtimeId === history.runtimeId &&
         event.history.generation === history.generation
     );
-    if (first === undefined && history.evictedEvents > 0) {
-        return Either.ofLeft(history);
-    }
     const ordinal = Math.max(first?.history?.ordinal ?? history.totalEvents + 1, ownerStart?.ordinal ?? 0);
     return Either.ofRight({ runtimeId: history.runtimeId, generation: history.generation, ...ownerStart, ordinal });
 }

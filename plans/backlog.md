@@ -719,3 +719,7 @@ and it has no status list.
   compared across reads. Touching the file makes the changed-style gate enforce its five pre-existing
   `boundary.unknown` findings, so that slice also has to type or register them: graphology's serialised
   `attributes`/`options` (×4) and the validation issue's `details`.
+- A black-box wait with `wait.match.sinceCommandIdPrefix` under a `recent` event history fails with
+  `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction, because the runner keeps no record of each
+  command's first event ordinal. Such a record would make the wait exact under `recent`; nothing needs it while every
+  lane runs a `full` history.
