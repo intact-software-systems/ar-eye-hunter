@@ -12,7 +12,7 @@ import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     findAcceptedOverlayById,
@@ -41,7 +41,7 @@ import {
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
 /** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
-const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 const CLIENT: ClientInfo = { clientId: 'alice', sessionId: 'session-a', isOnline: true };
 const OTHERS = ['session-b', 'session-c'] as const;

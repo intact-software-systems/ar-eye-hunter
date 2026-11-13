@@ -12,7 +12,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import {
@@ -82,7 +82,7 @@ export function createDefaultApiMiddlewareTestDouble(
                 new BrowserInboundOrderingCountersSink(createPassThroughALInboundRuntimeDiagnosticsSink()),
             publicationStageLimits: { ...AL_PUBLICATION_STAGE_LIMITS, ...middlewareOverrides.publicationStageLimits },
             outboundDiagnostics: middlewareOverrides.outboundDiagnostics ?? createPassThroughALOutboundRuntimeDiagnosticsSink(),
-            groupStateDiagnostics: middlewareOverrides.groupStateDiagnostics ?? createPassThroughGroupStateAppliedRevisionSink()
+            groupStateDiagnostics: middlewareOverrides.groupStateDiagnostics ?? createPassThroughGroupStateSnapshotChangeSink()
         }
     };
 }

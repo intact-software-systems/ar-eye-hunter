@@ -139,11 +139,17 @@ never asserts on a value that changes with every read.
 
 ## Group State Diagnostics
 
-The browser's `RallarDiagnosticsPorts.groupStateDiagnostics` port receives a
-`GroupStateAppliedRevision` (`packages/shared/repository/group-state-applied-revision.ts`)
+The browser's `RallarDiagnosticsPorts.groupStateDiagnostics` port receives the
+raw `GroupStateSnapshotChange` (`packages/shared/repository/group-state-snapshots-repository.ts`)
 each time the connect's group cache changes what it holds: the cache the RTC
-admission reads when it compares a frame's room floor. The harness publishes it
-on `rallar.browser.group_state.applied`; the event's `data` is the fact itself:
+admission reads when it compares a frame's room floor. The product builds no fact
+from it. The harness's bridge
+(`packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts`)
+projects each change with `toGroupStateAppliedRevision`
+(`packages/shared/repository/group-state-applied-revision.ts`) into a
+`GroupStateAppliedRevision` and publishes it on
+`rallar.browser.group_state.applied` when the projection returns one; the
+event's `data` is the fact itself:
 
 - `groupRef`: the `GroupRef` (`applicationId`, `workspaceId`, `groupId`)
 - `groupRevision` and `presenceRevision`: the held snapshot's causal revision;

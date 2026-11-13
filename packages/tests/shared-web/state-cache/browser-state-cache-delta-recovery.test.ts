@@ -10,7 +10,7 @@ import {
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findPlannedOverlayById, setPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
@@ -32,7 +32,7 @@ import {
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
 /** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
-const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 describe('browser state cache delta recovery and bootstrap topology', () => {
     afterEach(() => vi.unstubAllGlobals());

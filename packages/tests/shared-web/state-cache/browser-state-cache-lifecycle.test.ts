@@ -13,12 +13,12 @@ import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import {
-    createPassThroughGroupStateAppliedRevisionSink,
-    type GroupStateAppliedRevision,
-    type GroupStateAppliedRevisionSink
-} from '@shared/repository/group-state-applied-revision.ts';
+    createPassThroughGroupStateSnapshotChangeSink,
+    type GroupStateSnapshotChangeSink
+} from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findAcceptedOverlayById, findPlannedOverlayById } from '@shared/repository/overlays-repository.ts';
 // dprint-ignore
@@ -43,7 +43,7 @@ import {
 } from './browser-state-cache-lifecycle-fixtures.ts';
 
 /** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
-const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 describe('browser state cache lifecycle scope filtering', () => {
     beforeEach(() => {
@@ -959,7 +959,7 @@ describe('browser state cache lifecycle scope filtering', () => {
     );
 });
 
-describe('browser state cache lifecycle applied group revisions', () => {
+describe('browser state cache lifecycle group changes for diagnostics', () => {
     beforeEach(() => {
         configureTestCacheRepositories();
     });
@@ -977,7 +977,7 @@ describe('browser state cache lifecycle applied group revisions', () => {
     }
 
     /** One sink for the connect's initialise and hydrate, as the middleware passes it: the hydrate keeps the observers. */
-    function connectWithSink(groupStateDiagnostics: GroupStateAppliedRevisionSink) {
+    function connectWithSink(groupStateDiagnostics: GroupStateSnapshotChangeSink) {
         const manager = createWebRtcGroupManager();
         let receive: ((message: ALMessage) => Promise<void>) | undefined;
         browserStateCacheLifecycle.initialise({
@@ -1034,9 +1034,9 @@ describe('browser state cache lifecycle applied group revisions', () => {
         );
     }
 
-    it('states each applied group revision to the diagnostics sink, once, in order, for a delta, a snapshot page and a heartbeat adoption', async () => {
-        const stated: GroupStateAppliedRevision[] = [];
-        const connect = connectWithSink((revision) => stated.push(revision));
+    it('hands each raw group change to the diagnostics sink, in order, for a delta, a snapshot page and a heartbeat adoption', async () => {
+        const stated: groupStateSnapshotsRepository.GroupStateSnapshotChange[] = [];
+        const connect = connectWithSink((change) => stated.push(change));
         const paged = createRoomSnapshot(3);
         const advanced = createRoomSnapshot(4);
         const leased = withSessionLeases(advanced, 2, 10_000);
@@ -1050,23 +1050,20 @@ describe('browser state cache lifecycle applied group revisions', () => {
         adoptGroupSnapshotsFromHeartbeat([advanced], [leased]);
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
-        expect(stated.map(({ groupRevision, presenceRevision, activeSessionCount, change }) => ({
-            groupRevision,
-            presenceRevision,
-            activeSessionCount,
-            change
-        }))).toEqual([1, 2, 3, 4].map((revision) => ({
-            groupRevision: revision,
-            presenceRevision: revision,
-            activeSessionCount: 2,
-            change: 'held'
-        })));
+        expect(stated.map(({ kind, snapshot }) => [kind, snapshot?.causalRevision])).toEqual([
+            [ObservableValueEventType.Created, createRoomSnapshot(1).causalRevision],
+            [ObservableValueEventType.Updated, createRoomSnapshot(2).causalRevision],
+            [ObservableValueEventType.Updated, paged.causalRevision],
+            [ObservableValueEventType.Updated, advanced.causalRevision],
+            [ObservableValueEventType.Updated, leased.causalRevision]
+        ]);
+        expect(stated.at(-1)?.snapshot).toBe(leased);
         expect(stated.every(({ groupRef }) => groupRef.groupId === 'room-applied')).toBe(true);
     });
 
-    it('states a heartbeat that changes the session count at an equal tuple, once per change', async () => {
-        const stated: GroupStateAppliedRevision[] = [];
-        const connect = connectWithSink((revision) => stated.push(revision));
+    it('hands a heartbeat that changes the session count at an equal tuple to the sink, once per change', async () => {
+        const stated: groupStateSnapshotsRepository.GroupStateSnapshotChange[] = [];
+        const connect = connectWithSink((change) => stated.push(change));
         const held = withSessionLeases(createRoomSnapshot(4), 2, 10_000);
         const reduced = withSessionLeases(held, 1, 11_000);
         const restored = withSessionLeases(held, 2, 12_000);
@@ -1078,17 +1075,17 @@ describe('browser state cache lifecycle applied group revisions', () => {
         await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
 
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(held.group)).toBe(restored);
-        expect(stated.map(({ groupRevision, presenceRevision, activeSessionCount }) => [
-            groupRevision,
-            presenceRevision,
-            activeSessionCount
-        ])).toEqual([[4, 4, 2], [4, 4, 1], [4, 4, 2]]);
+        expect(stated.map(({ snapshot, previous }) => [snapshot, previous])).toEqual([
+            [held, undefined],
+            [reduced, held],
+            [restored, reduced]
+        ]);
     });
 
     it('a sink that throws changes no adoption', async () => {
-        const reached: number[] = [];
-        const throwing: GroupStateAppliedRevisionSink = (revision) => {
-            reached.push(revision.groupRevision);
+        const reached: (number | undefined)[] = [];
+        const throwing: GroupStateSnapshotChangeSink = (change) => {
+            reached.push(change.snapshot?.causalRevision.groupRevision);
             throw new Error('sink failed');
         };
         const { manager, receive, hydrate } = connectWithSink(throwing);

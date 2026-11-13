@@ -7,15 +7,14 @@ import {
     type RallarStateCacheReadPort
 } from '@shared-web/browser/state-cache/rallar-state-store.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { setClientStateSnapshots } from '@shared/repository/client-state-snapshots-repository.ts';
-import {
-    createPassThroughGroupStateAppliedRevisionSink,
-    type GroupStateAppliedRevision
-} from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     onGroupStateSnapshotChange,
     setGroupStateSnapshots,
-    waitForGroupStateSnapshotChangesIdle
+    waitForGroupStateSnapshotChangesIdle,
+    type GroupStateSnapshotChange
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     beforeEach,
@@ -39,7 +38,7 @@ describe('Rallar state store', () => {
             session: createDefaultTestSession(),
             middleware: {
                 webRtcGroupManager: createWebRtcGroupManager(),
-                groupStateDiagnostics: createPassThroughGroupStateAppliedRevisionSink()
+                groupStateDiagnostics: createPassThroughGroupStateSnapshotChangeSink()
             }
         };
         const { roomStateStore, stateStore } = createStateStoreFixture({}, () => context.session);
@@ -92,14 +91,14 @@ describe('Rallar state store', () => {
         }
     });
 
-    it('forwards the middleware sink when it hydrates, which states the hydrated revision once', async () => {
-        const stated: GroupStateAppliedRevision[] = [];
+    it('forwards the middleware sink when it hydrates, which receives the hydrated group change once', async () => {
+        const stated: GroupStateSnapshotChange[] = [];
         const context = {
             session: createDefaultTestSession(),
             middleware: {
                 webRtcGroupManager: createWebRtcGroupManager(),
-                groupStateDiagnostics: (revision: GroupStateAppliedRevision) => {
-                    stated.push(revision);
+                groupStateDiagnostics: (change: GroupStateSnapshotChange) => {
+                    stated.push(change);
                 }
             }
         };
@@ -110,14 +109,12 @@ describe('Rallar state store', () => {
         await stateStore.acceptSnapshots({ context, clients: [], groups: [joined], scope });
         await waitForGroupStateSnapshotChangesIdle();
 
-        expect(stated).toEqual([{
-            groupRef: { ...scope, groupId: 'joined' },
-            groupRevision: joined.causalRevision.groupRevision,
-            presenceRevision: joined.causalRevision.presenceRevision,
-            rosterVersion: joined.group.rosterVersion,
-            activeSessionCount: 1,
-            change: 'held'
-        }]);
+        expect(stated).toEqual([expect.objectContaining({
+            kind: ObservableValueEventType.Created,
+            groupRef: expect.objectContaining({ ...scope, groupId: 'joined' }),
+            snapshot: joined,
+            previous: undefined
+        })]);
     });
 
     it('emits room, people, then derived state observers', () => {

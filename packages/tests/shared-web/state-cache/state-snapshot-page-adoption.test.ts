@@ -13,7 +13,7 @@ import { browserStateCacheLifecycle } from '@shared-web/browser/state-cache/brow
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groups from '@shared/repository/group-state-snapshots-repository.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -22,7 +22,7 @@ import { configureTestCacheRepositories } from '../../configure-test-cache-repos
 import { createGroupSnapshot, createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
 /** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
-const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 interface LargeGroupPublication {
     readonly memberIds: readonly string[];

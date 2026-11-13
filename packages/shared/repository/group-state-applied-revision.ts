@@ -12,12 +12,6 @@ export interface GroupStateAppliedRevision {
     readonly change: 'held' | 'removed';
 }
 
-export type GroupStateAppliedRevisionSink = (revision: GroupStateAppliedRevision) => void;
-
-export function createPassThroughGroupStateAppliedRevisionSink(): GroupStateAppliedRevisionSink {
-    return () => {};
-}
-
 /** Undefined for a lease refresh and for a replacement that changes neither the causal revision nor the session count. */
 export function toGroupStateAppliedRevision(change: GroupStateSnapshotChange): GroupStateAppliedRevision | undefined {
     if (change.kind === ObservableValueEventType.Refreshed) {

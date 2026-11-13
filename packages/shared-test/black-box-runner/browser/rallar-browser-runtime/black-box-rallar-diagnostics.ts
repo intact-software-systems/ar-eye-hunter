@@ -9,6 +9,7 @@ import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { ALWorkBatchObservations } from '@shared/alm/work/al-work-batch-observations.ts';
+import { toGroupStateAppliedRevision } from '@shared/repository/group-state-applied-revision.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
@@ -204,12 +205,16 @@ export function createBlackBoxRallarDiagnosticsPorts(
             })
             : undefined,
         signalingDiagnostics: (event) => publishBlackBoxRallarSignalingDiagnostic(diagnostics, event),
-        groupStateDiagnostics: (revision) =>
-            diagnostics.emit({
-                kind: 'diagnostic',
-                topic: 'rallar.browser.group_state.applied',
-                data: { ...revision }
-            }),
+        groupStateDiagnostics: (change) => {
+            const revision = toGroupStateAppliedRevision(change);
+            if (revision) {
+                diagnostics.emit({
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.group_state.applied',
+                    data: { ...revision }
+                });
+            }
+        },
         storage: (event) => {
             effects.inboundStoreCounts.observe(event);
             if (almDiagnostics) {

@@ -27,9 +27,13 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import { ALStorageHealth } from '@shared/alm/storage/al-storage-health.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
+import type { GroupStateSnapshotChange } from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { createGroupSnapshot } from '../../shared-server/rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import {
     createReceiptTrackingFixture,
     receiptMessage,
@@ -577,7 +581,7 @@ it('records an AL inbound admission diagnostics event into the agent event log',
     ]));
 });
 
-it('bridges an applied group revision to rallar.browser.group_state.applied', async () => {
+it('states on rallar.browser.group_state.applied the revision each raw group change leaves held', async () => {
     const runtime = await loadRuntime();
     onTestFinished(async () => {
         await runtime.close();
@@ -586,21 +590,58 @@ it('bridges an applied group revision to rallar.browser.group_state.applied', as
         connection: 'diagnostics',
         rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
     });
-    const applied = {
-        groupRef: { applicationId: 'app-1', workspaceId: 'default', groupId: 'room-1' },
-        groupRevision: 5,
-        presenceRevision: 6,
-        rosterVersion: 2,
-        activeSessionCount: 2,
-        change: 'held'
-    } as const;
+    const created = createGroupSnapshot(4, ['session-a']);
+    const advanced = createGroupSnapshot(5, ['session-a', 'session-b']);
+    const renewed = withSessionLease(advanced, 10_000);
+    const reduced: GroupSnapshot = { ...renewed, activeSessions: renewed.activeSessions.slice(0, 1) };
+    const sink = facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.groupStateDiagnostics;
 
-    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.groupStateDiagnostics?.(applied);
+    sink?.(toGroupStateChange(ObservableValueEventType.Created, created, undefined));
+    sink?.(toGroupStateChange(ObservableValueEventType.Updated, advanced, created));
+    sink?.(toGroupStateChange(ObservableValueEventType.Updated, renewed, advanced));
+    sink?.(toGroupStateChange(ObservableValueEventType.Updated, reduced, renewed));
+    sink?.(toGroupStateChange(ObservableValueEventType.Deleted, reduced, reduced));
 
-    expect(events).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'diagnostic', topic: 'rallar.browser.group_state.applied', data: applied })
-    ]));
+    const groupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
+    expect(events.filter((event) => event.topic === 'rallar.browser.group_state.applied')).toEqual([
+        { groupRevision: 4, presenceRevision: 1, activeSessionCount: 1, change: 'held' },
+        { groupRevision: 5, presenceRevision: 2, activeSessionCount: 2, change: 'held' },
+        { groupRevision: 5, presenceRevision: 2, activeSessionCount: 1, change: 'held' },
+        { groupRevision: 5, presenceRevision: 2, activeSessionCount: 1, change: 'removed' }
+    ].map((stated) =>
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.group_state.applied',
+            data: { groupRef, rosterVersion: 1, ...stated }
+        })
+    ));
 });
+
+/** A deletion names the snapshot it removed and holds none. */
+function toGroupStateChange(
+    kind: ObservableValueEventType,
+    named: GroupSnapshot,
+    previous: GroupSnapshot | undefined
+): GroupStateSnapshotChange {
+    return {
+        kind,
+        groupRef: named.group,
+        snapshot: kind === ObservableValueEventType.Deleted ? undefined : named,
+        previous,
+        version: named.group.snapshotVersion
+    };
+}
+
+function withSessionLease(snapshot: GroupSnapshot, addedMs: number): GroupSnapshot {
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs + addedMs,
+            expiresAtEpochMs: session.expiresAtEpochMs + addedMs
+        }))
+    };
+}
 
 it('forwards a state-read event to rallar.browser.state-read and removes its sink on close', async () => {
     const runtime = await loadRuntime();

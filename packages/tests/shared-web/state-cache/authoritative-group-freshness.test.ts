@@ -16,13 +16,13 @@ import {
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
-import { createPassThroughGroupStateAppliedRevisionSink } from '@shared/repository/group-state-applied-revision.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 import { createWebRtcGroupManager } from './browser-state-cache-lifecycle-fixtures.ts';
 
 /** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
-const passThroughGroupStateDiagnostics = createPassThroughGroupStateAppliedRevisionSink();
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 

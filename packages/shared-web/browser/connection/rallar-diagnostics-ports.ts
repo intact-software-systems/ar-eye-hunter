@@ -9,9 +9,9 @@ import {
     type IndexedDbOperationObserver
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
-    createPassThroughGroupStateAppliedRevisionSink,
-    type GroupStateAppliedRevisionSink
-} from '@shared/repository/group-state-applied-revision.ts';
+    createPassThroughGroupStateSnapshotChangeSink,
+    type GroupStateSnapshotChangeSink
+} from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     createPassThroughTransportFaultPort,
     createPassThroughWebSocketSubmissionReadinessFaultPort,
@@ -28,8 +28,8 @@ export interface RallarDiagnosticsPortsInput {
     readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
     readonly storage?: ALStorageEventSink;
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
-    /** Where the connect's group cache states each group revision it applies or removes. */
-    readonly groupStateDiagnostics?: GroupStateAppliedRevisionSink;
+    /** Where the connect's group cache hands each raw change of what it holds. */
+    readonly groupStateDiagnostics?: GroupStateSnapshotChangeSink;
 }
 
 export interface RallarDiagnosticsPorts {
@@ -40,7 +40,7 @@ export interface RallarDiagnosticsPorts {
     readonly inboundDiagnostics: ALInboundRuntimeDiagnosticsSink;
     readonly storage: ALStorageEventSink;
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
-    readonly groupStateDiagnostics: GroupStateAppliedRevisionSink;
+    readonly groupStateDiagnostics: GroupStateSnapshotChangeSink;
 }
 
 export function createPassThroughALOutboundRuntimeDiagnosticsSink(): ALOutboundRuntimeDiagnosticsSink {
@@ -64,6 +64,6 @@ export function toRallarDiagnosticsPorts(
         inboundDiagnostics: input?.inboundDiagnostics ?? createPassThroughALInboundRuntimeDiagnosticsSink(),
         storage: input?.storage ?? createPassThroughALStorageEventSink(),
         signalingDiagnostics: input?.signalingDiagnostics,
-        groupStateDiagnostics: input?.groupStateDiagnostics ?? createPassThroughGroupStateAppliedRevisionSink()
+        groupStateDiagnostics: input?.groupStateDiagnostics ?? createPassThroughGroupStateSnapshotChangeSink()
     };
 }
