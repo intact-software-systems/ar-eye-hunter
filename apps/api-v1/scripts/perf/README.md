@@ -27,15 +27,15 @@ Do not check in:
 
 ## Prerequisites
 
-Run commands from the repository root. Deno harnesses use
-`--config apps/api-v1/deno.json`.
+Run commands from the repository root. Bun harnesses resolve `@shared/` and
+`@shared-server/` import aliases through the repository `tsconfig.json` paths.
 
 Useful environment checks:
 
 ```sh
 node --version
 npm --version
-deno --version
+bun --version
 docker --version
 docker compose version
 mkdir -p tmp/perf/results tmp/perf/profiles tmp/perf/logs tmp/perf/artifacts
@@ -468,7 +468,7 @@ measure a newer head. Once the workflow is on `main` it can also be dispatched w
 It measures the candidate against its merge base with `main` in A-B-B-A order. Both sides run the
 candidate's `apps/api-v1/scripts/perf` harness, and the pooled result goes through the unchanged comparator.
 The workflow refuses a candidate that changes the comparator or a module it imports, `package-lock.json`,
-`apps/api-v1/deno.json`, `apps/api-v1/deno.lock`, `docker-compose.perf-bench.yml`, or the
+`apps/api-v1/tsconfig.json`, `docker-compose.perf-bench.yml`, or the
 `perf:api-v1:state-write` and `db:migrate` scripts.
 
 The artifact `state-write-comparison-<run>-<attempt>` keeps the four captures, their environment records,
@@ -537,20 +537,14 @@ command-port tests do not establish it.
 
 ## Hosted native CPU diagnostic
 
-Dispatch `mode=cpu-profile` to collect whole-process native Deno CPU profiles on the hosted Linux
-runner. This mode shares comparison admission, frozen inputs, merge-base resolution, candidate
-performance-harness overlay, fresh owned PostgreSQL, and A-B-B-A source order. Each position runs all
-three workloads with one warmup, nine measured runs and concurrency ten. The native invocation is:
-
-```sh
-deno run --cpu-prof \
-  --cpu-prof-dir=<output>/position-<N>-profile --cpu-prof-name=position-<N>.cpuprofile \
-  -A --config apps/api-v1/deno.json apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts \
-  --backend=postgres --warmup=1 --runs=9 --concurrency=10 --out=<output>/position-<N>.json
-```
+Dispatch `mode=cpu-profile` to collect whole-process native CPU profiles on the hosted Linux
+runner. The previous V8 `--cpu-prof` invocation has no Bun (JavaScriptCore) equivalent and is
+left as a maintainer decision, not reimplemented here. The remaining acquisition semantics (comparison
+admission, frozen inputs, merge-base resolution, candidate performance-harness overlay, fresh owned
+PostgreSQL, and A-B-B-A source order) are unchanged.
 
 Output lives under `tmp/perf/state-write-cpu-profile/<run>-<attempt>`. Each profile directory is
-created exclusively before acquisition; existing destinations fail. After the Deno child exits
+created exclusively before acquisition; existing destinations fail. After the child exits
 successfully, the runner validates nonempty nodes and samples, the rooted node graph, sample
 references, timing-array lengths and integer timestamps. Signed native timing deltas are preserved,
 including occasional negative clock jitter. A missing or malformed profile fails the capture while
@@ -610,6 +604,6 @@ Run without competing workloads and record the host alongside the output.
 
 ```sh
 mkdir -p tmp/perf/group-move
-deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read --allow-write --allow-run \
+bun run \
   apps/api-v1/scripts/perf/group-move-commit-bench.ts tmp/perf/group-move/cohorts.json
 ```

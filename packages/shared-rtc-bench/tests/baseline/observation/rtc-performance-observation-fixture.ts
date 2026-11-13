@@ -245,7 +245,7 @@ function toB06RuntimeObservation(): RtcBaselineRuntimeObservationDto {
             ref: 'detached@c0cadb8216cf27d82a3143755e6965f3831ea164',
             clean: true
         },
-        runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '139' },
+        runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '139' },
         resolvedConfiguration: [
             {
                 caseKey: {
@@ -277,7 +277,7 @@ export function toRuntimeObservation(): RtcBaselineRuntimeObservationDto {
             ref: 'detached@eaf526518c70e3b396dad91c008125a622b38b00',
             clean: true
         },
-        runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '139' },
+        runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '139' },
         host: {
             os: 'linux',
             kernel: '6.8',

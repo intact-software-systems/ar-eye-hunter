@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -21,6 +22,7 @@ import {
     createPostgresAppInboxWorkerTrace
 } from '../../../../packages/tests/shared-server/integration/postgres/test-support/postgres-app-inbox-worker-runtime.ts';
 import { putAuthorisedWsTestTicket } from '../../../../packages/tests/shared-server/rallar-system/client-state/authorised-ws-test-ticket.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../packages/tests/shared/websocket/test-web-socket.ts';
 import {
     readAuthorisedWsConnectionEligibility,
@@ -51,7 +53,7 @@ for (
     ] as const
 ) {
     // `unbridged`: RALLAR_DB_PUBSUB=disabled installs no cluster bridge; the dequeuing server's own sends deliver.
-    Deno.test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
+    test(`committed client snapshot reaches ${placement} socket registered ${registration} through the cluster bridge`, async () => {
         await withPGliteSql(async (sql) => {
             const recipient: SnapshotRecipient = {
                 sessionId: crypto.randomUUID(),
@@ -214,7 +216,8 @@ async function commitClientSnapshot(sql: PSqlSql, recipient: SnapshotRecipient):
 }
 
 function registerRecipientConnection(socket: JsonWebSocketServer, recipient: SnapshotRecipient, native: TestWebSocket): void {
-    socket.addConnection(
+    attachTestWebSocket(
+        socket,
         new ConnectionContext({ id: recipient.sessionId, socket: native, generationId: 'generation', generationStartedAtEpochMs: recipient.now })
     );
     rememberAuthorisedWsConnection(recipient.sessionId, 'generation', {

@@ -417,7 +417,7 @@ Provider-mode examples:
 Validation wrapper:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=both \
   --transport=both \
   --record-dir=.artifacts/rallar-browser-rtc

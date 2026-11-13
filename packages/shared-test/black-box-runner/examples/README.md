@@ -99,7 +99,7 @@ control server and maps returned browser events back into `wsMessages`,
 Run the provider-mode parity recipe locally:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-provider-mode-parity.json
 ```
 
@@ -107,7 +107,7 @@ Run the same recipe through the control server:
 
 ```bash
 RALLAR_BB_RTC_PROVIDER=rallar-remote-browser \
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-provider-mode-parity.json
 ```
 
@@ -116,7 +116,7 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 Dry-run a recipe without launching browser providers or mutating runtime state:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
   --dry-run
 ```
@@ -124,7 +124,7 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 Explain or validate a recipe before dry-run or live execution:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
   --explain
 ```
@@ -151,7 +151,7 @@ Run the browser-backed live validation wrapper when a Rallar environment and
 test credentials are available:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=both \
   --transport=both \
   --record-dir=.artifacts/rallar-browser-rtc
@@ -160,7 +160,7 @@ deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation
 For one-off local runs, replace example variables at the CLI:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-connect.json \
   -r rallarApiBaseUrl:=http://localhost:8080,aliceUsername:=alice,alicePassword:=secret,bobUsername:=bob,bobPassword:=secret
 ```
@@ -169,14 +169,14 @@ Run the Rallar Server HTTP/WS smoke recipe against a local `apps/api-v1`
 server:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rallar-server-auth-group-ws-smoke.json
 ```
 
 Write a redacted artifact bundle for any recipe:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-delivery-semantics.json \
   --artifact-dir=.artifacts/shared-test/rallar-memory-delivery
 ```
@@ -261,7 +261,7 @@ After a failing traffic run, create a smaller replay candidate without rerunning
 the scenario:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
+bun run packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
   --artifact-dir=.artifacts/shared-test/rallar-memory-traffic
 ```
 
@@ -272,7 +272,7 @@ The inline loop pacing example is also deterministic and runs without live
 services:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-inline-loop-pacing.json
 ```
 

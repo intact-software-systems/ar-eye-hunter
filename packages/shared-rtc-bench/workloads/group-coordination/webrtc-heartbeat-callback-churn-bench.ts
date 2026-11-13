@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { WebRtcHeartbeatService } from '@shared/services/web-rtc-heartbeat-service.ts';
@@ -209,7 +210,7 @@ function toRawEvidence(result: WebRtcHeartbeatCallbackChurnResult): RtcBaselineJ
 }
 
 async function main(): Promise<void> {
-    const parsed = parseWebRtcHeartbeatCallbackChurnArguments(Deno.args);
+    const parsed = parseWebRtcHeartbeatCallbackChurnArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -235,8 +236,8 @@ async function main(): Promise<void> {
         input: { channelCount: diagnostic.input.channels, runs: diagnostic.runs },
         results
     };
-    await Deno.mkdir(dirname(diagnostic.out), { recursive: true });
-    await Deno.writeTextFile(diagnostic.out, JSON.stringify(output, null, 2));
+    await mkdir(dirname(diagnostic.out), { recursive: true });
+    await writeFile(diagnostic.out, JSON.stringify(output, null, 2), 'utf8');
     console.log(`Wrote ${diagnostic.out}`);
 }
 

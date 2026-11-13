@@ -220,7 +220,8 @@ describe('hosted operator inspect', () => {
         expect(evidence.operatorSettings.RALLAR_BLACK_BOX_AGENT_COUNT).toEqual({ present: true, value: '2', source: 'spa-environment' });
         expect(evidence.operatorSettings.VITE_RALLAR_APPLICATION_ID).toEqual({ present: true, value: 'prior-app', source: 'spa-environment' });
         expect(Object.keys(evidence.operatorSettings)).toHaveLength(10);
-        expect(evidence.processes).toEqual({ api: true, control: true, headless: true });
+        // The api role no longer probes the co-located control/headless services (moved to a separate host).
+        expect(evidence.processes).toEqual({ api: true, control: 'not-local', headless: 'not-local' });
         expect(evidence.database).toEqual({
             databaseOid: 1,
             roleOid: 2,
@@ -237,11 +238,10 @@ describe('hosted operator inspect', () => {
         expect(stdout).not.toMatch(/never-print|PASSWORD|journal|DATABASE_URL|username/iu);
         const commands = await readFile(fixture.commands, 'utf8');
         expect(commands).toContain('git --no-optional-locks');
-        expect(commands).toContain(
-            'curl --silent --show-error --output /dev/null --write-out %{http_code} --max-time 10 --header x-forwarded-proto: https http://127.0.0.1:5180/health'
-        );
+        // The api role probes only its own api-v1 loopback; control/headless are not-local on this host.
+        expect(commands).not.toContain('http://127.0.0.1:5180/health');
         expect(commands).toContain('https://api.example.test/api/config');
-        expect(commands).toContain('https://control.example.test/health');
+        expect(commands).not.toContain('https://control.example.test/health');
         expect(commands).not.toMatch(/systemctl (start|stop|restart|reload|enable|disable|status)\b/u);
         await writeFile(fixture.envFile, 'RALLAR_TIMING_LOGS=1\nCORS_ORIGINS=https://spa.example.test\n');
         const mixed = JSON.parse((await fixture.run()).stdout);
@@ -272,12 +272,12 @@ describe('hosted operator inspect', () => {
     });
 
     it('fails without printing partial evidence when readiness is missing', async (context) => {
+        // On the api role, deployment-readiness is a control-host marker, so a missing file no longer
+        // fails the inspect; the placeholder readiness object is emitted instead.
         const fixture = await inspect(context);
         await rm(path.join(fixture.fixture, 'readiness.json'));
-        await expect(fixture.run()).rejects.toMatchObject({
-            stderr: expect.stringContaining('required nonsecret evidence: readiness'),
-            stdout: ''
-        });
+        const evidence = JSON.parse((await fixture.run()).stdout);
+        expect(evidence.readiness).toEqual({ deployedCommit: null, note: 'deployment-readiness is a control-host marker' });
     });
 
     it('fails without printing partial evidence when source migration files are absent', async (context) => {

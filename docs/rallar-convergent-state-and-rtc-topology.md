@@ -651,7 +651,7 @@ operation matrix to make a change pass. Its fixed assertions prove
 cross-process state/topology convergence.
 
 The API-v1 black-box runner keeps memory as a one-process mode. Its built-in
-Postgres cluster profiles instead manage three Deno API processes sharing one
+Postgres cluster profiles instead manage three Bun API processes sharing one
 Postgres database on ports 18080, 18081, and 18082. Inspect the isolated
 `api-v1-server.log`, `api-v1-server-secondary.log`, and
 `api-v1-server-tertiary.log` artifacts together; recipes-only mode is

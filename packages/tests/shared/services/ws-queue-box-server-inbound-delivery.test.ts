@@ -9,6 +9,7 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { waitForSettledALInboundWork } from '../wait-for-al-inbound-work.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
 describe('WS server inbound delivery and relay', () => {
@@ -101,7 +102,7 @@ describe('WS server inbound delivery and relay', () => {
         await recipient.open();
         if (effect === 'forward') {
             fixture.service.removeAnyInboxMessageCallback('observer');
-            fixture.server.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
+            attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'recipient', socket: recipient }));
         }
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
@@ -155,7 +156,7 @@ describe('WS server inbound delivery and relay', () => {
         fixture.service.removeAnyInboxMessageCallback('observer');
         const recipient = new SimulatedWebSocket('ws://recipient');
         await recipient.open();
-        fixture.server.addConnection(new ConnectionContext({ id: 'recipient', socket: recipient }));
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'recipient', socket: recipient }));
         let authorityReads = 0;
         fixture.service.authorizeInboundMessagesWith({
             sendNacks: false,

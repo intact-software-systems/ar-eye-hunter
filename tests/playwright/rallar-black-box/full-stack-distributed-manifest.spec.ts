@@ -475,7 +475,7 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
                 diskAvailableBytes: disk.bavail * disk.bsize,
                 os: { platform: platform(), release: release(), version: version() },
                 node: process.version,
-                deno: spawnSync('deno', ['--version'], { encoding: 'utf8' }).stdout.trim(),
+                bun: spawnSync('bun', ['--version'], { encoding: 'utf8' }).stdout.trim(),
                 chromium: spawnSync(chromium.executablePath(), ['--version'], { encoding: 'utf8' }).stdout.trim(),
                 effectiveProfile: configuration.profile.name,
                 databaseMode: configuration.database.mode,
@@ -501,7 +501,7 @@ async function readLocalApiConfiguration(): Promise<ApiV1Configuration> {
     const profileEnvironment = createFullStackApiProfileEnvironment();
     const resourceUrl = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return readApiV1Configuration({
-        environment: { get: (key) => profileEnvironment[key] ?? process.env[key] },
+        environment: { ...process.env, ...profileEnvironment },
         hardwareConcurrency: availableParallelism(),
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resourceUrl('configuration/defaults-config.json'),

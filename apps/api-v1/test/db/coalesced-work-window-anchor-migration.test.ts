@@ -1,4 +1,6 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
@@ -38,7 +40,7 @@ function readCoalescedWork(storedMessage: string): StoredCoalescedWork | undefin
     return JSON.parse(message.payload.resource).data.__rallarCoalescedWork;
 }
 
-Deno.test('the window-anchor migration backfills coalesced rows written before the anchor existed', async () => {
+test('the window-anchor migration backfills coalesced rows written before the anchor existed', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
         const sql = lifecycle.database;
@@ -62,7 +64,7 @@ Deno.test('the window-anchor migration backfills coalesced rows written before t
             `;
         }
 
-        await sql.exec(await Deno.readTextFile(MIGRATION_URL));
+        await sql.exec(await readFile(MIGRATION_URL, 'utf8'));
 
         const stored = await sql<{ ri_resource_id: string; ri_resource: string; }[]>`
             select ri_resource_id, ri_resource from resource_inbox order by ri_resource_id

@@ -14,15 +14,6 @@ const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const FLOOR_MS = Date.parse('2030-01-01T00:00:00.000Z');
 
-type GlobalEnv = Readonly<{
-    Deno?: Readonly<{
-        env: Readonly<{ get(key: string): string | undefined; }>;
-    }>;
-    process?: Readonly<{
-        env?: Readonly<Record<string, string | undefined>>;
-    }>;
-}>;
-
 describe('Postgres runtime-state read batches', () => {
     postgresIt('returns exact, prefix, and missing selections as one driver row per selected entry', async () => {
         const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
@@ -293,6 +284,5 @@ function requireDatabaseUrl(): string {
 }
 
 function readEnv(name: string): string | undefined {
-    const globals = globalThis as GlobalEnv;
-    return globals.Deno?.env.get(name) ?? globals.process?.env?.[name];
+    return process.env[name];
 }

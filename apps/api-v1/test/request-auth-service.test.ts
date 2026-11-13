@@ -7,10 +7,11 @@ import type {
     RuntimeStateTransactionalRepositoryLike,
     RuntimeStateWriteInput
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { requireApiAuthSession } from '../src/services/request-auth-service.ts';
 
-Deno.test('requireApiAuthSession validates bearer token and client id', async () => {
+test('requireApiAuthSession validates bearer token and client id', async () => {
     const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
     const session = {
         clientId: 'client-1',

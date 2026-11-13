@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
@@ -86,7 +87,7 @@ function addConnection(
     rememberAuthorisedWsConnection(sessionId, registeredGenerationId, facts);
 }
 
-Deno.test('frozen room delivery keeps only currently open authenticated sockets in the scoped audience', () => {
+test('frozen room delivery keeps only currently open authenticated sockets in the scoped audience', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'eligible', { scope });
     addConnection(server, 'wrong-app', { scope: { applicationId: 'other', workspaceId: 'workspace' } });
@@ -134,7 +135,7 @@ Deno.test('frozen room delivery keeps only currently open authenticated sockets 
     );
 });
 
-Deno.test('durable unicast requires valid captured scope and current authenticated generation', () => {
+test('durable unicast requires valid captured scope and current authenticated generation', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'unicast-eligible', { scope });
     addConnection(server, 'unicast-other-app', { scope: { ...scope, applicationId: 'other' } });
@@ -160,7 +161,7 @@ Deno.test('durable unicast requires valid captured scope and current authenticat
     assert.deepEqual(filterEligibleDurableWsSessionIds(input), []);
 });
 
-Deno.test('verified principal broadcasts keep scoped co-group sockets while broad durable broadcasts stay excluded', () => {
+test('verified principal broadcasts keep scoped co-group sockets while broad durable broadcasts stay excluded', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'co-group-recipient', { scope, principalId: 'bob' });
     addConnection(server, 'wrong-workspace', { scope: { ...scope, workspaceId: 'other' }, principalId: 'bob' });
@@ -184,7 +185,7 @@ Deno.test('verified principal broadcasts keep scoped co-group sockets while broa
     assert.deepEqual(filterEligibleDurableWsSessionIds({ ...input, message: broad.message }), []);
 });
 
-Deno.test('durable captured audience excludes a reconnected same-ID socket in another scope', () => {
+test('durable captured audience excludes a reconnected same-ID socket in another scope', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'captured-eligible', { scope });
     addConnection(server, 'captured-stale', { scope, registeredGenerationId: 'older-generation' });
@@ -230,7 +231,7 @@ Deno.test('durable captured audience excludes a reconnected same-ID socket in an
     );
 });
 
-Deno.test('principal and broad notices use current authenticated eligibility', () => {
+test('principal and broad notices use current authenticated eligibility', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'principal-a', { scope, principalId: 'principal-a' });
     addConnection(server, 'principal-b', { scope, principalId: 'principal-b' });
@@ -266,7 +267,7 @@ Deno.test('principal and broad notices use current authenticated eligibility', (
     );
 });
 
-Deno.test('a world notice keeps the authenticated sockets of the scope it names alone', () => {
+test('a world notice keeps the authenticated sockets of the scope it names alone', () => {
     const server = new JsonWebSocketServer();
     addConnection(server, 'in-scope', { scope });
     addConnection(server, 'other-app', { scope: { ...scope, applicationId: 'other' } });

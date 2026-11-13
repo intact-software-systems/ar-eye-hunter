@@ -26,6 +26,7 @@ import {
     JsonWebSocketServer
 } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshot } from '../rallar-system/group-state/snapshot/group-state-snapshot-test-fixtures.ts';
 import { createRecordingLiveWsPublication } from '../rallar-system/websocket/router/recording-live-ws-publication.ts';
@@ -211,7 +212,7 @@ function createGameRouterFixture(cluster = false): GameRouterFixture {
     };
     for (const [sessionId, player] of Object.entries(players)) {
         player.open();
-        socket.addConnection(new ConnectionContext({ id: sessionId, socket: player }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: sessionId, socket: player }));
     }
     const recording = createRecordingLiveWsPublication();
     const router = new RallarServerWsRouter(createGameService(socket, roomRef, Object.keys(players)), {

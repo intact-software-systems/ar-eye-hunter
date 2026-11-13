@@ -1,8 +1,8 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarBrowserRtcProvider } from '../../../shared-test/black-box-runner/rallar-browser-rtc-provider.ts';
 
-Deno.test('createRallarBrowserRtcProvider records page load failure diagnostics', async () => {
+test('createRallarBrowserRtcProvider records page load failure diagnostics', async () => {
     let browserCloseCount = 0;
     let contextCloseCount = 0;
 
@@ -89,10 +89,10 @@ Deno.test('createRallarBrowserRtcProvider records page load failure diagnostics'
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'harness load failed');
-    assertEquals(contextCloseCount, 1);
-    assertEquals(browserCloseCount, 1);
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('harness load failed');
+    expect(contextCloseCount).toEqual(1);
+    expect(browserCloseCount).toEqual(1);
 
     const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data);
     const pageLoadFailed = diagnostics
@@ -100,11 +100,11 @@ Deno.test('createRallarBrowserRtcProvider records page load failure diagnostics'
     const connectFailed = diagnostics
         .find((event: any) => event.topic === 'rallar.browser.provider.connect_failed');
 
-    assertEquals(pageLoadFailed?.data?.harnessUrl, 'http://black-box-harness.local/rallar-browser-harness.html');
-    assertEquals(connectFailed?.data?.phase, 'page-load');
+    expect(pageLoadFailed?.data?.harnessUrl).toEqual('http://black-box-harness.local/rallar-browser-harness.html');
+    expect(connectFailed?.data?.phase).toEqual('page-load');
 });
 
-Deno.test('createRallarBrowserRtcProvider records runtime send failure diagnostics', async () => {
+test('createRallarBrowserRtcProvider records runtime send failure diagnostics', async () => {
     const page = {
         exposed: {} as Record<string, (event: any) => void | Promise<void>>,
 
@@ -254,12 +254,9 @@ Deno.test('createRallarBrowserRtcProvider records runtime send failure diagnosti
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsToBob[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsToBob[0].actual.exception,
-        'Rallar browser RTC send failed for 1 peer(s). status=closed'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsToBob[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.exception).toEqual('Rallar browser RTC send failed for 1 peer(s). status=closed');
 
     const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data);
     const runtimeChannelDiagnostic = diagnostics
@@ -267,8 +264,8 @@ Deno.test('createRallarBrowserRtcProvider records runtime send failure diagnosti
     const providerSendFailed = diagnostics
         .find((event: any) => event.topic === 'rallar.browser.provider.send_failed');
 
-    assertEquals(runtimeChannelDiagnostic?.data?.summary?.statuses?.closed, 1);
-    assertEquals(providerSendFailed?.data?.response?.results?.[0]?.result?.status, 'closed');
-    assertEquals(providerSendFailed?.data?.error?.message, 'Rallar browser RTC send failed for 1 peer(s). status=closed');
-    assertEquals(JSON.stringify(providerSendFailed?.data).includes('hello bob'), false);
+    expect(runtimeChannelDiagnostic?.data?.summary?.statuses?.closed).toEqual(1);
+    expect(providerSendFailed?.data?.response?.results?.[0]?.result?.status).toEqual('closed');
+    expect(providerSendFailed?.data?.error?.message).toEqual('Rallar browser RTC send failed for 1 peer(s). status=closed');
+    expect(JSON.stringify(providerSendFailed?.data).includes('hello bob')).toEqual(false);
 });

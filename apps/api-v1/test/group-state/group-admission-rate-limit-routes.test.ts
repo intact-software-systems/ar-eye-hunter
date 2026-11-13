@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -10,7 +11,7 @@ import {
     putGroupStateMutation
 } from './group-state-route-test-runtime.ts';
 
-Deno.test('join route answers 429 with Retry-After once the join-admission window is spent', async () => {
+test('join route answers 429 with Retry-After once the join-admission window is spent', async () => {
     const groupRef = uniqueGroupRef('route-join');
     const groupAdmissionQuota = createDefaultQuota();
     exhaustQuota(groupAdmissionQuota, 'join-admission', groupRef, 'alice', 60);
@@ -46,7 +47,7 @@ Deno.test('join route answers 429 with Retry-After once the join-admission windo
     });
 });
 
-Deno.test('upsert-self member route shares the join-admission window', async () => {
+test('upsert-self member route shares the join-admission window', async () => {
     const groupRef = uniqueGroupRef('route-upsert-self');
     const groupAdmissionQuota = createDefaultQuota();
     exhaustQuota(groupAdmissionQuota, 'join-admission', groupRef, 'alice', 60);
@@ -65,7 +66,7 @@ Deno.test('upsert-self member route shares the join-admission window', async () 
     assert.equal(response.headers.get('retry-after'), '60');
 });
 
-Deno.test('presence connect route answers 429 from the presence-connect window', async () => {
+test('presence connect route answers 429 from the presence-connect window', async () => {
     const groupRef = uniqueGroupRef('route-presence');
     const groupAdmissionQuota = createDefaultQuota();
     exhaustQuota(groupAdmissionQuota, 'presence-connect', groupRef, 'alice', 120);
@@ -98,7 +99,7 @@ Deno.test('presence connect route answers 429 from the presence-connect window',
     });
 });
 
-Deno.test('a group whose window is untouched still admits joins through the guard', async () => {
+test('a group whose window is untouched still admits joins through the guard', async () => {
     const groupRef = uniqueGroupRef('route-join-allowed');
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({

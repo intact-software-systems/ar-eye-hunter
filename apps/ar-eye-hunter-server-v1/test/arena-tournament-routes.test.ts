@@ -1,3 +1,5 @@
+import { test } from 'bun:test';
+
 import { createTracedApiTestApp } from '@api-v1/test/services/create-traced-api-test-app.ts';
 import { EMPTY_INPUT } from '@ar-eye-hunter/arena-player-state.ts';
 import type { ArenaTournamentMutation } from '@ar-eye-hunter/server/arena-tournament-mutation.ts';
@@ -8,7 +10,7 @@ import { registerArenaTournamentRoutes, type ArenaTournamentRouteDependencies } 
 
 const path = '/api/ar-eye/rooms/arena/tournament';
 
-Deno.test('arena input routes bind the actor to authentication and accept controls without client scores or poses', async () => {
+test('arena input routes bind the actor to authentication and accept controls without client scores or poses', async () => {
     const commands: ArenaTournamentMutation.Command[] = [];
     const app = createTracedApiTestApp();
     registerArenaTournamentRoutes(app, dependencies(commands));
@@ -38,7 +40,7 @@ Deno.test('arena input routes bind the actor to authentication and accept contro
     assert.equal(commands.length, 1);
 });
 
-Deno.test('arena snapshots and inputs require authentication', async () => {
+test('arena snapshots and inputs require authentication', async () => {
     const app = createTracedApiTestApp();
     registerArenaTournamentRoutes(app, { ...dependencies([]), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
     assert.equal((await app.request(path)).status, 401);

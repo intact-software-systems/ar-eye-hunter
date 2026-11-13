@@ -16,12 +16,13 @@ import {
     newALUnicastMessage
 } from '@shared/mod.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';
 
 describe('CRDT principal post-commit routing', () => {
     it.each(['applicationId', 'workspaceId', 'principalId'] as const)('rejects a principal lookup returning another %s', (field) => {
         const server = new JsonWebSocketServer();
-        server.addConnection(new ConnectionContext({ id: 'session-a', socket: createOpenTestWebSocket() }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-a', socket: createOpenTestWebSocket() }));
         const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
         const resolver = createWsServerTargetResolver(server, {
             grantedTopics: new WsGrantedTopicSet(),
@@ -34,7 +35,7 @@ describe('CRDT principal post-commit routing', () => {
 
     it('checks the resolved socket connection while retaining the logical peer ID', () => {
         const server = new JsonWebSocketServer();
-        server.addConnection(new ConnectionContext({ id: 'socket-a', socket: createOpenTestWebSocket() }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'socket-a', socket: createOpenTestWebSocket() }));
         const snapshot = createPrincipalSnapshot('workspace-a', 10_000);
         const resolver = createWsServerTargetResolver(server, {
             grantedTopics: new WsGrantedTopicSet(),
@@ -121,7 +122,7 @@ function principalResolver(input: PrincipalResolverInput) {
     const now = 10_000;
     const server = new JsonWebSocketServer();
     for (const connectionId of input.openConnectionIds) {
-        server.addConnection(new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() }));
+        attachTestWebSocket(server, new ConnectionContext({ id: connectionId, socket: createOpenTestWebSocket() }));
     }
     const resolver = createWsServerTargetResolver(server, {
         grantedTopics: new WsGrantedTopicSet(),

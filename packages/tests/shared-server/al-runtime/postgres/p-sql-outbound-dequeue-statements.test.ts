@@ -48,6 +48,7 @@ import {
     runOutboundWorkTask
 } from '../../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../../../shared/alm/outbound-test-payload.ts';
+import { attachTestWebSocket } from '../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../shared/websocket/test-web-socket.ts';
 import {
     createPSqlAdmissionTestStorage,
@@ -251,7 +252,7 @@ function createWsDequeueLane(
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const engine = new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
         name: 'server',

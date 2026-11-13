@@ -1,6 +1,7 @@
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
+import { initServerProcessShutdown } from '@shared-server/process/init-server-process-shutdown.ts';
 import { createConsoleRallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { createDefaultTimers } from '@shared/resilience/timers.ts';
+import { createDefaultBackgroundTimers, createDefaultTimers } from '@shared/resilience/timers.ts';
 
 import { ControlAgentSockets } from './control-agent-sockets.ts';
 import { ControlArtifactRecorder, DEFAULT_CONTROL_ARTIFACT_RECORDER_CONFIG } from './control-artifact-recorder.ts';
@@ -13,11 +14,13 @@ import { createRallarBlackBoxControlService } from './control-service.ts';
 import { ControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins } from './cors.ts';
 import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
+import { CONTROL_HTTP_IDLE_TIMEOUT_SECONDS } from './http/control-http-idle-timeout-seconds.ts';
 import { createControlHttpResponses } from './http/control-http-responses.ts';
 import { ControlHttpSecurity } from './http/control-http-security.ts';
 import { createControlRequestBodyReader } from './http/control-request-body.ts';
 import { createDefaultRetentionPlanTokenAdapter } from './retention-plan-token.ts';
 import { routeControlHttpRequest } from './routes/control-http-router.ts';
+import { createControlWebSocketHandlers, type ControlSocketData } from './routes/control-socket-route.ts';
 import {
     ControlCompletedRunArchive,
     DEFAULT_CONTROL_RUN_COMPLETION_CONFIG
@@ -25,14 +28,14 @@ import {
 
 const DEFAULT_PORT = 5180;
 
-assertBlackBoxControlProductionEnv(Deno.env);
+assertBlackBoxControlProductionEnv(process.env);
 
-const security = readBlackBoxControlServerConfiguration(Deno.env);
+const security = readBlackBoxControlServerConfiguration(process.env);
 const configurationIssues = validateBlackBoxControlServerConfiguration(security);
 if (configurationIssues.length > 0) {
     throw new Error(`Invalid black-box control server configuration: ${configurationIssues.join(' ')}`);
 }
-const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
+const port = Number(process.env['PORT'] ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 const timers = createDefaultTimers();
 const timingSink = createConsoleRallarTimingSink();
@@ -101,7 +104,7 @@ const routeDependencies = {
 
 const restoredSnapshot = await snapshotPersistence.restore();
 if (restoredSnapshot.left !== undefined) {
-    Deno.exit(1);
+    process.exit(1);
 }
 await completedRuns.restore();
 const stopRunCompletion = completedRuns.start();
@@ -112,23 +115,32 @@ const stopDeadlineSweep = startControlDeadlineSweep({
     intervalMs: security.deadlineSweepIntervalMs
 });
 
-if (security.storageDir) {
-    for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-        Deno.addSignalListener(signal, () => void stopControlServer());
+const server = Bun.serve<ControlSocketData>({
+    port,
+    idleTimeout: CONTROL_HTTP_IDLE_TIMEOUT_SECONDS,
+    websocket: createControlWebSocketHandlers(routeDependencies),
+    async fetch(request, server) {
+        const response = await routeControlHttpRequest(request, routeDependencies, server);
+        return response === undefined ? undefined : applyControlCorsHeaders(request, response, corsOrigins);
     }
-}
-
-Deno.serve({ port }, async (request) => {
-    return applyControlCorsHeaders(request, await routeControlHttpRequest(request, routeDependencies), corsOrigins);
 });
 
 console.log(`Rallar black-box control server listening on http://localhost:${port}`);
 console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
+initServerProcessShutdown({
+    process,
+    signals: ['SIGTERM', 'SIGINT'],
+    stop: stopControlServer,
+    log: console,
+    timers: createDefaultBackgroundTimers(),
+    deadlineMs: security.shutdownDeadlineMs
+});
 
+/** Control state lives in memory until the flush, so sockets are cut first and the flush sees every last change. */
 async function stopControlServer(): Promise<void> {
+    await server.stop(true);
     stopDeadlineSweep();
     stopRunCompletion();
     await completedRuns.stop();
     await Promise.all([snapshotPersistence.stop(), artifactRecorder.stop()]);
-    Deno.exit(0);
 }

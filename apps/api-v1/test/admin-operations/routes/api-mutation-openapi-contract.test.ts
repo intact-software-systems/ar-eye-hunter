@@ -1,5 +1,6 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { installApiDocumentationRoutes } from '../../../src/routes/swagger-routes.ts';
@@ -154,7 +155,7 @@ const COVERED_API_MUTATIONS: readonly CoveredApiMutation[] = [
     { method: 'post', path: `/api/crdt/admin/documents/erase${REQUEST_PATH}` }
 ];
 
-Deno.test('OpenAPI publishes the reusable strict API mutation request path parameter', async () => {
+test('OpenAPI publishes the reusable strict API mutation request path parameter', async () => {
     const document = await readOpenApiDocument();
     const parameters = requireObject(
         requireObject(document.components).parameters
@@ -184,7 +185,7 @@ const API_REQUEST_TRACE_SCHEMA = {
 const OPENAPI_METHODS = ['get', 'post', 'put', 'delete', 'patch'] as const;
 const WEBSOCKET_UPGRADE_PATH = '/api/ws/{sessionId}';
 
-Deno.test('OpenAPI publishes the reusable x-request-id trace parameter and its echoed response header', async () => {
+test('OpenAPI publishes the reusable x-request-id trace parameter and its echoed response header', async () => {
     const components = requireObject((await readOpenApiDocument()).components);
 
     assert.deepEqual(requireObject(components.parameters).XRequestId, {
@@ -201,7 +202,7 @@ Deno.test('OpenAPI publishes the reusable x-request-id trace parameter and its e
     });
 });
 
-Deno.test('OpenAPI gives every API operation the x-request-id parameter and every non-upgrade response its echo', async () => {
+test('OpenAPI gives every API operation the x-request-id parameter and every non-upgrade response its echo', async () => {
     const document = await readOpenApiDocument();
     const components = requireObject(document.components);
     const componentResponses = requireObject(components.responses);
@@ -229,7 +230,7 @@ Deno.test('OpenAPI gives every API operation the x-request-id parameter and ever
     }
 });
 
-Deno.test('OpenAPI request bodies carry no trace: the trace travels only as x-request-id', async () => {
+test('OpenAPI request bodies carry no trace: the trace travels only as x-request-id', async () => {
     const document = await readOpenApiDocument();
     const schemas = requireObject(requireObject(document.components).schemas);
     const paths = requireObject(document.paths);
@@ -248,7 +249,7 @@ Deno.test('OpenAPI request bodies carry no trace: the trace travels only as x-re
     }
 });
 
-Deno.test('OpenAPI gives all AppInbox REST mutations path-only request identity', async () => {
+test('OpenAPI gives all AppInbox REST mutations path-only request identity', async () => {
     const document = await readOpenApiDocument();
     const paths = requireObject(document.paths);
     const schemas = requireObject(requireObject(document.components).schemas);
@@ -284,7 +285,7 @@ Deno.test('OpenAPI gives all AppInbox REST mutations path-only request identity'
     }
 });
 
-Deno.test('OpenAPI gives every covered mutation the canonical failure envelope', async () => {
+test('OpenAPI gives every covered mutation the canonical failure envelope', async () => {
     const document = await readOpenApiDocument();
     const paths = requireObject(document.paths);
     const components = requireObject(document.components);

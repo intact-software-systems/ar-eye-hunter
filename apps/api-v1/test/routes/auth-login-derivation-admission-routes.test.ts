@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AuthPasswordDerivationAdmission } from '@shared-server/rallar-system/auth/credentials/auth-password-derivation-admission.ts';
@@ -7,7 +8,7 @@ import { createConfigRouteTestApp, createConfigRouteTestDependencies } from './c
 
 const HELD_RESPONSE_WINDOW_MS = 200;
 
-Deno.test('login against a static client completes while every derivation slot is held', async () => {
+test('login against a static client completes while every derivation slot is held', async () => {
     const admission = new AuthPasswordDerivationAdmission({ maxConcurrentDerivations: 1 });
     let releaseHeldSlot = (): void => {};
     const held = admission.admit(() =>

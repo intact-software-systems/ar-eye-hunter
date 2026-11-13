@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import {
@@ -87,7 +88,7 @@ interface PostAndProcessRawResult {
     readonly body: JsonWireObject;
 }
 
-Deno.test(
+test(
     'actual CRDT admin routes preserve compact/lifecycle/erase responses and post-commit audit',
     async () => await withPGliteSql(verifyCrdtAdminResponseContract)
 );
@@ -657,7 +658,7 @@ async function readAuditCount(
     return Number(rows[0]?.count);
 }
 
-Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
+test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
     const unauthorized = createTracedApiTestApp();
     routes.registerCrdtAdminRoutes(unauthorized, {
         repository: createUnusedCrdtReadRepository(),

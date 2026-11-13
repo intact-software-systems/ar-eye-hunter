@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import type { AppDataRepository } from '@shared-server/app-data/app-data-repository.ts';
 import {

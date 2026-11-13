@@ -23,8 +23,7 @@ if [[ "${user}" == postgres && "$1" == psql ]]; then
 elif [[ "${user}" == rallar && "$1" == psql ]]; then
 	shift
 	docker exec -i -e PGPASSWORD="${PGPASSWORD}" "${RALLAR_TEST_CONTAINER}" psql "$@"
-elif [[ "${user}" == rallar && "$1" == env && "$2" == DENO_DIR=* ]]; then
-	shift 2
+elif [[ "${user}" == rallar && "$1" == bunx && "$2" == prisma ]]; then
 	if [[ "${RALLAR_TEST_FAIL_MIGRATION:-0}" == 1 ]]; then
 		exit 37
 	fi

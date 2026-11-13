@@ -1,10 +1,11 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import defaultsSource from '../../resources/configuration/defaults-config.json' with { type: 'json' };
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
 import { validDecodeApiV1ConfigurationInput } from './api-v1-configuration-test-fixture.ts';
 
-Deno.test('matchmaking defaults and per-application overrides are explicit bounded configuration', () => {
+test('matchmaking defaults and per-application overrides are explicit bounded configuration', () => {
     const input = { ...validDecodeApiV1ConfigurationInput(), defaultsSource };
     const configuration = decodeApiV1Configuration(input);
     assert.ok('matchmaking' in configuration);
@@ -28,7 +29,7 @@ Deno.test('matchmaking defaults and per-application overrides are explicit bound
     });
 });
 
-Deno.test('matchmaking configuration rejects invalid bounds, incomplete game policies and unknown settings', () => {
+test('matchmaking configuration rejects invalid bounds, incomplete game policies and unknown settings', () => {
     for (
         const matchmaking of [
             { defaultPolicy: { players: 1 } },

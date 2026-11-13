@@ -1,11 +1,12 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
+import { websocket, type BunWebSocketData } from 'hono/bun';
 import assert from 'node:assert/strict';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 import defaults from '../../resources/configuration/defaults-config.json' with { type: 'json' };
@@ -47,6 +48,7 @@ export interface NativeGroupSessionFlow {
 }
 
 const NATIVE_HTTP_ALLOWANCE_MS = 5_000;
+const NATIVE_STATE_WAIT_MS = 45_000;
 // The first group write pays one-time server and database costs that the steady-state allowance does not measure.
 const NATIVE_COLD_START_ALLOWANCE_MS = 30_000;
 const NATIVE_WARMUP_REQUEST_INDEX = 1_000;
@@ -73,7 +75,7 @@ export class NativeSessionTestFixture {
     readonly databaseLifecycle: ApiV1TestPGliteDatabaseLifecycle;
     readonly sessionTtlMs: number;
     private readonly dependencies: NativeSessionTestFixtureDependencies;
-    private listener: Deno.HttpServer<Deno.NetAddr> | undefined;
+    private listener: Bun.Server<BunWebSocketData> | undefined;
 
     constructor(dependencies: NativeSessionTestFixtureDependencies) {
         this.dependencies = dependencies;
@@ -86,8 +88,13 @@ export class NativeSessionTestFixture {
         await this.runtime.readiness;
         this.dependencies.startServer();
         this.dependencies.queueEngineLifecycle.started = true;
-        this.listener = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, this.dependencies.app.fetch);
-        return `http://127.0.0.1:${this.listener.addr.port}`;
+        this.listener = Bun.serve({
+            hostname: '127.0.0.1',
+            port: 0,
+            fetch: this.dependencies.app.fetch,
+            websocket
+        });
+        return `http://127.0.0.1:${this.listener.port}`;
     }
 
     async stop(socketClosures: readonly Promise<void>[], primaryFailure: Error | undefined): Promise<void> {
@@ -326,16 +333,23 @@ export async function waitForSocketOpen(socket: WebSocket): Promise<void> {
 }
 
 export async function readAdmittedSnapshot(runtime: ApiV1Runtime): Promise<ClientSnapshot> {
-    const deadline = performance.now() + 45_000;
-    do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot?.activeSessions.length === 15) {
-            return snapshot;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-    while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not admit all fifteen sessions within 45000 ms');
+    return await readNativeStateUntil(
+        () => runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF),
+        (snapshot): snapshot is ClientSnapshot => snapshot?.activeSessions.length === 15,
+        'Automatic AppInbox queues did not admit all fifteen sessions'
+    );
+}
+
+/**
+ * The room audience a published message freezes: the current group snapshot lists a session only once the presence
+ * summary worker has folded its committed presence in, which can trail the presence response.
+ */
+export async function readPresentGroupSnapshot(runtime: ApiV1Runtime, groupRef: GroupRef): Promise<GroupSnapshot> {
+    return await readNativeStateUntil(
+        () => runtime.groupStateService.readCurrentSnapshot(groupRef),
+        (snapshot): snapshot is GroupSnapshot => snapshot?.activeSessions.length === 15,
+        'The presence summary did not list all fifteen sessions'
+    );
 }
 
 export async function closeSocket(socket: WebSocket): Promise<void> {
@@ -350,14 +364,27 @@ export async function closeSocket(socket: WebSocket): Promise<void> {
 }
 
 async function waitForSessionDisconnects(runtime: ApiV1Runtime): Promise<void> {
-    const deadline = performance.now() + 45_000;
+    await readNativeStateUntil(
+        () => runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF),
+        (snapshot): snapshot is ClientSnapshot | undefined =>
+            snapshot === undefined || snapshot.activeSessionCount === 0,
+        'Automatic AppInbox queues did not complete owned session disconnects'
+    );
+}
+
+async function readNativeStateUntil<T, A extends T>(
+    read: () => Promise<T>,
+    accept: (value: T) => value is A,
+    failure: string
+): Promise<A> {
+    const deadline = performance.now() + NATIVE_STATE_WAIT_MS;
     do {
-        const snapshot = await runtime.clientStateService.readCurrentSnapshot(PRINCIPAL_REF);
-        if (snapshot === undefined || snapshot.activeSessionCount === 0) {
-            return;
+        const value = await read();
+        if (accept(value)) {
+            return value;
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
     }
     while (performance.now() < deadline);
-    throw new Error('Automatic AppInbox queues did not complete owned session disconnects within 45000 ms');
+    throw new Error(`${failure} within ${NATIVE_STATE_WAIT_MS} ms`);
 }

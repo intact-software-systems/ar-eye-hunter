@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -25,7 +26,7 @@ import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests
 import { createResourceEntry, withPGliteSql } from './pglite-auth-test-harness.ts';
 
 for (const owner of ['handler', 'retry-finalizer'] as const) {
-    Deno.test(`${owner} reservation conflict keeps typed identity without caller serialization and rolls back`, async () => {
+    test(`${owner} reservation conflict keeps typed identity without caller serialization and rolls back`, async () => {
         await withPGliteSql(async (sql) => {
             const repository = createPSqlResourceInboxRepository(sql, () => new Date());
             const enqueue = {

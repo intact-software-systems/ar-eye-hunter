@@ -28,8 +28,8 @@ async function runScenarioCli(args: string[], env: Record<string, string | undef
 }> {
     return new Promise((resolve, reject) => {
         const child = spawn(
-            'deno',
-            ['run', '-A', scenarioCliPath, ...args],
+            'bun',
+            ['run', scenarioCliPath, ...args],
             {
                 stdio: ['ignore', 'pipe', 'pipe'],
                 env: {
@@ -99,7 +99,7 @@ async function tryStartHeaderEchoServer(): Promise<{ baseUrl: string; close: () 
     }
     catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown; }).code)
+            ? String(error.code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;

@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import type {
@@ -289,16 +290,16 @@ function resetCounts(counts: MutableOperationCounts): void {
 }
 
 async function main(): Promise<void> {
-    const outPath = readOutputPath(Deno.args);
+    const outPath = readOutputPath(process.argv.slice(2));
     const result = await runRtcTopologyReplayDrainOperationWorkloads();
     const artifact = {
         ...result,
         generatedAt: new Date().toISOString(),
-        runtime: { deno: Deno.version.deno },
+        runtime: { bun: process.versions.bun ?? process.versions.node },
         policy: RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY
     };
-    await Deno.mkdir(dirname(outPath), { recursive: true });
-    await Deno.writeTextFile(outPath, `${JSON.stringify(artifact, null, 2)}\n`);
+    await mkdir(dirname(outPath), { recursive: true });
+    await writeFile(outPath, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8');
     console.log(JSON.stringify({ outPath, ...result }, null, 2));
 }
 

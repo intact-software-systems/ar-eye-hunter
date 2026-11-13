@@ -400,17 +400,13 @@ describe('API-v1 runner options and process plans', () => {
         expect(plan?.env).not.toHaveProperty('RALLAR_DB_PUBSUB');
     });
 
-    it('builds the api-v1 Deno server command', () => {
+    it('builds the api-v1 Bun server command, reading no env files because the plan env is complete', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
 
         expect(toApiV1ServerCommand(options)).toEqual([
-            'deno',
+            process.execPath,
+            '--no-env-file',
             'run',
-            '--config',
-            'apps/api-v1/deno.json',
-            '--allow-net',
-            '--allow-env',
-            '--allow-read',
             'apps/api-v1/src/main.ts'
         ]);
     });
@@ -423,9 +419,8 @@ describe('API-v1 runner options and process plans', () => {
         ]);
 
         expect(toClusterRecipeMatrixCommand(options, '/tmp/api-v1-bb')).toEqual([
-            'deno',
+            'bun',
             'run',
-            '-A',
             'packages/shared-test/black-box-runner/recipe-matrix.mts',
             '--profile=api-v1-black-box-cluster',
             '--require-gates',
@@ -444,9 +439,8 @@ describe('API-v1 runner options and process plans', () => {
 
         expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb')).toEqual([
             [
-                'deno',
+                'bun',
                 'run',
-                '-A',
                 'packages/shared-test/black-box-runner/recipe-matrix.mts',
                 '--profile=api-v1-black-box-medium-scale',
                 '--require-gates',

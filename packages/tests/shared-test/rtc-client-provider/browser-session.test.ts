@@ -1,8 +1,8 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarBrowserRtcProvider } from '../../../shared-test/black-box-runner/rallar-browser-rtc-provider.ts';
 
-Deno.test('createRallarBrowserRtcProvider bridges browser runtime events into RTC report', async () => {
+test('createRallarBrowserRtcProvider bridges browser runtime events into RTC report', async () => {
     const pageEvents: Record<string, Array<(event?: any) => void>> = {};
     let browserCloseCount = 0;
     let contextCloseCount = 0;
@@ -205,38 +205,35 @@ Deno.test('createRallarBrowserRtcProvider bridges browser runtime events into RT
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcProviderNames.includes('rallar-browser'), true);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForBrowserMessage[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForBrowserClose[0].status, 'SUCCESS');
-    assertEquals(launchOptions.headless, true);
-    assertEquals(contextCloseCount, 1);
-    assertEquals(browserCloseCount, 1);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.rtcProviderNames.includes('rallar-browser')).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForBrowserMessage[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForBrowserClose[0].status).toEqual('SUCCESS');
+    expect(launchOptions.headless).toEqual(true);
+    expect(contextCloseCount).toEqual(1);
+    expect(browserCloseCount).toEqual(1);
 
     const bridgedEvents = report.rtcMessages.aliceRtc.map((message: any) => message.data);
-    assertEquals(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.runtime_loaded'), true);
-    assertEquals(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.provider.connected'), true);
-    assertEquals(
-        bridgedEvents.some((event: any) =>
-            event.topic === 'rallar.browser.realtime.message' &&
-            event.data?.text === 'hello from browser'
-        ),
-        true
-    );
+    expect(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.runtime_loaded')).toEqual(true);
+    expect(bridgedEvents.some((event: any) => event.topic === 'rallar.browser.provider.connected')).toEqual(true);
+    expect(bridgedEvents.some((event: any) =>
+        event.topic === 'rallar.browser.realtime.message' &&
+        event.data?.text === 'hello from browser'
+    )).toEqual(true);
 
     const runtimeCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.topic === 'rallar.browser.closed');
     const providerCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.closedBy === 'rallar-browser-provider');
 
-    assertEquals(runtimeCloseEvent?.topic, 'rallar.browser.closed');
-    assertEquals(runtimeCloseEvent?.actor, 'alice');
-    assertEquals(providerCloseEvent?.closedBy, 'rallar-browser-provider');
+    expect(runtimeCloseEvent?.topic).toEqual('rallar.browser.closed');
+    expect(runtimeCloseEvent?.actor).toEqual('alice');
+    expect(providerCloseEvent?.closedBy).toEqual('rallar-browser-provider');
 });
 
-Deno.test('createRallarBrowserRtcProvider opens local-only CRDT without RTC connect', async () => {
+test('createRallarBrowserRtcProvider opens local-only CRDT without RTC connect', async () => {
     const evaluateInputs: any[] = [];
     let contextCloseCount = 0;
 
@@ -361,15 +358,15 @@ Deno.test('createRallarBrowserRtcProvider opens local-only CRDT without RTC conn
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.openLocalOnlyCrdt[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.destroyLocalOnlyCrdt[0].status, 'SUCCESS');
-    assertEquals(evaluateInputs.some((input) => input?.connection === 'localCrdt'), false);
-    assertEquals(evaluateInputs.some((input) => input?.action === 'open'), true);
-    assertEquals(contextCloseCount, 1);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.openLocalOnlyCrdt[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.destroyLocalOnlyCrdt[0].status).toEqual('SUCCESS');
+    expect(evaluateInputs.some((input) => input?.connection === 'localCrdt')).toEqual(false);
+    expect(evaluateInputs.some((input) => input?.action === 'open')).toEqual(true);
+    expect(contextCloseCount).toEqual(1);
 });
 
-Deno.test('createRallarBrowserRtcProvider auto-closes browser resources at run end', async () => {
+test('createRallarBrowserRtcProvider auto-closes browser resources at run end', async () => {
     let browserCloseCount = 0;
     let contextCloseCount = 0;
     let runtimeCloseCount = 0;
@@ -467,11 +464,11 @@ Deno.test('createRallarBrowserRtcProvider auto-closes browser resources at run e
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcConnections, {});
-    assertEquals(runtimeCloseCount, 1);
-    assertEquals(contextCloseCount, 1);
-    assertEquals(browserCloseCount, 1);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.rtcConnections).toEqual({});
+    expect(runtimeCloseCount).toEqual(1);
+    expect(contextCloseCount).toEqual(1);
+    expect(browserCloseCount).toEqual(1);
 
     const autoCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.autoCloseRequested === true);
@@ -479,13 +476,13 @@ Deno.test('createRallarBrowserRtcProvider auto-closes browser resources at run e
         .find((event: any) => event.closedBy === 'rallar-browser-provider');
     const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data);
 
-    assertEquals(autoCloseEvent?.autoCloseSucceeded, true);
-    assertEquals(providerCloseEvent?.closedBy, 'rallar-browser-provider');
-    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed'), true);
-    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true);
+    expect(autoCloseEvent?.autoCloseSucceeded).toEqual(true);
+    expect(providerCloseEvent?.closedBy).toEqual('rallar-browser-provider');
+    expect(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed')).toEqual(true);
+    expect(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed')).toEqual(true);
 });
 
-Deno.test('createRallarBrowserRtcProvider cleans up browser resources when setup fails', async () => {
+test('createRallarBrowserRtcProvider cleans up browser resources when setup fails', async () => {
     let browserCloseCount = 0;
     let contextCloseCount = 0;
 
@@ -547,21 +544,21 @@ Deno.test('createRallarBrowserRtcProvider cleans up browser resources when setup
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'new page failed');
-    assertEquals(contextCloseCount, 1);
-    assertEquals(browserCloseCount, 1);
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('new page failed');
+    expect(contextCloseCount).toEqual(1);
+    expect(browserCloseCount).toEqual(1);
 
     const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data);
     const connectFailed = diagnostics
         .find((event: any) => event.topic === 'rallar.browser.provider.connect_failed');
 
-    assertEquals(connectFailed?.data?.phase, 'page');
-    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true);
+    expect(connectFailed?.data?.phase).toEqual('page');
+    expect(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed')).toEqual(true);
 });
 
-Deno.test('createRallarBrowserRtcProvider cleans up after unexpected page close', async () => {
+test('createRallarBrowserRtcProvider cleans up after unexpected page close', async () => {
     const pageEvents: Record<string, Array<() => void | Promise<void>>> = {};
     let browserCloseCount = 0;
     let contextCloseCount = 0;
@@ -661,24 +658,24 @@ Deno.test('createRallarBrowserRtcProvider cleans up after unexpected page close'
         context
     );
 
-    assertEquals(result.status, 'SUCCESS');
+    expect(result.status).toEqual('SUCCESS');
     await pageEvents.close[0]();
     await context.rtcConnections.aliceRtc.client.close();
 
-    assertEquals(contextCloseCount, 1);
-    assertEquals(browserCloseCount, 1);
+    expect(contextCloseCount).toEqual(1);
+    expect(browserCloseCount).toEqual(1);
 
     const pageCloseEvent = context.rtcCloseEvents.aliceRtc
         .find((event: any) => event.phase === 'page-close');
     const diagnostics = context.rtcMessages.aliceRtc.map((message: any) => message.data);
 
-    assertEquals(pageCloseEvent?.reason, 'browser page closed');
-    assertEquals(pageCloseEvent?.closedBy, 'rallar-browser-provider');
-    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed'), true);
-    assertEquals(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed'), true);
+    expect(pageCloseEvent?.reason).toEqual('browser page closed');
+    expect(pageCloseEvent?.closedBy).toEqual('rallar-browser-provider');
+    expect(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.context_closed')).toEqual(true);
+    expect(diagnostics.some((event: any) => event.topic === 'rallar.browser.provider.browser_closed')).toEqual(true);
 });
 
-Deno.test('createRallarBrowserRtcProvider records browser console and Rallar request diagnostics', async () => {
+test('createRallarBrowserRtcProvider records browser console and Rallar request diagnostics', async () => {
     const pageEvents: Record<string, Array<(event?: any) => void>> = {};
 
     const page = {
@@ -789,7 +786,7 @@ Deno.test('createRallarBrowserRtcProvider records browser console and Rallar req
         }
     );
 
-    assertEquals(report.summary.failure, 0);
+    expect(report.summary.failure).toEqual(0);
 
     const diagnostics = report.rtcMessages.aliceRtc.map((message: any) => message.data);
     const consoleError = diagnostics
@@ -797,7 +794,7 @@ Deno.test('createRallarBrowserRtcProvider records browser console and Rallar req
     const requestFailed = diagnostics
         .find((event: any) => event.topic === 'rallar.browser.rallar_request_failed');
 
-    assertEquals(consoleError?.data?.text, 'Rallar request failed in browser');
-    assertEquals(requestFailed?.data?.url, 'https://api.example.test/rtc/connect');
-    assertEquals(requestFailed?.data?.failure?.errorText, 'net::ERR_FAILED');
+    expect(consoleError?.data?.text).toEqual('Rallar request failed in browser');
+    expect(requestFailed?.data?.url).toEqual('https://api.example.test/rtc/connect');
+    expect(requestFailed?.data?.failure?.errorText).toEqual('net::ERR_FAILED');
 });

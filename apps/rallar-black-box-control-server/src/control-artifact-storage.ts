@@ -1,3 +1,5 @@
+import { appendFile, mkdir, open, readFile, rm, stat } from 'node:fs/promises';
+
 import type { ControlClientIdentity } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
     computeResultCaptureReceipts,
@@ -38,7 +40,7 @@ export class ControlArtifactStorage {
     }
 
     async deleteRun(runId: string): Promise<void> {
-        await Deno.remove(toArtifactRunDirectory(this.storageDir, runId), { recursive: true });
+        await rm(toArtifactRunDirectory(this.storageDir, runId), { recursive: true, force: true });
     }
 
     async openRunFile(
@@ -47,11 +49,11 @@ export class ControlArtifactStorage {
     ): Promise<ReadableStream<Uint8Array> | undefined> {
         const path = `${toArtifactRunDirectory(this.storageDir, runId)}/${fileName}`;
         try {
-            const file = await Deno.open(path, { read: true });
-            return file.readable;
+            await stat(path);
+            return Bun.file(path).stream();
         }
         catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
+            if (!isNotFound(error)) {
                 const message = error instanceof Error ? error.message : String(error);
                 console.warn(`Could not read control artifact ${path}: ${message}`);
             }
@@ -68,7 +70,7 @@ export class ControlArtifactStorage {
         }
         try {
             const path = `${toArtifactRunDirectory(this.storageDir, identity.runId)}/result-receipts.jsonl`;
-            const text = await Deno.readTextFile(path);
+            const text = await readFile(path, 'utf8');
             if (this.failedCaptureRuns.has(identity.runId)) {
                 return Either.ofLeft('Artifact capture became incomplete while reading durable receipts.');
             }
@@ -136,26 +138,30 @@ export function toArtifactRunDirectory(storageDir: string, runId: string): strin
     return `${storageDir.replace(/\/+$/, '')}/runs/${toRunDirectoryName(runId)}`;
 }
 
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
 interface ArtifactJsonlWrite {
     readonly fileName: 'events.jsonl' | 'results.jsonl' | 'result-receipts.jsonl';
     readonly text: string;
 }
 
 async function writeArtifactJsonl(runDirectory: string, writes: readonly ArtifactJsonlWrite[]): Promise<void> {
-    await Deno.mkdir(runDirectory, { recursive: true });
+    await mkdir(runDirectory, { recursive: true });
     for (const write of writes) {
         if (write.text.length === 0) {
             continue;
         }
         const path = `${runDirectory}/${write.fileName}`;
-        await Deno.writeTextFile(path, write.text, { append: true, create: true });
-        using file = await Deno.open(path, { write: true });
+        await appendFile(path, write.text, 'utf8');
+        await using file = await open(path, 'r+');
         await file.sync();
     }
     const parent = runDirectory.slice(0, runDirectory.lastIndexOf('/'));
     const storage = parent.slice(0, parent.lastIndexOf('/'));
     for (const path of [runDirectory, parent, storage]) {
-        using directory = await Deno.open(path, { read: true });
+        await using directory = await open(path, 'r');
         await directory.sync();
     }
 }

@@ -1,4 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
@@ -36,7 +37,7 @@ const TOPOLOGY_MUTATION_CASES = [
     { method: 'POST', path: 'reconfigure', body: { publish: false } }
 ] as const;
 
-Deno.test('topology mutations expose only path-owned request identities', async () => {
+test('topology mutations expose only path-owned request identities', async () => {
     const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
@@ -80,7 +81,7 @@ Deno.test('topology mutations expose only path-owned request identities', async 
     );
 });
 
-Deno.test('scoped graph routes pass scope and group refs to diagnostics', async () => {
+test('scoped graph routes pass scope and group refs to diagnostics', async () => {
     const calls: object[] = [];
     const group = createGroupSnapshot('room-1', ['owner']);
     const app = createRouteApp({
@@ -132,7 +133,7 @@ Deno.test('scoped graph routes pass scope and group refs to diagnostics', async 
     ]);
 });
 
-Deno.test('strict read auth allows active members and rejects non-members', async () => {
+test('strict read auth allows active members and rejects non-members', async () => {
     const intruderApp = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
         session: createIssuedSession('intruder', 'intruder-session'),
@@ -161,7 +162,7 @@ Deno.test('strict read auth allows active members and rejects non-members', asyn
     assert.equal(allowed.status, 200);
 });
 
-Deno.test('strict graph and topology policy uses one durable current snapshot', async () => {
+test('strict graph and topology policy uses one durable current snapshot', async () => {
     let durableReads = 0;
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
@@ -179,7 +180,7 @@ Deno.test('strict graph and topology policy uses one durable current snapshot', 
     assert.equal(durableReads, 1);
 });
 
-Deno.test('strict read auth rejects unauthenticated scoped global graph diagnostics', async () => {
+test('strict read auth rejects unauthenticated scoped global graph diagnostics', async () => {
     let authCalls = 0;
     const app = createRouteApp({
         strictReadAuthorization: true,
@@ -197,7 +198,7 @@ Deno.test('strict read auth rejects unauthenticated scoped global graph diagnost
     assert.equal(authCalls, 1);
 });
 
-Deno.test('topology writes require group manager or platform admin auth', async () => {
+test('topology writes require group manager or platform admin auth', async () => {
     const memberApp = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner', 'member']),
         session: createIssuedSession('member', 'member-session')
@@ -268,7 +269,7 @@ Deno.test('topology writes require group manager or platform admin auth', async 
     );
 });
 
-Deno.test('all topology mutation routes submit complete AppInbox commands', async () => {
+test('all topology mutation routes submit complete AppInbox commands', async () => {
     const appInboxCommands: Array<{
         authority: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[0];
         enqueue: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1];
@@ -353,7 +354,7 @@ Deno.test('all topology mutation routes submit complete AppInbox commands', asyn
     }
 });
 
-Deno.test('topology AppInbox reservations preserve scoped target components', async () => {
+test('topology AppInbox reservations preserve scoped target components', async () => {
     const contexts: Array<Readonly<{ callerId: string; groupRef: GroupRef; }>> = [];
     const refs = [
         { applicationId: 'app:a', workspaceId: 'workspace', groupId: 'room' },
@@ -398,7 +399,7 @@ Deno.test('topology AppInbox reservations preserve scoped target components', as
     assert.notDeepEqual(contexts[0], contexts[1]);
 });
 
-Deno.test(
+test(
     'topology mutations return after commit while explicit reconfigure forwards options',
     async () => {
         const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
@@ -473,7 +474,7 @@ Deno.test(
     }
 );
 
-Deno.test('all noncanonical topology mutation paths return 404 without enqueue', async () => {
+test('all noncanonical topology mutation paths return 404 without enqueue', async () => {
     const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
@@ -506,7 +507,7 @@ Deno.test('all noncanonical topology mutation paths return 404 without enqueue',
     assert.deepEqual(calls, []);
 });
 
-Deno.test('all topology mutation routes reject header and body request identities', async () => {
+test('all topology mutation routes reject header and body request identities', async () => {
     const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
@@ -569,7 +570,7 @@ Deno.test('all topology mutation routes reject header and body request identitie
     assert.deepEqual(calls, []);
 });
 
-Deno.test('graph topology routes map missing groups and validation errors', async () => {
+test('graph topology routes map missing groups and validation errors', async () => {
     const missingApp = createRouteApp({ group: undefined });
     const missing = await missingApp.request(
         '/api/state/apps/app-1/workspaces/workspace-1/groups/missing/topology'
@@ -1000,7 +1001,7 @@ function authorityFingerprintFor(group: GroupSnapshot): string {
     });
 }
 
-Deno.test('formation view reports nothing stale and nothing pending without an accepted layout', async () => {
+test('formation view reports nothing stale and nothing pending without an accepted layout', async () => {
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
         topologyQuery: topologyQueryWithPlanned(1),
@@ -1013,7 +1014,7 @@ Deno.test('formation view reports nothing stale and nothing pending without an a
     assert.equal(view.pending, null);
 });
 
-Deno.test('formation view latches layoutStale when the planned fingerprint trails the authority', async () => {
+test('formation view latches layoutStale when the planned fingerprint trails the authority', async () => {
     const app = createRouteApp({
         group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
@@ -1025,7 +1026,7 @@ Deno.test('formation view latches layoutStale when the planned fingerprint trail
     assert.equal(view.layoutStale, true);
 });
 
-Deno.test('formation view clears layoutStale when the group runs on the planned layout the authority matches', async () => {
+test('formation view clears layoutStale when the group runs on the planned layout the authority matches', async () => {
     const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
     const app = createRouteApp({
         group,
@@ -1038,7 +1039,7 @@ Deno.test('formation view clears layoutStale when the group runs on the planned 
     assert.equal(view.layoutStale, false);
 });
 
-Deno.test('formation view latches layoutStale while a newer planned layout awaits application', async () => {
+test('formation view latches layoutStale while a newer planned layout awaits application', async () => {
     const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
     const app = createRouteApp({
         group,
@@ -1051,7 +1052,7 @@ Deno.test('formation view latches layoutStale while a newer planned layout await
     assert.equal(view.layoutStale, true);
 });
 
-Deno.test('formation view reports the condition of the accepted layout it names as the basis', async () => {
+test('formation view reports the condition of the accepted layout it names as the basis', async () => {
     const app = createRouteApp({
         group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version)
@@ -1068,7 +1069,7 @@ Deno.test('formation view reports the condition of the accepted layout it names 
 // The status writer owns the dwell, so `degraded` exists only where a clock
 // has observed it. The read publishes the stored condition rather than
 // recomputing one it could never reach.
-Deno.test('formation view publishes the stored condition for the current series', async () => {
+test('formation view publishes the stored condition for the current series', async () => {
     const app = createRouteApp({
         group: withActivationStatus(
             withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
@@ -1084,7 +1085,7 @@ Deno.test('formation view publishes the stored condition for the current series'
 
 // A status whose basis the group has replaced describes a layout it has moved
 // past, so publishing it would report coverage of a layout carrying no traffic.
-Deno.test('formation view ignores a stored condition from a superseded basis', async () => {
+test('formation view ignores a stored condition from a superseded basis', async () => {
     const app = createRouteApp({
         group: withActivationStatus(
             withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
@@ -1103,7 +1104,7 @@ Deno.test('formation view ignores a stored condition from a superseded basis', a
 
 // Before first activation the basis is the candidate the group is dialing;
 // a stage that dials nothing has no basis and claims no coverage.
-Deno.test('formation view names the dialed candidate as the basis before the first activation', async () => {
+test('formation view names the dialed candidate as the basis before the first activation', async () => {
     const app = createRouteApp({
         group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'connecting'),
         topologyQuery: topologyQueryWithPlanned(4)
@@ -1115,7 +1116,7 @@ Deno.test('formation view names the dialed candidate as the basis before the fir
     assert.equal(view.condition, 'active');
 });
 
-Deno.test('formation view names no basis in a stage that dials nothing', async () => {
+test('formation view names no basis in a stage that dials nothing', async () => {
     const app = createRouteApp({
         group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'planned'),
         topologyQuery: topologyQueryWithPlanned(4)
@@ -1129,7 +1130,7 @@ Deno.test('formation view names no basis in a stage that dials nothing', async (
 
 // The whole policy-answered surface fails closed together: no manager, no
 // budget, no coverage basis, and no claim about replanning.
-Deno.test('formation view claims nothing the stored policy cannot answer', async () => {
+test('formation view claims nothing the stored policy cannot answer', async () => {
     const app = createRouteApp({
         group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
         topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version),
@@ -1148,7 +1149,7 @@ Deno.test('formation view claims nothing the stored policy cannot answer', async
     assert.equal(view.remediation, 'awaiting-application');
 });
 
-Deno.test('formation view reports no obligation under an unreadable policy with nothing stale', async () => {
+test('formation view reports no obligation under an unreadable policy with nothing stale', async () => {
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
         topologyQuery: topologyQueryWithPlanned(1),
@@ -1163,7 +1164,7 @@ Deno.test('formation view reports no obligation under an unreadable policy with 
 
 // A parked series reads failed on the condition axis and hands the next move
 // to the application.
-Deno.test('formation view reports a parked series as failed and awaiting the application', async () => {
+test('formation view reports a parked series as failed and awaiting the application', async () => {
     const parked = withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'dormant');
     const app = createRouteApp({
         group: { ...parked, group: { ...parked.group, formationAttemptCount: 1 } },
@@ -1176,7 +1177,7 @@ Deno.test('formation view reports a parked series as failed and awaiting the app
     assert.equal(view.remediation, 'awaiting-application');
 });
 
-Deno.test('formation view hands a stale layout to the application only under commanded replanning', async () => {
+test('formation view hands a stale layout to the application only under commanded replanning', async () => {
     const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
     const app = createRouteApp({
         group,
@@ -1194,7 +1195,7 @@ Deno.test('formation view hands a stale layout to the application only under com
 // The condition must measure the layout the basis names. A held candidate
 // runs ahead of the accepted layout, so measuring the planned slot reports a
 // number about a layout the group is not carrying traffic on.
-Deno.test('formation view measures the accepted layout, not the candidate running ahead of it', async () => {
+test('formation view measures the accepted layout, not the candidate running ahead of it', async () => {
     const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
     const accepted = layoutWithEdge(groupRef, ACCEPTED_IDENTITY.version, 'session-b');
     const group = withAcceptedLayout(createGroupSnapshot('room-1', ['owner']));
@@ -1211,7 +1212,7 @@ Deno.test('formation view measures the accepted layout, not the candidate runnin
     assert.equal(view.condition, 'active');
 });
 
-Deno.test('formation view reports a partly dialed candidate as initialising', async () => {
+test('formation view reports a partly dialed candidate as initialising', async () => {
     const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
     const app = createRouteApp({
         group: withLifecycleState(createGroupSnapshot('room-1', ['owner']), 'connecting'),
@@ -1228,7 +1229,7 @@ Deno.test('formation view reports a partly dialed candidate as initialising', as
 
 // A torn-down plan has an empty edge set, which reads as trivially complete;
 // the criterion path refuses to petition from one for the same reason.
-Deno.test('formation view claims no coverage against a torn-down plan', async () => {
+test('formation view claims no coverage against a torn-down plan', async () => {
     const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
     const removedLayout: RallarOverlayTopologySnapshot = {
         ...layoutWithEdge(groupRef, 7, 'session-b'),
@@ -1249,7 +1250,7 @@ Deno.test('formation view claims no coverage against a torn-down plan', async ()
 
 // Without the accepted snapshot loaded there is nothing to measure the named
 // basis on, so the surface reports no coverage rather than the wrong layout's.
-Deno.test('formation view claims no coverage when the accepted layout is not loaded', async () => {
+test('formation view claims no coverage when the accepted layout is not loaded', async () => {
     const groupRef = { ...TEST_SCOPE, groupId: 'room-1' };
     const app = createRouteApp({
         group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
@@ -1264,7 +1265,7 @@ Deno.test('formation view claims no coverage when the accepted layout is not loa
     assert.equal(view.condition, 'inactive');
 });
 
-Deno.test('formation view carries the queued replan the topology view reports', async () => {
+test('formation view carries the queued replan the topology view reports', async () => {
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
         topologyQuery: topologyQueryWithPlanned(1, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 })

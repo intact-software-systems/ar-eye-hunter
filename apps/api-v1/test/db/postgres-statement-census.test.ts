@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -9,7 +10,7 @@ interface ManualTimers extends Timers {
     runDue(): void;
 }
 
-Deno.test('the census emits one statement-census line per interval that saw statements, and none after its stop', () => {
+test('the census emits one statement-census line per interval that saw statements, and none after its stop', () => {
     const census = new PostgresStatementCensus();
     const events: RallarTimingEvent[] = [];
     const timers = createManualTimers();
@@ -50,7 +51,7 @@ Deno.test('the census emits one statement-census line per interval that saw stat
     assert.equal(events.length, 1);
 });
 
-Deno.test('a shape is the whole statement text, parameters as marks, with whitespace collapsed', () => {
+test('a shape is the whole statement text, parameters as marks, with whitespace collapsed', () => {
     const census = new PostgresStatementCensus();
     const text = `select ${'column_name, '.repeat(20)}`;
 
@@ -63,7 +64,7 @@ Deno.test('a shape is the whole statement text, parameters as marks, with whites
     ]);
 });
 
-Deno.test('statements whose texts share their first sixty characters stay two shapes, each truncated only on its line', () => {
+test('statements whose texts share their first sixty characters stay two shapes, each truncated only on its line', () => {
     const census = new PostgresStatementCensus();
     const events: RallarTimingEvent[] = [];
     const timers = createManualTimers();
@@ -79,7 +80,7 @@ Deno.test('statements whose texts share their first sixty characters stay two sh
     assert.deepEqual(shapes.map(({ shape }) => shape.length), [60, 60]);
 });
 
-Deno.test('a parameter counts its scalar text: an array its scalar elements, a structured value nothing', () => {
+test('a parameter counts its scalar text: an array its scalar elements, a structured value nothing', () => {
     const census = new PostgresStatementCensus();
 
     census.record({

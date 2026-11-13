@@ -12,6 +12,7 @@ import {
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_LIVE_API_BASE_URL,
     rtcConnectReadiness
 } from './live-rtc-setup.ts';
@@ -39,7 +40,7 @@ export function createRallarBlackBoxRtcSmokeRecipe(
                 requestPrefix: 'rtc-smoke',
                 group,
                 actor,
-                timeoutMs: 5_000
+                timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
             }),
             toSmokeConnectCommand({ options, group, roomRef, actor, connection }),
             toSmokeSendCommand({ options, group, roomRef, actor, connection }),
@@ -83,7 +84,7 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                 requestPrefix: 'provider-parity',
                 group,
                 actor,
-                timeoutMs: 5_000
+                timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
             }),
             ...scopedCommands
         ]

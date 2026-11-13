@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {

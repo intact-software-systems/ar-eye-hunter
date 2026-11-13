@@ -17,7 +17,7 @@ require Playwright, browser providers, or RTC connections.
 ## API-v1 Managed Topology
 
 Memory mode manages one API process. Built-in Postgres cluster profiles manage
-three Postgres-backed API processes: three Deno API processes sharing one
+three Postgres-backed API processes: three Bun API processes sharing one
 Postgres database on ports 18080, 18081, and 18082, with isolated `api-v1-server.log`,
 `api-v1-server-secondary.log`, and `api-v1-server-tertiary.log` artifacts.
 Recipes-only mode is externally managed and starts no API process.

@@ -9,8 +9,8 @@ import {
 
 import type { PSqlParameter } from '@shared-server/postgres/p-sql-sql.ts';
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
-import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { PSqlResourceInboxReservationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-reservation-repository.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -107,8 +107,10 @@ it('binds one topic inventory per SQL operation while preserving exact topic and
     const sql = new Proxy(storage.sql, {
         apply(target, receiver, args: PSqlParameter[]) {
             if (Array.isArray(args[0]) && Object.hasOwn(args[0], 'raw')) {
-                boundTopicCounts.push(args.slice(1).flatMap((value) => Array.isArray(value) ? value : [value])
-                    .filter((value) => typeof value === 'string' && topics.has(value)).length);
+                boundTopicCounts.push(
+                    args.slice(1).flatMap((value) => Array.isArray(value) ? value : [value])
+                        .filter((value) => typeof value === 'string' && topics.has(value)).length
+                );
             }
             return Reflect.apply(target, receiver, args);
         }

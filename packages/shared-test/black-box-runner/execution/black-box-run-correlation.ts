@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { isRecord } from './black-box-redaction.ts';
 
 export interface RunnerCorrelationConfig {

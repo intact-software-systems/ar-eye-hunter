@@ -1,8 +1,8 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarWebRtcWebSocketSignalingProvider } from '../../../shared-test/black-box-runner/rallar-webrtc-runtime.ts';
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider reports clear failure when signalingUrl is missing', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider reports clear failure when signalingUrl is missing', async () => {
     const provider = createRallarWebRtcWebSocketSignalingProvider({ now: Date.now });
 
     const report = await executeBlackBox(
@@ -32,16 +32,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider reports clear failure wh
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAliceWithoutSignalingUrl[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAliceWithoutSignalingUrl[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAliceWithoutSignalingUrl[0].actual.exception,
-        'Rallar WebRTC signalingUrl is required for connection: aliceRtc'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAliceWithoutSignalingUrl[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAliceWithoutSignalingUrl[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAliceWithoutSignalingUrl[0].actual.exception).toEqual('Rallar WebRTC signalingUrl is required for connection: aliceRtc');
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider can use global WebSocket for signaling-only connect close', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider can use global WebSocket for signaling-only connect close', async () => {
     const originalWebSocket = globalThis.WebSocket;
     const createdUrls: string[] = [];
     const sentWireMessages: string[] = [];
@@ -157,27 +154,27 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider can use global WebSocket
             }
         );
 
-        assertEquals(report.summary.failure, 0);
-        assertEquals(createdUrls, ['ws://localhost:8080/ws']);
-        assertEquals(sentWireMessages, [
+        expect(report.summary.failure).toEqual(0);
+        expect(createdUrls).toEqual(['ws://localhost:8080/ws']);
+        expect(sentWireMessages).toEqual([
             '{"type":"offer","from":"alice","to":"bob"}'
         ]);
-        assertEquals(closeEvents, [
+        expect(closeEvents).toEqual([
             {
                 code: 1000,
                 reason: 'fake websocket closed'
             }
         ]);
-        assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-        assertEquals(report.resultsByName.aliceReceivesFakeWebSocketAnswer[0].status, 'SUCCESS');
-        assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
+        expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+        expect(report.resultsByName.aliceReceivesFakeWebSocketAnswer[0].status).toEqual('SUCCESS');
+        expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
     }
     finally {
         globalThis.WebSocket = originalWebSocket;
     }
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider supports codec and connect message hooks', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider supports codec and connect message hooks', async () => {
     const originalWebSocket = globalThis.WebSocket;
     const sentWireMessages: string[] = [];
 
@@ -297,20 +294,20 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider supports codec and conne
             }
         );
 
-        assertEquals(report.summary.failure, 0);
-        assertEquals(sentWireMessages, [
+        expect(report.summary.failure).toEqual(0);
+        expect(sentWireMessages).toEqual([
             'wire:join:alice:room-1',
             'wire:offer:alice:bob'
         ]);
-        assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-        assertEquals(report.resultsByName.aliceReceivesHookDecodedAnswer[0].status, 'SUCCESS');
+        expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+        expect(report.resultsByName.aliceReceivesHookDecodedAnswer[0].status).toEqual('SUCCESS');
     }
     finally {
         globalThis.WebSocket = originalWebSocket;
     }
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider can wait for fake WebSocket open', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider can wait for fake WebSocket open', async () => {
     const originalWebSocket = globalThis.WebSocket;
     const createdSockets: FakeWebSocket[] = [];
     const sentWireMessages: string[] = [];
@@ -383,7 +380,7 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider can wait for fake WebSoc
             }
         );
 
-        assertEquals(sentWireMessages, []);
+        expect(sentWireMessages).toEqual([]);
 
         setTimeout(() => {
             const socket = createdSockets[0];
@@ -395,21 +392,21 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider can wait for fake WebSoc
 
         const report = await reportPromise;
 
-        assertEquals(report.summary.failure, 0);
-        assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-        assertEquals(sentWireMessages, [
+        expect(report.summary.failure).toEqual(0);
+        expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+        expect(sentWireMessages).toEqual([
             '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
         ]);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.topic, 'rallar.webrtc.signaling.connected');
-        assertEquals(report.rtcMessages.aliceRtc[0].data.opened, true);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.readyState, 'open');
+        expect(report.rtcMessages.aliceRtc[0].data.topic).toEqual('rallar.webrtc.signaling.connected');
+        expect(report.rtcMessages.aliceRtc[0].data.opened).toEqual(true);
+        expect(report.rtcMessages.aliceRtc[0].data.readyState).toEqual('open');
     }
     finally {
         globalThis.WebSocket = originalWebSocket;
     }
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider waits for fake WebSocket open by default', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider waits for fake WebSocket open by default', async () => {
     const originalWebSocket = globalThis.WebSocket;
     const createdSockets: FakeWebSocket[] = [];
     const sentWireMessages: string[] = [];
@@ -481,7 +478,7 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider waits for fake WebSocket
             }
         );
 
-        assertEquals(sentWireMessages, []);
+        expect(sentWireMessages).toEqual([]);
 
         setTimeout(() => {
             const socket = createdSockets[0];
@@ -493,20 +490,20 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider waits for fake WebSocket
 
         const report = await reportPromise;
 
-        assertEquals(report.summary.failure, 0);
-        assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-        assertEquals(sentWireMessages, [
+        expect(report.summary.failure).toEqual(0);
+        expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+        expect(sentWireMessages).toEqual([
             '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
         ]);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.opened, true);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.readyState, 'open');
+        expect(report.rtcMessages.aliceRtc[0].data.opened).toEqual(true);
+        expect(report.rtcMessages.aliceRtc[0].data.readyState).toEqual('open');
     }
     finally {
         globalThis.WebSocket = originalWebSocket;
     }
 });
 
-Deno.test('createRallarWebRtcWebSocketSignalingProvider can disable default waitForOpen', async () => {
+test('createRallarWebRtcWebSocketSignalingProvider can disable default waitForOpen', async () => {
     const originalWebSocket = globalThis.WebSocket;
     const sentWireMessages: string[] = [];
 
@@ -577,13 +574,13 @@ Deno.test('createRallarWebRtcWebSocketSignalingProvider can disable default wait
             }
         );
 
-        assertEquals(report.summary.failure, 0);
-        assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-        assertEquals(sentWireMessages, [
+        expect(report.summary.failure).toEqual(0);
+        expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+        expect(sentWireMessages).toEqual([
             '{"topic":"rallar.existing.signaling.join","payload":{"peerId":"alice","roomId":"room-1"}}'
         ]);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.opened, false);
-        assertEquals(report.rtcMessages.aliceRtc[0].data.readyState, 'connecting');
+        expect(report.rtcMessages.aliceRtc[0].data.opened).toEqual(false);
+        expect(report.rtcMessages.aliceRtc[0].data.readyState).toEqual('connecting');
     }
     finally {
         globalThis.WebSocket = originalWebSocket;

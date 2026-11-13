@@ -1,4 +1,4 @@
-import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Next } from 'hono';
 
 import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { AL_TRACE_ID_HTTP_HEADER, decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';

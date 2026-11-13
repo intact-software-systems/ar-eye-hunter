@@ -1,5 +1,6 @@
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
+import { upgradeWebSocket } from 'hono/bun';
 import {
     registerTournamentRoutes,
     type TournamentRouteDependencies
@@ -137,7 +138,7 @@ export interface ApiV1RouteInstallerOperations<Runtime extends ApiV1RouteInstall
         sessionId: string,
         repository: Runtime['authSessionRepository']
     ) => Promise<PersistedAuthSession | undefined>;
-    readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
+    readonly upgradeWebSocket: wsRoutes.RegisterWsRoutesInput['upgradeWebSocket'];
 }
 
 interface ApiV1RouteConstruction<
@@ -324,5 +325,5 @@ const PRODUCTION_OPERATIONS: ApiV1RouteInstallerOperations<ApiV1Runtime> = {
     readWsConnectTicket: async (ticketDigest, repository) =>
         (await repository.findWebSocketTicketByDigestEntry(ticketDigest))?.value,
     readWsConnectSession: (sessionId, repository) => repository.findBySessionId(sessionId),
-    upgradeWebSocket: (request) => Deno.upgradeWebSocket(request)
+    upgradeWebSocket
 };

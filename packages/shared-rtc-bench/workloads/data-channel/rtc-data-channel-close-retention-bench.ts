@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { createRtcBenchmarkPeerConnection } from '../native-rtc/rtc-benchmark-native-peer.ts';
 
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
@@ -305,7 +307,7 @@ function isDiagnosticOutput(out: string): boolean {
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcDataChannelCloseRetentionArguments(Deno.args);
+    const parsed = parseRtcDataChannelCloseRetentionArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -327,12 +329,12 @@ async function main(): Promise<void> {
             ...(await runRtcDataChannelCloseRetention(parsed.value.input.queueDepth))
         });
     }
-    await Deno.writeTextFile(
+    await writeFile(
         parsed.value.out,
         `${
             JSON.stringify(
                 {
-                    command: Deno.args,
+                    command: process.argv.slice(2),
                     queueItems: parsed.value.input.queueDepth,
                     runs: parsed.value.input.runs,
                     results
@@ -341,7 +343,7 @@ async function main(): Promise<void> {
                 2
             )
         }\n`,
-        { createNew: true }
+        { encoding: 'utf8', flag: 'wx' }
     );
     writeLine(
         JSON.stringify(

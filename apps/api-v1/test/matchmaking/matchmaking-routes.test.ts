@@ -2,13 +2,14 @@ import { authenticationRequired } from '@shared-server/http/request-auth-service
 import type { MatchmakingCommand } from '@shared-server/rallar-system/matchmaking/matchmaking-command.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RateLimiterPolicy } from '@shared/resilience/rate-limiter.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { registerMatchmakingRoutes, type MatchmakingRouteDependencies } from '../../src/matchmaking/register-matchmaking-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
 
 const path = '/api/matchmaking/apps/game/workspaces/default';
 
-Deno.test('matchmaking reads and commands bind scope and account to the authenticated HTTP boundary', async () => {
+test('matchmaking reads and commands bind scope and account to the authenticated HTTP boundary', async () => {
     const app = createTracedApiTestApp();
     const commands: MatchmakingCommand[] = [];
     registerMatchmakingRoutes(app, {
@@ -64,7 +65,7 @@ Deno.test('matchmaking reads and commands bind scope and account to the authenti
     assert.deepEqual(commands[1], { ...commands[0], requestId: 'start-party-request-1', request: partyRequest });
 });
 
-Deno.test('matchmaking requires authentication and rejects caller-supplied authority, policy and private expiry actions', async () => {
+test('matchmaking requires authentication and rejects caller-supplied authority, policy and private expiry actions', async () => {
     const app = createTracedApiTestApp();
     registerMatchmakingRoutes(app, { ...dependencies(), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
     assert.equal((await app.request(path)).status, 401);

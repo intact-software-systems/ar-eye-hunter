@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
@@ -47,6 +48,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
 import {
     readPGliteDatabaseEpochMs,
@@ -83,7 +85,7 @@ interface ProcessedTopologyCommand {
     readonly result: Either<AppInboxFailure, TopologyAppInboxResult>;
 }
 
-Deno.test(
+test(
     'PGlite AppGroup reuses the first durable topology command and rejects divergent stable identity',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -520,7 +522,7 @@ Deno.test(
             const wsServer = new JsonWebSocketServer();
             const wsSocket = new PGliteTestSocket();
             const wsConnection = new ConnectionContext({ id: authority.sessionId, socket: wsSocket });
-            wsServer.addConnection(wsConnection);
+            attachTestWebSocket(wsServer, wsConnection);
             const wsService = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
                 outbox: new InMemoryQueueBox(new Map()),
@@ -598,7 +600,8 @@ Deno.test(
                     clearTimeout(captureDeadline);
                 }
 
-                wsServer.addConnection(
+                attachTestWebSocket(
+                    wsServer,
                     new ConnectionContext({
                         id: authority.sessionId,
                         socket: new PGliteTestSocket()

@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -17,7 +18,7 @@ const GRANTED_TOPIC = 'room.feed';
 const SERVER_PEER_ID = 'ws-server';
 const PRINCIPAL_IDS = ['alice', 'bob', 'carol', 'dave'];
 
-Deno.test('a members row passes the durable filter only', async () => {
+test('a members row passes the durable filter only', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage('alice', 'room.chat'), ['bob', 'carol']),
         capturedConnectionGenerationIds: null,
@@ -27,7 +28,7 @@ Deno.test('a members row passes the durable filter only', async () => {
     assert.deepEqual(eligible, ['bob', 'carol']);
 });
 
-Deno.test('a captured generation equal to the current one is kept, a differing or absent one is dropped', async () => {
+test('a captured generation equal to the current one is kept, a differing or absent one is dropped', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage('alice'), ['alice', 'bob', 'dave']),
         // alice re-subscribed under a new generation after the row was routed; dave was captured with none.
@@ -37,7 +38,7 @@ Deno.test('a captured generation equal to the current one is kept, a differing o
     assert.deepEqual(eligible, ['bob']);
 });
 
-Deno.test('a granted row without captured generations reaches nobody and reads no publication authority', async () => {
+test('a granted row without captured generations reaches nobody and reads no publication authority', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage('alice'), ['bob']),
         capturedConnectionGenerationIds: null,
@@ -47,7 +48,7 @@ Deno.test('a granted row without captured generations reaches nobody and reads n
     assert.deepEqual(eligible, []);
 });
 
-Deno.test('a granted row reaches a durable eligible subscriber only while its live subscription stands', async () => {
+test('a granted row reaches a durable eligible subscriber only while its live subscription stands', async () => {
     const authority = grantedAuthority();
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage('alice'), ['bob', 'dave']),
@@ -57,14 +58,14 @@ Deno.test('a granted row reaches a durable eligible subscriber only while its li
     assert.deepEqual(eligible, ['dave']);
 });
 
-Deno.test('a granted row from a publish-granted session reaches the durable eligible subscribers alone', async () => {
+test('a granted row from a publish-granted session reaches the durable eligible subscribers alone', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds(portInput(feedMessage('alice'), ['bob', 'carol']));
 
     // carol holds no subscribe grant; dave subscribes but the durable filter found no current socket for him.
     assert.deepEqual(eligible, ['bob']);
 });
 
-Deno.test('a granted row whose publisher lost its publish grant reaches nobody', async () => {
+test('a granted row whose publisher lost its publish grant reaches nobody', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage('alice'), ['bob', 'carol']),
         readPublicationAuthority: () => Promise.resolve(grantedAuthority({ alice: { publish: false, subscribe: false } }))
@@ -73,7 +74,7 @@ Deno.test('a granted row whose publisher lost its publish grant reaches nobody',
     assert.deepEqual(eligible, []);
 });
 
-Deno.test('a server-origin granted row re-checks the subscribe half only', async () => {
+test('a server-origin granted row re-checks the subscribe half only', async () => {
     const eligible = await filterGrantedWsRecipientSessionIds({
         ...portInput(feedMessage(SERVER_PEER_ID), ['alice', 'bob', 'carol']),
         readPublicationAuthority: () => Promise.resolve(grantedAuthority({ bob: { publish: false, subscribe: false } }))
@@ -82,7 +83,7 @@ Deno.test('a server-origin granted row re-checks the subscribe half only', async
     assert.deepEqual(eligible, ['alice']);
 });
 
-Deno.test('a granted row rejects when the authority read fails, so its step sends nothing and retries', async () => {
+test('a granted row rejects when the authority read fails, so its step sends nothing and retries', async () => {
     await assert.rejects(
         filterGrantedWsRecipientSessionIds({
             ...portInput(feedMessage('alice'), ['bob']),
@@ -91,7 +92,7 @@ Deno.test('a granted row rejects when the authority read fails, so its step send
     );
 });
 
-Deno.test('a granted row whose read finds no current snapshot of its room, or a foreign one, reaches nobody', async () => {
+test('a granted row whose read finds no current snapshot of its room, or a foreign one, reaches nobody', async () => {
     const foreign = grantedAuthority();
     for (
         const read of [

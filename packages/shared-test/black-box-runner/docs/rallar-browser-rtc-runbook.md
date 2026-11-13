@@ -63,7 +63,7 @@ The replacement string must not contain unescaped commas because the current CLI
 Iteration 9 adds a wrapper that runs the provider-mode live validation scenarios through the normal scenario CLI:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=dry-run \
   --transport=both
 ```
@@ -109,7 +109,7 @@ Optional variables:
 To capture redacted CI artifacts:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=both \
   --transport=both \
   --record-dir=.artifacts/rallar-browser-rtc
@@ -122,7 +122,7 @@ The wrapper redacts password fields and known password environment values before
 Use dry-run before live browser runs. This checks scenario expansion and RTC provider registration without invoking browser/network transports:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
   -n \
   -r "rallarApiBaseUrl:=${RALLAR_API_BASE_URL},roomId:=${RALLAR_ROOM_ID},aliceUsername:=${RALLAR_ALICE_USERNAME},alicePassword:=${RALLAR_ALICE_PASSWORD},bobUsername:=${RALLAR_BOB_USERNAME},bobPassword:=${RALLAR_BOB_PASSWORD}"
@@ -131,7 +131,7 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 To inspect the executable interactions instead of running the engine:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
   -e dry \
   -r "rallarApiBaseUrl:=${RALLAR_API_BASE_URL},roomId:=${RALLAR_ROOM_ID},aliceUsername:=${RALLAR_ALICE_USERNAME},alicePassword:=${RALLAR_ALICE_PASSWORD},bobUsername:=${RALLAR_BOB_USERNAME},bobPassword:=${RALLAR_BOB_PASSWORD}"
@@ -142,7 +142,7 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 Run browser-backed realtime data-channel delivery:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-realtime.json \
   -r "rallarApiBaseUrl:=${RALLAR_API_BASE_URL},roomId:=${RALLAR_ROOM_ID},aliceUsername:=${RALLAR_ALICE_USERNAME},alicePassword:=${RALLAR_ALICE_PASSWORD},bobUsername:=${RALLAR_BOB_USERNAME},bobPassword:=${RALLAR_BOB_PASSWORD}"
 ```
@@ -168,7 +168,7 @@ Run browser-backed Rallar app-level RTC messages:
 export RALLAR_MESSAGE_TYPE_ID="black-box.chat.message"
 export RALLAR_TOPIC_ID="black-box.chat"
 
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-browser-messages-rtc.json \
   -r "rallarApiBaseUrl:=${RALLAR_API_BASE_URL},roomId:=${RALLAR_ROOM_ID},aliceUsername:=${RALLAR_ALICE_USERNAME},alicePassword:=${RALLAR_ALICE_PASSWORD},bobUsername:=${RALLAR_BOB_USERNAME},bobPassword:=${RALLAR_BOB_PASSWORD},messageTypeId:=${RALLAR_MESSAGE_TYPE_ID},topicId:=${RALLAR_TOPIC_ID}"
 ```
@@ -246,7 +246,7 @@ Recommended CI sequence for live RTC jobs:
 ```bash
 npm ci
 npx playwright install --with-deps chromium
-deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
   --mode=both \
   --transport=both \
   --record-dir=.artifacts/rallar-browser-rtc
@@ -260,7 +260,7 @@ Current support can run repeated short validations for hours by looping the vali
 
 ```bash
 while true; do
-  deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
+  bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts \
     --mode=live \
     --transport=both \
     --record-dir=".artifacts/rallar-browser-rtc/$(date +%Y%m%d-%H%M%S)"

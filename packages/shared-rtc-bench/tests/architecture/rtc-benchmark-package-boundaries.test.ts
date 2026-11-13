@@ -18,7 +18,6 @@ const performanceScriptRoots = ['scripts/platform/perf', 'apps/api-v1/scripts/pe
 const approvedRepositoryImportPrefixes = ['@shared/', '@shared-web/', '@shared-server/'] as const;
 const approvedExternalImports = new Set([
     '@playwright/test',
-    '@std/path',
     'fflate',
     'graphology',
     'postgres',
@@ -149,7 +148,6 @@ describe('shared RTC benchmark package boundaries', () => {
                 '@shared-server/runtime-state/example.ts',
                 'node:path',
                 '@playwright/test',
-                '@std/path',
                 'fflate',
                 'graphology',
                 'postgres',

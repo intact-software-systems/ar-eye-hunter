@@ -59,9 +59,6 @@ export interface TopologyMutationWorkerHandle {
     readonly done: Promise<TopologyMutationWorkerOutput>;
 }
 
-const ROOT_DENO_CONFIG_PATH = fileURLToPath(
-    new URL('../../../../../../deno.json', import.meta.url)
-);
 const STATE_MUTATION_WORKER_PATH = fileURLToPath(
     new URL('../../../integration/postgres/test-support/postgres-expiry-worker.ts', import.meta.url)
 );
@@ -71,15 +68,9 @@ export function spawnTopologyMutationWorker(
     input: TopologyMutationWorkerInput
 ): TopologyMutationWorkerHandle {
     const child = spawn(
-        process.env.DENO_BIN ?? 'deno',
+        process.env.BUN_BIN ?? 'bun',
         [
             'run',
-            '-A',
-            '--unstable-temporal',
-            '--node-modules-dir=none',
-            '--no-lock',
-            '--config',
-            ROOT_DENO_CONFIG_PATH,
             STATE_MUTATION_WORKER_PATH
         ],
         {

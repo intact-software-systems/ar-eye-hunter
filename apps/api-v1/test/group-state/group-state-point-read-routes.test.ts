@@ -1,10 +1,11 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createGroupStateRouteAuthSession, createGroupStateRouteSnapshot, createGroupStateRouteTestRuntime } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
 
-Deno.test('group point reads expose the authoritative causal pair and forward floors', async () => {
+test('group point reads expose the authoritative causal pair and forward floors', async () => {
     const snapshot = {
         ...createGroupStateRouteSnapshot('room-1'),
         causalRevision: { groupRevision: 4, presenceRevision: 6 }
@@ -34,7 +35,7 @@ Deno.test('group point reads expose the authoritative causal pair and forward fl
     }]);
 });
 
-Deno.test('group point reads authorize durable shortfall before typed 409', async () => {
+test('group point reads authorize durable shortfall before typed 409', async () => {
     const denied = createGroupStateRouteSnapshot('room-1', ['bob']);
     const allowed = createGroupStateRouteSnapshot('room-1', ['alice']);
     const deniedRuntime = createGroupStateRouteTestRuntime({
@@ -61,7 +62,7 @@ Deno.test('group point reads authorize durable shortfall before typed 409', asyn
     assert.equal(shortfall.headers.get('retry-after'), null);
 });
 
-Deno.test('group point reads reject partial causal floors', async () => {
+test('group point reads reject partial causal floors', async () => {
     const response = await createGroupStateRouteTestRuntime().app.request(
         `${API_BASE}?minGroupRevision=1`
     );

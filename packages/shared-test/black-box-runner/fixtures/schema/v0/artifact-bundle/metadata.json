@@ -8,5 +8,5 @@
     "success": 1,
     "failure": 0
   },
-  "command": ["deno", "run"]
+  "command": ["bun", "run"]
 }

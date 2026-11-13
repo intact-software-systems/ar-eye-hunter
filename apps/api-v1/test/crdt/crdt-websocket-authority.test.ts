@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { WsGrantedTopicSet } from '@shared-server/rallar-system/websocket/room-publication/ws-granted-topic-set.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -47,6 +48,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
+import { attachTestWebSocket } from '../../../../packages/tests/shared/websocket/attach-test-web-socket.ts';
 import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -95,7 +97,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
     documentId: 'document-1'
 };
 
-Deno.test(
+test(
     'browser WS ingress resolves real auth identity and rereads revoke through ' +
         'PGlite AppInbox',
     async () => {
@@ -154,7 +156,7 @@ Deno.test(
     }
 );
 
-Deno.test('production app-scope authorization rejects a foreign application context', async () => {
+test('production app-scope authorization rejects a foreign application context', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createCrdtWebSocketAuthorityFixture(sql);
         try {
@@ -306,7 +308,7 @@ async function addCurrentCrdtSession(ports: CrdtAuthoritySessionPorts, sessionId
     await clients.insertSession(clientSession(sessionId));
     const socket = new PGliteTestSocket();
     sockets.set(sessionId, socket);
-    socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+    attachTestWebSocket(socketServer, new ConnectionContext({ id: sessionId, socket }));
 }
 
 async function drain(

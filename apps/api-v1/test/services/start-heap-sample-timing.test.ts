@@ -1,21 +1,26 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createManualTimers, type ManualTimers } from '../../../../packages/tests/shared/resilience/manual-timers.ts';
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
-import { startHeapSampleTiming, type StartHeapSampleTimingInput } from '../../src/services/start-heap-sample-timing.ts';
+import {
+    startHeapSampleTiming,
+    type ApiHeapMemoryUsage,
+    type StartHeapSampleTimingInput
+} from '../../src/services/start-heap-sample-timing.ts';
 import { toTimingOnSink } from '../../src/services/timing-service.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 
 const INTERVAL_MS = 30_000;
-const MEMORY: Deno.MemoryUsage = { rss: 90_000_000, heapUsed: 40_000_000, heapTotal: 60_000_000, external: 2_000_000 };
+const MEMORY: ApiHeapMemoryUsage = { rss: 90_000_000, heapUsed: 40_000_000, heapTotal: 60_000_000, external: 2_000_000 };
 
 interface SamplerReads {
     readonly calls: string[];
     readonly input: StartHeapSampleTimingInput;
 }
 
-Deno.test('timing on records one api-process heap-sample line per interval, read after a forced full collection', async () => {
+test('timing on records one api-process heap-sample line per interval, read after a forced full collection', async () => {
     const timers = createManualTimers(0);
     const events: RallarTimingEvent[] = [];
     const reads = createSamplerReads(timers, (event) => events.push(event), () => undefined);
@@ -50,7 +55,7 @@ Deno.test('timing on records one api-process heap-sample line per interval, read
     assert.equal(timers.pendingCount(), 0);
 });
 
-Deno.test('a sample without an exposed collector reads the heap as it stands and says forcedGc false', async () => {
+test('a sample without an exposed collector reads the heap as it stands and says forcedGc false', async () => {
     const timers = createManualTimers(0);
     const events: RallarTimingEvent[] = [];
     const reads = createSamplerReads(timers, (event) => events.push(event), undefined);
@@ -63,7 +68,7 @@ Deno.test('a sample without an exposed collector reads the heap as it stands and
     stop();
 });
 
-Deno.test('timing off schedules nothing, so no sample is built, collected, read or timed', async () => {
+test('timing off schedules nothing, so no sample is built, collected, read or timed', async () => {
     const configuration = decodeApiV1Configuration(validDecodeApiV1ConfigurationInput());
     const failing = (): void => {
         throw new Error('a timing-off heap sample must not reach a sink');

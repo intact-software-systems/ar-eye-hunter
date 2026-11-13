@@ -1,4 +1,8 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
@@ -12,7 +16,7 @@ import {
     type MutableDecodeApiV1ConfigurationInput
 } from './api-v1-configuration-test-fixture.ts';
 
-Deno.test('configuration decoder returns the complete normalized development contract', () => {
+test('configuration decoder returns the complete normalized development contract', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = {
         http: {
@@ -55,7 +59,7 @@ Deno.test('configuration decoder returns the complete normalized development con
     assert.equal(configuration.ice.mode, 'local');
 });
 
-Deno.test('committed profiles resolve their intended database, delivery, and ICE modes', async () => {
+test('committed profiles resolve their intended database, delivery, and ICE modes', async () => {
     const defaultsSource = await readJsonResource('defaults-config.json');
     const cases = [
         {
@@ -131,7 +135,7 @@ Deno.test('committed profiles resolve their intended database, delivery, and ICE
     }
 });
 
-Deno.test('the committed defaults bound a coalesced topology replan at 4.5 s after a 500 ms debounce (D288)', async () => {
+test('the committed defaults bound a coalesced topology replan at 4.5 s after a 500 ms debounce (D288)', async () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.defaultsSource = await readJsonResource('defaults-config.json');
 
@@ -140,7 +144,7 @@ Deno.test('the committed defaults bound a coalesced topology replan at 4.5 s aft
     assert.deepEqual(configuration.topology.recompute, { formationDebounceMs: 500, formationMaxWaitMs: 4_500 });
 });
 
-Deno.test('Metered ICE uses the mandatory default region when no override is provided', () => {
+test('Metered ICE uses the mandatory default region when no override is provided', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = {
         ice: {
@@ -159,7 +163,7 @@ Deno.test('Metered ICE uses the mandatory default region when no override is pro
     assert.equal(configuration.ice.region, 'eu');
 });
 
-Deno.test('local ICE ignores Metered region overrides', () => {
+test('local ICE ignores Metered region overrides', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.environmentSource = { ice: { region: 'us' } };
 
@@ -168,7 +172,7 @@ Deno.test('local ICE ignores Metered region overrides', () => {
     assert.equal(configuration.ice.mode, 'local');
 });
 
-Deno.test('configuration decoder rejects unknown and missing fields at every owned source boundary', () => {
+test('configuration decoder rejects unknown and missing fields at every owned source boundary', () => {
     const cases = [
         {
             name: 'unknown top-level defaults field',
@@ -236,7 +240,7 @@ Deno.test('configuration decoder rejects unknown and missing fields at every own
     }
 });
 
-Deno.test('configuration decoder validates every numeric policy boundary without fallback', () => {
+test('configuration decoder validates every numeric policy boundary without fallback', () => {
     const integerMinimums = [
         ['http.port', 1],
         ['http.preflightMaxAgeSeconds', 0],
@@ -364,7 +368,7 @@ Deno.test('configuration decoder validates every numeric policy boundary without
     }
 });
 
-Deno.test('configuration decoder validates URLs, origins, enums, set duplicates, and ordered arrays', () => {
+test('configuration decoder validates URLs, origins, enums, set duplicates, and ordered arrays', () => {
     const invalidCases = [
         ['publicApi.apiBaseUrl', 'ftp://api.example.test'],
         ['publicApi.wsBaseUrl', 'https://api.example.test'],
@@ -418,16 +422,13 @@ Deno.test('configuration decoder validates URLs, origins, enums, set duplicates,
     );
 });
 
-Deno.test('grantedWsTopics defaults to empty, decodes the JSON environment value and refuses an unknown key, a reserved topic id and an unknown fanout', () => {
+test('grantedWsTopics defaults to empty, decodes the JSON environment value and refuses an unknown key, a reserved topic id and an unknown fanout', () => {
     assert.deepEqual(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).grantedWsTopics, []);
 
-    const environment = readApiV1ConfigurationEnvironment(
-        new Map([[
-            'RALLAR_GRANTED_WS_TOPICS_JSON',
-            '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":["feed"]},' +
+    const environment = readApiV1ConfigurationEnvironment({
+        RALLAR_GRANTED_WS_TOPICS_JSON: '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":["feed"]},' +
             '{"topicId":"app.scores","typeId":"scores.v1","fanout":"live-only","serverProducerIds":[]}]'
-        ]])
-    );
+    });
     const configured = decodeApiV1Configuration({
         ...validDecodeApiV1ConfigurationInput(),
         environmentSource: environment.environmentSource
@@ -454,7 +455,7 @@ Deno.test('grantedWsTopics defaults to empty, decodes the JSON environment value
     }
 });
 
-Deno.test('configuration decoder reports malformed CRDT and topology values instead of defaulting', () => {
+test('configuration decoder reports malformed CRDT and topology values instead of defaulting', () => {
     const input = validDecodeApiV1ConfigurationInput();
     setPath(input.defaultsSource, 'crdt.documentTypePolicies', [
         { documentType: 'room-state', rollout: 'unknown' }
@@ -472,7 +473,7 @@ Deno.test('configuration decoder reports malformed CRDT and topology values inst
     );
 });
 
-Deno.test('configuration decoder enforces database, pub-sub, ICE, replay, and worker invariants', () => {
+test('configuration decoder enforces database, pub-sub, ICE, replay, and worker invariants', () => {
     const cases = [
         {
             name: 'PostgreSQL pub-sub on PGlite',
@@ -552,7 +553,7 @@ Deno.test('configuration decoder enforces database, pub-sub, ICE, replay, and wo
     }
 });
 
-Deno.test('configuration decoder aggregates deterministic issues from every source category', () => {
+test('configuration decoder aggregates deterministic issues from every source category', () => {
     const input = validDecodeApiV1ConfigurationInput();
     setPath(input.defaultsSource, 'http.port', 0);
     input.profileSource = {
@@ -579,7 +580,7 @@ Deno.test('configuration decoder aggregates deterministic issues from every sour
     );
 });
 
-Deno.test('configuration decoder rejects weak authentication credentials in every profile', () => {
+test('configuration decoder rejects weak authentication credentials in every profile', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.secretsSource = {
         ...CONFIGURATION_SECRET_SENTINELS,
@@ -595,7 +596,7 @@ Deno.test('configuration decoder rejects weak authentication credentials in ever
     assert.equal(error.toSafeString().includes('too-short'), false);
 });
 
-Deno.test('configuration decoder never retains or renders secret values in failures', () => {
+test('configuration decoder never retains or renders secret values in failures', () => {
     const input = validDecodeApiV1ConfigurationInput();
     setPath(input.defaultsSource, 'database.mode', 'postgres');
     setPath(input.defaultsSource, 'database.pubSub', 'postgres');
@@ -623,7 +624,7 @@ Deno.test('configuration decoder never retains or renders secret values in failu
     }
 });
 
-Deno.test('production hardening validates the effective configuration and cannot be weakened', () => {
+test('production hardening validates the effective configuration and cannot be weakened', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.profileName = 'prod-hardened';
     input.profileSource = { profile: { productionHardening: false } };
@@ -636,7 +637,7 @@ Deno.test('production hardening validates the effective configuration and cannot
     assert.equal(error.issues.some((issue) => issue.path === 'ice.mode'), true);
 });
 
-Deno.test('only the prod-hardened profile enables production hardening', () => {
+test('only the prod-hardened profile enables production hardening', () => {
     for (const profileName of ['dev', 'prod', 'prod-in-memory'] as const) {
         const input = validDecodeApiV1ConfigurationInput();
         input.profileName = profileName;
@@ -718,13 +719,14 @@ async function readJsonResource(
     name: string
 ): Promise<ApiV1ConfigurationSourceValue> {
     return JSON.parse(
-        await Deno.readTextFile(
-            new URL(`../../resources/configuration/${name}`, import.meta.url)
+        await readFile(
+            new URL(`../../resources/configuration/${name}`, import.meta.url),
+            'utf8'
         )
     ) as ApiV1ConfigurationSourceValue;
 }
 
-Deno.test('configuration decoder bounds password derivations by the host cores minus one unless a source names the bound', async () => {
+test('configuration decoder bounds password derivations by the host cores minus one unless a source names the bound', async () => {
     const defaultsSource = await readJsonResource('defaults-config.json');
     const fromHost = decodeApiV1Configuration({
         ...validDecodeApiV1ConfigurationInput(),
@@ -749,7 +751,20 @@ Deno.test('configuration decoder bounds password derivations by the host cores m
     assert.equal(fromEnvironment.authentication.maxConcurrentPasswordDerivations, 7);
 });
 
-Deno.test('configuration decoder rejects a host core count that is not a positive safe integer', async () => {
+test('the AppInbox completion wait defaults to the shared API mutation ceiling unless a source names one', async () => {
+    const defaultsSource = await readJsonResource('defaults-config.json');
+    const fromDefault = decodeApiV1Configuration({ ...validDecodeApiV1ConfigurationInput(), defaultsSource });
+    assert.equal(fromDefault.appInbox.completionWait.maxElapsedMs, API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS);
+
+    const fromEnvironment = decodeApiV1Configuration({
+        ...validDecodeApiV1ConfigurationInput(),
+        defaultsSource,
+        environmentSource: { appInbox: { completionWait: { maxElapsedMs: 5_000 } }, group: { roomOwnedAppDataBindings: [] } }
+    });
+    assert.equal(fromEnvironment.appInbox.completionWait.maxElapsedMs, 5_000);
+});
+
+test('configuration decoder rejects a host core count that is not a positive safe integer', async () => {
     const defaultsSource = await readJsonResource('defaults-config.json');
     const error = captureConfigurationError(() =>
         decodeApiV1Configuration({ ...validDecodeApiV1ConfigurationInput(), defaultsSource, hardwareConcurrency: Number.NaN })
@@ -760,7 +775,7 @@ Deno.test('configuration decoder rejects a host core count that is not a positiv
     );
 });
 
-Deno.test('configuration decoder rejects a queue resilience source naming the retired fairness selection window', () => {
+test('configuration decoder rejects a queue resilience source naming the retired fairness selection window', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.profileSource = {
         ...validConfigurationProfileSource(),
@@ -779,7 +794,7 @@ Deno.test('configuration decoder rejects a queue resilience source naming the re
     );
 });
 
-Deno.test('configuration decoder rejects an AppInbox source naming a lane budget policy: the RETRY quota is not configurable', async () => {
+test('configuration decoder rejects an AppInbox source naming a lane budget policy: the RETRY quota is not configurable', async () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.defaultsSource = await readJsonResource('defaults-config.json');
     assert.equal(Object.hasOwn(decodeApiV1Configuration(input).appInbox, 'laneBudgetPolicy'), false);
@@ -794,7 +809,7 @@ Deno.test('configuration decoder rejects an AppInbox source naming a lane budget
     );
 });
 
-Deno.test('configuration decoder rejects a queue resilience source naming a rate key: the breaker and the lane budget govern claims', async () => {
+test('configuration decoder rejects a queue resilience source naming a rate key: the breaker and the lane budget govern claims', async () => {
     const rateKeys = ['initialRate', 'maxRate', 'increaseRate', 'decreaseRate'] as const;
     const defaults = validDecodeApiV1ConfigurationInput();
     defaults.defaultsSource = await readJsonResource('defaults-config.json');
@@ -818,7 +833,7 @@ Deno.test('configuration decoder rejects a queue resilience source naming a rate
     }
 });
 
-Deno.test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {
+test('configuration decoder requires the AppInbox flight hold and bounds it by the lane concurrency and the largest flight', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.newLaneHeldRows, 16);
     const unnamed = validDecodeApiV1ConfigurationInput();
     const unnamedAppInbox = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox;
@@ -850,7 +865,7 @@ Deno.test('configuration decoder requires the AppInbox flight hold and bounds it
     );
 });
 
-Deno.test('configuration decoder requires the RTT replan minimum layout age and bounds it by the largest age', () => {
+test('configuration decoder requires the RTT replan minimum layout age and bounds it by the largest age', () => {
     assert.equal(
         decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).topology.planning.rttReplanMinimumLayoutAgeMs,
         15_000
@@ -880,7 +895,7 @@ Deno.test('configuration decoder requires the RTT replan minimum layout age and 
     }
 });
 
-Deno.test('configuration decoder requires the heap sample interval and bounds it from one second to one hour', () => {
+test('configuration decoder requires the heap sample interval and bounds it from one second to one hour', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).observability.heapSampleIntervalMs, 30_000);
     const unnamed = validDecodeApiV1ConfigurationInput();
     const unnamedObservability = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).observability;
@@ -902,7 +917,7 @@ Deno.test('configuration decoder requires the heap sample interval and bounds it
     }
 });
 
-Deno.test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {
+test('configuration decoder requires the disconnected client session retention and bounds it by the auth session TTL', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).clientSessions.disconnectedRetentionMs, 604_800_000);
     const unnamed = validDecodeApiV1ConfigurationInput();
     const unnamedClientSessions = (unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).clientSessions;
@@ -941,7 +956,7 @@ Deno.test('configuration decoder requires the disconnected client session retent
     );
 });
 
-Deno.test('configuration decoder requires the finished AppInbox retention and bounds it from one hour to thirty days', () => {
+test('configuration decoder requires the finished AppInbox retention and bounds it from one hour to thirty days', () => {
     assert.equal(decodeApiV1Configuration(validDecodeApiV1ConfigurationInput()).appInbox.finishedRetentionMs, 86_400_000);
     const unnamed = validDecodeApiV1ConfigurationInput();
     delete ((unnamed.defaultsSource as MutableApiV1ConfigurationSourceObject).appInbox as MutableApiV1ConfigurationSourceObject)

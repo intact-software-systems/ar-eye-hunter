@@ -1,4 +1,5 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import { readFile, rm } from 'node:fs/promises';
 
 import { createDefaultRallarBlackBoxControlClient } from '@shared-test/rallar-bb-test/control-client.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
@@ -18,7 +19,7 @@ interface JournalRuntimeEvent {
     };
 }
 
-Deno.test('connected recent history preserves every produced runtime event in the complete durable journal', async () => {
+test('connected recent history preserves every produced runtime event in the complete durable journal', async () => {
     const server = await startControlServer({ RALLAR_BLACK_BOX_RETENTION_MAX_EVENTS: '3' });
     let nextId = 1;
     const runtime = createDefaultRallarBlackBoxTestRuntime({
@@ -39,23 +40,23 @@ Deno.test('connected recent history preserves every produced runtime event in th
         }
         await waitForJsonl(server.baseUrl, '/runs/recent-journal/artifacts/events.jsonl', 'journal.119');
         // Read the durable file directly: the HTTP preview's in-memory fallback cannot satisfy this assertion.
-        const text = await Deno.readTextFile(`${server.storageDir}/runs/recent-journal/events.jsonl`);
+        const text = await readFile(`${server.storageDir}/runs/recent-journal/events.jsonl`, 'utf8');
         const rows: JournalRuntimeEvent[] = text.trim().split('\n').map((line) => JSON.parse(line));
-        assertEquals(rows.map((row) => row.value.topic), ['rallar.bb.stats', ...Array.from({ length: 120 }, (_, index) => `journal.${index}`)]);
-        assertEquals(rows.slice(1).map((row) => row.value.history?.ordinal), Array.from({ length: 120 }, (_, index) => index + 1));
-        assertEquals(rows.slice(1).map((row) => row.value.history?.generation), Array(120).fill(0));
-        assertEquals(rows.slice(1).map((row) => row.value.history?.runtimeId), Array(120).fill('owned-journal-runtime'));
-        assertEquals(runtime.state().eventHistory.evictedEvents, 118);
-        assertEquals(runtime.state().events.length, 2);
-        assertEquals(runtime.state().eventHistory.totalEvents, 120);
-        assertEquals(runtime.state().eventHistory.countsByKind.message, 60);
-        assertEquals(runtime.state().eventHistory.countsByKind.diagnostic, 60);
-        assertEquals(runtime.state().eventHistory.capture.status, 'continuous');
+        expect(rows.map((row) => row.value.topic)).toEqual(['rallar.bb.stats', ...Array.from({ length: 120 }, (_, index) => `journal.${index}`)]);
+        expect(rows.slice(1).map((row) => row.value.history?.ordinal)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1));
+        expect(rows.slice(1).map((row) => row.value.history?.generation)).toEqual(Array(120).fill(0));
+        expect(rows.slice(1).map((row) => row.value.history?.runtimeId)).toEqual(Array(120).fill('owned-journal-runtime'));
+        expect(runtime.state().eventHistory.evictedEvents).toEqual(118);
+        expect(runtime.state().events.length).toEqual(2);
+        expect(runtime.state().eventHistory.totalEvents).toEqual(120);
+        expect(runtime.state().eventHistory.countsByKind.message).toEqual(60);
+        expect(runtime.state().eventHistory.countsByKind.diagnostic).toEqual(60);
+        expect(runtime.state().eventHistory.capture.status).toEqual('continuous');
     }
     finally {
         client.dispose();
         await server.stop();
-        await Deno.remove(server.storageDir, { recursive: true });
+        await rm(server.storageDir, { recursive: true, force: true });
     }
 });
 
@@ -69,7 +70,7 @@ async function waitForConnected(client: ReturnType<typeof createDefaultRallarBla
     }
 }
 
-Deno.test('HTTP manifest admission rejects malformed history before creating any staged run', async () => {
+test('HTTP manifest admission rejects malformed history before creating any staged run', async () => {
     const server = await startControlServer({ RALLAR_BLACK_BOX_ADMIN_TOKEN: ADMIN_TOKEN });
     try {
         for (
@@ -83,13 +84,13 @@ Deno.test('HTTP manifest admission rejects malformed history before creating any
                 headers: adminHeaders(),
                 body: JSON.stringify({ manifest: { ...toDistributedManifest(), eventHistory } })
             });
-            assertEquals(response.status, 400);
+            expect(response.status).toEqual(400);
             await response.body?.cancel();
         }
-        assertEquals(await getJson(server.baseUrl, '/distributed-runs'), { distributedRuns: [] });
+        expect(await getJson(server.baseUrl, '/distributed-runs')).toEqual({ distributedRuns: [] });
     }
     finally {
         await server.stop();
-        await Deno.remove(server.storageDir, { recursive: true });
+        await rm(server.storageDir, { recursive: true, force: true });
     }
 });

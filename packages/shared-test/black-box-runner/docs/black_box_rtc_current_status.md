@@ -99,7 +99,7 @@ Two dry modes now have distinct behavior.
 Prints executable interactions and does not run the scenario engine.
 
 ```bash
-deno run -A scenario-black-box.ts -w ./test-data -c config.json -e dry
+bun run scenario-black-box.ts -w ./test-data -c config.json -e dry
 ```
 
 #### `--dry-run` / `-n`
@@ -107,13 +107,13 @@ deno run -A scenario-black-box.ts -w ./test-data -c config.json -e dry
 Runs the scenario engine in dry-run mode and returns a normal report.
 
 ```bash
-deno run -A scenario-black-box.ts -w ./test-data -c config.json --dry-run
+bun run scenario-black-box.ts -w ./test-data -c config.json --dry-run
 ```
 
 or:
 
 ```bash
-deno run -A scenario-black-box.ts -w ./test-data -c config.json -n
+bun run scenario-black-box.ts -w ./test-data -c config.json -n
 ```
 
 Config-level dry-run is also supported:
@@ -538,7 +538,7 @@ The black-box runner should not reimplement RTC if Rallar already has an impleme
 
 Still incomplete:
 
-- browser/Deno integration tests around the real implementation
+- browser/Bun integration tests around the real implementation
 - first recorded live deployed-service run and failure-mode tuning using `rallar-browser-live-validation.mts --mode=live`
 - longer-duration live soak profiles beyond the short gated baselines
 

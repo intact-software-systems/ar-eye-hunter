@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 
 import assert from 'node:assert/strict';
 
@@ -98,7 +99,7 @@ interface EndTimestampRow {
     readonly end_ts: string;
 }
 
-Deno.test(
+test(
     'PSqlResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -441,7 +442,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'transaction-bound APP_OUTBOX coalescing fences generation and reserved work',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -519,7 +520,7 @@ Deno.test(
     }
 );
 
-Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
+test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
     await withPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
@@ -565,7 +566,7 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
     });
 });
 
-Deno.test(
+test(
     'PGlite topology gates skip unchanged coalesced group-revision rebuilds and fail open',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -694,7 +695,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
+test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlAppDataRepository(sql);
 
@@ -789,7 +790,7 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
     });
 });
 
-Deno.test('PSqlCrdtLogRepository exposes supported CRDT reads', async () => {
+test('PSqlCrdtLogRepository exposes supported CRDT reads', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlCrdtLogRepository(sql);
 

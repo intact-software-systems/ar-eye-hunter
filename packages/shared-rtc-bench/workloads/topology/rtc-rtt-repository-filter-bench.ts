@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
@@ -343,7 +345,7 @@ function createDependencies(): RtcRttRepositoryFilterDependencies {
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcRttRepositoryFilterArguments(Deno.args);
+    const parsed = parseRtcRttRepositoryFilterArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -360,10 +362,10 @@ async function main(): Promise<void> {
         const result = await runRtcRttRepositoryFilter(parsed.value.input, createDependencies());
         results.push({ run, ...result });
     }
-    await Deno.writeTextFile(
+    await writeFile(
         parsed.value.out,
         `${JSON.stringify({ input: parsed.value.input, results }, null, 2)}\n`,
-        { createNew: true }
+        { encoding: 'utf8', flag: 'wx' }
     );
     console.log(`Wrote ${parsed.value.out}`);
 }

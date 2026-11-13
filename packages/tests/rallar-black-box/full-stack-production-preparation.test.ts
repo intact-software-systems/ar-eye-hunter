@@ -28,7 +28,7 @@ const index = '<script type="module" src="/assets/entry.js"></script>';
 const manifest = { 'index.html': { file: 'assets/entry.js', isEntry: true } };
 const observation: LiveRtcPerformanceAttemptContext['runtimeObservation'] = {
     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/fixture', clean: true },
-    runtime: { node: 'v24', npm: '11', deno: '2', playwright: '1', chromium: '149' },
+    runtime: { node: 'v24', npm: '11', bun: '2', playwright: '1', chromium: '149' },
     host: { os: 'linux', kernel: '1', architecture: 'x64', logicalCpuCount: 4, cpuModel: 'fixture', totalMemoryBytes: 1, executionContext: 'local' },
     timing: { startedAtUtc: '2026-10-10T10:00:00.000Z', endedAtUtc: '2026-10-10T10:00:01.000Z', monotonicDurationMs: 1000, monotonicSource: 'performance.now' },
     deviations: [],

@@ -6,8 +6,12 @@ function createProtocolChannel() {
     let detached = false;
     return {
         send: vi.fn(),
-        detach: async () => { detached = true; },
-        get detached() { return detached; }
+        detach: async () => {
+            detached = true;
+        },
+        get detached() {
+            return detached;
+        }
     };
 }
 
@@ -20,23 +24,29 @@ describe('BrowserTimingCapture', () => {
         const renderer = createProtocolChannel();
         const browser = createProtocolChannel();
         const observations: BrowserTimingCapture.Observation[] = [];
-        renderer.send.mockResolvedValueOnce({}).mockResolvedValue({ metrics: [
-            { name: 'TaskDuration', value: 1.25 },
-            { name: 'ScriptDuration', value: 0.25 },
-            { name: 'JSHeapUsedSize', value: 2048 },
-            { name: 'secret-token', value: 99 }
-        ] });
+        renderer.send.mockResolvedValueOnce({}).mockResolvedValue({
+            metrics: [
+                { name: 'TaskDuration', value: 1.25 },
+                { name: 'ScriptDuration', value: 0.25 },
+                { name: 'JSHeapUsedSize', value: 2048 },
+                { name: 'secret-token', value: 99 }
+            ]
+        });
         browser.send.mockResolvedValue({ processInfo: [{ id: 42, type: 'GPU', cpuTime: 2.5 }] });
         const capture = new BrowserTimingCapture({ renderer, browser, timers: createDefaultTimers(), record: (sample) => observations.push(sample) });
         await capture.start();
         await vi.advanceTimersByTimeAsync(1000);
         await capture.stop();
         expect(observations).toContainEqual({
-            kind: 'renderer', startedAtEpochMs: 1000, completedAtEpochMs: 1000,
+            kind: 'renderer',
+            startedAtEpochMs: 1000,
+            completedAtEpochMs: 1000,
             metrics: { TaskDuration: 1.25, ScriptDuration: 0.25, JSHeapUsedSize: 2048 }
         });
         expect(observations).toContainEqual({
-            kind: 'processes', startedAtEpochMs: 1000, completedAtEpochMs: 1000,
+            kind: 'processes',
+            startedAtEpochMs: 1000,
+            completedAtEpochMs: 1000,
             processes: [{ id: 42, type: 'GPU', cpuTimeSeconds: 2.5 }]
         });
         expect(JSON.stringify(observations)).not.toContain('secret-token');
@@ -64,7 +74,6 @@ describe('BrowserTimingCapture', () => {
         expect(observations.some((sample) => sample.kind === 'renderer')).toBe(false);
     });
 
-
     it('surfaces artifact write failure after detaching both protocol channels', async () => {
         vi.useFakeTimers();
         const renderer = createProtocolChannel();
@@ -73,7 +82,12 @@ describe('BrowserTimingCapture', () => {
         browser.send.mockResolvedValue({ processInfo: [] });
         const failure = new Error('secret artifact storage detail');
         const capture = new BrowserTimingCapture({
-            renderer, browser, timers: createDefaultTimers(), record: () => { throw failure; }
+            renderer,
+            browser,
+            timers: createDefaultTimers(),
+            record: () => {
+                throw failure;
+            }
         });
         await capture.start();
         await vi.advanceTimersByTimeAsync(1);
@@ -96,7 +110,9 @@ describe('BrowserTimingCapture', () => {
     it('redacts detach failures and still releases the other channel', async () => {
         const renderer = createProtocolChannel();
         const browser = createProtocolChannel();
-        renderer.detach = async () => { throw new Error('secret detach detail'); };
+        renderer.detach = async () => {
+            throw new Error('secret detach detail');
+        };
         const capture = new BrowserTimingCapture({ renderer, browser, timers: createDefaultTimers(), record: () => undefined });
         await expect(capture.stop()).rejects.toEqual(new Error('Browser timing capture could not detach'));
         expect(browser.detached).toBe(true);

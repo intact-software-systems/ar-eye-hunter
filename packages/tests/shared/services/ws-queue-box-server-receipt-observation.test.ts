@@ -46,6 +46,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
@@ -99,7 +100,7 @@ async function createObservedServer(
     for (const id of ['origin', 'recipient']) {
         const native = new SimulatedWebSocket(`ws://${id}`);
         await native.open();
-        socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(socket, new ConnectionContext({ id, socket: native }));
     }
     const engine = options.queueEngine ?? new InboxOutboxEngine();
     const service = createDefaultWsQueueBoxServerService({
@@ -160,7 +161,7 @@ function createAckAuthorizerGate(controlMsgId: string): AckAuthorizerGate {
 async function replaceRecipientConnection(socket: JsonWebSocketServer): Promise<void> {
     const native = new SimulatedWebSocket('ws://replacement');
     await native.open();
-    socket.addConnection(new ConnectionContext({ id: 'recipient', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'recipient', socket: native }));
 }
 
 async function readCompleteReceipts(service: WsQueueBoxServerService): Promise<readonly ALReceiptPayload[]> {

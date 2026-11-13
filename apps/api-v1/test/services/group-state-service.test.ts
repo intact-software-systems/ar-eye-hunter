@@ -5,6 +5,7 @@ import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import {
     createTestGroupStateRuntime,
@@ -20,7 +21,7 @@ const TEST_SCOPE: StateScope = {
 const INITIAL_EXPIRES_AT_EPOCH_MS = 4_102_444_821_000;
 const REFRESHED_EXPIRES_AT_EPOCH_MS = 4_102_444_822_000;
 
-Deno.test('connectPresenceSession rejects missing and non-active group members', async () => {
+test('connectPresenceSession rejects missing and non-active group members', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -71,7 +72,7 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
     }
 });
 
-Deno.test('upsertMember preserves existing admin roles across leave and rejoin', async () => {
+test('upsertMember preserves existing admin roles across leave and rejoin', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -112,7 +113,7 @@ Deno.test('upsertMember preserves existing admin roles across leave and rejoin',
     });
 });
 
-Deno.test('semantic group mutations advance snapshotVersion', async () => {
+test('semantic group mutations advance snapshotVersion', async () => {
     const service = createTestGroupStateService();
 
     const createdWritten = await service.createGroup(TEST_SCOPE, {
@@ -209,7 +210,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
     assertEventSnapshotVersion(disconnectedWritten, 3);
 });
 
-Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
+test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
     const service = createTestGroupStateService();
 
     await service.createGroup(TEST_SCOPE, {
@@ -253,7 +254,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
     assert.deepEqual(refreshed.activeSessions, []);
 });
 
-Deno.test('updateGroup ignores unchanged metadata state', async () => {
+test('updateGroup ignores unchanged metadata state', async () => {
     const service = createTestGroupStateService();
 
     const created = snapshotFromGroupStateWritten(
@@ -277,7 +278,7 @@ Deno.test('updateGroup ignores unchanged metadata state', async () => {
     assert.equal(unchanged.group.metadataVersion, created.group.metadataVersion);
 });
 
-Deno.test('archived and deleted groups reject member activation and presence mutations', async () => {
+test('archived and deleted groups reject member activation and presence mutations', async () => {
     for (const status of ['archived', 'deleted'] as const) {
         const service = createTestGroupStateService();
         const code = status === 'archived' ? 'group-archived' : 'group-deleted';
@@ -357,7 +358,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
     }
 });
 
-Deno.test('archived and deleted groups reject non-lifecycle metadata updates', async () => {
+test('archived and deleted groups reject non-lifecycle metadata updates', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -403,7 +404,7 @@ Deno.test('archived and deleted groups reject non-lifecycle metadata updates', a
     );
 });
 
-Deno.test('expired groups reject member activation and presence connect', async () => {
+test('expired groups reject member activation and presence connect', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -439,7 +440,7 @@ Deno.test('expired groups reject member activation and presence connect', async 
     );
 });
 
-Deno.test('presence transitions maintain emptySinceEpochMs deterministically', async () => {
+test('presence transitions maintain emptySinceEpochMs deterministically', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -511,7 +512,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
     assert.equal(reconnected.group.emptySinceEpochMs, null);
 });
 
-Deno.test('expired presence sessions mark groups empty without purging durable state', async () => {
+test('expired presence sessions mark groups empty without purging durable state', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -547,7 +548,7 @@ Deno.test('expired presence sessions mark groups empty without purging durable s
     assert.equal(durableSnapshot.group.purgeAfterEpochMs, INITIAL_EXPIRES_AT_EPOCH_MS);
 });
 
-Deno.test('joinGroup enforces admission policy and activates allowed members', async () => {
+test('joinGroup enforces admission policy and activates allowed members', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'open-group',
@@ -583,7 +584,7 @@ Deno.test('joinGroup enforces admission policy and activates allowed members', a
     assertMember(rejoined, { principalId: 'member-1', role: 'member', status: 'active' });
 });
 
-Deno.test('joinGroup rejects invite-only, code, removed, and banned join attempts when policy denies them', async () => {
+test('joinGroup rejects invite-only, code, removed, and banned join attempts when policy denies them', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'invite-group',
@@ -671,7 +672,7 @@ Deno.test('joinGroup rejects invite-only, code, removed, and banned join attempt
     );
 });
 
-Deno.test('self-service active-member upsert is admission policy gated', async () => {
+test('self-service active-member upsert is admission policy gated', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'invite-group',
@@ -694,7 +695,7 @@ Deno.test('self-service active-member upsert is admission policy gated', async (
     );
 });
 
-Deno.test('maxMembers blocks new active members without mutating roster state', async () => {
+test('maxMembers blocks new active members without mutating roster state', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -725,7 +726,7 @@ Deno.test('maxMembers blocks new active members without mutating roster state', 
     assert.equal(after.members.some((member) => member.principalId === 'member-1'), false);
 });
 
-Deno.test('invited members do not reserve maxMembers slots by default', async () => {
+test('invited members do not reserve maxMembers slots by default', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -761,7 +762,7 @@ Deno.test('invited members do not reserve maxMembers slots by default', async ()
     assert.equal(joined.memberCount, 2);
 });
 
-Deno.test('maxSessionsPerMember blocks additional live sessions without mutating presence state', async () => {
+test('maxSessionsPerMember blocks additional live sessions without mutating presence state', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -805,7 +806,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
     assert.deepEqual(after.activeSessions, []);
 });
 
-Deno.test('idempotent accepted capacity mutations do not double-count existing slots', async () => {
+test('idempotent accepted capacity mutations do not double-count existing slots', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -867,7 +868,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
     assert.equal(connectedAgain.activeSessions.length, 0);
 });
 
-Deno.test('createGroupInvite lets owners and admins invite members', async () => {
+test('createGroupInvite lets owners and admins invite members', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -911,7 +912,7 @@ Deno.test('createGroupInvite lets owners and admins invite members', async () =>
     assert.equal(invited?.invitationExpiresAtEpochMs, 1_000 + 7 * 24 * 60 * 60 * 1000);
 });
 
-Deno.test('createGroupInvite rejects regular members', async () => {
+test('createGroupInvite rejects regular members', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -938,7 +939,7 @@ Deno.test('createGroupInvite rejects regular members', async () => {
     );
 });
 
-Deno.test('acceptGroupInvite enforces invite expiry and activates valid invites', async () => {
+test('acceptGroupInvite enforces invite expiry and activates valid invites', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -981,7 +982,7 @@ Deno.test('acceptGroupInvite enforces invite expiry and activates valid invites'
     assert.equal(acceptedWritten.result?.event?.eventType, 'member-joined');
 });
 
-Deno.test('revoked invites and banned members cannot be accepted', async () => {
+test('revoked invites and banned members cannot be accepted', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1038,7 +1039,7 @@ Deno.test('revoked invites and banned members cannot be accepted', async () => {
     );
 });
 
-Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins', async () => {
+test('rotateGroupJoinCode stores only a verifier and validates code joins', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'code-group',
@@ -1116,7 +1117,7 @@ Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins',
     });
 });
 
-Deno.test('rotateGroupJoinCode replays the same request id without rematerializing defaults', async () => {
+test('rotateGroupJoinCode replays the same request id without rematerializing defaults', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'code-group',
@@ -1161,7 +1162,7 @@ Deno.test('rotateGroupJoinCode replays the same request id without rematerializi
     );
 });
 
-Deno.test('expired join codes reject code joins', async () => {
+test('expired join codes reject code joins', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'code-group',
@@ -1192,7 +1193,7 @@ Deno.test('expired join codes reject code joins', async () => {
     );
 });
 
-Deno.test('membership governance operations enforce hierarchy and emit member events', async () => {
+test('membership governance operations enforce hierarchy and emit member events', async () => {
     const service = createTestGroupStateService();
     await createGovernanceGroup(service);
 
@@ -1291,7 +1292,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     assertMember(transferred, { principalId: 'admin-1', role: 'owner', status: 'active' });
 });
 
-Deno.test('last-owner protection applies to leave remove ban and demote operations', async () => {
+test('last-owner protection applies to leave remove ban and demote operations', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1342,7 +1343,7 @@ Deno.test('last-owner protection applies to leave remove ban and demote operatio
     );
 });
 
-Deno.test('grantGroupPublication writes the grant event and bumps snapshotVersion alone', async () => {
+test('grantGroupPublication writes the grant event and bumps snapshotVersion alone', async () => {
     const service = createTestGroupStateService();
     await createGovernanceGroup(service);
     const before = await readSnapshot(service);
@@ -1380,7 +1381,7 @@ Deno.test('grantGroupPublication writes the grant event and bumps snapshotVersio
     );
 });
 
-Deno.test('appointDirector lets an active member become director when owner is offline', async () => {
+test('appointDirector lets an active member become director when owner is offline', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1428,7 +1429,7 @@ Deno.test('appointDirector lets an active member become director when owner is o
     assert.equal(written.result?.event?.eventType, 'group-updated');
 });
 
-Deno.test('appointDirector does not replay cached appointments to a different actor', async () => {
+test('appointDirector does not replay cached appointments to a different actor', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1483,7 +1484,7 @@ Deno.test('appointDirector does not replay cached appointments to a different ac
     );
 });
 
-Deno.test('appointDirector rejects invalid heartbeat TTL values', async () => {
+test('appointDirector rejects invalid heartbeat TTL values', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1519,7 +1520,7 @@ Deno.test('appointDirector rejects invalid heartbeat TTL values', async () => {
     );
 });
 
-Deno.test('appointDirector denies member fallback while owner is online or director is active', async () => {
+test('appointDirector denies member fallback while owner is online or director is active', async () => {
     const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1600,7 +1601,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
     );
 });
 
-Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
+test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
     const service = createTestGroupStateService();
 
     await service.createGroup(TEST_SCOPE, {

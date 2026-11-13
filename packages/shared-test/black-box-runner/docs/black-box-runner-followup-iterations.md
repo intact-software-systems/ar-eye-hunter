@@ -128,7 +128,7 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "explains a valid recipe|validates missing env|missing traffic-plan|seeded traffic-plan expansion|strict profile"` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
 
 ## Runner Iteration 2: Safe Output Transform Layer
 
@@ -182,7 +182,7 @@ Results:
 Verification:
 
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
 
 ## Runner Iteration 3: Post-run Assertions And Thresholds
 
@@ -244,9 +244,9 @@ Verification:
 
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "post-run|same-connection soak"` passed.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
-- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json --explain` passed.
-- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts` passed.
+- `bun run packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json --explain` passed.
+- `bun run packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-same-connection-soak.json` passed.
 
 ## Runner Iteration 4: Trace Correlation And Server-log Join Keys
 
@@ -302,8 +302,8 @@ Verification:
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "correlation"` passed.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed.
 - `npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/rtc-provider.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
-- `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rallar-server-auth-group-ws-smoke.json --explain` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/rtc-provider.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `bun run packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/rallar-server-auth-group-ws-smoke.json --explain` passed.
 
 ## Runner Iteration 5: Large-run Artifact Indexing And Compaction
 
@@ -366,7 +366,7 @@ Verification:
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "artifact indexes|bounded artifacts|redacted report"` passed.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed when allowed to bind a local
   `127.0.0.1` HTTP server for existing correlation tests.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
 - `git diff --check` passed.
 
@@ -423,9 +423,9 @@ Verification:
 - `npx vitest run packages/tests/shared-test/black-box-runner-live-preflight.test.ts packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts packages/tests/shared-test/recipe-matrix.test.ts` passed.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "explains a valid recipe|validates missing env|strict profile"` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
-- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
-- `deno check packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/handoff-contract.ts packages/shared-test/black-box-runner/schema.ts packages/shared-test/black-box-runner/live-preflight.ts packages/shared-test/black-box-runner/recipe-matrix.mts` passed.
-- `deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts --profile=live --id=browser-connect-live --preflight-only --artifact-dir=/private/tmp/rallar-live-preflight-smoke` passed with a skipped entry and a written `preflight-report.json` for missing live credentials.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/handoff-contract.ts packages/shared-test/black-box-runner/schema.ts packages/shared-test/black-box-runner/live-preflight.ts packages/shared-test/black-box-runner/recipe-matrix.mts` passed.
+- `bun run packages/shared-test/black-box-runner/recipe-matrix.mts --profile=live --id=browser-connect-live --preflight-only --artifact-dir=/private/tmp/rallar-live-preflight-smoke` passed with a skipped entry and a written `preflight-report.json` for missing live credentials.
 
 ## Runner Iteration 7: Static Recipe Fragments And Includes
 
@@ -476,7 +476,7 @@ Verification:
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts` passed when allowed to bind a local
   `127.0.0.1` HTTP server for existing correlation tests.
 - `npx vitest run packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
-- `deno check packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/scenario-black-box.ts packages/shared-test/black-box-runner/execute-black-box.ts packages/shared-test/black-box-runner/plan-preflight.ts packages/shared-test/black-box-runner/schema.ts` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
 - `git diff --check` passed.
 
@@ -531,10 +531,10 @@ Verification:
 
 - `npx vitest run packages/tests/shared-test/black-box-runner-traffic-plan-reducer.test.ts packages/tests/shared-test/black-box-runner-artifact-reader.test.ts packages/tests/shared-test/black-box-runner-handoff-contract.test.ts` passed.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "traffic plan"` passed.
-- `deno check packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/traffic-plan-reducer.ts` passed.
+- `bunx tsc -p tsconfig.json --noEmit packages/shared-test/black-box-runner/artifact-reader.ts packages/shared-test/black-box-runner/traffic-plan-reducer.ts` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
-- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
-- `deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts --expanded-plan packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle/expanded-plan.json --first-failure aliceTrafficToBob --out /tmp/rallar-reduced-plan-smoke.json --summary-out /tmp/rallar-reduced-plan-summary-smoke.json` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
+- `bun run packages/shared-test/black-box-runner/traffic-plan-reducer.ts --expanded-plan packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle/expanded-plan.json --first-failure aliceTrafficToBob --out /tmp/rallar-reduced-plan-smoke.json --summary-out /tmp/rallar-reduced-plan-summary-smoke.json` passed.
 - `git diff --check` passed.
 
 ## Deferred For Now

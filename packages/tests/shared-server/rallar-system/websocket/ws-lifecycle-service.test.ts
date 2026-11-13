@@ -196,7 +196,9 @@ class LifecycleTestWebSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(): void {}
+    send(): number {
+        return 1;
+    }
 }
 
 function retryConfig(scheduled: Array<() => Promise<void>> = []) {

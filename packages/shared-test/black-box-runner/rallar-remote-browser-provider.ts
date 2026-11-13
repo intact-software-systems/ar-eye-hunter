@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { BlackBoxFetch } from './execution/black-box-scenario-context.ts';
 import {
     runRallarRemoteBrowserCommand,

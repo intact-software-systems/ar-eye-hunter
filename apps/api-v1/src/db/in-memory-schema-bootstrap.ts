@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
 
 export interface ApiV1SchemaBootstrapConfiguration {
@@ -28,11 +30,11 @@ export const API_V1_PGLITE_SCHEMA_UPGRADE_URLS: readonly URL[] = [
 ].map((path) => new URL(path, import.meta.url));
 
 export async function readApiV1InMemorySchemaSql(): Promise<string> {
-    return await Deno.readTextFile(API_V1_IN_MEMORY_SCHEMA_URL);
+    return await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8');
 }
 
 export async function readApiV1PGliteSchemaUpgradeSql(): Promise<string> {
-    const files = await Promise.all(API_V1_PGLITE_SCHEMA_UPGRADE_URLS.map((url) => Deno.readTextFile(url)));
+    const files = await Promise.all(API_V1_PGLITE_SCHEMA_UPGRADE_URLS.map((url) => readFile(url, 'utf8')));
     return files.join('\n');
 }
 

@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -49,7 +50,7 @@ interface NumericCountRow {
     readonly count: string | number;
 }
 
-Deno.test(
+test(
     'PGlite topology route preserves structured AppInbox terminal and unavailable failures',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -270,7 +271,7 @@ Deno.test(
     }
 );
 
-Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict', async () => {
+test('PGlite AppGroup rereads lifecycle after a retryable topology conflict', async () => {
     await withPGliteSql(async (sql) => {
         const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
         const runtime = new PSqlRuntimeStateRepository(sql);
@@ -463,7 +464,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     });
 });
 
-Deno.test(
+test(
     'PGlite topology authority fence rejects an archive overlapping the stable authorization read',
     async () => {
         await withPGliteSql(async (sql) => {

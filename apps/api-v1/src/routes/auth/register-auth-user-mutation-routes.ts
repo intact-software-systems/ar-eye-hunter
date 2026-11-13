@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';

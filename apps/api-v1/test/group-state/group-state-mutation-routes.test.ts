@@ -1,6 +1,7 @@
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
 import type { GroupCreateAppInboxPayload, GroupUpdateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -113,7 +114,7 @@ const EXPECTED_AGGREGATE_COMMANDS = [
     }
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
-Deno.test('canonical group request reader accepts only the path request ID', async () => {
+test('canonical group request reader accepts only the path request ID', async () => {
     const request = await readGroupStateRouteRequest<{ requestId?: string; name: string; }>({
         req: {
             json: () => Promise.resolve({ name: 'Room' }),
@@ -123,7 +124,7 @@ Deno.test('canonical group request reader accepts only the path request ID', asy
     });
     assert.deepEqual(request, { requestId: 'group-request-000001', name: 'Room' });
 });
-Deno.test('canonical group request reader rejects header and body identities', async () => {
+test('canonical group request reader rejects header and body identities', async () => {
     const identities: readonly Readonly<{
         body: ApiMutationFailureJsonObject;
         header: string | undefined;
@@ -149,7 +150,7 @@ Deno.test('canonical group request reader rejects header and body identities', a
         );
     }
 });
-Deno.test('group create command retains its authenticated AppInbox envelope', () => {
+test('group create command retains its authenticated AppInbox envelope', () => {
     const command = toGroupStateCommand({
         operation: 'create-group',
         authSession: createGroupStateRouteAuthSession('alice'),
@@ -167,7 +168,7 @@ Deno.test('group create command retains its authenticated AppInbox envelope', ()
     });
     assert.deepEqual(command, EXPECTED_CREATE_COMMAND);
 });
-Deno.test('group command output keeps create payloads isolated from updates', () => {
+test('group command output keeps create payloads isolated from updates', () => {
     const command = toGroupStateCommand({
         operation: 'create-group',
         authSession: createGroupStateRouteAuthSession('alice'),
@@ -190,7 +191,7 @@ Deno.test('group command output keeps create payloads isolated from updates', ()
         void invalidPayload;
     }
 });
-Deno.test('group aggregate commands retain update and director envelopes', () => {
+test('group aggregate commands retain update and director envelopes', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
     const commands = [
         toGroupStateCommand({
@@ -222,7 +223,7 @@ Deno.test('group aggregate commands retain update and director envelopes', () =>
     ];
     assert.deepEqual(commands, EXPECTED_AGGREGATE_COMMANDS);
 });
-Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef', () => {
+test('group AppInbox keys isolate operation, caller, and complete GroupRef', () => {
     const requestId = 'group-route-isolation-request';
     const alice = createGroupStateRouteAuthSession('alice');
     const renewedAlice = { ...alice, sessionId: 'alice-renewed-session' };
@@ -264,7 +265,7 @@ Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef'
         variants.length
     );
 });
-Deno.test('group mutation response retains snapshot identity', () => {
+test('group mutation response retains snapshot identity', () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const response = toGroupStateResponse({
         kind: 'mutation',
@@ -272,7 +273,7 @@ Deno.test('group mutation response retains snapshot identity', () => {
     });
     assert.strictEqual(response.snapshot, snapshot);
 });
-Deno.test('group mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
+test('group mutation routes hand the request trace to the AppInbox enqueue and refuse a body trace', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createGroupStateRouteTestRuntime({
         processGroupAppInbox: captureGroupStateRouteWrite(enqueued, createGroupStateRouteSnapshot('room-1'))
@@ -292,7 +293,7 @@ Deno.test('group mutation routes hand the request trace to the AppInbox enqueue 
     assert.equal(bodyTraced.status, 400);
     assert.deepEqual(enqueued.map((enqueue) => enqueue.traceId), ['trace-group-route']);
 });
-Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {
+test('group aggregate routes retain their AppInbox envelopes', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
@@ -327,7 +328,7 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
     assert.equal(responses[2].status, 200);
     assert.deepEqual(enqueued, [EXPECTED_CREATE_COMMAND, ...EXPECTED_AGGREGATE_COMMANDS]);
 });
-Deno.test(
+test(
     'group aggregate routes reject noncanonical identities and expose only the strict path',
     async () => {
         const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -378,7 +379,7 @@ Deno.test(
         ]);
     }
 );
-Deno.test(
+test(
     'group aggregate route waits for AppInbox completion before its normal response',
     async () => {
         let resolveCompletion: (() => void) | undefined;
@@ -406,7 +407,7 @@ Deno.test(
         assert.deepEqual(await response.json(), snapshot);
     }
 );
-Deno.test(
+test(
     'group aggregate route stops at route authentication failure before AppInbox',
     async () => {
         let enqueued = 0;
@@ -441,7 +442,7 @@ Deno.test(
         assert.equal(enqueued, 0);
     }
 );
-Deno.test(
+test(
     'group aggregate route serializes AppInbox failure after the awaited completion',
     async () => {
         const failure = Object.assign(new Error('group command rejected'), {
@@ -470,7 +471,7 @@ Deno.test(
         });
     }
 );
-Deno.test(
+test(
     'all non-presence group REST mutations reject malformed bodies before inbox ' +
         'enqueue',
     async () => {

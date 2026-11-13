@@ -309,10 +309,6 @@ async function runPGliteSnapshotReader(
         process.execPath,
         [
             'run',
-            '--quiet',
-            '--config',
-            'apps/api-v1/deno.json',
-            '--allow-read',
             PGLITE_SNAPSHOT_READER_PATH,
             snapshotPath,
             JSON.stringify(input)

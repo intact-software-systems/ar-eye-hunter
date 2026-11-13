@@ -1,3 +1,5 @@
+import { hostname } from 'node:os';
+
 import type {
     RtcBaselineCaptureManifestDto,
     RtcBaselineEnvironmentDto,
@@ -9,11 +11,11 @@ import type {
 import type { RtcBaselineStoredFile } from '../../../baseline/evidence/rtc-baseline-artifact-files.ts';
 import type { RtcBaselineFileStore } from '../../../baseline/evidence/rtc-baseline-evidence-store.ts';
 import {
-    createDenoRtcBaselineAdapters,
-    type RtcBaselineDenoPort
-} from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import type { RtcBaselineDenoEvidence } from '../../../baseline/runtime/rtc-baseline-deno-evidence.ts';
-import { createRtcBaselineDenoFinalization } from '../../../baseline/runtime/rtc-baseline-deno-finalization.ts';
+    createBunRtcBaselineAdapters,
+    type RtcBaselineBunPort
+} from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import type { RtcBaselineBunEvidence } from '../../../baseline/runtime/rtc-baseline-bun-evidence.ts';
+import { createRtcBaselineBunFinalization } from '../../../baseline/runtime/rtc-baseline-bun-finalization.ts';
 
 interface MemoryPeak {
     readonly heapUsed: number;
@@ -49,7 +51,7 @@ const decoder = new TextDecoder();
 
 function readPositiveIntegerArgument(name: string): number {
     const prefix = `--${name}=`;
-    const raw = Deno.args.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+    const raw = process.argv.slice(2).find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
     const value = Number(raw);
     if (!Number.isSafeInteger(value) || value < 1) {
         throw new Error(`Expected --${name}=<positive-safe-integer>.`);
@@ -60,7 +62,7 @@ function readPositiveIntegerArgument(name: string): number {
 function createMemorySampler(): MemorySampler {
     let peak: MemoryPeak = { heapUsed: 0, rss: 0 };
     function sample() {
-        const current = Deno.memoryUsage();
+        const current = process.memoryUsage();
         peak = {
             heapUsed: Math.max(peak.heapUsed, current.heapUsed),
             rss: Math.max(peak.rss, current.rss)
@@ -77,6 +79,11 @@ function createMemorySampler(): MemorySampler {
 }
 
 function collectGarbage() {
+    const bun = Reflect.get(globalThis, 'Bun') as { gc?(synchronous: boolean): void; } | undefined;
+    if (typeof bun?.gc === 'function') {
+        bun.gc(true);
+        return;
+    }
     const garbageCollect = Reflect.get(globalThis, 'gc');
     if (typeof garbageCollect === 'function') {
         garbageCollect();
@@ -91,7 +98,7 @@ function createRuntimeObservation(): RtcBaselineRuntimeObservationDto {
             ref: 'codex/rtc-memory-bounds',
             clean: true
         },
-        runtime: { node: '26', npm: '11', deno: '2.9.5', playwright: '1', chromium: '139' },
+        runtime: { node: '26', npm: '11', bun: '2.9.5', playwright: '1', chromium: '139' },
         host: {
             os: 'darwin',
             kernel: '25.0.0',
@@ -113,7 +120,7 @@ function createRuntimeObservation(): RtcBaselineRuntimeObservationDto {
         resolvedConfiguration: [],
         controllerInputs: [],
         workerCommand: {
-            redactedArgv: { executable: 'deno', arguments: [] },
+            redactedArgv: { executable: 'bun', arguments: [] },
             projection: { fixedWorkerFlags: [], configurationFlags: [] }
         },
         allowlistedEnvironment: {}
@@ -218,7 +225,7 @@ function createGeneratedEvidence(
     config: ScenarioConfig,
     sampler: MemorySampler,
     sha256: (bytes: Uint8Array) => Promise<string>
-): RtcBaselineDenoEvidence {
+): RtcBaselineBunEvidence {
     const observation = createRuntimeObservation();
     const environment = createEnvironment(observation);
     const manifest = createManifest(config.sampleCount);
@@ -303,16 +310,16 @@ function createGeneratedEvidence(
     };
 }
 
-function createUnusedDenoPort(): RtcBaselineDenoPort {
+function createUnusedBunPort(): RtcBaselineBunPort {
     const unused = async (): Promise<never> => {
-        throw new Error('The generated evidence scenario does not use the Deno file/process port.');
+        throw new Error('The generated evidence scenario does not use the Bun file/process port.');
     };
     return {
         envGet: () => undefined,
-        build: Deno.build,
-        version: Deno.version,
-        pid: Deno.pid,
-        hostname: () => Deno.hostname(),
+        build: { os: process.platform, arch: process.arch },
+        version: { bun: process.versions.bun ?? process.versions.node },
+        pid: process.pid,
+        hostname: () => hostname(),
         randomUuid: () => crypto.randomUUID(),
         kill: () => undefined,
         lstat: unused,
@@ -322,7 +329,7 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
         writeFile: unused,
         remove: unused,
         async *readDir(): AsyncIterable<never> {
-            throw new Error('The generated evidence scenario does not enumerate the Deno file port.');
+            throw new Error('The generated evidence scenario does not enumerate the Bun file port.');
         },
         command: unused,
         now: () => new Date('2026-08-18T10:00:00.000Z'),
@@ -334,7 +341,7 @@ function createUnusedDenoPort(): RtcBaselineDenoPort {
 
 async function runScenario(config: ScenarioConfig): Promise<MemoryBoundsScenarioResult> {
     const sampler = createMemorySampler();
-    const adapterSha256 = createDenoRtcBaselineAdapters(createUnusedDenoPort()).sha256;
+    const adapterSha256 = createBunRtcBaselineAdapters(createUnusedBunPort()).sha256;
     const sha256 = async (bytes: Uint8Array) => {
         sampler.sample();
         const digest = await adapterSha256(bytes);
@@ -342,7 +349,7 @@ async function runScenario(config: ScenarioConfig): Promise<MemoryBoundsScenario
         return digest;
     };
     const evidence = createGeneratedEvidence(config, sampler, sha256);
-    const { finalizedEvidence, finalizedReader } = createRtcBaselineDenoFinalization(
+    const { finalizedEvidence, finalizedReader } = createRtcBaselineBunFinalization(
         evidence,
         sha256
     );

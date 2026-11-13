@@ -135,7 +135,7 @@ describe('ResourceInbox dequeue failure log', () => {
         );
 
         expect(errorLines).toEqual([]);
-        // A console object argument prints as a multi-line dump on Deno, so the summary travels inside the one string.
+        // A console object argument prints as a multi-line dump on Bun, so the summary travels inside the one string.
         expect(conflictCalls).toHaveLength(1);
         const [line, ...rest] = conflictCalls[0]!;
         expect(rest).toEqual([]);

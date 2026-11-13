@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -24,7 +25,7 @@ import {
     withPGliteSql
 } from './pglite-auth-test-harness.ts';
 
-Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and the issued ticket', async () => {
+test('PGlite AppAuth atomically commits auth state, results, completion, and the issued ticket', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
@@ -163,7 +164,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
     });
 });
 
-Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
+test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
@@ -256,7 +257,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
     });
 });
 
-Deno.test(
+test(
     'PGlite AppAuth materializes one delayed winner fact set at worker execution',
     async () => {
         await withPGliteSql(async (sql) => {

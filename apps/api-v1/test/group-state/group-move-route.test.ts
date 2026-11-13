@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -29,7 +30,7 @@ const REQUEST: GroupMoveRequest = {
     inviteToken: null
 };
 
-Deno.test('group move recovery authenticates and selects only the current principal', async () => {
+test('group move recovery authenticates and selects only the current principal', async () => {
     const app = createTracedApiTestApp();
     const calls: RecoveryCall[] = [];
     registerGroupStateRoutes(app, {
@@ -45,7 +46,7 @@ Deno.test('group move recovery authenticates and selects only the current princi
     assert.deepEqual(calls, [{ scope: { applicationId: 'app-1', workspaceId: 'workspace-1' }, principalId: 'alice' }]);
 });
 
-Deno.test('group move rejects cross-scope and unknown request fields before enqueue', async () => {
+test('group move rejects cross-scope and unknown request fields before enqueue', async () => {
     const app = createTracedApiTestApp();
     let called = false;
     registerGroupStateRoutes(app, {
@@ -74,7 +75,7 @@ Deno.test('group move rejects cross-scope and unknown request fields before enqu
     assert.equal(called, false);
 });
 
-Deno.test('group move mutations and recovery reject unauthenticated requests', async () => {
+test('group move mutations and recovery reject unauthenticated requests', async () => {
     const app = createTracedApiTestApp();
     registerGroupStateRoutes(app, {
         ...createGroupStateRouteTestDependencies(),
@@ -91,7 +92,7 @@ Deno.test('group move mutations and recovery reject unauthenticated requests', a
     );
 });
 
-Deno.test('group move forwards the path request identity and authenticated session to AppInbox', async () => {
+test('group move forwards the path request identity and authenticated session to AppInbox', async () => {
     const app = createTracedApiTestApp();
     const calls: MutationCall[] = [];
     registerGroupStateRoutes(app, {

@@ -1,5 +1,5 @@
 import type { ChangeGroupSessionRequest } from '@shared/api/group-sessions/group-session-schedule.ts';
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';

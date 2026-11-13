@@ -31,6 +31,7 @@ import {
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { createTestGroup } from '../../../../create-test-group.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { createRecordingLiveWsPublication } from './recording-live-ws-publication.ts';
 
@@ -430,7 +431,7 @@ function createGrantedFixture(fanout: RallarServerWsFanout, options: GrantedFixt
     ) as Record<SessionId, TestWebSocket>;
     for (const [sessionId, socket] of Object.entries(sockets)) {
         socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: sessionId, socket }));
     }
     const grantedTopics = new WsGrantedTopicSet();
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });

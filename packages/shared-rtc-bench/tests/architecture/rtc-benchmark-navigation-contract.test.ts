@@ -68,10 +68,10 @@ describe('shared RTC benchmark navigation contract', () => {
         }
     });
 
-    it('keeps diagnostics outside accepted baseline catalog and checked by Deno', () => {
+    it('keeps diagnostics outside accepted baseline catalog and typechecked by the package', () => {
         const catalogPath = path.join(packageRoot, 'baseline/catalog/rtc-baseline-workload-catalog.ts');
         const catalog = fs.existsSync(catalogPath) ? fs.readFileSync(catalogPath, 'utf8') : '';
-        const packageJson = fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8');
+        const tsconfig = fs.readFileSync(path.join(packageRoot, 'tsconfig.json'), 'utf8');
         for (
             const diagnostic of [
                 'diagnostics/rtc-room-graph-no-rtt-bench.ts',
@@ -80,7 +80,7 @@ describe('shared RTC benchmark navigation contract', () => {
             ]
         ) {
             expect(catalog).not.toContain(diagnostic);
-            expect(packageJson).toContain(diagnostic);
         }
+        expect(tsconfig).toContain('"**/*.ts"');
     });
 });

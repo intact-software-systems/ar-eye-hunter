@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { normalize } from 'node:path';
 import process from 'node:process';
 import type { Sql } from 'postgres';
@@ -116,7 +117,7 @@ async function readBenchmarkConfiguration(options: StateWriteBenchmarkOptions): 
     const gitIdentity = await readBenchmarkGitIdentity();
     const reasonsText = options.regressionReasonsFile === undefined
         ? undefined
-        : await Deno.readTextFile(options.regressionReasonsFile);
+        : await readFile(options.regressionReasonsFile, 'utf8');
     const precommittedReasons = parseGroupTopologyRegressionReasons(
         reasonsText,
         gitIdentity
@@ -126,7 +127,7 @@ async function readBenchmarkConfiguration(options: StateWriteBenchmarkOptions): 
         precommittedReasons
     );
 
-    const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() ||
+    const databaseUrl = process.env.DATABASE_URL?.trim() ||
         DEFAULT_DATABASE_URL;
     const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
     return { options, gitIdentity, regressionReasons, databaseUrl, runId };

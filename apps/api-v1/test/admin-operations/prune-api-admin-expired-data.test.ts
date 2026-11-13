@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { toUnavailableAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
@@ -7,7 +8,7 @@ import { PruneApiAdminExpiredData } from '../../src/admin-operations/prune-api-a
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
 
-Deno.test('admin prune exposes typed AppInbox failure facts', async () => {
+test('admin prune exposes typed AppInbox failure facts', async () => {
     const prune = new PruneApiAdminExpiredData({
         appAdminInbox: {
             pruneExpired: () => Promise.resolve(Either.ofLeft(toUnavailableAppInboxFailure()))

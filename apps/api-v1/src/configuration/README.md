@@ -43,7 +43,11 @@ The configuration reader recognizes only these operational overrides:
 
 - Profile: `RALLAR_API_CONFIGURATION_PROFILE`.
 - HTTP and public URLs: `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
-  `RALLAR_WS_BASE_URL`.
+  `RALLAR_WS_BASE_URL`, `RALLAR_SHUTDOWN_DEADLINE_MS`. No committed profile
+  names the shutdown deadline (`http.shutdownDeadlineMs`): the decoder applies
+  the shared Bun server default from `packages/shared-server/process`, and the
+  hosted units set the variable with their `TimeoutStopSec`. Its drain (the
+  deadline less 15 s) must outlast the HTTP idle bound.
 - Database: `RALLAR_SQL_BACKEND`, `RALLAR_PGLITE_DATA_DIR`,
   `RALLAR_PGLITE_SCHEMA_INIT`, `RALLAR_DB_PUBSUB`,
   `RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR`.
@@ -80,6 +84,10 @@ The configuration reader recognizes only these operational overrides:
   `RALLAR_APP_INBOX_NEW_LANE_HELD_ROWS`, `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`, `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_APP_INBOX_FINISHED_RETENTION_MS`, `RALLAR_TIMING_LOGS`.
+  No committed resource names the completion wait (`appInbox.completionWait.maxElapsedMs`): the
+  decoder applies `API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS` from
+  `packages/shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts`, the ceiling black-box recipes
+  derive their mutation budgets from, and a profile or the environment variable overrides it.
 - ICE: `RALLAR_ICE_MODE`, `RALLAR_ICE_RATE_LIMIT_REQUESTS`, `METERED_APP_NAME`, `METERED_REGION`.
   The request allowance must be a positive integer and overrides `ice.rateLimit.requests`.
   All committed profiles retain 20 requests per 60000ms; cache lifetime remains 300000ms.

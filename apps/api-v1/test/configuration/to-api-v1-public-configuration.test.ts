@@ -1,10 +1,11 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { ApiConfig } from '@shared/api/api-config.ts';
 import type { ApiV1PublicApiConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import { toApiV1PublicConfiguration } from '../../src/configuration/to-api-v1-public-configuration.ts';
 
-Deno.test('public configuration projection returns exactly the browser contract', () => {
+test('public configuration projection returns exactly the browser contract', () => {
     const publicApi: ApiV1PublicApiConfiguration = {
         apiBaseUrl: 'https://api.example.test',
         wsBaseUrl: 'wss://api.example.test'
@@ -21,7 +22,7 @@ Deno.test('public configuration projection returns exactly the browser contract'
     assert.deepEqual(Object.keys(projected).sort(), ['apiBaseUrl', 'endpoints', 'wsBaseUrl']);
 });
 
-Deno.test('public configuration projection input cannot contain a secret field', () => {
+test('public configuration projection input cannot contain a secret field', () => {
     const publicApi: ApiV1PublicApiConfiguration = {
         apiBaseUrl: 'https://api.example.test',
         wsBaseUrl: 'wss://api.example.test',

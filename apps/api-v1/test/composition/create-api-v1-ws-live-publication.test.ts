@@ -1,10 +1,11 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { ClientSession } from '@shared/api/client-types.ts';
 import { createApiV1WsLivePublication } from '../../src/composition/create-api-v1-ws-live-publication.ts';
 import { createClientSnapshot, TEST_SCOPE } from '../client-state/client-state-route-test-runtime.ts';
 
-Deno.test('Postgres publisher uses the shared notice channel and freezes only live principal sessions', async () => {
+test('Postgres publisher uses the shared notice channel and freezes only live principal sessions', async () => {
     const notified: object[] = [];
     const snapshot = createClientSnapshot('alice');
     const session: ClientSession = {
@@ -60,7 +61,7 @@ Deno.test('Postgres publisher uses the shared notice channel and freezes only li
     assert.equal(notified.length, 1);
 });
 
-Deno.test('local and disabled API modes do not claim a cluster publisher', () => {
+test('local and disabled API modes do not claim a cluster publisher', () => {
     for (const mode of ['local', 'disabled'] as const) {
         assert.equal(
             createApiV1WsLivePublication({

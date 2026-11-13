@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';

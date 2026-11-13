@@ -1,7 +1,8 @@
 import type { AdminSupportUseCases, AdminSupportWriteInput } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AdminSupportExplainQueueItemRequest, AdminSupportNarrativeResponse, AdminSupportTarget } from '@shared/api/admin-support/admin-support-types.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import * as adminSupportRoutes from '../../src/routes/admin-support-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
@@ -21,7 +22,7 @@ const QUEUE_KEY = {
     contextId: 'room-1'
 };
 
-Deno.test('admin support routes reject unauthenticated requests with 401', async () => {
+test('admin support routes reject unauthenticated requests with 401', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token'))
     });
@@ -36,7 +37,7 @@ Deno.test('admin support routes reject unauthenticated requests with 401', async
     });
 });
 
-Deno.test('admin support routes reject authenticated non-admin requests with 403', async () => {
+test('admin support routes reject authenticated non-admin requests with 403', async () => {
     const app = createApp({
         requireApiAuthSession: () =>
             Promise.resolve({
@@ -59,7 +60,7 @@ Deno.test('admin support routes reject authenticated non-admin requests with 403
     });
 });
 
-Deno.test('admin support queue route forwards request body and admin session', async () => {
+test('admin support queue route forwards request body and admin session', async () => {
     const calls: AdminSupportWriteInput<AdminSupportExplainQueueItemRequest>[] = [];
     const app = createApp({
         support: {
@@ -96,7 +97,7 @@ Deno.test('admin support queue route forwards request body and admin session', a
     ]);
 });
 
-Deno.test('admin support routes reject malformed JSON bodies with 400', async () => {
+test('admin support routes reject malformed JSON bodies with 400', async () => {
     const app = createApp();
 
     const response = await app.request('/api/admin/support/explain/client', {
@@ -115,7 +116,7 @@ Deno.test('admin support routes reject malformed JSON bodies with 400', async ()
     });
 });
 
-Deno.test('admin support routes reject malformed queue keys before invoking support', async () => {
+test('admin support routes reject malformed queue keys before invoking support', async () => {
     let invoked = false;
     const app = createApp({
         support: {
