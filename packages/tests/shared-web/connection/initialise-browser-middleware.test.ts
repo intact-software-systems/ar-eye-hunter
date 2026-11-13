@@ -142,7 +142,8 @@ describe('native observation handoff cleanup', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(middleware.middleware.webSocketQueueBox);
@@ -199,7 +200,8 @@ describe('the inbound stores a connect hands its two carriers', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
@@ -251,7 +253,8 @@ describe('browser RTC layout adoption composition', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 600_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
@@ -611,7 +614,8 @@ describe('failed browser startup owns acquired transport completion', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         const original = wsClientFactory.createDefaultWsQueueBoxClientService;
         vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
@@ -751,7 +755,8 @@ function configureFailedStartup(
         serverPeerId: 'server',
         apiBaseUrl: 'http://test',
         wsBaseUrl: 'ws://test',
-        endpoints: { createWs: '/ws' }
+        endpoints: { createWs: '/ws' },
+        rtcReplacedLayoutOverlapMs: 15_000
     });
     const ice = vi.spyOn(connectionHttp, 'readIceCandidates');
     if (boundary === 'rtc-request') {

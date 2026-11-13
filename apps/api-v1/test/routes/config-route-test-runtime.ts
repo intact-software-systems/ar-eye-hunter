@@ -49,6 +49,7 @@ export function createConfigRouteTestDependencies(
             apiBaseUrl: 'http://localhost:8080',
             wsBaseUrl: 'ws://localhost:8080',
             endpoints: { createWs: '/api/ws/:id' },
+            rtcReplacedLayoutOverlapMs: 15_000,
             serverPeerId: 'default-qbox-server'
         },
         ...dependencies

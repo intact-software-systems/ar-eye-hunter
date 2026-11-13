@@ -1,8 +1,11 @@
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import Ajv from 'ajv';
 import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
+
+import { toApiV1PublicConfiguration } from '../../../../apps/api-v1/src/configuration/to-api-v1-public-configuration.ts';
 
 const document = requireRecord(load(readFileSync('apps/api-v1/resources/api-v1-openapi.yaml', 'utf8')), 'OpenAPI');
 const components = requireRecord(document.components, 'components');
@@ -58,4 +61,25 @@ it('accepts explicit null failure details while rejecting invalid non-null value
     expect(validate(failure), JSON.stringify(validate.errors)).toBe(true);
     expect(validate({ ...failure, issues: 'invalid' })).toBe(false);
     expect(validate({ ...failure, retry: 1 })).toBe(false);
+});
+
+it('requires the replaced-layout overlap on the body api-v1 serves at /api/config', () => {
+    const validate = new Ajv({ allErrors: true, unknownFormats: ['int64'] }).compile({
+        $ref: '#/components/schemas/ApiConfig',
+        components
+    });
+    const served = {
+        ...toApiV1PublicConfiguration({
+            apiBaseUrl: 'https://api.example.test',
+            wsBaseUrl: 'wss://api.example.test',
+            rtcReplacedLayoutOverlapMs: 7_000
+        }),
+        serverPeerId: 'default-qbox-server'
+    };
+    const { rtcReplacedLayoutOverlapMs: _rtcReplacedLayoutOverlapMs, ...olderServer } = served;
+
+    expect(validate(served), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate(olderServer)).toBe(false);
+    expect(validate({ ...served, rtcReplacedLayoutOverlapMs: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS + 1 })).toBe(false);
+    expect(validate({ ...served, rtcReplacedLayoutOverlapMs: -1 })).toBe(false);
 });

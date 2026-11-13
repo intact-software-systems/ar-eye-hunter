@@ -9,7 +9,7 @@ test('public configuration projection returns exactly the browser contract', () 
     const publicApi: ApiV1PublicApiConfiguration = {
         apiBaseUrl: 'https://api.example.test',
         wsBaseUrl: 'wss://api.example.test',
-        rtcReplacedLayoutOverlapMs: 15_000
+        rtcReplacedLayoutOverlapMs: 7_000
     };
     const projected: ApiConfig = toApiV1PublicConfiguration(publicApi);
 
@@ -18,9 +18,10 @@ test('public configuration projection returns exactly the browser contract', () 
         wsBaseUrl: 'wss://api.example.test',
         endpoints: {
             createWs: '/api/ws/:id'
-        }
+        },
+        rtcReplacedLayoutOverlapMs: 7_000
     });
-    assert.deepEqual(Object.keys(projected).sort(), ['apiBaseUrl', 'endpoints', 'wsBaseUrl']);
+    assert.deepEqual(Object.keys(projected).sort(), ['apiBaseUrl', 'endpoints', 'rtcReplacedLayoutOverlapMs', 'wsBaseUrl']);
 });
 
 test('public configuration projection input cannot contain a secret field', () => {

@@ -339,7 +339,8 @@ test('configuration startup summary is useful and contains no secret-derived dat
         iceMode: 'metered',
         publicApi: {
             apiBaseUrl: 'https://api.rallar.intactss.com',
-            wsBaseUrl: 'wss://api.rallar.intactss.com'
+            wsBaseUrl: 'wss://api.rallar.intactss.com',
+            rtcReplacedLayoutOverlapMs: 15_000
         },
         corsOrigins: [],
         workerCategories: {
@@ -365,6 +366,19 @@ test('configuration startup summary is useful and contains no secret-derived dat
     assert.equal(rendered.includes('databaseUrl'), false);
     assert.equal(rendered.includes('fingerprint'), false);
     assert.equal(rendered.includes('length'), false);
+});
+
+test('configuration startup summary names the replaced-layout overlap the server started with', async () => {
+    const configuration = await readApiV1Configuration(
+        readerInput(validConfigurationEnvironment('prod'))
+    );
+    const withoutOverlap = toApiV1ConfigurationStartupSummary({
+        ...configuration,
+        publicApi: { ...configuration.publicApi, rtcReplacedLayoutOverlapMs: 0 }
+    });
+
+    assert.equal(withoutOverlap.publicApi.rtcReplacedLayoutOverlapMs, 0);
+    assert.equal(toApiV1ConfigurationStartupSummary(configuration).publicApi.rtcReplacedLayoutOverlapMs, 15_000);
 });
 
 test('ICE request input overrides defaults and profile without changing window or cache and remains frozen', async () => {

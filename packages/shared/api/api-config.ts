@@ -10,6 +10,7 @@ export interface ApiConfig {
     readonly endpoints: {
         readonly createWs: string;
     };
+    readonly rtcReplacedLayoutOverlapMs: number;
 }
 
 /** What `/api/config` serves: the configuration and the peer id a client addresses the WS server by (D57 as applied). */

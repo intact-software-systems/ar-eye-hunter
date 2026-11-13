@@ -13,6 +13,7 @@ const SERVED = {
     apiBaseUrl: 'https://api.example.test',
     wsBaseUrl: 'wss://api.example.test',
     endpoints: { createWs: '/api/ws/:id' },
+    rtcReplacedLayoutOverlapMs: 15_000,
     serverPeerId: 'default-qbox-server'
 };
 

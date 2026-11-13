@@ -6806,7 +6806,7 @@ components:
 
     ApiConfig:
       type: object
-      required: [apiBaseUrl, wsBaseUrl, endpoints, serverPeerId]
+      required: [apiBaseUrl, wsBaseUrl, endpoints, serverPeerId, rtcReplacedLayoutOverlapMs]
       properties:
         apiBaseUrl:
           type: string
@@ -6824,6 +6824,15 @@ components:
             tracks the server as its one hop by it. Every server since S3c-i serves it; a browser reads a body
             without it as a server that predates the field and falls back (no hop receipt, app commands over REST).
           example: default-qbox-server
+        rtcReplacedLayoutOverlapMs:
+          type: integer
+          minimum: 0
+          maximum: 15000
+          description: >-
+            How long, in milliseconds, an RTC browser keeps routing over the edges of a server layout after a newer
+            server layout replaces it. The overlap ends at this bound or when the replaced layout's connection closes,
+            whichever comes first; 0 disables it. A browser reads it once per connect and refuses a body without it.
+          example: 15000
       additionalProperties: true
 
     ApiEndpoints:

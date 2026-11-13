@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
 
 const API_URL = new URL('https://api.example.test/api/config');
 
@@ -8,12 +9,41 @@ const SERVED = {
     apiBaseUrl: 'https://api.example.test',
     wsBaseUrl: 'wss://api.example.test',
     endpoints: { createWs: '/api/ws/:id' },
-    serverPeerId: 'default-qbox-server'
+    serverPeerId: 'default-qbox-server',
+    rtcReplacedLayoutOverlapMs: 7_000
 };
+
+const NO_OVERLAP = 'The /api/config response states no rtcReplacedLayoutOverlapMs that is an integer from 0 to 15000.';
 
 describe('the /api/config boundary decoder', () => {
     it('reads the configuration and the WS server peer id', () => {
         expect(decodeApiConfigResponse({ ...SERVED, build: 'b-1' }, API_URL).right).toEqual(SERVED);
+    });
+
+    it('returns the replaced-layout overlap the server states', () => {
+        expect(decodeApiConfigResponse(SERVED, API_URL).right?.rtcReplacedLayoutOverlapMs).toBe(7_000);
+        expect(decodeApiConfigResponse({ ...SERVED, rtcReplacedLayoutOverlapMs: 0 }, API_URL).right?.rtcReplacedLayoutOverlapMs)
+            .toBe(0);
+        expect(
+            decodeApiConfigResponse({ ...SERVED, rtcReplacedLayoutOverlapMs: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS }, API_URL).right
+                ?.rtcReplacedLayoutOverlapMs
+        ).toBe(MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS);
+    });
+
+    it('refuses a response that states no replaced-layout overlap, as from a server that predates it', () => {
+        const { rtcReplacedLayoutOverlapMs: _rtcReplacedLayoutOverlapMs, ...olderServer } = SERVED;
+
+        expect(decodeApiConfigResponse(olderServer, API_URL).left).toBe(NO_OVERLAP);
+    });
+
+    it('refuses an overlap above the browser\'s connection grace', () => {
+        const value = { ...SERVED, rtcReplacedLayoutOverlapMs: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS + 1 };
+
+        expect(decodeApiConfigResponse(value, API_URL).left).toBe(NO_OVERLAP);
+    });
+
+    it.each([-1, 1.5, '7000', null])('refuses the overlap %j, which is not a whole number of milliseconds in range', (overlap) => {
+        expect(decodeApiConfigResponse({ ...SERVED, rtcReplacedLayoutOverlapMs: overlap }, API_URL).left).toBe(NO_OVERLAP);
     });
 
     it('rejects a response missing the required WS server identity', () => {
