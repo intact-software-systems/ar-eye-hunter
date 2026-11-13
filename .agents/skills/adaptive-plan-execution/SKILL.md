@@ -120,6 +120,12 @@ action is uncertain.
   work.
 - `REPAIR_CHECK` means diagnose the failing check; do not edit governance metadata.
 - `WAIT_CI` and `WAIT_GITHUB` mean wait for GitHub without creating local evidence records.
+- Keep revision batches in draft, where governance and type checks provide CI feedback and the
+  agent runs focused behavioural tests locally. Mark ready after implementation and review to start
+  broad handoff validation. Continue monitoring the new run through `WAIT_CI`; do not end the task
+  as complete while the current candidate is unverified. If fixes require new code, return to draft
+  before pushing the batch and mark ready again after focused validation. A previous draft refusal
+  can remain visible briefly while the ready-triggered run queues; inspect the new run first.
 - `AWAIT_REVIEW_OR_ADMIN_MERGE` supports either native review or an intentional role-based
   administrator merge.
 - `DONE` is terminal and permits no post-merge governance work.

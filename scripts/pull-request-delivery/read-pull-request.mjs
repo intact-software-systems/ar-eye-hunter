@@ -12,14 +12,6 @@ const pullRequestFields = [
     'autoMergeRequest'
 ];
 
-const failingCheckConclusions = new Set([
-    'ACTION_REQUIRED',
-    'CANCELLED',
-    'FAILURE',
-    'STALE',
-    'STARTUP_FAILURE',
-    'TIMED_OUT'
-]);
 const requiredCheckName = 'Branch Release Gate result';
 
 export function readPullRequest({ execFile, defaultBranch }) {
@@ -66,17 +58,14 @@ function readDefaultBranch(execFile) {
 
 function toCheckState(statusCheckRollup) {
     const requiredChecks = statusCheckRollup.filter(isRequiredCheck);
-    if (requiredChecks.length === 0) {
+    if (requiredChecks.length === 0 || requiredChecks.some(isPendingCheck)) {
         return 'PENDING';
     }
     const requiredCheck = requiredChecks.reduce(newestCheck);
-    if (isFailingCheck(requiredCheck)) {
-        return 'FAILING';
-    }
-    if (isPendingCheck(requiredCheck)) {
-        return 'PENDING';
-    }
-    return 'PASSING';
+    const conclusion = requiredCheck.__typename === 'StatusContext'
+        ? requiredCheck.state
+        : requiredCheck.conclusion;
+    return conclusion === 'SUCCESS' ? 'PASSING' : 'FAILING';
 }
 
 function newestCheck(current, candidate) {
@@ -87,13 +76,6 @@ function isRequiredCheck(check) {
     return check.__typename === 'StatusContext'
         ? check.context === requiredCheckName
         : check.name === requiredCheckName;
-}
-
-function isFailingCheck(check) {
-    if (check.__typename === 'StatusContext') {
-        return check.state === 'ERROR' || check.state === 'FAILURE';
-    }
-    return failingCheckConclusions.has(check.conclusion);
 }
 
 function isPendingCheck(check) {

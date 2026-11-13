@@ -127,6 +127,20 @@ limit.
   auto-merge and an intentional role-based administrator merge are both
   supported. When GitHub reports the pull request as merged, stop. Ordinary
   pull request completion creates no tracked governance file or post-merge task.
+- Keep implementation and revision batches in a draft PR. Draft updates run
+  governance and type checks; run focused behavioural tests locally for the
+  affected code. Mark ready only after implementation, focused validation, and
+  review are complete: that transition starts the broad release handoff gate.
+- After marking ready, stay with the PR until the current candidate's required
+  `Branch Release Gate result` succeeds or a concrete blocker requires human
+  input. Use read-only status checks and bounded waits; `WAIT_CI` is ongoing
+  work, not a completed handoff. A draft's awaiting-handoff failure can remain
+  visible briefly while the new ready-triggered run queues; inspect that new
+  run before classifying the old refusal as a test failure.
+- Return to draft before pushing a batch of review fixes, then mark ready once
+  for the completed revision. Ready-PR pushes still require validation for the
+  new candidate. Rerun failed jobs only after classifying their failure; never
+  claim an older revision, a skipped check, or a draft refusal as passing evidence.
 - Retained production legacy remains a meaningful durable policy decision. It
   requires the focused exception registry and explicit human approval; ordinary
   delivery metadata never substitutes for that decision.

@@ -36,6 +36,7 @@ interface HandoffScenario {
     readonly draft: boolean;
     readonly cancelled: boolean;
     readonly governanceResult: string;
+    readonly mode: string;
 }
 
 const workflowPath = path.resolve(__dirname, '../../../../.github/workflows/branch-release-gate.yml');
@@ -45,7 +46,7 @@ describe('PR handoff admission', () => {
         'keeps draft %s events inexpensive without approving release',
         (event) => {
             const workflow = readHandoffWorkflow();
-            const scenario = { draft: true, cancelled: false, governanceResult: 'success' };
+            const scenario = { draft: true, cancelled: false, governanceResult: 'success', mode: 'broad' };
 
             expect(workflow.on.pull_request.types).toContain(event);
             expect(isAdmitted(workflow.jobs['governance-gate'].if, scenario)).toBe(true);
@@ -74,7 +75,7 @@ describe('PR handoff admission', () => {
         'validates ready candidates on %s using the broad suite',
         (event) => {
             const workflow = readHandoffWorkflow();
-            const scenario = { draft: false, cancelled: false, governanceResult: 'success' };
+            const scenario = { draft: false, cancelled: false, governanceResult: 'success', mode: 'broad' };
 
             expect(workflow.on.pull_request.types).toContain(event);
             expect(workflow.jobs['draft-checks']).toBeDefined();
@@ -89,14 +90,28 @@ describe('PR handoff admission', () => {
     );
 
     it.each([
-        { draft: false, cancelled: true, governanceResult: 'cancelled' },
-        { draft: false, cancelled: false, governanceResult: 'failure' }
+        { draft: false, cancelled: true, governanceResult: 'cancelled', mode: 'broad' },
+        { draft: false, cancelled: false, governanceResult: 'failure', mode: 'broad' }
     ])('still concludes an unsuccessful ready run: %j', (scenario) => {
         const workflow = readHandoffWorkflow();
 
         expect(isAdmitted(workflow.jobs['release-gate'].if, scenario)).toBe(false);
         expect(isAdmitted(workflow.jobs['games-release-gate'].if, scenario)).toBe(false);
         expect(isAdmitted(workflow.jobs['branch-release-result'].if, scenario)).toBe(true);
+    });
+
+    it.each([
+        { draft: true, mode: 'rtc-observation', integrity: false },
+        { draft: false, mode: 'rtc-observation', integrity: true },
+        { draft: false, mode: 'reuse', integrity: false }
+    ])('preserves ready observation/reuse routing without admitting draft integrity: %j', ({ draft, mode, integrity }) => {
+        const workflow = readHandoffWorkflow();
+        const scenario = { draft, cancelled: false, governanceResult: 'success', mode };
+
+        expect(isAdmitted(workflow.jobs['rtc-observation-integrity'].if, scenario)).toBe(integrity);
+        for (const job of ['release-gate', 'games-release-gate', 'alm-conformance-observation', 'publish-validation-evidence']) {
+            expect(isAdmitted(workflow.jobs[job].if, scenario), job).toBe(false);
+        }
     });
 
     it('refuses draft release approval with an actionable summary', () => {
@@ -152,7 +167,7 @@ function isAdmitted(condition: string | undefined, scenario: HandoffScenario): b
         github: { event: { pull_request: { draft: scenario.draft } } },
         needs: {
             'governance-gate': { result: scenario.governanceResult },
-            'validation-evidence': { result: 'success', outputs: { mode: 'broad' } },
+            'validation-evidence': { result: 'success', outputs: { mode: scenario.mode } },
             'game-changes': { result: 'success', outputs: { run_games: 'true' } },
             'release-gate': { result: 'success' },
             'games-release-result': { outputs: { result: 'success' } }
