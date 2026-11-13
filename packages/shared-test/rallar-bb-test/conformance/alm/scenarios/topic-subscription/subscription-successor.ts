@@ -56,12 +56,15 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     toRecipientCommands: toPublisherCommands
 };
 
-/** The receiver owns the room: it grants itself `publish` and the sender's principal `subscribe`. */
+/**
+ * The receiver owns the room: it subscribes to the cues, then grants itself `publish` and the sender's principal
+ * `subscribe`.
+ */
 function toPublisherCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
+        ...toCueListenCommands(owner),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: true, subscribe: false }),
         toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: false, subscribe: true }),
-        ...toCueListenCommands(owner),
         toCueWait(owner, 'successor-subscribed'),
         ...toPublishCommands(owner, 'publication')
     ];

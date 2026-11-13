@@ -35,7 +35,7 @@ import {
     type AlmConformanceCellPartsInput
 } from './cell/alm-conformance-cell-parts.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
-import { toAlmCellSettleCommands } from './cell/to-alm-cell-settle-commands.ts';
+import { toAlmCellSettledBody } from './cell/to-alm-cell-settled-body.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { resolveAlmConformancePrincipals } from './resolve-alm-conformance-principals.ts';
 import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
@@ -138,7 +138,7 @@ export interface AlmConformanceScenario {
     readonly publisherB: RallarBlackBoxTestRecipe | undefined;
     /**
      * Each declared role's recipe in its parts, so a combined recipe shares one prologue and runs each body. A role
-     * recipe of a `barriered` cell holds its settle between the two.
+     * recipe of a `barriered` cell also holds its cell's barriers: one after its prologue, one after its arming run.
      */
     readonly partsByRole: Readonly<Partial<Record<AlmConformanceRole, AlmConformanceCellParts>>>;
     readonly tags: readonly AlmConformanceTag[];
@@ -444,7 +444,7 @@ function toContinuationRecipe(
     return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
-/** Every declared role's cell; a role's settle reads the other roles' prologues, so all parts come first. */
+/** Every declared role's cell; a role's settle reads the other roles' parts, so all parts come first. */
 function toRoleCells(
     input: CreateAlmConformanceRecipesInput,
     definition: AlmConformanceScenarioDefinition,
@@ -465,30 +465,30 @@ function toRoleCells(
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });
-    const prologueByRole = new Map(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts.prologue]));
+    const partsByRole = new Map(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts]));
     return new Map(recipeInputs.map(({ recipeInput, parts }) => [
         recipeInput.role,
-        toRoleCell(recipeInput, parts, toAlmCellSettleCommands(recipeInput, prologueByRole))
+        toRoleCell(recipeInput, parts, toAlmCellSettledBody(recipeInput, partsByRole))
     ]));
 }
 
-/** The role's recipe, its settle between its parts, and its parts, all with the role's principals resolved. */
+/** The role's recipe, its prologue then its settled body, and its parts, all with the role's principals resolved. */
 function toRoleCell(
     recipeInput: AlmConformanceRecipeInput,
     parts: AlmConformanceCellParts,
-    settle: readonly RallarBlackBoxTestCommand[]
+    settledBody: readonly RallarBlackBoxTestCommand[]
 ): AlmConformanceRoleCell {
-    const recipe = resolveAlmConformancePrincipals(
-        toAlmConformanceRecipe(recipeInput, [...parts.prologue, ...settle, ...parts.body]),
-        recipeInput.input.principalIdsByRole
-    );
+    const toResolvedRecipe = (commands: readonly RallarBlackBoxTestCommand[]) =>
+        resolveAlmConformancePrincipals(
+            toAlmConformanceRecipe(recipeInput, commands),
+            recipeInput.input.principalIdsByRole
+        );
+    const recipe = toResolvedRecipe([...parts.prologue, ...settledBody]);
+    const resolvedParts = toResolvedRecipe([...parts.prologue, ...parts.body]).commands;
     const prologueLength = parts.prologue.length;
     return {
         recipe,
-        parts: {
-            prologue: recipe.commands.slice(0, prologueLength),
-            body: recipe.commands.slice(prologueLength + settle.length)
-        }
+        parts: { prologue: resolvedParts.slice(0, prologueLength), body: resolvedParts.slice(prologueLength) }
     };
 }
 

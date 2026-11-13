@@ -9,7 +9,11 @@ import {
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     ALM_CONFORMANCE_WORLD_SEND_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import {
+    ALM_CONFORMANCE_LANE_FAMILIES,
+    type AlmConformanceLaneFamily
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -27,6 +31,7 @@ import {
     createAlmConformance3AgentEntry,
     toAlmConformanceCombinedRecipe
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
+import { CONFORMANCE_PRINCIPAL_IDS } from '../shared-test/alm-conformance-test-input.ts';
 import { toNestedCommands } from '../shared-test/to-nested-commands.ts';
 
 /** No generated scenario carries a request of its own today, so the fixture places one first in the sender's body. */
@@ -357,6 +362,37 @@ describe('ALM conformance combined blocks', () => {
             ];
 
             expect(prefixes, carrier).toEqual(Array.from(prefixes, () => `alm-${carrier}-delivery-baseline`));
+        }
+    });
+
+    it('a combined block\'s arming run is its leading faults and cue subscriptions', () => {
+        const selections = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]
+            .flatMap((entry) => entry.manifest.recipes);
+        for (const selection of selections) {
+            for (const { cell, commands } of toCombinedBlocks(selection.recipe!)) {
+                const armedAt = commands.findIndex((command) => command.commandId === `${cell}-${selection.role}-armed`);
+                const steps = commands.filter((_, index) => index !== armedAt);
+
+                expect(commands.slice(0, armedAt), cell).toEqual(toAlmCellArming(steps).arming);
+            }
+        }
+        // No hosted cell carries a cue, so a cue cell's combined recipe shows the subscription half of the rule.
+        const granted = createAlmConformanceRecipes({
+            group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            senderConnection: 'sender',
+            receiverConnection: 'receiver',
+            deadlineMs: 18_000,
+            laneFamilies: ALM_CONFORMANCE_LANE_FAMILIES,
+            principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS
+        }).find((scenario) => scenario.scenarioKey === 'granted-rtc-delivered')!;
+        for (const role of ['sender', 'receiver'] as const) {
+            const [block] = toCombinedBlocks(toAlmConformanceCombinedRecipe([granted], role, 'two-agent'));
+            const prefix = `alm-rtc-granted-rtc-delivered-${role}-`;
+
+            expect(block!.commands.slice(0, 3).map((command) => command.commandId), role)
+                .toEqual([`${prefix}cue-listen`, `${prefix}cue-listen-sent`, `${prefix}armed`]);
         }
     });
 

@@ -8,6 +8,7 @@ import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/cell/alm-conformance-cell-parts.ts';
+import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import {
     toAlmCellBarrier,
     type AlmCellBarrierPhase
@@ -347,15 +348,15 @@ function toAlmConformanceCombinedCommands(
 /**
  * The combined recipe runs every role at once, so only barriers order one role's block against another's (D62).
  * `start`: every role finished the previous scenario, so no ACK of it is still owed when a fault is armed.
- * `armed`: every role armed the faults leading its block, so the sender sends into them.
+ * `armed`: every role ran the arming run leading its block, its faults and its cue subscription, so the sender sends
+ * into the faults and every cue reaches a role that listens.
  */
 function toBarrieredScenarioCommands(
     scenario: AlmConformanceScenario,
     role: AlmConformanceRole,
     commands: readonly RallarBlackBoxTestCommand[]
 ): readonly RallarBlackBoxTestCommand[] {
-    const firstStep = commands.findIndex((command) => command.kind !== 'fault.inject');
-    const armedEnd = firstStep < 0 ? commands.length : firstStep;
+    const { arming, rest } = toAlmCellArming(commands);
     const toBarrier = (phase: AlmCellBarrierPhase) =>
         toAlmCellBarrier({
             cellPrefix: toAlmCellCommandPrefix(toScenarioCarrier(scenario), scenario.scenarioKey),
@@ -364,7 +365,7 @@ function toBarrieredScenarioCommands(
             timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
             participants: undefined
         });
-    return [toBarrier('start'), ...commands.slice(0, armedEnd), toBarrier('armed'), ...commands.slice(armedEnd)];
+    return [toBarrier('start'), ...arming, toBarrier('armed'), ...rest];
 }
 
 /** A scenario names no carrier of its own; its recipes' metadata does. */

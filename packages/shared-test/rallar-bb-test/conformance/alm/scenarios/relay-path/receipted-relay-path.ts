@@ -68,15 +68,16 @@ function toRelayPathSenderCommands(sender: AlmConformanceStepInput): readonly Ra
 }
 
 /**
- * The receiver owns the run's group, so it PUTs the path; it says the path is set only once the sender, which starts
- * last, says it listens. It reads its own receipt before it waits for the sender's `sender-read` cue, so by the reset
- * both origins have read.
+ * The receiver owns the run's group, so it PUTs the path. It subscribes to the cues first, so it listens before the
+ * cell's `armed` barrier lets the sender say it is ready, and it says the path is set only once the sender says it
+ * listens. It reads its own receipt before it waits for the sender's `sender-read` cue, so by the reset both origins
+ * have read.
  */
 function toRelayPathOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(owner);
     return [
-        toPathTopologyConfigCommand(owner, 'tree'),
         ...toCueListenCommands(cue),
+        toPathTopologyConfigCommand(owner, 'tree'),
         toCueWait(cue, 'ready'),
         ...toCueSendCommands(cue, 'tree'),
         ...toRelayPathOriginCommands(owner),

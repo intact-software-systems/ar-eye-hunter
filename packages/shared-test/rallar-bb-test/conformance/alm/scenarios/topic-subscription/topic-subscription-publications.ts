@@ -13,6 +13,7 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
+import { ALM_CELL_CUE_SUBSCRIPTION_METADATA } from '../../cell/to-alm-cell-arming.ts';
 import { toGrantedSend } from './to-granted-send.ts';
 import {
     SUBSCRIPTION_ABSENCE_MS,
@@ -214,10 +215,14 @@ export function toPublicationWait(
 
 /**
  * A cue travels on the members topic under the cell's type. A role hears it only through the typed channel its own
- * send there opens, so every role that waits for a cue sends this one first, before any cue it waits for can be sent.
+ * send there opens, so every role that waits for a cue leads its body with this pair: it is the role's arming run,
+ * which a barriered cell completes on every role before any role's body sends a cue.
  */
 export function toCueListenCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return toCueSendCommands(step, 'listen');
+    return toCueSendCommands(step, 'listen').map((command) => ({
+        ...command,
+        metadata: ALM_CELL_CUE_SUBSCRIPTION_METADATA
+    }));
 }
 
 /**

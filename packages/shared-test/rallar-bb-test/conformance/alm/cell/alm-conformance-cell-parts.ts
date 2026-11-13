@@ -10,12 +10,14 @@ import {
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
 import { toOwnerLeaseLapseWait } from '../to-pause-command.ts';
+import { isAlmCellCueSubscription } from './to-alm-cell-arming.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
 /**
  * A role's recipe in two parts. The prologue opens the role's page through the connect; a delivery-diagnostics
  * recipe's prologue also holds the freshness waits before it and the wait for the connect's applied selection after it,
- * none of them marked. The body is the cell itself, opened by the sender's own storage baseline, and every wait in it
+ * none of them marked. The body is the cell itself, opened by the sender's own storage baseline (after a cue subscription that leads the
+ * sender's commands), and every wait in it
  * reads its own cell's history. A combined recipe shares one prologue and runs each cell's body.
  */
 export interface AlmConformanceCellParts {
@@ -49,8 +51,7 @@ export function toAlmConformanceCellParts(input: AlmConformanceCellPartsInput): 
             ...(input.deliveryDiagnostics ? [toAppliedDiagnosticsWait(input)] : [])
         ],
         body: toCellHistoryMarkedCommands(input, [
-            ...toConnectedStorageCountersCommands(input),
-            ...input.commands,
+            ...toBaselinedCommands(input),
             toStatsCommand(input, 'stats'),
             ...(input.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(input) : [])
         ])
@@ -58,14 +59,23 @@ export function toAlmConformanceCellParts(input: AlmConformanceCellPartsInput): 
 }
 
 /**
- * Pre-send evidence. A sender whose send exhausts its budget stops the recipe before the
- * post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out
- * scenario leaves behind, and the pair brackets the operations one typed send spends.
+ * A sender's definition commands after its pre-send evidence. A sender whose send exhausts its budget stops the recipe
+ * before the post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out scenario
+ * leaves behind, and the pair brackets the operations one typed send spends. A cue subscription leading the sender's
+ * commands runs before the reading, so it arms with every other role's; no cell compares a later reading with this
+ * one, and the subscription is a cue, not a typed send of the cell.
  */
-function toConnectedStorageCountersCommands(
-    step: AlmConformanceStepInput
-): readonly RallarBlackBoxTestCommand[] {
-    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected', false)] : [];
+function toBaselinedCommands(input: AlmConformanceCellPartsInput): readonly RallarBlackBoxTestCommand[] {
+    if (input.role !== 'sender') {
+        return input.commands;
+    }
+    const subscriptionEnd = input.commands.findIndex((command) => !isAlmCellCueSubscription(command));
+    const end = subscriptionEnd < 0 ? input.commands.length : subscriptionEnd;
+    return [
+        ...input.commands.slice(0, end),
+        toStorageCountersCommand(input, 'storage-counters-connected', false),
+        ...input.commands.slice(end)
+    ];
 }
 
 /** The page is fresh: none of these has been emitted on it yet, so these read the page's whole history. */

@@ -83,8 +83,8 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 }
 
 /**
- * The receiver relays that both producers published `p2`: it starts first, so it hears each producer's cue, while
- * publisher-b may publish both before the sibling, which starts after it, listens on the members topic.
+ * The receiver relays that both producers published `p2`: its cue subscription leads its body, so it listens before the
+ * cell's `armed` barrier lets either producer cue, and the sibling waits for this one cue alone.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [

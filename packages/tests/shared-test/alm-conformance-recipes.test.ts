@@ -10,6 +10,7 @@ import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-te
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
+import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import {
     createAlmConformanceRecipes,
     createAlmDeliveryDiagnosticsRecipes,
@@ -1321,7 +1322,9 @@ describe('alm-conformance recipe family', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
             const cellTypeId = 'alm.conformance.rtc.receipted-relay-path';
             const receiver = bodyOf(scenario.receiver);
-            expect(receiver[0]).toMatchObject({
+            // The owner subscribes to the cues first, then PUTs the path.
+            expect(receiver.slice(0, 2).map((command) => command.metadata?.cellArming)).toEqual(['cue-subscription', 'cue-subscription']);
+            expect(receiver[2]).toMatchObject({
                 kind: 'http.request',
                 request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } } }
             });
@@ -1632,14 +1635,16 @@ describe('alm-conformance cell parts', () => {
                         expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual([]);
                         continue;
                     }
-                    expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([...prologue, ...barriers, ...body]);
-                    expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual([{
+                    expect(recipe.commands.slice(0, prologue.length + 1), `${scenario.scenarioKey} ${role}`).toEqual([...prologue, barriers[0]]);
+                    expect(barriers, `${scenario.scenarioKey} ${role}`).toEqual(['connected', 'armed'].map((phase) => ({
                         kind: 'barrier',
-                        commandId: `${cellPrefix}-${role}-connected`,
-                        barrierId: `${cellPrefix}-connected`,
+                        commandId: `${cellPrefix}-${role}-${phase}`,
+                        barrierId: `${cellPrefix}-${phase}`,
                         timeoutMs: expect.any(Number),
                         participants: settleRoles
-                    }]);
+                    })));
+                    expect(recipe.commands.filter((command) => command.kind !== 'barrier'), `${scenario.scenarioKey} ${role}`)
+                        .toEqual([...prologue, ...body]);
                 }
             }
         }
@@ -1652,7 +1657,7 @@ describe('alm-conformance cell parts', () => {
             );
             const barrierIds = barrierIdsByCell.flatMap((ids) => [...ids]);
 
-            expect(barrierIdsByCell.every((ids) => ids.size === 1), carrier).toBe(true);
+            expect(barrierIdsByCell.every((ids) => ids.size === 2), carrier).toBe(true);
             expect(new Set(barrierIds).size, carrier).toBe(barrierIds.length);
         }
     });
@@ -1717,11 +1722,135 @@ describe('alm-conformance cell parts', () => {
                         'connect'
                     ]);
                     if (role === 'sender') {
-                        expect(parts.body[0]?.commandId).toBe(`${prefix}storage-counters-connected`);
+                        // A sender that waits for a cue subscribes before its storage baseline; nothing else precedes it.
+                        const baselineAt = parts.body.findIndex((command) => command.metadata?.cellArming !== 'cue-subscription');
+                        expect([0, 2], scenario.scenarioKey).toContain(baselineAt);
+                        expect(parts.body[baselineAt]?.commandId).toBe(`${prefix}storage-counters-connected`);
                     }
                     expect(parts.body.at(-1)?.commandId).toBe(`${prefix}stats`);
                 }
             }
         }
     });
+
+    it('every role that waits for a cue subscribes within its arming run', () => {
+        const subscribedByCarrier = new Map<AlmConformanceCarrier, number>();
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                for (const role of scenario.roles) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    if (!toNestedCommands(recipe.commands).some(isCueWait)) {
+                        continue;
+                    }
+                    // A successor carries no barrier, so no role relies on it to hear a cue sent at its start.
+                    expect(role, scenario.scenarioKey).not.toBe('successor');
+                    const listens = toArmingRun(recipe, `alm-${carrier}-${scenario.scenarioKey}`, role)
+                        .filter((command) => isCueSend(command) && command.payload.cue === 'listen');
+                    expect(listens, `${scenario.scenarioKey} ${role}`).toHaveLength(1);
+                    subscribedByCarrier.set(carrier, (subscribedByCarrier.get(carrier) ?? 0) + 1);
+                }
+            }
+        }
+        expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 18, rtc: 47, 'rtc-with-ws-fallback': 19 });
+    });
+
+    it('no role sends a cue other than its subscription before its armed barrier', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                for (const role of scenario.roles.filter((candidate) => candidate !== 'successor')) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    const armedAt = recipe.commands.findIndex((command) => command.commandId === `${cellPrefix}-${role}-armed`);
+                    const cues = toNestedCommands(recipe.commands.slice(0, armedAt)).filter(isCueSend);
+
+                    expect(armedAt, `${scenario.scenarioKey} ${role}`).toBeGreaterThan(0);
+                    expect(cues.map((command) => command.payload.cue), `${scenario.scenarioKey} ${role}`)
+                        .toEqual(cues.length === 0 ? [] : ['listen']);
+                }
+            }
+        }
+    });
+
+    it('every settle role of a barriered cell runs prologue, connected barrier, its arming run, armed barrier, the rest — in that order', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                for (const role of scenario.roles.filter((candidate) => candidate !== 'successor')) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    const { prologue, body } = scenario.partsByRole[role]!;
+                    const { arming, rest } = toAlmCellArming(body);
+                    const [connected, armed] = toBarrierCommands(recipe);
+
+                    expect(connected?.commandId).toBe(`${cellPrefix}-${role}-connected`);
+                    expect(armed?.commandId).toBe(`${cellPrefix}-${role}-armed`);
+                    expect(recipe.commands, `${scenario.scenarioKey} ${role}`)
+                        .toEqual([...prologue, connected, ...arming, armed, ...rest]);
+                }
+            }
+        }
+    });
+
+    it('the armed barrier\'s timeout covers the other roles\' arming commands', () => {
+        const armedTimeoutOf = (scenario: AlmConformanceScenario, role: AlmConformanceRole) =>
+            toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[1]!.timeoutMs;
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const settleRoles = scenario.roles.filter((role) => role !== 'successor');
+                const armingMs = (role: AlmConformanceRole) =>
+                    toAlmCellArming(scenario.partsByRole[role]!.body).arming.reduce((sum, command) => sum + command.timeoutMs!, 0);
+                const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + armingMs(other), 0));
+
+                // One timeout per cell, never below the control server's minimum of one response margin.
+                expect(new Set(settleRoles.map((role) => armedTimeoutOf(scenario, role))), scenario.scenarioKey)
+                    .toEqual(new Set([Math.max(RESPONSE_MARGIN_MS, ...othersMs)]));
+            }
+        }
+        // A cue subscription is two 5 000 ms commands and a fault 3 000 ms; the first arrival waits through the others'.
+        const timeoutOf = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
+            armedTimeoutOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver');
+        expect(timeoutOf('rtc', 'delivery-baseline')).toBe(1_000);
+        expect(timeoutOf('rtc', 'granted-rtc-delivered')).toBe(10_000);
+        expect(timeoutOf('rtc', 'receipted-relay-path')).toBe(20_000);
+        expect(timeoutOf('rtc', 'forged-recipient-ack')).toBe(23_000);
+        expect(timeoutOf('ws', 'subscription-delivery')).toBe(20_000);
+    });
+
+    it('a cell created without cellSettle carries no armed barrier', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = [
+                ...createAlmConformanceRecipes(toConformanceInput(carrier)),
+                createAlmDeliveryDiagnosticsRecipes(toConformanceInput(carrier), false)
+            ];
+            for (const scenario of scenarios) {
+                for (const role of scenario.roles) {
+                    const commandIds = toNestedCommands(toAlmConformanceRoleRecipe(scenario, role)!.commands).map((command) => command.commandId);
+                    expect(commandIds.filter((commandId) => commandId?.endsWith(`-${role}-armed`)), `${scenario.scenarioKey} ${role}`)
+                        .toEqual([]);
+                }
+            }
+        }
+    });
 });
+
+/** A cue's payload names it; the test reads it, the arming owner reads only what the builder declares. */
+function isCueWait(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'wait' && isJsonRecordValue(command.match.equals) && typeof command.match.equals.cue === 'string';
+}
+
+function isCueSend(command: RallarBlackBoxTestCommand): command is RallarBlackBoxTestCommand & { readonly payload: { readonly cue: string; }; } {
+    return isRallarBlackBoxTestMessagesSendCommand(command) && isJsonRecordValue(command.payload) && typeof command.payload.cue === 'string';
+}
+
+/** The commands a settle role runs between its cell's `connected` and `armed` barriers. */
+function toArmingRun(
+    recipe: RallarBlackBoxTestRecipe,
+    cellPrefix: string,
+    role: AlmConformanceRole
+): readonly RallarBlackBoxTestCommand[] {
+    const ids = recipe.commands.map((command) => command.commandId);
+    const connectedAt = ids.indexOf(`${cellPrefix}-${role}-connected`);
+    const armedAt = ids.indexOf(`${cellPrefix}-${role}-armed`);
+    expect(connectedAt, `${recipe.recipeId} connected`).toBeGreaterThan(0);
+    expect(armedAt, `${recipe.recipeId} armed`).toBeGreaterThan(connectedAt);
+    return recipe.commands.slice(connectedAt + 1, armedAt);
+}

@@ -6,6 +6,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toAlmCellArming } from '../../cell/to-alm-cell-arming.ts';
 import {
     toDirectorAppointCommand,
     toDirectorResignCommand,
@@ -56,10 +57,13 @@ export const grantedRtcListLaneRoles: AlmConformanceScenarioDefinition = {
         recipient.role === 'receiver' ? toDirectingOwnerCommands(recipient) : toListedSubscriberCommands(recipient)
 };
 
+/** The owner subscribes to the cues before it appoints itself, so its cue subscription arms with every other role's. */
 function toDirectingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const { arming, rest } = toAlmCellArming(toConfirmingOwnerCommands(owner, [RECIPIENT_B_SUBSCRIBES]));
     return [
+        ...arming,
         toDirectorAppointCommand(owner),
-        ...toConfirmingOwnerCommands(owner, [RECIPIENT_B_SUBSCRIBES]),
+        ...rest,
         toDirectorResignCommand(owner)
     ];
 }
