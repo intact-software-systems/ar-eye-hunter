@@ -72,6 +72,8 @@ import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly creationNow?: QueueBoxUtilities.CreationClock;
+    /** The server's bound on how long a replaced room layout stays routable, read once at connect. */
+    readonly replacedLayoutOverlapMs: number;
     readonly qosProvider: ALQosInputProvider;
     readonly volatileBudget: ALVolatileSessionBudget;
     /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
@@ -105,6 +107,8 @@ export function initialiseRtcOverlayMulticastManager(
         connectionService: webRtcConnectionService,
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         overlayCache: overlaysRepository.readableAcceptedOverlayCache(),
+        layoutTransitionCache: overlaysRepository.readableLayoutTransitionCache(),
+        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({

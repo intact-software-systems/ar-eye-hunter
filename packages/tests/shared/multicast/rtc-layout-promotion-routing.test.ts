@@ -103,7 +103,7 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             });
             const promoted = toPromotedLayout(snapshot, 'a');
             origin.groups.accept('room', promoted.snapshot);
-            origin.overlays.accept('room', promoted.overlay);
+            origin.acceptOverlay(promoted.overlay);
             // The edge to `b` the promoted layout drops is still open; the edge to `c` it adds is not open yet.
             expect(origin.ready.peerIds).toEqual(['b']);
 

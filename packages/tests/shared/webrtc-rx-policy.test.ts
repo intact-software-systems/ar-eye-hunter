@@ -643,6 +643,8 @@ class RtcReceiveFixture {
             connectionService: this.connection.service,
             groupCache: this.groups,
             overlayCache: this.overlays,
+            layoutTransitionCache: new shared.LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, this.connection.service),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,

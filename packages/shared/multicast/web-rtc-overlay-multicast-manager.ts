@@ -64,6 +64,7 @@ import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts'
 import { NotReadyException } from '../queuebox/resource-inbox/not-ready-exception.ts';
 import { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import type { OverlayLayoutTransition } from '../repository/overlay-layout-transition.ts';
 import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { Either } from '../resilience/Either.ts';
 import type { RateLimiter } from '../resilience/rate-limiter.ts';
@@ -190,6 +191,8 @@ export namespace WebRtcOverlayMulticastManager {
         readonly connectionService: Connection;
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+        readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+        readonly replacedLayoutOverlapMs: number;
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
         readonly qosProvider: ALQosInputProvider;
         readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
@@ -227,6 +230,8 @@ export class WebRtcOverlayMulticastManager {
     public readonly connectionService: WebRtcOverlayMulticastManager.Connection;
     public readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+    private readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+    public readonly replacedLayoutOverlapMs: number;
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
     private readonly rateLimiter: RateLimiter;
@@ -245,6 +250,8 @@ export class WebRtcOverlayMulticastManager {
         this.connectionService = dependencies.connectionService;
         this.groupCache = dependencies.groupCache;
         this.overlayCache = dependencies.overlayCache;
+        this.layoutTransitionCache = dependencies.layoutTransitionCache;
+        this.replacedLayoutOverlapMs = dependencies.replacedLayoutOverlapMs;
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
@@ -688,6 +695,8 @@ export class WebRtcOverlayMulticastManager {
             message: msg,
             groupCache: this.groupCache,
             overlayCache: this.overlayCache,
+            layoutTransitionCache: this.layoutTransitionCache,
+            replacedLayoutOverlapMs: this.replacedLayoutOverlapMs,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             nowMs: this.clock.nowMs()
         });

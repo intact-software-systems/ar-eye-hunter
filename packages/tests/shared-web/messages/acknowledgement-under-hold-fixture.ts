@@ -286,6 +286,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
         faultPort: runtime.faults,
+        replacedLayoutOverlapMs: 15_000,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         volatileBudget: createDefaultVolatileSessionBudget(),

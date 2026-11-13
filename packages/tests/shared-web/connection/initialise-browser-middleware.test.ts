@@ -339,7 +339,8 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         const { budget, qosProvider } = input.volatileBound;
@@ -416,7 +417,8 @@ describe('the durable work claim a connect hands its carriers', () => {
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(ws.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
@@ -433,7 +435,8 @@ describe('the transport faults a connect hands its RTC overlay', () => {
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.faultPort).toBe(OPTIONS.diagnosticsPorts.transportFaultPort);
@@ -450,7 +453,8 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.publicationCrypto).toBe(publicationCrypto);
@@ -465,7 +469,8 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
@@ -492,7 +497,8 @@ describe('the checkpoint stores a connect hands its carriers', () => {
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(ws.checkpointStores).toBe(input.checkpointStores.wsClient);

@@ -407,7 +407,8 @@ function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterCon
             overlayVersion: 1,
             updatedAtEpochMs: 1,
             nextHopsBySessionId: undefined
-        }
+        },
+        layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 }
     };
 }
 

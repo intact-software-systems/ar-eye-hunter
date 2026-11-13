@@ -107,6 +107,8 @@ export class RtcEndpointFixture {
             connectionService: service,
             groupCache: this.groups,
             overlayCache: this.overlays,
+            layoutTransitionCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,

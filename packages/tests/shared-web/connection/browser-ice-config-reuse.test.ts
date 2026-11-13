@@ -99,6 +99,21 @@ describe('browser ICE configuration reuse', () => {
         expect(requests.filter((request) => request.url.endsWith('/api/config'))).toHaveLength(2);
     });
 
+    it('connect reads `/api/config` once and hands its replaced-layout overlap to the RTC multicast manager', async () => {
+        configResponse = async (apiUrl) =>
+            Response.json({
+                ...apiConfiguration,
+                apiBaseUrl: apiUrl.origin,
+                wsBaseUrl: `wss://${apiUrl.host}`,
+                rtcReplacedLayoutOverlapMs: 7_000
+            });
+
+        const current = await runtime.init(options);
+
+        expect(current.middleware.middleware.webRtcOverlayMulticastManager.replacedLayoutOverlapMs).toBe(7_000);
+        expect(requests.filter((request) => request.url.endsWith('/api/config'))).toHaveLength(1);
+    });
+
     it('refreshes exactly at server expiry without using authentication expiry as a TTL', async () => {
         await runtime.init(options);
         runtime.shutdown();

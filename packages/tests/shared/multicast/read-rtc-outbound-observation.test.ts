@@ -6,6 +6,8 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { readRtcOutboundObservation } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
 import {
     createOriginOverlay,
@@ -14,6 +16,7 @@ import {
 } from './rtc-origin-overlay-fixture.ts';
 
 const SCOPED_ID = toScopedOverlayId(ORIGIN_ROOM);
+const SESSION_OVERLAP_MS = 7_000;
 
 describe('readRtcOutboundObservation', () => {
     it.each(
@@ -53,9 +56,46 @@ describe('readRtcOutboundObservation', () => {
             overlay: undefined
         });
     });
+
+    it('an observation carries the transition held for the overlay it selected, and the session\'s overlap', () => {
+        const overlays = new LatestRepository<string, OverlayInfo>();
+        overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
+        const replaced = { ...createOriginOverlay(['c']), overlayId: SCOPED_ID };
+        const transition: OverlayLayoutTransition = {
+            replaced,
+            replacedBy: toOverlayLayoutIdentity({ ...replaced, overlayVersion: 2 }),
+            replacedAtEpochMs: 500
+        };
+        const transitions = new LatestRepository<string, OverlayLayoutTransition>();
+        transitions.accept(SCOPED_ID, transition);
+        transitions.accept('another-overlay', { ...transition, replacedAtEpochMs: 1 });
+
+        const observation = readFor(overlays, {}, transitions);
+
+        expect(observation.layoutHistory).toEqual({ transition, replacedLayoutOverlapMs: SESSION_OVERLAP_MS });
+    });
+
+    it('carries no transition for an overlay with none', () => {
+        const overlays = new LatestRepository<string, OverlayInfo>();
+        overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
+        const transitions = new LatestRepository<string, OverlayLayoutTransition>();
+
+        expect(readFor(overlays, {}, transitions).layoutHistory).toEqual({
+            transition: null,
+            replacedLayoutOverlapMs: SESSION_OVERLAP_MS
+        });
+        expect(readFor(new LatestRepository<string, OverlayInfo>(), {}, transitions).layoutHistory).toEqual({
+            transition: null,
+            replacedLayoutOverlapMs: SESSION_OVERLAP_MS
+        });
+    });
 });
 
-function readFor(overlays: LatestRepository<string, OverlayInfo>, extra: Partial<ALMessage>) {
+function readFor(
+    overlays: LatestRepository<string, OverlayInfo>,
+    extra: Partial<ALMessage>,
+    transitions: LatestRepository<string, OverlayLayoutTransition> = new LatestRepository()
+) {
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('any-key', createOriginSnapshot(['a', 'b'], 1));
     const message: ALMessage = {
@@ -72,6 +112,8 @@ function readFor(overlays: LatestRepository<string, OverlayInfo>, extra: Partial
         message,
         groupCache: groups,
         overlayCache: overlays,
+        layoutTransitionCache: transitions,
+        replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
         connectedPeerIds: ['b'],
         nowMs: 1
     });

@@ -590,6 +590,8 @@ function createManager(
             },
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
+            layoutTransitionCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: () => {
                 throw new Error('A direct send must not construct a room multicaster');
             },

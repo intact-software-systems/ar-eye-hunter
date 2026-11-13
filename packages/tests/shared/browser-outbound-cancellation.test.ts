@@ -86,6 +86,8 @@ function createRtcOwner(settlements: ALDeliverySettlement[]) {
         connectionService: { input: { sessionId: 'self' }, readyPeerIdsForLane: () => [], readPeer: () => undefined },
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
+        layoutTransitionCache: new LatestRepository(),
+        replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
             throw new Error('Cancellation does not construct multicast messages');
         },

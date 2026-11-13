@@ -58,6 +58,7 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ApiConfig,
+    ApiConfigResponse,
     AuthSession,
     ClientInfo,
     IceConfig,
@@ -152,7 +153,7 @@ export type BrowserWebSocketCarrier = Pick<
 
 export type BrowserRtcOverlayCarrier = Pick<
     rtcEngine.InitialiseRtcOverlayMulticastManagerInput,
-    'webRtcConnectionService' | 'qboxEngine'
+    'webRtcConnectionService' | 'qboxEngine' | 'replacedLayoutOverlapMs'
 >;
 
 export interface BrowserMiddlewareCreation {
@@ -216,6 +217,7 @@ interface BrowserRtcAcquisitions {
 interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
     readonly rtcSignalingTopicId: string;
     readonly webSocketTransport: BrowserWebSocketTransport;
+    readonly replacedLayoutOverlapMs: number;
 }
 
 interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTransportInput {
@@ -287,11 +289,16 @@ export async function initialiseMiddleware(
             publicationCrypto: await options.publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
-        webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
+        const apiConfig = await runMiddlewareCommand(
+            (signal) => readApiConfig({ signal }),
+            options
+        );
+        webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput, apiConfig);
         rtcTransport = await initialiseBrowserRtcTransport({
             ...transportInput,
             rtcSignalingTopicId,
-            webSocketTransport
+            webSocketTransport,
+            replacedLayoutOverlapMs: apiConfig.rtcReplacedLayoutOverlapMs
         });
         const bootstrapDegree = resolveBootstrapDegree({
             bootstrapDegree: options.bootstrapDegree,
@@ -510,12 +517,9 @@ function initialiseBrowserRuntimeStores(
 }
 
 async function initialiseBrowserWebSocketTransport(
-    input: InitialiseBrowserTransportInput
+    input: InitialiseBrowserTransportInput,
+    apiConfig: ApiConfigResponse
 ): Promise<BrowserWebSocketTransport> {
-    const apiConfig = await runMiddlewareCommand(
-        (signal) => readApiConfig({ signal }),
-        input.options
-    );
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
     let webSocketQueueBox: WsQueueBoxClientService;
@@ -588,7 +592,8 @@ async function initialiseBrowserRtcTransport(
         const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
             toRtcOverlayMulticastManagerInput(input, {
                 webRtcConnectionService,
-                qboxEngine: input.webSocketTransport.qboxEngine
+                qboxEngine: input.webSocketTransport.qboxEngine,
+                replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
             })
         );
         acquired.webRtcOverlayMulticastManager = webRtcOverlayMulticastManager;

@@ -253,6 +253,7 @@ describe('browser RTC runtime composition', () => {
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -338,6 +339,7 @@ describe('browser RTC runtime composition', () => {
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -422,6 +424,7 @@ describe('browser RTC runtime composition', () => {
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: budget,
@@ -464,6 +467,7 @@ describe('browser RTC runtime composition', () => {
         const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: budget,
