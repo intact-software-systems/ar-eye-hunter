@@ -4,6 +4,7 @@ import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conform
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -21,6 +22,7 @@ it.each([
         throw new Error('Missing newest-N scenario.');
     }
     const runtime = createDefaultRallarBlackBoxBrowserTestRuntime();
+    writeAlmCellStartEvents(runtime, scenario.receiver.commands);
     for (const seq of arrivals) {
         setTimeout(() =>
             runtime.receiveRallarBrowserEvent({
@@ -63,6 +65,7 @@ it.each([
                 ? { status: 'ok', value: { state: command.state?.[0], attempts, reason: 'The publication stage displaced it before its opportunity.' } }
                 : undefined
     });
+    writeAlmCellStartEvents(runtime, scenario.sender.commands);
     runtime.recordEvent({
         kind: 'diagnostic',
         topic: 'rallar.browser.alm.outbound_diagnostics',

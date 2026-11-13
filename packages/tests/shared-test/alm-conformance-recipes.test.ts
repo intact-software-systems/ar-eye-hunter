@@ -12,10 +12,12 @@ import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-te
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
     createAlmConformanceRecipes,
+    createAlmDeliveryDiagnosticsRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestCommand,
@@ -949,7 +951,8 @@ describe('alm-conformance recipe family', () => {
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
                 contains: '"typeId":"al.control.nack.v3","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
-                    '"outcome":"committed"'
+                    '"outcome":"committed"',
+                sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },
             timeoutMs: 27_000
         }]);
@@ -1495,6 +1498,124 @@ describe('alm-conformance recipe family', () => {
         for (const scenario of duplicates) {
             const [first] = scenario.sender.commands.filter((command) => command.kind === 'messages.send');
             expect(first, scenario.scenarioKey).toMatchObject({ durability: 'local-outbox' });
+        }
+    });
+});
+
+/**
+ * The one class of wait that reads the page's history: a store's recovery that a fresh document (a successor page, or
+ * the page after `agent.reload`) reports during its first connect, before that connect's result opens the cell's mark.
+ */
+const PAGE_HISTORY_WAITS = [
+    'durable-takeover-successor-recovered-original-store',
+    'flush-on-hide-successor-recovered-checkpoint-store',
+    'delivery-reload-sender-recovered-session-inbound',
+    'delivery-reload-sender-recovered-original-store'
+] as const;
+
+const SESSION_PIN_PATTERN = /\{resultCache\.([^}]+)\.value\.sessionId\}/;
+
+function toWaitCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestWaitCommand[] {
+    return toNestedCommands(commands).filter((command): command is RallarBlackBoxTestWaitCommand => command.kind === 'wait');
+}
+
+/** The wait pins its store to the session of a connect that opened a fresh document earlier in the same recipe. */
+function expectFreshDocumentRecovery(
+    recipe: RallarBlackBoxTestRecipe,
+    role: AlmConformanceRole,
+    wait: RallarBlackBoxTestWaitCommand
+): void {
+    const connectId = SESSION_PIN_PATTERN.exec(wait.match.contains ?? '')?.[1];
+    const connectAt = recipe.commands.findIndex((command) => command.commandId === connectId);
+    const waitAt = recipe.commands.indexOf(wait);
+    const reloadAt = recipe.commands.findIndex((command) => command.kind === 'agent.reload');
+
+    expect(wait.match.topic, wait.commandId).toBe('rallar.browser.alm.storage');
+    expect(wait.match.contains, wait.commandId).toContain('"kind":"recovery","storeId":"');
+    expect(recipe.commands[connectAt]?.kind, wait.commandId).toBe('rtc.connect');
+    expect(connectAt, wait.commandId).toBeLessThan(waitAt);
+    expect(role === 'successor' || (reloadAt >= 0 && reloadAt < connectAt), wait.commandId).toBe(true);
+}
+
+describe('alm-conformance cell parts', () => {
+    it('every wait of every role\'s body and continuation, on every carrier, reads from its own cell\'s command prefix', () => {
+        const pageHistoryWaits: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                for (const role of scenario.roles) {
+                    for (const wait of toWaitCommands(scenario.partsByRole[role]!.body)) {
+                        if (wait.metadata?.historyFrom === 'page') {
+                            pageHistoryWaits.push(wait.commandId!.slice(`alm-${carrier}-`.length));
+                            expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBeUndefined();
+                            expect(validateRallarBlackBoxTestCommand(wait), wait.commandId).toMatchObject({ ok: true });
+                            expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
+                            continue;
+                        }
+                        expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBe(`${cellPrefix}-${role}-`);
+                    }
+                }
+                const continuation = scenario.continuation;
+                for (const wait of continuation ? toWaitCommands(continuation.recipe.commands) : []) {
+                    expect(wait.metadata?.historyFrom, wait.commandId).toBeUndefined();
+                    expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBe(`${cellPrefix}-${continuation!.role}-`);
+                }
+            }
+        }
+
+        // A fifth page-history wait is a red test, not a silent drift.
+        expect(new Set(pageHistoryWaits)).toEqual(new Set(PAGE_HISTORY_WAITS));
+    });
+
+    it('the delivery-diagnostics freshness waits read the whole page history', () => {
+        for (const almDiagnostics of [true, false]) {
+            const scenario = createAlmDeliveryDiagnosticsRecipes(toConformanceInput('ws'), almDiagnostics);
+            for (const role of scenario.roles) {
+                const freshWaits = toWaitCommands(scenario.partsByRole[role]!.prologue)
+                    .filter((wait) => wait.commandId?.includes(`-${role}-fresh-`));
+
+                expect(freshWaits.map((wait) => wait.commandId?.split('-fresh-')[1])).toEqual([
+                    'outbound_diagnostics',
+                    'inbound_diagnostics',
+                    'storage',
+                    'storage_reset',
+                    'phase_completed'
+                ]);
+                expect(freshWaits.every((wait) => wait.match.sinceCommandIdPrefix === undefined)).toBe(true);
+                expect(
+                    toWaitCommands(scenario.partsByRole[role]!.body).every((wait) =>
+                        wait.match.sinceCommandIdPrefix === `alm-ws-${scenario.scenarioKey}-${role}-`
+                    )
+                ).toBe(true);
+            }
+        }
+    });
+
+    it('a role recipe is its prologue then its body', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                for (const role of ALM_CONFORMANCE_ROLES) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role);
+                    const parts = scenario.partsByRole[role];
+                    expect(parts === undefined, `${scenario.scenarioKey} ${role}`).toBe(recipe === undefined);
+                    if (recipe === undefined || parts === undefined) {
+                        continue;
+                    }
+                    const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
+
+                    expect(recipe.commands).toEqual([...parts.prologue, ...parts.body]);
+                    expect(parts.prologue.map((command) => command.commandId!.slice(prefix.length))).toEqual([
+                        'ensure-group',
+                        'ensure-member',
+                        ...(role === 'successor' ? ['owner-lease-lapses'] : []),
+                        'connect'
+                    ]);
+                    if (role === 'sender') {
+                        expect(parts.body[0]?.commandId).toBe(`${prefix}storage-counters-connected`);
+                    }
+                    expect(parts.body.at(-1)?.commandId).toBe(`${prefix}stats`);
+                }
+            }
         }
     });
 });

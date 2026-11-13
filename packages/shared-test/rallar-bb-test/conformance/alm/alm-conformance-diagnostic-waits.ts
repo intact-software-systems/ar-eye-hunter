@@ -169,7 +169,8 @@ export function toRepairDispatchWait(
 /**
  * No repair dispatched any message of the cell's type from this page, and no gap NACK about the cell's tracks reached
  * it, whatever its origin made of one: a NACK whose repair was refused dispatches nothing, yet its admission states
- * the NACK's reason and track. The first wait listens one window, the second reads the history that window kept.
+ * the NACK's reason and track. The first wait listens one window; the second reads the cell's history, that window
+ * included.
  * A minted send names no index to pin either by.
  */
 export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {

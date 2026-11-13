@@ -230,7 +230,8 @@ describe('checkpoint-recovery', () => {
             kind: 'diagnostic',
             topic: STORAGE_TOPIC,
             payloadPath: 'data',
-            contains: toRecoveryMatch(sender, toCheckpointStorePrefix(carrier), 'reconnect')
+            contains: toRecoveryMatch(sender, toCheckpointStorePrefix(carrier), 'reconnect'),
+            sinceCommandIdPrefix: `${sender.recipeId}-`
         });
         expect(findCommand(sender, 'assert-recovered-claimed')).toMatchObject({
             kind: 'assert',

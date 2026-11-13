@@ -21,6 +21,7 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const FAIRNESS_SCENARIO_IDS = ['own-share-under-inbound', 'buffered-track-drains', 'churn-bounded-tracks'] as const;
 const SENDER_PROLOGUE = ['ensure-group', 'ensure-member', 'connect', 'storage-counters-connected'] as const;
@@ -84,6 +85,7 @@ async function runAfterDrains(command: RallarBlackBoxTestCommand, promotedCounts
         throw new Error(`${command.commandId} is not a loop.`);
     }
     const runtime = createDefaultRallarBlackBoxTestRuntime();
+    writeAlmCellStartEvents(runtime, [command]);
     for (const promoted of promotedCounts) {
         runtime.recordEvent({
             kind: 'diagnostic',

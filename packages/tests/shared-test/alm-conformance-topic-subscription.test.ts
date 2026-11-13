@@ -26,6 +26,7 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const FOUR_ROLE_IDS = [
     'subscription-delivery',
@@ -405,6 +406,7 @@ async function runAfterEvents(
     events: readonly Parameters<ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>['recordEvent']>[0][]
 ): Promise<boolean> {
     const runtime = createDefaultRallarBlackBoxTestRuntime();
+    writeAlmCellStartEvents(runtime, commands);
     for (const event of events) {
         runtime.recordEvent(event);
     }

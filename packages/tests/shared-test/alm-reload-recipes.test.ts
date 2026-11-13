@@ -8,6 +8,7 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 describe('ALM durable reload specimens', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('holds one %s original across an executable full-only reload checkpoint', async (carrier) => {
@@ -89,6 +90,7 @@ describe('ALM durable reload specimens', () => {
         expect(absence).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 17_000 });
         const receive = receiver.commands.find((command) => command.kind === 'wait' && command.absent !== true)!;
         const unrelatedRuntime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        writeAlmCellStartEvents(unrelatedRuntime, [receive]);
         unrelatedRuntime.recordEvent({
             kind: 'message',
             connection: 'receiver',
@@ -97,6 +99,7 @@ describe('ALM durable reload specimens', () => {
         });
         expect((await unrelatedRuntime.execute({ ...receive, timeoutMs: 1 })).ok).toBe(false);
         const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        writeAlmCellStartEvents(runtime, [receive]);
         runtime.recordEvent({
             kind: 'message',
             connection: 'receiver',

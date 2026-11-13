@@ -7,6 +7,7 @@ import {
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/cell/alm-conformance-cell-parts.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -287,6 +288,14 @@ function toCombinedReceiptRolesMetadata(
     return entries.length === 0 ? {} : { almReceiptRoles: entries.map((entry) => ({ ...entry })) };
 }
 
+function toRoleParts(scenario: AlmConformanceScenario, role: AlmConformanceRole): AlmConformanceCellParts {
+    const parts = scenario.partsByRole[role];
+    if (parts === undefined) {
+        throw new Error(`Generated ALM scenario ${scenario.scenarioKey} declares no ${role} parts.`);
+    }
+    return parts;
+}
+
 function toRoleRecipe(scenario: AlmConformanceScenario, role: AlmConformanceRole): RallarBlackBoxTestRecipe {
     const recipe = toAlmConformanceRoleRecipe(scenario, role);
     if (recipe === undefined) {
@@ -307,35 +316,27 @@ function toAlmConformanceCombinedCommands(
     if (rtcScenario === undefined) {
         throw new Error('Combined ALM recipes require an RTC scenario.');
     }
-    const rtc = toRoleRecipe(rtcScenario, role);
-    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect');
+    const rtcPrologue = toRoleParts(rtcScenario, role).prologue;
+    const rtcConnect = rtcPrologue.find((command) => command.kind === 'rtc.connect');
     if (rtcConnect === undefined) {
-        throw new Error(`Generated ALM recipe ${rtc.recipeId} has no rtc.connect prologue.`);
+        throw new Error(`Generated ALM scenario ${rtcScenario.scenarioKey} has no ${role} rtc.connect prologue.`);
     }
     const messageTypeIds = computeCombinedAlmMessageTypeIds(scenarios, role);
     const toConnect = (command: RallarBlackBoxTestRtcConnectCommand) =>
         toCombinedAlmConnect(command, rtcConnect.readiness, messageTypeIds);
-    const prologueEnd = rtc.commands.indexOf(rtcConnect);
-    const prologue = rtc.commands.slice(0, prologueEnd + 1).filter((command) =>
-        command.kind === 'http.request' || command.kind === 'rtc.connect'
-    ).map((command) => command.kind === 'rtc.connect' ? toConnect(command) : command);
+    const prologue = rtcPrologue.filter((command) => command.kind === 'http.request' || command.kind === 'rtc.connect')
+        .map((command) => command.kind === 'rtc.connect' ? toConnect(command) : command);
     return [
         ...prologue,
-        ...scenarios.flatMap((scenario) => {
-            const recipe = toRoleRecipe(scenario, role);
-            const commands = recipe.commands;
-            const scenarioConnectAt = commands.findIndex((command) => command.kind === 'rtc.connect');
-            if (scenarioConnectAt < 0) {
-                throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
-            }
-            return toBarrieredScenarioCommands(
+        ...scenarios.flatMap((scenario) =>
+            toBarrieredScenarioCommands(
                 scenario,
                 role,
-                commands.slice(scenarioConnectAt + 1).map((command) =>
+                toRoleParts(scenario, role).body.map((command) =>
                     command.kind === 'rtc.connect' ? toConnect(command) : command
                 )
-            );
-        })
+            )
+        )
     ];
 }
 

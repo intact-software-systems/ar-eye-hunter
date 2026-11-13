@@ -125,6 +125,7 @@ function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly Rallar
             storeIdPrefix: RECOVERED_STORE_PREFIXES.sessionInbound,
             lane: '/ws',
             connectName: 'reconnect',
+            historyFrom: 'page',
             timeoutMs
         }),
         toStoreRecoveryWait(sender, {
@@ -132,6 +133,7 @@ function toRecoveredStoreWaits(sender: AlmConformanceStepInput): readonly Rallar
             storeIdPrefix: toOriginalStorePrefix(sender.input.carrier),
             lane: '',
             connectName: 'reconnect',
+            historyFrom: 'page',
             timeoutMs
         })
     ];

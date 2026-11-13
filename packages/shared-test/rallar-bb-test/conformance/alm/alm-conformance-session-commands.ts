@@ -263,6 +263,8 @@ export interface AlmConformanceRecoveredStore {
     /** The connect whose result names the session the store id embeds. */
     readonly connectName: string;
     readonly timeoutMs: number;
+    /** `page` when the named connect is a fresh document's first, a successor's or the one after a reload. */
+    readonly historyFrom: 'cell' | 'page';
 }
 
 /** The absence window plus the time the next owner of the original needs before it can submit. */
@@ -300,7 +302,8 @@ export function toStoreRecoveryWait(
             contains:
                 `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}${store.lane}","outcome":{"kind":"restored"`
         },
-        timeoutMs: store.timeoutMs
+        timeoutMs: store.timeoutMs,
+        ...(store.historyFrom === 'page' ? { metadata: { historyFrom: 'page' } } : {})
     };
 }
 

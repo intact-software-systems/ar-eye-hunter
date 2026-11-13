@@ -15,6 +15,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
+    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRtcConnectCommand
@@ -26,18 +27,17 @@ import {
     createAlmConformance3AgentEntry,
     toAlmConformanceCombinedRecipe
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
+import { toNestedCommands } from '../shared-test/to-nested-commands.ts';
 
-/** No generated scenario carries a request of its own today, so the fixture places one right after the connect. */
+/** No generated scenario carries a request of its own today, so the fixture places one first in the sender's body. */
 function withInScenarioRequest(scenario: AlmConformanceScenario): AlmConformanceScenario {
-    const commands = scenario.sender.commands;
-    const connectAt = commands.findIndex((command) => command.kind === 'rtc.connect');
+    const parts = scenario.partsByRole.sender!;
     const request: RallarBlackBoxTestCommand = {
         kind: 'http.request',
         commandId: 'in-scenario-request',
         request: { method: 'GET', path: '/api/state/apps/app/workspaces/ws/groups/room-alm' }
     };
-    const sender = { ...scenario.sender, commands: [...commands.slice(0, connectAt + 1), request, ...commands.slice(connectAt + 1)] };
-    return { ...scenario, sender };
+    return { ...scenario, partsByRole: { ...scenario.partsByRole, sender: { ...parts, body: [request, ...parts.body] } } };
 }
 
 describe('ALM conformance combined recipe', () => {
@@ -287,6 +287,60 @@ describe('ALM conformance hosted lane families', () => {
         expect(samePrincipal.filter((cell) => hosted.includes(cell))).toEqual([]);
     });
 });
+
+describe('ALM conformance combined blocks', () => {
+    it('a combined block carries its cell\'s history mark on every wait and nothing of the cell\'s prologue', () => {
+        const prologueCommandIds = new Set(ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes({
+                group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                carrier,
+                typeId: 'alm.conformance',
+                senderConnection: 'sender',
+                receiverConnection: 'receiver',
+                deadlineMs: 18_000,
+                laneFamilies: ['two-agent', 'addressed', 'three-agent'],
+                principalIdsByRole: {}
+            }).flatMap((scenario) => Object.values(scenario.partsByRole).flatMap((parts) => parts.prologue.map((command) => command.commandId)))
+        ));
+        const selections = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]
+            .flatMap((entry) => entry.manifest.recipes);
+
+        for (const selection of selections) {
+            const role = selection.role!;
+            const blocks = toCombinedBlocks(selection.recipe!);
+            expect(blocks.length).toBeGreaterThan(0);
+            for (const { cell, commands } of blocks) {
+                const nested = toNestedCommands(commands);
+                expect(nested.filter((command) => prologueCommandIds.has(command.commandId)), cell).toEqual([]);
+                for (const command of nested) {
+                    if (command.kind === 'wait') {
+                        // Exactly one of the two: the cell's mark, or the declaration that it reads the page's history.
+                        const marked = command.match.sinceCommandIdPrefix !== undefined;
+                        const pageHistory = command.metadata?.historyFrom === 'page';
+                        expect(marked !== pageHistory, command.commandId).toBe(true);
+                        if (marked) {
+                            expect(command.match.sinceCommandIdPrefix, command.commandId).toBe(`${cell}-${role}-`);
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+
+/** Each cell's block runs from its `start` barrier to the next cell's; the shared prologue precedes the first. */
+function toCombinedBlocks(
+    recipe: RallarBlackBoxTestRecipe
+): readonly { readonly cell: string; readonly commands: readonly RallarBlackBoxTestCommand[]; }[] {
+    const starts = recipe.commands.flatMap((command, index) => command.kind === 'barrier' && command.barrierId.endsWith('-start') ? [index] : []);
+    return starts.map((start, position) => {
+        const barrier = recipe.commands[start] as RallarBlackBoxTestBarrierCommand;
+        return {
+            cell: barrier.barrierId.replace(/-start$/, ''),
+            commands: recipe.commands.slice(start + 1, starts[position + 1] ?? recipe.commands.length)
+        };
+    });
+}
 
 function toBarrierIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return recipe.commands.flatMap((command) => command.kind === 'barrier' ? [command.barrierId] : []);

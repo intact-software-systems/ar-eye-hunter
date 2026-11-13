@@ -135,6 +135,7 @@ function toRestoredCommands(sender: AlmConformanceStepInput): readonly RallarBla
             storeIdPrefix: toCheckpointStorePrefix(sender.input.carrier),
             lane: '',
             connectName: 'reconnect',
+            historyFrom: 'cell',
             timeoutMs: toRecoveryTtlMs(sender.input.deadlineMs)
         }),
         toResultAssertion({

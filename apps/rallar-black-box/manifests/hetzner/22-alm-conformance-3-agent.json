@@ -299,7 +299,8 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.outbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"typeId\":\"al.control.receipt.v1\",\"targetMsgId\":\"{resultCache.alm-ws-aggregated-receipt-sender-send-1.value.msgId}\",\"outcome\":\"committed\""
+              "contains": "\"typeId\":\"al.control.receipt.v1\",\"targetMsgId\":\"{resultCache.alm-ws-aggregated-receipt-sender-send-1.value.msgId}\",\"outcome\":\"committed\"",
+              "sinceCommandIdPrefix": "alm-ws-aggregated-receipt-sender-"
             },
             "timeoutMs": 27000
           },
@@ -995,7 +996,8 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"msgId\":\"alm-rtc-unknown-ack-version-retired-ack-{resultCache.alm-rtc-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v2\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-unknown-ack-version-retired-ack-{resultCache.alm-rtc-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v2\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\"",
+              "sinceCommandIdPrefix": "alm-rtc-unknown-ack-version-sender-"
             },
             "timeoutMs": 27000
           },
@@ -1562,7 +1564,8 @@
               "kind": "diagnostic",
               "topic": "rallar.browser.alm.inbound_diagnostics",
               "payloadPath": "data",
-              "contains": "\"msgId\":\"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v2\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\""
+              "contains": "\"msgId\":\"alm-rtc-with-ws-fallback-unknown-ack-version-retired-ack-{resultCache.alm-rtc-with-ws-fallback-unknown-ack-version-sender-send-1.value.msgId}\",\"typeId\":\"al.control.ack.v2\",\"carrier\":\"rtc\",\"outcome\":\"rejected\",\"reason\":\"unsupported\"",
+              "sinceCommandIdPrefix": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-"
             },
             "timeoutMs": 27000
           },
@@ -1960,7 +1963,8 @@
                 "data.typeId": "alm.conformance.ws.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-ws-missing-recipient-retry-receiver-"
             },
             "timeoutMs": 17000,
             "absent": true
@@ -2067,7 +2071,8 @@
                 "data.typeId": "alm.conformance.rtc.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-rtc-missing-recipient-retry-receiver-"
             },
             "timeoutMs": 17000,
             "absent": true
@@ -2211,7 +2216,8 @@
                 "data.typeId": "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-rtc-with-ws-fallback-missing-recipient-retry-receiver-"
             },
             "timeoutMs": 17000,
             "absent": true
@@ -2482,7 +2488,8 @@
                 "data.typeId": "alm.conformance.ws.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.ws.missing-recipient-retry\",\"carrier\":\"ws\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-ws-missing-recipient-retry-recipient-b-"
             },
             "timeoutMs": 17000,
             "absent": true
@@ -2676,7 +2683,8 @@
                 "data.typeId": "alm.conformance.rtc.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.rtc.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-rtc-missing-recipient-retry-recipient-b-"
             },
             "timeoutMs": 27000
           },
@@ -2719,7 +2727,8 @@
               "equals": {
                 "marker": "unknown-ack-version",
                 "carrier": "rtc"
-              }
+              },
+              "sinceCommandIdPrefix": "alm-rtc-unknown-ack-version-recipient-b-"
             },
             "timeoutMs": 27000
           },
@@ -2929,7 +2938,8 @@
                 "data.typeId": "alm.conformance.rtc-with-ws-fallback.missing-recipient-retry"
               },
               "payloadPath": "data",
-              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\""
+              "contains": "\"typeId\":\"alm.conformance.rtc-with-ws-fallback.missing-recipient-retry\",\"carrier\":\"rtc\",\"outcome\":\"not-handled\",\"reason\":\"duplicate\"",
+              "sinceCommandIdPrefix": "alm-rtc-with-ws-fallback-missing-recipient-retry-recipient-b-"
             },
             "timeoutMs": 27000
           },
@@ -2972,7 +2982,8 @@
               "equals": {
                 "marker": "unknown-ack-version",
                 "carrier": "rtc-with-ws-fallback"
-              }
+              },
+              "sinceCommandIdPrefix": "alm-rtc-with-ws-fallback-unknown-ack-version-recipient-b-"
             },
             "timeoutMs": 27000
           },

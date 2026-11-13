@@ -100,7 +100,8 @@ describe('ALM server-ordered-entry cell', () => {
                         'data.topicId': 'client-state.event',
                         'data.payload.principalId': 'principal-alice',
                         'data.payload.requestId': `${PREFIX}-sender-profile-3`
-                    }
+                    },
+                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 timeoutMs: 27_000
             });
@@ -116,7 +117,8 @@ describe('ALM server-ordered-entry cell', () => {
                         'data.kind': 'ordering-position',
                         'data.status': 'entered',
                         'data.priorSeq': 0
-                    }
+                    },
+                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 timeoutMs: 27_000
             });
@@ -138,7 +140,8 @@ describe('ALM server-ordered-entry cell', () => {
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.inbound_diagnostics',
                     payloadPath: 'data',
-                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
+                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' },
+                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 absent: true,
                 timeoutMs: 5_000
