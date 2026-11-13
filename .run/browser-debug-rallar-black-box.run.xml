@@ -1,0 +1,15 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Browser Debug · Rallar Black Box" type="js.build_tools.npm" folderName="JavaScript Debug">
+    <package-json value="$PROJECT_DIR$/apps/rallar-black-box/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <package-manager value="npm" />
+    <EXTENSION ID="com.intellij.lang.javascript.buildTools.npm.rc.StartBrowserRunConfigurationExtension">
+      <browser start="true" name="98ca6316-2f89-46d9-a9e5-fa9e2b0625b3" url="http://localhost:5176" with-js-debugger="true" />
+    </EXTENSION>
+    <method v="2" />
+  </configuration>
+</component>

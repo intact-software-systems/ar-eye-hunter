@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Server · AR Eye Hunter" type="BunRunConfiguration" folderName="Bun Servers">
+    <option name="program" value="$PROJECT_DIR$/apps/ar-eye-hunter-server-v1/src/main.ts" />
+    <option name="runtimeParameters" value="--watch" />
+    <option name="workingDirectory" value="$PROJECT_DIR$/apps/ar-eye-hunter-server-v1" />
+    <method v="2" />
+  </configuration>
+</component>

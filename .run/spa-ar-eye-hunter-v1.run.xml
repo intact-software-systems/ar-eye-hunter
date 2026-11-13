@@ -1,14 +1,15 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="ar-eye-hunter-v1 &gt; dev" type="js.build_tools.npm" nameIsGenerated="true">
+  <configuration default="false" name="SPA · AR Eye Hunter" type="js.build_tools.npm" folderName="React SPAs">
+    <envs>
+      <env name="API_BASE_URL" value="http://localhost:8080" />
+    </envs>
     <package-json value="$PROJECT_DIR$/apps/ar-eye-hunter-v1/package.json" />
     <command value="run" />
     <scripts>
       <script value="dev" />
     </scripts>
     <node-interpreter value="project" />
-    <envs>
-      <env name="API_BASE_URL" value="http://localhost:8080" />
-    </envs>
+    <package-manager value="npm" />
     <method v="2" />
   </configuration>
 </component>

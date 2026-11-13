@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Server · Relic Hunter" type="BunRunConfiguration" folderName="Bun Servers">
+    <option name="program" value="$PROJECT_DIR$/apps/relic-hunter-server-v1/src/main.ts" />
+    <option name="runtimeParameters" value="--watch --env-file=../api-v1/.env --env-file=../api-v1/.env.local --env-file=.env --env-file=.env.local" />
+    <option name="workingDirectory" value="$PROJECT_DIR$/apps/relic-hunter-server-v1" />
+    <method v="2" />
+  </configuration>
+</component>

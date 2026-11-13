@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Server · Rallar Black Box Control" type="BunRunConfiguration" folderName="Bun Servers">
+    <option name="program" value="$PROJECT_DIR$/apps/rallar-black-box-control-server/src/main.ts" />
+    <option name="runtimeParameters" value="--watch" />
+    <option name="workingDirectory" value="$PROJECT_DIR$/apps/rallar-black-box-control-server" />
+    <method v="2" />
+  </configuration>
+</component>
