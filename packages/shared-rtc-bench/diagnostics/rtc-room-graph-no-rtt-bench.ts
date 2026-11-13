@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { toGroupMemberPolicy } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
@@ -38,7 +40,7 @@ for (let run = 1; run <= RUNS; run++) {
     });
 }
 
-await Deno.writeTextFile(
+await writeFile(
     OUT,
     JSON.stringify(
         {
@@ -166,5 +168,5 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
 }
 
 function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+    return process.argv.slice(2).find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
 }

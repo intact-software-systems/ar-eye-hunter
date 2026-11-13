@@ -15,10 +15,13 @@ import {
     resolveQueuedRtcTopologySuccessor,
     toCoalescedGroupRevisionKey
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
+import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 
+import { toEarlierALEnvelopeVersionResource } from '../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
 import {
     createPostgresSql,
     topologyGroupSnapshot,
@@ -137,6 +140,33 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         expect((await entries.findByKey(head))?.resource).toBe(fresh.entryWrite.entry.resource);
     });
 
+    // #782: a head persisted under an older AL envelope version is replaced by the ordinary compare-and-set.
+    postgresIt.each([
+        { head: 'failed', failed: true },
+        { head: 'pending', failed: false }
+    ])(
+        'replaces a $head head stamped with an unsupported envelope version at the next generation',
+        async ({ head, failed }) => {
+            const ref = toRunGroupRef(`unsupported-head-${head}`);
+            await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+            const stale = await stampHeadEnvelopeVersion(ref, 3, failed);
+
+            const replaced = computeRevisionWork(ref, stale, 'automatic');
+            expect(await writeInTransaction(replaced)).toBe('written');
+
+            const rows = await readRevisionRows(ref);
+            expect(rows).toHaveLength(1);
+            expect(rows[0]!.resource).toBe(replaced.entryWrite.entry.resource);
+            const message = JSON.parse(rows[0]!.resource) as ALMessage;
+            expect(message.id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
+            expect(
+                (JSON.parse(message.payload.resource) as { data: { __rallarCoalescedWork: { generation: number; }; }; })
+                    .data.__rallarCoalescedWork.generation
+            ).toBe(2);
+            expect(isCanonicalRtcTopologyWorkEntry(rows[0]!)).toBe(true);
+        }
+    );
+
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {
         const ref = toRunGroupRef('plain-duplicate');
         const work = computeRevisionWork(ref, null, 'automatic');
@@ -185,6 +215,29 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
             set expire_ts = (now() - interval '1 minute') at time zone 'UTC'
             where ri_topic_id = ${head.topicId} and fk_ext_bank_id = ${head.contextId}
         `;
+    }
+
+    /** Restamps the stored head's envelope version; failed, it is left as an exhausted attempt budget leaves it. */
+    async function stampHeadEnvelopeVersion(ref: GroupRef, version: number, failed: boolean): Promise<ResourceEntry> {
+        const head: Key = toCoalescedGroupRevisionKey(ref);
+        const [stored] = await readRevisionRows(ref);
+        await requireSql()`
+            update resource_inbox
+            set ri_resource = ${toEarlierALEnvelopeVersionResource(stored!.resource, version)}
+            where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
+              and fk_ext_bank_id = ${head.contextId}
+        `;
+        if (failed) {
+            await requireSql()`
+                update resource_inbox
+                set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20, next_ts = null,
+                    start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC'
+                where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
+                  and fk_ext_bank_id = ${head.contextId}
+            `;
+        }
+        const [restamped] = await readRevisionRows(ref);
+        return restamped!;
     }
 
     async function reserveHead(ref: GroupRef): Promise<ResourceEntry> {

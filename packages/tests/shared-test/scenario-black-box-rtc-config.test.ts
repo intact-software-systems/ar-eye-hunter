@@ -1,20 +1,23 @@
-import { assertEquals, assertStringIncludes } from '@std/assert';
-import { fromFileUrl } from '@std/path';
+import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const scenarioCliPath = fromFileUrl(
+const scenarioCliPath = fileURLToPath(
     new URL('../../shared-test/black-box-runner/scenario-black-box.ts', import.meta.url)
 );
 const tempConfigDirectories = new Set<string>();
 
 async function writeTempConfig(config: unknown): Promise<string> {
-    const dir = await Deno.makeTempDir({
-        prefix: 'scenario-black-box-rtc-'
-    });
+    const dir = await mkdtemp(join(tmpdir(), 'scenario-black-box-rtc-'));
     tempConfigDirectories.add(dir);
 
-    await Deno.writeTextFile(
+    await writeFile(
         `${dir}/config.json`,
-        JSON.stringify(config, null, 2)
+        JSON.stringify(config, null, 2),
+        'utf8'
     );
 
     return dir;
@@ -25,24 +28,17 @@ async function runScenarioCli(args: string[]): Promise<{
     stdout: string;
     stderr: string;
 }> {
-    const command = new Deno.Command(Deno.execPath(), {
-        args: [
-            'run',
-            '-A',
-            scenarioCliPath,
-            ...args
-        ],
-        stdout: 'piped',
-        stderr: 'piped'
-    });
+    const output = spawnSync(process.execPath, [
+        'run',
+        scenarioCliPath,
+        ...args
+    ], { encoding: 'utf8' });
 
     try {
-        const output = await command.output();
-
         return {
-            code: output.code,
-            stdout: new TextDecoder().decode(output.stdout),
-            stderr: new TextDecoder().decode(output.stderr)
+            code: output.status ?? 0,
+            stdout: output.stdout,
+            stderr: output.stderr
         };
     }
     finally {
@@ -60,10 +56,10 @@ async function cleanupScenarioWorkingDirectory(args: string[]): Promise<void> {
         return;
     }
 
-    await Deno.remove(workingDirectory, { recursive: true }).catch(() => undefined);
+    await rm(workingDirectory, { recursive: true, force: true }).catch(() => undefined);
 }
 
-Deno.test('scenario-black-box CLI dry mode normalizes rtc.connect and rtc.send steps', async () => {
+test('scenario-black-box CLI dry mode normalizes rtc.connect and rtc.send steps', async () => {
     const workingDirectory = await writeTempConfig({
         variables: {
             roomId: 'room-1'
@@ -119,29 +115,29 @@ Deno.test('scenario-black-box CLI dry mode normalizes rtc.connect and rtc.send s
         'dry'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const interactions = JSON.parse(result.stdout);
 
-    assertEquals(Array.isArray(interactions), true);
-    assertEquals(interactions.length, 2);
+    expect(Array.isArray(interactions)).toEqual(true);
+    expect(interactions.length).toEqual(2);
 
-    assertEquals(interactions[0].RTC.request.action, 'connect');
-    assertEquals(interactions[0].RTC.request.connection, 'aliceRtc');
-    assertEquals(interactions[0].RTC.request.provider, 'rallar-stub');
-    assertEquals(interactions[0].RTC.request.actor, 'alice');
-    assertEquals(interactions[0].RTC.request.roomId, 'room-1');
+    expect(interactions[0].RTC.request.action).toEqual('connect');
+    expect(interactions[0].RTC.request.connection).toEqual('aliceRtc');
+    expect(interactions[0].RTC.request.provider).toEqual('rallar-stub');
+    expect(interactions[0].RTC.request.actor).toEqual('alice');
+    expect(interactions[0].RTC.request.roomId).toEqual('room-1');
 
-    assertEquals(interactions[1].RTC.request.action, 'send');
-    assertEquals(interactions[1].RTC.request.connection, 'aliceRtc');
-    assertEquals(interactions[1].RTC.response.connection, 'bobRtc');
-    assertEquals(interactions[1].RTC.response.message, {
+    expect(interactions[1].RTC.request.action).toEqual('send');
+    expect(interactions[1].RTC.request.connection).toEqual('aliceRtc');
+    expect(interactions[1].RTC.response.connection).toEqual('bobRtc');
+    expect(interactions[1].RTC.response.message).toEqual({
         topic: 'chat.message'
     });
 });
 
-Deno.test('scenario-black-box CLI executes rtc.connect and rtc.send with stub rallar provider', async () => {
+test('scenario-black-box CLI executes rtc.connect and rtc.send with stub rallar provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -202,21 +198,21 @@ Deno.test('scenario-black-box CLI executes rtc.connect and rtc.send with stub ra
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.success, 3);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsMessage[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsMessage[0].actual.stub, true);
-    assertEquals(report.rtcProviderNames.includes('rallar-stub'), true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.success).toEqual(3);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsMessage[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsMessage[0].actual.stub).toEqual(true);
+    expect(report.rtcProviderNames.includes('rallar-stub')).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI executes rtc.send with ordered expect.messages', async () => {
+test('scenario-black-box CLI executes rtc.send with ordered expect.messages', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -289,18 +285,18 @@ Deno.test('scenario-black-box CLI executes rtc.send with ordered expect.messages
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceEmitsJoinFlow[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceEmitsJoinFlow[0].actual.ordered, true);
-    assertEquals(report.resultsByName.aliceEmitsJoinFlow[0].actual.matchedMessages.length, 2);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceEmitsJoinFlow[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceEmitsJoinFlow[0].actual.ordered).toEqual(true);
+    expect(report.resultsByName.aliceEmitsJoinFlow[0].actual.matchedMessages.length).toEqual(2);
 });
 
-Deno.test('scenario-black-box CLI reports failure when ordered RTC messages are in wrong order', async () => {
+test('scenario-black-box CLI reports failure when ordered RTC messages are in wrong order', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -365,20 +361,17 @@ Deno.test('scenario-black-box CLI reports failure when ordered RTC messages are 
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'aliceEmitsWrongOrder');
-    assertStringIncludes(
-        report.summary.firstFailure.result,
-        'Expected RTC messages were not received in the expected order'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('aliceEmitsWrongOrder');
+    expect(report.summary.firstFailure.result).toContain('Expected RTC messages were not received in the expected order');
 });
 
-Deno.test('scenario-black-box CLI executes rtc.close and rtc.wait expect.close', async () => {
+test('scenario-black-box CLI executes rtc.close and rtc.wait expect.close', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -418,17 +411,17 @@ Deno.test('scenario-black-box CLI executes rtc.close and rtc.wait expect.close',
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceClosed[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceClosed[0].actual.matchedCloseEvent.stub, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceClosed[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceClosed[0].actual.matchedCloseEvent.stub).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI auto-closes unclosed RTC stub connections', async () => {
+test('scenario-black-box CLI auto-closes unclosed RTC stub connections', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -454,18 +447,18 @@ Deno.test('scenario-black-box CLI auto-closes unclosed RTC stub connections', as
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcConnections, {});
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].autoCloseRequested, true);
-    assertEquals(report.rtcCloseEvents.aliceRtc[0].stub, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.rtcConnections).toEqual({});
+    expect(report.rtcCloseEvents.aliceRtc[0].autoCloseRequested).toEqual(true);
+    expect(report.rtcCloseEvents.aliceRtc[0].stub).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI reports clear failure for rallar-signaling provider missing signalingUrl', async () => {
+test('scenario-black-box CLI reports clear failure for rallar-signaling provider missing signalingUrl', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -491,26 +484,23 @@ Deno.test('scenario-black-box CLI reports clear failure for rallar-signaling pro
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'connectAliceSignaling');
-    assertEquals(report.resultsByName.connectAliceSignaling[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAliceSignaling[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAliceSignaling[0].actual.exception,
-        'Rallar WebRTC signalingUrl is required for connection: aliceRtc'
-    );
-    assertEquals(report.rtcProviderNames.includes('rallar'), false);
-    assertEquals(report.rtcProviderNames.includes('rallar-signaling'), true);
-    assertEquals(report.rtcProviderNames.includes('rallar-stub'), true);
-    assertEquals(report.rtcProviderNames.includes('rallar-memory'), true);
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('connectAliceSignaling');
+    expect(report.resultsByName.connectAliceSignaling[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAliceSignaling[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAliceSignaling[0].actual.exception).toEqual('Rallar WebRTC signalingUrl is required for connection: aliceRtc');
+    expect(report.rtcProviderNames.includes('rallar')).toEqual(false);
+    expect(report.rtcProviderNames.includes('rallar-signaling')).toEqual(true);
+    expect(report.rtcProviderNames.includes('rallar-stub')).toEqual(true);
+    expect(report.rtcProviderNames.includes('rallar-memory')).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI explicit rallar-signaling provider is WebSocket signaling-only', async () => {
+test('scenario-black-box CLI explicit rallar-signaling provider is WebSocket signaling-only', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -539,26 +529,23 @@ Deno.test('scenario-black-box CLI explicit rallar-signaling provider is WebSocke
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
     const connectResult = report.resultsByName.connectAliceSignaling[0];
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(connectResult.status, 'FAILURE');
-    assertEquals(connectResult.result, 'RTC connect failed');
-    assertEquals(connectResult.provider, 'rallar-signaling');
-    assertEquals(connectResult.peerId, 'alice');
-    assertEquals(connectResult.groupId, 'group-1');
-    assertEquals(connectResult.overlayId, 'overlay-1');
-    assertEquals(
-        connectResult.actual.exception,
-        'Rallar WebRTC signalingUrl is required for connection: aliceRtc'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(connectResult.status).toEqual('FAILURE');
+    expect(connectResult.result).toEqual('RTC connect failed');
+    expect(connectResult.provider).toEqual('rallar-signaling');
+    expect(connectResult.peerId).toEqual('alice');
+    expect(connectResult.groupId).toEqual('group-1');
+    expect(connectResult.overlayId).toEqual('overlay-1');
+    expect(connectResult.actual.exception).toEqual('Rallar WebRTC signalingUrl is required for connection: aliceRtc');
 });
 
-Deno.test('scenario-black-box CLI explicit rallar-signaling provider waits for WebSocket open', async () => {
+test('scenario-black-box CLI explicit rallar-signaling provider waits for WebSocket open', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -589,26 +576,23 @@ Deno.test('scenario-black-box CLI explicit rallar-signaling provider waits for W
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
     const connectResult = report.resultsByName.connectAliceSignalingWithUrl[0];
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(connectResult.status, 'FAILURE');
-    assertEquals(connectResult.result, 'RTC connect failed');
-    assertEquals(connectResult.provider, 'rallar-signaling');
-    assertEquals(connectResult.peerId, 'alice');
-    assertEquals(connectResult.groupId, 'group-1');
-    assertEquals(connectResult.overlayId, 'overlay-1');
-    assertEquals(
-        String(connectResult.actual.exception).startsWith('Rallar WebRTC signaling transport failed before open.'),
-        true
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(connectResult.status).toEqual('FAILURE');
+    expect(connectResult.result).toEqual('RTC connect failed');
+    expect(connectResult.provider).toEqual('rallar-signaling');
+    expect(connectResult.peerId).toEqual('alice');
+    expect(connectResult.groupId).toEqual('group-1');
+    expect(connectResult.overlayId).toEqual('overlay-1');
+    expect(String(connectResult.actual.exception).startsWith('Rallar WebRTC signaling transport failed before open.')).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI dry mode normalizes rallar WebSocket signaling-only config', async () => {
+test('scenario-black-box CLI dry mode normalizes rallar WebSocket signaling-only config', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -641,24 +625,24 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar WebSocket signaling
         '--dry-run'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs, 1000);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAlice[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.provider).toEqual('rallar-signaling');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl).toEqual('ws://localhost:8080/ws');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.groupId).toEqual('group-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.overlayId).toEqual('overlay-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs).toEqual(1000);
 });
 
-Deno.test('scenario-black-box CLI short dry-run flag normalizes rallar WebSocket signaling-only config', async () => {
+test('scenario-black-box CLI short dry-run flag normalizes rallar WebSocket signaling-only config', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -691,24 +675,24 @@ Deno.test('scenario-black-box CLI short dry-run flag normalizes rallar WebSocket
         '-n'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs, 1000);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAlice[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.provider).toEqual('rallar-signaling');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl).toEqual('ws://localhost:8080/ws');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.groupId).toEqual('group-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.overlayId).toEqual('overlay-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs).toEqual(1000);
 });
 
-Deno.test('scenario-black-box CLI execution dry prints executable RTC interactions instead of report', async () => {
+test('scenario-black-box CLI execution dry prints executable RTC interactions instead of report', async () => {
     const workingDirectory = await writeTempConfig({
         variables: {
             roomId: 'room-1'
@@ -740,21 +724,21 @@ Deno.test('scenario-black-box CLI execution dry prints executable RTC interactio
         'dry'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const interactions = JSON.parse(result.stdout);
 
-    assertEquals(Array.isArray(interactions), true);
-    assertEquals(interactions.length, 1);
-    assertEquals(interactions[0].RTC.request.action, 'connect');
-    assertEquals(interactions[0].RTC.request.connection, 'aliceRtc');
-    assertEquals(interactions[0].RTC.request.provider, 'unknown-rtc-provider');
-    assertEquals(interactions[0].RTC.request.roomId, 'room-1');
-    assertEquals(interactions[0].summary, undefined);
+    expect(Array.isArray(interactions)).toEqual(true);
+    expect(interactions.length).toEqual(1);
+    expect(interactions[0].RTC.request.action).toEqual('connect');
+    expect(interactions[0].RTC.request.connection).toEqual('aliceRtc');
+    expect(interactions[0].RTC.request.provider).toEqual('unknown-rtc-provider');
+    expect(interactions[0].RTC.request.roomId).toEqual('room-1');
+    expect(interactions[0].summary).toEqual(undefined);
 });
 
-Deno.test('scenario-black-box CLI dry-run returns report instead of executable RTC interactions', async () => {
+test('scenario-black-box CLI dry-run returns report instead of executable RTC interactions', async () => {
     const workingDirectory = await writeTempConfig({
         variables: {
             roomId: 'room-1'
@@ -785,21 +769,21 @@ Deno.test('scenario-black-box CLI dry-run returns report instead of executable R
         '--dry-run'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(Array.isArray(report), false);
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.success, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'unknown-rtc-provider');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.roomId, 'room-1');
+    expect(Array.isArray(report)).toEqual(false);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.success).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAlice[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.provider).toEqual('unknown-rtc-provider');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.roomId).toEqual('room-1');
 });
 
-Deno.test('scenario-black-box CLI config execution dryRun normalizes rallar WebSocket signaling-only config', async () => {
+test('scenario-black-box CLI config execution dryRun normalizes rallar WebSocket signaling-only config', async () => {
     const workingDirectory = await writeTempConfig({
         execution: {
             dryRun: true
@@ -834,24 +818,24 @@ Deno.test('scenario-black-box CLI config execution dryRun normalizes rallar WebS
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAlice[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.provider, 'rallar-signaling');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl, 'ws://localhost:8080/ws');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.groupId, 'group-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.overlayId, 'overlay-1');
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen, true);
-    assertEquals(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs, 1000);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAlice[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.provider).toEqual('rallar-signaling');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.signalingUrl).toEqual('ws://localhost:8080/ws');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.groupId).toEqual('group-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.overlayId).toEqual('overlay-1');
+    expect(report.resultsByName.connectAlice[0].actual.normalized.waitForOpen).toEqual(true);
+    expect(report.resultsByName.connectAlice[0].actual.normalized.openTimeoutMs).toEqual(1000);
 });
 
-Deno.test('scenario-black-box CLI dry-run does not require configured RTC provider', async () => {
+test('scenario-black-box CLI dry-run does not require configured RTC provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -898,41 +882,38 @@ Deno.test('scenario-black-box CLI dry-run does not require configured RTC provid
         '--dry-run'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 3);
-    assertEquals(report.rtcConnections, {});
-    assertEquals(report.rtcMessages, {});
-    assertEquals(report.rtcCloseEvents, {});
-    assertEquals(report.resultsByName.connectAliceWithUnknownProvider[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsWithUnknownProvider[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAliceWithUnknownProvider[0].status, 'SUCCESS');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(3);
+    expect(report.rtcConnections).toEqual({});
+    expect(report.rtcMessages).toEqual({});
+    expect(report.rtcCloseEvents).toEqual({});
+    expect(report.resultsByName.connectAliceWithUnknownProvider[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsWithUnknownProvider[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAliceWithUnknownProvider[0].status).toEqual('SUCCESS');
 
-    assertEquals(report.resultsByName.connectAliceWithUnknownProvider[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.aliceSendsWithUnknownProvider[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.closeAliceWithUnknownProvider[0].actual.dryRun, true);
+    expect(report.resultsByName.connectAliceWithUnknownProvider[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.aliceSendsWithUnknownProvider[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.closeAliceWithUnknownProvider[0].actual.dryRun).toEqual(true);
 
-    assertEquals(report.resultsByName.connectAliceWithUnknownProvider[0].actual.normalized.provider, 'unknown-rtc-provider');
-    assertEquals(report.resultsByName.aliceSendsWithUnknownProvider[0].actual.normalized.provider, 'unknown-rtc-provider');
-    assertEquals(report.resultsByName.closeAliceWithUnknownProvider[0].actual.normalized.provider, 'unknown-rtc-provider');
+    expect(report.resultsByName.connectAliceWithUnknownProvider[0].actual.normalized.provider).toEqual('unknown-rtc-provider');
+    expect(report.resultsByName.aliceSendsWithUnknownProvider[0].actual.normalized.provider).toEqual('unknown-rtc-provider');
+    expect(report.resultsByName.closeAliceWithUnknownProvider[0].actual.normalized.provider).toEqual('unknown-rtc-provider');
 
-    assertEquals(
-        report.resultsByName.aliceSendsWithUnknownProvider[0].actual.normalized.send,
-        {
-            topic: 'chat.message',
-            payload: {
-                from: 'alice',
-                text: 'dry-run should not need provider'
-            }
+    expect(report.resultsByName.aliceSendsWithUnknownProvider[0].actual.normalized.send).toEqual({
+        topic: 'chat.message',
+        payload: {
+            from: 'alice',
+            text: 'dry-run should not need provider'
         }
-    );
+    });
 });
 
-Deno.test('scenario-black-box CLI dry-run normalizes rallar signaling close wait expectation', async () => {
+test('scenario-black-box CLI dry-run normalizes rallar signaling close wait expectation', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -975,32 +956,32 @@ Deno.test('scenario-black-box CLI dry-run normalizes rallar signaling close wait
         '--dry-run'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.rtcConnections, {});
-    assertEquals(report.rtcMessages, {});
-    assertEquals(report.rtcCloseEvents, {});
-    assertEquals(report.resultsByName.waitForSignalingClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.provider, 'rallar-signaling');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.connection, 'aliceRtc');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.groupId, 'group-1');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.overlayId, 'overlay-1');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.action, 'wait');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.withinMs, 1000);
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.phase, 'signaling-close');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.reason, 'rallar WebRTC signaling session closed');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.connection, 'aliceRtc');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.peerId, 'alice');
-    assertEquals(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.roomId, 'room-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(1);
+    expect(report.rtcConnections).toEqual({});
+    expect(report.rtcMessages).toEqual({});
+    expect(report.rtcCloseEvents).toEqual({});
+    expect(report.resultsByName.waitForSignalingClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.provider).toEqual('rallar-signaling');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.connection).toEqual('aliceRtc');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.groupId).toEqual('group-1');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.overlayId).toEqual('overlay-1');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.action).toEqual('wait');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.withinMs).toEqual(1000);
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.phase).toEqual('signaling-close');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.reason).toEqual('rallar WebRTC signaling session closed');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.connection).toEqual('aliceRtc');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.peerId).toEqual('alice');
+    expect(report.resultsByName.waitForSignalingClose[0].actual.normalized.response.close.roomId).toEqual('room-1');
 });
 
-Deno.test('scenario-black-box CLI dry mode normalizes rallar signaling send expectation', async () => {
+test('scenario-black-box CLI dry mode normalizes rallar signaling send expectation', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1060,38 +1041,32 @@ Deno.test('scenario-black-box CLI dry mode normalizes rallar signaling send expe
         '--dry-run'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.rtcConnections, {});
-    assertEquals(report.rtcMessages, {});
-    assertEquals(report.rtcCloseEvents, {});
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.dryRun, true);
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.provider, 'rallar-signaling');
-    assertEquals(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.connection, 'aliceRtc');
-    assertEquals(
-        report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.send,
-        {
-            topic: 'rallar.existing.signaling.offer',
-            payload: {
-                from: 'alice',
-                to: 'bob',
-                sdp: 'fake-offer-sdp'
-            }
+    expect(report.summary.failure).toEqual(0);
+    expect(report.summary.total).toEqual(1);
+    expect(report.rtcConnections).toEqual({});
+    expect(report.rtcMessages).toEqual({});
+    expect(report.rtcCloseEvents).toEqual({});
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].actual.dryRun).toEqual(true);
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.provider).toEqual('rallar-signaling');
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.connection).toEqual('aliceRtc');
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.send).toEqual({
+        topic: 'rallar.existing.signaling.offer',
+        payload: {
+            from: 'alice',
+            to: 'bob',
+            sdp: 'fake-offer-sdp'
         }
-    );
-    assertEquals(
-        report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.response.message.topic,
-        'rallar.webrtc.signaling.message'
-    );
+    });
+    expect(report.resultsByName.aliceSendsSignalingOffer[0].actual.normalized.response.message.topic).toEqual('rallar.webrtc.signaling.message');
 });
 
-Deno.test('scenario-black-box CLI report includes default RTC provider names', async () => {
+test('scenario-black-box CLI report includes default RTC provider names', async () => {
     const workingDirectory = await writeTempConfig({
         steps: []
     });
@@ -1103,19 +1078,19 @@ Deno.test('scenario-black-box CLI report includes default RTC provider names', a
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcProviderNames.includes('rallar'), false);
-    assertEquals(report.rtcProviderNames.includes('rallar-signaling'), true);
-    assertEquals(report.rtcProviderNames.includes('rallar-stub'), true);
-    assertEquals(report.rtcProviderNames.includes('rallar-memory'), true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.rtcProviderNames.includes('rallar')).toEqual(false);
+    expect(report.rtcProviderNames.includes('rallar-signaling')).toEqual(true);
+    expect(report.rtcProviderNames.includes('rallar-stub')).toEqual(true);
+    expect(report.rtcProviderNames.includes('rallar-memory')).toEqual(true);
 });
 
-Deno.test('scenario-black-box CLI can execute two-peer RTC flow with rallar-memory provider', async () => {
+test('scenario-black-box CLI can execute two-peer RTC flow with rallar-memory provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1210,25 +1185,25 @@ Deno.test('scenario-black-box CLI can execute two-peer RTC flow with rallar-memo
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredTo, 'bob');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredTo, 'alice');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence, 1);
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliverySequence, 2);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.bobSendsToAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredTo).toEqual('alice');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence).toEqual(1);
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliverySequence).toEqual(2);
 });
 
-Deno.test('scenario-black-box CLI routes rallar-memory payload target before remotePeerId', async () => {
+test('scenario-black-box CLI routes rallar-memory payload target before remotePeerId', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1326,20 +1301,20 @@ Deno.test('scenario-black-box CLI routes rallar-memory payload target before rem
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].result, 'Expected RTC message was not received');
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredTo, 'charlie');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].result).toEqual('Expected RTC message was not received');
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
 });
 
-Deno.test('scenario-black-box CLI can broadcast within room with rallar-memory provider', async () => {
+test('scenario-black-box CLI can broadcast within room with rallar-memory provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1431,19 +1406,19 @@ Deno.test('scenario-black-box CLI can broadcast within room with rallar-memory p
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceBroadcastsPresence[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].result, 'Expected RTC message was not received');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceBroadcastsPresence[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].result).toEqual('Expected RTC message was not received');
 });
 
-Deno.test('scenario-black-box CLI can explicitly broadcast with rallar-memory provider even when remotePeerId is configured', async () => {
+test('scenario-black-box CLI can explicitly broadcast with rallar-memory provider even when remotePeerId is configured', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1540,36 +1515,24 @@ Deno.test('scenario-black-box CLI can explicitly broadcast with rallar-memory pr
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].status, 'SUCCESS');
-    assertEquals(
-        report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy,
-        'rallar-in-memory-runtime'
-    );
-    assertEquals(
-        report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredBy,
-        'rallar-in-memory-runtime'
-    );
-    assertEquals(
-        report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliveredTo,
-        'bob'
-    );
-    assertEquals(
-        report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredTo,
-        'charlie'
-    );
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
 
-    assertEquals(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliverySequence, 1);
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliverySequence, 2);
+    expect(report.resultsByName.aliceExplicitlyBroadcastsPresence[0].actual.matchedMessage.data.deliverySequence).toEqual(1);
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliverySequence).toEqual(2);
 });
 
-Deno.test('scenario-black-box CLI can explicitly broadcast with payload broadcast flag and rallar-memory provider', async () => {
+test('scenario-black-box CLI can explicitly broadcast with payload broadcast flag and rallar-memory provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1666,33 +1629,21 @@ Deno.test('scenario-black-box CLI can explicitly broadcast with payload broadcas
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.alicePayloadBroadcastsPresence[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].status, 'SUCCESS');
-    assertEquals(
-        report.resultsByName.alicePayloadBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy,
-        'rallar-in-memory-runtime'
-    );
-    assertEquals(
-        report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredBy,
-        'rallar-in-memory-runtime'
-    );
-    assertEquals(
-        report.resultsByName.alicePayloadBroadcastsPresence[0].actual.matchedMessage.data.deliveredTo,
-        'bob'
-    );
-    assertEquals(
-        report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredTo,
-        'charlie'
-    );
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.alicePayloadBroadcastsPresence[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.alicePayloadBroadcastsPresence[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.alicePayloadBroadcastsPresence[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
 });
 
-Deno.test('scenario-black-box CLI reports failure when rallar-memory broadcast has no targets', async () => {
+test('scenario-black-box CLI reports failure when rallar-memory broadcast has no targets', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1733,23 +1684,22 @@ Deno.test('scenario-black-box CLI reports failure when rallar-memory broadcast h
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'aliceBroadcastsToEmptyRoom');
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceBroadcastsToEmptyRoom[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceBroadcastsToEmptyRoom[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceBroadcastsToEmptyRoom[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('aliceBroadcastsToEmptyRoom');
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].actual.exception).toEqual(
         'Rallar in-memory RTC broadcast has no connected targets for peer: alice'
     );
 });
 
-Deno.test('scenario-black-box CLI reports failure when rallar-memory direct target is missing', async () => {
+test('scenario-black-box CLI reports failure when rallar-memory direct target is missing', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1792,23 +1742,20 @@ Deno.test('scenario-black-box CLI reports failure when rallar-memory direct targ
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'aliceSendsToMissingBob');
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToMissingBob[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsToMissingBob[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsToMissingBob[0].actual.exception,
-        'Rallar in-memory RTC target is not connected: missing-bob'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('aliceSendsToMissingBob');
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToMissingBob[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsToMissingBob[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsToMissingBob[0].actual.exception).toEqual('Rallar in-memory RTC target is not connected: missing-bob');
 });
 
-Deno.test('scenario-black-box CLI can close and wait for close with rallar-memory provider', async () => {
+test('scenario-black-box CLI can close and wait for close with rallar-memory provider', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1854,21 +1801,21 @@ Deno.test('scenario-black-box CLI can close and wait for close with rallar-memor
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.phase, 'close');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.reason, 'closed by rallar in-memory runtime');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.peerId, 'alice');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.phase).toEqual('close');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.reason).toEqual('closed by rallar in-memory runtime');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.peerId).toEqual('alice');
 });
 
-Deno.test('scenario-black-box CLI reports failure when rallar-memory sends to peer after close', async () => {
+test('scenario-black-box CLI reports failure when rallar-memory sends to peer after close', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1929,25 +1876,22 @@ Deno.test('scenario-black-box CLI reports failure when rallar-memory sends to pe
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'aliceSendsToClosedBob');
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToClosedBob[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsToClosedBob[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsToClosedBob[0].actual.exception,
-        'Rallar in-memory RTC target is not connected: bob'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('aliceSendsToClosedBob');
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToClosedBob[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsToClosedBob[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsToClosedBob[0].actual.exception).toEqual('Rallar in-memory RTC target is not connected: bob');
 });
 
-Deno.test('scenario-black-box CLI auto-closes unclosed rallar-memory connections', async () => {
+test('scenario-black-box CLI auto-closes unclosed rallar-memory connections', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -1988,47 +1932,47 @@ Deno.test('scenario-black-box CLI auto-closes unclosed rallar-memory connections
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.rtcConnections, {});
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.rtcConnections).toEqual({});
 
     const aliceAutoCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.autoCloseRequested === true);
     const bobAutoCloseEvent = report.rtcCloseEvents.bobRtc
         .find((event: any) => event.autoCloseRequested === true);
 
-    assertEquals(aliceAutoCloseEvent?.autoCloseRequested, true);
-    assertEquals(aliceAutoCloseEvent?.autoCloseSucceeded, true);
-    assertEquals(bobAutoCloseEvent?.autoCloseRequested, true);
-    assertEquals(bobAutoCloseEvent?.autoCloseSucceeded, true);
+    expect(aliceAutoCloseEvent?.autoCloseRequested).toEqual(true);
+    expect(aliceAutoCloseEvent?.autoCloseSucceeded).toEqual(true);
+    expect(bobAutoCloseEvent?.autoCloseRequested).toEqual(true);
+    expect(bobAutoCloseEvent?.autoCloseSucceeded).toEqual(true);
 
     const aliceRuntimeCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.reason === 'closed by rallar in-memory runtime');
     const bobRuntimeCloseEvent = report.rtcCloseEvents.bobRtc
         .find((event: any) => event.reason === 'closed by rallar in-memory runtime');
 
-    assertEquals(aliceRuntimeCloseEvent?.phase, 'close');
-    assertEquals(aliceRuntimeCloseEvent?.closedBy, 'rallar-in-memory-runtime');
-    assertEquals(aliceRuntimeCloseEvent?.connection, 'aliceRtc');
-    assertEquals(aliceRuntimeCloseEvent?.actor, 'alice');
-    assertEquals(aliceRuntimeCloseEvent?.peerId, 'alice');
-    assertEquals(aliceRuntimeCloseEvent?.roomId, 'room-1');
+    expect(aliceRuntimeCloseEvent?.phase).toEqual('close');
+    expect(aliceRuntimeCloseEvent?.closedBy).toEqual('rallar-in-memory-runtime');
+    expect(aliceRuntimeCloseEvent?.connection).toEqual('aliceRtc');
+    expect(aliceRuntimeCloseEvent?.actor).toEqual('alice');
+    expect(aliceRuntimeCloseEvent?.peerId).toEqual('alice');
+    expect(aliceRuntimeCloseEvent?.roomId).toEqual('room-1');
 
-    assertEquals(bobRuntimeCloseEvent?.phase, 'close');
-    assertEquals(bobRuntimeCloseEvent?.closedBy, 'rallar-in-memory-runtime');
-    assertEquals(bobRuntimeCloseEvent?.connection, 'bobRtc');
-    assertEquals(bobRuntimeCloseEvent?.actor, 'bob');
-    assertEquals(bobRuntimeCloseEvent?.peerId, 'bob');
-    assertEquals(bobRuntimeCloseEvent?.roomId, 'room-1');
+    expect(bobRuntimeCloseEvent?.phase).toEqual('close');
+    expect(bobRuntimeCloseEvent?.closedBy).toEqual('rallar-in-memory-runtime');
+    expect(bobRuntimeCloseEvent?.connection).toEqual('bobRtc');
+    expect(bobRuntimeCloseEvent?.actor).toEqual('bob');
+    expect(bobRuntimeCloseEvent?.peerId).toEqual('bob');
+    expect(bobRuntimeCloseEvent?.roomId).toEqual('room-1');
 });
 
-Deno.test('scenario-black-box CLI reports failure when rallar-memory peer connects twice', async () => {
+test('scenario-black-box CLI reports failure when rallar-memory peer connects twice', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtcOne: {
@@ -2067,23 +2011,20 @@ Deno.test('scenario-black-box CLI reports failure when rallar-memory peer connec
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.summary.firstFailure.name, 'connectAliceSecond');
-    assertEquals(report.resultsByName.connectAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAliceSecond[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAliceSecond[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAliceSecond[0].actual.exception,
-        'Rallar in-memory RTC peer is already connected: alice'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.summary.firstFailure.name).toEqual('connectAliceSecond');
+    expect(report.resultsByName.connectAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAliceSecond[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAliceSecond[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAliceSecond[0].actual.exception).toEqual('Rallar in-memory RTC peer is already connected: alice');
 });
 
-Deno.test('scenario-black-box CLI allows rallar-memory peer to reconnect after close', async () => {
+test('scenario-black-box CLI allows rallar-memory peer to reconnect after close', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtcOne: {
@@ -2127,28 +2068,28 @@ Deno.test('scenario-black-box CLI allows rallar-memory peer to reconnect after c
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAliceSecond[0].status, 'SUCCESS');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAliceSecond[0].status).toEqual('SUCCESS');
 
     const aliceRuntimeCloseEvent = report.rtcCloseEvents.aliceRtcOne
         .find((event: any) => event.reason === 'closed by rallar in-memory runtime');
 
-    assertEquals(aliceRuntimeCloseEvent?.phase, 'close');
-    assertEquals(aliceRuntimeCloseEvent?.closedBy, 'rallar-in-memory-runtime');
-    assertEquals(aliceRuntimeCloseEvent?.connection, 'aliceRtcOne');
-    assertEquals(aliceRuntimeCloseEvent?.actor, 'alice');
-    assertEquals(aliceRuntimeCloseEvent?.peerId, 'alice');
-    assertEquals(aliceRuntimeCloseEvent?.roomId, 'room-1');
+    expect(aliceRuntimeCloseEvent?.phase).toEqual('close');
+    expect(aliceRuntimeCloseEvent?.closedBy).toEqual('rallar-in-memory-runtime');
+    expect(aliceRuntimeCloseEvent?.connection).toEqual('aliceRtcOne');
+    expect(aliceRuntimeCloseEvent?.actor).toEqual('alice');
+    expect(aliceRuntimeCloseEvent?.peerId).toEqual('alice');
+    expect(aliceRuntimeCloseEvent?.roomId).toEqual('room-1');
 });
 
-Deno.test('scenario-black-box CLI rallar-memory close event includes diagnostics', async () => {
+test('scenario-black-box CLI rallar-memory close event includes diagnostics', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -2202,25 +2143,25 @@ Deno.test('scenario-black-box CLI rallar-memory close event includes diagnostics
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.connection, 'aliceRtc');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.actor, 'alice');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.peerId, 'alice');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.roomId, 'room-1');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId, 'group-1');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId, 'overlay-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.connection).toEqual('aliceRtc');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.actor).toEqual('alice');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.peerId).toEqual('alice');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.roomId).toEqual('room-1');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId).toEqual('group-1');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId).toEqual('overlay-1');
 });
 
-Deno.test('scenario-black-box CLI RTC success report includes generic routing diagnostics', async () => {
+test('scenario-black-box CLI RTC success report includes generic routing diagnostics', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -2250,35 +2191,35 @@ Deno.test('scenario-black-box CLI RTC success report includes generic routing di
         'config.json'
     ]);
 
-    assertEquals(result.code, 0);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(0);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
     const connectResult = report.resultsByName.connectAlice[0];
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(connectResult.status, 'SUCCESS');
-    assertEquals(connectResult.provider, 'rallar-memory');
-    assertEquals(connectResult.actor, 'alice');
-    assertEquals(connectResult.peerId, 'alice');
-    assertEquals(connectResult.roomId, 'room-1');
-    assertEquals(connectResult.groupId, 'group-1');
-    assertEquals(connectResult.overlayId, 'overlay-1');
-    assertEquals(connectResult.remotePeerId, 'bob');
-    assertEquals(connectResult.action, 'connect');
-    assertEquals(connectResult.connection, 'aliceRtc');
-    assertEquals(connectResult.actual.provider, 'rallar-memory');
-    assertEquals(connectResult.actual.actor, 'alice');
-    assertEquals(connectResult.actual.peerId, 'alice');
-    assertEquals(connectResult.actual.roomId, 'room-1');
-    assertEquals(connectResult.actual.groupId, 'group-1');
-    assertEquals(connectResult.actual.overlayId, 'overlay-1');
-    assertEquals(connectResult.actual.remotePeerId, 'bob');
-    assertEquals(connectResult.actual.action, 'connect');
-    assertEquals(connectResult.actual.connection, 'aliceRtc');
+    expect(report.summary.failure).toEqual(0);
+    expect(connectResult.status).toEqual('SUCCESS');
+    expect(connectResult.provider).toEqual('rallar-memory');
+    expect(connectResult.actor).toEqual('alice');
+    expect(connectResult.peerId).toEqual('alice');
+    expect(connectResult.roomId).toEqual('room-1');
+    expect(connectResult.groupId).toEqual('group-1');
+    expect(connectResult.overlayId).toEqual('overlay-1');
+    expect(connectResult.remotePeerId).toEqual('bob');
+    expect(connectResult.action).toEqual('connect');
+    expect(connectResult.connection).toEqual('aliceRtc');
+    expect(connectResult.actual.provider).toEqual('rallar-memory');
+    expect(connectResult.actual.actor).toEqual('alice');
+    expect(connectResult.actual.peerId).toEqual('alice');
+    expect(connectResult.actual.roomId).toEqual('room-1');
+    expect(connectResult.actual.groupId).toEqual('group-1');
+    expect(connectResult.actual.overlayId).toEqual('overlay-1');
+    expect(connectResult.actual.remotePeerId).toEqual('bob');
+    expect(connectResult.actual.action).toEqual('connect');
+    expect(connectResult.actual.connection).toEqual('aliceRtc');
 });
 
-Deno.test('scenario-black-box CLI RTC failure report includes generic routing diagnostics', async () => {
+test('scenario-black-box CLI RTC failure report includes generic routing diagnostics', async () => {
     const workingDirectory = await writeTempConfig({
         connections: {
             aliceRtc: {
@@ -2308,31 +2249,31 @@ Deno.test('scenario-black-box CLI RTC failure report includes generic routing di
         'config.json'
     ]);
 
-    assertEquals(result.code, 1);
-    assertEquals(result.stderr, '');
+    expect(result.code).toEqual(1);
+    expect(result.stderr).toEqual('');
 
     const report = JSON.parse(result.stdout);
     const connectResult = report.resultsByName.connectAliceMissingProvider[0];
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(connectResult.status, 'FAILURE');
-    assertEquals(connectResult.result, 'RTC provider is not configured: missing-provider');
-    assertEquals(connectResult.provider, 'missing-provider');
-    assertEquals(connectResult.actor, 'alice');
-    assertEquals(connectResult.peerId, 'alice');
-    assertEquals(connectResult.roomId, 'room-1');
-    assertEquals(connectResult.groupId, 'group-1');
-    assertEquals(connectResult.overlayId, 'overlay-1');
-    assertEquals(connectResult.remotePeerId, 'bob');
-    assertEquals(connectResult.action, 'connect');
-    assertEquals(connectResult.connection, 'aliceRtc');
-    assertEquals(connectResult.actual.provider, 'missing-provider');
-    assertEquals(connectResult.actual.actor, 'alice');
-    assertEquals(connectResult.actual.peerId, 'alice');
-    assertEquals(connectResult.actual.roomId, 'room-1');
-    assertEquals(connectResult.actual.groupId, 'group-1');
-    assertEquals(connectResult.actual.overlayId, 'overlay-1');
-    assertEquals(connectResult.actual.remotePeerId, 'bob');
-    assertEquals(connectResult.actual.action, 'connect');
-    assertEquals(connectResult.actual.connection, 'aliceRtc');
+    expect(report.summary.failure).toEqual(1);
+    expect(connectResult.status).toEqual('FAILURE');
+    expect(connectResult.result).toEqual('RTC provider is not configured: missing-provider');
+    expect(connectResult.provider).toEqual('missing-provider');
+    expect(connectResult.actor).toEqual('alice');
+    expect(connectResult.peerId).toEqual('alice');
+    expect(connectResult.roomId).toEqual('room-1');
+    expect(connectResult.groupId).toEqual('group-1');
+    expect(connectResult.overlayId).toEqual('overlay-1');
+    expect(connectResult.remotePeerId).toEqual('bob');
+    expect(connectResult.action).toEqual('connect');
+    expect(connectResult.connection).toEqual('aliceRtc');
+    expect(connectResult.actual.provider).toEqual('missing-provider');
+    expect(connectResult.actual.actor).toEqual('alice');
+    expect(connectResult.actual.peerId).toEqual('alice');
+    expect(connectResult.actual.roomId).toEqual('room-1');
+    expect(connectResult.actual.groupId).toEqual('group-1');
+    expect(connectResult.actual.overlayId).toEqual('overlay-1');
+    expect(connectResult.actual.remotePeerId).toEqual('bob');
+    expect(connectResult.actual.action).toEqual('connect');
+    expect(connectResult.actual.connection).toEqual('aliceRtc');
 });

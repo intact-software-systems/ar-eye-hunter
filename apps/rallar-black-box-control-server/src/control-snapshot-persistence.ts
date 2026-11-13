@@ -1,3 +1,5 @@
+import { lstat, readFile } from 'node:fs/promises';
+
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type {
     ControlRunSnapshot,
@@ -109,7 +111,7 @@ export class ControlSnapshotPersistence {
         }
         const write = await writeControlSnapshotFile({
             path: toSnapshotPath(storageDir),
-            tempPath: `${toSnapshotPath(storageDir)}.tmp-${Deno.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
+            tempPath: `${toSnapshotPath(storageDir)}.tmp-${process.pid}-${savedAtEpochMs}-${this.sequence += 1}`,
             savedAtEpochMs,
             snapshot: controlService.snapshotForPersistence(snapshotBounds)
         });
@@ -129,6 +131,10 @@ function applyAutomaticRetention(input: ControlSnapshotPersistenceInput): void {
 
 function toSnapshotPath(storageDir: string): string {
     return `${storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
+}
+
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
 function recordSnapshotFlushTiming(sink: RallarTimingSink | undefined, write: SlicedJsonFileWrite): void {
@@ -172,16 +178,16 @@ async function restoreSnapshotFile(
     controlService: ControlSnapshotPersistenceInput['controlService']
 ): Promise<Either<Error, ControlSnapshotRestoreStatus>> {
     try {
-        await Deno.lstat(path);
+        await lstat(path);
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isNotFound(error)) {
             return Either.ofRight('absent');
         }
         return Either.ofLeft(new Error(`Could not restore control snapshot from ${path}: ${toError(error).message}`));
     }
     try {
-        return decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
+        return decodeSnapshotFile(JSON.parse(await readFile(path, 'utf8'))).fold(
             (issue) =>
                 Either.ofLeft<Error, ControlSnapshotRestoreStatus>(
                     new Error(`Could not restore control snapshot from ${path}: ${issue}`)

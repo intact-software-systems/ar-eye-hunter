@@ -2,6 +2,12 @@ type EnvReader = Readonly<{
     get(name: string): string | undefined;
 }>;
 
+const processEnv: EnvReader = {
+    get(name: string): string | undefined {
+        return process.env[name];
+    }
+};
+
 export type AuthenticatedWsSmokeConfig =
     | Readonly<{
         enabled: false;
@@ -33,7 +39,7 @@ export type WsTicketLike = Readonly<{
 }>;
 
 export function readAuthenticatedWsSmokeConfig(
-    env: EnvReader = Deno.env
+    env: EnvReader = processEnv
 ): AuthenticatedWsSmokeConfig {
     const username = firstNonEmpty(
         env.get('RALLAR_SMOKE_USERNAME'),
@@ -264,7 +270,7 @@ if (import.meta.main) {
     const config = readAuthenticatedWsSmokeConfig();
     if (!config.enabled) {
         console.log(`Skipping authenticated WS smoke: ${config.reason}`);
-        Deno.exit(0);
+        process.exit(0);
     }
 
     try {
@@ -273,6 +279,6 @@ if (import.meta.main) {
     }
     catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
-        Deno.exit(1);
+        process.exit(1);
     }
 }

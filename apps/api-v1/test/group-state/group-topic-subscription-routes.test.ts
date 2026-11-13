@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -62,7 +63,7 @@ function createSubscription(sessionId: string, topicId: string): GroupTopicSubsc
     };
 }
 
-Deno.test('the subscribe route enqueues GROUP_TOPIC_SUBSCRIBE with the path requestId as resourceId', async () => {
+test('the subscribe route enqueues GROUP_TOPIC_SUBSCRIBE with the path requestId as resourceId', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued);
 
@@ -99,7 +100,7 @@ Deno.test('the subscribe route enqueues GROUP_TOPIC_SUBSCRIBE with the path requ
     );
 });
 
-Deno.test('the unsubscribe route enqueues GROUP_TOPIC_UNSUBSCRIBE', async () => {
+test('the unsubscribe route enqueues GROUP_TOPIC_UNSUBSCRIBE', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued);
 
@@ -134,7 +135,7 @@ Deno.test('the unsubscribe route enqueues GROUP_TOPIC_UNSUBSCRIBE', async () => 
     );
 });
 
-Deno.test('a path session other than the auth session is 403 and enqueues nothing', async () => {
+test('a path session other than the auth session is 403 and enqueues nothing', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued);
 
@@ -150,7 +151,7 @@ Deno.test('a path session other than the auth session is 403 and enqueues nothin
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('malformed bodies are refused before enqueue', async () => {
+test('malformed bodies are refused before enqueue', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued);
     const malformedBodies = [
@@ -192,7 +193,7 @@ Deno.test('malformed bodies are refused before enqueue', async () => {
     assert.equal(enqueued.length, 0);
 });
 
-Deno.test('a forged actor in the body is replaced by the auth session', async () => {
+test('a forged actor in the body is replaced by the auth session', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
     const runtime = createCapturingRuntime(enqueued);
 
@@ -222,7 +223,7 @@ Deno.test('a forged actor in the body is replaced by the auth session', async ()
     ]);
 });
 
-Deno.test('the response is { outcome } from the receipt', async () => {
+test('the response is { outcome } from the receipt', async () => {
     const outcomes = [
         ['subscribe', 'subscribed'],
         ['subscribe', 'renewed'],
@@ -244,7 +245,7 @@ Deno.test('the response is { outcome } from the receipt', async () => {
     }
 });
 
-Deno.test('a rejected receipt answers as a rejected group mutation', () => {
+test('a rejected receipt answers as a rejected group mutation', () => {
     const receipt: GroupMutationReceipt = {
         ...createSubscriptionReceipt(null),
         outcome: 'rejected',
@@ -258,7 +259,7 @@ Deno.test('a rejected receipt answers as a rejected group mutation', () => {
     );
 });
 
-Deno.test('the subscriptions read lists the session\'s rows and refuses another session', async () => {
+test('the subscriptions read lists the session\'s rows and refuses another session', async () => {
     const rows = [createSubscription('alice-session', 'app.scores'), createSubscription('alice-session', 'room.feed')];
     const reads: (readonly [GroupRef, string])[] = [];
     const runtime = createGroupStateRouteTestRuntime({

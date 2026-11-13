@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -15,7 +16,7 @@ import {
 // follows the host, so `next_ts <= now()` used to promote the column through a
 // non-UTC zone and release scheduled entries hours early. These tests pin the
 // scheduling gate under a deliberately skewed session in both directions.
-Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed session time zone', async () => {
+test('PGlite scheduled entries stay invisible until next_ts under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -56,7 +57,7 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
     });
 });
 
-Deno.test('PGlite retry release delay is honored under a skewed session time zone', async () => {
+test('PGlite retry release delay is honored under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());

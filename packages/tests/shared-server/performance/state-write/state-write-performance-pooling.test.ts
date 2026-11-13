@@ -34,8 +34,8 @@ const ENVIRONMENT = (
     'maintenance_work_mem=65536;effective_cache_size=524288;random_page_cost=4;' +
     'effective_io_concurrency=1;synchronous_commit=on;fsync=on;full_page_writes=on;' +
     'max_wal_size=1024;checkpoint_timeout=300;jit=on;max_parallel_workers_per_gather=2;' +
-    'host_architecture=arm64;node=v26.5.1;npm=11.17.0;deno=2.9.4 aarch64-apple-darwin;' +
-    'deno_v8=15.0.245.2-rusty;deno_typescript=6.0.3;docker=29.6.2 dfc4efb;' +
+    'host_architecture=arm64;node=v26.5.1;npm=11.17.0;bun=1.4.4;' +
+    'docker=29.6.2 dfc4efb;' +
     'docker_compose=5.3.1;fresh_container=true;container_overlap_count=0;' +
     'benchmark_process_overlap_count=0;preflight_app_data_store_rows=0;' +
     'preflight_client_state_events_rows=0;preflight_group_state_events_rows=0;' +

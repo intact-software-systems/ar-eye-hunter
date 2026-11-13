@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';

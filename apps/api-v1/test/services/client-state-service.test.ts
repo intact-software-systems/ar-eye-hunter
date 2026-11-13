@@ -13,6 +13,7 @@ import type {
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { createClientStateTestDriver as createClientStateService } from '../../../../packages/tests/shared-server/rallar-system/client-state/client-state-test-runtime.ts';
 
@@ -23,7 +24,7 @@ const TEST_SCOPE: StateScope = {
 const INITIAL_EXPIRES_AT_EPOCH_MS = 4_102_444_821_000;
 const REFRESHED_EXPIRES_AT_EPOCH_MS = 4_102_444_822_000;
 
-Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate transition', async () => {
+test('heartbeatSession refreshes TTL through an outbox-owned aggregate transition', async () => {
     const service = createTestClientStateService();
 
     await service.connectSession(
@@ -74,7 +75,7 @@ Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate tran
     );
 });
 
-Deno.test('heartbeatSession returns an event when presence state changes without publishing directly', async () => {
+test('heartbeatSession returns an event when presence state changes without publishing directly', async () => {
     const service = createTestClientStateService();
 
     await service.connectSession(
@@ -119,7 +120,7 @@ Deno.test('heartbeatSession returns an event when presence state changes without
     assert.equal(event.eventType, 'session-heartbeat');
 });
 
-Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
+test('upsertPrincipal ignores unchanged profile state', async () => {
     const service = createTestClientStateService();
 
     const created = requireClientStateWrittenSnapshot(
@@ -146,7 +147,7 @@ Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
     assert.equal(unchanged.principal.snapshotVersion, created.principal.snapshotVersion);
 });
 
-Deno.test('upsertInstance bumps profile version only for semantic instance changes', async () => {
+test('upsertInstance bumps profile version only for semantic instance changes', async () => {
     const service = createTestClientStateService();
 
     await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
@@ -199,7 +200,7 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
     assert.equal(updatedEvent.eventType, 'instance-updated');
 });
 
-Deno.test('semantic client mutations advance snapshotVersion', async () => {
+test('semantic client mutations advance snapshotVersion', async () => {
     const service = createTestClientStateService();
 
     const createdWritten = await service.upsertPrincipal(TEST_SCOPE, 'client-1', {

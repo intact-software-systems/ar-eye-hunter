@@ -1,4 +1,8 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 
 import { ApiV1ConfigurationError } from '../../src/configuration/api-v1-configuration-error.ts';
 import type { ApiV1ConfigurationSourceValue } from '../../src/configuration/decode-api-v1-configuration-source.ts';
@@ -29,7 +33,7 @@ const PROD_IN_MEMORY_URL = new URL(
 );
 const STATIC_CLIENTS_URL = new URL('../../resources/authorised-clients.json', import.meta.url);
 
-Deno.test('configuration reader carries selected phase timing through AppInbox service options', async () => {
+test('configuration reader carries selected phase timing through AppInbox service options', async () => {
     for (const selection of [{ raw: 'false', expectedPhase: false }, { raw: 'true', expectedPhase: true }]) {
         const configuration = await readApiV1Configuration(readerInput({
             ...validConfigurationEnvironment('prod-in-memory'),
@@ -48,7 +52,7 @@ Deno.test('configuration reader carries selected phase timing through AppInbox s
     }
 });
 
-Deno.test('production origins are deployment-owned and hardened startup requires an explicit HTTPS allowlist', async () => {
+test('production origins are deployment-owned and hardened startup requires an explicit HTTPS allowlist', async () => {
     for (const profile of ['prod', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.deepEqual(configuration.http.corsOrigins, []);
@@ -61,7 +65,7 @@ Deno.test('production origins are deployment-owned and hardened startup requires
     assert.deepEqual(configured.http.corsOrigins, ['https://browser.example.test']);
 });
 
-Deno.test('configuration reader selects only absent or exact canonical profiles', async () => {
+test('configuration reader selects only absent or exact canonical profiles', async () => {
     const absentEnvironment = validConfigurationEnvironment();
     delete absentEnvironment.RALLAR_API_CONFIGURATION_PROFILE;
     assert.equal(
@@ -90,7 +94,7 @@ Deno.test('configuration reader selects only absent or exact canonical profiles'
     }
 });
 
-Deno.test('configuration reader bounds password derivations by the host cores minus one unless the environment names a bound', async () => {
+test('configuration reader bounds password derivations by the host cores minus one unless the environment names a bound', async () => {
     const fromHost = await readApiV1Configuration(readerInput(validConfigurationEnvironment(), 4));
     assert.equal(fromHost.authentication.maxConcurrentPasswordDerivations, 3);
 
@@ -110,7 +114,7 @@ Deno.test('configuration reader bounds password derivations by the host cores mi
     );
 });
 
-Deno.test('configuration reader rejects a password derivation bound below one', async () => {
+test('configuration reader rejects a password derivation bound below one', async () => {
     const error = await captureConfigurationError(readerInput({
         ...validConfigurationEnvironment(),
         RALLAR_AUTH_MAX_CONCURRENT_PASSWORD_DERIVATIONS: '0'
@@ -119,7 +123,7 @@ Deno.test('configuration reader rejects a password derivation bound below one', 
     assert.equal(error.issues.some((issue) => issue.path === 'authentication.maxConcurrentPasswordDerivations'), true);
 });
 
-Deno.test('configuration reader keeps 512 current group snapshots unless the environment names a cap', async () => {
+test('configuration reader keeps 512 current group snapshots unless the environment names a cap', async () => {
     const fromDefaults = await readApiV1Configuration(readerInput(validConfigurationEnvironment()));
     assert.equal(fromDefaults.group.currentSnapshotCacheMaxEntries, 512);
 
@@ -136,7 +140,7 @@ Deno.test('configuration reader keeps 512 current group snapshots unless the env
     );
 });
 
-Deno.test('configuration reader defaults room-owned data bindings to an explicit empty catalog', async () => {
+test('configuration reader defaults room-owned data bindings to an explicit empty catalog', async () => {
     const environment = validConfigurationEnvironment('prod-in-memory');
     delete environment.RALLAR_ROOM_OWNED_APP_DATA_BINDINGS_JSON;
 
@@ -151,7 +155,7 @@ Deno.test('configuration reader defaults room-owned data bindings to an explicit
     );
 });
 
-Deno.test('configuration reader keeps production hardening profile-owned', async () => {
+test('configuration reader keeps production hardening profile-owned', async () => {
     const environment = {
         ...validConfigurationEnvironment('prod'),
         RALLAR_PRODUCTION_HARDENING: '1'
@@ -168,7 +172,7 @@ Deno.test('configuration reader keeps production hardening profile-owned', async
     );
 });
 
-Deno.test('configuration reader applies exact leaf precedence and ignores unrelated environment', async () => {
+test('configuration reader applies exact leaf precedence and ignores unrelated environment', async () => {
     const environment = {
         ...validConfigurationEnvironment(),
         AUTH_ADMIN_CLIENT_IDS: 'zeta,admin',
@@ -211,7 +215,7 @@ Deno.test('configuration reader applies exact leaf precedence and ignores unrela
     );
 });
 
-Deno.test('configuration reader loads static clients for convenient production and disables them for hardening', async () => {
+test('configuration reader loads static clients for convenient production and disables them for hardening', async () => {
     let staticClientReads = 0;
     const devInput = readerInput(validConfigurationEnvironment());
     const configuration = await readApiV1Configuration({
@@ -249,7 +253,7 @@ Deno.test('configuration reader loads static clients for convenient production a
     assert.deepEqual(hardenedConfiguration.authentication.staticClients, []);
 });
 
-Deno.test('convenient production keeps bundled users outside privileged identity lists', async () => {
+test('convenient production keeps bundled users outside privileged identity lists', async () => {
     for (
         const [environmentName, clientId] of [
             ['AUTH_ADMIN_CLIENT_IDS', 'alice'],
@@ -270,7 +274,7 @@ Deno.test('convenient production keeps bundled users outside privileged identity
     }
 });
 
-Deno.test('convenient production requires an operator allowlist when token issuance is enabled', async () => {
+test('convenient production requires an operator allowlist when token issuance is enabled', async () => {
     const environment = validConfigurationEnvironment('prod');
     delete environment.RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS;
 
@@ -282,7 +286,7 @@ Deno.test('convenient production requires an operator allowlist when token issua
     );
 });
 
-Deno.test('configuration reader preserves ordered arrays and isolates the frozen snapshot', async () => {
+test('configuration reader preserves ordered arrays and isolates the frozen snapshot', async () => {
     const defaults = validConfigurationDefaultsSource();
     const profile = validConfigurationProfileSource();
     const staticClients = validConfigurationStaticClientsSource().map((value) => structuredClone(value));
@@ -321,7 +325,7 @@ Deno.test('configuration reader preserves ordered arrays and isolates the frozen
     assertRecursivelyFrozen(configuration);
 });
 
-Deno.test('configuration startup summary is useful and contains no secret-derived data', async () => {
+test('configuration startup summary is useful and contains no secret-derived data', async () => {
     const configuration = await readApiV1Configuration(
         readerInput(validConfigurationEnvironment('prod'))
     );
@@ -363,7 +367,7 @@ Deno.test('configuration startup summary is useful and contains no secret-derive
     assert.equal(rendered.includes('length'), false);
 });
 
-Deno.test('ICE request input overrides defaults and profile without changing window or cache and remains frozen', async () => {
+test('ICE request input overrides defaults and profile without changing window or cache and remains frozen', async () => {
     const environment = { ...validConfigurationEnvironment('prod-in-memory'), RALLAR_ICE_RATE_LIMIT_REQUESTS: '101' };
     const input = readerInput(environment);
     const configuration = await readApiV1Configuration({
@@ -390,7 +394,7 @@ Deno.test('ICE request input overrides defaults and profile without changing win
     }
 });
 
-Deno.test('ICE request input rejects malformed and nonpositive integers with safe source diagnostics', async () => {
+test('ICE request input rejects malformed and nonpositive integers with safe source diagnostics', async () => {
     for (const value of ['', 'malformed-input-sentinel', '0', '-1', '1.5', 'Infinity', 'NaN']) {
         const error = await captureConfigurationError(readerInput({
             ...validConfigurationEnvironment('prod-in-memory'),
@@ -409,11 +413,11 @@ Deno.test('ICE request input rejects malformed and nonpositive integers with saf
     }
 });
 
-Deno.test('single-process prod-in-memory polls AppInbox completion only as a five-second fallback to the same-process notice', async () => {
+test('single-process prod-in-memory polls AppInbox completion only as a five-second fallback to the same-process notice', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.deepEqual(configuration.appInbox.completionWait, {
-            maxElapsedMs: 30_000,
+            maxElapsedMs: API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS,
             retryIntervalMs: 250,
             maxRetryIntervalMs: profile === 'prod-in-memory' ? 5_000 : 1_000,
             jitterRatio: 0.1
@@ -421,7 +425,7 @@ Deno.test('single-process prod-in-memory polls AppInbox completion only as a fiv
     }
 });
 
-Deno.test('all committed profiles preserve the default finite ICE admission policy', async () => {
+test('all committed profiles preserve the default finite ICE admission policy', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.deepEqual(configuration.ice.rateLimit, { requests: 20, windowMs: 60_000 });
@@ -429,7 +433,7 @@ Deno.test('all committed profiles preserve the default finite ICE admission poli
     }
 });
 
-Deno.test('every committed profile gives the application pool five connections and the listener one', async () => {
+test('every committed profile gives the application pool five connections and the listener one', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.database.applicationPool.maxConnections, 5, profile);
@@ -437,7 +441,7 @@ Deno.test('every committed profile gives the application pool five connections a
     }
 });
 
-Deno.test('every committed profile runs four AppInbox context heads together unless the environment selects another bound (D296)', async () => {
+test('every committed profile runs four AppInbox context heads together unless the environment selects another bound (D296)', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.appInbox.newLaneConcurrency, 4, profile);
@@ -456,7 +460,7 @@ Deno.test('every committed profile runs four AppInbox context heads together unl
     }
 });
 
-Deno.test('every committed profile holds sixteen AppInbox flight rows unless the environment selects another bound', async () => {
+test('every committed profile holds sixteen AppInbox flight rows unless the environment selects another bound', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.appInbox.newLaneHeldRows, 16, profile);
@@ -475,7 +479,7 @@ Deno.test('every committed profile holds sixteen AppInbox flight rows unless the
     }
 });
 
-Deno.test('the environment selects the RTT replan minimum layout age within its range', async () => {
+test('the environment selects the RTT replan minimum layout age within its range', async () => {
     const selected = await readApiV1Configuration(readerInput({
         ...validConfigurationEnvironment('prod-in-memory'),
         RALLAR_RTC_TOPOLOGY_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS: '0'
@@ -494,14 +498,14 @@ Deno.test('the environment selects the RTT replan minimum layout age within its 
     }
 });
 
-Deno.test('every committed profile samples the API heap every thirty seconds while timing logs are on', async () => {
+test('every committed profile samples the API heap every thirty seconds while timing logs are on', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.observability.heapSampleIntervalMs, 30_000, profile);
     }
 });
 
-Deno.test('every committed profile keeps finished AppInbox commands one day unless the environment selects another retention', async () => {
+test('every committed profile keeps finished AppInbox commands one day unless the environment selects another retention', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.appInbox.finishedRetentionMs, 24 * 60 * 60 * 1_000, profile);
@@ -524,7 +528,7 @@ Deno.test('every committed profile keeps finished AppInbox commands one day unle
     }
 });
 
-Deno.test('every committed profile keeps disconnected client sessions seven days unless the environment selects another retention', async () => {
+test('every committed profile keeps disconnected client sessions seven days unless the environment selects another retention', async () => {
     for (const profile of ['dev', 'prod', 'prod-hardened', 'prod-in-memory'] as const) {
         const configuration = await readApiV1Configuration(readerInput(validConfigurationEnvironment(profile)));
         assert.equal(configuration.clientSessions.disconnectedRetentionMs, 7 * 24 * 60 * 60 * 1_000, profile);
@@ -552,9 +556,9 @@ function readerInput(
     hardwareConcurrency = 4
 ): ReadApiV1ConfigurationInput {
     return {
-        environment: { get: (name) => environmentValues[name] },
+        environment: environmentValues,
         hardwareConcurrency,
-        readTextFile: (url) => Deno.readTextFile(url),
+        readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: DEFAULTS_URL,
         profileUrls: {
             dev: DEV_URL,

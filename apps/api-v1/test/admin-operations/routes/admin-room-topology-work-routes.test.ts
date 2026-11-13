@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
@@ -35,7 +36,7 @@ function createApp(input: TopologyWorkTestInput): Hono {
     return app;
 }
 
-Deno.test('topology outcome reads require current API administrator authority before accessing retained work', async () => {
+test('topology outcome reads require current API administrator authority before accessing retained work', async () => {
     let reads = 0;
     let authorized = true;
     const topologyWork = {
@@ -62,7 +63,7 @@ Deno.test('topology outcome reads require current API administrator authority be
     assert.equal(reads, 1);
 });
 
-Deno.test('topology outcome reads bind exact room and receipt identity and never cache the result', async () => {
+test('topology outcome reads bind exact room and receipt identity and never cache the result', async () => {
     const app = createApp({
         requireSession: () => Promise.resolve(session),
         topologyWork: {
@@ -80,7 +81,7 @@ Deno.test('topology outcome reads bind exact room and receipt identity and never
     assert.equal((await app.request(path.replace('work-1', 'a'.repeat(257)))).status, 400);
 });
 
-Deno.test('topology work OpenAPI describes observed outcomes without claiming room recovery', async () => {
+test('topology work OpenAPI describes observed outcomes without claiming room recovery', async () => {
     const app = installApiDocumentationRoutes(new Hono());
     const response = await app.request('/api/openapi.json');
     const schema = await response.json();

@@ -40,7 +40,7 @@ function readWorkflowCommands() {
             .replace(/\\\n\s*/g, ' ')
             .split('\n')
             .map((line) => line.replace(/^\s*(-\s+)?(run:\s*)?/, '').trim())
-            .filter((line) => /^(npm run|npx (vitest|playwright)|deno test|deno task|cd )/.test(line))
+            .filter((line) => /^(npm run|npx (vitest|playwright)|bun test|cd )/.test(line))
     );
 }
 
@@ -126,7 +126,7 @@ function expandCommand(command, state) {
                 listVitestFiles(listArguments).forEach((file) => reached.add(file));
             }
         }
-        else if (/\bdeno (test|task test)\b/.test(segment)) {
+        else if (/\bbun test\b/.test(segment)) {
             const paths = readPathArguments(tokens.slice(tokens.indexOf('test') + 1));
             const roots = paths.length > 0 ? paths.map((path) => join(workingDirectory, path)) : [workingDirectory];
             roots

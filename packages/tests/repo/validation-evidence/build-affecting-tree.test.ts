@@ -50,7 +50,6 @@ describe('build-affecting tree', () => {
         ['package metadata', 'package.json'],
         ['lockfiles', 'package-lock.json'],
         ['TypeScript configuration', 'tsconfig.json'],
-        ['Deno configuration', 'deno.json'],
         ['Docker Compose configuration', 'docker-compose.yml'],
         ['root build scripts', 'no-js-files-outside-dist.sh'],
         ['test-consumed API reference', 'docs/rallar-api-reference.md'],

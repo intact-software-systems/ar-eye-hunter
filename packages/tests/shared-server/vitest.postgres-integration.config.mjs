@@ -1,4 +1,4 @@
-import denoVitestConfig from './vitest.deno.config.mjs';
+import bunVitestConfig from './vitest.bun.config.mjs';
 
 const topologyConcurrencyDirectory = 'packages/tests/shared-server/rallar-system/topology/concurrency';
 const topologyConcurrencyTests = [
@@ -9,9 +9,9 @@ const topologyConcurrencyTests = [
 const adminPrunePageTest = 'packages/tests/shared-server/rallar-system/admin-operations/prune/admin-prune-page-postgres.test.ts';
 
 export default {
-    ...denoVitestConfig,
+    ...bunVitestConfig,
     test: {
-        ...denoVitestConfig.test,
+        ...bunVitestConfig.test,
         include: [
             'packages/tests/shared-server/integration/postgres/*.test.ts',
             'packages/tests/shared-server/integration/postgres/test-support/*.test.ts',

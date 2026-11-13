@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -51,13 +52,13 @@ interface ServerRuntime {
 
 /** A WebSocket connect is awaited by its upgrade route, so its completion is relayed like any other awaited type. */
 for (const type of [AppInboxType.CLIENT_PRINCIPAL_UPSERT, AppInboxType.CLIENT_AUTHORISED_WS_CONNECT] as const) {
-    Deno.test(`PGlite AppInbox ${type} waiter on one server returns promptly when another server handles its entry`, async () => {
+    test(`PGlite AppInbox ${type} waiter on one server returns promptly when another server handles its entry`, async () => {
         await verifyRemoteCompletion(type, (client, command) => client.commandClient.enqueueAndWait(command));
     });
 }
 
 /** A winner waits for its wake before its first read, so only the relayed wake can return it before the safety tick. */
-Deno.test('PGlite AppInbox reservation winner on one server returns promptly when another server handles its entry', async () => {
+test('PGlite AppInbox reservation winner on one server returns promptly when another server handles its entry', async () => {
     await verifyRemoteCompletion(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT, (client, received) => {
         const command = { ...received, topicId: CLIENT_STATE_APP_INBOX_TOPIC };
         return client.commandClient.reserveMaterializedAndWaitForResult(

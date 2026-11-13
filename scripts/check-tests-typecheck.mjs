@@ -14,11 +14,6 @@ const projectPath = 'packages/tests/tsconfig.json';
 const debtPath = 'packages/tests/typecheck-debt.json';
 const updateCommand = 'npm run typecheck:tests -- --update';
 const fileDiagnosticPattern = /^(.+?)\(\d+,\d+\): error TS\d+:/mu;
-// The Deno apps are not npm workspaces, so `npm ci` never creates their node_modules and CI never
-// sees this cache. A machine that has run the Deno tasks resolves a second copy of shared npm
-// packages from it, and the resulting duplicate-identity errors are reported against enforced test
-// files rather than against a node_modules path -- they name the cache in the message instead.
-const denoCacheSegment = 'node_modules/.deno/';
 
 const shouldUpdate = process.argv.slice(2).includes('--update');
 const currentErrorCounts = readCurrentErrorCounts();
@@ -60,17 +55,13 @@ function readCurrentErrorCounts() {
     return toErrorCounts(compilerOutput);
 }
 
-// Third-party declaration errors are excluded: their paths carry machine-specific Deno cache
-// segments, and skipLibCheck is forbidden by packages/tests/repo/typescript-7-boundaries.test.ts.
+// Third-party declaration errors are excluded: their paths carry machine-specific cache segments,
+// and skipLibCheck is forbidden by packages/tests/repo/typescript-7-boundaries.test.ts.
 function toErrorCounts(compilerOutput) {
     const counts = {};
     for (const line of compilerOutput.split('\n')) {
         const match = fileDiagnosticPattern.exec(line);
         if (match === null) {
-            continue;
-        }
-        const diagnostic = line.split(path.sep).join('/');
-        if (diagnostic.includes(denoCacheSegment)) {
             continue;
         }
         const file = match[1].split(path.sep).join('/');

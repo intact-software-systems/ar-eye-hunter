@@ -40,16 +40,16 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 
 ## Scripts
 
-| File                                   | Purpose                                                                                                                                                                           |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime-validation-bench.ts`          | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
-| `summarize-runtime-results.mjs`        | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
-| `seed-perf-db.sql`                     | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
-| `explain-perf-db.sql`                  | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
-| `seed-perf-db-sparse-queue.sql`        | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
-| `client-list-fanout-bench.ts`          | Client snapshot fanout/pagination workload.                                                                                                                                       |
-| `group-list-fanout-bench.ts`           | Group snapshot fanout/pagination workload.                                                                                                                                        |
-| `counting-runtime-state-repository.ts` | In-memory counting runtime-state repository shared by the group list fanout harness and its unit test.                                                                            |
+| File                                   | Purpose                                                                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime-validation-bench.ts`          | Bun benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
+| `summarize-runtime-results.mjs`        | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                               |
+| `seed-perf-db.sql`                     | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                 |
+| `explain-perf-db.sql`                  | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                          |
+| `seed-perf-db-sparse-queue.sql`        | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                          |
+| `client-list-fanout-bench.ts`          | Client snapshot fanout/pagination workload.                                                                                                                                      |
+| `group-list-fanout-bench.ts`           | Group snapshot fanout/pagination workload.                                                                                                                                       |
+| `counting-runtime-state-repository.ts` | In-memory counting runtime-state repository shared by the group list fanout harness and its unit test.                                                                           |
 
 ## RTC/WebRTC benchmark package
 
@@ -95,26 +95,21 @@ Useful environment checks:
 ```sh
 node --version
 npm --version
-deno --version
+bun --version
 docker --version
 docker compose version
 mkdir -p tmp/perf/results tmp/perf/profiles tmp/perf/logs tmp/perf/artifacts
 ```
 
-The Deno harnesses use `apps/api-v1/deno.json` for import aliases such as
-`@shared/` and `@shared-server/`.
+The Bun harnesses resolve `@shared/` and `@shared-server/` import aliases through
+the repository `tsconfig.json` paths.
 
 ## Focused Runtime Harness
 
 Run the full focused harness with three measured runs:
 
 ```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  --v8-flags=--expose-gc \
-  scripts/platform/perf/runtime-validation-bench.ts \
+bun run scripts/platform/perf/runtime-validation-bench.ts \
   --mode=full \
   --runs=3 \
   --out=tmp/perf/results/runtime-validation-focused-runs3.json
@@ -143,12 +138,7 @@ Supported harness modes:
 Example narrow event-listing run:
 
 ```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  --v8-flags=--expose-gc \
-  scripts/platform/perf/runtime-validation-bench.ts \
+bun run scripts/platform/perf/runtime-validation-bench.ts \
   --mode=events \
   --runs=3 \
   --out=tmp/perf/results/events-runs3.json
@@ -159,41 +149,22 @@ deno run \
 Run one profiled pass:
 
 ```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  --v8-flags=--prof,--expose-gc \
-  scripts/platform/perf/runtime-validation-bench.ts \
+bun run scripts/platform/perf/runtime-validation-bench.ts \
   --mode=full \
   --runs=1 \
   --out=tmp/perf/results/runtime-validation-focused-profiled-run.json
 ```
 
-Deno writes an `isolate-*.log` file in the current directory. Move it into
-`tmp/perf/profiles/`, then process it with Node:
-
-```sh
-mv isolate-*.log tmp/perf/profiles/runtime-validation-focused-v8.log
-node --prof-process \
-  tmp/perf/profiles/runtime-validation-focused-v8.log \
-  > tmp/perf/profiles/runtime-validation-focused-v8-processed.txt
-```
-
-If `node --prof-process` warns about a V8 version mismatch, treat percentages
-as directional rather than exact.
+Bun runs on JavaScriptCore rather than V8, so the legacy V8 CPU-profile flags
+(`--v8-flags=--prof,--expose-gc`, `node --prof-process`) have no equivalent.
+Profiling under Bun is a maintainer decision and is not reimplemented here.
 
 ## GC Trace
 
 Use a short mode because `--trace-gc` is noisy:
 
 ```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  --v8-flags=--trace-gc,--expose-gc \
-  scripts/platform/perf/runtime-validation-bench.ts \
+bun run scripts/platform/perf/runtime-validation-bench.ts \
   --mode=events \
   --runs=3 \
   --out=tmp/perf/results/runtime-validation-events-gc-run.json \

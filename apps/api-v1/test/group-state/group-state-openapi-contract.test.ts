@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import { installApiDocumentationRoutes } from '../../src/routes/swagger-routes.ts';
@@ -241,7 +242,7 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
     }
 ];
 
-Deno.test(
+test(
     'group OpenAPI retains every route method, request, and success response contract',
     async () => {
         const response = await installApiDocumentationRoutes(new Hono()).request(
@@ -265,7 +266,7 @@ Deno.test(
     }
 );
 
-Deno.test('publication grant requests name every permission field and admit no other', async () => {
+test('publication grant requests name every permission field and admit no other', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;
     for (const name of ['GrantGroupPublicationRequest', 'RevokeGroupPublicationRequest']) {
@@ -289,7 +290,7 @@ Deno.test('publication grant requests name every permission field and admit no o
     }
 });
 
-Deno.test('a topic subscription row names its session, principal, topic, asserting generation and lease, and nothing else', async () => {
+test('a topic subscription row names its session, principal, topic, asserting generation and lease, and nothing else', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const row = (await response.json() as OpenApiDocument).components.schemas.GroupTopicSubscription;
     const keys = ['sessionId', 'principalId', 'topicId', 'connectionGenerationId', 'leaseExpiresAtEpochMs'];
@@ -299,7 +300,7 @@ Deno.test('a topic subscription row names its session, principal, topic, asserti
     assert.deepEqual(Object.keys(row.properties ?? {}), keys);
 });
 
-Deno.test('topic subscription requests name the topic and the asserting generation and admit no other', async () => {
+test('topic subscription requests name the topic and the asserting generation and admit no other', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;
     for (const name of ['SubscribeGroupTopicRequest', 'UnsubscribeGroupTopicRequest']) {
@@ -323,7 +324,7 @@ Deno.test('topic subscription requests name the topic and the asserting generati
     );
 });
 
-Deno.test('presence connect and heartbeat require the nullable publication key the session carries', async () => {
+test('presence connect and heartbeat require the nullable publication key the session carries', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;
     const schemas = document.components.schemas;
@@ -348,7 +349,7 @@ Deno.test('presence connect and heartbeat require the nullable publication key t
     assert.deepEqual(publicJwk.properties?.crv.enum, ['P-256']);
 });
 
-Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {
+test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable RTT', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;
     const operation = document.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/group-directory'].get;
@@ -360,7 +361,7 @@ Deno.test('directory OpenAPI exposes opt-in peer ordering and mandatory nullable
     assert.deepEqual(entry.properties?.peerRttMs.type, ['number', 'null']);
 });
 
-Deno.test('group creation documents closed retention intent and bounded temporary grace', async () => {
+test('group creation documents closed retention intent and bounded temporary grace', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = await response.json() as OpenApiDocument;
     const create = document.components.schemas.CreateGroupRequest;

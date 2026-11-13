@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -19,7 +20,7 @@ const INVALID_VALUES = [
     String(Number.MAX_SAFE_INTEGER + 1)
 ] as const;
 
-Deno.test('client snapshot floor parser accepts only one canonical safe integer', () => {
+test('client snapshot floor parser accepts only one canonical safe integer', () => {
     assert.deepEqual(readClientSnapshotPointQuery(new URLSearchParams()), {});
     assert.deepEqual(
         readClientSnapshotPointQuery(new URLSearchParams('minStateRevision=0')),
@@ -50,7 +51,7 @@ Deno.test('client snapshot floor parser accepts only one canonical safe integer'
     );
 });
 
-Deno.test('group snapshot floor parser requires one complete canonical causal pair', () => {
+test('group snapshot floor parser requires one complete canonical causal pair', () => {
     assert.deepEqual(readGroupSnapshotPointQuery(new URLSearchParams()), {});
     assert.deepEqual(
         readGroupSnapshotPointQuery(

@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
@@ -81,18 +82,18 @@ interface GroupDeltaClusterEvidence {
 }
 
 async function runGroupDeltaClusterProof(): Promise<void> {
-    const options = parseApiV1BlackBoxArgs(Deno.args);
+    const options = parseApiV1BlackBoxArgs(process.argv.slice(2));
     if (options.backend !== 'postgres' || !options.secondaryPort || !options.tertiaryPort || options.recipesOnly) {
         throw new Error('Group delta proof requires a managed three-process PostgreSQL cluster.');
     }
-    const environment = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
+    const environment = toApiV1BlackBoxEnvironment(options, process.env);
     const run: GroupDeltaClusterRun = {
         options,
         environment,
         artifactDir: resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!),
         repoRoot: fileURLToPath(new URL('../../../../', import.meta.url))
     };
-    await Deno.mkdir(run.artifactDir, { recursive: true });
+    await mkdir(run.artifactDir, { recursive: true });
     await withManagedPostgresRunDatabase(environment.DATABASE_URL!, options.runId, async (databaseUrl) => {
         await runGroupDeltaClusterInDatabase(run, databaseUrl);
     });
@@ -101,14 +102,14 @@ async function runGroupDeltaClusterProof(): Promise<void> {
 
 async function runGroupDeltaClusterInDatabase(run: GroupDeltaClusterRun, databaseUrl: string): Promise<void> {
     const environment = { ...run.environment, DATABASE_URL: databaseUrl };
-    const migration = await new Deno.Command('npm', {
-        args: ['run', 'db:migrate'],
+    const migration = Bun.spawn({
+        cmd: ['npm', 'run', 'db:migrate'],
         cwd: run.repoRoot,
         env: environment,
-        stdout: 'null',
+        stdout: 'ignore',
         stderr: 'inherit'
-    }).output();
-    assertEquals(migration.code, 0, 'Fresh proof database migration');
+    });
+    assert.deepEqual(await migration.exited, 0, 'Fresh proof database migration');
     const plans = toManagedApiServerPlans(run.options, environment, run.artifactDir).map((plan, index) => ({
         ...plan,
         env: { ...plan.env, RALLAR_API_QUEUE_WORKERS: index === 0 ? 'enabled' : 'disabled' }
@@ -119,7 +120,7 @@ async function runGroupDeltaClusterInDatabase(run: GroupDeltaClusterRun, databas
         repoRootPath: run.repoRoot,
         artifactDir: run.artifactDir
     }, {
-        writeEmptyLogFile: (path) => Deno.writeTextFile(path, ''),
+        writeEmptyLogFile: (path) => writeFile(path, ''),
         startServer: startManagedApiServer,
         waitForReady: waitForManagedApiReady,
         toDiagnosticSecrets: managedApiDiagnosticSecrets,
@@ -172,26 +173,27 @@ async function assertGroupDeltaCrossProcessDelivery(scenario: GroupDeltaClusterS
         await openGroupDeltaSocket(actors, actors.recipient, context);
         await openGroupDeltaSocket(actors, actors.outsider, context);
         const outsiderSocket = context.wsConnections[actors.outsider.label];
-        assertEquals(outsiderSocket?.readyState, WebSocket.OPEN, 'C must be open before the mutation');
-        assertEquals(
+        assert.deepEqual(outsiderSocket?.readyState, WebSocket.OPEN, 'C must be open before the mutation');
+        assert.deepEqual(
             context.wsCloseEvents[actors.outsider.label] ?? [],
             [],
             'C must not have closed before the mutation'
         );
         const evidence = await writeGroupDeltaAndAssertDelivery(actors, context, scenario);
-        assert(
+        assert.ok(
             context.wsConnections[actors.outsider.label] === outsiderSocket,
             'The same C socket must survive the mutation and absence window'
         );
-        assertEquals(outsiderSocket?.readyState, WebSocket.OPEN, 'C must remain open through the absence window');
-        assertEquals(
+        assert.deepEqual(outsiderSocket?.readyState, WebSocket.OPEN, 'C must remain open through the absence window');
+        assert.deepEqual(
             context.wsCloseEvents[actors.outsider.label] ?? [],
             [],
             'C must have no close event through the absence window'
         );
-        await Deno.writeTextFile(
+        await writeFile(
             `${scenario.artifactDir}/group-delta-cluster-proof.json`,
-            JSON.stringify(evidence, null, 2)
+            JSON.stringify(evidence, null, 2),
+            'utf8'
         );
     }
     finally {
@@ -226,21 +228,21 @@ async function writeGroupDeltaAndAssertDelivery(
         response: { withinMs: 10_000, decodeJsonPaths: ['payload.resource'], message: expected }
     };
     const delivery = await waitForWsMessage({ interaction, config: { interaction }, context });
-    assertEquals(delivery.status, 'SUCCESS', 'Process B must receive the exact delta caused by the mutation on A');
+    assert.deepEqual(delivery.status, 'SUCCESS', 'Process B must receive the exact delta caused by the mutation on A');
     const proof = await readGroupDeltaProof(scenario.databaseUrl, requestId);
-    assertEquals(proof.target, {
+    assert.deepEqual(proof.target, {
         kind: 'scoped-room-broadcast',
         groupRef: { applicationId, workspaceId, groupId },
         admittedAudience: [actors.recipient.sessionId]
     });
     const received = context.wsMessages[actors.recipient.label]!.map((frame) => decodeALMessageValue(frame.data))
         .find((message) => message.right?.id.msgId === proof.messageId)?.right;
-    assertEquals(received?.id.msgId, proof.messageId, 'The received frame must be the committed proved row');
+    assert.deepEqual(received?.id.msgId, proof.messageId, 'The received frame must be the committed proved row');
     const excluded: WsInteraction = {
         request: { connection: actors.outsider.label },
         response: { withinMs: 500, decodeJsonPaths: ['payload.resource'], absent: expected }
     };
-    assertEquals(
+    assert.deepEqual(
         (await waitForWsMessageAbsence({ interaction: excluded, config: { interaction: excluded }, context })).status,
         'SUCCESS'
     );
@@ -276,7 +278,7 @@ async function openGroupDeltaSocket(
             snapshotScope: scope
         }
     };
-    assertEquals(
+    assert.deepEqual(
         (await openWs(interaction, { interaction }, context)).status,
         'SUCCESS',
         `${session.label} authenticated socket`
@@ -295,7 +297,7 @@ async function readGroupDeltaProof(databaseUrl: string, requestId: string): Prom
               and outbox.ri_resource::jsonb->'route'->>'topicId' = 'group-state.event'
               and (outbox.ri_resource::jsonb->'payload'->>'resource')::jsonb->'event'->>'requestId' = ${requestId}
         `;
-        assertEquals(rows.length, 1, 'Exactly one committed delta row and matching sidecar');
+        assert.deepEqual(rows.length, 1, 'Exactly one committed delta row and matching sidecar');
         return decodeWsOutboxProvenance(JSON.parse(rows[0]!.proof));
     }
     finally {

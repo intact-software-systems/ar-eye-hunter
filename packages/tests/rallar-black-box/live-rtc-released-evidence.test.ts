@@ -145,7 +145,7 @@ function createReleaseObservation(): RtcBaselineRuntimeObservationDto {
     const { sourcePaths: _sourcePaths, ...configuration } = initialized.value.observation;
     return {
         git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'main', clean: true },
-        runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '1' },
+        runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '1' },
         host: {
             os: 'test',
             kernel: 'test',

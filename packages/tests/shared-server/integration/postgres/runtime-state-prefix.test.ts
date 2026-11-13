@@ -16,17 +16,6 @@ type ExplainRow = Readonly<{
     'QUERY PLAN': string;
 }>;
 
-type GlobalEnv = Readonly<{
-    Deno?: Readonly<{
-        env: Readonly<{
-            get(key: string): string | undefined;
-        }>;
-    }>;
-    process?: Readonly<{
-        env?: Readonly<Record<string, string | undefined>>;
-    }>;
-}>;
-
 describe('Postgres runtime-state prefix selection', () => {
     postgresIt('matches hierarchical child keys literally under the database collation', async () => {
         const sql = await createRuntimeStatePostgresSql(requireDatabaseUrl());
@@ -364,6 +353,5 @@ function requireDatabaseUrl(): string {
 }
 
 function readEnv(name: string): string | undefined {
-    const globals = globalThis as GlobalEnv;
-    return globals.Deno?.env.get(name) ?? globals.process?.env?.[name];
+    return process.env[name];
 }

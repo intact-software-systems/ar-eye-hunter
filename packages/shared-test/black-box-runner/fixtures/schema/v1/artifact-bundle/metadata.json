@@ -12,9 +12,8 @@
     "failure": 1
   },
   "command": [
-    "deno",
+    "bun",
     "run",
-    "-A",
     "packages/shared-test/black-box-runner/scenario-black-box.ts"
   ]
 }

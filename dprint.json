@@ -108,6 +108,7 @@
   "excludes": [
     "**/node_modules",
     "**/*-lock.json",
+    "packages/tests/shared-server/performance/state-write/test-support/image-capture/*.json",
     "**/dist/**",
     "**/build/**",
     "**/coverage/**",

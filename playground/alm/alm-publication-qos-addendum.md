@@ -1140,7 +1140,7 @@ audience after the envelope is decoded
 `app-inbox-malformed-command`), a `compact` with one still decodes, and api-v1's
 admin branch states its null publication authority. The PGlite statement
 recorder is one `vi`-free `recordPGliteStatements` under `apps/api-v1/test/db/`
-with a caller-owned `restore()`, imported by the four Vitest users and the Deno
+with a caller-owned `restore()`, imported by the four Vitest users and the Bun
 topology test; `recordResourceInboxInserts` is deleted. Bundle figures
 (guidance): `browser/rallar.ts` 297.9 → 298.0 KiB brotli (305,056 → 305,200 B,
 48 B over its 298 KiB budget, which was raised to 299 KiB) and the headless
@@ -1526,7 +1526,7 @@ root cause (D639).
 
 - **Restricted RTC beyond room multicast:** an encrypted publication with key
   distribution, rotation and revocation, and native hosts' publication keys.
-  Native publication-key custody outside a browser (a Deno sidecar, a native
+  Native publication-key custody outside a browser (a Bun sidecar, a native
   kit) is the actor's gating dependency for RTC parity.
 - **Ordered subscription history:** a latest-state snapshot with a fenced
   live cursor (the snapshot/live hand-off), and an authorized replay of

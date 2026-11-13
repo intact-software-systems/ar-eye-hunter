@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import type { DecodeApiV1ConfigurationInput } from '../../src/configuration/decode-api-v1-configuration-source.ts';
 

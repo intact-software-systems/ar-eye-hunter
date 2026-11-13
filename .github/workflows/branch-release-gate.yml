@@ -244,9 +244,9 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - uses: denoland/setup-deno@v2
+      - uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v2.x
+          bun-version: 1.4.4
       - name: Install observation verifier dependencies
         run: npm ci
       - name: Verify appended RTC observation

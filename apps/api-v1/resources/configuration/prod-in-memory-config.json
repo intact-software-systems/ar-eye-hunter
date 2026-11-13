@@ -6,8 +6,8 @@
     "corsOrigins": []
   },
   "publicApi": {
-    "apiBaseUrl": "https://rallar-server-in-memory.intact-software-systems.deno.net",
-    "wsBaseUrl": "wss://rallar-server-in-memory.intact-software-systems.deno.net"
+    "apiBaseUrl": "https://rallar-server-in-memory.intactss.com",
+    "wsBaseUrl": "wss://rallar-server-in-memory.intactss.com"
   },
   "database": {
     "mode": "pglite-memory",

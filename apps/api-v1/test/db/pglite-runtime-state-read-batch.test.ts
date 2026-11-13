@@ -6,13 +6,14 @@ import {
     createDensePrefixSuffixReadBatchFixture,
     createPrefixSuffixReadBatchFixture
 } from '@shared-test/shared-server/prefix-suffix-read-batch-fixture.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const FLOOR_MS = Date.parse('2030-01-01T00:00:00.000Z');
 
-Deno.test('PGlite returns dense runtime-state key and prefix selections as one driver row per selected entry', async () => {
+test('PGlite returns dense runtime-state key and prefix selections as one driver row per selected entry', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     const namespace = `read-batch-${crypto.randomUUID()}`;
@@ -53,7 +54,7 @@ Deno.test('PGlite returns dense runtime-state key and prefix selections as one d
     }
 });
 
-Deno.test('PGlite selects literal prefix-suffix matches in caller order and C key order', async () => {
+test('PGlite selects literal prefix-suffix matches in caller order and C key order', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const fixture = createPrefixSuffixReadBatchFixture(namespace);
@@ -73,7 +74,7 @@ Deno.test('PGlite selects literal prefix-suffix matches in caller order and C ke
     }
 });
 
-Deno.test('PGlite selects a dense workspace\'s prefix-suffix matches exactly as the in-memory selection does', async () => {
+test('PGlite selects a dense workspace\'s prefix-suffix matches exactly as the in-memory selection does', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const fixture = createDensePrefixSuffixReadBatchFixture(namespace);
@@ -93,7 +94,7 @@ Deno.test('PGlite selects a dense workspace\'s prefix-suffix matches exactly as 
     }
 });
 
-Deno.test('PGlite probes a version of exactly the rows a batch reads that every write of one of them moves', async () => {
+test('PGlite probes a version of exactly the rows a batch reads that every write of one of them moves', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const repository = new PSqlRuntimeStateRepository(lifecycle.database);
@@ -132,7 +133,7 @@ Deno.test('PGlite probes a version of exactly the rows a batch reads that every 
     }
 });
 
-Deno.test('PGlite probes every selector group in one statement, each group reporting the version its own probe reports', async () => {
+test('PGlite probes every selector group in one statement, each group reporting the version its own probe reports', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const repository = new PSqlRuntimeStateRepository(lifecycle.database);
@@ -160,7 +161,7 @@ Deno.test('PGlite probes every selector group in one statement, each group repor
     }
 });
 
-Deno.test('PGlite filters a prefix range by stored-value containment and an expiry floor as the in-memory selection does', async () => {
+test('PGlite filters a prefix range by stored-value containment and an expiry floor as the in-memory selection does', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const driverRowCounts: number[] = [];

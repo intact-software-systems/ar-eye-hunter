@@ -782,7 +782,7 @@ Results:
 - Added `black-box-runner/recipe-matrix.json` as the runnable catalog for dry,
   deterministic, live, remote-browser, signaling-only, and intentional-failure
   recipe variants.
-- Added `black-box-runner/recipe-matrix.mts`, a Deno matrix runner with
+- Added `black-box-runner/recipe-matrix.mts`, a Bun matrix runner with
   `--profile`, `--id`, `--artifact-dir`, `--list`, `--require-gates`,
   `--fail-fast`, and `--verbose`.
 - The matrix records per-entry scenario artifact bundles plus
@@ -868,7 +868,7 @@ Verification:
   diagnostics recipe.
 - `npx vitest run packages/tests/shared-test/scenario-black-box-config.test.ts -t "soak|messageCount"`
   passed 2 focused tests.
-- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts packages/tests/shared-test/scenario-black-box-config.test.ts`
   passed 19 tests.
 - `npm run check:shared-test` passed.
@@ -991,9 +991,9 @@ the command center.
 
 Work:
 
-- Split or fix Node, Deno, browser, and Playwright type boundaries so package
+- Split or fix Node, Bun, browser, and Playwright type boundaries so package
   typecheck commands are meaningful.
-- Ensure shared-test scripts have clear names for unit, Deno check, dry recipe
+- Ensure shared-test scripts have clear names for unit, Bun check, dry recipe
   matrix, deterministic recipe matrix, live recipe matrix, scale, and companion
   coverage.
 - Keep generated artifacts ignored and reproducible.
@@ -1008,7 +1008,7 @@ Exit criteria:
 
 Results:
 
-- Split shared-test verification into `check:ts`, `check:deno`, and `check`.
+- Split shared-test verification into `check:ts`, `check`, and `check`.
 - Updated `typecheck` to run the full shared-test check path.
 - Added root `check:shared-test`.
 - Added explicit root/package scripts for recipe matrix quick, dry,
@@ -1020,14 +1020,14 @@ Results:
   resolving scoped room operations to a concrete workspace scope, removing an
   unsupported `roomRef` field from `rooms.join`, and adding the
   `minSnapshotVersion` config field used by `messages.rtc` sends.
-- Added a minimal Deno global declaration for the TypeScript package check and
-  a Deno check script for the Deno CLI entrypoints.
+- Added a minimal Bun global declaration for the TypeScript package check and
+  a Bun check script for the Bun CLI entrypoints.
 
 Verification:
 
 - `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npm --workspace @ar-eye-hunter/shared-test run check:ts` passed.
-- `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed.
+- `npm --workspace @ar-eye-hunter/shared-test run check` passed.
 - `npm run check:shared-test` passed from the repository root.
 - `npx vitest run packages/tests/shared-test/rallar-browser-runtime.test.ts packages/tests/shared-test/recipe-matrix.test.ts`
   passed.
@@ -1266,7 +1266,7 @@ Results:
   entries.
 - Documented migration rules for catalog fields, event kinds, and expanded-plan
   replay data, plus a compatibility changelog.
-- Included the artifact reader in shared-test Deno checks.
+- Included the artifact reader in shared-test Bun checks.
 
 Verification:
 

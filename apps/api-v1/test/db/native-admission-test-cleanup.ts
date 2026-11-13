@@ -5,7 +5,7 @@ export interface NativeAdmissionTestCleanup {
     readonly socketClosures: readonly Promise<void>[];
     readonly waitForSessionDisconnects: () => Promise<void>;
     readonly webSocketLifecycle: Pick<ApiV1Runtime['wsQBoxServerService'], 'dispose'>;
-    readonly listener: Pick<Deno.HttpServer<Deno.NetAddr>, 'shutdown'> | undefined;
+    readonly listener: { stop(): void; } | undefined;
     readonly backgroundTasks: Pick<ApiV1Runtime['backgroundTasks'], 'stop'>;
     readonly engine: Pick<ApiV1Runtime['qboxEngine'], 'stop'>;
     readonly backgroundProducersStopped: Promise<void>;
@@ -77,7 +77,7 @@ async function stopNativeAdmissionConnections(cleanup: NativeAdmissionTestCleanu
     }
 
     try {
-        await cleanup.listener?.shutdown();
+        await cleanup.listener?.stop();
         writeNativeAdmissionCleanupProgress(
             cleanup.reportProgress,
             failures,

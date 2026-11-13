@@ -14,9 +14,7 @@ import * as Tree from '../../../workloads/topology/rtc-topology-tree-no-rtt-benc
 import { SyntheticRtcRttRuntimeStateRepository } from '../../../workloads/topology/synthetic-rtc-rtt-runtime-state-repository.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
-const denoPrefix = words(
-    'run --config=packages/shared-rtc-bench/deno.json --allow-read --allow-write'
-);
+const bunPrefix = words('run');
 
 function words(value: string): string[] {
     return value.trim().split(/\s+/);
@@ -466,10 +464,10 @@ it('RTC-B03 diagnostics stay create-new beneath tmp/perf/results', () => {
     ];
     for (const [index, arguments_] of cases.entries()) {
         const output = join(directory, `${index}.json`);
-        const command = [...denoPrefix, ...arguments_, '--runs=1', `--out=${output}`];
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
+        const command = [...bunPrefix, ...arguments_, '--runs=1', `--out=${output}`];
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).toBe(0);
         const persisted = JSON.parse(readFileSync(output, 'utf8'));
         expect([persisted.schema, persisted.outcome]).toEqual([undefined, undefined]);
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).not.toBe(0);
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).not.toBe(0);
     }
 }, 30_000);

@@ -10,8 +10,7 @@ import {
 import type { RelicGameMutationService } from '@relic-hunters/server/relic-game-mutation-service.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
-import { expect } from '@std/expect';
-import { describe, it } from '@std/testing/bdd';
+import { describe, expect, it, test } from 'bun:test';
 
 import { createApiV1TestQueueResilience } from '@api-v1/test/api-v1-test-queue-resilience.ts';
 import { withPGliteSql } from '@api-v1/test/db/pglite-auth-test-harness.ts';
@@ -140,7 +139,7 @@ describe('Relic transport admission', () => {
     });
 });
 
-Deno.test('a Relic WS command publishes under the trace of the envelope that carried it', async () => {
+test('a Relic WS command publishes under the trace of the envelope that carried it', async () => {
     await withPGliteSql(async (database) => {
         const stack = await createRelicTestStack(database);
         const ref = toRelicRoomGroupRef(RELIC_TEST_GAME_ID);

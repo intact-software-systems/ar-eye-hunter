@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
@@ -19,7 +20,7 @@ const ROOM_DOCUMENT: RallarCrdtDocumentRef = {
     }
 };
 
-Deno.test(
+test(
     'document authorizer rejects an audience mismatch before state and clock reads',
     async () => {
         const events: string[] = [];
@@ -72,7 +73,7 @@ Deno.test(
     }
 );
 
-Deno.test('room authority reads membership before one current-session expiry clock', async () => {
+test('room authority reads membership before one current-session expiry clock', async () => {
     const events: string[] = [];
     const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
         readGroupSnapshot: () => {
@@ -119,7 +120,7 @@ Deno.test('room authority reads membership before one current-session expiry clo
     assert.deepEqual(events, ['group', 'clock']);
 });
 
-Deno.test('room authority refuses an expired or disconnected session and admits neither to the audience', async () => {
+test('room authority refuses an expired or disconnected session and admits neither to the audience', async () => {
     const sessions = [
         { principalId: 'alice', sessionId: 'session-1', status: 'active' as const, expiresAtEpochMs: NOW + 1_000 },
         { principalId: 'alice', sessionId: 'expired-session', status: 'active' as const, expiresAtEpochMs: NOW },
@@ -157,7 +158,7 @@ Deno.test('room authority refuses an expired or disconnected session and admits 
     });
 });
 
-Deno.test('principal authority reads current client before one session expiry clock', async () => {
+test('principal authority reads current client before one session expiry clock', async () => {
     const events: string[] = [];
     const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
         readGroupSnapshot: () => Promise.resolve(undefined),
@@ -213,7 +214,7 @@ Deno.test('principal authority reads current client before one session expiry cl
     assert.deepEqual(events, ['client', 'clock']);
 });
 
-Deno.test('CRDT room authority refuses a snapshot returned from another workspace', async () => {
+test('CRDT room authority refuses a snapshot returned from another workspace', async () => {
     const authorizeDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
         readGroupSnapshot: () =>
             Promise.resolve({
@@ -240,7 +241,7 @@ Deno.test('CRDT room authority refuses a snapshot returned from another workspac
     );
 });
 
-Deno.test('room spectators may read CRDT but fresh mutation authority refuses their writes', async () => {
+test('room spectators may read CRDT but fresh mutation authority refuses their writes', async () => {
     let role: 'member' | 'spectator' = 'spectator';
     const dependencies = {
         readGroupSnapshot: () =>

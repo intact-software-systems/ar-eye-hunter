@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -8,7 +9,7 @@ import {
     toClientStateWritten
 } from './client-state-route-test-runtime.ts';
 
-Deno.test('client REST mutations reject non-object JSON before AppInbox enqueue', async () => {
+test('client REST mutations reject non-object JSON before AppInbox enqueue', async () => {
     let processCount = 0;
     const app = createClientRouteApp(
         createClientRouteDeps({

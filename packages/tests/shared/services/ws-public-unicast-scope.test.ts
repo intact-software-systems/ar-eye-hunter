@@ -21,6 +21,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
 
@@ -252,7 +253,7 @@ describe('public WS unicast scope', () => {
             const socket = new JsonWebSocketServer();
             const native = new TestWebSocket('ws://prepared');
             native.open();
-            socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
             const settled: string[] = [];
             const service = createDefaultWsQueueBoxServerService({
                 inboundVolatileStores: undefined,
@@ -278,7 +279,7 @@ describe('public WS unicast scope', () => {
             const encode = socket.encode.bind(socket);
             vi.spyOn(socket, 'encode').mockImplementation((message) => {
                 if (boundary === 'encode-replacement') {
-                    socket.addConnection(new ConnectionContext({ id: 'peer', socket: replacement }));
+                    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: replacement }));
                 }
                 return encode(message);
             });
@@ -298,7 +299,7 @@ describe('public WS unicast scope', () => {
         const original = new TestWebSocket('ws://original');
         original.open();
         const connection = new ConnectionContext({ id: 'peer', socket: original });
-        socket.addConnection(connection);
+        attachTestWebSocket(socket, connection);
         let proof = { scope: SCOPE, expiresAtEpochMs: Date.now() + 30_000 };
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -316,7 +317,7 @@ describe('public WS unicast scope', () => {
         const encode = socket.encode.bind(socket);
         vi.spyOn(socket, 'encode').mockImplementation((message) => {
             if (change === 'replaced') {
-                socket.addConnection(new ConnectionContext({ id: 'peer', socket: replacement }));
+                attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: replacement }));
             }
             else if (change === 'expired') {
                 proof = { ...proof, expiresAtEpochMs: 0 };
@@ -343,7 +344,7 @@ function createLiveDelivery(expiresAtEpochMs = 0): LiveDeliveryFixture {
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://live');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const live = new WsQueueBoxServerLiveDelivery({
         socket,
         clock: { nowMs: Date.now },

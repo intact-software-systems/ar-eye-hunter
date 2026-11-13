@@ -474,5 +474,5 @@ async function main(arguments_: readonly string[]): Promise<void> {
 }
 
 if (import.meta.main) {
-    await main(typeof Deno === 'undefined' ? process.argv.slice(2) : Deno.args);
+    await main(process.argv.slice(2));
 }

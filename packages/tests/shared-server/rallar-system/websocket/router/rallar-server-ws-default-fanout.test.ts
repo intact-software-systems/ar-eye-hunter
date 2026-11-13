@@ -26,6 +26,7 @@ import {
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
 import { toTestALAckPayload } from '../../../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 const SCOPE = { applicationId: ROOM.applicationId, workspaceId: ROOM.workspaceId };
@@ -161,7 +162,7 @@ function createWorldFixture(input: { readonly routerFanout: 'none' | 'live-only'
     for (const sessionId of ['origin', 'receiver', 'foreign']) {
         const socket = new TestWebSocket(`ws://${sessionId}`);
         socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: sessionId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: sessionId, socket }));
         sockets[sessionId] = socket;
     }
     const service = createDefaultWsQueueBoxServerService({
@@ -205,12 +206,12 @@ function createLiveRoomFixture(receiverIds: readonly string[]): LiveRoomFixture 
     const socketServer = new JsonWebSocketServer();
     const origin = new TestWebSocket('ws://origin');
     origin.open();
-    socketServer.addConnection(new ConnectionContext({ id: 'origin', socket: origin }));
+    attachTestWebSocket(socketServer, new ConnectionContext({ id: 'origin', socket: origin }));
     const receivers: Record<string, TestWebSocket> = {};
     for (const receiverId of receiverIds) {
         const receiver = new TestWebSocket(`ws://${receiverId}`);
         receiver.open();
-        socketServer.addConnection(new ConnectionContext({ id: receiverId, socket: receiver }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: receiverId, socket: receiver }));
         receivers[receiverId] = receiver;
     }
     const outboundStores = createDefaultInMemoryALOutboundRuntimeStores({

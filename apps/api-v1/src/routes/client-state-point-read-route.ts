@@ -1,4 +1,4 @@
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import { Hono, type Context } from 'hono';
 
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ClientStateSnapshotReadOptions, StateSnapshotReadResult } from '@shared/api/state-snapshot-read.ts';

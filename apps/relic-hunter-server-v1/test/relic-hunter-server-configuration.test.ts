@@ -1,6 +1,7 @@
-import { expect } from '@std/expect';
-import { describe, it } from '@std/testing/bdd';
+import { describe, expect, it } from 'bun:test';
+import { readFile } from 'node:fs/promises';
 
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import { readRelicHunterServerConfiguration } from '../src/relic-hunter-server-configuration.ts';
 
 const AUTHENTICATION_SECRET = 'relic-configuration-test-secret-at-least-32-characters';
@@ -28,14 +29,9 @@ describe('Relic Hunter server configuration', () => {
         };
         const reads = new Map<string, number>();
         const configuration = await readRelicHunterServerConfiguration({
-            environment: {
-                get(name) {
-                    reads.set(name, (reads.get(name) ?? 0) + 1);
-                    return values[name];
-                }
-            },
+            environment: trackingEnvironment(values, reads),
             hardwareConcurrency: 4,
-            readTextFile: Deno.readTextFile,
+            readTextFile: (url) => readFile(url, 'utf8'),
             defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
             profileUrls: {
                 dev: apiV1ResourceUrl('dev-config.json'),
@@ -55,7 +51,8 @@ describe('Relic Hunter server configuration', () => {
         expect(configuration.http).toEqual({
             port: 8090,
             corsOrigins: ['http://localhost:5175', 'https://relic.example.test'],
-            preflightMaxAgeSeconds: 600
+            preflightMaxAgeSeconds: 600,
+            shutdownDeadlineMs: DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS
         });
         expect(configuration.apiV1.tournaments.profiles).toEqual([{
             scope: { applicationId: 'rallar-server', workspaceId: 'default' },
@@ -177,9 +174,9 @@ async function readConfiguration(
         ...overrides
     };
     return await readRelicHunterServerConfiguration({
-        environment: { get: (name) => values[name] },
+        environment: values,
         hardwareConcurrency: 4,
-        readTextFile: Deno.readTextFile,
+        readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: apiV1ResourceUrl('defaults-config.json'),
         profileUrls: {
             dev: apiV1ResourceUrl('dev-config.json'),
@@ -202,6 +199,20 @@ function apiV1ResourceUrl(fileName: string): URL {
 
 function relicResourceUrl(fileName: string): URL {
     return new URL(`../resources/configuration/${fileName}`, import.meta.url);
+}
+
+function trackingEnvironment(
+    values: Readonly<Record<string, string | undefined>>,
+    reads: Map<string, number>
+): Readonly<Record<string, string | undefined>> {
+    return new Proxy(values, {
+        get(target, name) {
+            if (typeof name === 'string') {
+                reads.set(name, (reads.get(name) ?? 0) + 1);
+            }
+            return Reflect.get(target, name);
+        }
+    });
 }
 
 function productionOverrides(profile: 'prod' | 'prod-hardened'): Readonly<Record<string, string>> {

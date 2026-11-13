@@ -1,4 +1,5 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
 import type { ClientEvent } from '@shared/api/client-types.ts';
@@ -22,7 +23,7 @@ import {
     createRejectingGroupStateRouteTestDependencies
 } from '../group-state/group-state-route-test-runtime.ts';
 
-Deno.test(
+test(
     'state read routes hydrate process snapshot caches after successful client and group REST reads',
     async () => {
         const clientSnapshot = createClientSnapshot('alice');
@@ -70,7 +71,7 @@ Deno.test(
         ]);
     }
 );
-Deno.test(
+test(
     'state event page routes call paged services instead of full-history listEvents',
     async () => {
         const clientPage: StateEventPage<ClientEvent> = {
@@ -116,7 +117,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'state event array routes call bounded recent services instead of full-history listEvents',
     async () => {
         const clientEvent = createClientEvent('client-event-2');

@@ -117,6 +117,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         const envFile = path.join(stubDirectory, 'api-v1.env');
         await writeFile(envFile, `PORT=8080\nDATABASE_URL=${databaseUrl}\n`);
         const checkoutDir = path.join(stubDirectory, 'checkout');
+        await mkdir(path.join(checkoutDir, 'apps', 'api-v1'), { recursive: true });
 
         const { stdout, stderr } = await runScript(context, {
             scriptPath: helperScriptPath,
@@ -133,8 +134,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         expect(`${stdout}${stderr}`).not.toContain(password);
         const log = await readStubLog(stubDirectory);
         const migrateLine = [
-            'runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task',
-            `--config ${checkoutDir}/apps/api-v1/deno.json prisma migrate deploy`,
+            'runuser -u rallar -- bunx prisma migrate deploy',
             `database_url_env=${databaseUrl}`
         ].join(' ');
         expect(log).toContain('runuser -u rallar -- psql --no-psqlrc');
@@ -299,6 +299,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         const databaseUrl = `postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1`;
         const envFile = path.join(stubDirectory, 'api-v1.env');
         await writeFile(envFile, `DATABASE_URL=${databaseUrl}\n`);
+        await mkdir(path.join(stubDirectory, 'checkout', 'apps', 'api-v1'), { recursive: true });
         const environment = {
             RALLAR_API_PROD_PROFILE_SELF_TEST: 'provision-store',
             RALLAR_API_ENV_FILE: envFile,
@@ -418,6 +419,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         await writeFile(envFile, `DATABASE_URL=postgres://rallar:${'a'.repeat(64)}@127.0.0.1:5432/rallar_api_v1\n`);
         const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
 
+        await mkdir(path.join(stubDirectory, 'checkout', 'apps', 'api-v1'), { recursive: true });
         await expect(runScript(context, {
             scriptPath: helperScriptPath,
             stubDirectory,
@@ -439,6 +441,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
         const failureFile = path.join(stubDirectory, 'api-v1.store-failure');
         await writeFile(failureFile, 'The migrations of the API-v1 Postgres store failed.\n');
 
+        await mkdir(path.join(stubDirectory, 'checkout', 'apps', 'api-v1'), { recursive: true });
         await runScript(context, {
             scriptPath: helperScriptPath,
             stubDirectory,
@@ -474,7 +477,7 @@ describe('Hetzner controller API prod profile on the VM Postgres', () => {
 
         const calls = (await readStubLog(stubDirectory)).trim().split('\n');
         expect(calls.includes('systemctl start rallar-api-v1.service')).toBe(startsApi);
-        expect(calls).toContain('systemctl start rallar-black-box-control.service');
+        expect(calls).not.toContain('systemctl start rallar-black-box-control.service');
         expect(stderr.includes('::error::')).toBe(storeFailed);
     });
 

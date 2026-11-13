@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
@@ -25,10 +26,10 @@ const PARTICIPANTS: readonly AlmReloadParticipant[] = [
 const CADENCE_MS = 2_000;
 
 for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-    Deno.test(`the ${carrier} paced-latest cell admits its lead at once and the newest value at the lane's next opportunity`, async () => {
+    test(`the ${carrier} paced-latest cell admits its lead at once and the newest value at the lane's next opportunity`, async () => {
         const { ports, sent } = await runPacedCell(carrier, 'paced-latest');
 
-        assertEquals(sent.map((message) => message.state), [
+        expect(sent.map((message) => message.state)).toEqual([
             'transport-accepted',
             'superseded',
             'superseded',
@@ -37,70 +38,67 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             'transport-accepted'
         ]);
         const opportunities = readOpportunities(ports);
-        assertEquals(opportunities.map(({ selected }) => selected), [1, 1]);
-        assertEquals(opportunities[0].atMs, carrier === 'ws' ? 1_000 : 4_500, 'RTC setup observes the accepted hold before live admission');
-        assertEquals(opportunities[0].atMs, readStagingEvents(ports, sent[0])[0]?.atMs, 'the idle lane admits the lead when it stages');
-        assertEquals(opportunities[1].atMs - opportunities[0].atMs, CADENCE_MS, 'the second value waits one cadence');
+        expect(opportunities.map(({ selected }) => selected)).toEqual([1, 1]);
+        expect(opportunities[0].atMs).toEqual(carrier === 'ws' ? 1_000 : 4_500);
+        expect(opportunities[0].atMs).toEqual(readStagingEvents(ports, sent[0])[0]?.atMs);
+        expect(opportunities[1].atMs - opportunities[0].atMs).toEqual(CADENCE_MS);
     });
 
-    Deno.test(`the ${carrier} paced-newest-n cell supersedes the oldest of three staged values and drains two per opportunity`, async () => {
+    test(`the ${carrier} paced-newest-n cell supersedes the oldest of three staged values and drains two per opportunity`, async () => {
         const { ports, sent } = await runPacedCell(carrier, 'paced-newest-n');
 
-        assertEquals(sent.map((message) => message.state), [
+        expect(sent.map((message) => message.state)).toEqual([
             'transport-accepted',
             'superseded',
             'transport-accepted',
             'transport-accepted',
             'transport-accepted'
         ]);
-        assert(sent[1].reason?.includes('displaced it before its opportunity'), sent[1].reason);
-        assertEquals(sent[1].attemptCarriers, []);
-        assertEquals(readOpportunities(ports).map(({ selected, deferred }) => [selected, deferred]), [[1, 0], [2, 1], [1, 0]]);
-        assertEquals(readStagingOutcomes(ports, sent[1]), ['staged', 'superseded']);
+        assert(sent[1].reason?.includes('displaced it before its opportunity'));
+        expect(sent[1].attemptCarriers).toEqual([]);
+        expect(readOpportunities(ports).map(({ selected, deferred }) => [selected, deferred])).toEqual([[1, 0], [2, 1], [1, 0]]);
+        expect(readStagingOutcomes(ports, sent[1])).toEqual(['staged', 'superseded']);
     });
 
-    Deno.test(`the ${carrier} paced-expiry cell expires its short-lived value while staged, before any attempt`, async () => {
+    test(`the ${carrier} paced-expiry cell expires its short-lived value while staged, before any attempt`, async () => {
         const { ports, sent } = await runPacedCell(carrier, 'paced-expiry');
 
-        assertEquals(sent.map((message) => [message.state, message.failure, message.submitted]), [
+        expect(sent.map((message) => [message.state, message.failure, message.submitted])).toEqual([
             ['transport-accepted', undefined, true],
             ['expired', { kind: 'expired' }, false]
         ]);
         // The observer read the deadline; the stage settles the value at the lane's next opportunity, a cadence on.
-        assertEquals(readStagingOutcomes(ports, sent[1]), ['staged']);
+        expect(readStagingOutcomes(ports, sent[1])).toEqual(['staged']);
         const idled = await ports.sender.execute(toIdleCommand(CADENCE_MS));
-        assertEquals(idled.ok, true, JSON.stringify(idled));
-        assertEquals(readStagingOutcomes(ports, sent[1]), ['staged', 'expired']);
-        assertEquals(readOpportunities(ports).map(({ selected, expired }) => [selected, expired]), [[1, 0], [0, 1]]);
+        expect(idled.ok).toEqual(true);
+        expect(readStagingOutcomes(ports, sent[1])).toEqual(['staged', 'expired']);
+        expect(readOpportunities(ports).map(({ selected, expired }) => [selected, expired])).toEqual([[1, 0], [0, 1]]);
     });
 
-    Deno.test(`the ${carrier} paced-capacity cell refuses the value past its lowered staged-values bound`, async () => {
+    test(`the ${carrier} paced-capacity cell refuses the value past its lowered staged-values bound`, async () => {
         const { ports, sent } = await runPacedCell(carrier, 'paced-capacity');
 
-        assertEquals(sent.map((message) => message.state), [
+        expect(sent.map((message) => message.state)).toEqual([
             'transport-accepted',
             'transport-accepted',
             'transport-accepted',
             'rejected'
         ]);
-        assertEquals(sent[3].failure, { kind: 'refused', reason: 'capacity', limit: 'staged-values' });
-        assertEquals(sent[3].attemptCarriers, []);
-        assertEquals(
-            readStagingEvents(ports, sent[3]).map(({ outcome, limit }) => [outcome, limit]),
-            [['refused', 'staged-values']]
-        );
+        expect(sent[3].failure).toEqual({ kind: 'refused', reason: 'capacity', limit: 'staged-values' });
+        expect(sent[3].attemptCarriers).toEqual([]);
+        expect(readStagingEvents(ports, sent[3]).map(({ outcome, limit }) => [outcome, limit])).toEqual([['refused', 'staged-values']]);
     });
 
-    Deno.test(`the ${carrier} paced-cancel cell cancels a staged value, which its opportunity never carries`, async () => {
+    test(`the ${carrier} paced-cancel cell cancels a staged value, which its opportunity never carries`, async () => {
         const { ports, sent } = await runPacedCell(carrier, 'paced-cancel');
 
-        assertEquals(sent.map((message) => [message.state, message.submitted]), [
+        expect(sent.map((message) => [message.state, message.submitted])).toEqual([
             ['transport-accepted', true],
             ['cancelled', false],
             ['transport-accepted', true]
         ]);
-        assertEquals(readStagingOutcomes(ports, sent[1]), ['staged', 'cancelled']);
-        assertEquals(readOpportunities(ports).map(({ selected }) => selected), [1, 1]);
+        expect(readStagingOutcomes(ports, sent[1])).toEqual(['staged', 'cancelled']);
+        expect(readOpportunities(ports).map(({ selected }) => selected)).toEqual([1, 1]);
     });
 }
 
@@ -112,35 +110,35 @@ const DISPOSALS: readonly (readonly [name: string, dispose: (ports: AlmReloadPor
 ];
 
 for (const [name, dispose] of DISPOSALS) {
-    Deno.test(`${name} settles the value its stage still holds skipped as disposed, with no staging event and no carrier`, async () => {
+    test(`${name} settles the value its stage still holds skipped as disposed, with no staging event and no carrier`, async () => {
         const ports = new AlmReloadPorts(true, PARTICIPANTS);
         assertOk(await ports.sender.execute(toLiveSend(0)));
         assertOk(await ports.sender.execute(toLiveSend(1)));
         const [lead, held] = ports.messages;
-        assertEquals([lead.state, held.state], ['transport-accepted', 'staged']);
+        expect([lead.state, held.state]).toEqual(['transport-accepted', 'staged']);
         const heldOutcomes = readStagingOutcomes(ports, held);
 
         await dispose(ports);
         assertOk(await ports.sender.execute(toIdleCommand(CADENCE_MS)));
 
-        assertEquals([held.state, held.failure, held.submitted], ['failed', { kind: 'skipped', reason: 'disposed' }, false]);
-        assertEquals(heldOutcomes, ['staged']);
-        assertEquals(readStagingOutcomes(ports, held), name === 'a document replacement' ? [] : ['staged']);
+        expect([held.state, held.failure, held.submitted]).toEqual(['failed', { kind: 'skipped', reason: 'disposed' }, false]);
+        expect(heldOutcomes).toEqual(['staged']);
+        expect(readStagingOutcomes(ports, held)).toEqual(name === 'a document replacement' ? [] : ['staged']);
     });
 }
 
-Deno.test('a live send from a sender that left the group is refused by the trusted server instead of staged', async () => {
+test('a live send from a sender that left the group is refused by the trusted server instead of staged', async () => {
     const ports = new AlmReloadPorts(true, PARTICIPANTS);
     ports.group.left.add('sender');
 
     assertOk(await ports.sender.execute(toLiveSend(0)));
 
     const [fenced] = ports.messages;
-    assertEquals([fenced.state, fenced.submitted, fenced.relayRejection], ['rejected', false, { relay: 'trusted-server', reason: 'membership-fenced' }]);
-    assertEquals(readStagingOutcomes(ports, fenced), []);
+    expect([fenced.state, fenced.submitted, fenced.relayRejection]).toEqual(['rejected', false, { relay: 'trusted-server', reason: 'membership-fenced' }]);
+    expect(readStagingOutcomes(ports, fenced)).toEqual([]);
 });
 
-Deno.test('a send naming recipientPrincipalIds addresses only the participants of the listed principals', async () => {
+test('a send naming recipientPrincipalIds addresses only the participants of the listed principals', async () => {
     const ports = new AlmReloadPorts(true, [
         ...PARTICIPANTS,
         { role: 'recipient-b', sessionId: 'recipient-b-stored-session', principalId: 'recipient-b-principal' }
@@ -159,7 +157,7 @@ Deno.test('a send naming recipientPrincipalIds addresses only the participants o
         })
     );
 
-    assertEquals(ports.messages.map((message) => message.recipientRoles), [['recipient-b']]);
+    expect(ports.messages.map((message) => message.recipientRoles)).toEqual([['recipient-b']]);
 });
 
 /** A ws live send on one stream, one value retained, whose lane opens one opportunity per cadence. */
@@ -186,7 +184,7 @@ function findPacedCapacityConnect(): RallarBlackBoxTestCommand {
 }
 
 function assertOk(result: RallarBlackBoxTestResult): void {
-    assertEquals(result.ok, true, JSON.stringify(result));
+    expect(result.ok).toEqual(true);
 }
 
 function toCatalogInput(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): CreateAlmConformanceRecipesInput {
@@ -213,14 +211,14 @@ async function runPacedCell(
     scenarioId: string
 ): Promise<PacedCellResult> {
     const scenario = createAlmConformanceRecipes(toCatalogInput(carrier)).find((candidate) => candidate.scenarioId === scenarioId);
-    assert(scenario, `${scenarioId} over ${carrier}`);
+    assert(scenario);
     const ports = new AlmReloadPorts(true, PARTICIPANTS);
 
     const sender = await ports.sender.execute(toRecipeRun(scenario.sender));
     const receiver = await ports.receiver.execute(toRecipeRun(scenario.receiver));
 
-    assertEquals(sender.ok, true, JSON.stringify(sender));
-    assertEquals(receiver.ok, true, JSON.stringify(receiver));
+    expect(sender.ok).toEqual(true);
+    expect(receiver.ok).toEqual(true);
     const sent = ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.specimen === 'paced');
     return { ports, sent: [...sent].sort((left, right) => readSeq(left) - readSeq(right)) };
 }

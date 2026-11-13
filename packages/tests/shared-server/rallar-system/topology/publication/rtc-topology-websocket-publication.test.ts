@@ -45,6 +45,7 @@ import {
 import { configureTestCacheRepositories } from '../../../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createOutboundRuntimeWithWorkTask, runOutboundWorkTask } from '../../../../shared/alm/outbound-runtime-test-fixture.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createRtcTopologyReplayFixture } from '../replay/consumer/rtc-topology-replay-fixture.ts';
 
@@ -58,8 +59,8 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const recordedSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
-        server.addConnection(new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-1', socket: recordedSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-2', socket: outsideSocket }));
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
             readAuthenticatedConnectionScope: () => undefined,
@@ -104,9 +105,9 @@ describe('RTC topology websocket publication', () => {
         const peerSocket = new FakeSocket();
         const outsideSocket = new FakeSocket();
 
-        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
-        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
-        server.addConnection(new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-b', socket: peerSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-c', socket: outsideSocket }));
 
         const service = createDefaultWsQueueBoxServerService({
             inboundVolatileStores: undefined,
@@ -155,7 +156,7 @@ describe('RTC topology websocket publication', () => {
         ]);
 
         for (const [sessionId, socket] of sockets) {
-            server.addConnection(new ConnectionContext({ id: sessionId, socket }));
+            attachTestWebSocket(server, new ConnectionContext({ id: sessionId, socket }));
         }
 
         const service = createDefaultWsQueueBoxServerService({
@@ -258,7 +259,7 @@ describe('RTC topology websocket publication', () => {
 
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-a', socket: senderSocket }));
 
         const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -306,8 +307,8 @@ describe('RTC topology websocket publication', () => {
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
         const peerSocket = new FakeSocket();
-        server.addConnection(new ConnectionContext({ id: 'session-a', socket: senderSocket }));
-        server.addConnection(new ConnectionContext({ id: 'session-b', socket: peerSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-a', socket: senderSocket }));
+        attachTestWebSocket(server, new ConnectionContext({ id: 'session-b', socket: peerSocket }));
 
         const wsOutbox = new InMemoryQueueBox(new Map());
         const appOutbox = new InMemoryQueueBox(new Map());
@@ -410,11 +411,12 @@ class FakeSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    send(data: string | ArrayBufferLike | Blob | ArrayBufferView): number {
         if (typeof data !== 'string') {
             throw new TypeError('RTC topology publication tests require JSON text messages');
         }
         this.sent.push(decodePersistedALMessage(data));
+        return data.length;
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {

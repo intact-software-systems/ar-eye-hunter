@@ -1,6 +1,7 @@
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
@@ -9,7 +10,7 @@ import { createConfigRouteTestDependencies } from './config-route-test-runtime.t
 const NOW_EPOCH_MS = 1_700_000_000_000;
 const DEFAULT_TTL_MS = 86_400_000;
 
-Deno.test('black-box control token route rejects unauthenticated requests', async () => {
+test('black-box control token route rejects unauthenticated requests', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(authenticationRequired('Unauthorized: Missing bearer token')),
         operatorToken: {
@@ -30,7 +31,7 @@ Deno.test('black-box control token route rejects unauthenticated requests', asyn
     });
 });
 
-Deno.test('black-box control token route issues a 24h operator token by default', async () => {
+test('black-box control token route issues a 24h operator token by default', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
         operatorToken: {
@@ -74,7 +75,7 @@ Deno.test('black-box control token route issues a 24h operator token by default'
     }
 });
 
-Deno.test('black-box control token route rejects clients outside the allowlist', async () => {
+test('black-box control token route rejects clients outside the allowlist', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
         operatorToken: {
@@ -99,7 +100,7 @@ Deno.test('black-box control token route rejects clients outside the allowlist',
     });
 });
 
-Deno.test('black-box control token route reports missing signing secret clearly', async () => {
+test('black-box control token route reports missing signing secret clearly', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client'))
     });

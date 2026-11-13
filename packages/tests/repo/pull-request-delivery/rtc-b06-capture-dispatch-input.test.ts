@@ -1,10 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import {
-    mkdtempSync,
-    readFileSync,
-    rmSync
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -13,7 +8,6 @@ import {
     YAML11_SCHEMA
 } from 'js-yaml';
 import {
-    afterAll,
     describe,
     expect,
     it
@@ -28,10 +22,6 @@ interface RtcB06CaptureDispatchInput {
 }
 
 const repoRoot = path.resolve(import.meta.dirname, '../../../..');
-/** The CLI's Deno runs keep their lock here, so they never rewrite the tracked one. */
-const scratchDirectory = mkdtempSync(path.join(tmpdir(), 'rtc-b06-capture-'));
-
-afterAll(() => rmSync(scratchDirectory, { recursive: true, force: true }));
 
 describe('RTC-B06 capture dispatch input', () => {
     it.each([CORE_SCHEMA, YAML11_SCHEMA])('offers readable string choices under YAML scalar schema %#', (schema) => {
@@ -51,15 +41,8 @@ describe('RTC-B06 capture dispatch input', () => {
         ['capture-live-rtc', 'codex/rtc-baseline-refresh', 'Native'],
         ['capture-live-rtc', 'codex/rtc-baseline-refresh', 'disabled']
     ])('refuses noncanonical capture at the actual %s entry before environment or producer admission', (command, sourceRef, selection) => {
-        const result = spawnSync('deno', [
+        const result = spawnSync('bun', [
             'run',
-            '--cached-only',
-            '--no-check',
-            '--config=packages/shared-rtc-bench/deno.json',
-            `--lock=${path.join(scratchDirectory, 'deno.lock')}`,
-            '--allow-read',
-            '--deny-env',
-            '--deny-run',
             'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
             command,
             `--source-ref=${sourceRef}`,
@@ -68,7 +51,7 @@ describe('RTC-B06 capture dispatch input', () => {
             '--github-run-url=https://github.com/example/repository/actions/runs/123456789',
             '--output=tmp/observation',
             `--rtc-capture-mode=${selection}`
-        ], { cwd: repoRoot, encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });
+        ], { cwd: repoRoot, encoding: 'utf8' });
 
         expect(result.status).toBe(64);
         expect(result.stdout).toBe('');

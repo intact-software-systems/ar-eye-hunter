@@ -7,8 +7,7 @@ import {
 } from '@relic-hunters/mod.ts';
 import { decodeRelicGameStateAppData } from '@relic-hunters/server/decode-relic-game-state-app-data.ts';
 import { encodeRelicGameStateAppData } from '@relic-hunters/server/encode-relic-game-state-app-data.ts';
-import { expect } from '@std/expect';
-import { describe, it } from '@std/testing/bdd';
+import { describe, expect, it } from 'bun:test';
 
 import { requireRelicCommandApplied } from '../../../packages/tests/relic-hunters/require-relic-command-applied.ts';
 

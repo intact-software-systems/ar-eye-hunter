@@ -14,9 +14,9 @@ names and configuration paths without reporting secret values.
 ## API-v1 Production
 
 - Set `RALLAR_API_CONFIGURATION_PROFILE=prod-hardened`.
-  The Deno Deploy preflight also accepts `prod`, which keeps public registration
-  and bundled demo clients and enforces none of the hardening invariants, so this
-  step is a manual responsibility, not a deploy gate.
+  The `prod` profile keeps public registration and bundled demo clients and
+  enforces none of the hardening invariants, so this step is a manual
+  responsibility, not a deploy gate.
 - Keep the profile-owned PostgreSQL, PostgreSQL pub/sub, strict read auth,
   admin-only registration, disabled static clients, Metered ICE, HTTPS/WSS
   public URLs, and exact HTTPS CORS settings unless the deployment has a real
@@ -25,10 +25,10 @@ names and configuration paths without reporting secret values.
   `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`, and `METERED_APP_NAME`; all three are
   startup requirements under `prod-hardened` (the inherited admin default
   `admin` is rejected). Administrator identities must be non-demo identities:
-  `prod-hardened` rejects only `admin`, while `prod` and its preflight reject every
+  `prod-hardened` rejects only `admin`, while `prod` rejects every
   bundled client ID in `apps/api-v1/resources/authorised-clients.json`.
-- Keep the `DATABASE_URL` supplied by the application's assigned Deno Deploy
-  PostgreSQL database available at runtime. Store
+- Keep the `DATABASE_URL` supplied by the host's local PostgreSQL database
+  available at runtime. Store
   `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` as platform secrets. The auth secret
   must contain at least 32 characters and remain stable while sessions,
@@ -37,14 +37,6 @@ names and configuration paths without reporting secret values.
   [Environment Variables](./environment-variables.md). Do not set
   `ENVIRONMENT`, unprefixed server `API_BASE_URL`, or removed formation and
   dissemination settings.
-
-The Deno Deploy preflight reads redacted environment metadata for
-`rallar-server` and refuses deployment unless the production context contains
-the exact `prod` or `prod-hardened` selector, required visible values, and the three
-repository-managed platform secret names. The assigned Deno Deploy PostgreSQL
-database supplies `DATABASE_URL`, so the preflight does not require it to
-appear in the redacted metadata. The preflight never prints or uploads the
-environment document.
 
 ## Relic Server Production
 
@@ -55,9 +47,6 @@ environment document.
   `RELIC_AI_EXPEDITION_MODE=ollama`.
 - Snapshot reads require full group read permission, commands require room send
   permission, and reset requires active owner/admin permission.
-
-The Deno Deploy preflight applies the same API-v1 evidence checks to
-`relic-hunters` and rejects any explicitly configured Relic policy.
 
 ## Hetzner Disposable Controller
 

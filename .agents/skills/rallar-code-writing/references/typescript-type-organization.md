@@ -14,7 +14,7 @@ standard's construction, dataflow, or contract rules.
 - [Class-owned vocabulary uses an adjacent type-only namespace](#class-owned-vocabulary-uses-an-adjacent-type-only-namespace)
 - [Associated namespaces are type-only](#associated-namespaces-are-type-only)
 - [Erasable-syntax compatibility](#erasable-syntax-compatibility)
-- [Deno-linted application trees](#deno-linted-application-trees)
+- [Bun-owned application trees](#bun-owned-application-trees)
 - [Imports, re-exports, and module qualification](#imports-re-exports-and-module-qualification)
 - [Refactoring existing aliases](#refactoring-existing-aliases)
 - [Review heuristics](#review-heuristics)
@@ -170,10 +170,9 @@ Verified against this repository's actual toolchain: with TypeScript 7.0.2 (the
 pinned repo compiler), a type-only namespace declared immediately before its
 merged class type-checks cleanly under `--strict` and under
 `--erasableSyntaxOnly`, and a namespace containing runtime values fails
-`--erasableSyntaxOnly` with TS1294. Deno 2.9.5 (`deno check`) accepts the
-type-only pattern. Every repository tsconfig and deno.json enables
-`erasableSyntaxOnly`, including `apps/rallar-black-box-control-server/deno.json`
-now that its file-sourced Deno Deploy build accepts the option. The flag keeps
+`--erasableSyntaxOnly` with TS1294. `bunx tsc -p tsconfig.json --noEmit` accepts
+the type-only pattern. Every repository tsconfig enables `erasableSyntaxOnly`,
+including `apps/rallar-black-box-control-server/tsconfig.json`. The flag keeps
 shared `packages/**` TypeScript portable across both runtimes and is an
 enforced compiler setting, not merely a design target.
 
@@ -188,23 +187,23 @@ When runtime values are actually required, use normal JavaScript-compatible
 constructs — exported `const` objects, functions, and classes at module level.
 Do not change a good runtime design merely to force it into a namespace.
 
-## Deno-linted application trees
+## Bun-owned application trees
 
-`deno lint` with the `recommended` tag rejects every `namespace` declaration —
-including type-only ones — via its `no-namespace` rule. This repository runs that
-configuration over `apps/api-v1`, `apps/rallar-black-box-control-server`, and
-`apps/relic-hunter-server-v1` (see the root `deno.json` lint include list and each
-app's `deno.json`). `packages/**` is not in the Deno lint include list.
+`erasableSyntaxOnly` rejects runtime values inside a `namespace` declaration with
+TS1294, and the repository style checker independently flags runtime namespace
+members (`types.runtime-namespace`). Every application tree (`apps/api-v1`,
+`apps/rallar-black-box-control-server`, `apps/relic-hunter-server-v1`,
+`apps/ar-eye-hunter-server-v1`) and every `packages/**` tree enables the flag in its
+`tsconfig.json`.
 
-In those three Deno-owned trees, choose one of:
+In those trees, choose one of:
 
 1. keep class-owned contracts as flat feature-prefixed interfaces adjacent to the
    class — the established shape, and the default; or
-2. when qualified vocabulary genuinely improves comprehension, add a targeted
-   suppression on the declaration:
+2. when qualified vocabulary genuinely improves comprehension, keep a type-only
+   namespace immediately before the class (erasable declarations only):
 
 ```ts
-// deno-lint-ignore no-namespace
 export namespace GroupStateReplay {
     export interface InputDto {
         readonly groupRef: string;
@@ -212,8 +211,8 @@ export namespace GroupStateReplay {
 }
 ```
 
-Do not exclude `no-namespace` from the Deno lint configuration wholesale: the rule
-still usefully rejects runtime namespaces, which this standard also forbids.
+Do not exempt runtime namespaces: the flag and the checker still reject namespaces
+that carry runtime members, which this standard also forbids.
 
 ## Imports, re-exports, and module qualification
 
@@ -298,6 +297,5 @@ findings per file and rule, so legacy debt never blocks unrelated branches.
 
 Canonical-name choice, justified import renames, and namespace-before-class
 ordering remain manual review. Validate changed surfaces with the focused
-type-check for the touched package or app. In Deno-owned trees, `deno lint`
-findings for `no-namespace` are expected unless a targeted suppression
-accompanies a deliberate type-only namespace.
+type-check for the touched package or app. In Bun-owned trees, a `types.runtime-namespace`
+finding is expected unless a deliberate type-only namespace accompanies it.

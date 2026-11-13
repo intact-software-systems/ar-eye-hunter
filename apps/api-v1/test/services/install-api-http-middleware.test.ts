@@ -1,14 +1,18 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+
 import { decodeApiV1Configuration } from '../../src/configuration/decode-api-v1-configuration.ts';
+import { registerWsRoutes } from '../../src/routes/ws-routes.ts';
 import { installApiHttpMiddleware } from '../../src/services/install-api-http-middleware.ts';
 import { validDecodeApiV1ConfigurationInput } from '../configuration/api-v1-configuration-test-fixture.ts';
 
 const ALLOWED_ORIGIN = 'http://localhost:5176';
 
-Deno.test('API HTTP middleware permits conditional, traced directory reads from an allowed origin', async () => {
+test('API HTTP middleware permits conditional, traced directory reads from an allowed origin', async () => {
     const app = createTimedApp([]);
     const response = await app.request('/api/state/apps/app-1/workspaces/workspace-1/group-directory', {
         method: 'OPTIONS',
@@ -27,7 +31,7 @@ Deno.test('API HTTP middleware permits conditional, traced directory reads from 
     }
 });
 
-Deno.test('API HTTP middleware does not authorize a disallowed origin', async () => {
+test('API HTTP middleware does not authorize a disallowed origin', async () => {
     const app = createTimedApp([]);
     const response = await app.request('/api/state/apps/app-1/workspaces/workspace-1/group-directory', {
         method: 'OPTIONS',
@@ -51,12 +55,26 @@ function createTimedApp(events: RallarTimingEvent[]): Hono {
         timing: (event) => events.push(event)
     });
     app.post('/api/auth/login/requests/:requestId', (c) => c.json({ ok: true }));
-    app.get('/api/ws/:sessionId', (c) => c.text('upgrade', 426));
+    registerWsRoutes(app, {
+        socketServer: new JsonWebSocketServer(),
+        appClientInboxService: {
+            writeAuthorisedWsClientConnect: rejectUnusedDependency,
+            enqueueAuthorisedWsClientDisconnect: rejectUnusedDependency
+        },
+        readWsConnectTicket: rejectUnusedDependency,
+        readWsConnectSession: rejectUnusedDependency,
+        upgradeWebSocket: rejectUnusedDependency,
+        nowEpochMs: Date.now
+    });
     return app;
 }
 
+function rejectUnusedDependency(): Promise<never> {
+    return Promise.reject(new Error('A ticketless WebSocket request reaches no connect dependency'));
+}
+
 // Every mutation URL is fresh, so each one pays a preflight the CORS middleware answers by itself.
-Deno.test('API HTTP middleware times a CORS preflight that never reaches a route', async () => {
+test('API HTTP middleware times a CORS preflight that never reaches a route', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 
@@ -94,7 +112,7 @@ Deno.test('API HTTP middleware times a CORS preflight that never reaches a route
     );
 });
 
-Deno.test('API HTTP middleware times a routed request once and exposes its timing headers', async () => {
+test('API HTTP middleware times a routed request once and exposes its timing headers', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 
@@ -110,16 +128,26 @@ Deno.test('API HTTP middleware times a routed request once and exposes its timin
     assert.deepEqual(events.map((event) => [event.method, event.httpStatus]), [['POST', 200]]);
 });
 
-Deno.test('API HTTP middleware leaves a WebSocket upgrade without CORS headers but still times it', async () => {
+test('API HTTP middleware times a refused WebSocket upgrade on the production route without echoing its trace', async () => {
     const events: RallarTimingEvent[] = [];
     const app = createTimedApp(events);
 
     const response = await app.request('/api/ws/session-1', {
-        headers: { origin: ALLOWED_ORIGIN, upgrade: 'websocket' }
+        headers: { origin: ALLOWED_ORIGIN, upgrade: 'websocket', 'x-request-id': 'request-upgrade' }
     });
 
-    assert.equal(response.status, 426);
-    assert.equal(response.headers.get('access-control-allow-origin'), null);
+    assert.equal(response.status, 401);
     assert.equal(response.headers.get('x-request-id'), null);
-    assert.deepEqual(events.map((event) => [event.method, event.path]), [['GET', '/api/ws/session-1']]);
+    assert.deepEqual(events.map((event) => [event.method, event.path, event.httpStatus]), [['GET', '/api/ws/session-1', 401]]);
+});
+
+test('API HTTP middleware echoes the trace on the 426 a request without Upgrade: websocket gets', async () => {
+    const events: RallarTimingEvent[] = [];
+    const app = createTimedApp(events);
+
+    const response = await app.request('/api/ws/session-1', { headers: { 'x-request-id': 'request-no-upgrade' } });
+
+    assert.equal(response.status, 426);
+    assert.equal(response.headers.get('x-request-id'), 'request-no-upgrade');
+    assert.deepEqual(events.map((event) => [event.method, event.httpStatus]), [['GET', 426]]);
 });

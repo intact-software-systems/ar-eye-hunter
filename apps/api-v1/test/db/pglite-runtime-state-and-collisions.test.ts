@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 
 import assert from 'node:assert/strict';
 
@@ -58,7 +59,7 @@ interface ResourceInboxPayloadRow {
     readonly ri_resource: string;
 }
 
-Deno.test(
+test(
     'PGlite client write rejects a divergent event collision and rolls back the aggregate',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -131,7 +132,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'PGlite client write accepts an identical pre-existing event and commits once',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -175,7 +176,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'guarded runtime-state batch applies every guard and effect operation with exact results',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -370,7 +371,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'guarded runtime-state batch guard conflict skips every effect without writes',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -439,7 +440,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'guarded runtime-state batch preserves sequential physical expiry exactly',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -494,7 +495,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'guarded runtime-state batch rolls back applied siblings when a conditional effect conflicts',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -569,7 +570,7 @@ Deno.test(
     }
 );
 
-Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespaces', async () => {
+test('PSqlRuntimeStateRepository generic expiry preserves protected namespaces', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlRuntimeStateRepository(sql);
         const protectedNamespaces = [
@@ -593,7 +594,7 @@ Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespa
     });
 });
 
-Deno.test(
+test(
     'PGlite AppGroup retries topology CAS conflicts and commits receipts and outboxes',
     async () => {
         await withPGliteSql(async (sql) => {

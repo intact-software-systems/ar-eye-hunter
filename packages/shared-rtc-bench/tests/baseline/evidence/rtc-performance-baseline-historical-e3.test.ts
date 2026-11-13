@@ -6,7 +6,7 @@ import { createRtcBaselineFinalizedArtifactVerifier } from '../../../baseline/ev
 const baselineId = '20260829T081500417Z-0123456789ab-e3-memory-local';
 const historicalObservation = {
     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/historical-e3', clean: true },
-    runtime: { node: '24', npm: '11', deno: '2', playwright: '1', chromium: '139' },
+    runtime: { node: '24', npm: '11', bun: '2', playwright: '1', chromium: '139' },
     host: { os: 'darwin', kernel: '24', architecture: 'arm64', logicalCpuCount: 10, cpuModel: 'fixture', totalMemoryBytes: 1, executionContext: 'local' },
     timing: {
         startedAtUtc: '2026-08-29T08:00:00.000Z',

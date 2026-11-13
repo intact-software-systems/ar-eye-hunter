@@ -67,10 +67,6 @@ function hardenedBlackBoxControlEnvironment(): Record<string, string> {
     };
 }
 
-function env(values: Record<string, string>): Pick<Deno.Env, 'get'> {
-    return {
-        get(key: string): string | undefined {
-            return values[key];
-        }
-    };
+function env(values: Record<string, string>): Readonly<Record<string, string | undefined>> {
+    return values;
 }

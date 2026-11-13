@@ -408,16 +408,10 @@ function validateBrowserSendResult(response: BlackBoxRallarSendDiagnostics): Eit
     return Either.ofRight(true);
 }
 
-function isDenoRuntime(): boolean {
-    return 'Deno' in globalThis;
-}
-
 async function loadDependencies(): Promise<RallarBrowserDependencies> {
     try {
-        const playwright = await import(
-            isDenoRuntime() ? 'npm:@playwright/test' : '@playwright/test'
-        );
-        const vite = await import(isDenoRuntime() ? 'npm:vite' : 'vite');
+        const playwright = await import('@playwright/test');
+        const vite = await import('vite');
         const path = await import('node:path');
         const url = await import('node:url');
 
@@ -431,7 +425,7 @@ async function loadDependencies(): Promise<RallarBrowserDependencies> {
     catch (e) {
         throw new Error(
             'The rallar-browser RTC provider requires Playwright and Vite. ' +
-                'Run it in the npm workspace, or use a Deno runtime that can resolve npm:@playwright/test and npm:vite. ' +
+                'Run it in the npm workspace. ' +
                 'Cause: ' + (e instanceof Error ? e.message : String(e))
         );
     }

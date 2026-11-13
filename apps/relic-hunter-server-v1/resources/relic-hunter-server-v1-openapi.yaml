@@ -371,17 +371,16 @@ components:
 
     RelicPlayer:
       type: object
-      required: [
-        playerId,
-        username,
-        characterId,
-        roomId,
-        health,
-        escaped,
-        defeated,
-        score,
-        relicIds,
-      ]
+      required:
+        - playerId
+        - username
+        - characterId
+        - roomId
+        - health
+        - escaped
+        - defeated
+        - score
+        - relicIds
       properties:
         playerId:
           type: string

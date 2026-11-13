@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import {
     createRallarInMemoryProvider,
@@ -6,7 +6,7 @@ import {
 } from '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts';
 import { createRallarWebRtcProvider } from '../../../shared-test/black-box-runner/rallar-webrtc-runtime.ts';
 
-Deno.test('createRallarWebRtcProvider can execute two-peer scenario through in-memory runtime', async () => {
+test('createRallarWebRtcProvider can execute two-peer scenario through in-memory runtime', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -118,24 +118,24 @@ Deno.test('createRallarWebRtcProvider can execute two-peer scenario through in-m
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredTo, 'bob');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredTo, 'alice');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryMode, 'direct');
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveryMode, 'direct');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence, 1);
-    assertEquals(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliverySequence, 2);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.bobSendsToAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveredTo).toEqual('alice');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryMode).toEqual('direct');
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliveryMode).toEqual('direct');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence).toEqual(1);
+    expect(report.resultsByName.bobSendsToAlice[0].actual.matchedMessage.data.deliverySequence).toEqual(2);
 });
 
-Deno.test('createRallarWebRtcProvider routes in-memory message payload target before remotePeerId', async () => {
+test('createRallarWebRtcProvider routes in-memory message payload target before remotePeerId', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -253,16 +253,16 @@ Deno.test('createRallarWebRtcProvider routes in-memory message payload target be
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.sentBy, 'alice');
-    assertEquals(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredTo, 'charlie');
-    assertEquals(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].result, 'Expected RTC message was not received');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.sentBy).toEqual('alice');
+    expect(report.resultsByName.aliceSendsPayloadTargetToCharlie[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
+    expect(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.bobDoesNotReceiveCharlieTargetedMessage[0].result).toEqual('Expected RTC message was not received');
 });
 
-Deno.test('createRallarInMemoryProvider can execute two-peer scenario', async () => {
+test('createRallarInMemoryProvider can execute two-peer scenario', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const aliceToBob = {
@@ -341,17 +341,17 @@ Deno.test('createRallarInMemoryProvider can execute two-peer scenario', async ()
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryMode, 'direct');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence, 1);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliveryMode).toEqual('direct');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.matchedMessage.data.deliverySequence).toEqual(1);
 });
 
-Deno.test('createRallarInMemoryProvider reports failure when peer connects twice', async () => {
+test('createRallarInMemoryProvider reports failure when peer connects twice', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const report = await executeBlackBox(
@@ -397,17 +397,14 @@ Deno.test('createRallarInMemoryProvider reports failure when peer connects twice
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAliceSecond[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAliceSecond[0].result, 'RTC connect failed');
-    assertEquals(
-        report.resultsByName.connectAliceSecond[0].actual.exception,
-        'Rallar in-memory RTC peer is already connected: alice'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAliceSecond[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAliceSecond[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAliceSecond[0].actual.exception).toEqual('Rallar in-memory RTC peer is already connected: alice');
 });
 
-Deno.test('createRallarInMemoryProvider allows peer to reconnect after close', async () => {
+test('createRallarInMemoryProvider allows peer to reconnect after close', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const report = await executeBlackBox(
@@ -469,13 +466,13 @@ Deno.test('createRallarInMemoryProvider allows peer to reconnect after close', a
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAliceFirst[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAliceSecond[0].status, 'SUCCESS');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAliceFirst[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAliceSecond[0].status).toEqual('SUCCESS');
 });
 
-Deno.test('createRallarInMemoryProvider emits close diagnostics', async () => {
+test('createRallarInMemoryProvider emits close diagnostics', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const report = await executeBlackBox(
@@ -549,16 +546,16 @@ Deno.test('createRallarInMemoryProvider emits close diagnostics', async () => {
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.connection, 'aliceRtc');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.roomId, 'room-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.closedBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.connection).toEqual('aliceRtc');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.roomId).toEqual('room-1');
 });
 
-Deno.test('createRallarInMemoryProvider emits group and overlay close diagnostics', async () => {
+test('createRallarInMemoryProvider emits group and overlay close diagnostics', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const report = await executeBlackBox(
@@ -640,15 +637,15 @@ Deno.test('createRallarInMemoryProvider emits group and overlay close diagnostic
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId, 'group-1');
-    assertEquals(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId, 'overlay-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.groupId).toEqual('group-1');
+    expect(report.resultsByName.waitForAliceClose[0].actual.matchedCloseEvent.overlayId).toEqual('overlay-1');
 });
 
-Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime when no target is specified', async () => {
+test('createRallarWebRtcProvider can broadcast through in-memory runtime when no target is specified', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -761,14 +758,14 @@ Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime wh
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceBroadcastsToRoom[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceBroadcastsToRoom[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].result, 'Expected RTC message was not received');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceBroadcastsToRoom[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceBroadcastsToRoom[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.charlieDoesNotReceiveOtherRoomBroadcast[0].result).toEqual('Expected RTC message was not received');
 });
 
-Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime with explicit broadcast flag', async () => {
+test('createRallarWebRtcProvider can broadcast through in-memory runtime with explicit broadcast flag', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -885,22 +882,22 @@ Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime wi
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveredTo, 'bob');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredTo, 'charlie');
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveryMode, 'broadcast');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveryMode, 'broadcast');
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliverySequence, 1);
-    assertEquals(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliverySequence, 2);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceBroadcastsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
+    expect(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveryMode).toEqual('broadcast');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveryMode).toEqual('broadcast');
+    expect(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.aliceBroadcastsToBob[0].actual.matchedMessage.data.deliverySequence).toEqual(1);
+    expect(report.resultsByName.charlieReceivesExplicitBroadcast[0].actual.matchedMessage.data.deliverySequence).toEqual(2);
 });
 
-Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime with payload broadcast flag', async () => {
+test('createRallarWebRtcProvider can broadcast through in-memory runtime with payload broadcast flag', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -1017,20 +1014,20 @@ Deno.test('createRallarWebRtcProvider can broadcast through in-memory runtime wi
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.alicePayloadBroadcastsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredBy, 'rallar-in-memory-runtime');
-    assertEquals(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveredTo, 'bob');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredTo, 'charlie');
-    assertEquals(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveryMode, 'broadcast');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveryMode, 'broadcast');
-    assertEquals(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
-    assertEquals(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveryGroup, 'room-1');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.alicePayloadBroadcastsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredBy).toEqual('rallar-in-memory-runtime');
+    expect(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveredTo).toEqual('bob');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveredTo).toEqual('charlie');
+    expect(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveryMode).toEqual('broadcast');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveryMode).toEqual('broadcast');
+    expect(report.resultsByName.alicePayloadBroadcastsToBob[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
+    expect(report.resultsByName.charlieReceivesPayloadBroadcast[0].actual.matchedMessage.data.deliveryGroup).toEqual('room-1');
 });
 
-Deno.test('createRallarWebRtcProvider reports in-memory runtime failure when broadcast has no targets', async () => {
+test('createRallarWebRtcProvider reports in-memory runtime failure when broadcast has no targets', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -1081,16 +1078,15 @@ Deno.test('createRallarWebRtcProvider reports in-memory runtime failure when bro
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceBroadcastsToEmptyRoom[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceBroadcastsToEmptyRoom[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceBroadcastsToEmptyRoom[0].actual.exception,
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceBroadcastsToEmptyRoom[0].actual.exception).toEqual(
         'Rallar in-memory RTC broadcast has no connected targets for peer: alice'
     );
 });
 
-Deno.test('createRallarWebRtcProvider reports in-memory runtime failure when target is missing', async () => {
+test('createRallarWebRtcProvider reports in-memory runtime failure when target is missing', async () => {
     const provider = createRallarWebRtcProvider({
         createSession: createRallarInMemoryRuntime({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } }).connect
     });
@@ -1143,11 +1139,8 @@ Deno.test('createRallarWebRtcProvider reports in-memory runtime failure when tar
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSendsToMissingBob[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSendsToMissingBob[0].result, 'RTC send failed');
-    assertEquals(
-        report.resultsByName.aliceSendsToMissingBob[0].actual.exception,
-        'Rallar in-memory RTC target is not connected: missing-bob'
-    );
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSendsToMissingBob[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSendsToMissingBob[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSendsToMissingBob[0].actual.exception).toEqual('Rallar in-memory RTC target is not connected: missing-bob');
 });

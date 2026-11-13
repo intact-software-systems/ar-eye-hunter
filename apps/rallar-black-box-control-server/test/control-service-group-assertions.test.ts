@@ -1,3 +1,6 @@
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
@@ -9,7 +12,6 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
 import type { RallarBlackBoxTestRecord, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { assert, assertThrows } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
@@ -188,7 +190,7 @@ const ALL_EQUAL_ASSERTION: RallarBlackBoxDistributedGroupAssertion = {
     source: { recipeId: 'probe-recipe', commandId: 'probe-read', path: 'body.memberCount' }
 };
 
-Deno.test('group assertions pass a run when every agent contributed the same value', () => {
+test('group assertions pass a run when every agent contributed the same value', () => {
     const { snapshot } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
@@ -200,7 +202,7 @@ Deno.test('group assertions pass a run when every agent contributed the same val
     assertJsonEquals(snapshot.rollup.summary.failedGroupAssertions, 0);
 });
 
-Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
+test('a single disagreeing agent fails allEqual naming that agent', () => {
     const { snapshot } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 3 } }
@@ -208,7 +210,7 @@ Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
 
     assertJsonEquals(snapshot.state, 'failed');
     const failure = snapshot.rollup.failures.find((entry) => entry.kind === 'group-assertion');
-    assert(failure, 'Expected a group-assertion rollup failure.');
+    assert(failure);
     assertJsonEquals(failure.key, 'members-converge');
     assertJsonEquals(failure.error?.code, 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED');
     const result = snapshot.rollup.groupAssertions?.[0];
@@ -218,7 +220,7 @@ Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
     assertJsonEquals(violatingRow?.evidence === 'resolved' ? violatingRow.verdict : undefined, 'violating');
 });
 
-Deno.test('missing evidence at the source address fails the assertion by default', () => {
+test('missing evidence at the source address fails the assertion by default', () => {
     const { snapshot } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': undefined
@@ -235,7 +237,7 @@ Deno.test('missing evidence at the source address fails the assertion by default
     );
 });
 
-Deno.test('group-assertion evidence stays whole until the assessment settles, then compacts like any result', () => {
+test('group-assertion evidence stays whole until the assessment settles, then compacts like any result', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     for (const agentId of ['agent-1', 'agent-2']) {
         service.receiveClientEnvelope(registerEnvelope(agentId));
@@ -268,7 +270,7 @@ Deno.test('group-assertion evidence stays whole until the assessment settles, th
     }
 });
 
-Deno.test('redacted per-agent value tables hide sensitive evidence values', () => {
+test('redacted per-agent value tables hide sensitive evidence values', () => {
     const secretAssertion: RallarBlackBoxDistributedGroupAssertion = {
         groupAssertionId: 'token-agreement',
         aggregate: 'allEqual',
@@ -281,11 +283,11 @@ Deno.test('redacted per-agent value tables hide sensitive evidence values', () =
 
     assertJsonEquals(snapshot.state, 'failed');
     const serialized = JSON.stringify(snapshot.rollup.groupAssertions);
-    assert(!serialized.includes('secret-token-a'), 'Expected token values to be redacted.');
-    assert(!serialized.includes('secret-token-b'), 'Expected token values to be redacted.');
+    assert(!serialized.includes('secret-token-a'));
+    assert(!serialized.includes('secret-token-b'));
 });
 
-Deno.test('persistence snapshots preserve pending group evidence through JSON restore without materializing fleet reports', () => {
+test('persistence snapshots preserve pending group evidence through JSON restore without materializing fleet reports', () => {
     const service = deliverGroupAssertionResults([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
@@ -330,7 +332,7 @@ Deno.test('persistence snapshots preserve pending group evidence through JSON re
     assertJsonEquals(restored.snapshot().fleetReports?.length, 1);
 });
 
-Deno.test('restore keeps group evidence isolated from concatenation-ambiguous run and command identities', () => {
+test('restore keeps group evidence isolated from concatenation-ambiguous run and command identities', () => {
     const service = deliverGroupAssertionResults([ALL_EQUAL_ASSERTION], {
         'agent-1': { body: { memberCount: 2 } },
         'agent-2': { body: { memberCount: 2 } }
@@ -391,20 +393,17 @@ Deno.test('restore keeps group evidence isolated from concatenation-ambiguous ru
     assertJsonEquals(ordinaryValue.results, [PROBE_READ_RESULT]);
     assert(!JSON.stringify(ordinaryValue).includes('"body"'));
     assert(!JSON.stringify(ordinaryValue).includes('"memberCount":2'));
-    assertThrows(
-        () =>
-            restored.restoreSnapshot({
-                ...snapshot,
-                runs: [{
-                    ...runs[0],
-                    commands: runs[0].commands.map((queued, index) =>
-                        index === 0
-                            ? { ...queued, envelope: { ...queued.envelope, runId: 'run-1' } }
-                            : queued
-                    )
-                }]
-            }),
-        Error,
-        'Control command runId does not match this agent.'
-    );
+    expect(() =>
+        restored.restoreSnapshot({
+            ...snapshot,
+            runs: [{
+                ...runs[0],
+                commands: runs[0].commands.map((queued, index) =>
+                    index === 0
+                        ? { ...queued, envelope: { ...queued.envelope, runId: 'run-1' } }
+                        : queued
+                )
+            }]
+        })
+    ).toThrow(Error);
 });

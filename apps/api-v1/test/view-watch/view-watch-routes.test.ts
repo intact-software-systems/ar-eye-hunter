@@ -2,6 +2,7 @@ import { authenticationRequired } from '@shared-server/http/request-auth-service
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ViewWatchCommand } from '@shared-server/rallar-system/view-watch/view-watch-command.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { registerViewWatchRoutes, type ViewWatchRouteDependencies } from '../../src/view-watch/register-view-watch-routes.ts';
 import { createTracedApiTestApp } from '../services/create-traced-api-test-app.ts';
@@ -36,7 +37,7 @@ function dependencies(commands: ViewWatchCommand[]): ViewWatchRouteDependencies 
     };
 }
 
-Deno.test('watch route binds scope and issued authority, and returns the committed registration token', async () => {
+test('watch route binds scope and issued authority, and returns the committed registration token', async () => {
     const commands: ViewWatchCommand[] = [];
     const app = createTracedApiTestApp();
     registerViewWatchRoutes(app, dependencies(commands));
@@ -61,7 +62,7 @@ Deno.test('watch route binds scope and issued authority, and returns the committ
     }]);
 });
 
-Deno.test('watch route rejects missing auth, forged principal, malformed shape and short request IDs before admission', async () => {
+test('watch route rejects missing auth, forged principal, malformed shape and short request IDs before admission', async () => {
     const commands: ViewWatchCommand[] = [];
     const unauthenticated = createTracedApiTestApp();
     registerViewWatchRoutes(unauthenticated, { ...dependencies(commands), requireSession: () => Promise.reject(authenticationRequired('Sign in')) });
@@ -81,7 +82,7 @@ Deno.test('watch route rejects missing auth, forged principal, malformed shape a
     assert.deepEqual(commands, []);
 });
 
-Deno.test('watch route admits the closed tournament family and rejects an invented family before mutation', async () => {
+test('watch route admits the closed tournament family and rejects an invented family before mutation', async () => {
     const commands: ViewWatchCommand[] = [];
     const app = createTracedApiTestApp();
     registerViewWatchRoutes(app, dependencies(commands));

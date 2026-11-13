@@ -33,19 +33,13 @@ describe('governed branch RTC capture CLI', () => {
     it.each([['capture-live-rtc', 'invalid', 'unsupported-capture-environment'], ['observe-live-rtc', 'E4-pg', 'unsupported-option']])(
         'refuses unsupported %s environment before denied runtime access',
         (command, environment, code) => {
-            const result = spawnSync('deno', [
+            const result = spawnSync('bun', [
                 'run',
-                '--cached-only',
-                '--no-check',
-                '--config=packages/shared-rtc-bench/deno.json',
-                '--allow-read',
-                '--deny-env',
-                '--deny-run',
                 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
                 command!,
                 ...liveRtcObserveArguments.slice(1),
                 '--environment=' + environment
-            ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });
+            ], { encoding: 'utf8' });
             expect(result.status).toBe(64);
             expect(result.stdout).toBe('');
             expect(JSON.parse(result.stderr.trim())).toEqual([expect.objectContaining({ code })]);
@@ -149,37 +143,25 @@ describe('governed branch RTC capture CLI', () => {
 });
 
 describe('RTC performance observation CLI', () => {
-    it('refuses selected invalid ambient capture at the actual Deno entry before live process effects', () => {
-        const result = spawnSync('deno', [
+    it('refuses selected invalid ambient capture at the actual Bun entry before live process effects', () => {
+        const result = spawnSync('bun', [
             'run',
-            '--cached-only',
-            '--no-check',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--allow-read',
-            '--allow-env',
-            '--deny-run',
             'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
             ...liveRtcObserveArguments
-        ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1', RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'Native' } });
+        ], { encoding: 'utf8', env: { ...process.env, RALLAR_BLACK_BOX_RTC_CAPTURE_MODE: 'Native' } });
         expect(result.status).toBe(64);
         expect(JSON.parse(result.stderr.trim())).toEqual([
             expect.objectContaining({ code: 'invalid-rtc-capture-mode' })
         ]);
     });
 
-    it('parses invalid live selector before reading even denied ambient environment at the actual Deno entry', () => {
-        const result = spawnSync('deno', [
+    it('parses invalid live selector before reading even denied ambient environment at the actual Bun entry', () => {
+        const result = spawnSync('bun', [
             'run',
-            '--cached-only',
-            '--no-check',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--allow-read',
-            '--deny-env',
-            '--deny-run',
             'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
             ...liveRtcObserveArguments,
             '--rtc-capture-mode=Native'
-        ], { encoding: 'utf8', env: { ...process.env, DENO_NO_UPDATE_CHECK: '1' } });
+        ], { encoding: 'utf8' });
         expect(result.status).toBe(64);
         expect(JSON.parse(result.stderr.trim())).toEqual([expect.objectContaining({ code: 'invalid-rtc-capture-mode' })]);
     });

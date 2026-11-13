@@ -178,7 +178,8 @@ function changedProductionFiles(changes, input) {
 function isChangedProductionFile(file) {
     const normalized = file.replace(/\\/gu, '/');
     const isRuntime = normalized.startsWith('apps/') || normalized.startsWith('packages/');
-    const isOperational = normalized.startsWith('scripts/deploy/') || normalized.startsWith('scripts/hosted-rallar/actions/');
+    const isOperational = normalized.startsWith('scripts/deploy/') ||
+        normalized.startsWith('scripts/hosted-rallar/actions/');
     if ((!isRuntime && !isOperational) || isNonProductionPath(normalized)) {
         return false;
     }

@@ -27,7 +27,6 @@ const checkedExtensions = new Set(['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.mjs
 const outputContractExtensions = new Set(['.ts', '.tsx', '.mts', '.cts']);
 const skippedDirectoryNames = new Set([
     '.git',
-    '.deno',
     '.next',
     '.turbo',
     '.parcel-cache',

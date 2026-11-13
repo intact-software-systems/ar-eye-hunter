@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -182,7 +183,7 @@ function readConflictedTransaction(fixture: ConnectWriteFixture): RallarTimingEv
     return conflicted[0]!;
 }
 
-Deno.test('an applied authorised connect writes its runtime rows, ticket and lifecycle in one guarded batch', async () => {
+test('an applied authorised connect writes its runtime rows, ticket and lifecycle in one guarded batch', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createConnectWriteFixture(sql);
 
@@ -241,7 +242,7 @@ async function runGuardConflict(fixture: ConnectWriteFixture, input: GuardConfli
     return { conflicted: readConflictedTransaction(fixture), beforeWrite, afterRollback, retried: await retried };
 }
 
-Deno.test('a stale principal revision rolls the whole connect transaction back as a typed conflict at its first statement', async () => {
+test('a stale principal revision rolls the whole connect transaction back as a typed conflict at its first statement', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createConnectWriteFixture(sql);
         await connectApplied(fixture, 'generation-first');
@@ -265,7 +266,7 @@ Deno.test('a stale principal revision rolls the whole connect transaction back a
     });
 });
 
-Deno.test('a superseded connect whose ticket was spent after its read rolls back on the ticket guard and is then rejected', async () => {
+test('a superseded connect whose ticket was spent after its read rolls back on the ticket guard and is then rejected', async () => {
     await withPGliteSql(async (sql) => {
         const fixture = await createConnectWriteFixture(sql);
         const newerStartedAtEpochMs = Date.now();
@@ -309,7 +310,7 @@ async function writeConnectBatch(
     });
 }
 
-Deno.test('a live proof under a connect row\'s key rolls the connect\'s guarded batch back as a corruption, and a conflict takes precedence', async () => {
+test('a live proof under a connect row\'s key rolls the connect\'s guarded batch back as a corruption, and a conflict takes precedence', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
         const entry = createTrackIndexTestEntry({

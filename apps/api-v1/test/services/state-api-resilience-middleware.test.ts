@@ -1,9 +1,10 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import type { ApiV1StateApiConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import { createStateApiResilienceMiddleware } from '../../src/services/state-api-resilience-middleware.ts';
 
-Deno.test('state API event-list middleware rate limits by authenticated client id', async () => {
+test('state API event-list middleware rate limits by authenticated client id', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',
@@ -33,7 +34,7 @@ Deno.test('state API event-list middleware rate limits by authenticated client i
     });
 });
 
-Deno.test('state API event page middleware uses event-list rate limits', async () => {
+test('state API event page middleware uses event-list rate limits', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',
@@ -63,7 +64,7 @@ Deno.test('state API event page middleware uses event-list rate limits', async (
     });
 });
 
-Deno.test('state API circuit breaker opens after repeated server failures', async () => {
+test('state API circuit breaker opens after repeated server failures', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',
@@ -92,7 +93,7 @@ Deno.test('state API circuit breaker opens after repeated server failures', asyn
     });
 });
 
-Deno.test('state API circuit breaker ignores repeated revision-floor conflicts', async () => {
+test('state API circuit breaker ignores repeated revision-floor conflicts', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',
@@ -121,7 +122,7 @@ Deno.test('state API circuit breaker ignores repeated revision-floor conflicts',
     assert.equal(second.status, 409);
 });
 
-Deno.test('state API rate limiting uses the canonical client mutation failure', async () => {
+test('state API rate limiting uses the canonical client mutation failure', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',
@@ -160,7 +161,7 @@ Deno.test('state API rate limiting uses the canonical client mutation failure', 
     });
 });
 
-Deno.test('state API circuit breaking uses the canonical client mutation failure', async () => {
+test('state API circuit breaking uses the canonical client mutation failure', async () => {
     const app = new Hono();
     app.use(
         '/api/state/*',

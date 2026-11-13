@@ -222,7 +222,7 @@ async function prepareStartupBuild(fixture: StartupFixture): Promise<void> {
 function createRuntimeObservation(caseKey: RtcBaselineCaseKeyDto): FullStackRtcProductionAttempt['runtimeObservation'] {
     return {
         git: provenance.git,
-        runtime: { node: 'v24', npm: '11', deno: '2', playwright: '1', chromium: '149' },
+        runtime: { node: 'v24', npm: '11', bun: '2', playwright: '1', chromium: '149' },
         host: { os: 'linux', kernel: '1', architecture: 'x64', logicalCpuCount: 4, cpuModel: 'fixture', totalMemoryBytes: 1, executionContext: 'local' },
         timing: {
             startedAtUtc: '2026-10-18T10:00:00.000Z',

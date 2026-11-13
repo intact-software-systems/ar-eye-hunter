@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
+import { inspect } from 'node:util';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
@@ -141,9 +142,9 @@ async function verifyTicketRejection(
         assert.deepEqual(await fixture.runtime.findAllEntries('auth-sessions:ws-tickets'), before);
         assert.equal(fixture.runtime.ticketReads.get(authTicketDigestKey(ticketDigest)), 1);
         await verifyNothingQueued(fixture.sql);
-        const rendered = Deno.inspect(loggedCalls, { depth: Infinity });
+        const rendered = inspect(loggedCalls, { depth: Infinity });
         assert.match(rendered, /RequestAuthFailure/u);
-        assert.match(rendered, /sessionId: "stored-session"/u);
+        assert.match(rendered, /sessionId: 'stored-session'/u);
         assert.equal(rendered.includes(ticketDigest), false);
         assert.equal(rendered.includes(await hashAuthSecret(SESSION.accessToken)), false);
         for (const entry of before) {

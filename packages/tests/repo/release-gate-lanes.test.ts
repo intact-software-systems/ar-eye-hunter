@@ -95,15 +95,15 @@ describe('Release Gate lanes', () => {
             'test:api-v1:black-box:postgres:auth-logout'
         ]));
         for (
-            const denoCheck of [
-                'npm --workspace @ar-eye-hunter/shared-test run check:deno',
-                '(cd apps/api-v1 && deno task check)',
-                '(cd apps/rallar-black-box-control-server && deno task check)',
-                '(cd apps/ar-eye-hunter-server-v1 && deno task check)',
-                '(cd apps/relic-hunter-server-v1 && deno task check)'
+            const bunCheck of [
+                'npm --workspace @ar-eye-hunter/shared-test run check',
+                '(cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit)',
+                '(cd apps/rallar-black-box-control-server && bunx tsc -p tsconfig.json --noEmit)',
+                '(cd apps/ar-eye-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)',
+                '(cd apps/relic-hunter-server-v1 && bunx tsc -p tsconfig.json --noEmit)'
             ]
         ) {
-            expect(laneRuns).toContain(denoCheck);
+            expect(laneRuns).toContain(bunCheck);
         }
     });
 

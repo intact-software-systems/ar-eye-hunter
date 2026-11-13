@@ -2,6 +2,9 @@ import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar
 import type { Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
+/** The heap counters a sample line reports; `process.memoryUsage()` satisfies it. */
+export type ApiHeapMemoryUsage = Pick<NodeJS.MemoryUsage, 'rss' | 'heapUsed' | 'heapTotal' | 'external'>;
+
 export interface StartHeapSampleTimingInput {
     readonly timers: Timers;
     /** Undefined while timing logs are off: nothing is scheduled, so no sample is collected, read or built. */
@@ -10,7 +13,7 @@ export interface StartHeapSampleTimingInput {
     readonly intervalMs: number;
     /** Undefined where the runtime exposes no collector; each sample then reads the heap as it stands. */
     readonly collectGarbage: (() => void) | undefined;
-    readonly readMemoryUsage: () => Deno.MemoryUsage;
+    readonly readMemoryUsage: () => ApiHeapMemoryUsage;
     readonly readUptimeMs: () => number;
 }
 

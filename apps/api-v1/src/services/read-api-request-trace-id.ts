@@ -1,6 +1,6 @@
-import type { Context } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
 
-declare module 'jsr:@hono/hono@4.11.9' {
+declare module 'hono' {
     interface ContextVariableMap {
         traceId: string;
     }

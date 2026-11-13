@@ -1,3 +1,5 @@
+import { test } from 'bun:test';
+
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins, createControlResponseHeaders, resolveCorsAllowOrigin } from '../src/cors.ts';
 
 function assertEquals<T>(actual: T, expected: T): void {
@@ -8,17 +10,17 @@ function assertEquals<T>(actual: T, expected: T): void {
     }
 }
 
-Deno.test('control CORS origins default to wildcard when no request policy origins are configured', () => {
+test('control CORS origins default to wildcard when no request policy origins are configured', () => {
     assertEquals(corsOriginsFromAllowedOrigins([]), ['*']);
 });
 
-Deno.test('control CORS origins reuse existing request policy origins', () => {
+test('control CORS origins reuse existing request policy origins', () => {
     const origins = ['http://localhost:5176'];
 
     assertEquals(corsOriginsFromAllowedOrigins(origins), origins);
 });
 
-Deno.test('control CORS resolves configured origins from the request origin', () => {
+test('control CORS resolves configured origins from the request origin', () => {
     const origins = ['http://localhost:5176'];
 
     assertEquals(
@@ -31,7 +33,7 @@ Deno.test('control CORS resolves configured origins from the request origin', ()
     );
 });
 
-Deno.test('control wildcard CORS uses a literal wildcard response', () => {
+test('control wildcard CORS uses a literal wildcard response', () => {
     const request = new Request('http://localhost:5180/health', {
         headers: {
             origin: 'http://localhost:5176'
@@ -50,7 +52,7 @@ Deno.test('control wildcard CORS uses a literal wildcard response', () => {
     assertEquals(response.headers.get('vary'), null);
 });
 
-Deno.test('control response headers use request policy origins when request origin is allowed', () => {
+test('control response headers use request policy origins when request origin is allowed', () => {
     const request = new Request('http://localhost:5180/health', {
         headers: {
             origin: 'http://localhost:5176'
@@ -73,7 +75,7 @@ Deno.test('control response headers use request policy origins when request orig
     assertEquals(response.headers.get('vary'), 'Origin');
 });
 
-Deno.test('control response headers omit allow-origin when configured origins reject request origin', () => {
+test('control response headers omit allow-origin when configured origins reject request origin', () => {
     const request = new Request('http://localhost:5180/health', {
         headers: {
             origin: 'http://127.0.0.1:5176'
@@ -92,7 +94,7 @@ Deno.test('control response headers omit allow-origin when configured origins re
     assertEquals(response.headers.get('vary'), 'Origin');
 });
 
-Deno.test('control CORS leaves websocket upgrade responses untouched', () => {
+test('control CORS leaves websocket upgrade responses untouched', () => {
     const request = new Request('http://localhost:5180/control', {
         headers: {
             origin: 'http://localhost:5176'

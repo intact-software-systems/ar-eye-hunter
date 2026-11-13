@@ -5,17 +5,6 @@ import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
-interface GlobalEnv {
-    Deno?: Readonly<{
-        env: Readonly<{
-            get(key: string): string | undefined;
-        }>;
-    }>;
-    process?: Readonly<{
-        env?: Readonly<Record<string, string | undefined>>;
-    }>;
-}
-
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
@@ -107,6 +96,5 @@ function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
 }
 
 function readEnv(key: string): string | undefined {
-    const globals = globalThis as GlobalEnv;
-    return globals.Deno?.env.get(key) ?? globals.process?.env?.[key];
+    return process.env[key];
 }

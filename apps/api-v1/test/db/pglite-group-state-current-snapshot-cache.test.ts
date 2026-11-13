@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -90,7 +91,7 @@ class AudienceReadRuntime extends PSqlRuntimeStateRepository {
     }
 }
 
-Deno.test('five principal audiences share unchanged group values while retaining durable membership reads', async () => {
+test('five principal audiences share unchanged group values while retaining durable membership reads', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -115,7 +116,7 @@ Deno.test('five principal audiences share unchanged group values while retaining
     }
 });
 
-Deno.test('a principal audience observes revoked membership and expired presence despite a warm group cache', async () => {
+test('a principal audience observes revoked membership and expired presence despite a warm group cache', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -139,7 +140,7 @@ Deno.test('a principal audience observes revoked membership and expired presence
     }
 });
 
-Deno.test('a group written between the snapshot read and the second selection is read again from current authority', async () => {
+test('a group written between the snapshot read and the second selection is read again from current authority', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -158,7 +159,7 @@ Deno.test('a group written between the snapshot read and the second selection is
     }
 });
 
-Deno.test('a principal member row that moved between the two selections is read again from current authority', async () => {
+test('a principal member row that moved between the two selections is read again from current authority', async () => {
     const seeded = await seedCache();
     try {
         const stale = await seeded.cache.readSnapshots([REF]);
@@ -177,7 +178,7 @@ Deno.test('a principal member row that moved between the two selections is read 
     }
 });
 
-Deno.test('revocation committed between the two selections excludes the group', async () => {
+test('revocation committed between the two selections excludes the group', async () => {
     const seeded = await seedCache();
     try {
         const stale = await seeded.cache.readSnapshots([REF]);
@@ -196,7 +197,7 @@ Deno.test('revocation committed between the two selections excludes the group', 
     }
 });
 
-Deno.test('a failed current group read preserves the failure and allows a later fresh read', async () => {
+test('a failed current group read preserves the failure and allows a later fresh read', async () => {
     const seeded = await seedCache();
     try {
         const failure = new Error('version reader unavailable');
@@ -214,7 +215,7 @@ Deno.test('a failed current group read preserves the failure and allows a later 
     }
 });
 
-Deno.test('principal audience cache entries remain isolated by workspace', async () => {
+test('principal audience cache entries remain isolated by workspace', async () => {
     const seeded = await seedCache();
     try {
         const other = { ...REF, workspaceId: 'other-workspace' };
@@ -233,7 +234,7 @@ Deno.test('principal audience cache entries remain isolated by workspace', async
     }
 });
 
-Deno.test('a first read is one statement and a read of the unchanged group one revision probe', async () => {
+test('a first read is one statement and a read of the unchanged group one revision probe', async () => {
     const seeded = await seedCache();
     try {
         seeded.takeStatements();
@@ -250,7 +251,7 @@ Deno.test('a first read is one statement and a read of the unchanged group one r
     }
 });
 
-Deno.test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements', async () => {
+test('a write to the group, a member or a session moves the probe, and the next read is the written state in two statements', async () => {
     const seeded = await seedCache();
     try {
         await seeded.cache.readSnapshot(REF);
@@ -274,7 +275,7 @@ Deno.test('a write to the group, a member or a session moves the probe, and the 
     }
 });
 
-Deno.test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal', async () => {
+test('a removed member, session or group moves the probe as a shorter row set, and the next read shows the removal', async () => {
     const seeded = await seedCache();
     try {
         const group = await seeded.repository.findGroup(REF);
@@ -298,7 +299,7 @@ Deno.test('a removed member, session or group moves the probe as a shorter row s
     }
 });
 
-Deno.test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock', async () => {
+test('a cached snapshot is read again, without the session, once a presence lease it shows has expired on the cache clock', async () => {
     const seeded = await seedCache();
     try {
         assert.equal((await seeded.cache.readSnapshot(REF))?.activeSessions.length, 1);
@@ -317,7 +318,7 @@ Deno.test('a cached snapshot is read again, without the session, once a presence
     }
 });
 
-Deno.test('the cache sizes the groups it keeps and never keeps more than its entries cap', async () => {
+test('the cache sizes the groups it keeps and never keeps more than its entries cap', async () => {
     const seeded = await seedCache(2);
     try {
         const refs = ['second-room', 'third-room'].map((groupId) => ({ ...REF, groupId }));
@@ -338,7 +339,7 @@ Deno.test('the cache sizes the groups it keeps and never keeps more than its ent
     }
 });
 
-Deno.test('reading one group past the entries cap drops the oldest and reading it again is a full read', async () => {
+test('reading one group past the entries cap drops the oldest and reading it again is a full read', async () => {
     const maxEntries = 2;
     const second = { ...REF, groupId: 'second-room' };
     const third = { ...REF, groupId: 'third-room' };
@@ -363,7 +364,7 @@ Deno.test('reading one group past the entries cap drops the oldest and reading i
     }
 });
 
-Deno.test('a principal in 21 unchanged kept groups costs one version statement for all of them, and a changed group one probe plus one value read', async () => {
+test('a principal in 21 unchanged kept groups costs one version statement for all of them, and a changed group one probe plus one value read', async () => {
     const seeded = await seedCache(32);
     try {
         const refs = Array.from({ length: 20 }, (_, index) => ({ ...REF, groupId: `kept-room-${index}` }));
@@ -404,7 +405,7 @@ Deno.test('a principal in 21 unchanged kept groups costs one version statement f
     }
 });
 
-Deno.test('the cached principal group list answers in group-key order, as the scan and readability filter do', async () => {
+test('the cached principal group list answers in group-key order, as the scan and readability filter do', async () => {
     const seeded = await seedCache();
     try {
         const scope = { applicationId: REF.applicationId, workspaceId: REF.workspaceId };

@@ -9,6 +9,7 @@ import {
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_CONNECT_COMPLETION_MARGIN_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
@@ -287,7 +288,7 @@ export function createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
         requestPrefix: 'rtc-messages-principal',
         group,
         actor: '{auth.clientId}',
-        timeoutMs: 5_000
+        timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
     });
     const context = { options, group, connection, baseSetupCommands };
     return [
@@ -331,7 +332,7 @@ export function createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(
             requestPrefix: 'rtc-messages-all-peer',
             group,
             actor: '{auth.clientId}',
-            timeoutMs: 5_000
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
         })
     }, settleMetadata);
 }

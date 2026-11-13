@@ -9,6 +9,7 @@ import {
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
     groupRoomRef,
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
     rtcConnectReadiness
 } from './live-rtc-setup.ts';
 
@@ -271,7 +272,7 @@ function toRealtimeRecipe(context: RealtimeRecipeContext): RallarBlackBoxTestRec
                 requestPrefix: 'rtc-realtime',
                 group,
                 actor: '{auth.clientId}',
-                timeoutMs: 5_000
+                timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
             }),
             toRealtimeConnectCommand(context),
             executionMode === 'stream'

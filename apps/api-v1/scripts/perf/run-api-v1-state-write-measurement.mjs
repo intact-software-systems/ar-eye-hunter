@@ -108,7 +108,7 @@ class StateWriteMeasurement {
             const [command, args] of [
                 ['node', ['--version']],
                 ['npm', ['--version']],
-                ['deno', ['--version']],
+                ['bun', ['--version']],
                 ['docker', ['version']],
                 ['docker', ['compose', 'version']],
                 ['lscpu', []],
@@ -151,8 +151,7 @@ class StateWriteMeasurement {
             COMPOSE,
             'package.json',
             'package-lock.json',
-            'apps/api-v1/deno.json',
-            'apps/api-v1/deno.lock',
+            'apps/api-v1/tsconfig.json',
             'apps/api-v1/scripts/perf'
         ])).trim().split('\n');
         const inputs = [];
@@ -348,14 +347,11 @@ class StateWriteMeasurement {
             args.push(`--diagnostics-dir=${this.configuration.relativeOutput}/diagnostics`);
         }
         if (this.configuration.mode === 'cpu-profile') {
-            await this.readCommand('benchmark', 'deno', [
+            await this.readCommand('benchmark', 'bun', [
                 'run',
                 '--cpu-prof',
                 `--cpu-prof-dir=${join(this.configuration.output, `position-${this.position}-profile`)}`,
                 `--cpu-prof-name=position-${this.position}.cpuprofile`,
-                '-A',
-                '--config',
-                'apps/api-v1/deno.json',
                 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
                 ...args
             ]);

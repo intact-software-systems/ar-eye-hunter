@@ -1,5 +1,6 @@
 import type { ApiV1DatabaseNotificationPort } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { createPostgresLiveWsNoticeTransport } from '@api-v1/src/db/create-postgres-live-ws-notice-transport.ts';
+import { createJsonWebSocketEvents } from '@api-v1/src/runtime/create-json-web-socket-events.ts';
 import {
     installLiveWsNoticeSubscriber,
     sendReceivedLiveWsNotice
@@ -9,16 +10,21 @@ import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import { Hono } from 'hono';
+import { upgradeWebSocket, websocket, type BunWebSocketData } from 'hono/bun';
 import postgres from 'postgres';
 
-/** Controlled authenticated identities, production PostgreSQL notification transport, and native loopback WebSockets. */
+/**
+ * Controlled authenticated identities, production PostgreSQL notification transport, and native loopback
+ * WebSockets bridged into the server through the production `hono/bun` events.
+ */
 export class ArenaTournamentClusterNode {
     readonly physicalBytes: number[] = [];
     readonly socket = new JsonWebSocketServer();
     private readonly engine = new InboxOutboxEngine();
     private readonly database: ReturnType<typeof postgres>;
-    private readonly listener: Deno.HttpServer<Deno.NetAddr>;
+    private readonly listener: Bun.Server<BunWebSocketData>;
     private readonly clients: WebSocket[] = [];
     readonly service;
     readonly transport;
@@ -56,12 +62,19 @@ export class ArenaTournamentClusterNode {
                 expiresAtEpochMs: Date.now() + 60000
             })
         });
-        this.listener = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, (request) => {
-            const [id, generationId] = new URL(request.url).pathname.slice(1).split('/');
-            const { socket, response } = Deno.upgradeWebSocket(request);
-            this.socket.addConnection(new ConnectionContext({ id, generationId, socket }));
-            return response;
+        const app = new Hono();
+        app.get('/:id/:generationId', async (context) => {
+            await upgradeWebSocket(
+                context,
+                createJsonWebSocketEvents(this.socket, {
+                    id: context.req.param('id'),
+                    generationId: context.req.param('generationId'),
+                    generationStartedAtEpochMs: Date.now()
+                })
+            );
+            return new Response(null, { status: 101 });
         });
+        this.listener = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: app.fetch, websocket });
     }
 
     async subscribe(): Promise<void> {
@@ -78,7 +91,7 @@ export class ArenaTournamentClusterNode {
     }
 
     async connect(id: string, generation: string): Promise<string[]> {
-        const client = new WebSocket(`ws://127.0.0.1:${this.listener.addr.port}/${id}/${generation}`);
+        const client = new WebSocket(`ws://127.0.0.1:${this.listener.port}/${id}/${generation}`);
         this.clients.push(client);
         const frames: string[] = [];
         client.addEventListener('message', (event) => frames.push(String(event.data)));
@@ -94,7 +107,7 @@ export class ArenaTournamentClusterNode {
         for (const client of this.clients) {
             client.close();
         }
-        await this.listener.shutdown();
+        this.listener.stop();
         await this.service.dispose();
         await this.engine.stop();
         await this.database.end();

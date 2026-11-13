@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { LiveWsNotice } from '@shared-server/rallar-system/queue-pubsub/live-ws-notice.ts';
@@ -26,7 +27,7 @@ function createChannelRoutingNotificationPort(): ApiV1DatabaseNotificationPort {
     };
 }
 
-Deno.test('each pub/sub notice kind has a channel of its own', () => {
+test('each pub/sub notice kind has a channel of its own', () => {
     const channels = [
         API_V1_QUEUE_BOX_KEY_CHANNEL,
         API_V1_LIVE_WS_NOTICE_CHANNEL,
@@ -42,7 +43,7 @@ Deno.test('each pub/sub notice kind has a channel of its own', () => {
     assert.equal(relayed?.channel, API_V1_RELAYED_ACK_CHANNEL);
 });
 
-Deno.test('a live signalling notice reaches the live subscriber of another server and never the QueueBox key listener', async () => {
+test('a live signalling notice reaches the live subscriber of another server and never the QueueBox key listener', async () => {
     const notification = createChannelRoutingNotificationPort();
     const queueBoxMessages: QueueBoxPubSubMessage[] = [];
     await createApiV1QueuePubSubBridge({

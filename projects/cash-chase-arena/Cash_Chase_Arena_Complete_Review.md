@@ -781,7 +781,7 @@ The remaining feasibility risks require implementation evidence rather than more
 
 ### Not run
 
-- Full unit, Deno, Postgres, live RTC, or Playwright suites: unnecessary to prove a document-only analysis and may require services/browser environments.
+- Full unit, Bun, Postgres, live RTC, or Playwright suites: unnecessary to prove a document-only analysis and may require services/browser environments.
 - CCA build/tests/runtime/profiles: no CCA implementation exists.
 - External web research: no external compatibility fact was necessary for the conclusions; browser/library support remains a required future measurement matrix.
 
