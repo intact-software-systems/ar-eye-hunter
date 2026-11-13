@@ -35,7 +35,11 @@ export type GroupFormationView = Readonly<{
      * wall-clock time alone.
      */
     layoutStale: boolean;
-    /** The transient half: a replan is queued and due; null when none is. */
+    /**
+     * The transient half: a group-revision replan is queued and due, including one
+     * parked behind a head that has settled; null when none is. RTT-refresh work
+     * is not reported.
+     */
     pending: PendingTopologyReplan | null;
     /**
      * The attempt budget the series is spending, so an application can explain

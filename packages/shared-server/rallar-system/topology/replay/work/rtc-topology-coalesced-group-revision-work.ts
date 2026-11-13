@@ -44,6 +44,7 @@ import {
     decodeCurrentCoalescedGroupRevisionWork,
     type CoalescedMessageIdentity,
     type CurrentCoalescedGroupRevisionPredecessor,
+    type PreviousCoalescedGroupRevisionWork,
     type UnsupportedCoalescedGroupRevisionPredecessor
 } from './coalesced-group-revision-predecessor.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
@@ -260,6 +261,8 @@ function toCarriedDequeueAudit(previousEntry: ResourceEntry): ToCoalescedGroupRe
 
 export interface PendingTopologyReplanReader {
     findByKey(key: Key): Promise<ResourceEntry | null>;
+    /** The live NEW, RETRY and RESERVED rows of one topic and context; none is an empty list. */
+    readPendingByTopicAndContextId(topicId: string, contextId: string): Promise<readonly ResourceEntry[]>;
 }
 
 /** The stored coalesced head row's exact durable key, shared by writer and reader. */
@@ -273,33 +276,64 @@ export function toCoalescedGroupRevisionKey(groupRef: GroupRef): Key {
 
 /**
  * The transient half of product decision 11: is a replan queued for this
- * group, and when is it due? Read straight off the coalesced group-revision
+ * group, and when is it due? Read first off the coalesced group-revision
  * head row (I14 — its `dueAtEpochMs` doubles as the read surface's "when
  * will this settle"). Queued means the queue will still attempt it: a
  * waiting row (NEW/RETRY) and an executing row (RESERVED) both report
- * queued; a terminal row is settled work. A present row whose envelope no
+ * queued; a terminal row is settled work. A present head whose envelope no
  * longer decodes still reports queued, with a null due time and generation,
- * rather than hiding work the queue will attempt. Known residue, recorded in
- * the plan: a delta parked on a causal-suffixed successor row behind a
- * reserved head is invisible to this point read for at most its debounce
- * window — the head is RESERVED (reported queued) while the successor is
- * minted, so the blind window opens only between the head completing and
- * the successor dequeuing.
+ * rather than hiding work the queue will attempt.
+ *
+ * A replan written while the head executes parks on a causal-suffixed
+ * successor row, which outlives the head's completion as ordinary queued
+ * work. So when the head is not pending, the group's pending rows of the
+ * topology topic are read, and the earliest-due one that decodes as this
+ * room's coalesced group-revision work answers. Deliberate tradeoff: a row
+ * that does not decode as that is ignored, because it cannot be told apart
+ * from RTT-refresh work, and counting it would make `pending` wait on RTT
+ * refinement; RTT-refresh work is therefore never reported.
  */
 export async function readPendingTopologyReplan(
     reader: PendingTopologyReplanReader,
     groupRef: GroupRef
 ): Promise<PendingTopologyReplan | null> {
-    const entry = await reader.findByKey(toCoalescedGroupRevisionKey(groupRef));
-    if (entry === null || !isPendingCoalescedStatus(entry.status)) {
-        return null;
+    const headKey = toCoalescedGroupRevisionKey(groupRef);
+    const head = await reader.findByKey(headKey);
+    if (head !== null && isPendingCoalescedStatus(head.status)) {
+        return toPendingTopologyReplan(decodeCurrentCoalescedGroupRevisionWork(head));
     }
-    const metadata = decodeCurrentCoalescedGroupRevisionWork(entry)?.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+    const rows = await reader.readPendingByTopicAndContextId(headKey.topicId, headKey.contextId);
+    return toPendingTopologyReplanFromParkedRows(rows, toScopedOverlayId(groupRef));
+}
+
+function toPendingTopologyReplanFromParkedRows(
+    rows: readonly ResourceEntry[],
+    overlayId: string
+): PendingTopologyReplan | null {
+    let earliest: PreviousCoalescedGroupRevisionWork | null = null;
+    for (const row of rows) {
+        const work = decodeCurrentCoalescedGroupRevisionWork(row);
+        if (work === null || work.envelope.data.overlayId !== overlayId) {
+            continue;
+        }
+        if (earliest === null || toCoalescedDueAtEpochMs(work) < toCoalescedDueAtEpochMs(earliest)) {
+            earliest = work;
+        }
+    }
+    return earliest === null ? null : toPendingTopologyReplan(earliest);
+}
+
+function toPendingTopologyReplan(work: PreviousCoalescedGroupRevisionWork | null): PendingTopologyReplan {
+    const metadata = work?.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
     return {
         reconfigureQueued: true,
         dueAtEpochMs: metadata?.dueAtEpochMs ?? null,
         generation: metadata?.generation ?? null
     };
+}
+
+function toCoalescedDueAtEpochMs(work: PreviousCoalescedGroupRevisionWork): number {
+    return work.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs;
 }
 
 function isPendingCoalescedStatus(status: EntityStatus): boolean {
