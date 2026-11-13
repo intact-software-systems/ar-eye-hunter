@@ -152,7 +152,7 @@ that does not yet build make-before-break routing. This was found by an analysis
   delivered.
 - The `unauthorized` refusal is confirmed from the code: a hop that is not a neighbour in the accepted layout is refused
   with "RTC relay edge is not permitted by current server room topology", and no NACK is sent
-  (`resolveRtcRoomEdgeDenial` in `packages/shared/multicast/rtc-room-snapshot-admission.ts`).
+  (`resolveRtcRoomEdgeDenial` in `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`).
 - Still open: which server path produced the two hosted re-plans, with neither run recording the server's planning
   decision. Two paths can switch to a high-churn layout with no membership change and both skip #810's churn gate: the
   rebuild used as it is when a tree's leader-rooting or an update failure asks for a full rebuild, and the mesh rebuild,

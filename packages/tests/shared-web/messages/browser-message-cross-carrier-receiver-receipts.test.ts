@@ -41,7 +41,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
-import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { planRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';

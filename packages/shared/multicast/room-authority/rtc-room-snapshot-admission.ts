@@ -2,17 +2,20 @@ import {
     isRoomScopedALMessage,
     readALTargetGroupRef,
     type ALMessage
-} from '../al-contracts/al-contract.ts';
-import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multicast-audience.ts';
-import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
-import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
-import type { OverlayInfo } from '../api/api-config.ts';
-import { isSameGroupRef } from '../api/api-type-utils.ts';
-import { resolveRallarGroupLeaderSessionId } from '../api/group-director.ts';
-import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../api/group-types.ts';
-import { isRoomLayoutOverlay } from '../repository/is-accepted-room-layout-overlay.ts';
-import type { Either } from '../resilience/Either.ts';
-import type { RtcPublicationAdmitted, RtcPublicationRefusal } from './publication/compute-rtc-publication-admission.ts';
+} from '../../al-contracts/al-contract.ts';
+import { resolveALAdmittedRoomAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
+import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
+import type { OverlayInfo } from '../../api/api-config.ts';
+import { isSameGroupRef } from '../../api/api-type-utils.ts';
+import { resolveRallarGroupLeaderSessionId } from '../../api/group-director.ts';
+import type { GroupPresenceSession, GroupRef, GroupSnapshot } from '../../api/group-types.ts';
+import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
+import type { Either } from '../../resilience/Either.ts';
+import type {
+    RtcPublicationAdmitted,
+    RtcPublicationRefusal
+} from '../publication/compute-rtc-publication-admission.ts';
 import {
     resolveRtcRoomPeerDenial,
     resolveRtcRoomRosterPosition,

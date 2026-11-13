@@ -9,7 +9,7 @@ import type { RtcOutboundObservation } from './read-rtc-outbound-observation.ts'
 import {
     computeRtcRoomSnapshotAdmission,
     type RtcRoomSnapshotAdmission
-} from './rtc-room-snapshot-admission.ts';
+} from './room-authority/rtc-room-snapshot-admission.ts';
 import {
     isRtcUnfrozenRoomMessage,
     toRtcFrozenRoomMessage,

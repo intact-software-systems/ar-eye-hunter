@@ -10,7 +10,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience, toRtcAudienceNarrowing } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {

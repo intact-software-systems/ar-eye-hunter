@@ -1,11 +1,11 @@
-import type { ALMessage } from '../al-contracts/al-contract.ts';
-import { isSameGroupRef } from '../api/api-type-utils.ts';
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { isSameGroupRef } from '../../api/api-type-utils.ts';
 import type {
     GroupMember,
     GroupPresenceSession,
     GroupRef,
     GroupSnapshot
-} from '../api/group-types.ts';
+} from '../../api/group-types.ts';
 
 export type RtcRoomAuthorityDenial =
     | { readonly kind: 'pending'; readonly reason: string; }

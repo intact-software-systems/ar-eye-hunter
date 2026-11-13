@@ -24,7 +24,7 @@ import { isSameGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
-import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     findGroupStateSnapshotsBySessionIds,

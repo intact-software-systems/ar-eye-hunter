@@ -721,8 +721,8 @@ holds after each pass to `reportDeliveredMarkers`; the browser states it on the 
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it
-([`rtc-room-snapshot-admission.ts`](../../multicast/rtc-room-snapshot-admission.ts); the sender and peer
-verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/resolve-rtc-room-peer-denial.ts)). Behind the
+([`rtc-room-snapshot-admission.ts`](../../multicast/room-authority/rtc-room-snapshot-admission.ts); the sender and peer
+verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/room-authority/resolve-rtc-room-peer-denial.ts)). Behind the
 send's `minSnapshotVersion` or its `rosterVersion` the verdict is `pending`: the message is dropped
 `not-yet-in-sync`, its hop is NACKed with that reason, and the receiver refreshes the room once and
 re-admits the message once. At or beyond both, a sender whose member is absent or not `active` is

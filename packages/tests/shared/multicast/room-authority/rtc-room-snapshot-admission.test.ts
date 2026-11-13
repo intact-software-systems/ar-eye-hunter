@@ -17,10 +17,10 @@ import {
     computeRtcRoomSnapshotAdmission,
     toRtcPublicationHandlingPlan,
     toRtcRoomSnapshotHandlingPlan
-} from '@shared/multicast/rtc-room-snapshot-admission.ts';
+} from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { createGroupSnapshotFixture } from '../../../shared-web/authoritative-group-fixtures.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});

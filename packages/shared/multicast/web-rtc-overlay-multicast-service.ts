@@ -8,7 +8,10 @@ import type {
     OverlayMulticastForwarding,
     WebRtcOverlayMulticaster
 } from './overlay-multicast-contracts.ts';
-import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import {
+    computeRtcRoomSnapshotAdmission,
+    toRtcRoomSnapshotHandlingPlan
+} from './room-authority/rtc-room-snapshot-admission.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {

@@ -9,7 +9,7 @@ import {
     resolveRtcRoomRoutingEdges,
     type ResolveRtcRoomRoutingEdgesInput,
     type RtcRoomLayoutHistory
-} from '@shared/multicast/resolve-rtc-room-routing-edges.ts';
+} from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
 import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
 

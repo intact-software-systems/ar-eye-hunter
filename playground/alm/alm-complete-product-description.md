@@ -753,7 +753,7 @@ outbound route (D107).
 Durable replay rechecks snapshot readiness, preserves predecessor order, and
 ACKs the admitted upstream relay. Current coverage includes
 [durable replay](../../packages/tests/shared/multicast/rtc-snapshot-durable-replay.test.ts),
-[room snapshot admission](../../packages/tests/shared/multicast/rtc-room-snapshot-admission.test.ts),
+[room snapshot admission](../../packages/tests/shared/multicast/room-authority/rtc-room-snapshot-admission.test.ts),
 and [snapshot-floor admission](../../packages/tests/shared/rtc-snapshot-floor-admission.test.ts).
 
 **CURRENT — S3a, truthful at-least-once:** A typed send with no options is

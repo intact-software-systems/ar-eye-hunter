@@ -740,7 +740,7 @@ and it has no status list.
   on make-before-break routing (D644) and caps both campaign rungs (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
-  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`). Open: which
   server path produced the re-plans (neither run records the server's planning
   decision; a tree's leader-rooting or update-failure rebuild and the
   unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22

@@ -109,12 +109,12 @@ import {
 import { computeRtcReceiptKeyRefusal } from './receipt-proof/compute-rtc-receipt-key-refusal.ts';
 import { RtcReceiptProofVerifier } from './receipt-proof/rtc-receipt-proof-verifier.ts';
 import { toRtcReceiptProofDispatchPlan } from './receipt-proof/to-rtc-receipt-proof-dispatch-plan.ts';
-import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
-} from './rtc-room-snapshot-admission.ts';
+} from './room-authority/rtc-room-snapshot-admission.ts';
+import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-drop-reason-code-from-handling-plan.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
