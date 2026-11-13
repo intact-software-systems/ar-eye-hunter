@@ -77,6 +77,7 @@ export function createFormationView(groupRef: GroupRef, overrides: Partial<Group
         condition: 'inactive',
         remediation: 'none',
         coverageBasisLayoutIdentity: null,
+        causalRevision: { groupRevision: 1, presenceRevision: 1 },
         ...overrides
     };
 }

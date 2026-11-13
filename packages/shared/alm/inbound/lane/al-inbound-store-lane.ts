@@ -32,11 +32,14 @@ import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '../al-inbound-message-runtime.ts';
+import type { ALInboundPendingAdmission } from '../al-inbound-pending-admission.ts';
 import {
+    recordALInboundAdmissionOutcome,
     toALInboundClaimIdentity,
     toALInboundClaimTrace,
     type ALInboundDeferredEffect
 } from '../al-inbound-runtime-diagnostics.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
@@ -496,6 +499,21 @@ export class ALInboundStoreLane {
         catch { /* Optional diagnostics cannot change mandatory work. */ }
     }
 
+    /** Under the runtime's worker id, as its ingress stated the retention, on either lane. */
+    private recordReplayedAdmission(
+        pending: ALInboundPendingAdmission,
+        admitted: ALInboundMessageAdmission.ReplayResult['admission']
+    ): void {
+        if (admitted !== undefined) {
+            recordALInboundAdmissionOutcome(this.dependencies.diagnostics, {
+                workerId: this.input.runtime.effectWorkerId,
+                msg: pending.msg,
+                carrier: toALDeliveryCarrier(pending.source),
+                admitted
+            });
+        }
+    }
+
     /**
      * A replay commits inside the batch that claimed it, so the work it wrote is behind the page that
      * batch already read. Announcing it here gives that work a head read in the batch this batch's
@@ -508,6 +526,7 @@ export class ALInboundStoreLane {
         const payload = effect.payload;
         if (payload.kind === 'admit-message') {
             const replayed = await this.admission.replay(payload);
+            this.recordReplayedAdmission(payload, replayed.admission);
             if (replayed.wroteWork) {
                 this.commitWork();
             }

@@ -4,7 +4,6 @@ import type { ALDeliveryCarrier } from '../../al-contracts/al-control-value-code
 import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
-import { toALMessageTrace } from '../../al-contracts/trace/to-al-message-trace.ts';
 import type { StateScope } from '../../api/state-types.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
@@ -20,7 +19,7 @@ import type { ALOrderingObserver } from './admission/resolve-al-ordering-observe
 import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import type { ALInboundResyncRequired } from './al-inbound-resync-required.ts';
 import {
-    toALInboundAdmissionDiagnostics,
+    recordALInboundAdmissionOutcome,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
@@ -306,24 +305,18 @@ export class ALInboundMessageRuntime {
         return broughtDue.flat();
     }
 
-    /** A value that never decoded has no identity to record; this observation is optional. */
+    /** A value that never decoded has no identity to record. */
     private recordAdmissionOutcome(
         msg: ALMessage,
         source: ALInboundMessageRuntime.Source,
         admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Admission>
     ): void {
-        try {
-            this.dependencies.diagnostics?.({
-                kind: 'admission-outcome',
-                workerId: this.dependencies.effectWorkerId,
-                msgId: msg.id.msgId,
-                typeId: msg.payload.typeId,
-                carrier: toALDeliveryCarrier(source),
-                ...toALInboundAdmissionDiagnostics(admitted),
-                ...toALMessageTrace(msg)
-            });
-        }
-        catch { /* Optional diagnostics cannot change mandatory work. */ }
+        recordALInboundAdmissionOutcome(this.dependencies.diagnostics, {
+            workerId: this.dependencies.effectWorkerId,
+            msg,
+            carrier: toALDeliveryCarrier(source),
+            admitted
+        });
     }
 
     private async admitDecodedMessage(

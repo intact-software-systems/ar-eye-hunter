@@ -1,3 +1,4 @@
+import { setBrowserStateReadDiagnosticsSink } from '@shared-web/browser/state-read/diagnostics.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controller.ts';
@@ -83,6 +84,7 @@ export class BlackBoxRallarCloseOperation {
                 throw error;
             }
         }, activeCrdtOpens).finally(() => {
+            setBrowserStateReadDiagnosticsSink(undefined);
             this.#input.rallar.diagnostics.faults.clear();
             this.#input.rallar.diagnostics.storageFaults.clear();
             this.#input.rallar.diagnostics.congestion.reset();

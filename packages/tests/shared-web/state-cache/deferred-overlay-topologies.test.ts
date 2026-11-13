@@ -12,6 +12,7 @@ import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-
 import type { GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     findAcceptedOverlayById,
@@ -38,6 +39,9 @@ import {
     toSnapshotPageMessages,
     withGroupCausalRevision
 } from './browser-state-cache-lifecycle-fixtures.ts';
+
+/** One sink per file, so a connect's initialise and hydrate match as the middleware's do. */
+const passThroughGroupStateDiagnostics = createPassThroughGroupStateSnapshotChangeSink();
 
 const CLIENT: ClientInfo = { clientId: 'alice', sessionId: 'session-a', isOnline: true };
 const OTHERS = ['session-b', 'session-c'] as const;
@@ -103,6 +107,7 @@ describe('browser overlay adoption deferred until the own session is in the cach
 
         // A room refresh hydrates with its own options, which replaces the observer context.
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: browser.manager,
             clientData: CLIENT,
             clientSnapshots: [],
@@ -122,6 +127,7 @@ describe('browser overlay adoption deferred until the own session is in the cach
 
         await browser.receivePage(first);
         await browserStateCacheLifecycle.hydrate({
+            groupStateDiagnostics: passThroughGroupStateDiagnostics,
             webRtcGroupManager: browser.manager,
             clientData: CLIENT,
             clientSnapshots: [],
@@ -337,6 +343,7 @@ function installBrowser(): InstalledBrowser {
     let receive: ((message: ALMessage) => Promise<void>) | undefined;
     let receivePage: ((page: ALMessage) => Promise<void>) | undefined;
     browserStateCacheLifecycle.initialise({
+        groupStateDiagnostics: passThroughGroupStateDiagnostics,
         inbox: {
             onAllInboxMessagesDo: vi.fn((callback: { onMessage: (message: ALMessage) => Promise<void>; }) => {
                 receive = createPagedSnapshotReceiver(callback.onMessage);
@@ -356,6 +363,7 @@ function installBrowser(): InstalledBrowser {
         },
         hydrate: async (groupSnapshots) => {
             await browserStateCacheLifecycle.hydrate({
+                groupStateDiagnostics: passThroughGroupStateDiagnostics,
                 webRtcGroupManager: manager,
                 clientData: CLIENT,
                 clientSnapshots: [],
