@@ -520,3 +520,24 @@ and it has no status list.
 - Further room latency, capacity and recovery work should follow reproducible
   failures or participation evidence. Clickable journeys establish behavior and
   local timings, not adoption, OS-suspension behavior or a latency SLO.
+- The browser's floored group-state pull is not deduplicated per page
+  (`reconcile-group-state-delta.ts`): each write-nothing delta that resolves a
+  gap while its pull is in flight issues its own pull. A summary batch that does
+  not cover its snapshot costs a pull on every page behind it and a redundant one
+  on every page already level; the rate under a formation burst is unmeasured.
+  Waits on a pull counter in a lane and one in-flight pull per group.
+- A presence-summary work row that exhausts its 20 attempts
+  (`ResourceInboxRetryPolicy.ts` `DEFAULT_RESOURCE_INBOX_RETRY_POLICY`) goes
+  `FAILED` (`create-default-resource-inbox-dequeuer.ts`
+  `computeResourceInboxFailureDecision`): the outbox reader sets no exhaustion
+  finalizer (`outbox-queue-reader.ts`), so its delta is never sent and nothing
+  reports it. Waits on a finalizer or a counted terminal outcome for outbox work.
+- The presence-summary delta stamp relies on each event-bearing group write
+  advancing `snapshotVersion` by exactly one, and on presence writes keeping the
+  revision they read. The event-log pin in `group-mutation-result.test.ts`
+  exercises membership, grant, group-update and presence writes; lifecycle,
+  activation, transport, planned-layout, schedule and retention writers rest on
+  code reading. The stronger form is a rule in `computeGroupMutationWriteResult`
+  that refuses any other advance, plus one retention case (retention builds its
+  own result). Waits on a ruling that first tells fence rewrites, which keep the
+  version, apart from event-bearing writes.

@@ -31,7 +31,8 @@ vi.mock('@shared-server/rallar-system/group-state/presence/group-presence-summar
     return {
         ...original,
         computeGroupPresenceSummaryState: vi.fn(() => ({})),
-        validateGroupPresenceSummaryState: vi.fn(() => [])
+        validateGroupPresenceSummaryState: vi.fn(() => []),
+        resolveGroupStateDeltaPredecessorCausalRevision: vi.fn(() => ({ groupRevision: 1, presenceRevision: 1 }))
     };
 });
 

@@ -72,6 +72,7 @@ import {
 import {
     computeGroupPresenceSummaryState,
     computeGroupPresenceSummaryWork,
+    resolveGroupStateDeltaPredecessorCausalRevision,
     toTopologyReplanEnqueueFacts,
     validateGroupPresenceSummaryComputedWork,
     validateGroupPresenceSummaryState,
@@ -405,8 +406,19 @@ export class GroupPresenceSummaryWork {
             ? { items: candidates, deferred: [] }
             : computeGroupPresenceSummaryPage({ candidates, read: candidateRead, state });
         const reads = toGroupPresenceSummaryWorkReads(page.items, candidateRead);
+        const deltaPredecessorCausalRevision = resolveGroupStateDeltaPredecessorCausalRevision({
+            coalescedEvents: page.items.map((item) => item.work.event),
+            state,
+            presence: candidateRead.presence
+        });
         const expansions = page.items.map((item, index) =>
-            this.expand({ work: item.work, read: reads[index]!, state, traceId: item.traceId })
+            this.expand({
+                work: item.work,
+                read: reads[index]!,
+                state,
+                deltaPredecessorCausalRevision,
+                traceId: item.traceId
+            })
         );
         const outcome = await this.writeExpansions(database, { primary, expansions, computeStartedAtMs });
         return { outcome, deferred: page.deferred };

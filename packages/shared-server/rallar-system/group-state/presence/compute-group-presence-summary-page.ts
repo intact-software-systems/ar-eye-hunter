@@ -3,7 +3,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { isWithinStateSyncPayloadLimit } from '../../state-sync/state-sync-entry-computation.ts';
 import {
     computeGroupStateDeltaEnvelope,
-    toGroupPresenceSummaryPredecessorCausalRevision,
+    resolveGroupStateDeltaPredecessorCausalRevision,
     type GroupPresenceSummaryReservationRead,
     type GroupPresenceSummaryState,
     type GroupPresenceSummaryWorkRead
@@ -96,11 +96,16 @@ function toPage(candidates: readonly GroupPresenceSummaryWorkItem[], size: numbe
 /** Whether the first delta of a page of the first `size` candidates fits one AL payload. */
 function fitsPage(input: ComputeGroupPresenceSummaryPageInput, size: number): boolean {
     const items = sortGroupPresenceSummaryWorkByCausalOrder(input.candidates.slice(0, size));
+    const coalescedEvents = items.map((item) => item.work.event);
     return isWithinStateSyncPayloadLimit(computeGroupStateDeltaEnvelope({
         event: items[0]!.work.event,
-        coalescedEvents: items.map((item) => item.work.event),
+        coalescedEvents,
         summary: input.state.summary,
-        summaryPredecessorCausalRevision: toGroupPresenceSummaryPredecessorCausalRevision(input.read.presence),
+        predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision({
+            coalescedEvents,
+            state: input.state,
+            presence: input.read.presence
+        }),
         snapshot: input.state.snapshot
     }));
 }
