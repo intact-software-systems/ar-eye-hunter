@@ -17,9 +17,11 @@ import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/rallar-system/
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
-import { createApiV1SchemaPGliteSql } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 
 describe('RTC topology delivery log boundary', () => {
+    initApiV1SchemaPGliteTemplate();
+
     it('accepts only non-negative safe integer database values without coercion', () => {
         expect(readRtcTopologyDeliverySafeInteger(0, 'HEAD')).toBe(0);
         expect(readRtcTopologyDeliverySafeInteger(Number.MAX_SAFE_INTEGER, 'HEAD')).toBe(

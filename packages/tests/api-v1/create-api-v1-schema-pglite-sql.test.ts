@@ -1,10 +1,10 @@
-import { readFile } from 'node:fs/promises';
-
-import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
+import { readApiV1InMemorySchemaSql } from '../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
 import { createPGliteSqlClient, PGlite, type PGliteSql } from '../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
-import { createApiV1SchemaPGliteSql } from './create-api-v1-schema-pglite-sql.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from './create-api-v1-schema-pglite-sql.ts';
 
 describe('createApiV1SchemaPGliteSql', () => {
+    initApiV1SchemaPGliteTemplate();
+
     it('gives each test a private database that neither shares writes nor changes the template', async () => {
         const first = await openClone();
         const second = await openClone();
@@ -28,6 +28,15 @@ describe('createApiV1SchemaPGliteSql', () => {
     });
 });
 
+// Two template lifecycles in one module instance, as a run without per-file isolation would give two test files.
+describe.each(['first', 'second'])('the %s template lifecycle in one process', () => {
+    initApiV1SchemaPGliteTemplate();
+
+    it('clones a working database', async () => {
+        expect(await readRelation(await openClone(), 'resource_inbox')).toBe('resource_inbox');
+    });
+});
+
 async function openClone(): Promise<PGliteSql> {
     const sql = await createApiV1SchemaPGliteSql();
     onTestFinished(() => sql.close());
@@ -38,7 +47,7 @@ async function openClone(): Promise<PGliteSql> {
 async function openFreshSchemaInstance(): Promise<PGliteSql> {
     const sql = createPGliteSqlClient(new PGlite());
     onTestFinished(() => sql.close());
-    await sql.exec(await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8'));
+    await sql.exec(await readApiV1InMemorySchemaSql());
     return sql;
 }
 

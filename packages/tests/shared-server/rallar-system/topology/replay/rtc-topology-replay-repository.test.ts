@@ -4,13 +4,15 @@ import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
 import { PSqlRtcTopologyReplayRepository } from '@shared-server/rallar-system/topology/replay/postgres/p-sql-rtc-topology-replay-repository.ts';
 import type { PGliteSql } from '../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
-import { createApiV1SchemaPGliteSql } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 
 const CONSUMER = '00000000-0000-4000-8000-000000000001';
 const PUBLISHER_A = '00000000-0000-4000-8000-000000000002';
 const PUBLISHER_B = '00000000-0000-4000-8000-000000000003';
 
 describe('PSqlRtcTopologyReplayRepository', () => {
+    initApiV1SchemaPGliteTemplate();
+
     it('atomically seeds a new consumer to every captured publisher HEAD', async () => {
         await withReplayRepository(async (sql, repository) => {
             await insertStream(sql, CONSUMER, { headSequence: 0 });

@@ -60,7 +60,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
-import { createApiV1SchemaPGliteSql } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import {
     createLifecycleSql,
     createRuntimeStatePostgresSql,
@@ -73,6 +73,9 @@ import {
 } from './group-mutation-test-runtime.ts';
 
 describe.each(['memory', 'postgres'] as const)('connect trigger SQL atomicity (%s)', (backend) => {
+    if (backend === 'memory') {
+        initApiV1SchemaPGliteTemplate();
+    }
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
 
     sqlIt('rolls back a late outbox collision, commits the exact latch with group/plan, and rejects stale replay', async () => {

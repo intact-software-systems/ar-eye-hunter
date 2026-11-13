@@ -44,7 +44,7 @@ import {
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
-import { createApiV1SchemaPGliteSql } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
 import {
     deletePostgresRunRows,
     NO_POSTGRES_RUN_ROWS,
@@ -76,6 +76,9 @@ interface HeadHarness {
 }
 
 describe.each(['memory', 'postgres'] as const)('the coalesced topology head near its first expiry (%s)', (backend) => {
+    if (backend === 'memory') {
+        initApiV1SchemaPGliteTemplate();
+    }
     const sqlIt = backend === 'postgres' && process.env.RALLAR_POSTGRES_INTEGRATION !== '1' ? it.skip : it;
 
     sqlIt('keeps a head merged shortly before its first expiry visible past it, and its replan runs', async () => {
