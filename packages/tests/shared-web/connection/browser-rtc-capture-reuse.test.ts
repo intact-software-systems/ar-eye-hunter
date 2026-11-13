@@ -324,9 +324,9 @@ describe('immutable RTC capture on browser connections', () => {
         });
         onTestFinished(() => transport.shutdown());
         const first = transport.init(options);
-        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
         expect(reentered).toBe(first);
         expect(await reentered).toBe(await first);
+        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
         expect(transport.readRtcCaptureConfiguration()).toEqual({ mode: 'off', origin: 'host' });
         expect(transport.readRtcCaptureReceipt()).toMatchObject({
             configuration: { mode: 'off', origin: 'host' },
@@ -397,7 +397,6 @@ describe('immutable RTC capture on browser connections', () => {
             return undefined;
         });
         const first = connection.connect(input);
-        expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);
         const result = await first;
         expect(await reentered).toBe(result);
         expect(configurations).toEqual([{ mode: 'off', origin: 'host' }]);

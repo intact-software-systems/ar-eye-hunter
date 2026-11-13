@@ -27,8 +27,13 @@ const mocks = await vi.hoisted(async () => {
     return createLightweightBrowserFacadeTestMocks();
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), (): Partial<MiddlewareModule> => ({
-    initialiseMiddleware: async () => ({ middleware: (await mocks.initialiseApiMiddleware()).middleware, rtcCaptureReceipt, checkpoints: [] })
+    initialiseMiddleware: createInitialiseMiddlewareDouble(async () => ({
+        middleware: (await mocks.initialiseApiMiddleware()).middleware,
+        rtcCaptureReceipt,
+        checkpoints: []
+    }))
 }));
 
 vi.mock(

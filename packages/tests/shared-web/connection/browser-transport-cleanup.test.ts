@@ -47,11 +47,12 @@ const mocks = vi.hoisted(() => ({
     readSession: vi.fn<AuthModule['readSession']>()
 }));
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('./create-initialise-middleware-double.ts'));
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     async (importOriginal): Promise<Partial<MiddlewareModule>> => ({
         ...await importOriginal(),
-        initialiseMiddleware: mocks.initialiseMiddleware
+        initialiseMiddleware: createInitialiseMiddlewareDouble(mocks.initialiseMiddleware)
     })
 );
 

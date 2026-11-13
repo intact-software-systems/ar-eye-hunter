@@ -1,11 +1,14 @@
-import { PGlite } from '@electric-sql/pglite';
-import { readFile } from 'node:fs/promises';
 import { onTestFinished } from 'vitest';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
-import { API_V1_IN_MEMORY_SCHEMA_URL } from '../../../../../apps/api-v1/src/db/in-memory-schema-bootstrap.ts';
-import { createPGliteSqlClient, type PGliteSql } from '../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import type { PGliteSql } from '../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
+import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+
+// The PostgreSQL integration run passes its own database to the fixtures built on this storage.
+if (process.env.RALLAR_POSTGRES_INTEGRATION !== '1') {
+    initApiV1SchemaPGliteTemplate();
+}
 
 export interface PSqlAdmissionTestStorage {
     readonly sql: PGliteSql;
@@ -19,7 +22,6 @@ export async function createPSqlAdmissionTestStorage(): Promise<PSqlAdmissionTes
 }
 
 export async function createClosablePSqlAdmissionTestStorage(): Promise<PSqlAdmissionTestStorage> {
-    const sql = createPGliteSqlClient(new PGlite());
-    await sql.exec(await readFile(API_V1_IN_MEMORY_SCHEMA_URL, 'utf8'));
+    const sql = await createApiV1SchemaPGliteSql();
     return { sql, repository: new PSqlRuntimeStateRepository(sql) };
 }

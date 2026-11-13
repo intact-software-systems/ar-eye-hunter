@@ -50,14 +50,15 @@ const mocks = await vi.hoisted(async () => {
     return createLightweightBrowserFacadeTestMocks();
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
     (): Partial<typeof MiddlewareModule> => ({
-        initialiseMiddleware: async (_session, _topic, options) => ({
+        initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
             checkpoints: []
-        })
+        }))
     })
 );
 
@@ -319,7 +320,9 @@ describe('Rallar director relay', () => {
                 heartbeatTtlMs: 60_000
             }));
             mockRtcNoRoute();
-            const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+            const facade = createRallarFacade();
+            await facade.connect();
+            const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
                 roomId: 'room-1',
                 topicId: 'app.game.director',
                 intentTypeId: 'game.intent',
@@ -375,7 +378,9 @@ describe('Rallar director relay', () => {
             appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement>({
+        const facade = createRallarFacade();
+        await facade.connect();
+        const relay = facade.director.createRelay<DirectorMove, DirectorAcknowledgement>({
             roomId: 'room-1',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',

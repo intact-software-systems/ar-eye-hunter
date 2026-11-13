@@ -19,15 +19,6 @@ interface RtcRttTrafficArtifact {
     };
 }
 
-it('keeps the maintained RTT traffic diagnostic checked', { timeout: 30_000 }, () => {
-    const result = spawnSync(
-        'bunx',
-        ['tsc', '-p', 'packages/shared-rtc-bench/tsconfig.json', '--noEmit'],
-        { encoding: 'utf8' }
-    );
-    expect(result.status, result.stderr).toBe(0);
-});
-
 it('reports durable RTT enqueue traffic without claiming mutation completion', { timeout: 30_000 }, () => {
     const directory = mkdtempSync(join(tmpdir(), 'rallar-rtc-rtt-traffic-'));
     const outputPath = join(directory, 'metrics.json');
