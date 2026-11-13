@@ -36,6 +36,13 @@ const REPLAY_UNAUTHORIZED_ADMISSION: Either<ALMessageRejection, ALInboundMessage
     reason: 'unauthorized'
 });
 
+/** A stored WS client scope its current authority no longer covers ends the row, and nothing is written. */
+const REPLAY_STORED_SCOPE_REFUSED: ALInboundMessageAdmission.ReplayResult = {
+    outcome: { kind: 'non-retryable', reason: 'Stored WS client scope does not authorize delivery' },
+    wroteWork: false,
+    admission: REPLAY_UNAUTHORIZED_ADMISSION
+};
+
 /** A message past its deadline, found before its write or by the write itself: nothing was written for it. */
 const ATTEMPT_EXPIRED: ALInboundMessageAdmission.Attempt = {
     kind: 'completed',
@@ -268,24 +275,22 @@ export class ALInboundMessageAdmission {
             return REPLAY_EXPIRED;
         }
         if (authority.kind !== 'authorized') {
-            return authority.kind === 'retry'
-                ? {
-                    outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs },
-                    wroteWork: false,
-                    admission: undefined
-                }
-                : { outcome: 'completed', wroteWork: false, admission: REPLAY_UNAUTHORIZED_ADMISSION };
+            return toAuthorityReplay(authority);
         }
         if (!isAuthorizedStoredWsClientDelivery(pending.msg, authority.source)) {
-            return {
-                outcome: { kind: 'non-retryable', reason: 'Stored WS client scope does not authorize delivery' },
-                wroteWork: false,
-                admission: REPLAY_UNAUTHORIZED_ADMISSION
-            };
+            return REPLAY_STORED_SCOPE_REFUSED;
         }
+        return await this.replayAuthorized(pending.msg, authority.source);
+    }
+
+    /** One fresh attempt under the source its current authority answered with. */
+    private async replayAuthorized(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundMessageAdmission.ReplayResult> {
         const authorization = await readALInboundMessageAuthorization(
-            pending.msg,
-            authority.source,
+            msg,
+            source,
             toALInboundReceiver(
                 this.dependencies.effectPreparation.selfPeerId,
                 this.dependencies.readRelayedAckRejection,
@@ -293,34 +298,50 @@ export class ALInboundMessageAdmission {
             )
         );
         if (authorization.left) {
-            return {
-                outcome: { kind: 'non-retryable', reason: authorization.left.message },
-                wroteWork: false,
-                admission: Either.ofLeft(authorization.left)
-            };
+            return toRejectedReplay(authorization.left);
         }
-        const result = await this.attempt(pending.msg, authority.source, this.dependencies.planIncomingMessage);
+        const result = await this.attempt(msg, source, this.dependencies.planIncomingMessage);
         if (result.left) {
-            return {
-                outcome: { kind: 'non-retryable', reason: result.left.message },
-                wroteWork: false,
-                admission: Either.ofLeft(result.left)
-            };
+            return toRejectedReplay(result.left);
         }
-        const attempt = result.right!;
-        return {
-            outcome: attempt.kind === 'conflict' || this.shutdown.signal.aborted ? 'retry' : 'completed',
-            wroteWork: attempt.kind === 'completed' && attempt.wroteWork,
-            admission: this.shutdown.signal.aborted ? undefined : toReplayedAdmission(attempt)
-        };
+        return toAttemptReplay(result.right!, this.shutdown.signal.aborted);
     }
 }
 
-/** A replay that conflicts again is retained still, so it states pending again. */
-function toReplayedAdmission(
-    attempt: ALInboundMessageAdmission.Attempt
-): Either<ALMessageRejection, ALInboundMessageRuntime.Admission> {
-    return Either.ofRight(attempt.kind === 'conflict' ? { kind: 'pending-admission' } : attempt.acceptance);
+/** An authority that asks for a retry reached no verdict; one that refuses the message drops it unauthorized. */
+function toAuthorityReplay(
+    authority: Exclude<ALInboundMessageRuntime.PendingAuthority, { kind: 'authorized'; }>
+): ALInboundMessageAdmission.ReplayResult {
+    return authority.kind === 'retry'
+        ? {
+            outcome: { kind: 'not-ready', retryAfterMs: authority.retryAfterMs },
+            wroteWork: false,
+            admission: undefined
+        }
+        : { outcome: 'completed', wroteWork: false, admission: REPLAY_UNAUTHORIZED_ADMISSION };
+}
+
+/** A rejection ends the retained row; it is stated by its own code, as an ingress states it. */
+function toRejectedReplay(rejection: ALMessageRejection): ALInboundMessageAdmission.ReplayResult {
+    return {
+        outcome: { kind: 'non-retryable', reason: rejection.message },
+        wroteWork: false,
+        admission: Either.ofLeft(rejection)
+    };
+}
+
+/** A replay that conflicts again is retained still, so it states pending again; shutdown reached no verdict. */
+function toAttemptReplay(
+    attempt: ALInboundMessageAdmission.Attempt,
+    shutDown: boolean
+): ALInboundMessageAdmission.ReplayResult {
+    return {
+        outcome: attempt.kind === 'conflict' || shutDown ? 'retry' : 'completed',
+        wroteWork: attempt.kind === 'completed' && attempt.wroteWork,
+        admission: shutDown
+            ? undefined
+            : Either.ofRight(attempt.kind === 'conflict' ? { kind: 'pending-admission' } : attempt.acceptance)
+    };
 }
 
 function toAdmissionAcceptance(plan: ALMessageHandlingPlan): ALInboundMessageRuntime.Acceptance {

@@ -14,7 +14,11 @@ import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
-import { createDefaultIndexedDbALInboundRuntimeStores, createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import {
+    createDefaultIndexedDbALInboundRuntimeStores,
+    createDefaultInMemoryALInboundRuntimeStores,
+    createVolatileALInboundRuntimeStores
+} from '@shared/alm/al-runtime-stores.ts';
 import type { ALInboundCommitBundle } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
 import { ALInboundMessageRuntime, type ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -29,6 +33,7 @@ import {
     createInboundTestAdmission,
     createInboundTestMessage,
     createInboundTestRuntime,
+    INBOUND_TEST_SOURCE,
     setNextInboundCommitConflicted
 } from './inbound-runtime-test-fixture.ts';
 import '../../setup-browser-indexeddb.ts';
@@ -492,6 +497,99 @@ it('a replay that conflicts again states pending again', async () => {
         { outcome: 'committed', reason: 'admitted' }
     ]);
 });
+
+it('a replay on the volatile lane states the runtime\'s worker id and the retained arrival\'s carrier', async () => {
+    const volatileStores = createVolatileALInboundRuntimeStores({}, undefined);
+    const { runtime, diagnostics, delivered, queueEngine } = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        volatileStores,
+        effectWorkerId: 'volatile-replay-worker'
+    });
+    await runtime.ready();
+    // No declared durability keeps the message in the memory pair, whose lane works as `…/volatile`.
+    const message = createInboundTestMessage({ msgId: 'volatile-replay' });
+    setNextInboundCommitConflicted(volatileStores.admissionStore);
+
+    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(async () => {
+        await queueEngine.executeOnce();
+        return delivered;
+    }).toEqual(['dispatched']);
+
+    expect(toAdmissionOutcomeOrigins(diagnostics, message)).toEqual([
+        { workerId: 'volatile-replay-worker', carrier: 'rtc', outcome: 'pending' },
+        { workerId: 'volatile-replay-worker', carrier: 'rtc', outcome: 'committed' }
+    ]);
+});
+
+it('a replay its stored WS client scope no longer authorizes states unauthorized', async () => {
+    const { runtime, stores, diagnostics, delivered, queueEngine } = createInboundTestRuntime({
+        carrier: 'ws',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        effectWorkerId: 'stored-scope-worker',
+        // The current authority answers for the sender under a scope other than the room the message names.
+        readPendingAdmissionAuthority: async () => ({
+            kind: 'authorized',
+            source: { ...INBOUND_TEST_SOURCE, authenticatedScope: { applicationId: 'app-2', workspaceId: 'workspace-2' } }
+        })
+    });
+    await runtime.ready();
+    const unscoped = createInboundTestMessage({ msgId: 'stored-scope' });
+    const message: ALMessage = {
+        ...unscoped,
+        targets: { mode: 'unicast', toPeerId: 'receiver', groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room' } }
+    };
+    setNextInboundCommitConflicted(stores.admissionStore);
+
+    expect((await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await expect.poll(async () => {
+        await queueEngine.executeOnce();
+        return toAdmissionOutcomes(diagnostics, message).length;
+    }).toBe(2);
+
+    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome, reason }) => ({ outcome, reason }))).toEqual([
+        { outcome: 'pending', reason: 'pending-admission' },
+        { outcome: 'unauthorized', reason: 'unauthorized' }
+    ]);
+    expect(delivered).toEqual([]);
+});
+
+it('a replay that shutdown cuts short before its verdict states nothing', async () => {
+    const authorityAsked = Promise.withResolvers<void>();
+    const authorityAnswer = Promise.withResolvers<void>();
+    const { runtime, stores, diagnostics, delivered } = createInboundTestRuntime({
+        carrier: 'rtc',
+        stores: createDefaultInMemoryALInboundRuntimeStores(),
+        effectWorkerId: 'shutdown-replay-worker',
+        readPendingAdmissionAuthority: async (_msg, source) => {
+            authorityAsked.resolve();
+            await authorityAnswer.promise;
+            return { kind: 'authorized', source };
+        }
+    });
+    await runtime.ready();
+    const message = createInboundTestMessage({ msgId: 'shutdown-replay' });
+    setNextInboundCommitConflicted(stores.admissionStore);
+
+    expect((await runtime.admitIncomingMessage(message, PENDING_SOURCE)).right).toEqual({ kind: 'pending-admission' });
+    await authorityAsked.promise;
+    const disposed = runtime.dispose();
+    authorityAnswer.resolve();
+    await disposed;
+
+    expect(toAdmissionOutcomes(diagnostics, message).map(({ outcome }) => outcome)).toEqual(['pending']);
+    expect(delivered).toEqual([]);
+});
+
+/** Who stated each `admission-outcome` about one message, and over which carrier. */
+function toAdmissionOutcomeOrigins(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
+    return diagnostics.flatMap((event) =>
+        event.kind === 'admission-outcome' && event.msgId === message.id.msgId
+            ? [{ workerId: event.workerId, carrier: event.carrier, outcome: event.outcome }]
+            : []
+    );
+}
 
 /** The `admission-outcome` events stated about one message, in the order they were stated. */
 function toAdmissionOutcomes(diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[], message: ALMessage) {
