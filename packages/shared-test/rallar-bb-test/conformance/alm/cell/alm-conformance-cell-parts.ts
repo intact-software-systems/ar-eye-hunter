@@ -16,9 +16,9 @@ import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.t
 /**
  * A role's recipe in two parts. The prologue opens the role's page through the connect; a delivery-diagnostics
  * recipe's prologue also holds the freshness waits before it and the wait for the connect's applied selection after it,
- * none of them marked. The body is the cell itself, opened by the sender's own storage baseline (after a cue subscription that leads the
- * sender's commands), and every wait in it
- * reads its own cell's history. A combined recipe shares one prologue and runs each cell's body.
+ * none of them marked. The body is the cell itself, opened by the sender's own storage baseline, after a cue
+ * subscription that leads the sender's commands, and every wait in it reads its own cell's history. A combined recipe
+ * shares one prologue and runs each cell's body.
  */
 export interface AlmConformanceCellParts {
     readonly prologue: readonly RallarBlackBoxTestCommand[];
@@ -62,8 +62,8 @@ export function toAlmConformanceCellParts(input: AlmConformanceCellPartsInput): 
  * A sender's definition commands after its pre-send evidence. A sender whose send exhausts its budget stops the recipe
  * before the post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out scenario
  * leaves behind, and the pair brackets the operations one typed send spends. A cue subscription leading the sender's
- * commands runs before the reading, so it arms with every other role's; no cell compares a later reading with this
- * one, and the subscription is a cue, not a typed send of the cell.
+ * commands runs before the reading, so it arms with every other role's. That is safe only because no cell whose sender
+ * subscribes to cues reads its storage counters again, and the subscription is a cue, not a typed send of the cell.
  */
 function toBaselinedCommands(input: AlmConformanceCellPartsInput): readonly RallarBlackBoxTestCommand[] {
     if (input.role !== 'sender') {

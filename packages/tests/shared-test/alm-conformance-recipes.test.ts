@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
+import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '@shared-test/rallar-bb-test/barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
@@ -1722,10 +1723,14 @@ describe('alm-conformance cell parts', () => {
                         'connect'
                     ]);
                     if (role === 'sender') {
-                        // A sender that waits for a cue subscribes before its storage baseline; nothing else precedes it.
-                        const baselineAt = parts.body.findIndex((command) => command.metadata?.cellArming !== 'cue-subscription');
-                        expect([0, 2], scenario.scenarioKey).toContain(baselineAt);
-                        expect(parts.body[baselineAt]?.commandId).toBe(`${prefix}storage-counters-connected`);
+                        // The baseline follows the sender's leading cue-subscription pair, or opens the body without one.
+                        const leadsWithSubscription = parts.body[0]?.metadata?.cellArming === 'cue-subscription';
+                        const baselineAt = leadsWithSubscription ? 2 : 0;
+                        expect(
+                            parts.body.slice(0, baselineAt).map((command) => command.metadata?.cellArming),
+                            scenario.scenarioKey
+                        ).toEqual(Array.from({ length: baselineAt }, () => 'cue-subscription'));
+                        expect(parts.body[baselineAt]?.commandId, scenario.scenarioKey).toBe(`${prefix}storage-counters-connected`);
                     }
                     expect(parts.body.at(-1)?.commandId).toBe(`${prefix}stats`);
                 }
@@ -1742,6 +1747,7 @@ describe('alm-conformance cell parts', () => {
                     if (!toNestedCommands(recipe.commands).some(isCueWait)) {
                         continue;
                     }
+                    // Role recipes only: a continuation carries no barrier, and the next test pins how it hears its cues.
                     // A successor carries no barrier, so no role relies on it to hear a cue sent at its start.
                     expect(role, scenario.scenarioKey).not.toBe('successor');
                     const listens = toArmingRun(recipe, `alm-${carrier}-${scenario.scenarioKey}`, role)
@@ -1752,6 +1758,60 @@ describe('alm-conformance cell parts', () => {
             }
         }
         expect(Object.fromEntries(subscribedByCarrier)).toEqual({ ws: 18, rtc: 47, 'rtc-with-ws-fallback': 19 });
+    });
+
+    // A continuation carries no barrier and no arming run: it runs on the connection its role's first recipe opened,
+    // so the cues it waits for reach it through that recipe's subscription, armed before any role's body cued.
+    it('a continuation that waits for a cue runs on a role whose first recipe subscribed within its arming run', () => {
+        const continuationsWaitingByCarrier = new Map<AlmConformanceCarrier, string[]>();
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const continuation = scenario.continuation;
+                if (continuation === undefined || !toNestedCommands(continuation.recipe.commands).some(isCueWait)) {
+                    continue;
+                }
+                const firstRecipe = toAlmConformanceRoleRecipe(scenario, continuation.role)!;
+                const listens = toArmingRun(firstRecipe, `alm-${carrier}-${scenario.scenarioKey}`, continuation.role)
+                    .filter((command) => isCueSend(command) && command.payload.cue === 'listen');
+
+                expect(toBarrierCommands(continuation.recipe), scenario.scenarioKey).toEqual([]);
+                expect(toNestedCommands(continuation.recipe.commands).filter(isCueSend).map((command) => command.payload.cue))
+                    .not.toContain('listen');
+                expect(listens, `${scenario.scenarioKey} ${continuation.role}`).toHaveLength(1);
+                continuationsWaitingByCarrier.set(carrier, [
+                    ...(continuationsWaitingByCarrier.get(carrier) ?? []),
+                    `${scenario.scenarioKey} ${continuation.role}`
+                ]);
+            }
+        }
+        // Today exactly one continuation waits for cues; a second one is a red test, not a silent drift.
+        expect(Object.fromEntries(continuationsWaitingByCarrier)).toEqual(Object.fromEntries(
+            ALM_CONFORMANCE_CARRIERS.map((carrier) => [carrier, ['subscription-ordered-reconnect sibling']])
+        ));
+    });
+
+    it('no cell whose sender subscribes to cues reads the sender\'s storage baseline again', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                const sender = scenario.partsByRole.sender!.body;
+                if (sender[0]?.metadata?.cellArming !== 'cue-subscription') {
+                    continue;
+                }
+                const baselineId = `alm-${carrier}-${scenario.scenarioKey}-sender-storage-counters-connected`;
+                const recipes = [
+                    ...scenario.roles.map((role) => toAlmConformanceRoleRecipe(scenario, role)!),
+                    ...(scenario.continuation ? [scenario.continuation.recipe] : [])
+                ];
+                // A post-run assessment reads a sender's counters by position, so a second reading is a comparison.
+                expect(
+                    toNestedCommands(scenario.sender.commands).filter((command) => command.kind === 'storage.counters')
+                        .map((command) => command.commandId),
+                    scenario.scenarioKey
+                ).toEqual([baselineId]);
+                expect(recipes.filter((recipe) => JSON.stringify(recipe).includes(`resultCache.${baselineId}`)), scenario.scenarioKey)
+                    .toEqual([]);
+            }
+        }
     });
 
     it('no role sends a cue other than its subscription before its armed barrier', () => {
@@ -1800,15 +1860,15 @@ describe('alm-conformance cell parts', () => {
                     toAlmCellArming(scenario.partsByRole[role]!.body).arming.reduce((sum, command) => sum + command.timeoutMs!, 0);
                 const othersMs = settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + armingMs(other), 0));
 
-                // One timeout per cell, never below the control server's minimum of one response margin.
+                // One timeout per cell, never below the grace a barrier's verdict has to reach a late page.
                 expect(new Set(settleRoles.map((role) => armedTimeoutOf(scenario, role))), scenario.scenarioKey)
-                    .toEqual(new Set([Math.max(RESPONSE_MARGIN_MS, ...othersMs)]));
+                    .toEqual(new Set([Math.max(RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS, ...othersMs)]));
             }
         }
         // A cue subscription is two 5 000 ms commands and a fault 3 000 ms; the first arrival waits through the others'.
         const timeoutOf = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             armedTimeoutOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver');
-        expect(timeoutOf('rtc', 'delivery-baseline')).toBe(1_000);
+        expect(timeoutOf('rtc', 'delivery-baseline')).toBe(10_000);
         expect(timeoutOf('rtc', 'granted-rtc-delivered')).toBe(10_000);
         expect(timeoutOf('rtc', 'receipted-relay-path')).toBe(20_000);
         expect(timeoutOf('rtc', 'forged-recipient-ack')).toBe(23_000);
