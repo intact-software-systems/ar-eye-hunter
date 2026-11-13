@@ -7,14 +7,20 @@ import { toCommandId, toRoomRef } from '../alm-conformance-step-identities.ts';
 export interface AlmCellGroupReadInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
-    /** `''` reads the group's snapshot; `/formation` reads its formation view. */
-    readonly resource: '' | '/formation';
+    /** The group's snapshot, or its formation view. */
+    readonly resource: 'snapshot' | 'formation';
     readonly purpose: string;
+}
+
+/** The REST path of the cell's room, which every owner and member request extends. */
+export function toAlmCellGroupPath(step: AlmConformanceStepInput): string {
+    const group = step.input.group;
+    return `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}`;
 }
 
 /** What the server holds of the cell's group, read under the page's own session. */
 export function toAlmCellGroupRead(read: AlmCellGroupReadInput): RallarBlackBoxTestHttpRequestCommand {
-    const group = read.step.input.group;
+    const path = toAlmCellGroupPath(read.step);
     return {
         kind: 'http.request',
         commandId: toCommandId(read.step, read.name),
@@ -22,12 +28,11 @@ export function toAlmCellGroupRead(read: AlmCellGroupReadInput): RallarBlackBoxT
         metadata: {
             purpose: read.purpose,
             idempotent: true,
-            group: toRoomRef(group)
+            group: toRoomRef(read.step.input.group)
         },
         request: {
             method: 'GET',
-            path: `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}` +
-                read.resource
+            path: read.resource === 'snapshot' ? path : `${path}/formation`
         },
         response: { body: 'json', acceptedStatusCodes: [200] }
     };

@@ -20,7 +20,7 @@ import {
     SUBSCRIPTION_ABSENCE_MS,
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
     SUBSCRIPTION_PHASE_MS
-} from './topic-subscription-polls.ts';
+} from './topic-subscription-budgets.ts';
 
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;
@@ -97,6 +97,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 ...toGrantedSend({
@@ -122,6 +123,7 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
                 ['outsideAudience', publication.outsideAudience]
             ] as const).map(([list, expected]) =>
                 toResultFact({
+                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                     step,
                     name: `${name}-${list}`,
                     source: `${receipt}.${list}RecipientPeerIds`,
@@ -147,6 +149,7 @@ export function toPublishCommands(step: AlmConformanceStepInput, name: string): 
             handleId: send
         },
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-admitted`,
             source: `resultCache.${send}.value.status`,
@@ -183,6 +186,7 @@ export function toRejectedPublishCommands(
             timeoutMs: REJECTION_WAIT_MS
         },
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-refusal-reason`,
             source: `resultCache.${observe}.value.failure.reason`,

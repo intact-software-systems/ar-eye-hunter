@@ -8,6 +8,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
     toFourRoleGrantCommands,
     TOPIC_SUBSCRIPTION_CARRIERS,
@@ -30,7 +31,6 @@ import {
     toOrderedPublishCommands,
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-polls.ts';
 import {
     computeUnelectedOutsideCount,
     toCueListenCommands,

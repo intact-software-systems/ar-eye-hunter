@@ -8,7 +8,11 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import { createAlmConformanceRecipes, type AlmConformanceScenario } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import {
+    createAlmConformanceRecipes,
+    toAlmConformanceRoleRecipe,
+    type AlmConformanceScenario
+} from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import {
     assessAlmConformanceIdentity,
     hasAlmIdentityEvidence,
@@ -130,6 +134,45 @@ describe('ALM recipe identity assessment', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('accepts complete generated %s reload evidence', (carrier) => {
         expect(assessAlmConformanceIdentity(new IdentityTranscript('reload', carrier).input())).toEqual([]);
     });
+
+    it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('a barriered %s reload cell passes its identity assessment', (carrier) => {
+        const transcript = new IdentityTranscript('reload', carrier, 'barriered');
+
+        // The receiver owns the room, so its settle carries the formation poll, a loop.
+        expect(transcript.receiver.commands.some((command) => command.kind === 'loop')).toBe(true);
+        expect(transcript.sender.commands.some((command) => command.kind === 'barrier')).toBe(true);
+        expect(assessAlmConformanceIdentity(transcript.input())).toEqual([]);
+    });
+
+    it('a loop in a reload receiver\'s authored commands is still refused', () => {
+        const transcript = new IdentityTranscript('reload', 'rtc', 'barriered');
+        const receiver = transcript.receiver;
+        const armedAt = receiver.commands.findIndex((command) => command.kind === 'barrier' && command.barrierId.endsWith('-armed'));
+        const loop: RallarBlackBoxTestCommand = { kind: 'loop', commandId: 'receiver-authored-loop', count: 1, timeoutMs: 1_000, commands: [] };
+        receiver.commands.splice(armedAt + 1, 0, loop);
+        receiver.results.splice(armedAt + 1, 0, transcriptResult(loop.commandId!, 'loop', {}));
+
+        expect(assessAlmConformanceIdentity(transcript.input()))
+            .toEqual(['ALM reload requires matching, complete authored checkpoints and original sends.']);
+    });
+
+    it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
+        'every barriered %s cell assesses its identity as the same cell without a settle does',
+        (carrier) => {
+            const toInputs = (cellSettle: 'barriered' | undefined) =>
+                createAlmConformanceRecipes({ ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) })
+                    .filter((scenario) => hasAlmIdentityEvidence(scenario.sender))
+                    .map((scenario) => [scenario.scenarioKey, toScenarioIdentityInput(scenario)] as const);
+            const plain = toInputs(undefined);
+            const barriered = toInputs('barriered');
+
+            expect(barriered.map(([key]) => key)).toEqual(plain.map(([key]) => key));
+            expect(plain.length).toBeGreaterThan(0);
+            for (const [index, [key, input]] of barriered.entries()) {
+                expect(assessAlmConformanceIdentity(input), key).toEqual(assessAlmConformanceIdentity(plain[index]![1]));
+            }
+        }
+    );
 
     it('rejects unchanged sender document in the actual combined recipe even when lifecycle joins pass', () => {
         const transcript = new IdentityTranscript('combined');
@@ -561,17 +604,17 @@ describe('ALM recipe identity assessment', () => {
             ['pinned receipt roles', 'delivery-baseline', 'ws']
         ] as const
     )('counts a sender whose evidence is %s', (_label, scenarioId, carrier) => {
-        expect(hasAlmIdentityEvidence(toGeneratedScenario(scenarioId, carrier).sender)).toBe(true);
+        expect(hasAlmIdentityEvidence(toGeneratedScenario(scenarioId, carrier, undefined).sender)).toBe(true);
     });
 
     it('does not count a sender whose plain send pins no receipt roles', () => {
-        const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
+        const { sender } = toGeneratedScenario('delivery-baseline', 'ws', undefined);
         const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
         expect(hasAlmIdentityEvidence({ ...sender, metadata })).toBe(false);
     });
 
     it('counts a sender whose only evidence is a relayed receipt pin', () => {
-        const { sender } = toGeneratedScenario('delivery-baseline', 'ws');
+        const { sender } = toGeneratedScenario('delivery-baseline', 'ws', undefined);
         const { almReceiptRoles: _pinned, ...metadata } = sender.metadata ?? {};
         const relayedPin = createAlmConformanceRecipes(toConformanceInput('rtc'))
             .find((scenario) => scenario.scenarioKey === 'receipted-relay-path')?.sender.metadata?.almRelayedReceiptOrigins;
@@ -678,8 +721,8 @@ class IdentityTranscript {
     readonly sender: ParticipantTranscript;
     readonly receiver: ParticipantTranscript;
 
-    constructor(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier = 'ws') {
-        const recipes = transcriptRecipes(kind, carrier);
+    constructor(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier = 'ws', cellSettle?: 'barriered') {
+        const recipes = transcriptRecipes(kind, carrier, cellSettle);
         this.sender = new ParticipantTranscript('sender', recipes.sender, recipes.sender);
         this.receiver = new ParticipantTranscript('receiver', recipes.receiver, recipes.sender);
     }
@@ -701,6 +744,15 @@ class IdentityTranscript {
             participants: [this.sender, ...recipients].map((participant) => participant.participant())
         };
     }
+}
+
+/** Every declared role's generated recipe, recorded as a transcript the way the reload pair's roles are. */
+function toScenarioIdentityInput(scenario: AlmConformanceScenario): AlmConformanceIdentityInput {
+    return {
+        runId: 'run',
+        roles: scenario.roles,
+        participants: scenario.roles.map((role) => new ParticipantTranscript(role, toAlmConformanceRoleRecipe(scenario, role)!, scenario.sender).participant())
+    };
 }
 
 class ParticipantTranscript {
@@ -785,7 +837,7 @@ const TRANSCRIPT_SCENARIO_IDS: Readonly<Record<Exclude<IdentityTranscript.Kind, 
     'server-originated': 'server-originated'
 };
 
-function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier) {
+function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier, cellSettle: 'barriered' | undefined) {
     if (kind === 'combined') {
         const recipes = createAlmConformance2AgentEntry().manifest.recipes;
         const sender = recipes.find((entry) => entry.role === 'sender')?.recipe;
@@ -795,10 +847,14 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
         }
         return { sender, receiver };
     }
-    return toGeneratedScenario(TRANSCRIPT_SCENARIO_IDS[kind], carrier);
+    return toGeneratedScenario(TRANSCRIPT_SCENARIO_IDS[kind], carrier, cellSettle);
 }
 
-function toGeneratedScenario(scenarioId: string, carrier: AlmConformanceCarrier): AlmConformanceScenario {
+function toGeneratedScenario(
+    scenarioId: string,
+    carrier: AlmConformanceCarrier,
+    cellSettle: 'barriered' | undefined
+): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier,
@@ -807,7 +863,8 @@ function toGeneratedScenario(scenarioId: string, carrier: AlmConformanceCarrier)
         receiverConnection: 'receiver',
         deadlineMs: 18_000,
         laneFamilies: ['two-agent', 'addressed'],
-        principalIdsByRole: {}
+        principalIdsByRole: {},
+        ...(cellSettle === undefined ? {} : { cellSettle })
     }).find((candidate) => candidate.scenarioId === scenarioId);
     if (!scenario) {
         throw new Error('Generated identity scenario missing.');

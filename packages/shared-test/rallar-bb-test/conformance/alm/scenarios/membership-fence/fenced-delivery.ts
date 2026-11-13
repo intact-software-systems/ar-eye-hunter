@@ -44,7 +44,7 @@ function toRosterReadCommand(recipient: AlmConformanceStepInput): RallarBlackBox
     return toAlmCellGroupRead({
         step: recipient,
         name: 'read-roster',
-        resource: '',
+        resource: 'snapshot',
         purpose: 'Read the group roster version the server holds.'
     });
 }

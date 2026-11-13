@@ -20,15 +20,15 @@ import {
 } from '../../alm-conformance-step-identities.ts';
 import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../topic-subscription/topic-subscription-budgets.ts';
+import {
     toSubscribeCommand,
     toTopicGrantCommand,
     toUnsubscribeCommands,
     type TopicGrantInput
 } from '../topic-subscription/topic-subscription-commands.ts';
-import {
-    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS
-} from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -105,6 +105,7 @@ export function toPublishUntilCueCommand(step: AlmConformanceStepInput, cue: str
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
             { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
@@ -130,6 +131,7 @@ export function toRewritingPublisherCommands(
             step: sender,
             name: 'rewrite-hold',
             phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             commands: [
                 toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
             ]
@@ -196,6 +198,7 @@ export function toGrantedRefusalPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 kind: 'rtc.send',
@@ -214,6 +217,7 @@ export function toGrantedRefusalPollCommand(
             },
             ...facts.map(([fact, field, operator, expected]) =>
                 toResultFact({
+                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                     step,
                     name: `${name}-${fact}`,
                     source: `${verdict}.message.${field}`,

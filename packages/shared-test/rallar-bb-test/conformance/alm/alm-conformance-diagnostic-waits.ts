@@ -8,7 +8,7 @@ import type { RallarBlackBoxTestWaitCommand } from '../../rallar-black-box-test-
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-polls.ts';
+import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-budgets.ts';
 
 /** The page's runtime diagnostics topics; an event's `data` is the runtime event itself, in its emitted key order. */
 export const ALM_OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';

@@ -16,6 +16,7 @@ import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/ral
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
+import { toAlmCellAuthoredCommands } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
     createAlmConformanceRecipes,
     createAlmDeliveryDiagnosticsRecipes,
@@ -1646,7 +1647,8 @@ describe('alm-conformance cell parts', () => {
                         commandId: `${cellPrefix}-${role}-${phase}`,
                         barrierId: `${cellPrefix}-${phase}`,
                         timeoutMs: expect.any(Number),
-                        participants: settleRoles
+                        participants: settleRoles,
+                        metadata: { cellSettle: 'lane' }
                     })));
                     expect(
                         recipe.commands.filter((command) => command.kind !== 'barrier' && !isSettleCommand(command, `${cellPrefix}-${role}-`)),
@@ -1693,10 +1695,11 @@ describe('alm-conformance cell parts', () => {
                 const timeouts = settleRoles.map((role) => toBarrierCommands(toAlmConformanceRoleRecipe(scenario, role)!)[0]!.timeoutMs);
 
                 // Every arrival names one timeout, or the control server refuses the later ones as conflicting.
-                expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs)]));
+                expect(new Set(timeouts), scenario.scenarioKey).toEqual(new Set([Math.max(...othersMs) + RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS]));
             }
         }
-        // Each settle prologue is 5 000 + 5 000 + 45 000 ms, and the first arrival waits through every other one.
+        // Each settle prologue is 5 000 + 5 000 + 45 000 ms; the first arrival waits through every other one, then the
+        // 10 000 ms a barrier verdict and the pages' skew may take.
         const timeoutOf = (scenarioKey: string, role: AlmConformanceRole) =>
             toBarrierCommands(
                 toAlmConformanceRoleRecipe(
@@ -1704,9 +1707,9 @@ describe('alm-conformance cell parts', () => {
                     role
                 )!
             )[0]?.timeoutMs;
-        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(55_000);
-        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(110_000);
-        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(165_000);
+        expect(timeoutOf('delivery-baseline', 'receiver')).toBe(65_000);
+        expect(timeoutOf('aggregated-receipt', 'recipient-b')).toBe(120_000);
+        expect(timeoutOf('subscription-delivery', 'publisher-b')).toBe(175_000);
     });
 
     it('a role recipe is its prologue then its body', () => {
@@ -1931,7 +1934,7 @@ describe('alm-conformance cell parts', () => {
                             }
                         },
                         timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
-                        metadata: { historyFrom: 'page' }
+                        metadata: { historyFrom: 'page', cellSettle: 'lane' }
                     });
                     expect(validateRallarBlackBoxTestCommand(headApplied!), headApplied!.commandId).toMatchObject({ ok: true });
                 }
@@ -1984,12 +1987,10 @@ describe('alm-conformance cell parts', () => {
                 const armedMs = (role: AlmConformanceRole) =>
                     toCommandsMs([...settleOf(role).slice(-2), ...toAlmCellArming(scenario.partsByRole[role]!.body).arming]);
                 const longestOthersMs = (toMs: (role: AlmConformanceRole) => number) =>
-                    Math.max(
-                        RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS,
-                        ...settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + toMs(other), 0))
-                    );
+                    Math.max(...settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + toMs(other), 0))) +
+                    RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS;
 
-                // One timeout per barrier of a cell, never below the grace a barrier's verdict has to reach a late page.
+                // One timeout per barrier of a cell: the others' commands plus the grace a verdict and the pages' skew take.
                 for (const role of settleRoles) {
                     expect(timeoutsOf(scenario, role).slice(1), `${scenario.scenarioKey} ${role}`)
                         .toEqual([longestOthersMs(formationMs), longestOthersMs(armedMs)]);
@@ -1998,15 +1999,36 @@ describe('alm-conformance cell parts', () => {
         }
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms. The first arrival waits through
-        // every other role's commands.
+        // every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
-        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([35_000, 35_000]);
-        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([35_000, 45_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([35_000, 90_000]);
-        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([35_000, 93_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([35_000, 125_000]);
+        expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([45_000, 55_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([45_000, 100_000]);
+        expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([45_000, 135_000]);
+    });
+
+    it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const plain = createAlmConformanceRecipes(toConformanceInput(carrier));
+            for (const [index, scenario] of createAlmConformanceRecipes(toBarrieredInput(carrier)).entries()) {
+                for (const role of scenario.roles) {
+                    const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
+                    const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
+
+                    expect(toAlmCellAuthoredCommands(recipe.commands), `${scenario.scenarioKey} ${role}`)
+                        .toEqual(toAlmConformanceRoleRecipe(plain[index]!, role)!.commands);
+                    // Every command the authored view leaves out is a settle command, and every settle command is declared.
+                    expect(
+                        recipe.commands.filter((command) => !toAlmCellAuthoredCommands(recipe.commands).includes(command))
+                            .every((command) => command.kind === 'barrier' || isSettleCommand(command, prefix)),
+                        `${scenario.scenarioKey} ${role}`
+                    ).toBe(true);
+                }
+            }
+        }
     });
 
     it('a cell without cellSettle carries no poll, head read or settle barrier', () => {

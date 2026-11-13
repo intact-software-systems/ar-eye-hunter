@@ -7,6 +7,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -16,7 +17,6 @@ import {
     toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
-import { SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -59,6 +59,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         toTokenReadCommand(owner, 'tokens-after-t1'),
         ...(['lapsed', 'active'] as const).map((status, index) =>
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step: owner,
                 name: `tokens-after-t1-${index}-${status}`,
                 source: toTokenStatusSource(owner, index),
@@ -74,6 +75,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             step: owner,
             name: 'rows-released',
             phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(owner, readName) }],
             facts: [{
                 name: 'rows-released-empty',
@@ -124,6 +126,7 @@ function toRowCountCommands(
     return [
         read,
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: owner,
             name: `${name}-count`,
             source: `resultCache.${read.commandId}.value.body.subscriptions`,

@@ -5,7 +5,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../rallar-black-box-test-contracts.ts';
 
-import { CONNECT_READINESS_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
+import { CONNECT_READINESS_TIMEOUT_MS, MESSAGE_CONTROL_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
@@ -32,7 +32,7 @@ export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
             toAlmCellGroupRead({
                 step,
                 name: 'head-read',
-                resource: '',
+                resource: 'snapshot',
                 purpose: 'Read the room head this page must apply before its cell starts.'
             }),
             toHeadAppliedWait(step)
@@ -75,6 +75,7 @@ function toFormationPollCommand(owner: AlmConformanceStepInput): RallarBlackBoxT
         step: owner,
         name: 'formation-poll',
         phaseMs: CONNECT_READINESS_TIMEOUT_MS,
+        commandTimeoutMs: MESSAGE_CONTROL_TIMEOUT_MS,
         reads: [
             {
                 name: 'formation',
@@ -82,14 +83,19 @@ function toFormationPollCommand(owner: AlmConformanceStepInput): RallarBlackBoxT
                     toAlmCellGroupRead({
                         step: owner,
                         name: readName,
-                        resource: '/formation',
+                        resource: 'formation',
                         purpose: 'Read whether the room\'s formation settled.'
                     })
             },
             {
                 name: 'group',
                 read: (readName) =>
-                    toAlmCellGroupRead({ step: owner, name: readName, resource: '', purpose: 'Read the room head.' })
+                    toAlmCellGroupRead({
+                        step: owner,
+                        name: readName,
+                        resource: 'snapshot',
+                        purpose: 'Read the room head.'
+                    })
             }
         ],
         facts: FORMATION_SETTLED_FACTS
@@ -97,8 +103,11 @@ function toFormationPollCommand(owner: AlmConformanceStepInput): RallarBlackBoxT
 }
 
 /**
- * The page applied the head it read, or a later one. The applied revision is monotone per runtime and group, so the
- * wait reads the page's whole history; the bridged diagnostic names no connection, so the match names none.
+ * The page holds the head it read, or a later one. The wait reads the page's whole history: every settle role's connect
+ * in this cell wrote presence before this read, so the head's `presenceRevision` floor is above any `held` event an
+ * earlier cell left on the page, and only this cell's applications can meet both floors. A `removed` event, which the
+ * page emits when its cache drops the group, is not matched. The bridged diagnostic names no connection, so the match
+ * names none.
  */
 function toHeadAppliedWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     const group = step.input.group;

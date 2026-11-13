@@ -6,12 +6,12 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toTopicGrantCommand,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
-import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,

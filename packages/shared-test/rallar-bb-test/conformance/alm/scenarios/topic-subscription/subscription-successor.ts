@@ -8,6 +8,12 @@ import {
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS,
+    toGenerationText,
+    toResultTextWait
+} from './topic-subscription-budgets.ts';
+import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
@@ -17,7 +23,6 @@ import {
     toUnsubscribeRequestCommand
 } from './topic-subscription-commands.ts';
 import { toRowsGenerationPollCommand } from './topic-subscription-generation-polls.ts';
-import { SUBSCRIPTION_PHASE_MS, toGenerationText, toResultTextWait } from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -80,6 +85,7 @@ function toOwnerPageCommands(owner: AlmConformanceStepInput): readonly RallarBla
             step: owner,
             name: 'replaced',
             phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             reads: [{ name: 'read', read: (readName) => toTokenReadCommand(owner, readName) }],
             facts: [{
                 name: 'replaced-lapsed',
@@ -93,6 +99,7 @@ function toOwnerPageCommands(owner: AlmConformanceStepInput): readonly RallarBla
         toRowsGenerationPollCommand({ step: owner, name: 'rows-after-release', tokens: OWNER_GATE, names: false }),
         staleRelease,
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: owner,
             name: 'stale-unsubscribe-not-subscribed',
             source: `resultCache.${staleRelease.commandId}.value.body.outcome`,
@@ -111,6 +118,7 @@ function toSuccessorPageCommands(successor: AlmConformanceStepInput): readonly R
         toTokenReadCommand(successor, 'tokens-successor-generation'),
         toSubscriptionRowsCommand(successor, 'rows-successor'),
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: successor,
             name: 'rows-successor-count',
             source: `resultCache.${rows}.value.body.subscriptions`,

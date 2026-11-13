@@ -13,9 +13,10 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
+import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
 import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import { toPrincipalPlaceholder } from '../../resolve-alm-conformance-principals.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 
 /**
  * The granted-topic proof's carriers, which a cell narrows only for a reason of its own: over ws the server's
@@ -52,7 +53,7 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         request: {
             method: 'POST',
-            path: `${toGroupPath(step)}/publication-grants/${toPrincipalPlaceholder(grantee)}/${operation}` +
+            path: `${toAlmCellGroupPath(step)}/publication-grants/${toPrincipalPlaceholder(grantee)}/${operation}` +
                 `/requests/${toTopicRequestId(step, name)}-{loop.iteration}`,
             body: { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, publish: grant.publish, subscribe: grant.subscribe }
         },
@@ -62,7 +63,13 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
             group: toRoomRef(step.input.group)
         }
     };
-    return toPollCommand({ step, name, phaseMs: SUBSCRIPTION_PHASE_MS, commands: [request] });
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commands: [request]
+    });
 }
 
 /**
@@ -92,6 +99,7 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             {
                 kind: 'messages.subscribe',
@@ -101,6 +109,7 @@ export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId
                 timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
             },
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step,
                 name: `${name}-active`,
                 source: `${toPollResult({ step, name, index: 1, childId: subscribe })}.status`,
@@ -125,6 +134,7 @@ export function toUnsubscribeCommands(
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
         },
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `unsubscribe-${subscriptionId}-lapsed`,
             source: `resultCache.${unsubscribe}.value.status`,
@@ -153,7 +163,7 @@ export function toSubscriptionRowsCommand(
         kind: 'http.request',
         commandId: toCommandId(step, name),
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        request: { method: 'GET', path: `${toGroupPath(step)}/sessions/{auth.sessionId}/subscriptions` },
+        request: { method: 'GET', path: `${toAlmCellGroupPath(step)}/sessions/{auth.sessionId}/subscriptions` },
         response: { body: 'json', acceptedStatusCodes: [200] }
     };
 }
@@ -169,7 +179,7 @@ export function toUnsubscribeRequestCommand(
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         request: {
             method: 'POST',
-            path: `${toGroupPath(step)}/sessions/{auth.sessionId}/unsubscribe` +
+            path: `${toAlmCellGroupPath(step)}/sessions/{auth.sessionId}/unsubscribe` +
                 `/requests/${toTopicRequestId(step, 'stale-unsubscribe')}`,
             body: { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, connectionGenerationId }
         },
@@ -194,12 +204,6 @@ export function toProductSocketCommand(
 /** `p`, `s` or `ps`: a request id names the permissions short, so it stays within 128 characters. */
 function toPermissionName(grant: TopicGrantInput): string {
     return `${grant.publish ? 'p' : ''}${grant.subscribe ? 's' : ''}`;
-}
-
-/** The REST path of the cell's room, which every owner and member request extends. */
-export function toGroupPath(step: AlmConformanceStepInput): string {
-    const group = step.input.group;
-    return `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}`;
 }
 
 /** A mutation request id: the page's runtime identity keeps a rerun from replaying an earlier run's answer. */

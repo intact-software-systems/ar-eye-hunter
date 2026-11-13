@@ -5,14 +5,15 @@ import type {
 
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
 import { toPollChildId, toPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
-import { toGroupPath, toSubscriptionRowsCommand, toTokenReadCommand } from './topic-subscription-commands.ts';
 import {
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
     SUBSCRIPTION_PHASE_MS,
     toGenerationText,
     toResultTextWait
-} from './topic-subscription-polls.ts';
+} from './topic-subscription-budgets.ts';
+import { toSubscriptionRowsCommand, toTokenReadCommand } from './topic-subscription-commands.ts';
 
 export interface GenerationPollInput {
     readonly step: AlmConformanceStepInput;
@@ -49,9 +50,11 @@ export function toGenerationChangePollCommand(poll: GenerationPollInput): Rallar
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toTokenReadCommand(step, readName),
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step,
                 name: `${name}-open`,
                 source: `resultCache.${attemptRead}.value.connectionGenerationId`,
@@ -59,6 +62,7 @@ export function toGenerationChangePollCommand(poll: GenerationPollInput): Rallar
                 expected: null
             }),
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step,
                 name: `${name}-${poll.status}`,
                 source: `resultCache.${attemptRead}.value.subscriptions.0.status`,
@@ -87,9 +91,11 @@ export function toRowsGenerationPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toSubscriptionRowsCommand(step, readName),
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step,
                 name: `${name}-one-row`,
                 source: `resultCache.${attemptRead}.value.body.subscriptions`,
@@ -121,6 +127,7 @@ export function toPresenceGenerationPollCommand(
         step,
         name,
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         commands: [
             toRoomSnapshotCommand(step, readName),
             toResultTextWait({
@@ -140,7 +147,7 @@ function toRoomSnapshotCommand(step: AlmConformanceStepInput, name: string): Ral
         kind: 'http.request',
         commandId: toCommandId(step, name),
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        request: { method: 'GET', path: toGroupPath(step) },
+        request: { method: 'GET', path: toAlmCellGroupPath(step) },
         response: { body: 'json', acceptedStatusCodes: [200] }
     };
 }

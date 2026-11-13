@@ -8,6 +8,7 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -19,7 +20,6 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import { toGenerationChangePollCommand } from './topic-subscription-generation-polls.ts';
-import { SUBSCRIPTION_PHASE_MS } from './topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
@@ -91,6 +91,7 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
             step: sibling,
             name: 'rows-revoked',
             phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(sibling, readName) }],
             facts: [{
                 name: 'rows-revoked-empty',

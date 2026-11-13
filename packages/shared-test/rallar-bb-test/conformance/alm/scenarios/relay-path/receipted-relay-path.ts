@@ -21,7 +21,10 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';
-import { SUBSCRIPTION_PHASE_MS } from '../topic-subscription/topic-subscription-polls.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../topic-subscription/topic-subscription-budgets.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -109,6 +112,7 @@ function toTreeInForcePollCommand(origin: AlmConformanceStepInput): RallarBlackB
         step: origin,
         name: 'tree-in-force',
         phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         reads: [{
             name: 'read',
             read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) })
