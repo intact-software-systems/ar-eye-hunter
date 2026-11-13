@@ -9,6 +9,10 @@ import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/confo
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/cell/alm-conformance-cell-parts.ts';
 import {
+    toAlmCellBarrier,
+    type AlmCellBarrierPhase
+} from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-barrier.ts';
+import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
@@ -42,7 +46,6 @@ import { serverOriginated } from '@shared-test/rallar-bb-test/conformance/alm/sc
 import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import type {
-    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
@@ -352,26 +355,15 @@ function toBarrieredScenarioCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     const firstStep = commands.findIndex((command) => command.kind !== 'fault.inject');
     const armedEnd = firstStep < 0 ? commands.length : firstStep;
-    const scenarioPrefix = toScenarioCarrierAndKey(scenario);
-    return [
-        toScenarioBarrier(scenarioPrefix, role, 'start'),
-        ...commands.slice(0, armedEnd),
-        toScenarioBarrier(scenarioPrefix, role, 'armed'),
-        ...commands.slice(armedEnd)
-    ];
-}
-
-function toScenarioBarrier(
-    scenarioPrefix: string,
-    role: AlmConformanceRole,
-    phase: 'start' | 'armed'
-): RallarBlackBoxTestBarrierCommand {
-    return {
-        kind: 'barrier',
-        commandId: `${scenarioPrefix}-${role}-${phase}`,
-        barrierId: `${scenarioPrefix}-${phase}`,
-        timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS
-    };
+    const toBarrier = (phase: AlmCellBarrierPhase) =>
+        toAlmCellBarrier({
+            cellPrefix: toScenarioCarrierAndKey(scenario),
+            role,
+            phase,
+            timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
+            participants: undefined
+        });
+    return [toBarrier('start'), ...commands.slice(0, armedEnd), toBarrier('armed'), ...commands.slice(armedEnd)];
 }
 
 /** Matches `toCommandId`'s own `alm-<carrier>-<scenarioKey>` prefix; `scenarioId` alone collides across scenarioKeys. */

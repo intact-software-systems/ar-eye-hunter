@@ -28,6 +28,12 @@ export interface CreateAlmConformanceRecipesInput {
      * recipient's connect and lets `ordering-resync` wait for its invocation.
      */
     readonly recoveryOwner?: 'record';
+    /**
+     * Absent, no cell's roles meet before its body: the hosted combined recipe orders its blocks with barriers of its
+     * own, and a caller without a started distributed run has no participants to meet. `barriered` makes every role but
+     * the successor meet at its cell's `connected` barrier between its prologue and its body.
+     */
+    readonly cellSettle?: 'barriered';
 }
 
 export type AlmConformanceScenarioId =

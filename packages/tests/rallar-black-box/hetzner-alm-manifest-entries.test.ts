@@ -326,6 +326,24 @@ describe('ALM conformance combined blocks', () => {
             }
         }
     });
+
+    it('no combined block carries a cell gate', () => {
+        const selections = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()]
+            .flatMap((entry) => entry.manifest.recipes);
+
+        for (const selection of selections) {
+            for (const { cell, commands } of toCombinedBlocks(selection.recipe!)) {
+                const barriers = toNestedCommands(commands).filter((command) => command.kind === 'barrier');
+                // The run's every started agent meets at each block's two barriers; no barrier names its participants.
+                expect(barriers, cell).toEqual([{
+                    kind: 'barrier',
+                    commandId: `${cell}-${selection.role}-armed`,
+                    barrierId: `${cell}-armed`,
+                    timeoutMs: expect.any(Number)
+                }]);
+            }
+        }
+    });
 });
 
 /** Each cell's block runs from its `start` barrier to the next cell's; the shared prologue precedes the first. */

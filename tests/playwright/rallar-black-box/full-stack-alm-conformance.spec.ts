@@ -57,6 +57,7 @@ import {
     toAgentRunPrincipalIds,
     type AgentRun
 } from './full-stack-agent-run.ts';
+import { startCellGateRun } from './full-stack-cell-gate-run.ts';
 import {
     createTwoAgentRun,
     readFullStackConfig,
@@ -177,6 +178,11 @@ test.describe('ALM conformance lane', () => {
 
                 let scenarioFailed = false;
                 try {
+                    await startCellGateRun({
+                        run,
+                        cellKey: undefined,
+                        agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
+                    });
                     await runAlmConformanceScenarios(run, carrier, family);
                 }
                 catch (scenarioError) {
@@ -216,6 +222,7 @@ test.describe('ALM conformance lane', () => {
                 });
                 let scenarioFailed = false;
                 try {
+                    await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
                     await runAgentScenarios(run, carrier, family);
                 }
                 catch (scenarioError) {
@@ -304,7 +311,8 @@ function selectScenarios(
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS,
         laneFamilies: [family],
-        recoveryOwner: 'record'
+        recoveryOwner: 'record',
+        cellSettle: 'barriered'
     }).filter((scenario) =>
         (scope === 'full' || scenario.tags.includes('smoke')) &&
         !skippedScenarioIds.includes(scenario.scenarioId)
@@ -571,6 +579,11 @@ async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
         }
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
+        await startCellGateRun({
+            run,
+            cellKey: scenario.scenarioKey,
+            agentsByRole: new Map([['sender', owner], ['receiver', run.receiver]])
+        });
         const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
         const successorGate = scenario.successorGate?.commandId;
         const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd, successorGate }, {

@@ -34,6 +34,7 @@ import {
     type AlmConformanceCellParts,
     type AlmConformanceCellPartsInput
 } from './cell/alm-conformance-cell-parts.ts';
+import { toAlmCellSettleCommands } from './cell/to-alm-cell-settle-commands.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { resolveAlmConformancePrincipals } from './resolve-alm-conformance-principals.ts';
 import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
@@ -134,7 +135,10 @@ export interface AlmConformanceScenario {
     readonly sibling: RallarBlackBoxTestRecipe | undefined;
     /** The second producer's recipe; undefined exactly when `roles` does not declare `publisher-b`. */
     readonly publisherB: RallarBlackBoxTestRecipe | undefined;
-    /** Each declared role's recipe in its parts, so a combined recipe shares one prologue and runs each body. */
+    /**
+     * Each declared role's recipe in its parts, so a combined recipe shares one prologue and runs each body. A role
+     * recipe of a `barriered` cell holds its settle between the two.
+     */
     readonly partsByRole: Readonly<Partial<Record<AlmConformanceRole, AlmConformanceCellParts>>>;
     readonly tags: readonly AlmConformanceTag[];
     /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
@@ -325,23 +329,7 @@ function toAlmConformanceScenario(
     definition: AlmConformanceScenarioDefinition,
     diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
-    const cells = new Map(definition.roles.map((role) => {
-        const step = toStepInput(input, definition, role);
-        const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
-            ? definition.toSenderCommands(step)
-            : definition.toRecipientCommands(step);
-        return [
-            role,
-            toRoleCell({
-                ...step,
-                ...diagnostics,
-                commands,
-                receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
-                reloadCheckpoint: definition.toReloadCheckpoint?.(step),
-                relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined
-            })
-        ] as const;
-    }));
+    const cells = toRoleCells(input, definition, diagnostics);
     const toDeclaredRecipe = (role: AlmConformanceRole) => cells.get(role)?.recipe;
     const scenario: AlmConformanceScenario = {
         scenarioId: definition.scenarioId,
@@ -455,17 +443,51 @@ function toContinuationRecipe(
     return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
-/** The role's recipe and its parts, both with the role's principals resolved. */
-function toRoleCell(recipeInput: AlmConformanceRecipeInput): AlmConformanceRoleCell {
-    const parts = toAlmConformanceCellParts(recipeInput);
+/** Every declared role's cell; a role's settle reads the other roles' prologues, so all parts come first. */
+function toRoleCells(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    diagnostics: AlmRecipeDiagnosticSelection
+): ReadonlyMap<AlmConformanceRole, AlmConformanceRoleCell> {
+    const recipeInputs = definition.roles.map((role) => {
+        const step = toStepInput(input, definition, role);
+        const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
+            ? definition.toSenderCommands(step)
+            : definition.toRecipientCommands(step);
+        const recipeInput: AlmConformanceRecipeInput = {
+            ...step,
+            ...diagnostics,
+            commands,
+            receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
+            reloadCheckpoint: definition.toReloadCheckpoint?.(step),
+            relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined
+        };
+        return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
+    });
+    const prologueByRole = new Map(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts.prologue]));
+    return new Map(recipeInputs.map(({ recipeInput, parts }) => [
+        recipeInput.role,
+        toRoleCell(recipeInput, parts, toAlmCellSettleCommands(recipeInput, prologueByRole))
+    ]));
+}
+
+/** The role's recipe, its settle between its parts, and its parts, all with the role's principals resolved. */
+function toRoleCell(
+    recipeInput: AlmConformanceRecipeInput,
+    parts: AlmConformanceCellParts,
+    settle: readonly RallarBlackBoxTestCommand[]
+): AlmConformanceRoleCell {
     const recipe = resolveAlmConformancePrincipals(
-        toAlmConformanceRecipe(recipeInput, [...parts.prologue, ...parts.body]),
+        toAlmConformanceRecipe(recipeInput, [...parts.prologue, ...settle, ...parts.body]),
         recipeInput.input.principalIdsByRole
     );
     const prologueLength = parts.prologue.length;
     return {
         recipe,
-        parts: { prologue: recipe.commands.slice(0, prologueLength), body: recipe.commands.slice(prologueLength) }
+        parts: {
+            prologue: recipe.commands.slice(0, prologueLength),
+            body: recipe.commands.slice(prologueLength + settle.length)
+        }
     };
 }
 
