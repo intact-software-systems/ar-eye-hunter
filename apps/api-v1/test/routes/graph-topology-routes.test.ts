@@ -14,7 +14,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -617,6 +617,7 @@ function createRouteApp(options: {
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
     readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
     readonly readPlannedLayoutFingerprint?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
+    readonly readPresenceSummaryRevision?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPresenceSummaryRevision'];
     readonly readLifecyclePolicy?: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
@@ -689,6 +690,7 @@ function createRouteApp(options: {
                     }))
         },
         readPlannedLayoutFingerprint: options.readPlannedLayoutFingerprint ?? (() => Promise.resolve(null)),
+        readPresenceSummaryRevision: options.readPresenceSummaryRevision ?? (() => Promise.resolve(null)),
         processTopologyAppInbox: options.processTopologyAppInbox ??
             ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
         now: () => 123_456
@@ -890,6 +892,18 @@ function withActivationStatus(
                 evidenceWatermark: { version: 3, createdAtEpochMs: 1_000 },
                 publishedAtEpochMs: 1_000
             }
+        }
+    };
+}
+
+function withCausalRevision(snapshot: GroupSnapshot, causalRevision: GroupStateCausalRevision): GroupSnapshot {
+    return {
+        ...snapshot,
+        causalRevision,
+        group: {
+            ...snapshot.group,
+            snapshotVersion: causalRevision.groupRevision,
+            presenceVersion: causalRevision.presenceRevision
         }
     };
 }
@@ -1273,4 +1287,49 @@ Deno.test('formation view carries the queued replan the topology view reports', 
     const view = await readFormationView(app);
 
     assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 });
+});
+
+Deno.test('formation view states the group causal revision it was derived at', async () => {
+    const app = createRouteApp({
+        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.causalRevision, { groupRevision: 7, presenceRevision: 3 });
+});
+
+Deno.test('formation view states the presence summary revision, equal to the causal revision once the summary has caught up', async () => {
+    const app = createRouteApp({
+        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 }),
+        readPresenceSummaryRevision: () => Promise.resolve({ groupRevision: 7, presenceRevision: 3 })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.presenceSummaryRevision, { groupRevision: 7, presenceRevision: 3 });
+    assert.deepEqual(view.presenceSummaryRevision, view.causalRevision);
+});
+
+Deno.test('formation view states a presence summary revision behind the causal revision while a write summary work is still queued', async () => {
+    const app = createRouteApp({
+        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 }),
+        readPresenceSummaryRevision: () => Promise.resolve({ groupRevision: 6, presenceRevision: 3 })
+    });
+
+    const view = await readFormationView(app);
+
+    assert.deepEqual(view.presenceSummaryRevision, { groupRevision: 6, presenceRevision: 3 });
+    assert.deepEqual(view.causalRevision, { groupRevision: 7, presenceRevision: 3 });
+});
+
+Deno.test('formation view states no presence summary revision for a group whose first summary is not written', async () => {
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        readPresenceSummaryRevision: () => Promise.resolve(null)
+    });
+
+    const view = await readFormationView(app);
+
+    assert.equal(view.presenceSummaryRevision, null);
 });

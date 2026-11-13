@@ -1,5 +1,5 @@
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
-import type { GroupRef } from '../group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
 import type {
     GroupActivationCondition,
     GroupActivationRemediation
@@ -65,4 +65,13 @@ export type GroupFormationView = Readonly<{
      * is not itself a claim that traffic is flowing.
      */
     coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
+    /** The group's causal revision this view was derived at. */
+    causalRevision: GroupStateCausalRevision;
+    /**
+     * The causal revision of the stored presence summary. The summary worker,
+     * not the write, queues `pending`, so until this equals `causalRevision`
+     * a write that will replan can still read as nothing queued. Null before
+     * the group's first summary is written.
+     */
+    presenceSummaryRevision: GroupStateCausalRevision | null;
 }>;

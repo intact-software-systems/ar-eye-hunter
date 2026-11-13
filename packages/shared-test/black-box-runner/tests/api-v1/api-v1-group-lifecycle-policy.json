@@ -347,6 +347,58 @@
       }
     },
     {
+      "name": "formationViewStatesTheRevisionsItWasDerivedAt",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 8000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.2
+        },
+        "outputs": {
+          "formationCausalGroupRevision": "body.causalRevision.groupRevision",
+          "formationPresenceSummaryGroupRevision": "body.presenceSummaryRevision.groupRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "causalRevision": {
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
+          },
+          "presenceSummaryRevision": {
+            "groupRevision": "integer",
+            "presenceRevision": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "thePresenceSummaryNeverRunsAheadOfTheGroup",
+      "type": "assert",
+      "actual": {
+        "presenceSummaryGroupRevision": "{formationPresenceSummaryGroupRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "comparators": [
+          {
+            "path": "presenceSummaryGroupRevision",
+            "lte": "{formationCausalGroupRevision}"
+          }
+        ]
+      }
+    },
+    {
       "name": "absentPolicyJoinAdmitsInstantly",
       "type": "http",
       "connection": "primary",

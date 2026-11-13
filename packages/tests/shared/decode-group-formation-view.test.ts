@@ -71,4 +71,41 @@ describe('group formation view decoding', () => {
             ).left
         ).toBeUndefined();
     });
+
+    it('rejects a view that does not state the revisions it was derived at', () => {
+        const {
+            causalRevision: _causalRevision,
+            presenceSummaryRevision: _presenceSummaryRevision,
+            ...withoutRevisions
+        } = createFormationView(groupRef);
+
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutRevisions)), groupRef).left).toEqual([
+            { path: 'causalRevision', code: 'missing-field', message: 'Formation view is missing causalRevision' },
+            {
+                path: 'presenceSummaryRevision',
+                code: 'missing-field',
+                message: 'Formation view is missing presenceSummaryRevision'
+            }
+        ]);
+    });
+
+    it('accepts no presence summary revision and refuses a revision that is not a causal revision', () => {
+        const broken = {
+            ...createFormationView(groupRef),
+            causalRevision: { groupRevision: -1, presenceRevision: 0 },
+            presenceSummaryRevision: { groupRevision: 1, presenceRevision: 1, version: 1 }
+        };
+
+        expect(issuePaths(JSON.stringify(broken))).toEqual(['causalRevision', 'presenceSummaryRevision']);
+        expect(issuePaths(JSON.stringify({ ...broken, causalRevision: null }))).toEqual([
+            'causalRevision',
+            'presenceSummaryRevision'
+        ]);
+        expect(
+            decodeGroupFormationView(
+                JSON.parse(JSON.stringify(createFormationView(groupRef, { presenceSummaryRevision: null }))),
+                groupRef
+            ).left
+        ).toBeUndefined();
+    });
 });

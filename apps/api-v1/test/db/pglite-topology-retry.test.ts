@@ -151,6 +151,7 @@ Deno.test(
                     adminClientIds: [],
                     readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
                     readPlannedLayoutFingerprint: () => Promise.resolve(null),
+                    readPresenceSummaryRevision: () => Promise.resolve(null),
                     now: () => nowEpochMs
                 });
                 return app;

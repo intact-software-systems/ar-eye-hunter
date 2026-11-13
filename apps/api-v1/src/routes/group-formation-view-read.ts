@@ -32,7 +32,7 @@ import {
     resolveGroupLifecycleManagers,
     toGroupLifecycleElectionKey
 } from '@shared/api/group-lifecycle/resolve-group-lifecycle-managers.ts';
-import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { Group, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { GraphTopologyRoutePlanning, GraphTopologyRouteQuery } from './graph-topology-routes.ts';
 
@@ -42,6 +42,8 @@ export interface ReadGroupFormationViewDependencies {
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     /** The planned slot's stored topology-input fingerprint; null before a planning cycle stored one. */
     readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
+    /** The stored presence summary's causal revision; null before the group's first summary is written. */
+    readonly readPresenceSummaryRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | null>;
 }
 
 export async function readGroupFormationView(
@@ -49,6 +51,10 @@ export async function readGroupFormationView(
     snapshot: GroupSnapshot,
     deps: ReadGroupFormationViewDependencies
 ): Promise<GroupFormationView> {
+    // Read before the group: the worker stamps the summary with the group
+    // revision it read, so a summary read first never names a later revision
+    // than the group the view is derived from.
+    const presenceSummaryRevision = await deps.readPresenceSummaryRevision(groupRef);
     const [authority, view] = await Promise.all([
         deps.topologyPlanning.readTopologyPlanningAuthority({
             groupRef,
@@ -89,7 +95,9 @@ export async function readGroupFormationView(
         maxFormationAttempts: policy === null ? null : policy.activation.maxFormationAttempts,
         condition: status.condition,
         remediation: status.remediation,
-        coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity
+        coverageBasisLayoutIdentity: status.coverageBasisLayoutIdentity,
+        causalRevision: authority.group.causalRevision,
+        presenceSummaryRevision
     };
 }
 

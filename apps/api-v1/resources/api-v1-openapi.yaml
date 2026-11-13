@@ -7801,7 +7801,20 @@ components:
         - condition
         - remediation
         - coverageBasisLayoutIdentity
+        - causalRevision
+        - presenceSummaryRevision
       properties:
+        causalRevision:
+          description: The group's causal revision this view was derived at.
+          allOf:
+            - { $ref: '#/components/schemas/GroupStateCausalRevision' }
+        presenceSummaryRevision:
+          description: >-
+            The stored presence summary's causal revision, equal to causalRevision once the summary worker has
+            caught up with the group's latest write; null before the group's first summary is written.
+          anyOf:
+            - { $ref: '#/components/schemas/GroupStateCausalRevision' }
+            - { type: 'null' }
         maxFormationAttempts:
           type:
             - integer
