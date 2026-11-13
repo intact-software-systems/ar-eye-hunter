@@ -32,7 +32,7 @@ import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 import { createApiV1TestQueueResilience } from '../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
+import { waitForPGliteQueueRetryDue, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createPGliteClientEventCollisionFixture } from './pglite-client-event-collision-test-runtime.ts';
 import {
@@ -727,6 +727,17 @@ test(
                     InboxQueueReader.INBOX_DEQUEUE_TYPES,
                     createApiV1TestQueueResilience()
                 );
+                const [afterPass] = await sql<ResourceInboxAttemptStatusRow[]>`
+      select ri_attempts, ri_status from resource_inbox
+      where ri_type_id = 'APP_INBOX' and ri_resource_id = ${requestId}
+    `;
+                if (afterPass?.ri_status === EntityStatus.RETRY) {
+                    await waitForPGliteQueueRetryDue(sql, 'APP_INBOX');
+                    await inboxReader.dequeueInbox(
+                        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                        createApiV1TestQueueResilience()
+                    );
+                }
                 return await pending;
             };
 

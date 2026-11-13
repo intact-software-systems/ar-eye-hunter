@@ -132,3 +132,20 @@ export async function waitForPGliteFirstRetryEligibility(sql: PGliteSql, key: Ke
     }
     throw new Error('Timed out waiting for the exact AppInbox retry SQL eligibility');
 }
+
+export async function waitForPGliteQueueRetryDue(sql: PGliteSql, typeId: string): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+        const rows = await sql<RetryEligibilityRow[]>`
+            select next_ts <= (now() at time zone 'UTC')
+                and expire_ts > (now() at time zone 'UTC') as eligible
+            from resource_inbox
+            where ri_type_id = ${typeId} and ri_status = 'RETRY' and next_ts is not null
+        `;
+        assert.ok(rows.length > 0, `Expected a scheduled ${typeId} retry`);
+        if (rows.some((row) => row.eligible)) {
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error(`Timed out waiting for a ${typeId} retry to become due`);
+}

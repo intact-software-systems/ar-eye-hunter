@@ -729,3 +729,10 @@ and it has no status list.
   both (`navigationProductChanged` in `computeChangedFindings`). Ruled by the
   maintainer (2026-11-13): scan the changed files only, then scan base and head
   in parallel.
+- A queue retry's due time (`next_ts`) is written from the application clock
+  (`PSqlQueueBox.releaseEntries`, `Temporal.Now.instant`) and compared with the
+  database's `now()` by the claim predicate (`toEligibleRowPredicate`). Two
+  clocks that disagree delay or advance a retry by their difference; the retry
+  still runs, so it is latency, not correctness. It matters when the API and its
+  database run on hosts whose clocks drift by more than the retry backoff, and
+  not before.

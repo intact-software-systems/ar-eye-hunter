@@ -42,7 +42,7 @@ import { createCrdtAdminMutations } from '../../../src/crdt/create-crdt-admin-mu
 import * as routes from '../../../src/crdt/register-crdt-admin-routes.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
 import { createApiV1TestQueueResilience } from '../../api-v1-test-queue-resilience.ts';
-import { waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
+import { waitForPGliteQueueRetryDue, waitForPGliteQueueRow } from '../../db/pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 import { createTracedApiTestApp } from '../../services/create-traced-api-test-app.ts';
 import { authorizeTestCrdtCommand } from '../crdt-api-test-fixtures.ts';
@@ -642,6 +642,15 @@ async function verifyEraseResponseAndAuditDelivery(
         OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
         createApiV1TestQueueResilience()
     );
+    if (await readAuditCount(harness.sql, 'RETRY') === 1) {
+        assert.equal(harness.readAuditAttempts(), 1);
+        assert.equal(harness.audit.length, 0);
+        await waitForPGliteQueueRetryDue(harness.sql, 'APP_OUTBOX');
+        await harness.outbox.dequeueOutbox(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            createApiV1TestQueueResilience()
+        );
+    }
     assert.equal(harness.readAuditAttempts(), 2);
     assert.equal(harness.audit.length, 1);
     assert.equal(await readAuditCount(harness.sql, 'COMPLETED'), 1);
@@ -649,7 +658,7 @@ async function verifyEraseResponseAndAuditDelivery(
 
 async function readAuditCount(
     sql: PGliteSql,
-    statusPredicate: 'NEW' | 'COMPLETED'
+    statusPredicate: 'NEW' | 'RETRY' | 'COMPLETED'
 ): Promise<number> {
     const rows = await sql<SqlCountRow[]>`
         select count(*) as count from resource_inbox
