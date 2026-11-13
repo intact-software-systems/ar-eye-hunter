@@ -206,7 +206,11 @@ event's `data` is the event itself:
 The type is the authority for the members; the harness adds nothing to the
 event. The bridged event carries no connection, actor or lane context, so a
 consumer keys it by page. A page that never closes its runtime leaves its sink
-installed; a second runtime in the same process replaces it.
+installed; a second runtime in the same process replaces it, and the first
+runtime's close then clears the sink the second installed (the close clears it
+unconditionally, `black-box-rallar-close-operation.ts`), so in a realm with two
+runtimes the survivor records no state reads. No production realm holds two:
+one runtime per window or page.
 
 ## Outbound Admission Diagnostics
 
