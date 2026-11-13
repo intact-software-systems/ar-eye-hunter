@@ -3,7 +3,7 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { isOverlayIdentity } from './overlays-repository.ts';
+import { isOverlayIdentity } from './to-overlay-layout-identity.ts';
 
 /**
  * A slot holds whatever the classifier last wrote under the overlay id; only a

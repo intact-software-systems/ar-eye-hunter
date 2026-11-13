@@ -5,7 +5,6 @@ import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-
 import {
     configureOverlayRepositories,
     findAcceptedOverlayById,
-    isOverlayIdentity,
     readableLayoutTransitionCache,
     reconcileAcceptedOverlayIdentity,
     removeAcceptedOverlayByGroupRef,
@@ -13,9 +12,9 @@ import {
     removeAcceptedOverlayByIdIfUnchanged,
     setAcceptedOverlayById,
     setCurrentAcceptedServerOverlayById,
-    setPlannedOverlayById,
-    toOverlayLayoutIdentity
+    setPlannedOverlayById
 } from '@shared/repository/overlays-repository.ts';
+import { isOverlayIdentity, toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 // dprint-ignore
 import {
     beforeEach,

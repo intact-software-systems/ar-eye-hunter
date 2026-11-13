@@ -11,7 +11,7 @@ import {
     type RtcRoomLayoutHistory
 } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const replacedAtEpochMs = 10_000;

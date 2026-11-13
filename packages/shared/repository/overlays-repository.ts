@@ -1,10 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    isSameGroupLayoutIdentity,
-    resolveGroupLayoutRole,
-    type GroupLayoutIdentity
-} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { resolveGroupLayoutRole, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -28,6 +24,7 @@ import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { isRoomLayoutOverlay } from './is-accepted-room-layout-overlay.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
 import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
+import { isOverlayIdentity, toOverlayLayoutIdentity } from './to-overlay-layout-identity.ts';
 
 export interface OverlayRepositoryOptions
     extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
@@ -587,25 +584,6 @@ function removeMismatchedAcceptedOverlay(
     }
 
     return removeAcceptedOverlayById(input.overlayId, input.manager);
-}
-
-export function isOverlayIdentity(
-    overlay: OverlayInfo,
-    identity: GroupLayoutIdentity
-): boolean {
-    return isSameGroupLayoutIdentity(
-        toOverlayLayoutIdentity(overlay),
-        identity
-    );
-}
-
-export function toOverlayLayoutIdentity(overlay: OverlayInfo): GroupLayoutIdentity {
-    return {
-        groupRevision: overlay.sourceGroupStateCausalRevision.groupRevision,
-        presenceRevision: overlay.sourceGroupStateCausalRevision.presenceRevision,
-        version: overlay.overlayVersion,
-        state: overlay.state
-    };
 }
 
 function toOverlayRepositoryChange(

@@ -2,7 +2,7 @@ import type { OverlayInfo } from '../../api/api-config.ts';
 import type { GroupRef } from '../../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
 import type { OverlayLayoutTransition } from '../../repository/overlay-layout-transition.ts';
-import { isOverlayIdentity } from '../../repository/overlays-repository.ts';
+import { isOverlayIdentity } from '../../repository/to-overlay-layout-identity.ts';
 
 export interface RtcRoomLayoutHistory {
     readonly transition: OverlayLayoutTransition | null;

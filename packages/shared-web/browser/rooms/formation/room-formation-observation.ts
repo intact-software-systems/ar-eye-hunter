@@ -18,7 +18,8 @@ import {
     isAcceptedRoomLayoutOverlay,
     isRoomLayoutOverlay
 } from '@shared/repository/is-accepted-room-layout-overlay.ts';
-import { toOverlayLayoutIdentity, type OverlayRepositoryChange } from '@shared/repository/overlays-repository.ts';
+import type { OverlayRepositoryChange } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
 import type { GroupRef, GroupSnapshot } from '../room-group-state-translation.ts';
 import type { RallarRoomStateStorePort } from '../room-state-store.ts';
