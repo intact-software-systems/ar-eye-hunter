@@ -69,12 +69,13 @@ vi.mock(import('@shared-web/browser/composition/create-default-publication-key-s
     return { createDefaultPublicationKeyStore: () => store };
 });
 
+const { createInitialiseMiddlewareDouble } = await vi.hoisted(async () => await import('../connection/create-initialise-middleware-double.ts'));
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), () => ({
-    initialiseMiddleware: async (): Promise<BrowserConnectedMiddleware> => ({
+    initialiseMiddleware: createInitialiseMiddlewareDouble(async (): Promise<BrowserConnectedMiddleware> => ({
         middleware: roomWorkflowMocks.context.middleware,
         rtcCaptureReceipt,
         checkpoints: []
-    })
+    }))
 }));
 
 vi.mock(import('@shared-web/browser/rooms/room-group-state-workflows.ts'), async (importOriginal) => ({
