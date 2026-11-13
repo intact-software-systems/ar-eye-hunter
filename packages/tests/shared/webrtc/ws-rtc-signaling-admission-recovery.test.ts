@@ -62,6 +62,7 @@ it.each([
     socket.open();
     await connecting;
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         socket: client,
         outbox: new InMemoryQueueBox(),
         sessionId: 'self',

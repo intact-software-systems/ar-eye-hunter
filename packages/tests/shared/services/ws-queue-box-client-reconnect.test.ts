@@ -316,6 +316,7 @@ function createDefaultReconnectService(
 ): WsQueueBoxClientService {
     vi.stubGlobal('WebSocket', TestWebSocket);
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(new Map()),
         socket,
         sessionId: 'session-1',

@@ -88,6 +88,7 @@ async function openCongestionCarriers(
     });
     const socket = new JsonWebSocketClient(() => 'ws://congestion-test', faults);
     const ws = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         socket,
         sessionId: 'a',
         serverPeerId: 'server',

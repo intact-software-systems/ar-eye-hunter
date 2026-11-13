@@ -2,6 +2,7 @@ import { expect } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type { RallarBlackBoxTestMessagesReceivedResultValue } from '@shared-test/rallar-bb-test/alm/rallar-black-box-alm-result-values.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -19,6 +20,7 @@ import { resolveLatestWaitEvent } from '@shared-test/rallar-bb-test/wait/wait-ev
 import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
+import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALMessageTrace } from '@shared/al-contracts/trace/to-al-message-trace.ts';
 import { AL_CHECKPOINT_DEFAULT_SETTINGS } from '@shared/alm/checkpoint/al-checkpoint-default-settings.ts';
 import type { ALDeliveryFailure } from '@shared/alm/delivery/al-delivery-failure.ts';
@@ -40,6 +42,7 @@ import {
 } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import { AlmReloadLiveArrivals } from './alm-reload-live-arrivals.ts';
 import {
@@ -204,9 +207,9 @@ export class AlmReloadPorts {
     recoveryOwnerInstalled = false;
     private deliveries = 0;
     private readonly volatileSessions: Readonly<Record<PortRole, AlmReloadVolatileSession>> = {
-        sender: new AlmReloadVolatileSession(),
-        receiver: new AlmReloadVolatileSession(),
-        'recipient-b': new AlmReloadVolatileSession()
+        sender: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        receiver: new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS),
+        'recipient-b': new AlmReloadVolatileSession(AL_VOLATILE_SESSION_LIMITS)
     };
     /** A held admission quota fault fails every durable admission of the sender's page; its id names the failure. */
     storageQuotaFaultId: string | undefined = undefined;
@@ -237,7 +240,8 @@ export class AlmReloadPorts {
             clock: { nowMs: () => this.now, setNowMs: (nowMs) => this.now = nowMs },
             submit: (msgIds) => msgIds.forEach((msgId) => this.routeAdmitted(this.findMessage(msgId))),
             settle: (settlement) => this.settleStaged(settlement),
-            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event)
+            diagnostics: (event) => recordOutboundDiagnostic(this.sender, event),
+            idleLimits: AL_PUBLICATION_STAGE_LIMITS
         });
         this.receiver = this.createRuntime('receiver');
         this.recipientB = this.createRuntime('recipient-b');
@@ -329,15 +333,24 @@ export class AlmReloadPorts {
             case 'http.request':
                 return this.requestGroup(role, command);
             case 'rtc.connect':
-                this.volatileSessions[role].connect(command);
+                this.volatileSessions[role].connect(
+                    decodeBlackBoxRallarConfigFields(command.rallar ?? {}).almVolatileLimits ??
+                        AL_VOLATILE_SESSION_LIMITS
+                );
                 this.acceptedLayoutSince.set(role, this.now);
                 if (role === 'receiver') {
                     this.recoveryOwnerInstalled = command.rallar?.recoveryOwner === 'record';
                 }
                 if (role === 'sender') {
-                    const limits = decodeAlmReloadPublicationLimits(command.rallar?.almPublicationLimits);
-                    assert(limits.right);
-                    this.publicationLane.connect(limits.right);
+                    const namedLimits = command.rallar?.almPublicationLimits;
+                    if (namedLimits === undefined) {
+                        this.publicationLane.connect(AL_PUBLICATION_STAGE_LIMITS);
+                    }
+                    else {
+                        const limits = decodeAlmReloadPublicationLimits(namedLimits);
+                        assert(limits.right);
+                        this.publicationLane.connect(limits.right);
+                    }
                 }
                 this.reportStoreRecoveries(role, session.sessionId);
                 this.deliverRecoveredOriginals(role);

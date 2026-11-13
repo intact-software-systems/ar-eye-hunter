@@ -60,7 +60,7 @@ export interface BrowserRuntimeFoundation {
     readonly authRuntime: RallarAuthRuntimePort;
     readonly lifecycle: RallarLifecycleCoordinator;
     readonly transportRuntime: BrowserTransportRuntimePort;
-    /** The page's WebCrypto: the only read of `globalThis.crypto.subtle` for publication signing and verification. */
+    /** The WebCrypto for publication signing and verification; the default foundation reads the page's. */
     readonly subtle: SubtleCrypto | undefined;
     /** Where the pages of a session, this one among them, share the session's key pair. */
     readonly publicationKeyStore: PublicationKeyStore;
@@ -89,6 +89,11 @@ export interface BrowserStateEventComposition {
     readonly stateEvents: RallarStateEventsPort;
 }
 
+export interface CreateBrowserRuntimeFoundationInput {
+    readonly subtle: SubtleCrypto | undefined;
+    readonly publicationKeyStore: PublicationKeyStore;
+}
+
 export interface CreateBrowserStateCompositionInput {
     readonly runtime: RallarBrowserFacadeRuntimeContext;
     readonly stateRuntime: RallarStateRuntimePort;
@@ -99,7 +104,14 @@ export interface CreateBrowserStateEventCompositionInput {
     readonly session: RallarSessionController;
 }
 
-export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
+export function createDefaultBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
+    return createBrowserRuntimeFoundation({
+        subtle: globalThis.crypto?.subtle,
+        publicationKeyStore: createDefaultPublicationKeyStore()
+    });
+}
+
+export function createBrowserRuntimeFoundation(input: CreateBrowserRuntimeFoundationInput): BrowserRuntimeFoundation {
     const transportRuntime = browserTransportRuntime;
     const runtime = new BrowserFacadeRuntimeState(transportRuntime);
     const connectionRuntime: RallarConnectionRuntimePort = {
@@ -137,8 +149,8 @@ export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
         authRuntime,
         lifecycle: createRallarLifecycleCoordinator(),
         transportRuntime,
-        subtle: globalThis.crypto?.subtle,
-        publicationKeyStore: createDefaultPublicationKeyStore()
+        subtle: input.subtle,
+        publicationKeyStore: input.publicationKeyStore
     };
 }
 

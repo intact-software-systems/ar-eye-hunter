@@ -37,6 +37,7 @@ const signal: ALMessage = {
 function createConsumerFixture(input: ConsumerFixtureInput): ConsumerFixture {
     const events: ALInboundRuntimeDiagnosticsEvent[] = [];
     const service = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
         outbox: new InMemoryQueueBox(),
         socket: new JsonWebSocketClient('ws://unused', createPassThroughTransportFaultPort()),
         sessionId: 'receiver',

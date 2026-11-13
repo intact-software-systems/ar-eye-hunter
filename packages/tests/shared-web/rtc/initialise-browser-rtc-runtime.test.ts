@@ -85,6 +85,7 @@ describe('browser RTC runtime composition', () => {
             return networkConnect.promise;
         });
         const queueBox = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             outbox: new InMemoryQueueBox(),
             socket,
             sessionId: 'self',
@@ -183,7 +184,13 @@ describe('browser RTC runtime composition', () => {
         const failure = new Error('private-connect-failure');
         const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
         vi.spyOn(socket, 'connect').mockRejectedValue(failure);
-        const queueBox = createDefaultWsQueueBoxClientService({ outbox: new InMemoryQueueBox(), socket, sessionId: 'self', serverPeerId: 'server' });
+        const queueBox = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
+            outbox: new InMemoryQueueBox(),
+            socket,
+            sessionId: 'self',
+            serverPeerId: 'server'
+        });
         onTestFinished(() => queueBox.close());
         await expect(initialiseRtcConnectionService({
             webSocketQueueBox: queueBox,

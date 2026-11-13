@@ -1,31 +1,34 @@
 import assert from 'node:assert/strict';
 
-import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
-    RallarBlackBoxTestMessagesSendCommand,
-    RallarBlackBoxTestRtcConnectCommand
+    RallarBlackBoxTestMessagesSendCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
-    AL_VOLATILE_SESSION_LIMITS,
-    ALVolatileSessionBudget
+    ALVolatileSessionBudget,
+    type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionAdmission } from '@shared/alm/volatile-budget/to-al-volatile-session-admission.ts';
 
 /** A connected fixture page uses the product's volatile ledger for both admission and its stats reading. */
 export class AlmReloadVolatileSession {
-    private budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
+    private readonly idleLimits: ALVolatileSessionLimits;
+    private budget: ALVolatileSessionBudget;
 
-    connect(command: RallarBlackBoxTestRtcConnectCommand): void {
-        const limits = decodeBlackBoxRallarConfigFields(command.rallar ?? {}).almVolatileLimits;
-        this.budget = new ALVolatileSessionBudget(limits ?? AL_VOLATILE_SESSION_LIMITS);
+    constructor(idleLimits: ALVolatileSessionLimits) {
+        this.idleLimits = idleLimits;
+        this.budget = new ALVolatileSessionBudget(idleLimits);
+    }
+
+    connect(limits: ALVolatileSessionLimits): void {
+        this.budget = new ALVolatileSessionBudget(limits);
     }
 
     close(): void {
-        this.budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
+        this.budget = new ALVolatileSessionBudget(this.idleLimits);
     }
 
     admit(command: RallarBlackBoxTestMessagesSendCommand, msgId: string, nowMs: number): boolean {

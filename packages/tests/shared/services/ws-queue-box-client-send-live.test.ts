@@ -26,6 +26,7 @@ describe('WsQueueBoxClientService.sendLive', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient('ws://send-live-test', createPassThroughTransportFaultPort());
         const service = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             socket,
             sessionId: 'self',
             serverPeerId: 'server',
@@ -49,6 +50,7 @@ describe('WsQueueBoxClientService.sendLive', () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient('ws://send-live-test', createPassThroughTransportFaultPort());
         const service = createDefaultWsQueueBoxClientService({
+            qosProvider: {},
             socket,
             sessionId: 'self',
             serverPeerId: 'server',
