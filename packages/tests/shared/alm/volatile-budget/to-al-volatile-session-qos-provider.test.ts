@@ -72,7 +72,7 @@ describe('the session QoS provider over the volatile budget (D78)', () => {
     it('states overloaded with no application provider, and nothing below the bound', () => {
         const budget = createFullBudget();
         let nowMs = NOW_MS;
-        const provider = toALVolatileSessionQosProvider(undefined, budget, () => nowMs);
+        const provider = toALVolatileSessionQosProvider({}, budget, () => nowMs);
 
         expect(provider.liveForMessage?.(MESSAGE, CONTEXT)).toEqual({ overloaded: true });
         nowMs = NOW_MS + 1_000;

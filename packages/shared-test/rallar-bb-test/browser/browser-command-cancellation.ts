@@ -1,3 +1,6 @@
+import { DeadlineAbortScope } from '@shared/resilience/timing/deadline-abort-scope.ts';
+import { sleepWithAbortReason } from '@shared/resilience/timing/sleep-with-abort-reason.ts';
+
 import type { RallarBlackBoxTestCommandContext } from '../rallar-black-box-test-contracts.ts';
 
 import type { CommandWithId } from './browser-command-contracts.ts';
@@ -10,24 +13,7 @@ export interface BrowserCommandAbortScope {
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    if (ms <= 0) {
-        return Promise.resolve();
-    }
-    if (signal?.aborted) {
-        return Promise.reject(decodeAbortReason(signal.reason));
-    }
-
-    return new Promise((resolve, reject) => {
-        const listener = new AbortController();
-        const timeout = setTimeout(() => {
-            listener.abort();
-            resolve();
-        }, ms);
-        signal?.addEventListener('abort', () => {
-            clearTimeout(timeout);
-            reject(decodeAbortReason(signal.reason));
-        }, { once: true, signal: listener.signal });
-    });
+    return sleepWithAbortReason(ms, signal, (aborted) => decodeAbortReason(aborted.reason));
 }
 
 export function decodeAbortReason(reason: unknown): Error {
@@ -54,50 +40,19 @@ export function createBrowserCommandAbortScope(
         return { signal: undefined, origin: undefined, cleanup: () => undefined };
     }
 
-    return new BrowserCommandCancellation(parentSignal, timeoutMs);
-}
-
-/** Owns the first abort, its provenance, and the resources forwarding it. */
-class BrowserCommandCancellation implements BrowserCommandAbortScope {
-    readonly #controller = new AbortController();
-    readonly #parentSignal: AbortSignal | undefined;
-    readonly #timeout: ReturnType<typeof setTimeout> | undefined;
-    #origin: BrowserCommandAbortScope['origin'];
-
-    constructor(parentSignal: AbortSignal | undefined, timeoutMs: number | undefined) {
-        this.#parentSignal = parentSignal;
-        if (parentSignal?.aborted) {
-            this.#abortFromParent();
-        }
-        else {
-            parentSignal?.addEventListener('abort', this.#abortFromParent, { once: true });
-        }
-        this.#timeout = timeoutMs === undefined ? undefined : setTimeout(() => {
-            if (!this.signal.aborted) {
-                this.#origin = 'timeout';
-                this.#controller.abort(createTimeoutError());
-            }
-        }, timeoutMs);
-    }
-
-    get signal(): AbortSignal {
-        return this.#controller.signal;
-    }
-
-    get origin(): BrowserCommandAbortScope['origin'] {
-        return this.#origin;
-    }
-
-    cleanup(): void {
-        clearTimeout(this.#timeout);
-        this.#parentSignal?.removeEventListener('abort', this.#abortFromParent);
-    }
-
-    #abortFromParent = (): void => {
-        if (!this.signal.aborted) {
-            this.#origin = 'parent';
-            this.#controller.abort(this.#parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
-        }
+    const scope = new DeadlineAbortScope({
+        parentSignal,
+        timeoutMs,
+        toParentReason: (parent) => parent.reason ?? 'Rallar black-box command was cancelled.',
+        toTimeoutReason: createTimeoutError
+    });
+    return {
+        signal: scope.signal,
+        get origin() {
+            const origin = scope.origin();
+            return origin === 'caller' ? undefined : origin;
+        },
+        cleanup: () => scope.cleanup()
     };
 }
 

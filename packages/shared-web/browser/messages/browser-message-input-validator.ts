@@ -24,10 +24,10 @@ import {
     type RallarJsonPayloadValidationResult,
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 const CORR_ID_MAX_BYTES = 128;
-const UTF8_ENCODER = new TextEncoder();
 
 export interface ResolvedWsMessageInput<T> {
     readonly input: RallarWsSendInput<T>;
@@ -441,7 +441,7 @@ function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly Ralla
 
 function validateCorrId(corrId: string | undefined): readonly RallarValidationIssue[] {
     return corrId === undefined ||
-            (corrId.length > 0 && UTF8_ENCODER.encode(corrId).byteLength <= CORR_ID_MAX_BYTES)
+            (corrId.length > 0 && computeUtf8ByteLength(corrId) <= CORR_ID_MAX_BYTES)
         ? []
         : [{
             path: '$.corrId',

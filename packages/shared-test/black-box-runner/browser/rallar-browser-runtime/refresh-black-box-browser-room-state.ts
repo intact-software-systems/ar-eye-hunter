@@ -6,6 +6,7 @@ import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hyd
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { DeadlineAbortScope } from '@shared/resilience/timing/deadline-abort-scope.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 
 export interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
@@ -43,11 +44,6 @@ interface BlackBoxRoomStateRefreshSession {
     ): Promise<BlackBoxRoomStateRefreshContext>;
 }
 
-interface RoomStateRefreshAbortScope {
-    readonly signal: AbortSignal;
-    cleanup(): void;
-}
-
 interface AbortRejection {
     readonly promise: Promise<never>;
     cleanup(): void;
@@ -56,7 +52,16 @@ interface AbortRejection {
 export async function refreshBlackBoxBrowserRoomState(
     input: RefreshBlackBoxBrowserRoomStateInput
 ): Promise<void> {
-    const abortScope = createRoomStateRefreshAbortScope(input.options);
+    const abortScope = new DeadlineAbortScope({
+        parentSignal: input.options.signal,
+        timeoutMs: Math.max(0, input.options.timeoutMs),
+        toParentReason: (parent) => parent.reason ?? new Error('Room state refresh aborted.'),
+        toTimeoutReason: () => {
+            const error = new Error(`Room state refresh timed out after ${input.options.timeoutMs} ms.`);
+            error.name = 'TimeoutError';
+            return error;
+        }
+    });
     const options = { ...input.options, signal: abortScope.signal };
     let abortRejection: AbortRejection | undefined;
     try {
@@ -69,45 +74,6 @@ export async function refreshBlackBoxBrowserRoomState(
         abortRejection?.cleanup();
         abortScope.cleanup();
     }
-}
-
-function createRoomStateRefreshAbortScope(
-    options: BlackBoxRoomStateRefreshOptions
-): RoomStateRefreshAbortScope {
-    const controller = new AbortController();
-    const abortFromCaller = () => {
-        controller.abort(
-            options.signal?.reason ?? new Error('Room state refresh aborted.')
-        );
-    };
-    if (options.signal?.aborted) {
-        abortFromCaller();
-    }
-    else {
-        options.signal?.addEventListener('abort', abortFromCaller, { once: true });
-    }
-    const timeout = controller.signal.aborted
-        ? undefined
-        : setTimeout(
-            () => {
-                const error = new Error(
-                    `Room state refresh timed out after ${options.timeoutMs} ms.`
-                );
-                error.name = 'TimeoutError';
-                controller.abort(error);
-            },
-            Math.max(0, options.timeoutMs)
-        );
-
-    return {
-        signal: controller.signal,
-        cleanup: () => {
-            if (timeout !== undefined) {
-                clearTimeout(timeout);
-            }
-            options.signal?.removeEventListener('abort', abortFromCaller);
-        }
-    };
 }
 
 function createAbortRejection(signal: AbortSignal): AbortRejection {

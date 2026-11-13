@@ -103,15 +103,6 @@ export function toIndexedDbQueueStoreDefinition(name: string): IndexedDbStoreDef
     };
 }
 
-export async function readStoredQueueWorkPage(
-    db: IDBDatabase,
-    storeName: string,
-    request: ResourceInboxWorkPage.Request
-): Promise<readonly StoredResourceEntry[]> {
-    const [page] = await readStoredQueueWorkPages(db, storeName, [request]);
-    return page;
-}
-
 /**
  * Every request is answered exactly as a single-page read would, from one readonly transaction, so a
  * readiness scan across statuses and work types costs one round trip over one store snapshot.

@@ -9,6 +9,7 @@ import {
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 
 import {
     parseApiV1BlackBoxArgs,
@@ -264,11 +265,16 @@ async function openGroupDeltaSocket(
 ): Promise<void> {
     const ticket = await actors.api.issueWebSocketTicket(session);
     const scope = { applicationId: actors.group.applicationId, workspaceId: actors.group.workspaceId };
-    const query = new URLSearchParams({ ticket, ...scope });
     const interaction: WsInteraction = {
         request: {
             connection: session.label,
-            url: `${session.wsBaseUrl}/api/ws/${session.sessionId}?${query}`,
+            url: toApiWsUrl({
+                wsBaseUrl: session.wsBaseUrl,
+                createWsPath: API_CREATE_WS_PATH,
+                sessionId: session.sessionId,
+                ticket,
+                scope
+            }),
             snapshotScope: scope
         }
     };

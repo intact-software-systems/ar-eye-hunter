@@ -334,14 +334,20 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
     return result;
 }
 
+export const AL_ACK_STATUSES = [
+    'accepted',
+    'delivered',
+    'forwarded',
+    'subtree-complete',
+    'subtree-complete-not-subscribed'
+] as const;
+
 function decodeAckStatus(value: unknown): ALAckStatus {
-    if (
-        value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete' &&
-        value !== 'subtree-complete-not-subscribed'
-    ) {
+    const status = AL_ACK_STATUSES.find((candidate) => candidate === value);
+    if (status === undefined) {
         throw new TypeError('Control ACK status is invalid');
     }
-    return value;
+    return status;
 }
 
 /** The one carrier decoder for every persisted or wire `ALDeliveryCarrier` value. */

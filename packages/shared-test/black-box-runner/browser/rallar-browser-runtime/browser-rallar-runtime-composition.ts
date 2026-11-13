@@ -1,12 +1,6 @@
 import { resolveBrowserRtcOverlayALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import {
-    createBrowserMessagingComposition,
     createBrowserRealtimeCoreComposition,
-    createBrowserResyncRecoveryComposition,
-    createDefaultBrowserGrantedTopics,
-    createDefaultBrowserTopicSubscriptions,
-    createDefaultRtcPublicationProofVerifier,
-    readBrowserSessionInboundDiagnostics,
     type BrowserMessagingComposition,
     type BrowserRealtimeCoreComposition
 } from '@shared-web/browser/composition/browser-communication-composition.ts';
@@ -24,17 +18,16 @@ import {
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
-    createBrowserStateEventComposition,
     type BrowserRuntimeFoundation,
     type BrowserStateComposition,
     type BrowserStateEventComposition
 } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import {
     createBrowserCrdtComposition,
-    createBrowserSessionCoreComposition,
     type BrowserCrdtComposition,
     type BrowserSessionCoreComposition
 } from '@shared-web/browser/composition/browser-session-composition.ts';
+import { createBrowserSessionMessaging } from '@shared-web/browser/composition/create-browser-session-messaging.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { BrowserRallarCrdtFacade } from '@shared-web/browser/crdt/create-rallar-crdt-facade.ts';
 import type {
@@ -482,37 +475,13 @@ function createBlackBoxBrowserTransportComposition(
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
-    const recovery = createBrowserResyncRecoveryComposition({
-        nowMs: browserDeliveryComposition.nowMs
-    });
-    const grantedTopics = createDefaultBrowserGrantedTopics(state);
-    const topicSubscriptions = createDefaultBrowserTopicSubscriptions();
-    const publicationVerifier = createDefaultRtcPublicationProofVerifier(foundation, state);
-    const session = createBrowserSessionCoreComposition({
-        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
-        readVolatileSessionLimits: input.readVolatileSessionLimits,
-        readPublicationStageLimits: input.readPublicationStageLimits,
+    const { session, stateEvents, messaging } = createBrowserSessionMessaging({
         foundation,
         state,
-        grantedTopics,
-        topicSubscriptions,
-        publicationVerifier,
-        sessionDeliveries: browserDeliveryComposition.sessionDeliveries,
-        onResyncRequired: (resync, storage) => recovery.resyncRecovery.onResyncRequired(resync, storage)
-    });
-    const stateEvents = createBrowserStateEventComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        session: session.session
-    });
-    const messaging = createBrowserMessagingComposition({
-        ...browserDeliveryComposition,
-        wsInbox: stateEvents.wsInbox,
-        recoveryOwners: recovery.recoveryOwners,
-        state,
-        session: session.session,
-        grantedTopics,
-        topicSubscriptions,
-        readInboundDiagnostics: () => readBrowserSessionInboundDiagnostics(foundation)
+        delivery: browserDeliveryComposition,
+        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        readVolatileSessionLimits: input.readVolatileSessionLimits,
+        readPublicationStageLimits: input.readPublicationStageLimits
     });
     const realtime = createBrowserRealtimeCoreComposition({
         runtime: foundation.runtime,

@@ -1,5 +1,6 @@
 import type { ConsoleMessage, Page, Request } from 'playwright';
 
+import { DeadlineAbortScope } from '@shared/resilience/timing/deadline-abort-scope.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 interface DistributedRunResponse {
@@ -96,25 +97,12 @@ type PromiseObservation<T> =
     | Readonly<{ status: 'fulfilled'; value: T; }>
     | Readonly<{ status: 'rejected'; reason: Error; }>;
 
-interface HeadlessWorkerAbortScope {
-    readonly signal: AbortSignal;
-    abort(reason: Error): void;
-    cleanup(): void;
-}
-
 type DistributedRunPoll =
     | Readonly<{ kind: 'state' | 'retry'; state: string; message: string; }>
     | Readonly<{ kind: 'malformed'; }>;
 
-interface CreateAbortScopeInput {
-    readonly parentSignal: AbortSignal | undefined;
-    readonly deadline: number | undefined;
-    readonly now: () => number;
-    readonly timeoutError: () => Error;
-}
-
 interface EnsureDeadlineActiveInput {
-    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly abortScope: DeadlineAbortScope<Error>;
     readonly deadline: number;
     readonly now: () => number;
     readonly timeoutError: () => Error;
@@ -122,14 +110,14 @@ interface EnsureDeadlineActiveInput {
 
 interface EnsureDistributedRunPollingActiveInput {
     readonly polling: WaitForDistributedRunTerminalInput;
-    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly abortScope: DeadlineAbortScope<Error>;
     readonly timeoutError: () => Error;
     readonly response: DistributedRunResponse | undefined;
 }
 
 interface ReadDistributedRunPollInput {
     readonly polling: WaitForDistributedRunTerminalInput;
-    readonly abortScope: HeadlessWorkerAbortScope;
+    readonly abortScope: DeadlineAbortScope<Error>;
     readonly ensureActive: (response?: DistributedRunResponse) => void;
 }
 
@@ -288,7 +276,12 @@ async function pollForHeadlessWorkerAgentRegistration(
             `Timed out waiting ${input.timeoutMs}ms for agent ${input.agentId} ` +
                 `to register in control server snapshot. Last state: ${lastState}`
         );
-    const abortScope = createAbortScope({ parentSignal: input.signal, deadline, now: input.now, timeoutError });
+    const abortScope = new DeadlineAbortScope({
+        parentSignal: input.signal,
+        timeoutMs: Math.max(0, deadline - input.now()),
+        toParentReason: abortReason,
+        toTimeoutReason: timeoutError
+    });
     const ensureActive = () => ensureDeadlineActive({ abortScope, deadline, now: input.now, timeoutError });
 
     try {
@@ -374,11 +367,11 @@ export async function waitForDistributedRunTerminal(input: WaitForDistributedRun
     }
 
     const timeoutError = () => toDistributedRunTimeoutError(input);
-    const abortScope = createAbortScope({
+    const abortScope = new DeadlineAbortScope({
         parentSignal: input.signal,
-        deadline: input.deadline,
-        now: input.now,
-        timeoutError
+        timeoutMs: input.deadline === undefined ? undefined : Math.max(0, input.deadline - input.now()),
+        toParentReason: abortReason,
+        toTimeoutReason: timeoutError
     });
     const ensureActive = (response?: DistributedRunResponse) =>
         ensureDistributedRunPollingActive({ polling: input, abortScope, timeoutError, response });
@@ -491,43 +484,6 @@ function observePromise<T>(promise: Promise<T>): Promise<PromiseObservation<T>> 
         (value) => ({ status: 'fulfilled', value }),
         (reason) => ({ status: 'rejected', reason: toError(reason) })
     );
-}
-
-function createAbortScope(input: CreateAbortScopeInput): HeadlessWorkerAbortScope {
-    const { parentSignal } = input;
-    const controller = new AbortController();
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const abort = (reason: Error) => {
-        if (!controller.signal.aborted) {
-            controller.abort(reason);
-        }
-    };
-    const abortFromParent = () => {
-        if (parentSignal !== undefined) {
-            abort(abortReason(parentSignal));
-        }
-    };
-    const cleanup = () => {
-        if (timeout !== undefined) {
-            clearTimeout(timeout);
-            timeout = undefined;
-        }
-        parentSignal?.removeEventListener('abort', abortFromParent);
-    };
-
-    if (parentSignal?.aborted) {
-        abortFromParent();
-    }
-    else {
-        parentSignal?.addEventListener('abort', abortFromParent, { once: true });
-    }
-    if (input.deadline !== undefined && !controller.signal.aborted) {
-        timeout = setTimeout(() => {
-            abort(input.timeoutError());
-        }, Math.max(0, input.deadline - input.now()));
-    }
-
-    return { signal: controller.signal, abort, cleanup };
 }
 
 function ensureDeadlineActive(input: EnsureDeadlineActiveInput): void {

@@ -136,7 +136,7 @@ export interface CreateDefaultALRuntimeStoresInput {
 const DEFAULT_NAMESPACE = 'al-runtime';
 const DEFAULT_INDEXED_DB_NAME = 'rallar-al-runtime';
 
-export function createInMemoryALInboundRuntimeStores(
+function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     const backend = input.inboundBackend ??
@@ -147,7 +147,7 @@ export function createInMemoryALInboundRuntimeStores(
     };
 }
 
-export function createInMemoryALOutboundRuntimeStores<TPrepared>(
+function createInMemoryALOutboundRuntimeStores<TPrepared>(
     input: CreateInMemoryALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     const backend = input.outboundBackend ??
@@ -158,7 +158,7 @@ export function createInMemoryALOutboundRuntimeStores<TPrepared>(
     };
 }
 
-export function createIndexedDbALInboundRuntimeStores(
+function createIndexedDbALInboundRuntimeStores(
     input: CreateIndexedDbALRuntimeStoresInput
 ): ALInboundRuntimeStores {
     if (input.inboundBackend !== undefined) {
@@ -179,7 +179,7 @@ export function createIndexedDbALInboundRuntimeStores(
     return toIndexedDbALInboundRuntimeStores(input, backend, createStorageRecovery);
 }
 
-export function createIndexedDbALOutboundRuntimeStores<TPrepared>(
+function createIndexedDbALOutboundRuntimeStores<TPrepared>(
     input: CreateIndexedDbALOutboundRuntimeStoresInput<TPrepared>
 ): ALOutboundRuntimeStores<TPrepared> {
     // Only a backend this factory opens reports its resets and its recovery here; a supplied one reports to its opener.

@@ -6,6 +6,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { compareOverlayTopologyCausalTuple } from '@shared/api/overlay-topology.ts';
 import type { CompletedStateSnapshot } from '@shared/api/state-snapshot-page.ts';
 import { StateSnapshotAssembly } from '@shared/services/state-snapshot-assembly.ts';
+import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import type {
     ProofCausalRevision,
     ProofSession
@@ -89,11 +90,13 @@ export class ApiV1RtcTopologyProofSocket {
 
     static async open(input: ApiV1RtcTopologyProofSocket.OpenInput): Promise<ApiV1RtcTopologyProofSocket> {
         const { session, ticket, groupRef, now } = input;
-        const url = `${session.wsBaseUrl}/api/ws/${encodeURIComponent(session.sessionId)}` +
-            `?ticket=${encodeURIComponent(ticket)}` +
-            `&applicationId=${encodeURIComponent(groupRef.applicationId)}` +
-            `&workspaceId=${encodeURIComponent(groupRef.workspaceId)}`;
-        const socket = new WebSocket(url);
+        const socket = new WebSocket(toApiWsUrl({
+            wsBaseUrl: session.wsBaseUrl,
+            createWsPath: API_CREATE_WS_PATH,
+            sessionId: session.sessionId,
+            ticket,
+            scope: groupRef
+        }));
         const client = new ApiV1RtcTopologyProofSocket({ socket, label: session.label, groupRef, now });
         await waitForOpen(socket, session.label);
         return client;

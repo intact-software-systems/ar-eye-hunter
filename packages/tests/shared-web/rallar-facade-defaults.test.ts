@@ -322,7 +322,7 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             expect.objectContaining({
-                qosProvider: undefined,
+                qosProvider: {},
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 onResyncRequired: expect.any(Function),
                 diagnosticsPorts: {

@@ -1,4 +1,4 @@
-import { decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { AL_TRACE_ID_HTTP_HEADER, decodeALTraceId, newALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
@@ -39,7 +39,7 @@ export function newApiRequestHeaders(options: ApiRequestOptions): Headers {
     const traceId = options.traceId === undefined
         ? newALTraceId()
         : decodeALTraceId(options.traceId).fold((issue) => throwRallarValidation([issue]), (value) => value);
-    const headers = new Headers({ 'content-type': 'application/json', 'x-request-id': traceId });
+    const headers = new Headers({ 'content-type': 'application/json', [AL_TRACE_ID_HTTP_HEADER]: traceId });
     const session = readApiRequestSession(options);
     if (session) {
         headers.set('authorization', `Bearer ${session.accessToken}`);

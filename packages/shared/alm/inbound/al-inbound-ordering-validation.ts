@@ -3,6 +3,7 @@ import { decodeALMessageValue, type ALMessageRejection } from '../../al-contract
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
 import type { ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import { toALOrderingTrackKey, type ALOrderingTrackSnapshot } from '../../al-contracts/al-runtime.ts';
+import { computeUtf8ByteLength } from '../../encoding/compute-utf8-byte-length.ts';
 import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
@@ -183,10 +184,9 @@ export function validateALInboundBufferedMessages(bundle: ALInboundCommitBundle)
     if (issues.length > 0) {
         return issues;
     }
-    const encoder = new TextEncoder();
     let bytes = 0;
     for (const msg of buffered.values()) {
-        bytes += encoder.encode(JSON.stringify(msg)).length;
+        bytes += computeUtf8ByteLength(JSON.stringify(msg));
     }
     if (
         buffered.size > AL_MESSAGE_RESOURCE_LIMITS.bufferedMessages || bytes > AL_MESSAGE_RESOURCE_LIMITS.bufferedBytes

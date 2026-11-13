@@ -1,3 +1,4 @@
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
@@ -51,7 +52,7 @@ function visibilityCommand(phase: string, shareOnline: boolean): RallarBlackBoxT
         request: {
             method: 'POST',
             path: `/api/friends/requests/${requestId}`,
-            headers: { 'x-request-id': requestId },
+            headers: { [AL_TRACE_ID_HTTP_HEADER]: requestId },
             body: { action: 'visibility', shareOnline }
         },
         response: { body: 'json', acceptedStatusCodes: [200] }

@@ -1,7 +1,11 @@
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
+import {
+    normalizeALQosPolicy,
+    resolveALQosNormalizationInput,
+    type ALQosInputProvider
+} from '@shared/al-contracts/al-policy.ts';
 import {
     AL_PUBLICATION_STAGE_LIMITS,
     type ALPublicationStageLimits
@@ -126,9 +130,9 @@ describe('browser runtime construction', () => {
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts'
         );
         const volatileLimits = new BlackBoxRallarVolatileLimits();
-        const read: (ALVolatileSessionLimits | undefined)[] = [];
+        const read: ALVolatileSessionLimits[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
-            read.push(options.readVolatileSessionLimits?.());
+            read.push(options.readVolatileSessionLimits());
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const { BlackBoxRallarPublicationLimits } = await import(
@@ -167,9 +171,9 @@ describe('browser runtime construction', () => {
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
         );
         const publicationLimits = new BlackBoxRallarPublicationLimits();
-        const read: (ALPublicationStageLimits | undefined)[] = [];
+        const read: ALPublicationStageLimits[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
-            read.push(options.readPublicationStageLimits?.());
+            read.push(options.readPublicationStageLimits());
             return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
@@ -187,6 +191,23 @@ describe('browser runtime construction', () => {
         await blackBox.disconnect();
 
         expect(read).toEqual([lowered, AL_PUBLICATION_STAGE_LIMITS]);
+    });
+
+    it('hands the product session the shipped limits and no application QoS from its composition root', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/composition/create-rallar-facade.ts');
+        const recorded: [ALVolatileSessionLimits, ALPublicationStageLimits, ALQosInputProvider][] = [];
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            recorded.push([options.readVolatileSessionLimits(), options.readPublicationStageLimits(), options.qosProvider]);
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+        });
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        await facade.disconnect();
+
+        expect(recorded[0][0]).toBe(AL_VOLATILE_SESSION_LIMITS);
+        expect(recorded[0][1]).toBe(AL_PUBLICATION_STAGE_LIMITS);
+        expect(recorded[0][2]).toEqual({});
     });
 
     it('shares one bounded session observation owner across facades', async () => {

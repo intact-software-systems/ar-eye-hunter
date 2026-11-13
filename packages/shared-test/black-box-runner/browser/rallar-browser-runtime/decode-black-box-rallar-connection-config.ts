@@ -3,11 +3,8 @@ import {
     decodeALPublicationStageLimits,
     type ALPublicationStageLimits
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
-import {
-    AL_VOLATILE_SESSION_MAX_AGE_MS,
-    AL_VOLATILE_SESSION_MAX_TRACKS,
-    type ALVolatileSessionLimits
-} from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+import { decodeALVolatileSessionLimits } from '@shared/alm/volatile-budget/decode-al-volatile-session-limits.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
 import type { RtcDataChannelFlowControlPolicy } from '@shared/webrtc/qrtc-data-channel.ts';
 import { parseRtcCaptureMode } from '@shared/webrtc/rtc-capture-configuration.ts';
@@ -230,29 +227,21 @@ function dataChannelLanes(value: unknown): readonly RtcDataChannelLaneConfig[] |
     });
 }
 
+const ALM_VOLATILE_LIMITS_SHAPE =
+    'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
+    'each a positive integer.';
+
 /** The wire names the count and byte bounds; a lane that lowers no age or track bound reads the constants (D179). */
 function decodeAlmVolatileLimits(value: unknown): ALVolatileSessionLimits | undefined {
     if (value === undefined) {
         return undefined;
     }
-    const record = configRecord(value);
-    const {
-        maxAdmissions,
-        maxBytes,
-        maxAgeMs = AL_VOLATILE_SESSION_MAX_AGE_MS,
-        maxTracks = AL_VOLATILE_SESSION_MAX_TRACKS,
-        ...unknownFields
-    } = record;
-    if (
-        !isPositiveInteger(maxAdmissions) || !isPositiveInteger(maxBytes) || !isPositiveInteger(maxAgeMs) ||
-        !isPositiveInteger(maxTracks) || Object.keys(unknownFields).length > 0
-    ) {
-        throw new TypeError(
-            'rallar.almVolatileLimits must name maxAdmissions and maxBytes and may name maxAgeMs and maxTracks, ' +
-                'each a positive integer.'
-        );
-    }
-    return { maxAdmissions, maxBytes, maxAgeMs, maxTracks };
+    return decodeALVolatileSessionLimits(value, '$.almVolatileLimits').fold(
+        () => {
+            throw new TypeError(ALM_VOLATILE_LIMITS_SHAPE);
+        },
+        (limits) => limits
+    );
 }
 
 /** Every issue the decoder names fails the connect, each as `path: message`; an absent field decodes as absent. */
@@ -266,10 +255,6 @@ function decodeAlmPublicationLimits(value: unknown): ALPublicationStageLimits | 
         },
         (limits) => limits
     );
-}
-
-function isPositiveInteger(value: unknown): value is number {
-    return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
 function decodeRtcCaptureMode(value: unknown): RtcSignalingDiagnostics.CaptureMode | undefined {

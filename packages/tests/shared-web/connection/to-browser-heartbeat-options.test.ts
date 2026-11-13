@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { describe, expect, it } from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
@@ -40,9 +41,7 @@ const KEYLESS_PUBLICATION: BrowserTransportPublication = {
 const OPTIONS: BrowserConnectOptions = {
     readIceCandidates: () => Promise.reject(new Error('No ICE read in a heartbeat translation.')),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-    qosProvider: undefined,
-    readVolatileSessionLimits: undefined,
-    readPublicationStageLimits: undefined,
+    ...createDefaultBrowserSessionQosInputs(),
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},

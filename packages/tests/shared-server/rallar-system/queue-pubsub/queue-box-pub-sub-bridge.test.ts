@@ -393,6 +393,53 @@ describe('QueueBoxPubSubBridge', () => {
         expect(evicted).toBe(6);
     });
 
+    it('logs a failing held send and still sends the session\'s next held row', async () => {
+        const outboxPublishers: ClusterPublisher[] = [];
+        const held: ALMessage[] = [];
+        let socketOpened = false;
+        let heldSendCount = 0;
+        const failure = new Error('held send failed');
+        const loggedErrors: (readonly [string, Error])[] = [];
+        const consoleError = vi.spyOn(console, 'error').mockImplementation((message: string, error: Error) => {
+            loggedErrors.push([message, error]);
+        });
+        onTestFinished(() => consoleError.mockRestore());
+        const wsQBoxServerService = createTestQueueBoxPubSubWsService({
+            registerOutboxPublisher: (publisher) => outboxPublishers.push(publisher),
+            readAudience: async () => ['awaited-session'],
+            sendToTargetsWithResult: (message, _recipients, admittedPeerIds) => {
+                if (socketOpened && admittedPeerIds?.length === 1 && admittedPeerIds[0] === 'awaited-session') {
+                    heldSendCount += 1;
+                    if (heldSendCount === 1) {
+                        throw failure;
+                    }
+                    held.push(message);
+                }
+                return noRecipientLiveSendResult(message);
+            }
+        });
+        const holds = wsQBoxServerService.socket.expectedConnections;
+        holds.expect({ id: 'awaited-session', generationId: 'generation-1', expiresAtEpochMs: Date.now() + 60_000 });
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge: createBridge(),
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1'
+        });
+        const messages: ALMessage[] = [];
+        for (let index = 0; index < 2; index += 1) {
+            const entry = createWsOutboxEntry();
+            messages.push(decodePersistedALMessage(entry.resource));
+            await outboxPublishers[0](messages.at(-1)!, entry, STORED_POLICY_HANDOFF);
+        }
+        socketOpened = true;
+        holds.open({ id: 'awaited-session', generationId: 'generation-1' });
+
+        await expect.poll(() => held).toEqual([messages[1]]);
+        expect(heldSendCount).toBe(2);
+        expect(loggedErrors).toEqual([['Held WebSocket send failed:', failure]]);
+    });
+
     it('excludes late joiners from the captured audience on both publishing and receiving instances', async () => {
         const outboxPublishers: ClusterPublisher[] = [];
         const bridge = createBridge();

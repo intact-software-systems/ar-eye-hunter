@@ -46,10 +46,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
-import {
-    AL_PUBLICATION_STAGE_LIMITS,
-    type ALPublicationStageLimits
-} from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type {
     ALInboundRuntimeStores,
@@ -92,6 +89,7 @@ import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
+import { toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
@@ -106,10 +104,10 @@ import type { BrowserDeliverySettlements } from './browser-delivery-settlements.
 
 export interface MiddlewareInitOptions {
     readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
-    readonly qosProvider: ALQosInputProvider | undefined;
-    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-    /** Read once per connect, as the volatile limits are; absent, the stage holds `AL_PUBLICATION_STAGE_LIMITS`. */
-    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
+    readonly qosProvider: ALQosInputProvider;
+    readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    /** Read once per connect, as the volatile limits are. */
+    readonly readPublicationStageLimits: () => ALPublicationStageLimits;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     /** Where both carriers' inbound runtimes hand a message they can no longer order. */
@@ -143,13 +141,6 @@ export interface BrowserConnectedMiddleware {
     readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly middleware: RallarBrowserMiddleware;
     readonly checkpoints: readonly ALCheckpointPort[];
-}
-
-export interface ToCreateWsUrlInput {
-    readonly apiConfig: ApiConfig;
-    readonly session: AuthSession;
-    readonly ticket: string;
-    readonly scope?: StateScope;
 }
 
 export const BROWSER_RTT_HEARTBEAT_TTL_MS = 15_000;
@@ -367,7 +358,7 @@ export function createBrowserTransportInput(
         ),
         volatileBound,
         inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
-        publicationStageLimits: options.readPublicationStageLimits?.() ?? AL_PUBLICATION_STAGE_LIMITS,
+        publicationStageLimits: options.readPublicationStageLimits(),
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
         ...publication,
         options,
@@ -410,22 +401,6 @@ function initialiseBrowserHeartbeat(
     ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
 ): ReturnType<typeof heartbeat.initHeartbeat> {
     return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
-}
-
-export function toCreateWsUrl(
-    input: ToCreateWsUrlInput
-): string {
-    const path = input.apiConfig.endpoints.createWs.replace(
-        ':id',
-        encodeURIComponent(input.session.sessionId)
-    );
-    const url = new URL(path, input.apiConfig.wsBaseUrl);
-    url.searchParams.set('ticket', input.ticket);
-    if (input.scope) {
-        url.searchParams.set('applicationId', input.scope.applicationId);
-        url.searchParams.set('workspaceId', input.scope.workspaceId);
-    }
-    return url.toString();
 }
 
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
@@ -583,9 +558,10 @@ async function createBrowserWebSocketUrl(
     if (wsTicket.sessionId !== input.session.sessionId) {
         throw new Error('WebSocket ticket does not match the current session.');
     }
-    return toCreateWsUrl({
-        apiConfig,
-        session: input.session,
+    return toApiWsUrl({
+        wsBaseUrl: apiConfig.wsBaseUrl,
+        createWsPath: apiConfig.endpoints.createWs,
+        sessionId: input.session.sessionId,
         ticket: wsTicket.ticket,
         scope: input.options.scope
     });

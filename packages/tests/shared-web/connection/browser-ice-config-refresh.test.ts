@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     afterEach,
     beforeEach,
@@ -28,9 +29,7 @@ const apiConfiguration: ApiConfigResponse = {
 const session = { clientId: 'refresh-client', sessionId: 'refresh-session', username: 'test', accessToken: 'initial', expiresAtEpochMs: 1_000_000 };
 const options = {
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' } as const,
-    qosProvider: undefined,
-    readVolatileSessionLimits: undefined,
-    readPublicationStageLimits: undefined,
+    ...createDefaultBrowserSessionQosInputs(),
     deliverySettlements: { ws: () => {}, rtc: () => {}, holds: () => false },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},

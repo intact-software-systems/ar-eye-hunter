@@ -55,9 +55,9 @@ interface PendingSessionConnection {
 
 export namespace BrowserSessionConnectionLifecycle {
     export interface Input {
-        readonly qosProvider: ALQosInputProvider | undefined;
-        readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-        readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
+        readonly qosProvider: ALQosInputProvider;
+        readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+        readonly readPublicationStageLimits: () => ALPublicationStageLimits;
         readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
         readonly connectionRuntime: RallarConnectionRuntimePort;

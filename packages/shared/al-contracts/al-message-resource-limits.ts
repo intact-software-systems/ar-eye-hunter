@@ -2,6 +2,7 @@ import {
     RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES,
     RALLAR_ROUTE_ID_MAX_LENGTH
 } from '../api/rallar-validation.ts';
+import { computeUtf8ByteLength } from '../encoding/compute-utf8-byte-length.ts';
 import { Either } from '../resilience/Either.ts';
 
 export const AL_MESSAGE_RESOURCE_LIMITS = {
@@ -36,7 +37,6 @@ export interface ALMessageResourceIssue {
     readonly message: string;
 }
 
-const UTF8_ENCODER = new TextEncoder();
 const NON_ASCII_CHARACTER = /[^\x00-\x7f]/u;
 
 interface ALMessageValue {
@@ -268,12 +268,12 @@ function exceedsUtf8Limit(value: string, limit: number): boolean {
     if (value.length * 3 <= limit || !NON_ASCII_CHARACTER.test(value)) {
         return false;
     }
-    return UTF8_ENCODER.encode(value).length > limit;
+    return computeUtf8ByteLength(value) > limit;
 }
 
 function computeJsonStringByteLength(value: string): number {
     const serialized = JSON.stringify(value);
-    return NON_ASCII_CHARACTER.test(serialized) ? UTF8_ENCODER.encode(serialized).length : serialized.length;
+    return NON_ASCII_CHARACTER.test(serialized) ? computeUtf8ByteLength(serialized) : serialized.length;
 }
 
 function isValidALMessageByteLimits(byteLimits: ALMessageByteLimits): boolean {

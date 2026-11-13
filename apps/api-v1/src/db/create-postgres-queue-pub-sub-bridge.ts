@@ -3,6 +3,7 @@ import {
     decodeQueueBoxPubSubMessage,
     type QueueBoxPubSubBridge
 } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
 export function createPostgresQueuePubSubBridge(
@@ -33,7 +34,7 @@ export function createPostgresQueuePubSubBridge(
 }
 
 function parsePostgresPubSubMessage(payload: string): JsonWireValue | undefined {
-    if (new TextEncoder().encode(payload).length >= 8_000) {
+    if (computeUtf8ByteLength(payload) >= 8_000) {
         return undefined;
     }
     try {

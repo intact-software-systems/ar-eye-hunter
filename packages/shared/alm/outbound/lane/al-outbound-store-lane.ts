@@ -66,7 +66,7 @@ import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
 import type { ALOutboundSendControls } from './al-outbound-send-controls.ts';
-import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-committed-rows.ts';
+import { computeALOutboundSettledCommittedRows } from './compute-al-outbound-settled-committed-rows.ts';
 import { recordALOutboundDequeueTiming } from './record-al-outbound-dequeue-timing.ts';
 import { runALOutboundDequeueClaimGroup } from './run-al-outbound-dequeue-claim-group.ts';
 import {

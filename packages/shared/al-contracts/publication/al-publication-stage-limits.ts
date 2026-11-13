@@ -1,3 +1,4 @@
+import { getOwnNumber } from '../../api/exact-object-decoding.ts';
 import type { RallarValidationIssue } from '../../api/rallar-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 
@@ -25,7 +26,10 @@ const LIMIT_FIELD_CODES: Readonly<Record<keyof ALPublicationStageLimits, string>
     maxStagedBytes: 'invalid-max-staged-bytes'
 };
 
-/** Every issue names its field under `path`, the place the caller read the limits from. */
+/**
+ * Every issue names its field under `path`, the place the caller read the limits from; a missing or non-number
+ * field becomes NaN, which `validateLimitFields` reports at that field's path.
+ */
 export function decodeALPublicationStageLimits(
     value: unknown,
     path: string
@@ -38,9 +42,9 @@ export function decodeALPublicationStageLimits(
         }]);
     }
     const limits: ALPublicationStageLimits = {
-        maxStreams: getNumber(value, 'maxStreams'),
-        maxStagedValues: getNumber(value, 'maxStagedValues'),
-        maxStagedBytes: getNumber(value, 'maxStagedBytes')
+        maxStreams: getOwnNumber(value, ['maxStreams'], Number.NaN),
+        maxStagedValues: getOwnNumber(value, ['maxStagedValues'], Number.NaN),
+        maxStagedBytes: getOwnNumber(value, ['maxStagedBytes'], Number.NaN)
     };
     const issues = [...validateLimitFields(limits, path), ...validateKnownFields(value, path)];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(limits);
@@ -64,12 +68,6 @@ function validateKnownFields(value: object, path: string): readonly RallarValida
         code: 'unknown-field',
         message: 'Expected only maxStreams, maxStagedValues and maxStagedBytes.'
     }));
-}
-
-/** A missing or non-number field becomes NaN, which `validateLimitFields` reports at that field's path. */
-function getNumber(source: object, field: keyof ALPublicationStageLimits): number {
-    const value = Object.getOwnPropertyDescriptor(source, field)?.value;
-    return typeof value === 'number' ? value : Number.NaN;
 }
 
 function isPositiveSafeInteger(value: number): boolean {

@@ -24,7 +24,7 @@ export interface ALWorkKeyRangesInput {
  * delimiter so a resourceId that is itself a string prefix of another owner's resourceId (e.g.
  * `abc` vs `abc123`) can't pull that other owner's rows into this range too.
  */
-export function toALWorkKeyRanges(input: ALWorkKeyRangesInput): readonly IDBKeyRange[] {
+function toALWorkKeyRanges(input: ALWorkKeyRangesInput): readonly IDBKeyRange[] {
     const ranges: IDBKeyRange[] = [];
     for (const namespace of input.namespacePrefixes) {
         const inboundResourceId = toALInboundWorkKey(namespace, '').resourceId;

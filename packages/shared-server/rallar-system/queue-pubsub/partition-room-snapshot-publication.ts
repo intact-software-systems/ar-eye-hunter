@@ -1,4 +1,5 @@
 import type { GroupScope } from '@shared/api/group-types.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
     encodeLiveWsNotice,
@@ -46,7 +47,7 @@ export function partitionRoomSnapshotPublication(
     if (encoded.kind === 'oversize') {
         return Either.ofLeft('An empty room snapshot envelope exceeds the private publication limit');
     }
-    const batches = toRecipientBatches(new TextEncoder().encode(encoded.serialized).length, publication.audience);
+    const batches = toRecipientBatches(computeUtf8ByteLength(encoded.serialized), publication.audience);
     return batches.left === undefined
         ? Either.ofRight(batches.right!.map((batch) => toPartition(empty, batch.ids, generations)))
         : Either.ofLeft(batches.left);
@@ -82,7 +83,7 @@ function toRecipientBatches(
 }
 
 function toJsonStringBytes(value: string): number {
-    return new TextEncoder().encode(JSON.stringify(value)).length;
+    return computeUtf8ByteLength(JSON.stringify(value));
 }
 
 function toPartition(

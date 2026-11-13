@@ -67,23 +67,6 @@ export type ResourceEntry = {
     readonly db?: Db;
 };
 
-export const NOT_COMPLETED_STATUSES: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.NEW,
-    EntityStatus.RETRY,
-    EntityStatus.RESERVED,
-    EntityStatus.FAILED,
-    EntityStatus.ABORTED,
-    EntityStatus.NON_RETRYABLE
-]);
-
-export const NOT_COMPLETED_STATUSES_EXCEPT_NEW: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.RETRY,
-    EntityStatus.RESERVED,
-    EntityStatus.FAILED,
-    EntityStatus.ABORTED,
-    EntityStatus.NON_RETRYABLE
-]);
-
 export const NOT_COMPLETED_RETRYABLE_STATUSES: ReadonlySet<EntityStatus> = new Set([
     EntityStatus.NEW,
     EntityStatus.RETRY,
@@ -96,13 +79,6 @@ export const NEW_AND_RETRY_STATUSES: ReadonlySet<EntityStatus> = new Set([
 ]);
 
 export const FAILED_STATUS: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.FAILED
-]);
-
-export const NOT_COMPLETED_RETRYABLE_INCLUDING_FAILED_STATUSES: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.NEW,
-    EntityStatus.RETRY,
-    EntityStatus.RESERVED,
     EntityStatus.FAILED
 ]);
 
@@ -123,10 +99,6 @@ export function isFailed(status: EntityStatus): boolean {
 
 export function isCompleted(status: EntityStatus): boolean {
     return COMPLETED_STATUSES.has(status);
-}
-
-export function isCompletedOrFailed(status: EntityStatus): boolean {
-    return COMPLETED_STATUSES.has(status) || status === EntityStatus.FAILED;
 }
 
 export const TIMEOUT_ON_NON_RESPONSIVE_ENTRY: Temporal.Duration = Temporal.Duration.from({ minutes: 5 });

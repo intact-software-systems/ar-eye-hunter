@@ -19,6 +19,7 @@ import {
     RALLAR_USER_WS_TOPIC_PREFIXES
 } from '@shared/api/rallar-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { WsServerInboundAuthorization } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
@@ -531,7 +532,7 @@ export class RallarServerWsRouter {
     }
 
     private isPayloadSizeAllowed(message: ALMessage, maxPayloadBytes: number): boolean {
-        return new TextEncoder().encode(message.payload.resource).length <= maxPayloadBytes;
+        return computeUtf8ByteLength(message.payload.resource) <= maxPayloadBytes;
     }
 
     private reject(

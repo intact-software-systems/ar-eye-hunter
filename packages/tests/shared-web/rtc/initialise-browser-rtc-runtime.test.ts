@@ -332,7 +332,7 @@ describe('browser RTC runtime composition', () => {
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
@@ -416,7 +416,7 @@ describe('browser RTC runtime composition', () => {
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             volatileBudget: budget,
             checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
             outboundSettlements: () => {},
@@ -458,7 +458,7 @@ describe('browser RTC runtime composition', () => {
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             volatileBudget: budget,
             checkpointStores,
             outboundSettlements: () => {},

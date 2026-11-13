@@ -1,3 +1,4 @@
+import { computeUtf8ByteLength } from '../encoding/compute-utf8-byte-length.ts';
 import { toStrictAppInboxQueueKey } from '../queuebox/AppQueueIdentity.ts';
 import { isKeysEqual } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
@@ -11,6 +12,7 @@ import {
     isALControlTypeId
 } from './al-control-type-ids.ts';
 import {
+    AL_ACK_STATUSES,
     decodeALAckPayload,
     decodeALNackPayload,
     decodeALReceiptPayload,
@@ -30,12 +32,7 @@ import type { ALSeqRange } from './al-runtime.ts';
  * `subtree-complete-not-subscribed` ends the hop of a frozen recipient that delivered nothing, having answered
  * `not-subscribed`: it completes that hop and confirms no recipient, so no hop relays or counts it as a confirmation.
  */
-export type ALAckStatus =
-    | 'accepted'
-    | 'delivered'
-    | 'forwarded'
-    | 'subtree-complete'
-    | 'subtree-complete-not-subscribed';
+export type ALAckStatus = typeof AL_ACK_STATUSES[number];
 export type ALNackReason =
     | 'duplicate'
     | 'gap'
@@ -418,5 +415,5 @@ function parseControlPayload(resource: string): unknown {
 function utf8Length(value: string): number {
     return value.length > AL_MESSAGE_RESOURCE_LIMITS.payloadBytes
         ? value.length
-        : new TextEncoder().encode(value).length;
+        : computeUtf8ByteLength(value);
 }

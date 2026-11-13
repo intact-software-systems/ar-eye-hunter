@@ -102,7 +102,7 @@ function createDirectorAtTheBound(): DirectorAtTheBound {
         snapshot: createOriginSnapshot(['a', DIRECTOR_PEER_ID], 4),
         neighbourPeerIds: ['a'],
         overlayIds: ['room', toScopedOverlayId(ORIGIN_ROOM)],
-        qosProvider: toALVolatileSessionQosProvider(undefined, budget, Date.now)
+        qosProvider: toALVolatileSessionQosProvider({}, budget, Date.now)
     });
     const fixture = createBrowserMessageSenderFixture();
     fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent = async (message) => await rtc.enqueue(message);

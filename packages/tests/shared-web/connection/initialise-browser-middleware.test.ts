@@ -1,3 +1,4 @@
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     describe,
     expect,
@@ -84,9 +85,8 @@ const KEYLESS_PUBLICATION: BrowserTransportPublication = {
 const OPTIONS: BrowserConnectOptions = {
     readIceCandidates: (signal) => connectionHttp.readIceCandidates({ signal }),
     rtcCaptureConfiguration: { mode: 'off', origin: 'product-default' },
-    qosProvider: undefined,
+    ...createDefaultBrowserSessionQosInputs(),
     readVolatileSessionLimits: () => ({ ...AL_VOLATILE_SESSION_LIMITS, maxAdmissions: 3, maxBytes: 4_096 }),
-    readPublicationStageLimits: undefined,
     deliverySettlements: { ws: () => {}, rtc: () => {} },
     diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
     onResyncRequired: () => {},
@@ -551,14 +551,6 @@ describe('the publication stage limits a connect hands its middleware (D477)', (
 
         expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
             .toBe(limits);
-    });
-
-    it('keeps the product defaults for a session that reads no limits', () => {
-        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS, KEYLESS_PUBLICATION);
-
-        expect(toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware).publicationStageLimits)
-            .toBe(AL_PUBLICATION_STAGE_LIMITS);
     });
 });
 

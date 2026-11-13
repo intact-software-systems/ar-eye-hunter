@@ -1,9 +1,11 @@
 import { newALBroadcastMessage, newALEventRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { parseAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import type { ManagedApiServerPlan } from '../../managed-api/with-managed-api-server-plans.mts';
@@ -182,7 +184,7 @@ export class OrderingClusterScenario {
         const requestId = this.#newRequestId();
         await this.#mutate(
             session,
-            `/groups/${this.#scope.groupId}/sessions/${session.sessionId}/requests/${requestId}`,
+            toApiMutationRequestPath(`/groups/${this.#scope.groupId}/sessions/${session.sessionId}`, requestId),
             {
                 method: 'PUT',
                 requestId,
@@ -205,7 +207,10 @@ export class OrderingClusterScenario {
         const principalId = grantee.session.clientId;
         await this.#mutate(
             owner.session,
-            `/groups/${this.#scope.groupId}/publication-grants/${principalId}/grant/requests/${requestId}`,
+            toApiMutationRequestPath(
+                `/groups/${this.#scope.groupId}/publication-grants/${principalId}/grant`,
+                requestId
+            ),
             {
                 method: 'POST',
                 requestId,
@@ -216,8 +221,10 @@ export class OrderingClusterScenario {
 
     async #subscribe(party: Party): Promise<void> {
         const requestId = this.#newRequestId();
-        const path =
-            `/groups/${this.#scope.groupId}/sessions/${party.session.sessionId}/subscribe/requests/${requestId}`;
+        const path = toApiMutationRequestPath(
+            `/groups/${this.#scope.groupId}/sessions/${party.session.sessionId}/subscribe`,
+            requestId
+        );
         const outcome = await this.#mutate(party.session, path, {
             method: 'POST',
             requestId,
@@ -380,7 +387,7 @@ export class OrderingClusterScenario {
 
     async #upsertPrincipal(session: ProofSession, displayName: string): Promise<string> {
         const requestId = this.#newRequestId();
-        await this.#mutate(session, `/clients/${session.clientId}/principal/requests/${requestId}`, {
+        await this.#mutate(session, toApiMutationRequestPath(`/clients/${session.clientId}/principal`, requestId), {
             method: 'PUT',
             requestId,
             body: { username: session.principal, displayName }
@@ -402,7 +409,7 @@ export class OrderingClusterScenario {
             headers: {
                 ...toAuthHeaders(session),
                 'Content-Type': 'application/json',
-                'x-request-id': request.requestId
+                [AL_TRACE_ID_HTTP_HEADER]: request.requestId
             },
             body: JSON.stringify(request.body)
         });

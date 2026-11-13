@@ -37,9 +37,9 @@ import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/r
 import type { PublicationKeyStore } from '@shared/signature/publication-key-store.ts';
 
 export interface CreateRallarSessionControllerOptions {
-    readonly qosProvider: ALQosInputProvider | undefined;
-    readonly readVolatileSessionLimits: (() => ALVolatileSessionLimits) | undefined;
-    readonly readPublicationStageLimits: (() => ALPublicationStageLimits) | undefined;
+    readonly qosProvider: ALQosInputProvider;
+    readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
+    readonly readPublicationStageLimits: () => ALPublicationStageLimits;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly onResyncRequired: (resync: ALInboundResyncRequired, storage: ALStorageEventSink) => void;
     readonly connectionRuntime: RallarConnectionRuntimePort;

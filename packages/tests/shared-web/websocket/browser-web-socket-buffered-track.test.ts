@@ -100,7 +100,7 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
     const budget = createDefaultVolatileSessionBudget();
     const initialized = createBrowserWebSocketQueueBox({
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-        qosProvider: undefined,
+        qosProvider: {},
         submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
         outboundSettlements: () => {},
         newConnectionRequestId: undefined,

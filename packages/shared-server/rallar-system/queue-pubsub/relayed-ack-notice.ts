@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { WsServerAckRelayPublisher } from '@shared/services/ws-queue-box-server/ws-queue-box-server-ack-relay.ts';
 import {
@@ -57,7 +58,7 @@ export function toRelayedAckNotice(
         publisherId: input.publisherId,
         message: input.message
     };
-    const bytes = new TextEncoder().encode(JSON.stringify(notice)).length;
+    const bytes = computeUtf8ByteLength(JSON.stringify(notice));
     return bytes < MAX_LIVE_WS_NOTICE_BYTES
         ? Either.ofRight(notice)
         : Either.ofLeft(`Relayed acknowledgement notice is oversized (${bytes} bytes)`);
@@ -77,7 +78,7 @@ export function decodeRelayedAckNotice(
     }
     if (
         !isRelayedAckNoticeRecord(wire) || wire.channel !== expectedChannel ||
-        new TextEncoder().encode(JSON.stringify(wire)).length >= MAX_LIVE_WS_NOTICE_BYTES
+        computeUtf8ByteLength(JSON.stringify(wire)) >= MAX_LIVE_WS_NOTICE_BYTES
     ) {
         return undefined;
     }

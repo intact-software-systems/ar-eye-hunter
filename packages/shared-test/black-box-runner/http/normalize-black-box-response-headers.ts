@@ -1,3 +1,5 @@
+import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
+
 const RESPONSE_HEADER_ALLOW_LIST = [
     'access-control-allow-credentials',
     'access-control-allow-headers',
@@ -11,7 +13,7 @@ const RESPONSE_HEADER_ALLOW_LIST = [
     'rallar-state-source',
     'retry-after',
     'vary',
-    'x-request-id'
+    AL_TRACE_ID_HTTP_HEADER
 ] as const;
 
 export function normalizeBlackBoxResponseHeaders(

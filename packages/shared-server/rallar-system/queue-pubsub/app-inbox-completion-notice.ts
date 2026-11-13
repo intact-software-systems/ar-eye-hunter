@@ -1,3 +1,4 @@
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import type { ResourceInboxCompletionNotifications } from '@shared/queuebox/resource-inbox/resource-inbox-completion-notifications.ts';
 
 import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
@@ -120,5 +121,5 @@ export function decodeAppInboxCompletionNotice(
 }
 
 function isWithinNoticeLimit(notice: AppInboxCompletionNotice): boolean {
-    return new TextEncoder().encode(JSON.stringify(notice)).length < MAX_LIVE_WS_NOTICE_BYTES;
+    return computeUtf8ByteLength(JSON.stringify(notice)) < MAX_LIVE_WS_NOTICE_BYTES;
 }

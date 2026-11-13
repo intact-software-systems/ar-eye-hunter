@@ -1,3 +1,5 @@
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
+
 export type ProofPrincipal = 'alice' | 'bob' | 'admin';
 
 export type ProofSession = Readonly<{
@@ -48,7 +50,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<ProofSession> {
         const body = await requestJson(
             input.apiBaseUrl,
-            strictMutationPath('/api/auth/login', crypto.randomUUID()),
+            toApiMutationRequestPath('/api/auth/login', crypto.randomUUID()),
             {
                 method: 'POST',
                 body: this.#credentials[input.principal]
@@ -65,7 +67,7 @@ export class ApiV1RtcTopologyProofApi {
     async createGroup(input: ProofGroupInput & Readonly<{ owner: ProofSession; }>): Promise<void> {
         await requestJson(
             input.owner.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 groupCollectionPath(input),
                 `${input.proofId}-create-group`
             ),
@@ -89,7 +91,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<void> {
         await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}`,
                 `${input.proofId}-activate-${input.memberClientId}`
             ),
@@ -108,7 +110,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<ProofCausalRevision> {
         const body = await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 `${groupPath(input)}/sessions/${encodeURIComponent(input.actor.sessionId)}`,
                 `${input.proofId}-presence-${input.actor.label}`
             ),
@@ -131,7 +133,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<void> {
         await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 `${groupPath(input)}/topology/reconfigure`,
                 `${input.proofId}-baseline`
             ),
@@ -176,7 +178,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<ProofCausalRevision> {
         const body = await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 `${groupPath(input)}/members/${encodeURIComponent(input.memberClientId)}/role`,
                 `${input.proofId}-${input.phase}-role`
             ),
@@ -196,7 +198,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<ProofCausalRevision> {
         const body = await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 groupPath(input),
                 `${input.proofId}-${input.phase}-description`
             ),
@@ -222,7 +224,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<ProofCausalRevision> {
         const body = await requestJson(
             input.actor.apiBaseUrl,
-            strictMutationPath(
+            toApiMutationRequestPath(
                 groupPath(input),
                 `${input.proofId}-${input.phase}-display-name`
             ),
@@ -243,7 +245,7 @@ export class ApiV1RtcTopologyProofApi {
     ): Promise<string> {
         const body = await requestJson(
             apiBaseUrl,
-            strictMutationPath('/api/auth/ws-ticket', crypto.randomUUID()),
+            toApiMutationRequestPath('/api/auth/ws-ticket', crypto.randomUUID()),
             {
                 method: 'POST',
                 session
@@ -323,10 +325,6 @@ function groupCollectionPath(input: ProofGroupInput): string {
         `/api/state/apps/${encodeURIComponent(input.applicationId)}` +
         `/workspaces/${encodeURIComponent(input.workspaceId)}/groups`
     );
-}
-
-function strictMutationPath(path: string, requestId: string): string {
-    return `${path}/requests/${encodeURIComponent(requestId)}`;
 }
 
 function groupPath(input: ProofGroupInput): string {

@@ -8,6 +8,8 @@ import {
     decodeWsOutboxProvenance,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
+import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
+import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 import {
     parseApiV1BlackBoxArgs,
     toApiV1BlackBoxEnvironment,
@@ -98,7 +100,7 @@ async function assertLogoutClusterDelivery(scenario: LogoutClusterScenario): Pro
     const requestId = `auth-logout-proof-${crypto.randomUUID()}`;
     try {
         const delivery = waitForLogoutFrame(target.socket);
-        const response = await fetch(`${primary.baseUrl}/api/auth/logout/requests/${requestId}`, {
+        const response = await fetch(`${primary.baseUrl}${toApiMutationRequestPath('/api/auth/logout', requestId)}`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${recipient.accessToken}`, 'x-client-id': recipient.clientId }
         });
@@ -159,8 +161,13 @@ async function writeLogoutEvidence(
 
 async function openLogoutProofSocket(api: ApiV1RtcTopologyProofApi, session: ProofSession): Promise<LogoutProofSocket> {
     const ticket = await api.issueWebSocketTicket(session);
-    const query = new URLSearchParams({ ticket, applicationId: 'logout-proof', workspaceId: 'workspace' });
-    const socket = new WebSocket(`${session.wsBaseUrl}/api/ws/${session.sessionId}?${query}`);
+    const socket = new WebSocket(toApiWsUrl({
+        wsBaseUrl: session.wsBaseUrl,
+        createWsPath: API_CREATE_WS_PATH,
+        sessionId: session.sessionId,
+        ticket,
+        scope: { applicationId: 'logout-proof', workspaceId: 'workspace' }
+    }));
     const frames: string[] = [];
     const closeCodes: number[] = [];
     socket.addEventListener('message', (event) => frames.push(String(event.data)));

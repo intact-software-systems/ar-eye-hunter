@@ -1,6 +1,7 @@
 import { decodePersistedALMessageRow } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { resolveALMessageExpireAtMs } from '@shared/al-contracts/al-policy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { JsonWireObject, JsonWireValue } from '../protocol/json-wire-identity.ts';
 
@@ -32,7 +33,7 @@ export function decodeQueueBoxPubSubMessage(
     message: JsonWireValue,
     expectedChannel: string
 ): QueueBoxPubSubMessage | undefined {
-    if (!isJsonWireObject(message) || new TextEncoder().encode(JSON.stringify(message)).length >= 8_000) {
+    if (!isJsonWireObject(message) || computeUtf8ByteLength(JSON.stringify(message)) >= 8_000) {
         return undefined;
     }
     const key = decodeQueueBoxPubSubMessageKey(message.key);

@@ -164,7 +164,7 @@ describe('WS retained-work faults', () => {
         const settlements: ALDeliverySettlement[] = [];
         const connecting = createBrowserWebSocketQueueBox({
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
-            qosProvider: undefined,
+            qosProvider: {},
             submissionReadinessFaultPort: faults,
             outboundSettlements: (settlement) => settlements.push(settlement),
             newConnectionRequestId: undefined,

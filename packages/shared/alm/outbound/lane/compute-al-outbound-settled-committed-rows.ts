@@ -4,7 +4,7 @@ import type { ALOutboundDispatchAdmission } from '../al-outbound-dispatch-admiss
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
 
 /** A commit that landed, or a pending admission that wrote its replay work, wrote rows its owner must run. */
-export function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
+function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
     return result.committed || result.computed.verdict.kind === 'pending';
 }
 
@@ -13,7 +13,7 @@ export function hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Re
  * when one of them wrote work its result does not describe. A receipted send's acknowledgement
  * timeout is due after its send, so the batch that sends it cannot have claimed it.
  */
-export function computeALOutboundCommittedRows<TPrepared>(
+function computeALOutboundCommittedRows<TPrepared>(
     namespace: string,
     results: readonly ALOutboundDispatchAdmission.Result<TPrepared>[]
 ): ALWorkCommittedRows {

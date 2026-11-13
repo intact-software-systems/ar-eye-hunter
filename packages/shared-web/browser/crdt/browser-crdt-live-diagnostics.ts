@@ -3,6 +3,7 @@ import type {
     RallarCrdtTransportKind
 } from '@shared-web/browser/crdt/browser-crdt-transport.ts';
 import type { RallarCrdtApplyResult, RallarCrdtMetricsSink, RallarCrdtSyncResult } from '@shared/crdt/mod.ts';
+import { computeUtf8ByteLength } from '@shared/encoding/compute-utf8-byte-length.ts';
 
 export namespace BrowserCrdtLiveDiagnostics {
     export type Options = Readonly<{
@@ -150,5 +151,5 @@ export class BrowserCrdtLiveDiagnostics {
 }
 
 function byteLengthOfJson(value: RallarCrdtSyncResult): number {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    return computeUtf8ByteLength(JSON.stringify(value));
 }

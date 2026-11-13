@@ -1,3 +1,4 @@
+import { computeUtf8ByteLength } from '../encoding/compute-utf8-byte-length.ts';
 import type { WebRtcConnectionService } from '../services/web-rtc-connection-service.ts';
 import type { QRtcSignalingType } from './qrtc-signaling-contracts.ts';
 import { RtcNativeObservationScope } from './rtc-native-observation-scope.ts';
@@ -435,7 +436,7 @@ function recordBoundedNativeEvent(
     atEpochMs: number
 ): boolean {
     const event = Object.freeze({ ...observation, atEpochMs });
-    if (new TextEncoder().encode(JSON.stringify(event)).byteLength > RtcNativeObservationScope.SOURCE_BYTES) {
+    if (computeUtf8ByteLength(JSON.stringify(event)) > RtcNativeObservationScope.SOURCE_BYTES) {
         return false;
     }
     diagnostics.record(event);

@@ -8,6 +8,7 @@ import {
     type StateSnapshotPage
 } from '../api/state-snapshot-page.ts';
 import type { StateScope } from '../api/state-types.ts';
+import { computeUtf8ByteLength } from '../encoding/compute-utf8-byte-length.ts';
 import { fnv1a64 } from '../queuebox/AppQueueIdentity.ts';
 import { Either } from '../resilience/Either.ts';
 
@@ -137,7 +138,7 @@ export class StateSnapshotAssembly {
     #complete(key: string, partial: PartialStateSnapshot): Either<ALMessageRejection, StateSnapshotAssemblyResult> {
         const resource = Array.from({ length: partial.page.count }, (_, index) => partial.chunks.get(index)!).join('');
         if (
-            new TextEncoder().encode(resource).length !== partial.page.totalBytes ||
+            computeUtf8ByteLength(resource) !== partial.page.totalBytes ||
             fnv1a64(resource) !== partial.page.checksum
         ) {
             this.#settle(key, 'cancelled');
@@ -183,7 +184,7 @@ function computeSnapshotFragment(input: SnapshotFragmentInput): Either<ALMessage
     }
     const chunks = new Map(prior?.chunks);
     chunks.set(page.index, page.chunk);
-    const bytes = (prior?.bytes ?? 0) + (previous === undefined ? new TextEncoder().encode(page.chunk).length : 0);
+    const bytes = (prior?.bytes ?? 0) + (previous === undefined ? computeUtf8ByteLength(page.chunk) : 0);
     if (bytes > page.totalBytes) {
         return rejectSnapshotPage('oversized', 'Snapshot fragments exceed declared bytes');
     }

@@ -72,7 +72,7 @@ import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly creationNow?: QueueBoxUtilities.CreationClock;
-    readonly qosProvider: ALQosInputProvider | undefined;
+    readonly qosProvider: ALQosInputProvider;
     readonly volatileBudget: ALVolatileSessionBudget;
     /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
     readonly checkpointStores: ALCheckpointOutboundRuntimeStores<ALOutboundTransportMessage>;

@@ -9,7 +9,6 @@ import {
 
 import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { toCreateWsUrl } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import {
     initHeartbeat,
     SESSION_HEARTBEAT_INTERVAL_MS,
@@ -83,28 +82,6 @@ describe('Browser session heartbeat', () => {
         stopHeartbeat();
         vi.unstubAllGlobals();
         vi.useRealTimers();
-    });
-
-    it('threads the active state scope into the websocket connection URL', () => {
-        const url = toCreateWsUrl({
-            apiConfig: {
-                apiBaseUrl: 'https://api.example.test',
-                wsBaseUrl: 'wss://api.example.test',
-                endpoints: {
-                    createWs: '/api/ws/:id'
-                }
-            },
-            session: authSession,
-            ticket: 'ticket-1',
-            scope: {
-                applicationId: 'ar-eye-hunter',
-                workspaceId: 'default'
-            }
-        });
-
-        expect(url).toBe(
-            'wss://api.example.test/api/ws/session-1?ticket=ticket-1&applicationId=ar-eye-hunter&workspaceId=default'
-        );
     });
 
     it('runs the first renewal at the browser cache TTL minus the margin when the lease outlives the cache', async () => {
