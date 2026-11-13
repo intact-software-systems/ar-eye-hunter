@@ -162,9 +162,12 @@ jobs:
               echo '::error::Logs require a reviewed full source commit.' >&2
               exit 1
             }
-          cat scripts/hosted-rallar/controller/15-logs.sh |
-            ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
-              'bash -s -- --services api --lines 500 --since "30 min ago" --no-color'
+          {
+            cat scripts/hosted-rallar/controller/rallar-controller-role.sh
+            printf '\n'
+            cat scripts/hosted-rallar/controller/15-logs.sh
+          } | ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
+            'bash -s -- --services api --lines 500 --since "30 min ago" --no-color'
 
       - name: Copy controller scripts
         if: inputs.action == 'rollout'

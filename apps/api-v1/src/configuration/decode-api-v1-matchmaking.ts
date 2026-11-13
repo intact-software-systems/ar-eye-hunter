@@ -10,7 +10,7 @@ export function decodeApiV1Matchmaking(decoder: ApiV1ConfigurationValueDecoder):
         policiesByApplication: decodeApplicationPolicies(decoder),
         rateLimit: {
             windowMs: decoder.integer('matchmaking.rateLimit.windowMs', 1, 3600000),
-            requests: decoder.integer('matchmaking.rateLimit.requests', 1, 10000)
+            requests: decoder.replicaLimitShare('matchmaking.rateLimit.requests', 1, 10000)
         }
     };
 }

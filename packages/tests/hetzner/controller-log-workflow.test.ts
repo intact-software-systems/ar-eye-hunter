@@ -19,7 +19,7 @@ interface ControllerWorkflowStep {
     readonly run?: string;
 }
 
-it('streams a bounded redacted API log reader without writing to the controller', async (context) => {
+it('streams a bounded redacted log reader of every API replica without writing to the controller', async (context) => {
     const repoRoot = path.resolve(__dirname, '../../..');
     const workflow = load(await readFile(path.join(repoRoot, '.github/workflows/deploy-hetzner-controller.yml'), 'utf8'));
     const schema = {
@@ -67,7 +67,7 @@ it('streams a bounded redacted API log reader without writing to the controller'
         path.join(fixture, 'ssh'),
         `#!/usr/bin/env bash
 set -euo pipefail
-[[ "$4" == 'bash -s -- --services api --lines 500 --since "30 min ago" --no-color' ]]
+[[ "$4" == 'bash -s -- --services api --lines 500 --since "30 min ago" --no-color' ]] || exit 1
 exec bash -s -- --services api --lines 500 --since '30 min ago' --no-color
 `
     );
@@ -75,8 +75,8 @@ exec bash -s -- --services api --lines 500 --since '30 min ago' --no-color
         path.join(fixture, 'journalctl'),
         `#!/usr/bin/env bash
 set -euo pipefail
-[[ "$*" == '--no-pager -o json -u rallar-api-v1.service -n 500 --since 30 min ago' ]]
-printf '%s\n' '{"MESSAGE":"AppInbox failed Bearer private-token token=private-query","_SYSTEMD_UNIT":"rallar-api-v1.service","__REALTIME_TIMESTAMP":"1000000"}'
+[[ "$*" == '--no-pager -o json -u rallar-api-v1.service -u rallar-api-v1-2.service -u rallar-api-v1-3.service -n 500 --since 30 min ago' ]] || exit 1
+printf '%s\n' '{"MESSAGE":"AppInbox failed Bearer private-token token=private-query","_SYSTEMD_UNIT":"rallar-api-v1-3.service","__REALTIME_TIMESTAMP":"1000000"}'
 `
     );
     for (const executable of ['git', 'ssh', 'journalctl']) {

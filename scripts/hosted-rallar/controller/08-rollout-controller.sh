@@ -141,7 +141,7 @@ cleanup_rollout_disk_pressure() {
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
-	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|DATABASE_URL|"
+	local allowed_names="|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|DATABASE_URL|"
 	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|RALLAR_APP_INBOX_PHASE_TIMING|"
 	allowed_names+="RALLAR_REGISTRATION_IP_RATE_LIMIT|RALLAR_LOGIN_IP_RATE_LIMIT|"
 	allowed_names+="RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET|"
@@ -227,7 +227,7 @@ write_api_prod_profile_environment() {
 write_rollout_role_units() {
 	case "${RALLAR_CONTROLLER_ROLE}" in
 	api)
-		write_rallar_api_v1_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_STORE_FAILURE_FILE}"
+		write_rallar_api_replica_units
 		;;
 	control)
 		write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_ROLLOUT_CONTROL_STATE_DIR}"
@@ -655,7 +655,7 @@ echo "==> Starting services"
 rallar_playwright_operation_stage "rollout-service-start"
 systemctl daemon-reload
 for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
-	systemctl start "${service}"
+	systemctl enable --now "${service}"
 done
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
@@ -669,8 +669,10 @@ trap - ERR
 rallar_playwright_operation_stage "rollout-service-health"
 case "${RALLAR_CONTROLLER_ROLE}" in
 api)
-	wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
-	wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
+	for api_replica_port in "${RALLAR_API_REPLICA_PORTS[@]}"; do
+		wait_for_url "API-v1 config ${api_replica_port}" "http://127.0.0.1:${api_replica_port}/api/config"
+		wait_for_url "API-v1 docs ${api_replica_port}" "http://127.0.0.1:${api_replica_port}/api/docs"
+	done
 	;;
 control)
 	wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"

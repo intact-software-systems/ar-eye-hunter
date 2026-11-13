@@ -317,11 +317,8 @@ describe('ALWorkQueuePort lease recovery', () => {
         const port = createLimitedTestPort(queue, () => now);
 
         expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
-        now += 5_000;
+        now += 4_999;
         await port.retainIfAbsent(newReservedWorkEntry('crashed', { startMs: now - 6_000, attempts: 1 }));
-        expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
-        // The limiter counts in quarter-window buckets: the first sweep closes the window for 1.25 leases.
-        now = 10_000 + 6_250;
         expect(await port.claim({ maxCount: 4, observedEntries: undefined })).toEqual([]);
         now += 1;
         expect(toEffectIds(await port.claim({ maxCount: 4, observedEntries: undefined }))).toEqual(['crashed']);
@@ -363,7 +360,9 @@ describe('ALWorkQueuePort lease recovery', () => {
         await port.releaseAll(finalized.map((claim) => ({ claim, outcome: { status: 'non-retryable' } as const })));
         await port.retainIfAbsent(newReservedWorkEntry('exhausted-second', { startMs: 0, attempts: 20 }));
         expect(await port.finalizeExhausted(4)).toEqual([]);
-        now = 10_000 + 6_251;
+        now = 10_000 + 4_999;
+        expect(await port.finalizeExhausted(4)).toEqual([]);
+        now = 10_000 + 5_000;
         expect(toEffectIds(await port.finalizeExhausted(4))).toEqual(['exhausted-second']);
     });
 

@@ -17,6 +17,7 @@ import {
 } from 'vitest';
 import type { TestContext } from 'vitest';
 
+import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
@@ -462,7 +463,7 @@ describe('Hetzner workflow contracts and effects', () => {
         expect(Object.keys(workflow.on.workflow_dispatch?.inputs ?? {})).toHaveLength(25);
         expect(workflow.on.workflow_dispatch?.inputs?.execution_mode).toMatchObject({
             default: 'hetzner-control',
-            options: ['hetzner-control', 'all-local']
+            options: ['hetzner-control', 'all-local', 'all-local-postgres']
         });
         for (const job of ['prepare-hetzner', 'operator']) {
             expect(workflow.jobs[job].with).not.toHaveProperty('capture_api_cpu_gc');
@@ -1294,11 +1295,14 @@ describe('Hetzner workflow contracts and effects', () => {
 
     it('derives terminal timeout and prints load estimate from manifest metadata', async (context) => {
         const fixture = await createGhDispatchFixture({ label: 'rallar-dispatch-manifest-timeout-gh-', secretResponses: completeSecretResponses });
+        const manifestPath = 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json';
+        const terminalTimeoutSeconds = createHetznerDistributedManifestCatalog()
+            .find((entry) => entry.filePath === manifestPath)?.manifest.metadata?.recommendedTerminalTimeoutSeconds;
         const { stdout } = await runOwnedTestProcess(context, {
             executable: 'bash',
             args: [
                 dispatchScriptPath,
-                'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
+                manifestPath,
                 '--allow-diagnostic',
                 '--run-id',
                 'long-principal'
@@ -1310,9 +1314,9 @@ describe('Hetzner workflow contracts and effects', () => {
         });
 
         const args = (await readFile(fixture.argsFile, 'utf8')).trim().split('\n');
-        expect(args).toContain('terminal_timeout_seconds=3900');
+        expect(args).toContain(`terminal_timeout_seconds=${terminalTimeoutSeconds}`);
         expect(args).toContain('agent_count=50');
-        expect(stdout).toContain('Timeout  : 3900');
+        expect(stdout).toContain(`Timeout  : ${terminalTimeoutSeconds}`);
         expect(stdout).toContain('Topology : RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=51');
         expect(stdout).toContain('Load     : stream frames=72000, logical fanout=3528000');
     });

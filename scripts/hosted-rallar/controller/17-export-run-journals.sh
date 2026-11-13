@@ -26,9 +26,10 @@ usage() {
 Usage: 17-export-run-journals.sh --since <journalctl since> --output-dir <dir>
          [--teardown-timeout-seconds <n>] [--teardown-poll-seconds <n>]
 
-Writes api-journal.log and control-journal.log into <dir>: the redacted raw journal of
-rallar-api-v1.service and rallar-black-box-control.service since the run phase began,
-each capped at its last 50000 lines. The API journal is re-exported every poll until every
+Writes api-journal.log and control-journal.log into <dir>: the redacted raw journals of
+every API replica unit the api role installs, interleaved in one file, and of
+rallar-black-box-control.service since the run phase began, each file capped at its last
+50000 lines. The API journal is re-exported every poll until every
 WS connect it logged since the run start has its disconnect (the run's teardown), or the
 timeout passes (default 120 s, polled every 5 s). An API journal without AppInbox handler
 lines, an uninstrumented API, is exported once and reported as having no teardown balance.

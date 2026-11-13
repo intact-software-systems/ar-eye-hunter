@@ -158,6 +158,38 @@ describe('RTC topology RTT-refresh work', () => {
         );
     });
 
+    it('plans no edge change for an aged leaderless tree when near-identical RTTs promise no worthwhile gain', () => {
+        const members = createRtcTopologyMemberIds(50);
+        const group = createRtcTopologyGroupSnapshot('group-1', members);
+        const accepted = acceptPlannedLayout(group);
+        const rttMeasurements = members.flatMap((sessionIdFrom, fromIndex) =>
+            members.slice(fromIndex + 1).map((sessionIdTo, toIndex) =>
+                createRtcTopologyRttMeasurement({
+                    sessionIdFrom,
+                    sessionIdTo,
+                    rttMs: 2 + ((fromIndex * 37 + toIndex * 11) % 10) / 10,
+                    version: fromIndex * members.length + toIndex + 1
+                })
+            )
+        );
+        const workInput = toRttRefreshWorkInput({
+            accepted,
+            current: toLaterGroupRevision(group),
+            nowEpochMs: ACCEPTED_AT_EPOCH_MS + MINIMUM_LAYOUT_AGE_MS
+        });
+
+        const replanned = computeRtcTopologyWork({
+            ...workInput,
+            read: { ...workInput.read, authority: { ...workInput.read.authority, rttMeasurements } }
+        }).right?.accepted;
+
+        expect(replanned?.decision).toBe('skipped-unchanged');
+        if (replanned?.decision !== 'skipped-unchanged') {
+            throw new Error('The kept tree must leave the accepted layout unchanged');
+        }
+        expect(replanned.criterionPetition?.planned.nextHopsBySessionId).toEqual(accepted.snapshot.nextHopsBySessionId);
+    });
+
     it('promotes a join at once while the accepted layout is still young', () => {
         const promoted = computeRttRefreshDecision({
             accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),
@@ -291,13 +323,13 @@ describe('RTC topology RTT-refresh work', () => {
     });
 });
 
-interface AcceptedPathLayout {
+interface AcceptedLayout {
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly inputFingerprint: string;
 }
 
 /** A valid accepted tree the planner would not produce itself, so an RTT replan of it always changes the layout. */
-function acceptPathLayout(memberSessionIds: readonly string[]): AcceptedPathLayout {
+function acceptPathLayout(memberSessionIds: readonly string[]): AcceptedLayout {
     const group = createRtcTopologyGroupSnapshot('group-1', memberSessionIds);
     const authority = createPlanningAuthority(group, ACCEPTED_AT_EPOCH_MS);
     const planned = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
@@ -310,6 +342,16 @@ function acceptPathLayout(memberSessionIds: readonly string[]): AcceptedPathLayo
     };
 }
 
+/** The tree the planner forms for a leaderless room before any RTT is reported. */
+function acceptPlannedLayout(group: GroupSnapshot): AcceptedLayout {
+    const authority = createPlanningAuthority(group, ACCEPTED_AT_EPOCH_MS);
+    const planned = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
+    if (planned.action !== 'planned') {
+        throw new Error('The accepted layout fixture must plan');
+    }
+    return { snapshot: planned.snapshot, inputFingerprint: computeAuthorityTopologyInputFingerprint(authority) };
+}
+
 function toPathNextHops(memberSessionIds: readonly string[]): Record<string, readonly string[]> {
     return Object.fromEntries(memberSessionIds.map((sessionId, index) => [
         sessionId,
@@ -318,7 +360,7 @@ function toPathNextHops(memberSessionIds: readonly string[]): Record<string, rea
 }
 
 interface ComputeRttRefreshDecisionInput {
-    readonly accepted: AcceptedPathLayout;
+    readonly accepted: AcceptedLayout;
     readonly current: GroupSnapshot;
     readonly nowEpochMs: number;
 }

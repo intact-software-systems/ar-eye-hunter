@@ -1,4 +1,5 @@
 import { createAlmScaleRecipes } from '@shared-test/rallar-bb-test/conformance/alm/scale/create-alm-scale-recipes.ts';
+import { RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import {
@@ -40,7 +41,7 @@ function createAlmScaleManifestEntry(input: AlmScaleManifestInput): HetznerDistr
     const scale = createAlmScaleRecipes({
         participantCount: input.participantCount,
         group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        readyTimeoutMs: 45_000,
+        readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
         almDiagnostics: input.diagnostic
     });
     return createManifestEntry({

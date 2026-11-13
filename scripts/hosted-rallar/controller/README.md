@@ -18,13 +18,13 @@ Run every script as `root`.
 Intended DNS records (documented here; live DNS is not managed by these
 scripts):
 
-| Host                           | Role    | Backend                                  |
-| ------------------------------ | ------- | ---------------------------------------- |
-| `api.rallar.intactss.com`      | api     | `127.0.0.1:8080`                         |
-| `blackbox.rallar.intactss.com` | api     | static SPA (`/var/www/rallar-black-box`) |
-| `control.rallar.intactss.com`  | control | `127.0.0.1:5180`                         |
-| `relic.rallar.intactss.com`    | games   | `127.0.0.1:8090`                         |
-| `ar-eye.rallar.intactss.com`   | games   | `127.0.0.1:8091`                         |
+| Host                           | Role    | Backend                                                                                                        |
+| ------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `api.rallar.intactss.com`      | api     | `127.0.0.1:8080`, `:8081`, `:8082` (round robin over the replicas whose `GET /api/config` health check passes) |
+| `blackbox.rallar.intactss.com` | api     | static SPA (`/var/www/rallar-black-box`)                                                                       |
+| `control.rallar.intactss.com`  | control | `127.0.0.1:5180`                                                                                               |
+| `relic.rallar.intactss.com`    | games   | `127.0.0.1:8090`                                                                                               |
+| `ar-eye.rallar.intactss.com`   | games   | `127.0.0.1:8091`                                                                                               |
 
 Each role's script set reads `RALLAR_CONTROLLER_ROLE` from the environment.
 Every script defaults to `api`, so an unset role on the api server preserves the
@@ -98,14 +98,15 @@ shell history (api role):
 ```
 
 The script prompts for `METERED_APP_NAME` and a silent `METERED_API_KEY`, writes
-`/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, installs a systemd
-drop-in for `rallar-api-v1.service`, reloads systemd, and restarts API-v1.
+`/etc/rallar/api-v1.secrets.env` as a root-only `0600` file, and restarts every
+API replica the role lists (each replica unit already reads that file, and reads
+it only at start).
 When the secret file already exists, it updates only Metered-owned assignments
 and preserves other supported assignments; an unreadable or unsupported file
 blocks synchronization without replacing it. New Metered values must use the
 same simple unquoted assignment format.
-`02-deploy-controller.sh` also references this optional secret file so future
-redeploys keep Metered enabled when the file exists.
+Every replica unit that `rallar-controller-role.sh` writes names this optional
+secret file, so redeploys keep Metered enabled when the file exists.
 
 Run public smoke checks (api checks the API, control checks the control server
 and SPA, games checks the two game servers):
@@ -275,10 +276,25 @@ installs:
 
 ```text
 api     rallar-api-v1.service
+        rallar-api-v1-2.service
+        rallar-api-v1-3.service
 control rallar-black-box-control.service
 games   rallar-relic-hunter-server-v1.service
         rallar-ar-eye-hunter-server-v1.service
 ```
+
+The API replicas bind only `127.0.0.1` (`RALLAR_HTTP_HOSTNAME`), so nothing
+reaches them around Caddy. Each replica unit also carries
+`RALLAR_API_REPLICA_COUNT` (the length of the role's replica list), and every
+per-client limit the API env file names (login, registration and WebSocket
+ticket rate limits, state API, group admission, ICE, friends, parties,
+matchmaking and tournament quotas, and the password-derivation concurrency
+bound) is a fleet limit: each replica enforces its share, the limit divided by
+the replica count, rounded up and never below 1. The fleet limit is therefore
+approximate. Round-robin spreads one client's requests evenly only on average,
+so a client can be refused somewhat before the fleet limit when its requests
+cluster on one replica, and rounding up lets the fleet admit up to one request
+fewer than the replica count beyond the limit.
 
 Caddy is left running so HTTPS/static SPA stays available. To include Caddy:
 
@@ -353,11 +369,26 @@ the services remain running on the previous process. If failure happens after
 the services are stopped, the script attempts to start them again, except
 API-v1 after a failed database connection check or migration: the script reports it as an
 `::error::`, writes `/etc/rallar/api-v1.store-failure` (shown by
-`07-status-controller.sh`), and leaves `rallar-api-v1.service` stopped until a
-rollout succeeds. The unit that `02-deploy-controller.sh` installs carries
+`07-status-controller.sh`), and leaves every API replica stopped until a
+rollout succeeds. Each replica unit that `rallar-controller-role.sh` writes carries
 `ConditionPathExists=!/etc/rallar/api-v1.store-failure`, so systemd skips
-starting API-v1 at boot or by hand while that file exists; `08-rollout-controller.sh`
-does not rewrite the unit, so re-run `02-deploy-controller.sh` once to install it.
+starting API-v1 at boot or by hand while that file exists.
+
+On the api role, `02-deploy-controller.sh` and `08-rollout-controller.sh` write one
+unit per replica the role lists, and disable, stop and delete every
+`rallar-api-v1*.service` the list no longer names, so a shorter replica list
+leaves no stray replica claiming AppInbox work from the shared store.
+
+Rollback past the API replica split: a ref older than the replica split knows
+only `rallar-api-v1.service`, so its rollout neither stops nor removes the other
+replicas, and they keep running (`Restart=always`) on the swapped checkout. Before
+rolling back to such a ref, stop and remove them by hand:
+
+```sh
+systemctl disable --now rallar-api-v1-2.service rallar-api-v1-3.service
+rm -f /etc/systemd/system/rallar-api-v1-2.service /etc/systemd/system/rallar-api-v1-3.service
+systemctl daemon-reload
+```
 
 The local retention proof uses an owned, disposable PostgreSQL container and
 checks auth, group, and unrelated rows plus database and role identity after two
@@ -1070,9 +1101,11 @@ before distributed artifacts exist. No AI analysis is required to distinguish
 those failures.
 
 For the `run` and `full` phases the same artifact also carries `api-journal.log`
-and `control-journal.log`: the redacted raw journals of `rallar-api-v1.service`
-and `rallar-black-box-control.service` since the run phase began on the
-controller, each capped at its last 50 000 lines. The remote run phase records
+and `control-journal.log`: the redacted raw journals of every API replica unit
+the api role installs (`rallar-api-v1.service`, `rallar-api-v1-2.service`,
+`rallar-api-v1-3.service`, interleaved in one file, each line naming its replica
+in its syslog identifier) and of `rallar-black-box-control.service` since the
+run phase began on the controller, each file capped at its last 50 000 lines. The remote run phase records
 its start and exports both through `17-export-run-journals.sh` when it exits,
 whatever the recipe's outcome. The agents disconnect after the recipe reports
 its terminal state, so the export re-reads the API journal every 5 s until every
@@ -1242,6 +1275,8 @@ Systemd services (per role):
 
 ```text
 api     /etc/systemd/system/rallar-api-v1.service
+        /etc/systemd/system/rallar-api-v1-2.service
+        /etc/systemd/system/rallar-api-v1-3.service
 control /etc/systemd/system/rallar-black-box-control.service
         /etc/systemd/system/rallar-black-box-headless-worker.service
 games   /etc/systemd/system/rallar-relic-hunter-server-v1.service
@@ -1258,7 +1293,7 @@ Control server persisted runs (control):
 Useful inspection commands on the VM:
 
 ```sh
-systemctl cat rallar-api-v1                       # api
+systemctl cat 'rallar-api-v1*'                    # api, every replica
 systemctl cat rallar-black-box-control            # control
 systemctl cat rallar-relic-hunter-server-v1       # games
 systemctl cat rallar-ar-eye-hunter-server-v1      # games
@@ -1269,10 +1304,10 @@ ls -la /var/www/rallar-black-box                  # api
 ## Useful Status Commands
 
 ```sh
-systemctl status rallar-api-v1 --no-pager
+systemctl status 'rallar-api-v1*' --no-pager
 systemctl status rallar-black-box-control --no-pager
 systemctl status caddy --no-pager
-journalctl -u rallar-api-v1 -n 80 --no-pager
+journalctl -u 'rallar-api-v1*' -n 80 --no-pager
 journalctl -u rallar-black-box-control -n 80 --no-pager
 ```
 
