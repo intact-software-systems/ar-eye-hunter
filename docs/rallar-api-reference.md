@@ -315,7 +315,9 @@ layout that appears and disappears before the browser observes it raises no even
 `layoutStale`, `pending`, the attempt budget, both status axes, the coverage basis and the group's
 `causalRevision` that `layoutStale` and `condition` were derived at) and decodes
 it against the bound room, rejecting a body that is malformed or names another group. `pending`
-reports a queued group-revision replan, including one parked behind a head that has settled;
+reports any queued group-revision replan of the group: the coalesced head, a replan parked behind a
+settled head, an explicit reconfigure or a topology-config write. Its `dueAtEpochMs` is the earliest
+due coalesced row's (not a bound on when the room settles) and is `null` for a per-command replan;
 RTT-refresh work is not reported. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.

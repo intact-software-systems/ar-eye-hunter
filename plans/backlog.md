@@ -696,3 +696,9 @@ and it has no status list.
 - Further room latency, capacity and recovery work should follow reproducible
   failures or participation evidence. Clickable journeys establish behavior and
   local timings, not adoption, OS-suspension behavior or a latency SLO.
+- `PendingTopologyReplan` in `packages/shared/api/graph-topology-management-types.ts` still describes only a
+  queued coalesced replan. It should say what the formation view's `pending` and OpenAPI now say: commanded and
+  parked replans are reported, `dueAtEpochMs` is the earliest coalesced due time, and `generation` cannot be
+  compared across reads. Touching the file makes the changed-style gate enforce its five pre-existing
+  `boundary.unknown` findings, so that slice also has to type or register them: graphology's serialised
+  `attributes`/`options` (×4) and the validation issue's `details`.
