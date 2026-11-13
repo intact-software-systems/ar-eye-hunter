@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { extractRouteHandlerRanges } from './factory-route-rules.mjs';
 import { readCallableInventoryObservations } from './navigation-callable-inventories.mjs';
+import { readDefinitionNodes, readReferenceNodes } from './navigation-language-service.mjs';
 
 const require = createRequire(import.meta.url);
 const maximumTraversalDepth = 24;
@@ -613,7 +614,7 @@ function resolveExpressionDeclarations(expression) {
 }
 
 function definitionNodes(node) {
-    const definitions = node.getDefinitionNodes?.() ?? [];
+    const definitions = node.getDefinitionNodes === undefined ? [] : readDefinitionNodes(node);
     const symbol = node.getSymbol?.();
     const aliasedDeclarations = symbol?.getAliasedSymbol?.()?.getDeclarations?.() ?? [];
     return uniqueNodes([...definitions, ...aliasedDeclarations]);
@@ -660,7 +661,7 @@ function isTypeOnlyCallableDeclaration(node) {
 }
 
 function implementationCandidates(state, signature) {
-    const references = signature.findReferencesAsNodes?.() ?? [];
+    const references = signature.findReferencesAsNodes === undefined ? [] : readReferenceNodes(signature);
     return uniqueNodes(
         references
             .map(normalizeImplementationDeclaration)

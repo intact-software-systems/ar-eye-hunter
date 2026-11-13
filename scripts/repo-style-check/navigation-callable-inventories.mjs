@@ -1,3 +1,5 @@
+import { readDefinitionNodes, readReferenceNodes } from './navigation-language-service.mjs';
+
 const membershipMutationNames = new Set([
     'add',
     'clear',
@@ -153,7 +155,7 @@ function hasRuntimeMembershipMutation(expression, seen = new Set()) {
     seen.add(key);
     for (const declaration of resolveExpressionDeclarations(inventory)) {
         const nameNode = declarationNameNode(declaration);
-        if (nameNode !== undefined && nameNode.findReferencesAsNodes().some(isRuntimeMembershipMutationReference)) {
+        if (nameNode !== undefined && readReferenceNodes(nameNode).some(isRuntimeMembershipMutationReference)) {
             return true;
         }
         for (const candidate of declarationInventoryExpressions(declaration)) {
@@ -268,7 +270,7 @@ function staticMembershipEntries(expression, seen) {
         const nameNode = declarationNameNode(declaration);
         if (nameNode !== undefined) {
             entries.push(
-                ...nameNode.findReferencesAsNodes().flatMap((reference) => {
+                ...readReferenceNodes(nameNode).flatMap((reference) => {
                     const call = membershipMutationCall(reference);
                     return call === undefined || isRuntimeMembershipMutationReference(reference)
                         ? []
@@ -387,7 +389,7 @@ function callArgumentsForParameter(parameter) {
     if (nameNode === undefined || index < 0) {
         return [];
     }
-    return nameNode.findReferencesAsNodes()
+    return readReferenceNodes(nameNode)
         .map(callForCallableReference)
         .filter((call) => call !== undefined)
         .map((call) => call.getArguments()[index])
@@ -407,7 +409,7 @@ function callForCallableReference(reference) {
 }
 
 function propertyImplementationInitializers(signature) {
-    const referenced = signature.findReferencesAsNodes()
+    const referenced = readReferenceNodes(signature)
         .map((reference) => ({ reference, parent: reference.getParent() }))
         .filter(({ reference, parent }) =>
             parent?.getKindName() === 'PropertyAssignment' &&
@@ -494,7 +496,7 @@ function resolveExpressionDeclarations(expression) {
 }
 
 function definitionNodes(node) {
-    const definitions = node.getDefinitionNodes?.() ?? [];
+    const definitions = node.getDefinitionNodes === undefined ? [] : readDefinitionNodes(node);
     const symbol = node.getSymbol?.();
     const aliases = symbol?.getAliasedSymbol?.()?.getDeclarations?.() ?? [];
     return uniqueNodes([...definitions, ...aliases]);
