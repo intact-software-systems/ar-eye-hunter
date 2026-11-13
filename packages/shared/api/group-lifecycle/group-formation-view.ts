@@ -36,9 +36,14 @@ export type GroupFormationView = Readonly<{
      */
     layoutStale: boolean;
     /**
-     * The transient half: a group-revision replan is queued and due, including one
-     * parked behind a head that has settled; null when none is. RTT-refresh work
-     * is not reported.
+     * The transient half: a group-revision replan of this group is queued —
+     * the coalesced head, a replan parked behind a settled head, an explicit
+     * reconfigure or a topology-config write; null when none is. RTT-refresh
+     * work is not reported. `dueAtEpochMs` is the earliest due coalesced row's,
+     * not a bound on when the room settles, and null for a per-command or
+     * undecodable row. `generation` is that row's own coalescing count: the
+     * head's counts every merge into it, a parked replan starts at 1, so it is
+     * not comparable across reads.
      */
     pending: PendingTopologyReplan | null;
     /**
