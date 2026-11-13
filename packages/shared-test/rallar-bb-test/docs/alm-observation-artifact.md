@@ -35,6 +35,10 @@ the receiver's pages and each scenario's successor page, with role `successor`. 
 ids start `alm-successor-`, which the snapshot decoder does not attribute, so its events read
 `unattributed`.
 
+The control run snapshot also carries each page's `rallar.browser.state-read` events (the state-read
+diagnostics of the runtime diagnostic contract), so a cell can tell when a page pulled or reconciled
+group state by `operation` and `result`.
+
 They live beside the per-test output directories rather than inside one, because Playwright deletes
 a passing test's own directory at the end of the run. A failed cell additionally attaches its
 snapshot to the Playwright report, which is where it has always been; a green cell used to leave no

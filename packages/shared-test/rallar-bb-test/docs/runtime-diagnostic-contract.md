@@ -160,15 +160,16 @@ snapshot page, a point read, a heartbeat adoption, a reopen resync.
   presenceRevision)` or `activeSessionCount`. A heartbeat that drops or restores
   a session at an equal causal revision is therefore stated, with the new count.
 - A lease-only replacement or a lease refresh states nothing. `rosterVersion`
-  is carried but never decides: it cannot change while the causal revision stays
-  equal.
+  is carried but never decides: a consistent server does not change it at an
+  equal causal revision. A point read that replaces content at an equal revision
+  states nothing for a roster-only change.
 - A `removed` event is stated for the explicit removals only: a heartbeat that
   no longer returns the group (`missingGroups`), a collection reconciliation
   that drops it, and a point read that finds the room missing.
 - A cache entry that lapses by its TTL states nothing; the RTC admission no
   longer reads it.
-- A connect, disconnect or logout replaces the whole cache and states nothing
-  for the groups it held.
+- A disconnect or logout leaves the cache as it is and states nothing; the next
+  connect replaces the whole cache and states nothing for the groups it held.
 
 So the last `held` event does not prove the group is still readable.
 
@@ -182,6 +183,30 @@ The topic carries about one event per applied change per page; it grows with
 the room's writes, not with the messages a cell sends. The bridged event carries
 no connection, actor or lane context, so a consumer keys it by page; a reloaded
 page starts with an empty cache and states `held` afresh.
+
+## State Read Diagnostics
+
+The browser's `BrowserStateReadDiagnosticEvent`
+(`packages/shared-web/browser/state-read/diagnostics.ts`) reaches the harness
+through the process-wide `setBrowserStateReadDiagnosticsSink`. The harness
+installs its sink when it configures an idle connection and clears it when the
+runtime closes, and publishes each event on `rallar.browser.state-read`; the
+event's `data` is the event itself:
+
+- `name`: always `rallar.browser.state-read`
+- `feature`: `client` or `group`
+- `operation`: `point`, `heartbeat`, `collection`, `topology-read-through`,
+  `reopen-resync` or `delta-apply`
+- `result`: `found`, `not-found`, `error`, `removed`, `preserved`, `adopted`,
+  `applied`, `no-op`, `gap-pull`, `no-overlay`, `revision-conflict`,
+  `read-failed`, `resynced` or `stale-generation`
+- `source`: the read's `StateSnapshotReadSource`, when the operation has one
+- `durationMs`: how long the read or application took
+
+The type is the authority for the members; the harness adds nothing to the
+event. The bridged event carries no connection, actor or lane context, so a
+consumer keys it by page. A page that never closes its runtime leaves its sink
+installed; a second runtime in the same process replaces it.
 
 ## Outbound Admission Diagnostics
 

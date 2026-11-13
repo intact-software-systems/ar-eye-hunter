@@ -3,6 +3,7 @@ import {
     toRallarDiagnosticsPorts,
     type RallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { BrowserStateReadDiagnosticsSink } from '@shared-web/browser/state-read/diagnostics.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { ALInboundAcknowledgementEvidence } from '@shared/alm/inbound/control/al-inbound-acknowledgement-evidence.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -216,6 +217,18 @@ export function createBlackBoxRallarDiagnosticsPorts(
             }
         }
     });
+}
+
+/** The page's state-read sink is process-wide: one installer sets it, and close clears it. */
+export function createBlackBoxRallarStateReadSink(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics
+): BrowserStateReadDiagnosticsSink {
+    return (event) =>
+        diagnostics.emit({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.state-read',
+            data: { ...event }
+        });
 }
 
 /** A live value the publication stage refused reads as a warning; others keep their topic's severity (D480). */

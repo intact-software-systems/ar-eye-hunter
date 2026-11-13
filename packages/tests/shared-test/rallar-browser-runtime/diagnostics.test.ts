@@ -19,6 +19,10 @@ import type { RallarBlackBoxBrowserRallarEvent } from '@shared-test/rallar-bb-te
 import { createDefaultRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import {
+    emitBrowserStateReadDiagnostic,
+    type BrowserStateReadDiagnosticEvent
+} from '@shared-web/browser/state-read/diagnostics.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
@@ -596,6 +600,36 @@ it('bridges an applied group revision to rallar.browser.group_state.applied', as
     expect(events).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: 'diagnostic', topic: 'rallar.browser.group_state.applied', data: applied })
     ]));
+});
+
+it('forwards a state-read event to rallar.browser.state-read and removes its sink on close', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+    const read: BrowserStateReadDiagnosticEvent = {
+        name: 'rallar.browser.state-read',
+        feature: 'group',
+        operation: 'delta-apply',
+        result: 'applied',
+        durationMs: 3
+    };
+
+    emitBrowserStateReadDiagnostic(read);
+
+    expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'diagnostic', topic: 'rallar.browser.state-read', data: read })
+    ]));
+
+    await runtime.close();
+    const before = events.filter((event) => event.topic === 'rallar.browser.state-read').length;
+    emitBrowserStateReadDiagnostic(read);
+
+    expect(events.filter((event) => event.topic === 'rallar.browser.state-read')).toHaveLength(before);
 });
 
 it('records an AL storage reset diagnostics event into the agent event log', async () => {
