@@ -109,9 +109,10 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "timeoutMs": 65000
             },
-            "timeoutMs": 60000,
+            "timeoutMs": 115000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -250,9 +251,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-delivery-poll",
-            "count": 14,
+            "count": 25,
             "intervalMs": 5000,
-            "maxCommands": 28,
+            "maxCommands": 50,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
@@ -269,7 +270,7 @@
               "minReceiveRatio": 0.9,
               "logicalFanoutMessages": 31500,
               "purpose": "delivery-poll",
-              "pollWindowMs": 65000
+              "pollWindowMs": 120000
             },
             "commands": [
               {
@@ -323,9 +324,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-all-peer-relay-hold",
-            "count": 66,
+            "count": 121,
             "intervalMs": 1000,
-            "maxCommands": 66,
+            "maxCommands": 121,
             "metadata": {
               "profile": "rtc-messages-all-peer-multicast",
               "transport": "messages.rtc",
@@ -341,7 +342,7 @@
               "minReceiveRatio": 0.9,
               "logicalFanoutMessages": 31500,
               "purpose": "relay-hold",
-              "relayHoldMs": 65000
+              "relayHoldMs": 120000
             },
             "commands": [
               {
@@ -428,7 +429,7 @@
       "streamFrames": 2250,
       "logicalFanoutMessages": 31500
     },
-    "recommendedTerminalTimeoutSeconds": 345
+    "recommendedTerminalTimeoutSeconds": 510
   },
   "description": "All 15 headless peers multicast RTC messages at 5 Hz through a forced tree topology."
 }

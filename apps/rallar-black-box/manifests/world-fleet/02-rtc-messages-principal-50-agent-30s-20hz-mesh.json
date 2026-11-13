@@ -106,9 +106,10 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "timeoutMs": 65000
             },
-            "timeoutMs": 60000,
+            "timeoutMs": 115000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -358,9 +359,10 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "timeoutMs": 65000
             },
-            "timeoutMs": 60000,
+            "timeoutMs": 115000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -385,9 +387,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-delivery-poll",
-            "count": 21,
+            "count": 32,
             "intervalMs": 5000,
-            "maxCommands": 42,
+            "maxCommands": 64,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
@@ -404,7 +406,7 @@
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 29400,
               "purpose": "delivery-poll",
-              "pollWindowMs": 100000
+              "pollWindowMs": 155000
             },
             "commands": [
               {
@@ -571,7 +573,7 @@
       "streamFrames": 600,
       "logicalFanoutMessages": 29400
     },
-    "recommendedTerminalTimeoutSeconds": 327,
+    "recommendedTerminalTimeoutSeconds": 437,
     "worldFleet": true,
     "noSpawn": true
   }

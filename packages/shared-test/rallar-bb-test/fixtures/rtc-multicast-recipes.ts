@@ -11,6 +11,7 @@ import {
     defaultRallarBlackBoxGroup,
     groupRoomRef,
     RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS,
+    RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS,
     RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
 } from './live-rtc-setup.ts';
 import { normalizeRallarBlackBoxRtcRealtimeRateHz } from './rtc-realtime-recipes.ts';
@@ -221,7 +222,10 @@ function messagesRtcConnectCommand(
         workspaceId: options.group.workspaceId,
         roomRef,
         transport: 'messages.rtc',
-        rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
+        rallar: {
+            ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
+            timeoutMs: RALLAR_BLACK_BOX_RTC_CONNECT_ESTABLISHMENT_TIMEOUT_MS
+        },
         timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(readinessTimeoutMs),
         readiness: {
             minReadyPeers: options.minReadyPeers,

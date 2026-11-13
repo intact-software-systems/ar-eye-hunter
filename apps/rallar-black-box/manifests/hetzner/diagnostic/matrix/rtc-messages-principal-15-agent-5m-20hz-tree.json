@@ -106,9 +106,10 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "timeoutMs": 65000
             },
-            "timeoutMs": 60000,
+            "timeoutMs": 115000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -358,9 +359,10 @@
             "transport": "messages.rtc",
             "rallar": {
               "typeId": "black-box.group.multicast.position",
-              "topicId": "black-box.group.multicast.position"
+              "topicId": "black-box.group.multicast.position",
+              "timeoutMs": 65000
             },
-            "timeoutMs": 60000,
+            "timeoutMs": 115000,
             "readiness": {
               "minReadyPeers": 1,
               "timeoutMs": 45000,
@@ -385,9 +387,9 @@
           {
             "kind": "loop",
             "commandId": "rtc-messages-principal-receiver-delivery-poll",
-            "count": 75,
+            "count": 86,
             "intervalMs": 5000,
-            "maxCommands": 150,
+            "maxCommands": 172,
             "until": "first-success",
             "metadata": {
               "profile": "rtc-messages-principal-multicast-receiver",
@@ -404,7 +406,7 @@
               "minReceiveRatio": 0.95,
               "logicalFanoutMessages": 84000,
               "purpose": "delivery-poll",
-              "pollWindowMs": 370000
+              "pollWindowMs": 425000
             },
             "commands": [
               {
@@ -682,7 +684,7 @@
       "streamFrames": 6000,
       "logicalFanoutMessages": 84000
     },
-    "recommendedTerminalTimeoutSeconds": 565
+    "recommendedTerminalTimeoutSeconds": 675
   },
   "description": "Diagnostic 15-agent principal RTC messages multicast run at 20 Hz for 5m through a forced tree topology."
 }
