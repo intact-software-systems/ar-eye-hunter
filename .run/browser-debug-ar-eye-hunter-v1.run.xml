@@ -1,0 +1,18 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Browser Debug · AR Eye Hunter" type="js.build_tools.npm" folderName="JavaScript Debug">
+    <envs>
+      <env name="API_BASE_URL" value="http://localhost:8080" />
+    </envs>
+    <package-json value="$PROJECT_DIR$/apps/ar-eye-hunter-v1/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <package-manager value="npm" />
+    <EXTENSION ID="com.intellij.lang.javascript.buildTools.npm.rc.StartBrowserRunConfigurationExtension">
+      <browser start="true" name="98ca6316-2f89-46d9-a9e5-fa9e2b0625b3" url="http://localhost:5174" with-js-debugger="true" />
+    </EXTENSION>
+    <method v="2" />
+  </configuration>
+</component>

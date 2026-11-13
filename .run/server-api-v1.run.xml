@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Server · API v1" type="BunRunConfiguration" folderName="Bun Servers">
+    <option name="program" value="$PROJECT_DIR$/apps/api-v1/src/main.ts" />
+    <option name="runtimeParameters" value="--watch" />
+    <option name="workingDirectory" value="$PROJECT_DIR$/apps/api-v1" />
+    <method v="2" />
+  </configuration>
+</component>
