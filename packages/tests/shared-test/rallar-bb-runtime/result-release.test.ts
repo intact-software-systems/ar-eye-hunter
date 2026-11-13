@@ -162,6 +162,11 @@ it('defers active work and owned recipe leases, rejects reset receipts, and fail
     expect(absent.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
     const wait = await runtime.execute({ kind: 'wait', commandId: 'wait-released', match: { contains: '{resultCache.first.value}' } }, identity);
     expect(wait.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+    const floor = await runtime.execute(
+        { kind: 'wait', commandId: 'floor-released', match: { payloadMinimums: { revision: '{resultCache.first.value.revision}' } } },
+        identity
+    );
+    expect(floor.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
     await runtime.execute({ kind: 'reset', commandId: 'reset' }, identity);
     expect((await runtime.releaseResults(request)).status).toBe('rejected');
 });
@@ -455,6 +460,7 @@ it.each([
     { payloadPath: 'value.answer', equals: 'kept' },
     { payloadPath: 'value.answer', contains: 'ke' },
     { payloadFields: { 'value.answer': 'kept' } },
+    { payloadMinimums: { 'value.count': 1 } },
     { contains: 'kept' }
 ])('does not substitute released evidence for wait payload query %j', async (query) => {
     for (const absent of [false, true]) {

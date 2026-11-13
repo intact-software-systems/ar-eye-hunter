@@ -71,6 +71,23 @@ it says so: capture a stamp before the step that should produce the event, and p
 Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
 same hazard `absent: true` carries in the other direction.
 
+## Wait History From A Command
+
+`wait.match.sinceCommandIdPrefix` starts the wait's history at the first retained event whose `commandId` starts
+with the prefix, and at the next event when none does yet. It resolves once, when the wait starts. Conformance cells
+that share one page name their commands under a cell prefix, so a wait sees only its own cell's history rather than
+an earlier cell's traffic. Beside an owner's own history start, such as a barrier's, the later of the two wins. When
+events were evicted and no retained event carries the prefix, the wait fails with
+`RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`.
+
+## Wait Numeric Floors
+
+`wait.match.payloadMinimums` maps payload paths to floors: every path must reach a number at or above its floor in
+the same event, so a page that reached one revision but not the other does not match. A floor is a finite number or
+exactly one `{resultCache.<commandId>.<path>}` reference with the `wait.timeoutFrom` grammar below, resolved once
+when the wait starts. A reference naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`, and any
+other text is refused when the recipe is loaded.
+
 ## Wait Result References
 
 A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number

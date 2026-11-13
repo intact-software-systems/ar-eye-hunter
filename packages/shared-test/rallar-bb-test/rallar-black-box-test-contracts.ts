@@ -275,6 +275,9 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly contains?: string;
     readonly exists?: boolean;
     readonly sinceEpochMs?: number;
+    readonly sinceCommandIdPrefix?: string;
+    /** Every path must reach its floor, a finite number or one `{resultCache…}` reference, in the same event. */
+    readonly payloadMinimums?: Readonly<Record<string, number | string>>;
 }
 
 export type RallarBlackBoxTestWaitCommand =

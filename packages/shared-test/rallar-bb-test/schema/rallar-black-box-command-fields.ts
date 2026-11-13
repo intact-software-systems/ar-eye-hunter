@@ -253,7 +253,9 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'equals',
             'contains',
             'exists',
-            'sinceEpochMs'
+            'sinceEpochMs',
+            'sinceCommandIdPrefix',
+            'payloadMinimums'
         ]
     },
     rtcConnectReadiness: { required: [], optional: ['minReadyPeers', 'timeoutMs', 'intervalMs'] },

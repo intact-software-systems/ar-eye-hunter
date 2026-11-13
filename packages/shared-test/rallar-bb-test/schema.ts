@@ -408,7 +408,14 @@ const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELD
     equals: anySchema,
     contains: stringSchema,
     exists: booleanSchema,
-    sinceEpochMs: { type: 'integer', minimum: 0 }
+    sinceEpochMs: { type: 'integer', minimum: 0 },
+    sinceCommandIdPrefix: stringSchema,
+    payloadMinimums: {
+        type: 'object',
+        additionalProperties: {
+            oneOf: [{ type: 'number' }, { type: 'string', pattern: WAIT_TIMEOUT_FROM_PATTERN_SOURCE }]
+        }
+    }
 });
 
 const assertOperatorSchema: JsonSchema = {
