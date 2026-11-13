@@ -84,8 +84,6 @@ export interface ApiV1RouteInstallerTopology {
     }>;
     readonly readPlannedLayoutFingerprint:
         graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
-    readonly readPresenceSummaryRevision:
-        graphTopologyRoutes.GraphTopologyRouteDependencies['readPresenceSummaryRevision'];
 }
 
 export interface ApiV1RouteInstallerAdminServices {
@@ -283,7 +281,6 @@ function registerApiV1StateRoutes<
         adminClientIds: input.topology.adminClientIds,
         readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
         readPlannedLayoutFingerprint: input.topology.readPlannedLayoutFingerprint,
-        readPresenceSummaryRevision: input.topology.readPresenceSummaryRevision,
         strictReadAuthorization: input.strictReadAuthorization,
         now: input.nowEpochMs
     });

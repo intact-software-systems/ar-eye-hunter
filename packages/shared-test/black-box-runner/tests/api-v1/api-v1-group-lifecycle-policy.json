@@ -332,7 +332,10 @@
           "Authorization": "{bobAuthHeader}",
           "x-client-id": "{bobClientId}"
         },
-        "body": {}
+        "body": {},
+        "outputs": {
+          "optimisticJoinGroupRevision": "body.causalRevision.groupRevision"
+        }
       },
       "expect": {
         "status": 200,
@@ -347,7 +350,7 @@
       }
     },
     {
-      "name": "formationViewStatesTheRevisionsItWasDerivedAt",
+      "name": "formationViewStatesTheGroupRevisionItWasDerivedAt",
       "type": "http",
       "connection": "primary",
       "request": {
@@ -357,15 +360,8 @@
           "Authorization": "{aliceAuthHeader}",
           "x-client-id": "{aliceClientId}"
         },
-        "poll": {
-          "maxAttempts": 20,
-          "maxDurationMs": 8000,
-          "backoffMs": 100,
-          "backoffMultiplier": 1.2
-        },
         "outputs": {
-          "formationCausalGroupRevision": "body.causalRevision.groupRevision",
-          "formationPresenceSummaryGroupRevision": "body.presenceSummaryRevision.groupRevision"
+          "formationCausalGroupRevision": "body.causalRevision.groupRevision"
         }
       },
       "expect": {
@@ -374,26 +370,22 @@
           "causalRevision": {
             "groupRevision": "integer",
             "presenceRevision": "integer"
-          },
-          "presenceSummaryRevision": {
-            "groupRevision": "integer",
-            "presenceRevision": "integer"
           }
         }
       }
     },
     {
-      "name": "thePresenceSummaryNeverRunsAheadOfTheGroup",
+      "name": "theFormationViewIsDerivedNoEarlierThanTheJoin",
       "type": "assert",
       "actual": {
-        "presenceSummaryGroupRevision": "{formationPresenceSummaryGroupRevision}"
+        "formationGroupRevision": "{formationCausalGroupRevision}"
       },
       "expect": {
         "missingActualValue": "MISSING",
         "comparators": [
           {
-            "path": "presenceSummaryGroupRevision",
-            "lte": "{formationCausalGroupRevision}"
+            "path": "formationGroupRevision",
+            "gte": "{optimisticJoinGroupRevision}"
           }
         ]
       }

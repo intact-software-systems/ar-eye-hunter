@@ -65,13 +65,11 @@ export type GroupFormationView = Readonly<{
      * is not itself a claim that traffic is flowing.
      */
     coverageBasisLayoutIdentity: GroupLayoutIdentity | null;
-    /** The group's causal revision this view was derived at. */
-    causalRevision: GroupStateCausalRevision;
     /**
-     * The causal revision of the stored presence summary. The summary worker,
-     * not the write, queues `pending`, so until this equals `causalRevision`
-     * a write that will replan can still read as nothing queued. Null before
-     * the group's first summary is written.
+     * The group's causal revision of the snapshot `layoutStale` and
+     * `condition` were derived from. `pending` and the planned and accepted
+     * slots come from a topology read made beside it, so this is not a
+     * version of `pending`.
      */
-    presenceSummaryRevision: GroupStateCausalRevision | null;
+    causalRevision: GroupStateCausalRevision;
 }>;

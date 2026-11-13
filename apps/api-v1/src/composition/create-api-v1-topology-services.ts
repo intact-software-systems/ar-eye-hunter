@@ -39,7 +39,7 @@ import {
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RtcTopologyAdminMetrics } from '@shared/rtc/rtc-topology-admin-metrics.ts';
 import type { RtcTopologyReplayMetrics } from '@shared/rtc/rtc-topology-replay-metrics.ts';
@@ -75,7 +75,6 @@ export interface ApiV1TopologyServices {
     readonly topologyQuery: GroupTopologyConfigQueryService;
     readonly topologyPlanning: GroupTopologyPlanningService;
     readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
-    readonly readPresenceSummaryRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | null>;
     readonly topologyConfigMutation: GroupTopologyConfigMutationService;
     readonly topologyReconfigureMutation: GroupTopologyReconfigureMutation;
     readonly topologyMutationOwners: TopologyAppInboxMutationOwners;
@@ -219,8 +218,6 @@ export function createApiV1TopologyServices(
         topologyQuery: topologyRuntimeOwners.query,
         topologyPlanning: topologyRuntimeOwners.planning,
         readPlannedLayoutFingerprint: (ref: GroupRef) => plannedLayoutFingerprints.findFingerprint(ref),
-        readPresenceSummaryRevision: async (ref: GroupRef) =>
-            (await groupStateRepository.findPresenceSummaryEntry(ref))?.value.causalRevision ?? null,
         topologyConfigMutation,
         topologyReconfigureMutation,
         topologyMutationOwners: {

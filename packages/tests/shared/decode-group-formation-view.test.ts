@@ -72,40 +72,26 @@ describe('group formation view decoding', () => {
         ).toBeUndefined();
     });
 
-    it('rejects a view that does not state the revisions it was derived at', () => {
-        const {
-            causalRevision: _causalRevision,
-            presenceSummaryRevision: _presenceSummaryRevision,
-            ...withoutRevisions
-        } = createFormationView(groupRef);
+    it('rejects a view that does not state the causal revision it was derived at', () => {
+        const { causalRevision: _causalRevision, ...withoutRevision } = createFormationView(groupRef);
 
-        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutRevisions)), groupRef).left).toEqual([
-            { path: 'causalRevision', code: 'missing-field', message: 'Formation view is missing causalRevision' },
-            {
-                path: 'presenceSummaryRevision',
-                code: 'missing-field',
-                message: 'Formation view is missing presenceSummaryRevision'
-            }
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutRevision)), groupRef).left).toEqual([
+            { path: 'causalRevision', code: 'missing-field', message: 'Formation view is missing causalRevision' }
         ]);
     });
 
-    it('accepts no presence summary revision and refuses a revision that is not a causal revision', () => {
-        const broken = {
-            ...createFormationView(groupRef),
-            causalRevision: { groupRevision: -1, presenceRevision: 0 },
-            presenceSummaryRevision: { groupRevision: 1, presenceRevision: 1, version: 1 }
-        };
+    it('refuses a causal revision without two non-negative integers and accepts one the schema permits', () => {
+        const view = createFormationView(groupRef);
 
-        expect(issuePaths(JSON.stringify(broken))).toEqual(['causalRevision', 'presenceSummaryRevision']);
-        expect(issuePaths(JSON.stringify({ ...broken, causalRevision: null }))).toEqual([
-            'causalRevision',
-            'presenceSummaryRevision'
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: { groupRevision: -1, presenceRevision: 0 } })))
+            .toEqual(['causalRevision']);
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: { groupRevision: 1 } }))).toEqual([
+            'causalRevision'
         ]);
-        expect(
-            decodeGroupFormationView(
-                JSON.parse(JSON.stringify(createFormationView(groupRef, { presenceSummaryRevision: null }))),
-                groupRef
-            ).left
-        ).toBeUndefined();
+        expect(issuePaths(JSON.stringify({ ...view, causalRevision: null }))).toEqual(['causalRevision']);
+        expect(issuePaths(JSON.stringify({
+            ...view,
+            causalRevision: { groupRevision: 1, presenceRevision: 1, observedAtEpochMs: 5 }
+        }))).toEqual([]);
     });
 });

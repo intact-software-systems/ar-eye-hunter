@@ -6,7 +6,7 @@ import type {
     GroupTopologyManagementView,
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
@@ -99,8 +99,6 @@ export interface GraphTopologyRouteDependencies {
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     /** The planned slot's stored topology-input fingerprint; null before a planning cycle stored one. */
     readonly readPlannedLayoutFingerprint: (ref: GroupRef) => Promise<string | null>;
-    /** The stored presence summary's causal revision; null before the group's first summary is written. */
-    readonly readPresenceSummaryRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | null>;
     readonly strictReadAuthorization: boolean;
     readonly now: () => number;
 }

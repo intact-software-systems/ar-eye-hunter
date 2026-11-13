@@ -7802,19 +7802,13 @@ components:
         - remediation
         - coverageBasisLayoutIdentity
         - causalRevision
-        - presenceSummaryRevision
       properties:
         causalRevision:
-          description: The group's causal revision this view was derived at.
+          description: >-
+            The group's causal revision of the snapshot layoutStale and condition were derived from; pending and the
+            planned and accepted slots come from a topology read made beside it, so this is not a version of pending.
           allOf:
             - { $ref: '#/components/schemas/GroupStateCausalRevision' }
-        presenceSummaryRevision:
-          description: >-
-            The stored presence summary's causal revision, equal to causalRevision once the summary worker has
-            caught up with the group's latest write; null before the group's first summary is written.
-          anyOf:
-            - { $ref: '#/components/schemas/GroupStateCausalRevision' }
-            - { type: 'null' }
         maxFormationAttempts:
           type:
             - integer

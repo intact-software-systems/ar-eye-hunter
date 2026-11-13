@@ -617,7 +617,6 @@ function createRouteApp(options: {
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
     readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
     readonly readPlannedLayoutFingerprint?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPlannedLayoutFingerprint'];
-    readonly readPresenceSummaryRevision?: graphTopologyRoutes.GraphTopologyRouteDependencies['readPresenceSummaryRevision'];
     readonly readLifecyclePolicy?: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
@@ -690,7 +689,6 @@ function createRouteApp(options: {
                     }))
         },
         readPlannedLayoutFingerprint: options.readPlannedLayoutFingerprint ?? (() => Promise.resolve(null)),
-        readPresenceSummaryRevision: options.readPresenceSummaryRevision ?? (() => Promise.resolve(null)),
         processTopologyAppInbox: options.processTopologyAppInbox ??
             ((_authority, reservation) => createTopologyAppInboxResult(reservation)),
         now: () => 123_456
@@ -1299,37 +1297,51 @@ Deno.test('formation view states the group causal revision it was derived at', a
     assert.deepEqual(view.causalRevision, { groupRevision: 7, presenceRevision: 3 });
 });
 
-Deno.test('formation view states the presence summary revision, equal to the causal revision once the summary has caught up', async () => {
+Deno.test('formation view states the causal revision of the planning snapshot, not the route read', async () => {
+    const routeSnapshot = createGroupSnapshot('room-1', ['owner']);
+    const planningSnapshot = withCausalRevision(routeSnapshot, { groupRevision: 9, presenceRevision: 4 });
     const app = createRouteApp({
-        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 }),
-        readPresenceSummaryRevision: () => Promise.resolve({ groupRevision: 7, presenceRevision: 3 })
+        group: routeSnapshot,
+        topologyPlanning: {
+            readTopologyPlanningAuthority: () =>
+                Promise.resolve({
+                    group: planningSnapshot,
+                    config: createTopologyConfigView(),
+                    kindHysteresisWidths: { meshExitWidth: 0, treeExitWidth: 0 },
+                    rttReportingDegreeLimit: 5,
+                    rttMeasurements: [],
+                    rttReplanMinimumLayoutAgeMs: 15_000,
+                    replanning: 'auto' as const,
+                    nowEpochMs: 123_456
+                })
+        }
     });
 
     const view = await readFormationView(app);
 
-    assert.deepEqual(view.presenceSummaryRevision, { groupRevision: 7, presenceRevision: 3 });
-    assert.deepEqual(view.presenceSummaryRevision, view.causalRevision);
+    assert.deepEqual(view.causalRevision, { groupRevision: 9, presenceRevision: 4 });
 });
 
-Deno.test('formation view states a presence summary revision behind the causal revision while a write summary work is still queued', async () => {
-    const app = createRouteApp({
-        group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 }),
-        readPresenceSummaryRevision: () => Promise.resolve({ groupRevision: 6, presenceRevision: 3 })
-    });
+Deno.test('formation view carries exactly the fields the view declares', async () => {
+    const app = createRouteApp({ group: createGroupSnapshot('room-1', ['owner']) });
 
     const view = await readFormationView(app);
 
-    assert.deepEqual(view.presenceSummaryRevision, { groupRevision: 6, presenceRevision: 3 });
-    assert.deepEqual(view.causalRevision, { groupRevision: 7, presenceRevision: 3 });
-});
-
-Deno.test('formation view states no presence summary revision for a group whose first summary is not written', async () => {
-    const app = createRouteApp({
-        group: createGroupSnapshot('room-1', ['owner']),
-        readPresenceSummaryRevision: () => Promise.resolve(null)
-    });
-
-    const view = await readFormationView(app);
-
-    assert.equal(view.presenceSummaryRevision, null);
+    assert.deepEqual(Object.keys(view).sort(), [
+        'causalRevision',
+        'condition',
+        'coverageBasisLayoutIdentity',
+        'establishmentStartedAtEpochMs',
+        'formationAttemptCount',
+        'formationEpoch',
+        'groupRef',
+        'lastFormationOutcome',
+        'layoutStale',
+        'lifecycleState',
+        'managerPrincipalIds',
+        'maxFormationAttempts',
+        'pending',
+        'readiness',
+        'remediation'
+    ]);
 });

@@ -71,10 +71,6 @@ const FIELD_CHECKS = {
     causalRevision: {
         message: 'Causal revision must carry non-negative group and presence revisions',
         isValid: isCausalRevision
-    },
-    presenceSummaryRevision: {
-        message: 'Presence summary revision must be null or a causal revision',
-        isValid: isNullOr(isCausalRevision)
     }
 } satisfies Record<keyof GroupFormationView, GroupFormationViewFieldCheck>;
 
@@ -184,7 +180,6 @@ function isPendingTopologyReplan(value: unknown): value is PendingTopologyReplan
 
 function isCausalRevision(value: unknown): value is GroupStateCausalRevision {
     return isRecordValue(value) &&
-        Object.keys(value).length === 2 &&
         isNonNegativeInteger(value.groupRevision) &&
         isNonNegativeInteger(value.presenceRevision);
 }
