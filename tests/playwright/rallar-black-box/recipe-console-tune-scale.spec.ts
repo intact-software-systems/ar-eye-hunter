@@ -6,7 +6,6 @@ import { verifyTuneScalePressure } from './recipe-console-tune-scale-proof.ts';
 test.use({
     hasTouch: true,
     isMobile: true,
-    reducedMotion: 'reduce',
     viewport: { width: 932, height: 430 }
 });
 

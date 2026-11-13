@@ -7,7 +7,7 @@ import {
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import {
@@ -21,14 +21,18 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestRecipe,
-    RallarBlackBoxTestRtcConnectCommand
+    RallarBlackBoxTestRtcConnectCommand,
+    RallarBlackBoxTestWaitCommand,
+    RallarBlackBoxTestWaitMatch
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
 /** A `room.` topic makes any send room-scoped, so the world cell publishes under `app.`. */
@@ -130,7 +134,7 @@ const GRANTED_RTC_ROOM_KEYS = [
     'granted-rtc-list-lane-roles'
 ] as const;
 
-/** The granted cells that reshape the room's topology; the ordered relay stays last. */
+/** The granted cells that reshape the room's topology, in catalog order. */
 const GRANTED_RTC_RELAY_KEYS = ['granted-rtc-relay-only', 'granted-rtc-ordered-relay'] as const;
 
 const GRANTED_RTC_THREE_AGENT_KEYS = [...GRANTED_RTC_ROOM_KEYS, ...GRANTED_RTC_RELAY_KEYS] as const;
@@ -183,6 +187,23 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
     }
 }
 
+/**
+ * A message wait matches no typeId of its own, so it names its pair through what it matches: the marker and carrier
+ * of the payload it equals (a cue marker is the pair's key with `-cues`), the pair's typeId as a payload field or in
+ * the text it contains, or a trace or request id field naming an identity one of the pair's roles authored
+ * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes).
+ */
+function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: AlmConformanceCarrier, key: string): boolean {
+    const typeId = `alm.conformance.${carrier}.${key}`;
+    const equals = match.equals;
+    const fields = Object.entries(match.payloadFields ?? {});
+    const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
+    return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
+        fields.some(([, value]) => value === typeId) ||
+        match.contains?.includes(`"typeId":"${typeId}"`) === true ||
+        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id)));
+}
+
 /** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */
 function toAdmissionOutcomeTypeIds(contains: string | undefined): readonly string[] {
     const typeId = contains?.match(/^"typeId":"([^"]+)"/)?.[1];
@@ -196,6 +217,10 @@ function toTopicCell(scenario: AlmConformanceScenario): 'world' | 'granted' | 'm
         : scenario.scenarioId.startsWith('subscription-') || scenario.scenarioId.startsWith('granted-rtc-')
         ? 'granted'
         : 'members';
+}
+
+function isWorldSend(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.scope === 'world';
 }
 
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
@@ -285,7 +310,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'ws-unicast-receipt',
         'capacity',
         'capacity-age',
-        'capacity-tracks',
         'paced-latest',
         'paced-newest-n',
         'paced-expiry',
@@ -313,7 +337,6 @@ const SCENARIO_KEYS_BY_CARRIER = {
         'checkpoint-recovery',
         'checkpoint-lag',
         'ordering-resync',
-        'repair-exhausted',
         'cross-carrier-duplicate-rtc-then-ws',
         'cross-carrier-duplicate-ws-then-rtc',
         'not-yet-in-sync-expires',
@@ -375,7 +398,7 @@ describe('alm-conformance recipe family', () => {
                 carrier === 'ws'
                     ? ['ws-unicast-receipt', 'server-command', ...VOLATILE_BOUND_KEYS, ...REPLY_ADDRESSED_KEYS_BY_CARRIER.ws]
                     : carrier === 'rtc'
-                    ? ['ws-unicast-receipt', ...VOLATILE_BOUND_KEYS]
+                    ? ['ws-unicast-receipt', 'capacity', 'capacity-age']
                     : [
                         'ws-unicast-receipt',
                         'unicast-fallback',
@@ -414,7 +437,7 @@ describe('alm-conformance recipe family', () => {
                     ...(carrier === 'ws'
                         ? ['sender', 'receiver', 'successor'].map((role) => `alm-${carrier}-subscription-successor-${role}`)
                         : []),
-                    // The path cells close the list; the one that can outlast the lane's per-role deadline runs last.
+                    // The path cells close the list: each reshapes the room's topology until its own last step.
                     ...(carrier === 'rtc' ? RTC_THREE_AGENT_KEYS_IN_ORDER : []).flatMap((key) =>
                         ['sender', 'receiver', 'recipient-b'].map((role) => `alm-${carrier}-${key}-${role}`)
                     )
@@ -603,16 +626,46 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    it('claims no wait for a key whose authored ids another key\'s prefix would match', () => {
+        const ageWait: RallarBlackBoxTestWaitMatch = {
+            kind: 'message',
+            payloadFields: { 'data.traceId': 'alm-ws-capacity-age-sender-trace-active' }
+        };
+
+        expect(isPairScopedMessageWait(ageWait, 'ws', 'capacity-age')).toBe(true);
+        expect(isPairScopedMessageWait(ageWait, 'ws', 'capacity')).toBe(false);
+    });
+
+    it('scopes every message wait to its pair: its payload marker and carrier, the pair typeId in a field or its text, or an id the pair authored', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
+            for (const scenario of scenarios) {
+                const recipes = [
+                    ...toAllRoleRecipes([scenario]),
+                    ...(scenario.continuation ? [scenario.continuation.recipe] : [])
+                ];
+                const waits = recipes.flatMap((recipe) => toNestedCommands(recipe.commands))
+                    .filter((command): command is RallarBlackBoxTestWaitCommand => command.kind === 'wait' && command.match.kind === 'message');
+                for (const wait of waits) {
+                    expect(isPairScopedMessageWait(wait.match, carrier, scenario.scenarioKey), wait.commandId).toBe(true);
+                }
+            }
+        }
+    });
+
     it('routes every carrier over one room WS topic the product admits, the world cell over its own app topic and the granted cells over the granted topic', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
             const topicIdsOf = (cell: 'world' | 'granted' | 'members') =>
                 toAllRoleRecipes(scenarios.filter((scenario) => toTopicCell(scenario) === cell))
-                    .flatMap((recipe) => recipe.commands.flatMap(toRoutedTopicIds));
+                    .flatMap((recipe) => recipe.commands.filter((command) => !isWorldSend(command)).flatMap(toRoutedTopicIds));
+            const worldSends = toAllRoleRecipes(scenarios).flatMap((recipe) => recipe.commands.filter(isWorldSend));
 
             expect(topicIdsOf('members').length).toBeGreaterThan(0);
             expect(new Set(topicIdsOf('members'))).toEqual(new Set([CONFORMANCE_TOPIC_ID]));
             expect(new Set(topicIdsOf('world'))).toEqual(new Set([WORLD_TOPIC_ID]));
+            // A world send names no room, so every cell publishes it on the world topic.
+            expect(new Set(worldSends.flatMap(toRoutedTopicIds))).toEqual(new Set([WORLD_TOPIC_ID]));
             // A cell's cues travel on the members topic, beside its granted publications.
             expect(new Set(topicIdsOf('granted'))).toEqual(new Set([GRANTED_TOPIC_ID, CONFORMANCE_TOPIC_ID]));
         }
@@ -633,9 +686,9 @@ describe('alm-conformance recipe family', () => {
                     command.commandId?.includes('frozen-audience-membership-recipient-b') === true;
                 // R-S3b-20: durable-opt-in's received-1 carries the durable path's own budget; pinned separately below.
                 const durableOptInReceived1 = command.commandId?.endsWith('durable-opt-in-receiver-received-1') === true;
-                // The capacity and capacity-tracks senders reconnect before they send; those waits are pinned in
+                // The capacity sender reconnects before it sends; that wait is pinned in
                 // alm-conformance-addressed-scenarios.
-                const capacityReceived1 = /-capacity(-tracks)?-receiver-received-1$/.test(command.commandId ?? '');
+                const capacityReceived1 = /-capacity-receiver-received-1$/.test(command.commandId ?? '');
                 // The fairness cells' reconnect and lifetime windows are pinned in alm-conformance-fairness.
                 const fairnessWindow =
                     /-(own-share-under-inbound-sender-received-1|buffered-track-drains-receiver-received-1|churn-bounded-tracks-receiver-received-1)$/
@@ -742,7 +795,6 @@ describe('alm-conformance recipe family', () => {
             'checkpoint-recovery',
             'checkpoint-lag',
             'ordering-resync',
-            'repair-exhausted',
             'cross-carrier-duplicate',
             'cross-carrier-duplicate',
             'not-yet-in-sync',
@@ -774,7 +826,6 @@ describe('alm-conformance recipe family', () => {
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
-            ['full'],
             ['full'],
             ['full'],
             ['full'],
@@ -1340,6 +1391,32 @@ describe('alm-conformance recipe family', () => {
                 const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
                 expect(keys.includes('receipted-relay-path'), carrier).toBe(carrier === 'rtc');
             }
+        });
+
+        it('sends from each relay-path origin only once its own accepted overlay is the tree, and pins that one origin relayed', () => {
+            const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
+                recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const treeCues = { sender: '-sender-cue-tree-received', receiver: '-receiver-cue-tree-sent' } as const;
+            for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
+                const poll = indexOf(recipe, `-${role}-tree-in-force`);
+                const command = recipe.commands[poll];
+                expect(poll, recipe.recipeId).toBeGreaterThan(indexOf(recipe, treeCues[role]));
+                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(poll + 1);
+                expect(command, recipe.recipeId).toMatchObject({ kind: 'loop', until: 'first-success', count: 360, intervalMs: 250 });
+                const [read, fact, ...rest] = command?.kind === 'loop' ? command.commands : [];
+                expect(rest).toEqual([]);
+                expect(read).toMatchObject({ kind: 'health', commandId: `${recipe.recipeId}-tree-in-force-read` });
+                expect(fact).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'tree' });
+                expect(fact?.kind === 'assert' ? fact.source : undefined)
+                    .toMatch(/-tree-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
+            }
+            expect(scenario.sender.metadata?.almRelayedReceiptOrigins).toEqual([
+                { role: 'sender', handleId: 'alm-rtc-receipted-relay-path-send-1' },
+                { role: 'receiver', handleId: 'alm-rtc-receipted-relay-path-receiver-send-1' }
+            ]);
+            expect(scenario.receiver.metadata?.almRelayedReceiptOrigins).toBeUndefined();
+            expect(scenario.recipientB.metadata?.almRelayedReceiptOrigins).toBeUndefined();
         });
 
         it(

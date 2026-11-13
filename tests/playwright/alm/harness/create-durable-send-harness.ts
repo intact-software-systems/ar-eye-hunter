@@ -1,3 +1,4 @@
+import { Temporal } from '@js-temporal/polyfill';
 import {
     toBrowserALRuntimeDbName,
     toBrowserWsClientALRuntimeStoreId
@@ -236,13 +237,16 @@ function toReceiptedCommandPlanShape(sessionId: string): DurableSendPlanShape {
                     onStorageUnavailable: 'refuse',
                     publication: undefined
                 },
-                laneTtlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs
+                laneTtlMs: AL_CHANNEL_SEND_DEFAULTS.command.ttlMs,
+                actions: undefined
             }),
         planOutgoingMessage: (msg) =>
             toWsQueueBoxClientDispatchPlan(msg, {
                 sessionId,
                 serverPeerId: HARNESS_SERVER_PEER_ID,
                 socketOpen: true,
+                nowMs: Date.now(),
+                backpressured: false,
                 qosProvider
             }),
         serverReceipt: {
@@ -302,8 +306,10 @@ export async function createDurableSendHarness(
         stores,
         outbox: stores.workQueue,
         carrier: 'ws',
+        recipientAuthentication: { kind: 'carrier' },
         decodePreparedMessage: decodeALOutboundTransportMessage,
-        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, EnqueuedType.WS_OUTBOX),
+        toOutboxEntry: (msg) =>
+            QueueBoxUtilities.toResourceEntryFromMsg(msg, EnqueuedType.WS_OUTBOX, Temporal.Now.instant()),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
         planOutgoingMessage: shape.planOutgoingMessage,
         diagnostics: (event) => observation.observeDiagnostics(event),

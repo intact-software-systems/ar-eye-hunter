@@ -4,7 +4,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
+import type { RallarWsMessageLane } from '@shared-web/browser/messages/rallar-message-operations.ts';
+import type { RallarDefaults, RallarStartOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
@@ -690,7 +696,7 @@ test('does not poll control runs while direct Rallar tabs are active', async ({ 
 });
 
 test('keeps Quick Test group stable after create subscribe and send', async ({ page }) => {
-    await page.addInitScript(({ groupSnapshot, sentLifecycle }) => {
+    await page.addInitScript<QuickTestInitScriptArg>(({ groupSnapshot, sentLifecycle }) => {
         const session = {
             clientId: 'alice-client',
             accessToken: 'secret-token-value',
@@ -718,9 +724,9 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             rooms: {
                 current: () => undefined,
                 list: () => [],
-                create: async (input: Record<string, unknown>) => {
+                create: async (input: Parameters<BrowserRallarRooms['create']>[0]) => {
                     (window as any).__quickCreateInputs.push(input);
-                    const groupId = typeof input.groupId === 'string'
+                    const groupId = typeof input !== 'string' && typeof input.groupId === 'string'
                         ? input.groupId
                         : 'generated-server-group-id';
                     return {
@@ -728,7 +734,9 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         group: {
                             ...groupSnapshot.group,
                             groupId,
-                            displayName: typeof input.displayName === 'string' ? input.displayName : groupId
+                            displayName: typeof input !== 'string' && typeof input.displayName === 'string'
+                                ? input.displayName
+                                : groupId
                         }
                     };
                 },
@@ -749,7 +757,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             },
             messages: {
                 ws: {
-                    send: async (input: Record<string, unknown>) => {
+                    send: async (input: Parameters<RallarWsMessageLane['send']>[0]) => {
                         (window as any).__quickSendInputs.push(input);
                         return {
                             msgId: sentLifecycle.msgId,
@@ -849,8 +857,63 @@ test('surfaces direct RTC, Rallar Data, and Media tabs with real-backend guardra
     await expect(mediaPanel.getByRole('button', { name: 'Attach local stream' })).toBeDisabled();
 });
 
+/** Playwright's serialized-argument type cannot unfold the full domain types. */
+interface PageGroupSnapshot {
+    readonly group: { readonly groupId: string; };
+}
+
+interface PageSentLifecycle {
+    readonly msgId: string;
+    readonly typeId: string;
+}
+
+interface QuickTestInitScriptArg {
+    readonly groupSnapshot: PageGroupSnapshot;
+    readonly sentLifecycle: PageSentLifecycle;
+}
+
+interface WsProbeScriptArg {
+    readonly joinedGroupSnapshot: PageGroupSnapshot;
+    readonly sentLifecycle: PageSentLifecycle;
+}
+
+/** The bulk enqueue body as far as this spec reads it: of the command, only its `kind`. */
+interface ControlBulkEnqueueBody {
+    readonly agentIds: readonly string[];
+    readonly commandIdPrefix?: string;
+    readonly command: Readonly<{ kind: string; }>;
+}
+
+function decodeControlBulkEnqueueBody(value: unknown): Either<string, ControlBulkEnqueueBody> {
+    if (!isApiJsonObject(value) || !Array.isArray(value.agentIds) || !isApiJsonObject(value.command)) {
+        return Either.ofLeft('The bulk enqueue body is not { agentIds, command }.');
+    }
+    const { agentIds, commandIdPrefix, command } = value;
+    const kind = command.kind;
+    if (!agentIds.every((agentId): agentId is string => typeof agentId === 'string') || typeof kind !== 'string') {
+        return Either.ofLeft('The bulk enqueue body carries a non-string agent id or a command without a kind.');
+    }
+    if (commandIdPrefix !== undefined && typeof commandIdPrefix !== 'string') {
+        return Either.ofLeft('The bulk enqueue body carries a non-string commandIdPrefix.');
+    }
+    return Either.ofRight({ agentIds, commandIdPrefix, command: { kind } });
+}
+
+interface QueuedDemoCommand {
+    readonly envelope: Readonly<{
+        kind: 'command';
+        protocolVersion: 1;
+        runId: string;
+        agentId: string;
+        commandId: string;
+        command: Readonly<{ kind: string; }>;
+    }>;
+    readonly queuedAtEpochMs: number;
+    readonly dispatchCount: number;
+}
+
 test('inspects control-server runs and enqueues a bulk command', async ({ page }) => {
-    let run: any = {
+    let run = {
         runId: 'demo-run',
         createdAtEpochMs: Date.now() - 5_000,
         updatedAtEpochMs: Date.now() - 1_000,
@@ -884,7 +947,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                 resumeCompletedCommandIds: []
             }
         ],
-        commands: [],
+        commands: [] as QueuedDemoCommand[],
         results: [{
             kind: 'result',
             protocolVersion: 1,
@@ -906,7 +969,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
         reports: [],
         heartbeats: []
     };
-    let bulkBody: unknown;
+    let bulkBody: ControlBulkEnqueueBody | undefined;
     let resetCalled = false;
 
     await page.route('http://localhost:5180/**', async (route) => {
@@ -929,12 +992,13 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             return;
         }
         if (request.method() === 'POST' && url.pathname === '/runs/demo-run/commands') {
-            bulkBody = await request.postDataJSON();
-            const body = bulkBody as {
-                agentIds: string[];
-                commandIdPrefix: string;
-                command: { kind: string; };
-            };
+            const body = decodeControlBulkEnqueueBody(await request.postDataJSON()).fold(
+                (issue) => {
+                    throw new Error(issue);
+                },
+                (decoded) => decoded
+            );
+            bulkBody = body;
             run = {
                 ...run,
                 updatedAtEpochMs: Date.now(),
@@ -1067,7 +1131,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
     await expect(panel).toContainText('agent-b');
 
     await panel.getByRole('button', { name: 'Enqueue Selected' }).click();
-    await expect.poll(() => (bulkBody as { agentIds?: string[]; } | undefined)?.agentIds?.length).toBe(2);
+    await expect.poll(() => bulkBody?.agentIds.length).toBe(2);
     await expect(panel).toContainText('agent-a - health');
     await expect(panel).toContainText('agent-b - health');
 
@@ -1687,7 +1751,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(runState.locator('.metric').filter({ hasText: 'RTC' })).toContainText('ready');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('awesome');
 
-    await page.evaluate(
+    await page.evaluate<void, WsProbeScriptArg>(
         ({ joinedGroupSnapshot, sentLifecycle }) => {
             (window as any).__lastRallarWsSend = undefined;
             (window as any).__rallarCallLog = [];
@@ -1701,13 +1765,13 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 expiresAtEpochMs: Date.now() + 60_000
             };
             (window as any).__rallarDirectFacade = {
-                configure: (config: unknown) => {
+                configure: (config: RallarApiClientConfig) => {
                     (window as any).__rallarCallLog.push({
                         kind: 'configure',
                         config
                     });
                 },
-                setDefaults: (defaults: unknown) => {
+                setDefaults: (defaults?: RallarDefaults) => {
                     (window as any).__rallarCallLog.push({
                         kind: 'setDefaults',
                         defaults
@@ -1720,7 +1784,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 auth: {
                     restore: () => session
                 },
-                start: async (config: unknown) => {
+                start: async (config?: RallarStartOptions) => {
                     connected = true;
                     (window as any).__rallarCallLog.push({
                         kind: 'start',
@@ -1738,11 +1802,11 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 rooms: {
                     current: () => undefined,
                     list: () => [],
-                    create: async (input: Record<string, unknown>) => ({
+                    create: async (input: Parameters<BrowserRallarRooms['create']>[0]) => ({
                         ...joinedGroupSnapshot,
                         group: {
                             ...joinedGroupSnapshot.group,
-                            groupId: typeof input.groupId === 'string'
+                            groupId: typeof input !== 'string' && typeof input.groupId === 'string'
                                 ? input.groupId
                                 : joinedGroupSnapshot.group.groupId
                         }
@@ -1757,7 +1821,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 },
                 messages: {
                     ws: {
-                        send: async (input: unknown) => {
+                        send: async (input: Parameters<RallarWsMessageLane['send']>[0]) => {
                             if (!connected) {
                                 throw new Error('Rallar direct facade is not connected.');
                             }
@@ -1775,7 +1839,10 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                                 cancel: () => undefined
                             };
                         },
-                        onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
+                        onMessage: (
+                            _selector: Parameters<RallarWsMessageLane['onMessage']>[0],
+                            handler: Parameters<RallarWsMessageLane['onMessage']>[1]
+                        ) => {
                             (window as any).__rallarWsMessageHandler = handler;
                             return () => {
                                 (window as any).__rallarWsMessageHandler = undefined;

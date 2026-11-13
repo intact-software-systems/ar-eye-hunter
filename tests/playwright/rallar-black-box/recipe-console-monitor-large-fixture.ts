@@ -1,4 +1,5 @@
 import type { BrowserContext, Route } from '@playwright/test';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope
@@ -141,7 +142,7 @@ export async function installRecipeConsoleLargeMonitorFixture(
             await fulfillJson(route, createLargeArtifact(distributedRun, controlRun));
             return;
         }
-        await fulfillJson(route, {
+        await fulfillRawJson(route, {
             error: `Unhandled ${request.method()} ${url.pathname}`
         }, 404);
     });
@@ -345,6 +346,9 @@ function createLargeDistributedRun(
                 recipes: LARGE_MONITOR_COUNTS.recipes,
                 passedRecipes: LARGE_MONITOR_COUNTS.recipes - 1,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: LARGE_MONITOR_FAILURE_COUNT
             },
             failures: []
@@ -584,13 +588,25 @@ function largeCompositeCommandId(index: number): string {
     return `monitor-large-composite-command-${String(index).padStart(3, '0')}`;
 }
 
-async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
-    await route.fulfill({
-        status,
-        contentType: 'application/json',
-        headers: corsHeaders(),
-        body: JSON.stringify(body)
-    });
+async function fulfillJson(
+    route: Route,
+    body:
+        | ControlServerSnapshot
+        | ControlRunSnapshot
+        | Pick<ControlServerSnapshot, 'distributedRuns'>
+        | ControlDistributedRunArtifactBundle,
+    status = 200
+): Promise<void> {
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+/** A body that is no control DTO: an error or a deliberately malformed payload. */
+async function fulfillRawJson(route: Route, body: ApiJsonValue, status = 200): Promise<void> {
+    await route.fulfill(toJsonFulfillment(status, JSON.stringify(body)));
+}
+
+function toJsonFulfillment(status: number, body: string) {
+    return { status, contentType: 'application/json', headers: corsHeaders(), body };
 }
 
 function corsHeaders(): Record<string, string> {

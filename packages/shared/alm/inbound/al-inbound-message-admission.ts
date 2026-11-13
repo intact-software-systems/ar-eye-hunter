@@ -79,7 +79,7 @@ export namespace ALInboundMessageAdmission {
             /** The commit persisted work the inbound worker must claim; an idle worker stays idle without it. */
             readonly wroteWork: boolean;
         }
-        | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission | undefined; };
+        | { readonly kind: 'conflict'; readonly pending: ALInboundPendingAdmission; };
 }
 
 /** One conditional admission per call; the existing QueueBox worker owns retries. */
@@ -151,11 +151,7 @@ export class ALInboundMessageAdmission {
         if (status === 'conflict') {
             return Either.ofRight({
                 kind: 'conflict',
-                pending: plan.dropReason ? undefined : {
-                    kind: 'admit-message',
-                    msg: toALInboundMessageWithDeadline(admitted, deadline),
-                    source
-                }
+                pending: { kind: 'admit-message', msg: toALInboundMessageWithDeadline(admitted, deadline), source }
             });
         }
         this.recordResyncRequired(msg, source, plan);

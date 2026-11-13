@@ -79,23 +79,6 @@ export function toBoundRefusalCommands(
     ];
 }
 
-export function toAcknowledgedCommands(
-    sender: AlmConformanceStepInput,
-    index: number
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toObserveCommand({ ...sender, index, state: 'acknowledged' }),
-        toResultAssertion({
-            step: sender,
-            name: `assert-acknowledged-${index}`,
-            resultName: `observe-acknowledged-${index}`,
-            field: 'state',
-            operator: 'equals',
-            expected: 'acknowledged'
-        })
-    ];
-}
-
 /**
  * The waiting page's window opens before the other page's reconnect, so it also owns one RTC readiness budget and
  * whatever the other page waits after the reconnect before it sends.

@@ -181,7 +181,6 @@ async function attachMapScreenshot(
         path,
         animations: 'disabled',
         caret: 'hide',
-        captureBeyondViewport: true,
         clip
     });
     await testInfo.attach(name, { path, contentType: 'image/png' });

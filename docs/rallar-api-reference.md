@@ -848,10 +848,11 @@ receives. Half of each limit is the own share
 (`AL_VOLATILE_SESSION_OWN_SHARE`, 0.5, rounded down: 500 messages and 2 MiB). The
 age limit admits a deadline at most 5 minutes ahead
 (`AL_VOLATILE_SESSION_MAX_AGE_MS`). The track limit holds 64 live ordering
-tracks of the session's own ordered sends (`AL_VOLATILE_SESSION_MAX_TRACKS`).
-A send opens a track when it states a `seq`: on its `orderingKey`, or, for an
-RTC room send that names none, on the room's default ordering key. A send
-without a `seq` opens none. A sent message counts until its deadline, and its
+tracks of the session's own ordered volatile sends
+(`AL_VOLATILE_SESSION_MAX_TRACKS`, D179). An ordered room send is minted on the
+durable lane (D529) and a peer send carries no ordering, so from a browser the
+track limit judges an ordered world broadcast, which opens a track on its
+`orderingKey`; a send without a `seq` opens none. A sent message counts until its deadline, and its
 track until the last counted send on it reaches its deadline. A received
 message counts until the earlier of its deadline and 30 s after it arrives; it
 never opens a counted track and is never refused.

@@ -1,12 +1,8 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
-import {
-    toObserveCommand,
-    toResultAssertion,
-    toSendCommand,
-    toStorageCountersCommand
-} from '../alm-conformance-message-commands.ts';
+import { toResultAssertion, toSendCommand, toStorageCountersCommand } from '../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
@@ -42,15 +38,7 @@ function toVolatileDefaultSenderCommands(
             payload: { marker: sender.scenarioId },
             delivery: {}
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-acknowledged-1',
-            resultName: 'observe-acknowledged-1',
-            field: 'state',
-            operator: 'equals',
-            expected: 'acknowledged'
-        }),
+        ...toSettledStateCommands({ ...sender, index: 1 }, 'acknowledged'),
         toStorageCountersCommand(sender, 'storage-window', false),
         ...toVolatileStorageWindowAssertions(sender)
     ];

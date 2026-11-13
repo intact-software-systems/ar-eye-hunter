@@ -1,4 +1,9 @@
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import type {
+    AnalyzeWorkerRequest,
+    AnalyzeWorkerResponse
+} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     createRecipeConsoleControlScaleFixture
 } from '../../../packages/shared-test/rallar-bb-test/recipe-console-control-scale-fixture.ts';
@@ -330,10 +335,8 @@ async function installAnalyzeWorkerTelemetryTracking(
             constructor(url: string | URL, options?: WorkerOptions) {
                 super(url, options);
                 this.addEventListener('message', (event) => {
-                    const response = event.data as
-                        | { type?: unknown; telemetry?: Telemetry; }
-                        | undefined;
-                    if (response?.type === 'complete' && response.telemetry) {
+                    const response: AnalyzeWorkerResponse = event.data;
+                    if (response.type === 'complete' && response.telemetry) {
                         tracked.__analyzeScaleWorker?.completeTelemetry.push({
                             ...response.telemetry
                         });
@@ -341,13 +344,13 @@ async function installAnalyzeWorkerTelemetryTracking(
                 });
             }
 
-            override postMessage(message: unknown, transfer?: Transferable[]): void;
-            override postMessage(message: unknown, options?: StructuredSerializeOptions): void;
+            override postMessage(message: AnalyzeWorkerRequest, transfer?: Transferable[]): void;
+            override postMessage(message: AnalyzeWorkerRequest, options?: StructuredSerializeOptions): void;
             override postMessage(
-                message: unknown,
+                message: AnalyzeWorkerRequest,
                 transferOrOptions?: Transferable[] | StructuredSerializeOptions
             ): void {
-                if ((message as { type?: unknown; } | undefined)?.type === 'start') {
+                if (message.type === 'start') {
                     const telemetry = tracked.__analyzeScaleWorker;
                     if (telemetry) {
                         telemetry.startCount += 1;
@@ -1045,15 +1048,17 @@ function urlEvidenceSelectors(page: Page) {
 }
 
 function scaleUploads(
-    files: Readonly<Record<string, string>>
+    files: DistributedRunArtifactFiles
 ): readonly AnalyzeUploadFile[] {
-    return Object.entries(files).map(([name, contents]) => ({
-        name,
-        mimeType: name.endsWith('.jsonl')
-            ? 'application/x-ndjson'
-            : 'application/json',
-        buffer: Buffer.from(contents)
-    }));
+    return Object.entries(files).flatMap(([name, contents]) =>
+        contents === undefined ? [] : [{
+            name,
+            mimeType: name.endsWith('.jsonl')
+                ? 'application/x-ndjson'
+                : 'application/json',
+            buffer: Buffer.from(contents)
+        }]
+    );
 }
 
 function bidiUploads(

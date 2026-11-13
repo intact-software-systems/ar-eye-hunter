@@ -5,11 +5,11 @@ Prepared: 2026-10-09. Status: Slice 1 (bounded publication pacing), Slice 2
 S3-i and S3-ii), Slice 4 (ordered subscription entry, as S4-i and S4-ii), Slice
 5 (producer-row positions, as S5-i), Slice 6 (granted unicast, list and
 principal broadcast over RTC, as S6-i and S6-ii), Slice 7 (cross-instance
-positions and outside class, as S7-i and S7-ii) and Slice 8 (signed receipts on
-RTC, as S8-i and S8-ii) are implemented and recorded as applied in §7; Slice 9's
-first part (one owner each, as S9-i) is recorded in §7 and its second part,
-S9-ii, is pending; the later outcomes remain a proposed extension, not
-implemented behavior or an adopted change to `docs/product.md`.
+positions and outside class, as S7-i and S7-ii), Slice 8 (signed receipts on
+RTC, as S8-i and S8-ii) and Slice 9 (one owner each, then a lane to trust, as
+S9-i and S9-ii) are implemented and recorded as applied in §7; the later
+outcomes remain a proposed extension, not implemented behavior or an adopted
+change to `docs/product.md`.
 
 This plan brings the publication-pacing proposals in
 [PR #632](https://github.com/intact-software-systems/ar-eye-hunter/pull/632)
@@ -1131,7 +1131,9 @@ reads served repairs by the gap identity. `buffered-track-drains` declares
 `['ws', 'rtc']` (observation). The `repair-exhausted` cell, whose two-agent form
 induced exhaustion by the same receiver re-reporting the same gap, is a
 three-agent cell (D579): the second receiver's report of the held gap finds the
-budget spent. It runs over `rtc` and `rtc-with-ws-fallback` only (D580). The
+budget spent. It runs over `rtc` alone (D580, as amended by S9-ii: its fallback
+half is not asserted, since the D56 hand-over of a held send makes
+`repair-exhausted` not the documented outcome there). The
 CRDT mutation command codec refuses an `append` with an `admin` response
 audience after the envelope is decoded
 (`TypeError('CRDT append refuses an admin response audience')`, classed
@@ -1470,10 +1472,55 @@ behavior: no wire shape, stored shape or OpenAPI document differs from Slice
 
 The inbound runtime-state stores nothing constructed, six unreferenced queuebox
 and resilience values and fifteen file-private runtime exports are deleted.
-The second part, S9-ii, is a full-scope lane to trust, designed in its own
-plan and pending: the lane's red cells diagnosed, an overrun cancelling its own
-recipe, a layout-independent check of the relay path, the two cluster proofs
-wired into the Postgres lane and `tests/playwright/**` typechecked.
+The second part, S9-ii, made the full-scope lane one to trust (D627–D641). It
+changes one product path: a conflicted inbound admission is always retained and
+replayed (D640), so a `resync-required` drop that loses a commit race still
+reaches its sender as a NACK. On the WS server such a drop of a receipted room
+send first answers `pending-admission` and starts its `admitted` receipt, which
+can precede or follow the replay's NACK at the origin; a late one settles an
+`acknowledgement` after `relay-rejected`, and the handle reads `rejected`. The
+rest corrects the lane. No window, timeout or budget was widened; three cells
+assert what the product documents instead of what they asserted before (D630,
+D633, D641), and each row states its cost:
+
+- an overrun fails its own cell, its recipe is cancelled, and a recipe still
+  live after its cancel stops the family (D628);
+- the cells were corrected where their causes sit: the path cells state
+  recipient-b's grant set (D629), `repair-exhausted` opens its gap once both
+  recipients delivered the first frame and runs over `rtc` alone (D630), the RTC
+  half of `ordering-resync` authors a real gap, since a jump in the sender's own
+  sequence is an omission under the per-recipient prior (D631),
+  `server-ordered-entry` pins a nonzero entry (D633) and `capacity-tracks` fills
+  the track bound with ordered world broadcasts, the one browser send the bound
+  judges (D632, D641);
+- `receipted-relay-path` waits for the tree to be in force and fails unless one
+  origin's ending receipt confirms two recipients through one hop (D634), every
+  `message` wait is pinned to its pair (D635), the group-delta and auth-logout
+  cluster proofs run in the Postgres lane (D636) and `tests/playwright/**` is
+  typechecked at zero debt (D637).
+
+The full-scope lane, six families per run, ran at `818beb3e7`. With the
+in-memory API, three runs per carrier gave `ws` three green, `rtc` one green and
+two red, and `rtc-with-ws-fallback` two green and one red. With Postgres on a
+fresh database per run, one run per carrier gave three green. The three reds are
+the four-role family, `subscription-ordered-omission` and
+`subscription-ordered-entry`, from one group-state sync race outside ALM
+(recorded as a backlog line): the `ws` carrier is green in every run, and the
+RTC carriers are green except that family, which failed in three of six
+in-memory runs and none of two on Postgres. Every cell S9-ii corrected was green
+in all twelve runs, and no role ended `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
+`missing-recipient-retry` over `rtc` stays a known intermittent, about one run
+in four and on `main` too: a first copy refused `not-yet-in-sync` at both
+recipients meets the honest retry inside the receiver's absence window, and no
+page diagnostic lets a recipe wait to be in sync. `repair-exhausted` over
+`rtc-with-ws-fallback` is not asserted.
+
+The lane stays a non-blocking observation. A later slice may promote one
+carrier on a recorded streak of about ten consecutive green full runs per
+carrier across ordinary branch work with no rerun, the hosted observation
+completing typed `ws` sends and cold RTC handshakes inside the recipe budgets
+on the Postgres API, and a per-cell flake ledger whose entries each carry a
+root cause (D639).
 
 ### Later outcomes
 

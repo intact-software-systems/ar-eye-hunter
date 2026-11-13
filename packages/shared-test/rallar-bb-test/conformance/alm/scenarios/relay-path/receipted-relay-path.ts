@@ -17,8 +17,10 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';
+import { toReadPollCommand } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -30,11 +32,12 @@ import { toPathTopologyConfigCommand } from './to-path-topology-config-command.t
  * The owner reshapes the room into a path, then the sender and the owner each send one receipted multicast to the
  * other two pages. Three sessions in a tree whose degree is at most two form a path with one middle, so whenever both
  * sends route on one planned path at least one origin is a leaf: its send is relayed, and the middle forwards the far
- * leaf's signed ACK back. The owner's PUT only requests the reshape and the cell waits for no plan version, so two
- * sends routed under different plans can both go direct. Each page records its next hops and each origin's receipt
- * names the hops it confirmed through, which is where a run shows whether it relayed; the cell asserts neither which
- * agent relays nor the hop count. Over `rtc` alone: a WS fallback would complete a relayed leg and hide it. The owner
- * resets the topology only once both origins read their receipts, so no reshape lands inside either receipt.
+ * leaf's signed ACK back. The owner's PUT only requests the reshape, so each origin sends only once its own page has
+ * accepted the tree. Each page records its next hops and each origin's receipt names the hops it confirmed through;
+ * the cell asserts neither which agent relays nor through which hop, and after the run the identity assessment fails
+ * it unless at least one origin confirmed both recipients through one hop. Over `rtc` alone: a WS fallback would
+ * complete a relayed leg and hide it. The owner resets the topology only once both origins read their receipts, so no
+ * reshape lands inside either receipt.
  */
 export const receiptedRelayPath: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-relay-path',
@@ -46,6 +49,7 @@ export const receiptedRelayPath: AlmConformanceScenarioDefinition = {
     connect: { minReadyPeers: 1 },
     // The post-run identity pin describes the sender's send: the receiver and recipient-b confirm it.
     toReceiptRoles: () => BOTH_CONFIRMED,
+    relayedReceiptOrigins: ['sender', 'receiver'],
     toSenderCommands: toRelayPathSenderCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toRelayPathOwnerCommands(recipient) : toRelayPathMemberCommands(recipient)
@@ -82,18 +86,34 @@ function toRelayPathOwnerCommands(owner: AlmConformanceStepInput): readonly Rall
 }
 
 /**
- * Each origin sends, hears the other origin's one send, records its next hops and reads its own receipt after its
- * window. Its recipients are the other two pages, so the roles value is read for its lengths alone: expected 2,
- * confirmed 2, nobody unconfirmed or outside.
+ * Each origin waits for the tree, sends, hears the other origin's one send, records its next hops and reads its own
+ * receipt after its window. Its recipients are the other two pages, so the roles value is read for its lengths alone:
+ * expected 2, confirmed 2, nobody unconfirmed or outside.
  */
 function toRelayPathOriginCommands(origin: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
+        toTreeInForcePollCommand(origin),
         ...toAudienceSendCommands({ sender: origin, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         toReceivedCommand({ ...origin, index: 1, count: 1, absent: false }),
         toOverlayNextHopsCommand(origin),
         toOriginSelfAbsenceCommand(origin),
         ...toReceiptReadCommands(origin, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
     ];
+}
+
+/** The page's health names its accepted overlay: the origin reads it until that overlay is the tree. */
+function toTreeInForcePollCommand(origin: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toReadPollCommand({
+        step: origin,
+        name: 'tree-in-force',
+        read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) }),
+        facts: [{
+            name: 'tree-in-force-topology',
+            field: 'rallar.formation.accepted.overlay.topology',
+            operator: 'equals',
+            expected: 'tree'
+        }]
+    });
 }
 
 /** Of the cell's type an origin holds the other origin's one message and never its own, so a second never arrives. */

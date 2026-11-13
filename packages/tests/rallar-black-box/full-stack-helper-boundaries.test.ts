@@ -13,6 +13,7 @@ import {
 } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunArtifactBundle, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -35,6 +36,8 @@ import {
 
 import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+
+import { openRecordingControlRequest, type RecordingControlRequest } from './recording-control-request-fixture.ts';
 
 let browser: Playwright.Browser;
 
@@ -401,37 +404,6 @@ describe('recipient barrier failure', () => {
 });
 
 describe('control poll timeouts', () => {
-    interface AcceptingControlRequest {
-        readonly request: Playwright.APIRequestContext;
-        close(): Promise<void>;
-    }
-
-    /** A request whose every command enqueue the control server accepts. */
-    async function openAcceptingControlRequest(): Promise<AcceptingControlRequest> {
-        const server = createServer((_request, response) => {
-            response.writeHead(202, { 'content-type': 'application/json' });
-            response.end('{}');
-        });
-        server.listen(0, '127.0.0.1');
-        await once(server, 'listening');
-        const address = server.address();
-        if (address === null || typeof address === 'string') {
-            throw new Error('Expected the owned HTTP server address.');
-        }
-        const request = await Playwright.request.newContext();
-        const post = request.post.bind(request);
-        vi.spyOn(request, 'post').mockImplementation(
-            async (_url, options) => await post(`http://127.0.0.1:${address.port}`, options)
-        );
-        return {
-            request,
-            close: async () => {
-                await request.dispose();
-                await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-            }
-        };
-    }
-
     const baseline = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
         carrier: 'ws',
@@ -448,8 +420,12 @@ describe('control poll timeouts', () => {
         readCount(): number;
     }
 
-    // Each read moves the clock by `stepMs` and finds neither a result nor an event.
-    function createSilentRun(request: Playwright.APIRequestContext, stepMs: number): SilentRun {
+    // Each read moves the clock by `stepMs` and finds no event, and only the results `results` lists at the moved clock.
+    function createSilentRun(
+        request: Playwright.APIRequestContext,
+        stepMs: number,
+        results: (nowEpochMs: number) => readonly ControlResultEnvelope[] = () => []
+    ): SilentRun {
         let nowEpochMs = 1_000;
         let reads = 0;
         vi.spyOn(Date, 'now').mockImplementation(() => nowEpochMs);
@@ -459,24 +435,144 @@ describe('control poll timeouts', () => {
             readSnapshot: async () => {
                 reads += 1;
                 nowEpochMs += stepMs;
-                return { ...snapshot, runId: 'poll-timeout' };
+                return { ...snapshot, runId: 'poll-timeout', results: [...results(nowEpochMs)] };
             }
         };
         return { run, readCount: () => reads };
     }
 
-    it('reports a recipe run with no control result by its deadline as a failed outcome, not a rejection', async () => {
-        const control = await openAcceptingControlRequest();
+    const rootCommandId = `${baseline.sender.recipeId}-run`;
+
+    function toFailedRootResult(code: string): ControlResultEnvelope {
+        return {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'poll-timeout',
+            agentId: 'sender',
+            commandId: rootCommandId,
+            ok: false,
+            error: { code, message: `the root ended ${code}` }
+        };
+    }
+
+    function toPostedKinds(control: RecordingControlRequest): readonly string[] {
+        return control.posted.map(({ command }) => command.kind);
+    }
+
+    it('enqueues every recipe root with the role deadline as its own timeoutMs', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
         try {
-            const { run, readCount } = createSilentRun(control.request, 60_000);
+            const { run } = createSilentRun(control.request, 60_000);
+            await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            expect(control.posted.map(({ commandId, command }) => [commandId, command.kind, command.timeoutMs])).toEqual([
+                [rootCommandId, 'recipe.run', 180_000]
+            ]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('reads the agent\'s own timeout result that arrives inside the grace after the deadline', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The deadline is at 181 000; the agent's own timeout result lands at 201 000, inside the grace.
+            const { run } = createSilentRun(
+                control.request,
+                20_000,
+                (nowEpochMs) => nowEpochMs > 181_000 ? [toFailedRootResult('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')] : []
+            );
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            const outcome = await started.readOutcome();
+
+            expect(outcome).toEqual({ commandId: rootCommandId, ok: false, summary: expect.any(String) });
+            expect(outcome.summary.startsWith('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')).toBe(true);
+            expect(toPostedKinds(control)).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('cancels a root with no result after its deadline and grace by a targeted recipe.cancel, and reads the result the cancel brings', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The agent answers only once the lane cancelled the root.
+            const { run } = createSilentRun(
+                control.request,
+                30_000,
+                () =>
+                    control.posted.some(({ command }) => command.kind === 'recipe.cancel')
+                        ? [toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]
+                        : []
+            );
             const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
 
             await expect(started.readOutcome()).resolves.toEqual({
-                commandId: `${baseline.sender.recipeId}-run`,
+                commandId: rootCommandId,
                 ok: false,
-                summary: 'no control result within 180000 ms'
+                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
             });
-            expect(readCount()).toBe(3);
+            expect(
+                control.posted.filter(({ command }) => command.kind === 'recipe.cancel').map(({ commandId, command }) => ({
+                    commandId,
+                    command
+                }))
+            ).toEqual([
+                {
+                    commandId: `cancel-${rootCommandId}`,
+                    command: { kind: 'recipe.cancel', targetCommandId: rootCommandId, reason: expect.any(String) }
+                }
+            ]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('reads a root once however often its outcome is read, so a later read past the grace cancels nothing', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The root's result is there at the first read, which moves the clock past the deadline and the grace.
+            const { run, readCount } = createSilentRun(control.request, 250_000, () => [{
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'poll-timeout',
+                agentId: 'sender',
+                commandId: rootCommandId,
+                ok: true
+            }]);
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            const first = await started.readOutcome();
+            const second = await started.readOutcome();
+
+            expect(second).toEqual(first);
+            expect(first).toEqual({ commandId: rootCommandId, ok: true, summary: 'ok' });
+            expect(readCount()).toBe(1);
+            expect(toPostedKinds(control)).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('rejects when neither the root nor its cancel settles within the grace, so no later cell runs on the pages', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            const { run } = createSilentRun(control.request, 30_000);
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            await expect(started.readOutcome()).rejects.toThrow(
+                `${rootCommandId} is still running after its deadline and cancellation`
+            );
+            expect(toPostedKinds(control)).toEqual(['recipe.run', 'recipe.cancel']);
         }
         finally {
             vi.restoreAllMocks();
@@ -485,7 +581,7 @@ describe('control poll timeouts', () => {
     });
 
     it('warns and releases the sender when the receiver neither connects nor ends within the barrier timeout', async () => {
-        const control = await openAcceptingControlRequest();
+        const control = await openRecordingControlRequest('poll-timeout');
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
             const { run, readCount } = createSilentRun(control.request, 30_000);

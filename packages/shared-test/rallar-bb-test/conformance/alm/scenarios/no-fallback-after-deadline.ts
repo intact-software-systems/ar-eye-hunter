@@ -2,12 +2,8 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { EXPIRY_TTL_MS, RESPONSE_MARGIN_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
-import {
-    toAdmissionCommands,
-    toObserveCommand,
-    toResultAssertion,
-    toSendCommand
-} from '../alm-conformance-message-commands.ts';
+import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
+import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toAckHoldFaultCommand } from '../alm-conformance-receipt-commands.ts';
 import { toAdmissionOutcomeWait, toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
@@ -43,15 +39,7 @@ function toNoFallbackAfterDeadlineSenderCommands(
             delivery: { ack: 'receiver', ttlMs: EXPIRY_TTL_MS }
         }),
         ...toAdmissionCommands({ ...sender, index: 1 }),
-        toObserveCommand({ ...sender, index: 1, state: 'expired' }),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-expired-1',
-            resultName: 'observe-expired-1',
-            field: 'state',
-            operator: 'equals',
-            expected: 'expired'
-        })
+        ...toSettledStateCommands({ ...sender, index: 1 }, 'expired')
     ];
 }
 

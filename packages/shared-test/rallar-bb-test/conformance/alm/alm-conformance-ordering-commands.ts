@@ -1,4 +1,5 @@
 import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
@@ -43,6 +44,28 @@ export function toSentCommands(step: AlmConformanceMessageStepInput): readonly R
     ];
 }
 
+/**
+ * The send of `step.index` settled in exactly `state`, which its observation must name; with no `budgetMs`, the state's
+ * own observe budget.
+ */
+export function toSettledStateCommands(
+    step: AlmConformanceMessageStepInput,
+    state: ALDeliveryState,
+    budgetMs?: number
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...step, state, ...(budgetMs === undefined ? {} : { budgetMs }) }),
+        toResultAssertion({
+            step,
+            name: `assert-${state}-${step.index}`,
+            resultName: `observe-${state}-${step.index}`,
+            field: 'state',
+            operator: 'equals',
+            expected: state
+        })
+    ];
+}
+
 export function toOrderingKey(sender: AlmConformanceStepInput): string {
     return `alm-${sender.input.carrier}-${sender.scenarioId}`;
 }
@@ -56,6 +79,13 @@ export function toHeldSecondSendCommands(sender: AlmConformanceStepInput): reado
     return [
         ...toOrderedSendCommands(sender, 1),
         ...toSentCommands({ ...sender, index: 1 }),
+        ...toHeldGapCommands(sender)
+    ];
+}
+
+/** The second ordered send held, the third sent past it, and the range NACK the third reveals admitted. */
+export function toHeldGapCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
         ...toHeldSendCommands({ ...sender, index: 2 }, toOrderedSendCommands(sender, 2)),
         ...toOrderedSendCommands(sender, 3),
         toControlAdmissionWait({

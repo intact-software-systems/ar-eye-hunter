@@ -165,11 +165,17 @@ export async function installRecipeConsoleFleetFixture(
     };
 }
 
+/** The `schema-error` mode's snapshot, whose report the console must quarantine. */
+interface QuarantinedFleetReportSnapshot extends Omit<ControlServerSnapshot, 'fleetReports'> {
+    readonly fleetReports:
+        readonly (ControlFleetRunReport | Readonly<{ fleetReportSchemaVersion: number; distributedRunId: string; }>)[];
+}
+
 function rootSnapshotForCollection(
     snapshot: ControlServerSnapshot,
     reports: readonly ControlFleetRunReport[],
     mode: 'present' | 'absent' | 'empty' | 'schema-error'
-): unknown {
+) {
     if (mode === 'absent') {
         const { fleetReports: _fleetReports, ...core } = snapshot;
         return core;
@@ -194,6 +200,8 @@ function augmentControlRun(base: ControlRunSnapshot): ControlRunSnapshot {
         ...agent,
         identity: {
             ...agent.identity,
+            sessionLabel: agent.identity?.sessionLabel ?? `${agent.agentId}-principal:${agent.agentId}-session`,
+            updatedAtEpochMs: agent.identity?.updatedAtEpochMs ?? BASE_EPOCH_MS + 900,
             ...GROUP,
             providerMode: 'browser-rallar',
             region: index === 0 ? 'region-00' : FLEET_SELECTED_REGION,
@@ -539,13 +547,15 @@ function pad(value: number): string {
     return String(value).padStart(2, '0');
 }
 
-async function fulfillJson(route: Route, body: unknown): Promise<void> {
-    await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        headers: corsHeaders(),
-        body: JSON.stringify(body)
-    });
+async function fulfillJson(
+    route: Route,
+    body: ControlServerSnapshot | QuarantinedFleetReportSnapshot | ControlRunSnapshot | ControlFleetReportBundle
+): Promise<void> {
+    await route.fulfill(toJsonFulfillment(JSON.stringify(body)));
+}
+
+function toJsonFulfillment(body: string) {
+    return { status: 200, contentType: 'application/json', headers: corsHeaders(), body };
 }
 
 function corsHeaders(): Record<string, string> {
