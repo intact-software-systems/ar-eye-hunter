@@ -100,6 +100,15 @@ describe('set assertion control admission', () => {
         }
     });
 
+    it('an equals assert names an expected value or a comparison source', () => {
+        const neither = { kind: 'assert', source: 'state.a', operator: 'equals' };
+
+        expect(validateRallarBlackBoxTestCommand(neither).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand({ ...neither, expected: null }).ok).toBe(true);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, neither).ok).toBe(false);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, { ...neither, expected: null }).ok).toBe(true);
+    });
+
     it('accepts the distinct set shape and an existing value operator in both validators', () => {
         for (
             const command of [

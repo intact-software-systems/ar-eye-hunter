@@ -393,6 +393,13 @@ it.each(['events', 'recentEvents', 'state.events'])(
             comparisonSource: source
         }, nextIdentity);
         expect(comparison.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
+        const equalsComparison = await runtime.execute({
+            kind: 'assert',
+            source: `${root}.0.payload.commandId`,
+            operator: 'equals',
+            comparisonSource: source
+        }, nextIdentity);
+        expect(equalsComparison.error?.code).toBe('RALLAR_BLACK_BOX_RESULT_RELEASED');
         for (const index of [2, 3]) {
             expect((await runtime.execute({ kind: 'assert', source: `${root}.${index}.payload.value`, operator: 'exists', expected: false }, nextIdentity)).ok)
                 .toBe(true);

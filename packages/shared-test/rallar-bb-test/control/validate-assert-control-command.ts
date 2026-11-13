@@ -31,5 +31,8 @@ export function validateAssertControlCommand(command: RallarBlackBoxTestRecord):
     else if (command.comparisonSource !== undefined) {
         issues.push(toControlCommandIssue('assert.comparisonSource is unsupported for this operator.'));
     }
+    else if (command.operator === 'equals' && command.expected === undefined) {
+        issues.push(toControlCommandIssue('assert.equals requires expected or comparisonSource.'));
+    }
     return issues;
 }

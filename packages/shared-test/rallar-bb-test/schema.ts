@@ -420,7 +420,7 @@ const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELD
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS.filter((operator) => operator !== 'equals')
 };
 
 const parallelGroupSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.parallelGroup, {
@@ -632,6 +632,17 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                     ...commandBaseProperties('assert'),
                     source: nonEmptyStringSchema,
                     operator: assertOperatorSchema,
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
+                required: ['kind', 'source', 'operator', 'expected'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: { const: 'equals' },
                     expected: anySchema
                 },
                 additionalProperties: false
