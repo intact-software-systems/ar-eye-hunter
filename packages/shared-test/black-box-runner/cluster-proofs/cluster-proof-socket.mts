@@ -2,7 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { API_CREATE_WS_PATH, toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
 import type { ApiV1RtcTopologyProofApi, ProofSession } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
 export namespace ClusterProofSocket {
@@ -64,9 +64,9 @@ export class ClusterProofSocket {
     }
 
     assertOpen(): void {
-        assertEquals(this.socket.readyState, WebSocket.OPEN, 'Original websocket remains open');
-        assertEquals(this.closeCodes, [], 'No socket reconnect can rescue the proof');
-        assertEquals(this.#failure, null);
+        assert.deepEqual(this.socket.readyState, WebSocket.OPEN, 'Original websocket remains open');
+        assert.deepEqual(this.closeCodes, [], 'No socket reconnect can rescue the proof');
+        assert.deepEqual(this.#failure, null);
     }
 
     send(frame: ALMessage): void {
@@ -82,13 +82,13 @@ export class ClusterProofSocket {
 
     #record(event: MessageEvent): void {
         try {
-            assert(typeof event.data === 'string');
+            assert.ok(typeof event.data === 'string');
             const decoded = decodeALMessageValue(JSON.parse(event.data));
             if (decoded.left) {
                 throw new TypeError(decoded.left.message);
             }
             const frame = decoded.right;
-            assert(frame, 'Decoded AL message is required');
+            assert.ok(frame, 'Decoded AL message is required');
             this.validateFrame(frame);
             this.frames.push(frame);
         }
@@ -105,7 +105,7 @@ export async function waitForProofCondition(
 ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (!await read()) {
-        assert(Date.now() < deadline, `Timed out waiting for ${label}`);
+        assert.ok(Date.now() < deadline, `Timed out waiting for ${label}`);
         await new Promise((resolve) => setTimeout(resolve, 25));
     }
 }

@@ -4,6 +4,7 @@ import { createWsServerTargetResolver } from '@shared-server/rallar-system/webso
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 import { expect, it } from 'vitest';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { createRtcTopologyReplayFixture } from '../../topology/replay/consumer/rtc-topology-replay-fixture.ts';
 import { createOpenTestWebSocket } from '../test-support/open-test-websocket.ts';
 
@@ -16,7 +17,7 @@ it.each(['short-room', 'group-rtc-replay-33fd71196b34408d84fbf238'])(
         const pages = materializeRtcOverlayTopologyMessages({ ...fixture.publication, snapshot });
         const server = new JsonWebSocketServer();
         for (const id of ['session-1', 'session-999', 'not-a-recipient']) {
-            server.addConnection(server.createConnectionContext({ id, socket: createOpenTestWebSocket() }));
+            attachTestWebSocket(server, server.createConnectionContext({ id, socket: createOpenTestWebSocket() }));
         }
         const resolver = createWsServerTargetResolver(server, { grantedTopics: new WsGrantedTopicSet() });
         const recipients = pages.flatMap((message) => resolver.resolveBroadcastRecipients?.('room', message) ?? []);

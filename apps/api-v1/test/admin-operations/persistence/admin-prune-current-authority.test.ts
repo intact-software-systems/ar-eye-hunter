@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -16,7 +17,7 @@ import {
     withUtcPGliteSql
 } from '../../db/pglite-auth-test-harness.ts';
 
-Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
+test('production admin prune rereads current admin authority before creating page work', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);
@@ -83,7 +84,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
     });
 });
 
-Deno.test('committed initial admin page work wakes the queue after its transaction commits', async () => {
+test('committed initial admin page work wakes the queue after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
         const repository = createPSqlResourceInboxRepository(sql, () => new Date());
         const queue = new PSqlQueueBox(repository, Temporal.Now.instant);

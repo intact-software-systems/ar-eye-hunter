@@ -20,6 +20,7 @@ import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const PENDING_ADMISSION_DENIALS = ['unauthorized', 'membership-fenced', 'not-yet-in-sync'] as const;
 
@@ -116,7 +117,7 @@ describe('WS server bounded and authorized admission', () => {
         const fixture = await createServerIngressFixture();
         const peer = new SimulatedWebSocket('ws://peer');
         await peer.open();
-        fixture.server.addConnection(new ConnectionContext({ id: 'session-2', socket: peer }));
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
         const message: ALMessage = { ...createIncomingMessage(), targets: { mode: 'broadcast', scope: 'world' } };
 
         const result = fixture.service.sendToTargetsWithResult({
@@ -134,7 +135,7 @@ describe('WS server bounded and authorized admission', () => {
         const fixture = await createServerIngressFixture();
         const peer = new SimulatedWebSocket('ws://peer');
         await peer.open();
-        fixture.server.addConnection(new ConnectionContext({ id: 'session-2', socket: peer }));
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-2', socket: peer }));
         fixture.service.authorizeInboundMessagesWith({
             sendNacks: false,
             authorize: async () => ({ authorized: true, roomAudience: { recipientPeerIds: ['session-1', 'session-2'], snapshotVersion: 1 } })
@@ -174,7 +175,7 @@ describe('WS server bounded and authorized admission', () => {
         }));
         const targetSocket = new SimulatedWebSocket('ws://target');
         await targetSocket.open();
-        fixture.server.addConnection(new ConnectionContext({ id: 'target-session', socket: targetSocket }));
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'target-session', socket: targetSocket }));
         const message: ALMessage = {
             ...createIncomingMessage(),
             targets: { mode: 'unicast', toPeerId: 'target-session' }
@@ -487,7 +488,7 @@ describe('WS server bounded and authorized admission', () => {
         const receiving = fixture.service.acceptIncomingMessage(createIncomingMessage(), 'session-1');
         const replacement = new SimulatedWebSocket('ws://replacement');
         await replacement.open();
-        fixture.server.addConnection(new ConnectionContext({ id: 'session-1', socket: replacement }));
+        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-1', socket: replacement }));
         gate.resolve();
 
         expect((await receiving).left?.code).toBe('unauthorized');
@@ -504,7 +505,7 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () => {
                 queueMicrotask(() => {
                     queueMicrotask(() => {
-                        fixture.server.addConnection(new ConnectionContext({ id: 'session-1', socket: replacement }));
+                        attachTestWebSocket(fixture.server, new ConnectionContext({ id: 'session-1', socket: replacement }));
                     });
                 });
                 return { authorized: true };

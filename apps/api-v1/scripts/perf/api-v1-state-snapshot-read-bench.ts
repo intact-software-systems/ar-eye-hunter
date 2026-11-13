@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import process from 'node:process';
+
 import {
     createClientRestSnapshotReadSelector
 } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
@@ -53,8 +56,8 @@ const results = [
     await runConcurrentClientScenario()
 ];
 
-await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
-await Deno.writeTextFile(
+await mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
+await writeFile(
     OUT,
     `${
         JSON.stringify(
@@ -234,6 +237,6 @@ function readPositiveInteger(name: string, fallback: number): number {
 }
 
 function readArgument(name: string): string | undefined {
-    return Deno.args.find((argument) => argument.startsWith(`${name}=`))
+    return process.argv.slice(2).find((argument) => argument.startsWith(`${name}=`))
         ?.slice(name.length + 1);
 }

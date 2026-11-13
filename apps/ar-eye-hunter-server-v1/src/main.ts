@@ -1,5 +1,3 @@
-import { bindTournamentGameProfile } from '@shared-server/rallar-system/tournaments/tournament-game-profile.ts';
-import 'jsr:@std/dotenv@0.225.6/load';
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import { readApiV1Configuration } from '@api-v1/src/configuration/read-api-v1-configuration.ts';
 import { reportApiV1Configuration } from '@api-v1/src/configuration/report-api-v1-configuration.ts';
@@ -10,15 +8,17 @@ import { installApiHttpMiddleware } from '@api-v1/src/services/install-api-http-
 import { requireApiAuthSession } from '@api-v1/src/services/request-auth-service.ts';
 import { createApiTimingSink } from '@api-v1/src/services/timing-service.ts';
 import { ARENA_TOURNAMENT_SNAPSHOT_SENDER } from '@ar-eye-hunter/arena-tournament-stream.ts';
+import { bindTournamentGameProfile } from '@shared-server/rallar-system/tournaments/tournament-game-profile.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
 import { registerArenaTournamentRoutes } from './arena-tournament-routes.ts';
 import { ARENA_TOURNAMENT_GAME_PROFILE, createArenaTournamentServices } from './create-arena-tournament-services.ts';
 
 const configured = await readApiV1Configuration({
-    environment: Deno.env,
+    environment: process.env,
     hardwareConcurrency: navigator.hardwareConcurrency,
-    readTextFile: Deno.readTextFile,
+    readTextFile: (url) => readFile(url, 'utf8'),
     defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
     profileUrls: {
         dev: new URL('../../api-v1/resources/configuration/dev-config.json', import.meta.url),

@@ -44,7 +44,7 @@ Record the answers; do not assume them. This is the check the runbook exists to 
 
 1. **No running deployment requires compatibility.** Confirm that every deployment reading either
    database is being replaced in this cutover, not left on the old build. Today the repository
-   deploys three Deno applications (`rallar-server`, `rallar-bb-server`, `relic-hunters`) and three
+   deploys three Bun applications (`rallar-server`, `rallar-bb-server`, `relic-hunters`) and three
    browser bundles (Eye Hunter to Cloudflare Pages, Relic Hunter Web and Rallar Kit to Cloudflare
    Workers) from one `main` push, so the answer is normally "yes, all of them" — but a manually
    pinned application or a second environment sharing a database would make it "no", and that has to
@@ -72,13 +72,12 @@ new server reads an old row or an old server writes one.
    drain has entries already failing — inspect them with
    `POST /api/admin/support/explain/queue-item` before deciding to discard them.
 3. **Reset or drop.** Drop both databases, or reset them to an empty schema, and run
-   `deno task prisma migrate deploy` against each. A reused database that merely had migrations
+   `bun run db:migrate:deploy` against each. A reused database that merely had migrations
    applied is **not** sufficient: migrations change the schema and leave the pre-cutover rows in
    place, which is exactly the state that throws.
 4. **Deploy both servers before any browser.** `rallar-server` and `relic-hunters` first, so no old
-   server can write a row a new one will read. When `DENO_DEPLOY_ACTIONS_ENABLED` is `true`,
-   `deploy.yml` orders each API deployment behind its own migration step; otherwise the Deno Git
-   integration deploys and the migration must be run by hand first. Nothing orders the browsers:
+   server can write a row a new one will read. The Hetzner rollout deploys each server behind its own
+   database migration step. Nothing orders the browsers:
    Cloudflare's Git integration publishes `main` independently of `deploy.yml`, so pause those
    Cloudflare builds (or deploy the servers from a commit that does not yet change the browsers)
    until the servers are live.

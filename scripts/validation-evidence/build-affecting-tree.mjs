@@ -8,7 +8,6 @@ export const exactBuildContractPaths = new Set([
     'AGENTS.md',
     'CLAUDE.md',
     'apps/api-v1/README.md',
-    'deno.json',
     'docker-compose.yml',
     'docs/README.md',
     'docs/architecture.md',
@@ -45,7 +44,7 @@ export const exactBuildContractPaths = new Set([
     'tsconfig.json',
     'vitest.config.ts'
 ]);
-const lockfilePattern = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|deno\.lock)$/u;
+const lockfilePattern = /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock)$/u;
 
 export function computeBuildAffectingTreeDigest({ repoRoot, headSha }) {
     const entries = readTreeEntries(repoRoot, headSha)

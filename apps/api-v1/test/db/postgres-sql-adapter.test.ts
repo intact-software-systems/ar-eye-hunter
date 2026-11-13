@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlCounterScope } from '@shared-server/postgres/create-p-sql-counter-scope.ts';
@@ -26,7 +27,7 @@ interface FakePostgresClient {
     readonly events: string[];
 }
 
-Deno.test('Postgres SQL client counts every statement of its root and transaction handles on one executor and forwards the client capabilities', async () => {
+test('Postgres SQL client counts every statement of its root and transaction handles on one executor and forwards the client capabilities', async () => {
     const fake = createFakePostgresClient();
     const sql = createPostgresSqlClient(fake.client, undefined);
 
@@ -58,7 +59,7 @@ Deno.test('Postgres SQL client counts every statement of its root and transactio
     assert.deepEqual(fake.events, ['notify:channel:payload', 'listen:channel', 'end']);
 });
 
-Deno.test('a counter scope over the Postgres client credits only its own statements, inside its transaction and savepoint, and carries none of the client lifecycle', async () => {
+test('a counter scope over the Postgres client credits only its own statements, inside its transaction and savepoint, and carries none of the client lifecycle', async () => {
     const fake = createFakePostgresClient();
     const sql = createPostgresSqlClient(fake.client, undefined);
     const scoped = createPSqlCounterScope(sql, { timesBeginWait: true });
@@ -89,7 +90,7 @@ Deno.test('a counter scope over the Postgres client credits only its own stateme
     assert.deepEqual(['end', 'notify', 'listen', 'close'].filter((name) => name in scoped), []);
 });
 
-Deno.test('with a census, every statement of the root, transaction and savepoint handles is recorded under its shape', async () => {
+test('with a census, every statement of the root, transaction and savepoint handles is recorded under its shape', async () => {
     const fake = createFakePostgresClient();
     const census = new PostgresStatementCensus();
     const sql = createPostgresSqlClient(fake.client, census);
@@ -115,7 +116,7 @@ Deno.test('with a census, every statement of the root, transaction and savepoint
     assert.deepEqual(census.takeShapes(), [], 'a take empties the census');
 });
 
-Deno.test('at the root a statement planned per execution is sent unprepared as its positional text, counted and recorded like any other', async () => {
+test('at the root a statement planned per execution is sent unprepared as its positional text, counted and recorded like any other', async () => {
     const fake = createFakePostgresClient();
     const census = new PostgresStatementCensus();
     const sql = createPostgresSqlClient(fake.client, census);
@@ -134,7 +135,7 @@ Deno.test('at the root a statement planned per execution is sent unprepared as i
     ]);
 });
 
-Deno.test('in a transaction a statement planned per execution goes out between two plan-cache settings in one pipelined write, counted and recorded once', async () => {
+test('in a transaction a statement planned per execution goes out between two plan-cache settings in one pipelined write, counted and recorded once', async () => {
     const fake = createFakePostgresClient();
     const census = new PostgresStatementCensus();
     const sql = createPostgresSqlClient(fake.client, census);
@@ -163,7 +164,7 @@ Deno.test('in a transaction a statement planned per execution goes out between t
     assert.deepEqual(census.takeShapes().map(({ shape, count }) => [shape, count]), [['select * from rows where id = ?', 2]]);
 });
 
-Deno.test('without a census the client records nothing beside its counters', async () => {
+test('without a census the client records nothing beside its counters', async () => {
     const fake = createFakePostgresClient();
     const sql = createPostgresSqlClient(fake.client, undefined);
 

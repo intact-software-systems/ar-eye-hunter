@@ -1,9 +1,8 @@
+import { DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS } from '@shared-server/process/default-server-shutdown-deadline-ms.ts';
 import { RALLAR_BLACK_BOX_CONTROL_MAX_FRAME_BYTES } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
-export interface BlackBoxControlEnvironment {
-    get(key: string): string | undefined;
-}
+export type BlackBoxControlEnvironment = Readonly<Record<string, string | undefined>>;
 
 export interface BlackBoxControlServerConfiguration {
     readonly allowedOrigins: readonly string[];
@@ -33,6 +32,8 @@ export interface BlackBoxControlServerConfiguration {
     readonly deadlineSweepIntervalMs: number;
     readonly snapshotPersistenceBounds: ControlRunSnapshotBounds;
     readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
+    /** The bound on the whole graceful stop after SIGTERM or SIGINT. */
+    readonly shutdownDeadlineMs: number;
 }
 
 type SnapshotBoundsPrefix = 'SNAPSHOT_PERSIST' | 'RUNTIME_RETAIN';
@@ -106,7 +107,12 @@ export function readBlackBoxControlServerConfiguration(
             'SNAPSHOT_PERSIST',
             DEFAULT_SNAPSHOT_PERSISTENCE_BOUNDS
         ),
-        runtimeRetentionBounds: readSnapshotBounds(environment, 'RUNTIME_RETAIN', DEFAULT_RUNTIME_RETENTION_BOUNDS)
+        runtimeRetentionBounds: readSnapshotBounds(environment, 'RUNTIME_RETAIN', DEFAULT_RUNTIME_RETENTION_BOUNDS),
+        shutdownDeadlineMs: readEnvironmentNumber(
+            environment,
+            'RALLAR_SHUTDOWN_DEADLINE_MS',
+            DEFAULT_SERVER_SHUTDOWN_DEADLINE_MS
+        )
     };
 }
 
@@ -171,24 +177,24 @@ function readSnapshotBounds(
 }
 
 function readEnvironmentString(environment: BlackBoxControlEnvironment, key: string): string | undefined {
-    const value = environment.get(key)?.trim();
+    const value = environment[key]?.trim();
     return value ? value : undefined;
 }
 
 function readEnvironmentList(environment: BlackBoxControlEnvironment, key: string): string[] {
-    return (environment.get(key) ?? '')
+    return (environment[key] ?? '')
         .split(',')
         .map((value) => value.trim())
         .filter((value) => value.length > 0);
 }
 
 function readEnvironmentNumber(environment: BlackBoxControlEnvironment, key: string, fallback: number): number {
-    const parsed = Number.parseInt(environment.get(key) ?? '', 10);
+    const parsed = Number.parseInt(environment[key] ?? '', 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function readEnvironmentBoolean(environment: BlackBoxControlEnvironment, key: string): boolean {
-    return TRUE_FLAGS.has((environment.get(key) ?? '').trim().toLowerCase());
+    return TRUE_FLAGS.has((environment[key] ?? '').trim().toLowerCase());
 }
 
 function readEnvironmentSnapshotLimit(
@@ -196,7 +202,7 @@ function readEnvironmentSnapshotLimit(
     key: string,
     fallback: number
 ): number | undefined {
-    const normalized = (environment.get(key) ?? '').trim().toLowerCase();
+    const normalized = (environment[key] ?? '').trim().toLowerCase();
     if (!normalized) {
         return fallback;
     }

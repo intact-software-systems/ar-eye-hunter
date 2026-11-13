@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
@@ -33,7 +34,7 @@ const METADATA: RallarCrdtDocumentMetadata = {
     projectionIds: []
 };
 
-Deno.test('compact admin CRDT returns only a compact result', async () => {
+test('compact admin CRDT returns only a compact result', async () => {
     const calls: CrdtAdminMutationInput[] = [];
     const compact = new CompactApiAdminCrdt(createMutations(calls, {
         document: DOCUMENT,
@@ -58,7 +59,7 @@ Deno.test('compact admin CRDT returns only a compact result', async () => {
     assert.equal(calls[0]?.operation, 'compact');
 });
 
-Deno.test('lifecycle admin CRDT returns only document metadata', async () => {
+test('lifecycle admin CRDT returns only document metadata', async () => {
     const calls: CrdtAdminMutationInput[] = [];
     const lifecycle = new UpdateApiAdminCrdtLifecycle(createMutations(calls, METADATA));
 
@@ -68,7 +69,7 @@ Deno.test('lifecycle admin CRDT returns only document metadata', async () => {
     assert.equal(calls[0]?.operation, 'lifecycle');
 });
 
-Deno.test('erase admin CRDT returns only an erasure result', async () => {
+test('erase admin CRDT returns only an erasure result', async () => {
     const calls: CrdtAdminMutationInput[] = [];
     const erase = new EraseApiAdminCrdt(createMutations(calls, {
         request: {

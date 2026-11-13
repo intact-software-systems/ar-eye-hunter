@@ -76,7 +76,7 @@ and it has no status list.
   (`.github/workflows/api-v1-formation-gate.yml`,
   `api-v1-medium-scale-gate.yml`) wait 30 s for the managed API's startup
   marker (`packages/shared-test/black-box-runner/managed-api/api-v1-managed-api-readiness.mts`),
-  which a cold Deno cache can outlast (#728).
+  which a cold Bun cache can outlast (#728).
 - ALM persistence outcomes the QoS plan keeps outcome-shaped
   (`playground/alm/alm-qos-product-plan.md` §7.6): a durable owner hosted in a
   worker; a per-message persistence barrier; the Temporal polyfill leaving the
@@ -506,7 +506,7 @@ and it has no status list.
   answers `requiresFrozenAudience` but omits a callback, so return no recipients
   in `resolveOutboundRecipients` and `resolveInboundRecipients` for such a
   message (S2-i).
-- The api-v1 Deno test of a room archived before dequeue
+- The api-v1 Bun test of a room archived before dequeue
   (`ws-room-granted-delivery.test.ts`) asserts only that nothing was delivered;
   assert the row reached COMPLETED too, so a row stuck retrying fails it (S2-i).
 - Push room-directory changes over existing state sync only if measured freshness

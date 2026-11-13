@@ -15,9 +15,9 @@ describe.each(['memory', 'postgres'] as const)('%s API shell launch', (mode) => 
         const directory = await mkdtemp(join(tmpdir(), 'rallar-api-environment-'));
         onTestFinished(() => rm(directory, { recursive: true, force: true }));
         await writeFile(
-            join(directory, 'deno'),
+            join(directory, 'bun'),
             `#!/bin/sh
-exec node -e 'process.stdout.write(JSON.stringify({api:process.env.RALLAR_API_BASE_URL,ws:process.env.RALLAR_WS_BASE_URL,topics:JSON.parse(process.env.RALLAR_GRANTED_WS_TOPICS_JSON),cors:process.env.CORS_ORIGINS,denoNoPackageJson:process.env.DENO_NO_PACKAGE_JSON}))'
+exec node -e 'process.stdout.write(JSON.stringify({api:process.env.RALLAR_API_BASE_URL,ws:process.env.RALLAR_WS_BASE_URL,topics:JSON.parse(process.env.RALLAR_GRANTED_WS_TOPICS_JSON),cors:process.env.CORS_ORIGINS}))'
 `,
             { mode: 0o700 }
         );
@@ -31,7 +31,6 @@ exec node -e 'process.stdout.write(JSON.stringify({api:process.env.RALLAR_API_BA
             cwd: resolve('apps/rallar-black-box'),
             env: {
                 ...process.env,
-                DENO_NO_PACKAGE_JSON: '0',
                 DATABASE_URL: 'postgres://unused:unused@localhost/unused',
                 PATH: `${directory}:${process.env.PATH}`
             },
@@ -41,7 +40,6 @@ exec node -e 'process.stdout.write(JSON.stringify({api:process.env.RALLAR_API_BA
             api: 'http://localhost:18080/$(printf injected)?a=1&b=2',
             ws: 'ws://localhost:18080/$(printf%20injected)?a=1&b=2',
             cors,
-            denoNoPackageJson: '1',
             topics: [{ topicId: 'room.alm-conformance-granted', fanout: 'outbox', serverProducerIds: [] }]
         });
     });

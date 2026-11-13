@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -22,7 +23,11 @@ import {
     withPGliteSql
 } from './pglite-auth-test-harness.ts';
 
-Deno.test(
+const COMPLETION_WAIT_MAX_ELAPSED_MS = 5_000;
+// The retry-exhaustion test waits out the whole completion wait, so its budget is that wait plus the PGlite setup.
+const PGLITE_SETUP_ALLOWANCE_MS = 5_000;
+
+test(
     [
         'PGlite logout outbox collision rolls back session deletion',
         'and success receipt'
@@ -58,7 +63,7 @@ Deno.test(
                     serviceId: 'pglite-auth',
                     timing: undefined,
                     options: {
-                        waitMaxElapsedMsecs: 5_000,
+                        waitMaxElapsedMsecs: COMPLETION_WAIT_MAX_ELAPSED_MS,
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,
@@ -119,11 +124,12 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     [
         'PGlite auth finalization fence rolls back state and result',
         'through retry exhaustion'
     ].join(' '),
+    { timeout: COMPLETION_WAIT_MAX_ELAPSED_MS + PGLITE_SETUP_ALLOWANCE_MS },
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
@@ -155,7 +161,7 @@ Deno.test(
                     serviceId: 'pglite-auth',
                     timing: undefined,
                     options: {
-                        waitMaxElapsedMsecs: 5_000,
+                        waitMaxElapsedMsecs: COMPLETION_WAIT_MAX_ELAPSED_MS,
                         waitRetryIntervalMsecs: 1,
                         waitMaxRetryIntervalMsecs: 4,
                         waitJitterRatio: 0,

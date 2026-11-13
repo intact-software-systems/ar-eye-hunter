@@ -1,10 +1,10 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarInMemoryProvider } from '../../../shared-test/black-box-runner/rallar-in-memory-runtime.ts';
 import { createRtcProviderFromClientFactory } from '../../../shared-test/black-box-runner/rtc-provider.ts';
 import { createFakeRtcClient } from './fake-rtc-client.ts';
 
-Deno.test('createRtcProviderFromClientFactory preserves failed send result details', async () => {
+test('createRtcProviderFromClientFactory preserves failed send result details', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.send = async () => {
         const error = new Error('fake send had no route') as Error & {
@@ -70,21 +70,21 @@ Deno.test('createRtcProviderFromClientFactory preserves failed send result detai
 
     const sendResult = report.resultsByName.aliceSendsWithoutRoute[0];
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(sendResult.status, 'FAILURE');
-    assertEquals(sendResult.result, 'RTC send failed');
-    assertEquals(sendResult.actual.sendResult, {
+    expect(report.summary.failure).toEqual(1);
+    expect(sendResult.status).toEqual('FAILURE');
+    expect(sendResult.result).toEqual('RTC send failed');
+    expect(sendResult.actual.sendResult).toEqual({
         status: 'no-peers',
         peerIds: []
     });
-    assertEquals(sendResult.actual.diagnostics, {
+    expect(sendResult.actual.diagnostics).toEqual({
         phase: 'send',
         reason: 'no-route'
     });
-    assertEquals(typeof sendResult.actual.sendLatencyMs, 'number');
+    expect(typeof sendResult.actual.sendLatencyMs).toEqual('number');
 });
 
-Deno.test('RTC success status includes generic routing diagnostics', async () => {
+test('RTC success status includes generic routing diagnostics', async () => {
     const provider = createRallarInMemoryProvider({ now: Date.now, state: { connections: new Map(), nextDeliverySequence: 1 } });
 
     const report = await executeBlackBox(
@@ -119,19 +119,19 @@ Deno.test('RTC success status includes generic routing diagnostics', async () =>
 
     const result = report.resultsByName.connectAlice[0];
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(result.status, 'SUCCESS');
-    assertEquals(result.peerId, 'alice');
-    assertEquals(result.groupId, 'group-1');
-    assertEquals(result.overlayId, 'overlay-1');
-    assertEquals(result.remotePeerId, 'bob');
-    assertEquals(result.actual.peerId, 'alice');
-    assertEquals(result.actual.groupId, 'group-1');
-    assertEquals(result.actual.overlayId, 'overlay-1');
-    assertEquals(result.actual.remotePeerId, 'bob');
+    expect(report.summary.failure).toEqual(0);
+    expect(result.status).toEqual('SUCCESS');
+    expect(result.peerId).toEqual('alice');
+    expect(result.groupId).toEqual('group-1');
+    expect(result.overlayId).toEqual('overlay-1');
+    expect(result.remotePeerId).toEqual('bob');
+    expect(result.actual.peerId).toEqual('alice');
+    expect(result.actual.groupId).toEqual('group-1');
+    expect(result.actual.overlayId).toEqual('overlay-1');
+    expect(result.actual.remotePeerId).toEqual('bob');
 });
 
-Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.diagnostic', async () => {
+test('createRtcProviderFromClientFactory supports rtc.wait expect.diagnostic', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -201,17 +201,14 @@ Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.diagnosti
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.waitForDiagnostic[0].status, 'SUCCESS');
-    assertEquals(
-        report.resultsByName.waitForDiagnostic[0].actual.matchedDiagnostic.topic,
-        'fake.rtc.ready'
-    );
-    assertEquals(report.rtcDiagnostics.aliceRtc[0].topic, 'fake.rtc.ready');
-    assertEquals(report.rtcMessages.aliceRtc[0].data.topic, 'fake.rtc.ready');
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.waitForDiagnostic[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForDiagnostic[0].actual.matchedDiagnostic.topic).toEqual('fake.rtc.ready');
+    expect(report.rtcDiagnostics.aliceRtc[0].topic).toEqual('fake.rtc.ready');
+    expect(report.rtcMessages.aliceRtc[0].data.topic).toEqual('fake.rtc.ready');
 });
 
-Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.health', async () => {
+test('createRtcProviderFromClientFactory supports rtc.wait expect.health', async () => {
     const fakeClient = createFakeRtcClient();
     let ready = false;
     fakeClient.diagnostics = () => ({
@@ -274,15 +271,15 @@ Deno.test('createRtcProviderFromClientFactory supports rtc.wait expect.health', 
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.waitForHealth[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForHealth[0].actual.matchedHealth, {
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.waitForHealth[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForHealth[0].actual.matchedHealth).toEqual({
         ready: true,
         phase: 'ready'
     });
 });
 
-Deno.test('createRtcProviderFromClientFactory reports RTC connect, send, and first-payload latency', async () => {
+test('createRtcProviderFromClientFactory reports RTC connect, send, and first-payload latency', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.send = async (message: unknown) => {
         fakeClient.sentMessages.push(message);
@@ -353,14 +350,14 @@ Deno.test('createRtcProviderFromClientFactory reports RTC connect, send, and fir
     const connectResult = report.resultsByName.connectAlice[0];
     const sendResult = report.resultsByName.aliceSends[0];
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(typeof connectResult.actual.connectLatencyMs, 'number');
-    assertEquals(typeof sendResult.actual.sendLatencyMs, 'number');
-    assertEquals(typeof sendResult.actual.firstPayloadLatencyMs, 'number');
-    assertEquals(sendResult.actual.firstPayloadLatencyMs >= 0, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(typeof connectResult.actual.connectLatencyMs).toEqual('number');
+    expect(typeof sendResult.actual.sendLatencyMs).toEqual('number');
+    expect(typeof sendResult.actual.firstPayloadLatencyMs).toEqual('number');
+    expect(sendResult.actual.firstPayloadLatencyMs >= 0).toEqual(true);
 });
 
-Deno.test('createRtcProviderFromClientFactory reports missing RTC diagnostics clearly', async () => {
+test('createRtcProviderFromClientFactory reports missing RTC diagnostics clearly', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -411,15 +408,12 @@ Deno.test('createRtcProviderFromClientFactory reports missing RTC diagnostics cl
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(
-        report.resultsByName.waitForMissingDiagnostic[0].result,
-        'Expected RTC diagnostic was not received'
-    );
-    assertEquals(report.resultsByName.waitForMissingDiagnostic[0].actual.diagnostics, []);
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.waitForMissingDiagnostic[0].result).toEqual('Expected RTC diagnostic was not received');
+    expect(report.resultsByName.waitForMissingDiagnostic[0].actual.diagnostics).toEqual([]);
 });
 
-Deno.test('createRtcProviderFromClientFactory reports missing RTC health clearly', async () => {
+test('createRtcProviderFromClientFactory reports missing RTC health clearly', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.diagnostics = () => ({
         ready: false,
@@ -474,18 +468,15 @@ Deno.test('createRtcProviderFromClientFactory reports missing RTC health clearly
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(
-        report.resultsByName.waitForMissingHealth[0].result,
-        'Expected RTC health was not observed'
-    );
-    assertEquals(report.resultsByName.waitForMissingHealth[0].actual.health, {
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.waitForMissingHealth[0].result).toEqual('Expected RTC health was not observed');
+    expect(report.resultsByName.waitForMissingHealth[0].actual.health).toEqual({
         ready: false,
         phase: 'connecting'
     });
 });
 
-Deno.test('RTC failure status includes generic routing diagnostics', async () => {
+test('RTC failure status includes generic routing diagnostics', async () => {
     const report = await executeBlackBox(
         [
             {
@@ -516,19 +507,19 @@ Deno.test('RTC failure status includes generic routing diagnostics', async () =>
 
     const result = report.resultsByName.connectAliceMissingProvider[0];
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(result.status, 'FAILURE');
-    assertEquals(result.peerId, 'alice');
-    assertEquals(result.groupId, 'group-1');
-    assertEquals(result.overlayId, 'overlay-1');
-    assertEquals(result.remotePeerId, 'bob');
-    assertEquals(result.actual.peerId, 'alice');
-    assertEquals(result.actual.groupId, 'group-1');
-    assertEquals(result.actual.overlayId, 'overlay-1');
-    assertEquals(result.actual.remotePeerId, 'bob');
+    expect(report.summary.failure).toEqual(1);
+    expect(result.status).toEqual('FAILURE');
+    expect(result.peerId).toEqual('alice');
+    expect(result.groupId).toEqual('group-1');
+    expect(result.overlayId).toEqual('overlay-1');
+    expect(result.remotePeerId).toEqual('bob');
+    expect(result.actual.peerId).toEqual('alice');
+    expect(result.actual.groupId).toEqual('group-1');
+    expect(result.actual.overlayId).toEqual('overlay-1');
+    expect(result.actual.remotePeerId).toEqual('bob');
 });
 
-Deno.test('createRtcProviderFromClientFactory connects client and stores connection', async () => {
+test('createRtcProviderFromClientFactory connects client and stores connection', async () => {
     let createdRequest: unknown;
     let createdConfig: unknown;
     let createdContext: unknown;
@@ -570,17 +561,17 @@ Deno.test('createRtcProviderFromClientFactory connects client and stores connect
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.connectAlice[0].actual.connected, true);
-    assertEquals(fakeClient.connected, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.connectAlice[0].actual.connected).toEqual(true);
+    expect(fakeClient.connected).toEqual(true);
 
-    assertEquals((createdRequest as any).connection, 'aliceRtc');
-    assertEquals((createdConfig as any).interactionName, 'connectAlice');
-    assertEquals((createdContext as any).rtcProviders.fake !== undefined, true);
+    expect((createdRequest as any).connection).toEqual('aliceRtc');
+    expect((createdConfig as any).interactionName).toEqual('connectAlice');
+    expect((createdContext as any).rtcProviders.fake !== undefined).toEqual(true);
 });
 
-Deno.test('createRtcProviderFromClientFactory sends through connected client', async () => {
+test('createRtcProviderFromClientFactory sends through connected client', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -636,13 +627,13 @@ Deno.test('createRtcProviderFromClientFactory sends through connected client', a
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(fakeClient.sentMessages, [payload]);
-    assertEquals(report.resultsByName.aliceSends[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSends[0].actual.sent, payload);
+    expect(report.summary.failure).toEqual(0);
+    expect(fakeClient.sentMessages).toEqual([payload]);
+    expect(report.resultsByName.aliceSends[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSends[0].actual.sent).toEqual(payload);
 });
 
-Deno.test('createRtcProviderFromClientFactory waits for client-emitted message', async () => {
+test('createRtcProviderFromClientFactory waits for client-emitted message', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -709,9 +700,9 @@ Deno.test('createRtcProviderFromClientFactory waits for client-emitted message',
 
     const report = await reportPromise;
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.waitForMessage[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.waitForMessage[0].actual.matchedMessage.data, {
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.waitForMessage[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.waitForMessage[0].actual.matchedMessage.data).toEqual({
         topic: 'chat.message',
         payload: {
             text: 'hello'
@@ -719,7 +710,7 @@ Deno.test('createRtcProviderFromClientFactory waits for client-emitted message',
     });
 });
 
-Deno.test('createRtcProviderFromClientFactory closes client on rtc.close', async () => {
+test('createRtcProviderFromClientFactory closes client on rtc.close', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -767,14 +758,14 @@ Deno.test('createRtcProviderFromClientFactory closes client on rtc.close', async
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(fakeClient.closed, true);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.closeAlice[0].actual.closed, true);
-    assertEquals(report.rtcCloseEvents.aliceRtc.length >= 1, true);
+    expect(report.summary.failure).toEqual(0);
+    expect(fakeClient.closed).toEqual(true);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.closeAlice[0].actual.closed).toEqual(true);
+    expect(report.rtcCloseEvents.aliceRtc.length >= 1).toEqual(true);
 });
 
-Deno.test('createRtcProviderFromClientFactory converts connect exception to RTC failure result', async () => {
+test('createRtcProviderFromClientFactory converts connect exception to RTC failure result', async () => {
     const provider = createRtcProviderFromClientFactory({
         createClient: () => {
             throw new Error('cannot create client');
@@ -807,13 +798,13 @@ Deno.test('createRtcProviderFromClientFactory converts connect exception to RTC 
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.connectAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.connectAlice[0].result, 'RTC connect failed');
-    assertEquals(report.resultsByName.connectAlice[0].actual.exception, 'cannot create client');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.connectAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.connectAlice[0].result).toEqual('RTC connect failed');
+    expect(report.resultsByName.connectAlice[0].actual.exception).toEqual('cannot create client');
 });
 
-Deno.test('createRtcProviderFromClientFactory converts send exception to RTC failure result', async () => {
+test('createRtcProviderFromClientFactory converts send exception to RTC failure result', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.send = async () => {
         throw new Error('send failed');
@@ -867,13 +858,13 @@ Deno.test('createRtcProviderFromClientFactory converts send exception to RTC fai
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.aliceSends[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.aliceSends[0].result, 'RTC send failed');
-    assertEquals(report.resultsByName.aliceSends[0].actual.exception, 'send failed');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.aliceSends[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.aliceSends[0].result).toEqual('RTC send failed');
+    expect(report.resultsByName.aliceSends[0].actual.exception).toEqual('send failed');
 });
 
-Deno.test('createRtcProviderFromClientFactory converts close exception to RTC failure result', async () => {
+test('createRtcProviderFromClientFactory converts close exception to RTC failure result', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.close = async () => {
         throw new Error('close failed');
@@ -924,13 +915,13 @@ Deno.test('createRtcProviderFromClientFactory converts close exception to RTC fa
         }
     );
 
-    assertEquals(report.summary.failure, 1);
-    assertEquals(report.resultsByName.closeAlice[0].status, 'FAILURE');
-    assertEquals(report.resultsByName.closeAlice[0].result, 'RTC close failed');
-    assertEquals(report.resultsByName.closeAlice[0].actual.exception, 'close failed');
+    expect(report.summary.failure).toEqual(1);
+    expect(report.resultsByName.closeAlice[0].status).toEqual('FAILURE');
+    expect(report.resultsByName.closeAlice[0].result).toEqual('RTC close failed');
+    expect(report.resultsByName.closeAlice[0].actual.exception).toEqual('close failed');
 });
 
-Deno.test('createRtcProviderFromClientFactory auto-closes unclosed client connection', async () => {
+test('createRtcProviderFromClientFactory auto-closes unclosed client connection', async () => {
     const fakeClient = createFakeRtcClient();
 
     const provider = createRtcProviderFromClientFactory({
@@ -963,18 +954,18 @@ Deno.test('createRtcProviderFromClientFactory auto-closes unclosed client connec
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(fakeClient.closed, true);
-    assertEquals(report.rtcConnections, {});
+    expect(report.summary.failure).toEqual(0);
+    expect(fakeClient.closed).toEqual(true);
+    expect(report.rtcConnections).toEqual({});
 
     const autoCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.autoCloseRequested === true);
 
-    assertEquals(autoCloseEvent?.autoCloseRequested, true);
-    assertEquals(autoCloseEvent?.autoCloseSucceeded, true);
+    expect(autoCloseEvent?.autoCloseRequested).toEqual(true);
+    expect(autoCloseEvent?.autoCloseSucceeded).toEqual(true);
 });
 
-Deno.test('createRtcProviderFromClientFactory records auto-close failure diagnostics', async () => {
+test('createRtcProviderFromClientFactory records auto-close failure diagnostics', async () => {
     const fakeClient = createFakeRtcClient();
     fakeClient.close = async () => {
         throw new Error('auto close failed');
@@ -1010,14 +1001,14 @@ Deno.test('createRtcProviderFromClientFactory records auto-close failure diagnos
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.rtcConnections, {});
+    expect(report.summary.failure).toEqual(0);
+    expect(report.rtcConnections).toEqual({});
 
     const autoCloseEvent = report.rtcCloseEvents.aliceRtc
         .find((event: any) => event.autoCloseRequested === true);
 
-    assertEquals(autoCloseEvent?.autoCloseRequested, true);
-    assertEquals(autoCloseEvent?.autoCloseSucceeded, false);
-    assertEquals(autoCloseEvent?.autoCloseFailed, true);
-    assertEquals(autoCloseEvent?.exception, 'auto close failed');
+    expect(autoCloseEvent?.autoCloseRequested).toEqual(true);
+    expect(autoCloseEvent?.autoCloseSucceeded).toEqual(false);
+    expect(autoCloseEvent?.autoCloseFailed).toEqual(true);
+    expect(autoCloseEvent?.exception).toEqual('auto close failed');
 });

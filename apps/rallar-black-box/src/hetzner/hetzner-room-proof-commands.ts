@@ -1,5 +1,8 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { createRallarBlackBoxEnsureGroupCommands } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    createRallarBlackBoxEnsureGroupCommands,
+    RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
+} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 export interface HetznerRoomProofInput {
     readonly group: RallarBlackBoxDistributedGroupRef;
@@ -19,7 +22,7 @@ export function toHetznerRoomProofCommands(input: HetznerRoomProofInput): readon
             group: input.group,
             groupRequestId: input.groupRequestId,
             memberRequestId: input.memberRequestId,
-            timeoutMs: 5_000
+            timeoutMs: RALLAR_BLACK_BOX_ENSURE_GROUP_TIMEOUT_MS
         }),
         toRoomProofConnect(input),
         toRoomProofSend(input),

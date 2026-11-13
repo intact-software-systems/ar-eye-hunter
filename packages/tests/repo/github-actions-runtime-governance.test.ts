@@ -40,7 +40,6 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const LANE_SETUP_ACTION = './.github/actions/release-gate-setup';
 const githubAutomationRoots = ['.github/actions', '.github/workflows'] as const;
 const requiredActionReferences = {
-    cache: 'actions/cache@v6',
     checkout: 'actions/checkout@v7',
     'setup-node': 'actions/setup-node@v7',
     'upload-artifact': 'actions/upload-artifact@v7'
@@ -103,27 +102,20 @@ describe('GitHub Actions runtime governance', () => {
         expect(steps[navigationIndex]).not.toHaveProperty('continue-on-error');
     });
 
-    it('restores Deno caches without saving unless the exact main push is checked out', async () => {
+    it('installs Bun through the shared setup action without a separate cache step', async () => {
         const releaseGate = await readYaml<WorkflowDocument>('.github/workflows/release-gate.yml');
         const setup = await readYaml<ActionDocument>('.github/actions/release-gate-setup/action.yml');
-        const restoreOnlyCacheStep = setup.runs.steps.find((step) => step.name === 'Restore Deno cache without save permission');
-        const trustedCacheStep = setup.runs.steps.find((step) => step.name === 'Cache Deno for trusted runs');
+        const setupBunStep = setup.runs.steps.find((step) => step.uses === 'oven-sh/setup-bun@v2');
         const setupSteps = Object.values(releaseGate.jobs).flatMap((job) => job.steps).filter((step) => step.uses === LANE_SETUP_ACTION);
-        const savingSteps = setupSteps.filter((step) => step.with?.['save-deno-cache'] !== undefined);
+        const bunLanes = setupSteps.filter((step) => step.with?.['bun'] === 'true');
 
-        expect(restoreOnlyCacheStep).toMatchObject({
-            if: '${{ inputs.deno == \'true\' && inputs.save-deno-cache != \'true\' }}',
-            uses: 'actions/cache/restore@v6'
+        expect(setupBunStep).toMatchObject({
+            if: '${{ inputs.bun == \'true\' }}'
         });
-        expect(trustedCacheStep).toMatchObject({
-            if: '${{ inputs.deno == \'true\' && inputs.save-deno-cache == \'true\' }}',
-            uses: 'actions/cache@v6'
-        });
-        expect(setup.inputs['save-deno-cache'].default).toBe('false');
-        // Exactly one lane may save, and only on the push that validates its exact main commit.
-        expect(savingSteps.map((step) => step.with?.['save-deno-cache'])).toEqual([
-            '${{ github.event_name == \'push\' && github.ref == \'refs/heads/main\' && inputs.candidate_ref == github.sha }}'
-        ]);
+        expect(setup.inputs['bun-version'].default).toBe('1.4.4');
+        // No lane caches a runtime directly; npm handles its own cache through setup-node.
+        expect(setup.runs.steps.filter((step) => step.uses?.startsWith('actions/cache'))).toEqual([]);
+        expect(bunLanes.length).toBeGreaterThan(0);
         for (const job of Object.values(releaseGate.jobs)) {
             expect(job.steps[0]).toMatchObject({
                 uses: 'actions/checkout@v7',
@@ -193,7 +185,7 @@ describe('GitHub Actions runtime governance', () => {
         const yamlFiles = (await Promise.all(githubAutomationRoots.map(findYamlFiles))).flat();
         const observedActions = new Set<GovernedActionName>();
         const violations: string[] = [];
-        const actionReference = /uses:\s*actions\/(cache|checkout|setup-node|upload-artifact)@([^\s#'"]+)/gu;
+        const actionReference = /uses:\s*actions\/(checkout|setup-node|upload-artifact)@([^\s#'"]+)/gu;
 
         for (const relativePath of yamlFiles) {
             const source = await readFile(path.join(repoRoot, relativePath), 'utf8');

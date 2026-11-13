@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -37,7 +38,7 @@ interface RetryMutationScenario {
     readonly documentAuthorityReadCount: () => number;
 }
 
-Deno.test(
+test(
     'real SQL CAS conflict retries from revoked room membership and commits no owner effect',
     verifyRealSqlCasConflictRetry
 );

@@ -6,7 +6,7 @@ import { describe, expect, it, onTestFinished } from 'vitest';
 
 import type { RtcBaselineAcceptedWorker } from '../../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 import type { RtcBaselineResult, RtcBaselineSampleDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import { decodeRtcBaselineWorkerSamples } from '../../../baseline/runtime/create-rtc-baseline-deno-acceptance.ts';
+import { decodeRtcBaselineWorkerSamples } from '../../../baseline/runtime/create-rtc-baseline-bun-acceptance.ts';
 import * as CacheFallback from '../../../workloads/group-coordination/webrtc-group-cache-fallback-bench.ts';
 import * as PeerOwners from '../../../workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts';
 import * as ManagerState from '../../../workloads/group-coordination/webrtc-group-manager-state-bench.ts';
@@ -59,10 +59,8 @@ function readAcceptedWorker<Input>(
 
 function readAcceptedSubprocessSamples(entry: string, fixture: WorkerFixture): RtcBaselineSampleDto[] {
     const runtimeObservation = toRuntimeObservation();
-    const output = spawnSync('deno', [
+    const output = spawnSync('bun', [
         'run',
-        '--config=packages/shared-rtc-bench/deno.json',
-        '--allow-read',
         `packages/shared-rtc-bench/workloads/group-coordination/${entry}`,
         ...fixture.arguments
     ], { encoding: 'utf8' });
@@ -489,16 +487,13 @@ it('keeps one-item direct diagnostics import-safe, nested, and overwrite-capable
         const output = join(directory, String(index), 'result.json');
         const command = [
             'run',
-            '--config=packages/shared-rtc-bench/deno.json',
-            '--allow-read',
-            '--allow-write',
             `packages/shared-rtc-bench/workloads/group-coordination/${entry}`,
             ...capabilityArguments,
             '--runs=1',
             `--out=${output}`
         ];
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
-        expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).toBe(0);
+        expect(spawnSync('bun', command, { encoding: 'utf8' }).status).toBe(0);
         expect(JSON.parse(readFileSync(output, 'utf8')).results).toHaveLength(1);
     }
 });

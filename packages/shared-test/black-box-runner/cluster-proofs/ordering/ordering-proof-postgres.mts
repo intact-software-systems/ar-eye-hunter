@@ -1,4 +1,4 @@
-import { assert } from '@std/assert';
+import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import { waitForProofCondition } from '../cluster-proof-socket.mts';
 
@@ -15,7 +15,7 @@ export class OrderingProofPostgres {
         const rows = await this.#sql<{ store_value: string; }[]>`
             select store_value from runtime_state_store where store_key like ${'%:sent:' + msgId}
         `;
-        assert(rows.length === 1, `One sent record for ${msgId}, found ${rows.length}`);
+        assert.ok(rows.length === 1, `One sent record for ${msgId}, found ${rows.length}`);
         return JSON.parse(rows[0]!.store_value).sentPositions ?? null;
     }
 
@@ -25,7 +25,7 @@ export class OrderingProofPostgres {
                 select ri_status as status from resource_inbox
                 where ri_type_id = 'WS_OUTBOX' and ri_resource::jsonb->'id'->>'msgId' = ${msgId}
             `;
-            assert(rows.length <= 1, 'One outbox row per message');
+            assert.ok(rows.length <= 1, 'One outbox row per message');
             return rows[0]?.status === 'COMPLETED';
         }, `outbox completion of ${msgId}`);
     }

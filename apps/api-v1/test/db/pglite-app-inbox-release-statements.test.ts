@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type {
@@ -30,7 +31,7 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const SERVICE_ID = 'pglite-release-statements';
 
-Deno.test('PGlite AppInbox success committed by its handler transaction updates no inbox row afterwards and notifies its waiter once per finalized entry', async () => {
+test('PGlite AppInbox success committed by its handler transaction updates no inbox row afterwards and notifies its waiter once per finalized entry', async () => {
     await withPGliteSql(async (sql) => {
         const statements: string[] = [];
         const recordingSql = recordStatements(sql, statements);

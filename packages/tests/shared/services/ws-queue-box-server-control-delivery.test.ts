@@ -27,6 +27,7 @@ import { createOutboundTestRuntimeFor } from '../alm/outbound-runtime-test-fixtu
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 /** Every instance of one deployment shares this server peer id, as `wsRuntimeName` does in production. */
 const SERVER_ID = 'server';
@@ -257,7 +258,7 @@ function createControlInstance(
 ): ControlInstance {
     const socket = new JsonWebSocketServer();
     for (const connection of connections) {
-        socket.addConnection(connection);
+        attachTestWebSocket(socket, connection);
     }
     const recipients = () => [...socket.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();

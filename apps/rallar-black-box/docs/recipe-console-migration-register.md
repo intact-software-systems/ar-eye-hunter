@@ -72,7 +72,7 @@ Ready-State #11–#13 are satisfied by the three exact tests in
 all 22 canonical/contextual routes and aliases, five failure-derived tools,
 safe context/return, ten lazy owners/effect shutdown, twelve exceptions, and
 cold reciprocal chunk/CSS isolation. Fresh qualification passes 1,564/1,564
-app tests across 148 files, shared/app type and Deno gates, a 776-module
+app tests across 148 files, shared/app type and Bun gates, a 776-module
 build/chunk assertion, and 190 Recipe Console cases with one configured-live
 skip, plus 30 legacy cases with
 two configured-stack skips. The exact unavailable prerequisite remains `Set
@@ -121,7 +121,7 @@ Tasks 1–4 add tolerant schema-v1 Fleet report validation, deterministic
 report/geographic analysis, legacy parity adapters, collision-safe public
 identities, bounded bundle transfer, a lazy authorized one-bundle capability,
 and exact pending-safe Fleet selection and handoff contracts. The stable gate
-passes 267/267 focused tests, shared/app TypeScript, direct Deno checks for the
+passes 267/267 focused tests, shared/app TypeScript, direct Bun checks for the
 new shared modules, and two clean independent exit reviews.
 
 At this milestone Direction A was approved, and before the visual workspace
@@ -148,7 +148,7 @@ keyboard/touch/reduced-motion behavior, all operational states, URL and browser
 history restoration, CSS isolation, inactive cleanup, reciprocal chunk
 separation, and unchanged `fleet`, `fleet-report`, and `fleet-reports` legacy
 aliases. Fresh qualification passed 279/279 focused tests, shared/app TypeScript
-and shared Deno gates, the 758-module build, reciprocal chunk assertion,
+and shared Bun gates, the 758-module build, reciprocal chunk assertion,
 1,472/1,472 complete app tests across 139 files, Fleet 7/7, visual no-update
 3/3, broader Recipe Console 65/65, the complete Recipe Console configuration
 with 179 passed and one exact configured-live skip, legacy Fleet/navigation
@@ -183,7 +183,7 @@ first/middle/last search and traversal, exact parse/work counters, bounded DOM,
 heartbeat progress, desktop/tablet/touch portrait/touch landscape, keyboard,
 reduced motion, operational states, CSS isolation, chunk boundaries, and
 cleanup. Fresh exit passed 1,385/1,385 app tests, shared/app TypeScript, seven
-shared Deno entries, a 699-module build and reciprocal chunk proof, 169
+shared Bun entries, a 699-module build and reciprocal chunk proof, 169
 available Recipe Console browser cases, and 28/28 preserved legacy cases. Four
 independent review tracks are clean after focused selector/focus repairs.
 
@@ -309,7 +309,7 @@ keyboard, reduced-motion, coarse-target, four-viewport, CSS-isolation, and
 lazy/unmounted boundaries are executable proof.
 
 Fresh exit passed 330/330 focused tests, 1,066/1,066 app tests, shared/app
-typechecks, seven shared Deno entries, a 616-module build and chunk assertion,
+typechecks, seven shared Bun entries, a 616-module build and chunk assertion,
 control-server check plus 79/79 tests, 147 Recipe Console browser cases with
 one configured-live skip, and 28/28 legacy navigation/ticket cases. The in-app
 Browser also confirmed contained desktop Execute and portrait/landscape Tune
@@ -393,7 +393,7 @@ deleted focus/dependent/comparison fields. The combined filtered Candidate,
 cleanup, copied-link, and back/forward sequence is green; async
 refresh-before-replace remains a Task 7 UI-hook responsibility.
 
-Fresh proof is 176/176 related tests, complete shared TypeScript and seven Deno
+Fresh proof is 176/176 related tests, complete shared TypeScript and seven Bun
 entries, app TypeScript, and final review with no Critical or Important issue.
 The review-driven scalability fix limits identity/manifest work to the visible
 100 and skips Tune performance derivation while retaining exact full-set counts
@@ -427,7 +427,7 @@ harmless unknown state remain independent and copy/popstate compatible. Legacy
 raw `failureType`, query, substring, inclusive date, and stable order behavior
 is unchanged.
 
-Fresh proof is 78/78 focused tests, shared TypeScript and seven Deno entries,
+Fresh proof is 78/78 focused tests, shared TypeScript and seven Bun entries,
 app TypeScript, and independent review with no Critical or Important
 implementation defect. The combined cleanup/back-forward sequence is deferred
 to Task 5, and URL-over-preset precedence to Task 4; no parity or cutover claim
@@ -477,7 +477,7 @@ OpenAPI, current-state, and command-execution documentation distinguish all
 three modes without implying that preview deletes.
 
 Fresh evidence is 31/31 focused shared tests, complete shared TypeScript and
-seven-entry Deno checks, app TypeScript, server check, and 79/79 real-loopback
+seven-entry Bun checks, app TypeScript, server check, and 79/79 real-loopback
 server tests. Independent reviews closed legacy-bound leakage, noncanonical
 signature aliases, and overlapping OpenAPI success schemas, then reported no
 remaining Critical or Important issue.
@@ -525,7 +525,7 @@ document overflow, and both CSS load orders.
 Fresh exit evidence is 247/247 focused Vitest tests; a qualified-green complete
 883-test app suite across 93 files after the restricted sandbox's two denied
 IPC/loopback cases passed 9/9 with required permission; complete shared-test
-TypeScript and seven-entry Deno checks; app TypeScript; a 580-module build;
+TypeScript and seven-entry Bun checks; app TypeScript; a 580-module build;
 reciprocal experience chunks; 137 available Recipe Console Chromium tests with
 one configured-live skip; 28/28 preserved legacy navigation/ticket tests; and
 57/57 control-server tests. Independent shared, app/state, browser/
@@ -572,7 +572,7 @@ legacy load orders.
 Fresh exit evidence is 226/226 focused tests, 786/786 complete app tests,
 shared-test and app TypeScript checks, a 551-module production build, 119
 available Recipe Console Chromium tests with one configured-live skip, 28/28
-preserved legacy navigation/ticket tests, and 57/57 control-server Deno tests.
+preserved legacy navigation/ticket tests, and 57/57 control-server Bun tests.
 Analyze's own four browser owners pass 19/19, including keyboard-owned picker,
 actual drop, and activated legacy Runs/Shared Test destinations. The in-app
 Browser was unavailable exactly as `No browser is available`;
@@ -656,7 +656,7 @@ Final validation passes 229/229 focused tests; 708/708 complete app tests across
 72 files; shared-test and SPA typechecks; a 507-module production build and
 reciprocal experience-chunk assertion; 100 passed Recipe Console Chromium tests
 plus one configured-live skip; 28/28 exact legacy navigation/ticket tests; and
-control-server check plus 57/57 Deno tests. Desktop, tablet, 430×932 portrait,
+control-server check plus 57/57 Bun tests. Desktop, tablet, 430×932 portrait,
 932×430 landscape, keyboard, 44px targets, focus trap/restore, reduced motion,
 announcements, contained scrolling, operational-state transitions, refreshed
 Monitor baselines, and actual Monitor CSS in both load orders pass. The in-app
@@ -771,7 +771,7 @@ Create, Stage, Start, Cancel, and schema-v2 artifact export. It reuses the
 Iteration 3 credential-origin policy while keeping read, write, and artifact
 challenge state separate; no token, raw fetch, or control-run-manager
 ownership enters Execute React code. The reviewed API slice passed 79/79
-focused tests and SPA typecheck. The default shared-test Deno aggregate was
+focused tests and SPA typecheck. The default shared-test Bun aggregate was
 not counted as passed because manual node-modules mode could not resolve
 `npm:@types/node`; the same seven entries passed with
 `--node-modules-dir=none`.
@@ -818,7 +818,7 @@ tests across 67 files outside the socket-restricted sandbox, shared-test and
 SPA typechecks, a 479-module production build, reciprocal experience-chunk
 proof, 89 passed Recipe Console Chromium tests with one configured-live skip,
 28/28 exact legacy navigation/ticket tests, and control-server check plus
-57/57 Deno tests. Desktop, tablet, 430×932 portrait, 932×430 landscape,
+57/57 Bun tests. Desktop, tablet, 430×932 portrait, 932×430 landscape,
 keyboard-only paths, 44px targets, reduced motion, focus trap/restore,
 contained scrolling, operational announcements, and actual Execute CSS in
 both load orders pass. The in-app Browser was unavailable exactly as
@@ -867,7 +867,7 @@ Exit evidence is 155/155 focused tests, 567/567 complete app tests across 62
 files outside the socket-restricted sandbox, app typecheck, a 458-module build,
 reciprocal chunk proof, 64/64 Recipe Console Chromium tests,
 28/28 exact legacy navigation/ticket tests, control-server check and 57/57
-tests, shared-test TypeScript plus seven Deno entry checks using the documented
+tests, shared-test TypeScript plus seven Bun entry checks using the documented
 `--node-modules-dir=none` isolated-worktree workaround, and the reproducible 1/1
 non-mutating standard-harness smoke
 `RALLAR_BLACK_BOX_LOCAL_CONTROL_SMOKE=1 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/control-foundation-local-smoke.spec.ts`
@@ -883,7 +883,7 @@ review found no Critical or Important issue.
 The configured Postgres lifecycle remains **skipped, not passed**, for exactly:
 `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
 apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
-The local GET smoke and Deno suite prove read/contract behavior only, not a
+The local GET smoke and Bun suite prove read/contract behavior only, not a
 distributed lifecycle. At the Iteration 3 checkpoint the configured
 `recipe-console-execute.spec.ts` acceptance was absent; visible create, stage,
 start, monitor, cancel, and export plus the configured lifecycle proof remained

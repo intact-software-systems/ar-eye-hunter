@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -20,7 +21,7 @@ import {
     withPGliteSql
 } from '../../db/pglite-auth-test-harness.ts';
 
-Deno.test('admin prune PSQL repository reads and deletes one deterministic page', async () => {
+test('admin prune PSQL repository reads and deletes one deterministic page', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         for (const key of ['1', '2', '3']) {
@@ -71,7 +72,7 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
     });
 });
 
-Deno.test('admin prune PSQL repository excludes its executing resource row', async () => {
+test('admin prune PSQL repository excludes its executing resource row', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         const inbox = createPSqlResourceInboxRepository(sql, () => new Date());
@@ -122,7 +123,7 @@ Deno.test('admin prune PSQL repository excludes its executing resource row', asy
     });
 });
 
-Deno.test('admin prune successor outbox rejects an identical active identity', async () => {
+test('admin prune successor outbox rejects an identical active identity', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         const entry = toAdminPruneOutbox(
@@ -155,7 +156,7 @@ Deno.test('admin prune successor outbox rejects an identical active identity', a
     });
 });
 
-Deno.test('admin prune PSQL progress CAS completes the aggregate result', async () => {
+test('admin prune PSQL progress CAS completes the aggregate result', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
         const aggregate = createAdminPruneAggregate({

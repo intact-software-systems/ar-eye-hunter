@@ -41,8 +41,8 @@ import {
     createRtcPerformanceObservationArchive,
     verifyRtcPerformanceObservationArchive
 } from '../../shared-rtc-bench/baseline/observation/rtc-performance-observation-archive.ts';
-import { createRtcBaselineDenoEvidence } from '../../shared-rtc-bench/baseline/runtime/rtc-baseline-deno-evidence.ts';
-import { createRtcBaselineDenoFinalization } from '../../shared-rtc-bench/baseline/runtime/rtc-baseline-deno-finalization.ts';
+import { createRtcBaselineBunEvidence } from '../../shared-rtc-bench/baseline/runtime/rtc-baseline-bun-evidence.ts';
+import { createRtcBaselineBunFinalization } from '../../shared-rtc-bench/baseline/runtime/rtc-baseline-bun-finalization.ts';
 
 const baselineId = '20260829T081500Z-aaaaaaaaaaaa-e3-memory-gh123456789-a1';
 const runId = 'rallar-live-three-browser-retention-live3-retention-100-abc';
@@ -356,7 +356,7 @@ it.each(
             rawEvidence: JSON.parse(JSON.stringify({ retention: { checkpoints: [{ cycle: 100, agents }] } })),
             runtimeObservation: {
                 git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'main', clean: true },
-                runtime: { node: 'test', npm: 'test', deno: 'test', playwright: 'test', chromium: 'test' },
+                runtime: { node: 'test', npm: 'test', bun: 'test', playwright: 'test', chromium: 'test' },
                 host: {
                     os: 'test',
                     kernel: 'test',
@@ -573,7 +573,7 @@ it.each(
             }],
             repeatLink: null
         };
-        const evidence = createRtcBaselineDenoEvidence({
+        const evidence = createRtcBaselineBunEvidence({
             rootPath,
             filePort: new FilesystemEvidencePort(),
             writerLockRuntime: {
@@ -629,7 +629,7 @@ it.each(
             rawResultRelativePath: attempt.locator.rawResultRelativePath
         });
         expect(recorded.ok).toBe(false);
-        const finalized = await createRtcBaselineDenoFinalization(evidence, sha256).finalizedEvidence.finalize({ baselineId });
+        const finalized = await createRtcBaselineBunFinalization(evidence, sha256).finalizedEvidence.finalize({ baselineId });
         expect(finalized.ok ? [] : finalized.issues).toEqual([]);
         if (!finalized.ok) {
             throw new Error('Failed evidence must finalize structurally.');

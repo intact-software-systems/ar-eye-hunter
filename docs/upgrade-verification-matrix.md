@@ -9,27 +9,27 @@
 
 ## Commands and Evidence
 
-| Command                                                                                         | Scope                                   | Result                  | Evidence                                                                                                |
-| ----------------------------------------------------------------------------------------------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| `npm run test:unit`                                                                             | Unit validation (Vitest)                | ✅ PASS                 | `435 passed                                                                                             |
-| `npx npm-check-updates --workspaces --jsonUpgraded --target latest`                             | Dependency drift check (all workspaces) | ✅ PASS                 | Returns `{}` for all targeted manifests                                                                 |
-| `npm run typecheck`                                                                             | TypeScript compile validation           | ✅ PASS                 | Full workspace typecheck completed successfully                                                         |
-| `npm run test:deno`                                                                             | Deno unit + shared-test checks          | ✅ PASS                 | `182 passed`, `79 passed`, `33 + 113` etc from deno checks; no test failures                            |
-| `npm run test:e2e`                                                                              | Browser E2E (Playwright)                | ✅ PASS                 | Full run passed in a bind-allowed environment (no `listen EPERM` errors)                                |
-| `npm run test:full-stack:memory`                                                                | Full-stack memory e2e                   | ✅ PASS                 | Full run passed in a bind-allowed environment                                                           |
-| `npm audit --json`                                                                              | Vulnerability audit                     | ✅ PASS                 | `vulnerabilities: total 0`                                                                              |
-| `npm run test:ci`                                                                               | Full CI chain                           | ✅ PASS                 | End-to-end and full-stack stages completed after resolving bind restrictions in a supported environment |
-| `cd apps/api-v1 && deno cache --frozen --config deno.json src/main.ts`                          | Deno lock consistency                   | ✅ PASS                 | Frozen cache succeeds                                                                                   |
-| `cd apps/rallar-black-box-control-server && deno cache --frozen --config deno.json src/main.ts` | Deno lock consistency                   | ✅ PASS                 | Frozen cache succeeds                                                                                   |
-| `cd apps/relic-hunter-server-v1 && deno cache --frozen --config deno.json src/main.ts`          | Deno lock consistency                   | ✅ PASS (after refresh) | Initially reported drift, then lock refreshed and frozen check passed                                   |
-| `npm run check:shared-test`                                                                     | Shared-test TS + Deno checks            | ✅ PASS                 | `Check` of 8 black-box runner scripts succeeded                                                         |
+| Command                                                                       | Scope                                   | Result                  | Evidence                                                                                                |
+| ----------------------------------------------------------------------------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `npm run test:unit`                                                           | Unit validation (Vitest)                | ✅ PASS                 | `435 passed                                                                                             |
+| `npx npm-check-updates --workspaces --jsonUpgraded --target latest`           | Dependency drift check (all workspaces) | ✅ PASS                 | Returns `{}` for all targeted manifests                                                                 |
+| `npm run typecheck`                                                           | TypeScript compile validation           | ✅ PASS                 | Full workspace typecheck completed successfully                                                         |
+| `npm run test:bun`                                                            | Bun unit + shared-test checks           | ✅ PASS                 | `182 passed`, `79 passed`, `33 + 113` etc from bunx tsc -p tsconfig.json --noEmits; no test failures    |
+| `npm run test:e2e`                                                            | Browser E2E (Playwright)                | ✅ PASS                 | Full run passed in a bind-allowed environment (no `listen EPERM` errors)                                |
+| `npm run test:full-stack:memory`                                              | Full-stack memory e2e                   | ✅ PASS                 | Full run passed in a bind-allowed environment                                                           |
+| `npm audit --json`                                                            | Vulnerability audit                     | ✅ PASS                 | `vulnerabilities: total 0`                                                                              |
+| `npm run test:ci`                                                             | Full CI chain                           | ✅ PASS                 | End-to-end and full-stack stages completed after resolving bind restrictions in a supported environment |
+| `cd apps/api-v1 && bun install --frozen src/main.ts`                          | Bun lock consistency                    | ✅ PASS                 | Frozen cache succeeds                                                                                   |
+| `cd apps/rallar-black-box-control-server && bun install --frozen src/main.ts` | Bun lock consistency                    | ✅ PASS                 | Frozen cache succeeds                                                                                   |
+| `cd apps/relic-hunter-server-v1 && bun install --frozen src/main.ts`          | Bun lock consistency                    | ✅ PASS (after refresh) | Initially reported drift, then lock refreshed and frozen check passed                                   |
+| `npm run check:shared-test`                                                   | Shared-test TS + Bun checks             | ✅ PASS                 | `Check` of 8 black-box runner scripts succeeded                                                         |
 
 ## Lockfile updates generated by the upgrade pass
 
 - `package-lock.json`
-- `deno.lock`
-- `apps/api-v1/deno.lock`
-- `apps/relic-hunter-server-v1/deno.lock`
+- `package-lock.json`
+- `apps/api-v1/package-lock.json`
+- `apps/relic-hunter-server-v1/package-lock.json`
 
 ## Environment caveat (e2e/full-stack)
 

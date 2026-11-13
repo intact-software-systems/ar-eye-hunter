@@ -1,7 +1,8 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AgentSessionTicketResponse, AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
@@ -12,7 +13,7 @@ const NOW_EPOCH_MS = Date.now();
 const ISSUE_REQUEST_ID = 'AgentIssueRequest_01234567';
 const CONSUME_REQUEST_ID = 'AgentConsumeRequest_012345';
 
-Deno.test('agent session ticket route rejects unauthenticated issue requests', async () => {
+test('agent session ticket route rejects unauthenticated issue requests', async () => {
     const app = createApp({
         requireApiAuthSession: () => Promise.reject(authenticationRequired('Bearer credential was not provided'))
     });
@@ -36,7 +37,7 @@ Deno.test('agent session ticket route rejects unauthenticated issue requests', a
     );
 });
 
-Deno.test('agent session ticket route mints distinct same-user sessions and consumes a ticket once', async () => {
+test('agent session ticket route mints distinct same-user sessions and consumes a ticket once', async () => {
     const sessions = new Map<string, AuthSession>();
     const consumedByRequest = new Map<string, AuthSession>();
     const app = createApp({

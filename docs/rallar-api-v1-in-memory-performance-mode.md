@@ -14,7 +14,7 @@ runtime state disappear when the process restarts.
 From `apps/api-v1`:
 
 ```sh
-deno task start:memory
+npm run start:rallar:api:memory
 ```
 
 The task sets only:
@@ -38,7 +38,7 @@ PORT=18080 \
 RALLAR_API_BASE_URL=http://127.0.0.1:18080 \
 RALLAR_WS_BASE_URL=ws://127.0.0.1:18080 \
 CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176 \
-deno task start:memory
+npm run start:rallar:api:memory
 ```
 
 From the repository root, `npm run start:rallar:api:memory` starts the same

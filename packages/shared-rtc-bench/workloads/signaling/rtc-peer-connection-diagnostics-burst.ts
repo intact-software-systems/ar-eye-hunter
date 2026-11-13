@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises';
+
 import { runRtcBaselineAcceptedWorkerSamples } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import {
     parseRtcBaselineBoundedInteger,
@@ -104,7 +106,7 @@ function acceptedWorkerIdentity(worker: AcceptedArguments) {
 }
 
 async function main(): Promise<void> {
-    const parsed = parseRtcPeerConnectionDiagnosticsArguments(Deno.args);
+    const parsed = parseRtcPeerConnectionDiagnosticsArguments(process.argv.slice(2));
     if (!parsed.ok) {
         throw new Error(JSON.stringify(parsed.issues));
     }
@@ -134,7 +136,7 @@ async function main(): Promise<void> {
                 offerCollisionsPerPeer: parsed.value.input.offerCollisionsPerPeer
             });
         }
-        await Deno.writeTextFile(
+        await writeFile(
             parsed.value.out,
             JSON.stringify(
                 {
@@ -145,7 +147,7 @@ async function main(): Promise<void> {
                 null,
                 2
             ),
-            { createNew: true }
+            { encoding: 'utf8', flag: 'wx' }
         );
         writeLine(`Wrote ${parsed.value.out}`);
     }

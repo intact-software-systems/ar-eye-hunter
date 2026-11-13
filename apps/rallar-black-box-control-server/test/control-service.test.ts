@@ -1,3 +1,6 @@
+import { test } from 'bun:test';
+import assert from 'node:assert/strict';
+
 import {
     parseControlClientMessage,
     parseControlServerMessage,
@@ -5,7 +8,6 @@ import {
     type ControlClientEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { assert } from '@std/assert';
 
 import { controlRunEventsJsonl, controlRunResultsJsonl, createControlRunArtifactBundle } from '../src/control-artifacts.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
@@ -21,7 +23,7 @@ import {
 } from './support/control-service-test-fixtures.ts';
 import { takeAgentDispatchableCommands } from './support/take-agent-dispatchable-commands.ts';
 
-Deno.test('control service queues and dispatches commands to a registered agent', () => {
+test('control service queues and dispatches commands to a registered agent', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: (() => {
             let now = 1_000;
@@ -50,7 +52,7 @@ Deno.test('control service queues and dispatches commands to a registered agent'
     assertJsonEquals(run.agents[0].connected, true);
 });
 
-Deno.test('control service stores results and suppresses completed resume commands', () => {
+test('control service stores results and suppresses completed resume commands', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
@@ -100,7 +102,7 @@ Deno.test('control service stores results and suppresses completed resume comman
 });
 
 for (const outerOnly of [false, true]) {
-    Deno.test(`bounded snapshot restores retained ${outerOnly ? 'outer-only' : 'ordinary'} facts after completed queue entries are trimmed`, () => {
+    test(`bounded snapshot restores retained ${outerOnly ? 'outer-only' : 'ordinary'} facts after completed queue entries are trimmed`, () => {
         const service = createRallarBlackBoxControlService(toControlServiceInput({
             runtimeRetentionBounds: { commands: 0, results: 1 }
         }));
@@ -130,7 +132,7 @@ for (const outerOnly of [false, true]) {
     });
 }
 
-Deno.test('control service hardens command enqueueing and run tokens', () => {
+test('control service hardens command enqueueing and run tokens', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now,
@@ -202,7 +204,7 @@ Deno.test('control service hardens command enqueueing and run tokens', () => {
     assertJsonEquals(service.validateRunToken('run-1', 'agent-1', token.token), false);
 });
 
-Deno.test('control service stores Rallar identity metadata on register and heartbeat', () => {
+test('control service stores Rallar identity metadata on register and heartbeat', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({
@@ -254,7 +256,7 @@ Deno.test('control service stores Rallar identity metadata on register and heart
     assertJsonEquals(run.heartbeats[0].identity?.groupId, 'new-group');
 });
 
-Deno.test('control service stores heartbeat and event telemetry', () => {
+test('control service stores heartbeat and event telemetry', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
@@ -289,7 +291,7 @@ Deno.test('control service stores heartbeat and event telemetry', () => {
     assertJsonEquals(run.agents[0].receivedEventCount, 1);
 });
 
-Deno.test('control service stores stats and redacted reports separately', () => {
+test('control service stores stats and redacted reports separately', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
@@ -346,7 +348,7 @@ Deno.test('control service stores stats and redacted reports separately', () => 
     assertJsonEquals(JSON.stringify(run.reports).includes('"results"'), false);
 });
 
-Deno.test('control service compacts canonical reports and preserves arbitrary event payloads', () => {
+test('control service compacts canonical reports and preserves arbitrary event payloads', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
@@ -406,7 +408,7 @@ Deno.test('control service compacts canonical reports and preserves arbitrary ev
     assertJsonEquals(opaquePayload, opaqueEnvelope.payload);
 });
 
-Deno.test('control service compacts recipe run results while preserving distributed rollups', () => {
+test('control service compacts recipe run results while preserving distributed rollups', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
 
@@ -442,7 +444,7 @@ Deno.test('control service compacts recipe run results while preserving distribu
     assertJsonEquals(value.resultCount, 1);
 });
 
-Deno.test('control service compact result failure counts include all composite child failures', () => {
+test('control service compact result failure counts include all composite child failures', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const failedChildren = Array.from({ length: 25 }, (_, index) => ({
@@ -503,7 +505,7 @@ Deno.test('control service compact result failure counts include all composite c
     assertJsonEquals(value.failures.length, 20);
 });
 
-Deno.test('control service keeps terminal distributed rollups stable after runtime trimming', () => {
+test('control service keeps terminal distributed rollups stable after runtime trimming', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         runtimeRetentionBounds: {
             commands: 10,
@@ -555,7 +557,7 @@ Deno.test('control service keeps terminal distributed rollups stable after runti
     assertJsonEquals(stillPassed.rollup.summary.passedParticipants, 1);
 });
 
-Deno.test('control service runtime retention trims old evidence but keeps active distributed results', () => {
+test('control service runtime retention trims old evidence but keeps active distributed results', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         runtimeRetentionBounds: {
             commands: 2,
@@ -626,7 +628,7 @@ Deno.test('control service runtime retention trims old evidence but keeps active
     assertJsonEquals(retainedReport.payload.reportId, 'report-2');
 });
 
-Deno.test('control service report dedupe survives report payload retention trimming', () => {
+test('control service report dedupe survives report payload retention trimming', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         runtimeRetentionBounds: {
             commands: 10,
@@ -671,7 +673,7 @@ Deno.test('control service report dedupe survives report payload retention trimm
     );
 });
 
-Deno.test('control service returns bounded snapshots and resets or deletes runs', () => {
+test('control service returns bounded snapshots and resets or deletes runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
@@ -750,7 +752,7 @@ Deno.test('control service returns bounded snapshots and resets or deletes runs'
     assertJsonEquals(service.deleteRun('run-1'), false);
 });
 
-Deno.test('control service restores persisted snapshots as disconnected runs', () => {
+test('control service restores persisted snapshots as disconnected runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.enqueueCommand({
@@ -770,7 +772,7 @@ Deno.test('control service restores persisted snapshots as disconnected runs', (
     assertJsonEquals(run.agents[0].connected, false);
     assertJsonEquals(run.commands[0].envelope.commandId, 'configure-1');
 });
-Deno.test('control service records duplicate agent socket replacement diagnostics', () => {
+test('control service records duplicate agent socket replacement diagnostics', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => 2_000
     }));
@@ -783,7 +785,7 @@ Deno.test('control service records duplicate agent socket replacement diagnostic
     assertJsonEquals(run.events[0].kind, 'diagnostic');
     assertJsonEquals((run.events[0].payload as { topic?: string; }).topic, 'rallar.bb.control.duplicate-agent-socket');
 });
-Deno.test('control service prunes old runs by update time', () => {
+test('control service prunes old runs by update time', () => {
     let now = 1_000;
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now++
@@ -805,7 +807,7 @@ Deno.test('control service prunes old runs by update time', () => {
     assertJsonEquals(service.snapshot().runs.map((run) => run.runId), ['run-new']);
 });
 
-Deno.test('control protocol parses client envelopes before server ingestion', () => {
+test('control protocol parses client envelopes before server ingestion', () => {
     const parsed = parseControlClientMessage(JSON.stringify(toRegisterEnvelope({ completedCommandIds: ['configure-1'] })));
 
     assert(parsed.ok);
@@ -825,7 +827,7 @@ Deno.test('control protocol parses client envelopes before server ingestion', ()
     );
 });
 
-Deno.test('control protocol accepts scoped RTC commands inside recipes', () => {
+test('control protocol accepts scoped RTC commands inside recipes', () => {
     const parsed = parseControlServerMessage(
         JSON.stringify({
             kind: 'command',
@@ -872,6 +874,6 @@ Deno.test('control protocol accepts scoped RTC commands inside recipes', () => {
         }
     );
 
-    assert(parsed.ok, parsed.ok ? undefined : parsed.error);
+    assert(parsed.ok);
     assertJsonEquals(parsed.envelope.command.kind, 'recipe.load');
 });

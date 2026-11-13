@@ -1,4 +1,5 @@
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -36,22 +37,22 @@ export namespace ManagedClusterProof {
  * answers the run's artifact directory once the scenario passed.
  */
 export async function runManagedClusterProof(input: ManagedClusterProof.Input): Promise<string> {
-    const options = parseApiV1BlackBoxArgs(Deno.args);
-    assert(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
-    const environment = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
+    const options = parseApiV1BlackBoxArgs(process.argv.slice(2));
+    assert.ok(options.backend === 'postgres' && options.secondaryPort && options.tertiaryPort && !options.recipesOnly);
+    const environment = toApiV1BlackBoxEnvironment(options, process.env);
     const artifactDir = resolve(options.artifactDir, environment.RALLAR_BB_EXECUTION_TOKEN!);
     const repoRootPath = fileURLToPath(new URL('../../../../', import.meta.url));
-    await Deno.mkdir(artifactDir, { recursive: true });
+    await mkdir(artifactDir, { recursive: true });
     await withManagedPostgresRunDatabase(environment.DATABASE_URL!, options.runId, async (databaseUrl) => {
         const env = { ...environment, DATABASE_URL: databaseUrl };
-        const migration = await new Deno.Command('npm', {
-            args: ['run', 'db:migrate'],
+        const migration = Bun.spawn({
+            cmd: ['npm', 'run', 'db:migrate'],
             cwd: repoRootPath,
             env,
-            stdout: 'null',
+            stdout: 'ignore',
             stderr: 'inherit'
-        }).output();
-        assertEquals(migration.code, 0);
+        });
+        assert.deepEqual(await migration.exited, 0);
         const plans = toManagedApiServerPlans(options, env, artifactDir)
             .map((plan, index) => labelProofPlan(plan, index, input.applicationNamePrefix));
         await withManagedApiServerPlans({
@@ -60,7 +61,7 @@ export async function runManagedClusterProof(input: ManagedClusterProof.Input): 
             repoRootPath,
             artifactDir
         }, {
-            writeEmptyLogFile: (path) => Deno.writeTextFile(path, ''),
+            writeEmptyLogFile: (path) => writeFile(path, ''),
             startServer: startManagedApiServer,
             waitForReady: waitForManagedApiReady,
             toDiagnosticSecrets: managedApiDiagnosticSecrets,

@@ -1,4 +1,4 @@
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';

@@ -47,6 +47,27 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'asNodes',
         maximumMagnitude: 1
     }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'someNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNode',
+        maximumMagnitude: 1
+    }),
+    // Parser-owned AST fields remain untrusted during traversal; only records with a string type reach operation analysis.
+    Object.freeze({
+        path: 'packages/tests/repo/mutation-route-ownership/routing/mutation-routing-inventory.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asNodes',
+        maximumMagnitude: 1
+    }),
     // Whole-file review: bounded all-or-none admission keeps staged group, roster and reservation predecessors visible together.
     Object.freeze({
         path: 'packages/shared-server/rallar-system/group-state/move/compute-group-move-admission.ts',
@@ -711,20 +732,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'asNodes',
         maximumMagnitude: 1
     }),
-    // Canonical filesystem JSON must be a record with a record imports member;
-    // every target is checked as a string before the import mapping leaves.
-    Object.freeze({
-        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readNativeReceiptDenoImports'
-    }),
-    // The caught boundary preserves an original Error's identity and otherwise
-    // normalizes through String into Error; no raw exception feeds domain policy.
-    Object.freeze({
-        path: 'apps/api-v1/test/db/native-receiver-receipts.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toNativeReceiptFailure'
-    }),
     // This caught/framework boundary immediately normalizes Error.message or
     // String into response text and derives status only from RequestAuthFailure.
     // No raw exception reaches domain logic; only this exact owner is reviewed.
@@ -816,12 +823,12 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined
     }),
     // Actual attempted/replacement snapshot envelopes are record-guarded before
-    // their snapshot values are emitted only as opaque assertion evidence. The
-    // caller independently checks complete DTOs; no raw value feeds domain logic.
+    // their snapshot values are asserted only as opaque evidence. No raw value
+    // feeds domain logic.
     Object.freeze({
-        path: 'apps/rallar-black-box-control-server/test/support/run-control-snapshot-atomic-replacement-fixture.ts',
+        path: 'apps/rallar-black-box-control-server/test/control-snapshot-atomic-replacement.test.ts',
         rule: 'boundary.unknown',
-        symbol: 'runControlSnapshotAtomicReplacementFixture'
+        symbol: undefined
     }),
     // The native execFile rejection is immediately narrowed for captured stdout;
     // every other rejection is normalized through canonical toError, preserving
@@ -2971,6 +2978,490 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'model',
         maximumMagnitude: 1
+    }),
+    // Caught-exception normalization: the native filesystem/request error is read only for its code and never becomes domain input.
+    Object.freeze({
+        path: 'apps/api-v1/src/db/pglite-black-box-evidence-snapshot.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/src/group-state/read-group-state-route-request.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isAbortedRequestBodyError',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/src/routes/spa-statistics-routes.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toErrorResponse',
+        maximumMagnitude: 1
+    }),
+    // Captured route/dependency calls are typed unknown[] and asserted per call; the array never leaves the test.
+    Object.freeze({
+        path: 'apps/api-v1/test/client-state/client-state-read-routes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/group-state/group-state-point-read-routes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/routes/spa-statistics-routes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 4
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/routes/state-api-cross-feature-routes.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/services/runtime-state-expiry-startup.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 7
+    }),
+    // HTTP response JSON is decoded as unknown and narrowed through requireRecord/requireArray/postJson before assertion.
+    Object.freeze({
+        path: 'apps/api-v1/test/crdt/routes/crdt-admin-read-operations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/crdt/routes/crdt-admin-read-operations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'postJson',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/crdt/routes/crdt-admin-read-operations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireArray',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/crdt/routes/crdt-admin-read-operations.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord',
+        maximumMagnitude: 2
+    }),
+    // Persisted/decoded query and workspace fixtures admit an untrusted body that the owner narrows before use.
+    Object.freeze({
+        path: 'apps/api-v1/test/db/pglite-client-state-workspace-isolation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'insertClientSession',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/group-state/group-state-route-errors.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createErrorResponseContext',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/api-v1/test/routes/state-snapshot-read-query.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isQueryError',
+        maximumMagnitude: 1
+    }),
+    // caught-exception normalization at the boundary; a catch clause yields unknown in strict mode.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-artifact-storage.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-snapshot-persistence.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/run-completion/control-run-completion.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    // Test double casts a partial non-upgrading server into the full type; the retention routes never reach the upgrade path.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/test/retention-cleanup-route-isolation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // recipe/artifact JSON is opaque until the exact decoder admits it; no field becomes authority or command input.
+    Object.freeze({
+        path: 'apps/rallar-black-box/scripts/rallar-recipe-console-scale-bench.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createParseClassifier',
+        maximumMagnitude: 1
+    }),
+    // Caught-exception normalization: the runtime filesystem error is translated into the owned RtcBaselineNotFound family before it reaches command logic.
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isAlreadyExists',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
+        rule: 'boundary.unknown',
+        symbol: 'translateNodeError',
+        maximumMagnitude: 1
+    }),
+    // Hostile artifact fixtures are cast past their contract to prove the decoder rejects malformed samples; no value escapes the assertion.
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-artifact-validation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 19
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-artifact-validation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'copyArtifact',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-artifact-validation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'ownerAndField',
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-artifact-validation.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'valueAtPath',
+        maximumMagnitude: 3
+    }),
+    // Finalization fixtures build untrusted dependency inputs that the owner decodes before producing the finalized evidence.
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'finalizationDependencies',
+        maximumMagnitude: 3
+    }),
+    // Runtime test doubles carry untrusted environment/issue bytes that the named readers narrow before assertion.
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-bun-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 3
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-bun-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'issueText',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-bun-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'jsonBytes',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-bun-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'persistedEnvironment',
+        maximumMagnitude: 1
+    }),
+    // recipe/artifact JSON is opaque until the exact decoder admits it; no field becomes authority or command input.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 45
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asArray',
+        maximumMagnitude: 2
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asRecord',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'executionMode',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'expectedResult',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isMatrixRun',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'liveSupport',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'numberValue',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseJson',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'providerMode',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireArray',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireRecord',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireSummary',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringList',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringValue',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateBlackBoxRunnerRecipeCatalog',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateBlackBoxRunnerRecipeCatalogEntryFixture',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRedactionPlaceholders',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateSchemaVersion',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/artifact-reader.ts',
+        rule: 'boundary.unknown',
+        symbol: 'visitStrings',
+        maximumMagnitude: 1
+    }),
+    // The handoff contract carries arbitrary monitor evidence by design; fields are read behind try/catch and narrowed before any pattern runs.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/artifacts/handoff-contract.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    // Live preflight reads untrusted environment/URL text and narrows each field through the named decoder before any request is emitted.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asRecord',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'normalizeBaseUrl',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'positiveInteger',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'runBlackBoxRunnerLivePreflight',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringList',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/preflight/live-preflight.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringValue',
+        maximumMagnitude: 1
+    }),
+    // Traffic-plan reducer admits opaque plan JSON and narrows every field through the named reader before the plan is reduced.
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asRecord',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: 'asRecordArray',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: 'firstRecord',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: 'numberValue',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/black-box-runner/traffic-plan-reducer.ts',
+        rule: 'boundary.unknown',
+        symbol: 'stringValue',
+        maximumMagnitude: 1
+    }),
+    // The integrity test reads JSON manifests as unknown and narrows them through readJson before structural assertions.
+    Object.freeze({
+        path: 'packages/tests/repo/repo-code-style-checker-integrity.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/repo/repo-code-style-checker-integrity.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readJson',
+        maximumMagnitude: 1
+    }),
+    // caught-exception normalization at the boundary; a catch clause yields unknown in strict mode.
+    Object.freeze({
+        path: 'packages/tests/shared-server/integration/postgres/test-support/postgres-worker-barrier.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isNotFound',
+        maximumMagnitude: 1
+    }),
+    // Recipe DTO fixtures admit untrusted JSON and narrow it through isRecord/isCrdtAppendHistoryRecipe before assertion.
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-crdt-append-history-recipe.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+        maximumMagnitude: 5
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-crdt-append-history-recipe.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isCrdtAppendHistoryRecipe',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-crdt-append-history-recipe.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord',
+        maximumMagnitude: 1
+    }),
+    // Managed-server plan fixture reads an untrusted plan payload that the owner decodes before the lifecycle is asserted.
+    Object.freeze({
+        path: 'packages/tests/shared-test/api-v1-managed-server-plan-lifecycle.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'getWithManagedApiServerPlans',
+        maximumMagnitude: 1
+    }),
+    // writeTempConfig serializes an arbitrary config object to JSON for the scenario CLI; the value is JSON.stringify input only.
+    Object.freeze({
+        path: 'packages/tests/shared-test/scenario-black-box-config.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'writeTempConfig',
+        maximumMagnitude: 1
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'writeTempConfig',
+        maximumMagnitude: 1
+    }),
+    // One cohesive CLI command family: dispatch, output rendering and the default Bun runtime
+    // shell stay in a single module; extraction would only regroup helpers by role.
+    Object.freeze({
+        path: 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 92
     })
 ]);
 

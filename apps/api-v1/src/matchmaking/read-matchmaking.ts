@@ -1,6 +1,6 @@
 import { decodeStateScope } from '@shared/api/state-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context } from 'jsr:@hono/hono@4.11.9';
+import type { Context } from 'hono';
 import { toApiMutationFailureResponse } from '../routes/api-mutation-route-failure.ts';
 import type { MatchmakingRouteDependencies } from './register-matchmaking-routes.ts';
 

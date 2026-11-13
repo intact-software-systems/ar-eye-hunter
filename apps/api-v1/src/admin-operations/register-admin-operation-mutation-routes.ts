@@ -12,7 +12,7 @@ import {
     toCanonicalGroupTopologyConfigPatch
 } from '@shared/api/group-topology-config-canonical.ts';
 import { assertValidRallarGroupRef } from '@shared/api/rallar-validation.ts';
-import { type Context, type Hono } from 'jsr:@hono/hono@4.11.9';
+import { type Context, type Hono } from 'hono';
 
 import {
     decodeJsonWireValue,

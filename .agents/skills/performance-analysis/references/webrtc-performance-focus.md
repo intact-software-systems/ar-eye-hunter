@@ -206,7 +206,7 @@ Suggested tools and signals:
 - Hidden-tab tests: `document.visibilityState`, timer wakeups, heartbeat missed
   count, reconnect attempts, and foreground recovery behavior.
 
-Prefer real browser runs for media and DataChannel backpressure; Node/Deno
+Prefer real browser runs for media and DataChannel backpressure; Node/Bun
 synthetic harnesses are useful for algorithmic shape but do not model browser
 media internals.
 
@@ -409,12 +409,12 @@ npm run test:shared-black-box:browser:live
 Reusable WebRTC perf harness examples from `scripts/platform/perf/README.md`:
 
 ```sh
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts --peers=500 --ice-candidates=5 --offer-collisions=3 --runs=3 --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts --candidates=25000 --runs=5 --out=tmp/perf/results/rtc-ice-candidate-queue.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-replace-key-bench.ts --queue-size=5000 --replacements=25000 --runs=5 --out=tmp/perf/results/rtc-data-channel-replace-key.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts --channels=10000 --runs=5 --out=tmp/perf/results/webrtc-heartbeat-callback-churn.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts --clients=5000 --desired=1000 --lookups=20 --runs=5 --out=tmp/perf/results/webrtc-group-manager-state.json
-deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts --sessions=600 --runs=5 --out=tmp/perf/results/rtc-room-graph-rtt.json
+bun run packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts --peers=500 --ice-candidates=5 --offer-collisions=3 --runs=3 --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
+bun run packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts --candidates=25000 --runs=5 --out=tmp/perf/results/rtc-ice-candidate-queue.json
+bun run packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-replace-key-bench.ts --queue-size=5000 --replacements=25000 --runs=5 --out=tmp/perf/results/rtc-data-channel-replace-key.json
+bun run packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts --channels=10000 --runs=5 --out=tmp/perf/results/webrtc-heartbeat-callback-churn.json
+bun run packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts --clients=5000 --desired=1000 --lookups=20 --runs=5 --out=tmp/perf/results/webrtc-group-manager-state.json
+bun run packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts --sessions=600 --runs=5 --out=tmp/perf/results/rtc-room-graph-rtt.json
 node packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
 ```
 
@@ -427,7 +427,7 @@ RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR=tmp/perf/results npm run test:rallar:fu
 Profiling patterns documented in `scripts/platform/perf/README.md`:
 
 ```sh
-deno run --config apps/api-v1/deno.json --allow-read --allow-write --v8-flags=--prof,--expose-gc scripts/platform/perf/runtime-validation-bench.ts --mode=full --runs=1 --out=tmp/perf/results/runtime-validation-focused-profiled-run.json
+bun run scripts/platform/perf/runtime-validation-bench.ts --mode=full --runs=1 --out=tmp/perf/results/runtime-validation-focused-profiled-run.json
 node --prof-process tmp/perf/profiles/runtime-validation-focused-v8.log > tmp/perf/profiles/runtime-validation-focused-v8-processed.txt
 ```
 

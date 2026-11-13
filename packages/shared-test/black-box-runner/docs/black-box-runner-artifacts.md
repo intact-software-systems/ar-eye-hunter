@@ -9,7 +9,7 @@ The generic scenario CLI accepts `--artifact-dir`, `--artifacts`, or
 `--record-dir`:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
+bun run packages/shared-test/black-box-runner/scenario-black-box.ts \
   -c packages/shared-test/black-box-runner/examples/rtc-rallar-memory-delivery-semantics.json \
   --artifact-dir=.artifacts/shared-test/rallar-memory-delivery
 ```
@@ -90,7 +90,7 @@ traffic operations are expanded before the artifact is written. Use this file wi
 After a failing seeded traffic run, reduce post-failure noise offline:
 
 ```bash
-deno run -A packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
+bun run packages/shared-test/black-box-runner/traffic-plan-reducer.ts \
   --artifact-dir=.artifacts/shared-test/rallar-memory-traffic
 ```
 

@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { areSameUniqueStringSet } from '../assert/are-same-unique-string-set.ts';
 import { isAssertOperatorSatisfied } from '../assert/assert-value-operators.ts';
 import type { ResolvedGroupAssertionEvidenceRow } from './group-assertions-evidence.ts';

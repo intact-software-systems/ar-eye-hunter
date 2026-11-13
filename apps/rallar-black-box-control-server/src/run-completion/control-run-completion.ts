@@ -1,3 +1,5 @@
+import { readFile, stat } from 'node:fs/promises';
+
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { ControlRunSnapshot, ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
@@ -249,7 +251,7 @@ export class ControlCompletedRunArchive {
         const path = toCompletionFilePath(storageDir, runId);
         const write = await writeSlicedJsonFile({
             path,
-            tempPath: `${path}.tmp-${Deno.pid}-${this.sequence += 1}`,
+            tempPath: `${path}.tmp-${process.pid}-${this.sequence += 1}`,
             pieces: toJsonPieces(candidate.snapshot, 0)
         });
         recordCompletionTiming(timingSink, runId, write);
@@ -300,13 +302,13 @@ export class ControlCompletedRunArchive {
         }
         const path = `${storageDir}/${completion.file.path}`;
         try {
-            return decodeControlRunSnapshot(JSON.parse(await Deno.readTextFile(path))).mapLeft((issue) => ({
+            return decodeControlRunSnapshot(JSON.parse(await readFile(path, 'utf8'))).mapLeft((issue) => ({
                 code: 'completed-run-file-invalid' as const,
                 message: `The completed run ${runId} could not be read from ${completion.file.path}: ${issue}`
             }));
         }
         catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
+            if (!isNotFound(error)) {
                 const message = error instanceof Error ? error.message : String(error);
                 return Either.ofLeft({
                     code: 'completed-run-file-invalid',
@@ -369,15 +371,19 @@ function toRelativeCompletionFilePath(runId: string): string {
 
 async function isPresentFile(path: string): Promise<boolean> {
     try {
-        await Deno.stat(path);
+        await stat(path);
         return true;
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isNotFound(error)) {
             return false;
         }
         throw error;
     }
+}
+
+function isNotFound(error: unknown): boolean {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
 }
 
 function recordCompletionTiming(sink: RallarTimingSink | undefined, runId: string, write: SlicedJsonFileWrite): void {

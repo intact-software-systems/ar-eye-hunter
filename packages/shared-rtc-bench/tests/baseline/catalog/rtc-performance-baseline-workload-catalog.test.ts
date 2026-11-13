@@ -152,7 +152,7 @@ describe('RTC baseline workload catalog', () => {
                 )
             )
         ]).toEqual([
-            'synthetic-path|deno|run,--config=packages/shared-rtc-bench/deno.json,--allow-read,--allow-write|packages/shared-rtc-bench/deno.json'
+            'synthetic-path|bun|run|'
         ]);
         expect(
             RTC_BASELINE_WORKLOAD_CATALOG.slice(0, 4).flatMap((workload) =>
@@ -274,12 +274,9 @@ describe('RTC baseline workload catalog', () => {
             ok: true,
             value: {
                 redactedArgv: {
-                    executable: 'deno',
+                    executable: 'bun',
                     arguments: [
                         'run',
-                        '--config=packages/shared-rtc-bench/deno.json',
-                        '--allow-read',
-                        '--allow-write',
                         'packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts',
                         '--capture=worker',
                         '--baseline-id=20260807-0123456789ab-e1-local',

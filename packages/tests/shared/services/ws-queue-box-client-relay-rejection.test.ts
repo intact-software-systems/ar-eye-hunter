@@ -36,6 +36,7 @@ import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 /** The ordering-resync scenario gap: far wider than any repair window, so the relay asks for a resync. */
@@ -467,7 +468,7 @@ async function createRelayFixture(
     const sockets = { a: new SimulatedWebSocket('ws://a'), b: new SimulatedWebSocket('ws://b') };
     for (const [peerId, socket] of Object.entries(sockets)) {
         await socket.open();
-        socketServer.addConnection(new ConnectionContext({ id: peerId, socket }));
+        attachTestWebSocket(socketServer, new ConnectionContext({ id: peerId, socket }));
     }
     const recipients = () => [...socketServer.connections.keys()].map((peerId) => ({ peerId, connectionId: peerId }));
     const engine = new InboxOutboxEngine();

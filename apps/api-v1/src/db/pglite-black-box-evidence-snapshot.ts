@@ -1,4 +1,6 @@
 import type { PGlite } from '@electric-sql/pglite';
+import type { Dirent } from 'node:fs';
+import { chmod, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 
 const REQUESTS_DIRECTORY = 'requests';
 const RESPONSES_DIRECTORY = 'responses';
@@ -64,7 +66,7 @@ export async function startPGliteBlackBoxSnapshotPublisher(
     const interval = setInterval(() => {
         poll();
     }, options.pollIntervalMs ?? POLL_INTERVAL_MS);
-    Deno.unrefTimer(interval);
+    interval.unref();
     poll();
     return {
         publishPendingSnapshots: publisher.publishPendingSnapshots,
@@ -135,19 +137,19 @@ class SnapshotControlDirectory {
     }
 
     async prepare(): Promise<void> {
-        await Deno.mkdir(this.root, { recursive: true, mode: 0o700 });
-        await Deno.chmod(this.root, 0o700);
+        await mkdir(this.root, { recursive: true, mode: 0o700 });
+        await chmod(this.root, 0o700);
         await Promise.all([
-            Deno.mkdir(this.requests(), { recursive: true, mode: 0o700 }),
-            Deno.mkdir(this.responses(), { recursive: true, mode: 0o700 }),
-            Deno.mkdir(this.snapshots(), { recursive: true, mode: 0o700 }),
-            Deno.mkdir(`${this.root}/${CANCELLATIONS_DIRECTORY}`, { recursive: true, mode: 0o700 })
+            mkdir(this.requests(), { recursive: true, mode: 0o700 }),
+            mkdir(this.responses(), { recursive: true, mode: 0o700 }),
+            mkdir(this.snapshots(), { recursive: true, mode: 0o700 }),
+            mkdir(`${this.root}/${CANCELLATIONS_DIRECTORY}`, { recursive: true, mode: 0o700 })
         ]);
         await Promise.all([
-            Deno.chmod(this.requests(), 0o700),
-            Deno.chmod(this.responses(), 0o700),
-            Deno.chmod(this.snapshots(), 0o700),
-            Deno.chmod(`${this.root}/${CANCELLATIONS_DIRECTORY}`, 0o700)
+            chmod(this.requests(), 0o700),
+            chmod(this.responses(), 0o700),
+            chmod(this.snapshots(), 0o700),
+            chmod(`${this.root}/${CANCELLATIONS_DIRECTORY}`, 0o700)
         ]);
     }
 }
@@ -158,8 +160,8 @@ async function publishPendingSnapshots(
     publicationHooks: SnapshotPublicationHooks | undefined
 ): Promise<void> {
     const requests: string[] = [];
-    for await (const entry of Deno.readDir(control.requests())) {
-        if (entry.isFile && entry.name.endsWith('.json')) {
+    for (const entry of await readdir(control.requests(), { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.endsWith('.json')) {
             requests.push(entry.name);
         }
     }
@@ -170,7 +172,7 @@ async function publishPendingSnapshots(
             continue;
         }
         await publishSnapshot({ raw, control, request, publicationHooks });
-        await Deno.remove(requestPath, { recursive: false }).catch(ignoreNotFound);
+        await rm(requestPath, { recursive: false }).catch(ignoreNotFound);
     }
 }
 
@@ -184,7 +186,7 @@ async function publishSnapshot(input: PublishSnapshotInput): Promise<void> {
         const dump = await raw.dumpDataDir();
         const temporarySnapshot = `${control.snapshot(request.nonce)}.${crypto.randomUUID()}.part`;
         await publicationHooks?.beforeArchiveWrite?.(request);
-        await Deno.writeFile(temporarySnapshot, new Uint8Array(await dump.arrayBuffer()), {
+        await writeFile(temporarySnapshot, new Uint8Array(await dump.arrayBuffer()), {
             mode: 0o600
         });
         if (!await canPublishSnapshot(control, request)) {
@@ -192,7 +194,7 @@ async function publishSnapshot(input: PublishSnapshotInput): Promise<void> {
             return;
         }
         await publicationHooks?.beforeArchiveRename?.(request);
-        await Deno.rename(temporarySnapshot, control.snapshot(request.nonce));
+        await rename(temporarySnapshot, control.snapshot(request.nonce));
         await publicationHooks?.afterArchive?.(request);
         if (!await canPublishSnapshot(control, request)) {
             await cleanupPublishedSnapshot(control, request.nonce);
@@ -249,11 +251,11 @@ async function isSnapshotCancelled(
     nonce: string
 ): Promise<boolean> {
     try {
-        await Deno.stat(control.cancellation(nonce));
+        await stat(control.cancellation(nonce));
         return true;
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isNotFound(error)) {
             return false;
         }
         throw error;
@@ -298,11 +300,9 @@ async function removeSnapshotArtifacts(
     nonce: string,
     onlyTransient = false
 ): Promise<void> {
-    const entries: Deno.DirEntry[] = [];
+    let entries: Dirent[];
     try {
-        for await (const entry of Deno.readDir(directory)) {
-            entries.push(entry);
-        }
+        entries = await readdir(directory, { withFileTypes: true });
     }
     catch (error) {
         if (!(error instanceof Error)) {
@@ -315,17 +315,19 @@ async function removeSnapshotArtifacts(
         entries
             .filter(
                 (entry) =>
-                    entry.isFile && entry.name.startsWith(nonce) &&
+                    entry.isFile() && entry.name.startsWith(nonce) &&
                     (!onlyTransient || entry.name.endsWith('.part'))
             )
-            .map(async (entry) =>
-                await Deno.remove(`${directory}/${entry.name}`, { recursive: false }).catch(ignoreNotFound)
-            )
+            .map(async (entry) => await rm(`${directory}/${entry.name}`, { recursive: false }).catch(ignoreNotFound))
     );
 }
 
+function isNotFound(error: unknown): boolean {
+    return error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT';
+}
+
 function ignoreNotFound(error: Error): void {
-    if (error instanceof Deno.errors.NotFound) {
+    if (isNotFound(error)) {
         return;
     }
     throw error;
@@ -343,7 +345,7 @@ async function isSnapshotRequestPending(
 
 async function readSnapshotRequest(path: string): Promise<SnapshotRequest | undefined> {
     try {
-        const value = JSON.parse(await Deno.readTextFile(path)) as Partial<SnapshotRequest>;
+        const value = JSON.parse(await readFile(path, 'utf8')) as Partial<SnapshotRequest>;
         const requestedAtEpochMs = value.requestedAtEpochMs;
         if (
             !isSnapshotToken(value.nonce) || !isSnapshotToken(value.generation) ||
@@ -358,11 +360,11 @@ async function readSnapshotRequest(path: string): Promise<SnapshotRequest | unde
         };
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if (isNotFound(error)) {
             return undefined;
         }
         console.error('Ignoring invalid private PGlite snapshot request:', error);
-        await Deno.remove(path).catch(ignoreNotFound);
+        await rm(path).catch(ignoreNotFound);
         return undefined;
     }
 }
@@ -375,9 +377,9 @@ async function publishResponse(
     const destination = control.response(response.nonce);
     const temporary = `${destination}.${crypto.randomUUID()}.part`;
     await publicationHooks?.beforeResponseWrite?.(response);
-    await Deno.writeTextFile(temporary, JSON.stringify(response), { mode: 0o600 });
+    await writeFile(temporary, JSON.stringify(response), { mode: 0o600 });
     await publicationHooks?.beforeResponseRename?.(response);
-    await Deno.rename(temporary, destination);
+    await rename(temporary, destination);
 }
 
 function isSnapshotToken(value: string | undefined): value is string {

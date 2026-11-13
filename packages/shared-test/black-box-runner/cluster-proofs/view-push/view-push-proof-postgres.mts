@@ -2,7 +2,7 @@ import {
     decodeWsOutboxProvenance,
     type WsOutboxProvenance
 } from '@shared-server/rallar-system/websocket/outbox/ws-outbox-provenance.ts';
-import { assert, assertEquals } from '@std/assert';
+import assert from 'node:assert/strict';
 import postgres from 'postgres';
 import { waitForProofCondition } from '../cluster-proof-socket.mts';
 
@@ -20,13 +20,13 @@ export class ViewPushProofPostgres {
             where datname = current_database() and application_name = ${applicationName}
               and state = 'idle' and ltrim(query) ilike 'listen %'
         `;
-        assertEquals(rows.length, 1, 'Exactly one dedicated LISTEN backend for this isolated API');
+        assert.deepEqual(rows.length, 1, 'Exactly one dedicated LISTEN backend for this isolated API');
         return rows[0]!.pid;
     }
 
     async terminateListener(pid: number): Promise<void> {
         const rows = await this.#sql<{ terminated: boolean; }[]>`select pg_terminate_backend(${pid}) as terminated`;
-        assertEquals(rows[0]?.terminated, true);
+        assert.deepEqual(rows[0]?.terminated, true);
         await waitForProofCondition(async () => {
             const live = await this.#sql`select pid from pg_stat_activity where pid = ${pid}`;
             return live.length === 0;
@@ -45,14 +45,14 @@ export class ViewPushProofPostgres {
                   and outbox.ri_resource::jsonb->'route'->>'topicId' = 'view.invalidated'
                   and outbox.ri_resource::jsonb->'id'->>'traceId' = ${traceId}
             `;
-            assert(rows.length <= 1, 'One own-account visibility publication');
+            assert.ok(rows.length <= 1, 'One own-account visibility publication');
             if (rows[0]?.status !== 'COMPLETED') {
                 return false;
             }
             proof = decodeWsOutboxProvenance(JSON.parse(rows[0].proof));
             return true;
         }, 'committed view outbox publication completion');
-        assert(proof !== null);
+        assert.ok(proof !== null);
         return proof;
     }
 

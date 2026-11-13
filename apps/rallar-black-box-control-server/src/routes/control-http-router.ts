@@ -1,3 +1,5 @@
+import type { Server } from 'bun';
+
 import type { ControlAgentSockets } from '../control-agent-sockets.ts';
 import type { ControlArtifactRecorder } from '../control-artifact-recorder.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
@@ -11,7 +13,7 @@ import type { BrowserCommandDestinationPolicy } from '../validate-browser-comman
 import { routeAgentWriteRequest } from './agent-routes-write.ts';
 import { ADMIN_TOKEN_REJECTION, toNotFoundRejection } from './control-route-errors.ts';
 import { isReadRequest } from './control-route-requests.ts';
-import { openControlSocket } from './control-socket-route.ts';
+import { openControlSocket, type ControlSocketData } from './control-socket-route.ts';
 import { routeDistributedRunAdminRequest } from './distributed-run-routes-admin.ts';
 import { routeDistributedRunReadRequest } from './distributed-run-routes-read.ts';
 import { routeFleetReportAdminRequest } from './fleet-report-routes-admin.ts';
@@ -46,8 +48,9 @@ const ROUTE_NOT_FOUND = toNotFoundRejection('Not found.');
 
 export async function routeControlHttpRequest(
     request: Request,
-    dependencies: ControlHttpRouteDependencies
-): Promise<Response> {
+    dependencies: ControlHttpRouteDependencies,
+    server: Server<ControlSocketData>
+): Promise<Response | undefined> {
     const url = new URL(request.url);
     const policyRejection = dependencies.security.toRequestPolicyRejection(request, url);
     if (policyRejection) {
@@ -62,7 +65,7 @@ export async function routeControlHttpRequest(
         return swaggerResponse;
     }
     if (url.pathname === '/control') {
-        return openControlSocket(request, dependencies);
+        return openControlSocket(request, server, dependencies);
     }
     return await routeControlApiRequest(request, url, dependencies);
 }

@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -15,7 +16,7 @@ interface TableReadCounters {
     readonly heapRowsRead: number;
 }
 
-Deno.test('a session presence lookup reads only that session\'s rows, however many other sessions the store holds', async () => {
+test('a session presence lookup reads only that session\'s rows, however many other sessions the store holds', async () => {
     const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     const sql = lifecycle.database;
     try {

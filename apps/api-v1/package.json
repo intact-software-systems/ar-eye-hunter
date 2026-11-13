@@ -1,0 +1,30 @@
+{
+  "name": "@ar-eye-hunter/api-v1",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test --timeout=240000 test/",
+    "prisma": "npm exec -- prisma",
+    "db:migrate:deploy": "npm run prisma -- migrate deploy",
+    "db:migrate:dev": "npm run prisma -- migrate dev",
+    "db:migrate:create": "npm run prisma -- migrate dev --create-only",
+    "db:studio": "npm run prisma -- studio",
+    "db:status": "npm run prisma -- migrate status",
+    "db:pull": "npm run prisma -- db pull"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.4",
+    "@js-temporal/polyfill": "^0.5.1",
+    "graphology": "0.26.0",
+    "hono": "4.11.9",
+    "js-yaml": "^5.3.0",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4"
+  }
+}

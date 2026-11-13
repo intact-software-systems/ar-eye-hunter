@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -54,7 +55,7 @@ interface RecordedSqlRead {
     readonly rows: PSqlRows;
 }
 
-Deno.test(
+test(
     'production CRDT mutation repository denies an explicit fail-closed authority decision',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -77,7 +78,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'CRDT append reads only its candidate update while administration reads complete history',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -128,7 +129,7 @@ Deno.test(
     }
 );
 
-Deno.test('CRDT administration retains complete persisted-counter validation', async () => {
+test('CRDT administration retains complete persisted-counter validation', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         await apply(sql, service, await command('counter-base', 'counter-update', 1_000));
@@ -143,7 +144,7 @@ Deno.test('CRDT administration retains complete persisted-counter validation', a
     });
 });
 
-Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () => {
+test('CRDT CAS guards revision, lifecycle, and append sequence', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         await apply(sql, service, await command('first', 'first', 1_000));
@@ -163,7 +164,7 @@ Deno.test('CRDT CAS guards revision, lifecycle, and append sequence', async () =
     });
 });
 
-Deno.test(
+test(
     'CRDT persisted row decoding fails closed on physical/logical identity corruption',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -191,7 +192,7 @@ Deno.test(
     }
 );
 
-Deno.test('CRDT persisted metadata decoding validates counters and nested policies', async () => {
+test('CRDT persisted metadata decoding validates counters and nested policies', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         const input = await command('metadata-base', 'metadata-update', 1_000);
@@ -207,7 +208,7 @@ Deno.test('CRDT persisted metadata decoding validates counters and nested polici
     });
 });
 
-Deno.test('CRDT update decoding binds physical update_id to the envelope updateId', async () => {
+test('CRDT update decoding binds physical update_id to the envelope updateId', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         const original = await command('physical-update-command', 'logical-update-id', 1_000);
@@ -221,7 +222,7 @@ Deno.test('CRDT update decoding binds physical update_id to the envelope updateI
     });
 });
 
-Deno.test('CRDT durable trusted identity columns are mandatory', async () => {
+test('CRDT durable trusted identity columns are mandatory', async () => {
     await withPGliteSql(async (sql) => {
         const rows = await sql<ColumnNullabilityRow[]>`
       select column_name, is_nullable from information_schema.columns
@@ -238,7 +239,7 @@ Deno.test('CRDT durable trusted identity columns are mandatory', async () => {
     });
 });
 
-Deno.test(
+test(
     'CRDT snapshot decoding binds physical identity, sequence, time, and reason',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -285,7 +286,7 @@ Deno.test(
     }
 );
 
-Deno.test('CRDT quota accounts for every retained snapshot byte', async () => {
+test('CRDT quota accounts for every retained snapshot byte', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         const original = await command('all-snapshot-base', 'all-snapshot-update', 1_000);
@@ -311,7 +312,7 @@ Deno.test('CRDT quota accounts for every retained snapshot byte', async () => {
     });
 });
 
-Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts', async () => {
+test('CRDT read includes current actor-rate and snapshot-byte policy facts', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         const first = await command('rate-first', 'rate-first', 10_000);
@@ -355,7 +356,7 @@ Deno.test('CRDT read includes current actor-rate and snapshot-byte policy facts'
     });
 });
 
-Deno.test('overlapping CRDT transaction writers keep one winner and no lost counter', async () => {
+test('overlapping CRDT transaction writers keep one winner and no lost counter', async () => {
     await withPGliteSql(async (sql) => {
         const service = mutationService(sql);
         await apply(sql, service, await command('base', 'base', 1_000));

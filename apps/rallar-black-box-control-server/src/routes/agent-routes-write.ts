@@ -26,6 +26,9 @@ import {
 } from './control-route-errors.ts';
 import { toPathParameters } from './control-route-requests.ts';
 
+/** How long a result release waits for its agent to acknowledge before answering 409. */
+export const RESULT_RELEASE_ACK_TIMEOUT_MS = 15_000;
+
 export interface AgentWriteRouteDependencies {
     readonly controlService: Pick<RallarBlackBoxControlService, 'enqueueCommand' | 'receiveClientEnvelope'>;
     readonly security: Pick<ControlHttpSecurity, 'authorizeRunToken'>;
@@ -158,7 +161,7 @@ async function releaseAgentResultsRoute(
         ...agent,
         requestId: value.requestId,
         receipts: captured.right
-    }, AbortSignal.timeout(15_000));
+    }, AbortSignal.timeout(RESULT_RELEASE_ACK_TIMEOUT_MS));
     return outcome.fold(
         (message) => responses.rejection({ status: 409, message }),
         (released) => responses.json(released, released.status === 'released' ? 200 : 409)

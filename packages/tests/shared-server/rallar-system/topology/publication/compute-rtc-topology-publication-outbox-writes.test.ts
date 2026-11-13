@@ -21,6 +21,7 @@ import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
@@ -70,11 +71,11 @@ describe('RTC topology producer provenance', () => {
             const socket = new JsonWebSocketServer();
             const native = new TestWebSocket('ws://foreign');
             native.open();
-            socket.addConnection(new ConnectionContext({ id: recipient === 'late-joiner' ? 'session-late' : 'session-a', socket: native }));
+            attachTestWebSocket(socket, new ConnectionContext({ id: recipient === 'late-joiner' ? 'session-late' : 'session-a', socket: native }));
             if (recipient === 'late-joiner') {
                 const captured = new TestWebSocket('ws://captured');
                 captured.open();
-                socket.addConnection(new ConnectionContext({ id: 'session-a', socket: captured }));
+                attachTestWebSocket(socket, new ConnectionContext({ id: 'session-a', socket: captured }));
             }
             const stores = createDefaultInMemoryALOutboundRuntimeStores({ decodePrepared: decodeWsQueueBoxServerPreparedMessage });
             const service = createDefaultWsQueueBoxServerService({

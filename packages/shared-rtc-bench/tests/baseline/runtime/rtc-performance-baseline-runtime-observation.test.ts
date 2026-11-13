@@ -18,14 +18,14 @@ import {
 
 import type { RtcBaselineCaptureRequestDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 import { createRtcBaselineRuntimeObservationInput } from '../../../baseline/runtime/create-rtc-baseline-runtime-observation-input.ts';
+import type { BunRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-bun-adapters.ts';
+import { createRtcBaselineBunEvidence } from '../../../baseline/runtime/rtc-baseline-bun-evidence.ts';
+import { createRtcBaselineBunRuntime } from '../../../baseline/runtime/rtc-baseline-bun-runtime.ts';
 import type { RtcBaselineCaptureAdmission } from '../../../baseline/runtime/rtc-baseline-capture-admission.ts';
-import type { DenoRtcBaselineAdapters } from '../../../baseline/runtime/rtc-baseline-deno-adapters.ts';
-import { createRtcBaselineDenoEvidence } from '../../../baseline/runtime/rtc-baseline-deno-evidence.ts';
-import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
-import { createRtcBaselineDenoObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
+import { createRtcBaselineBunObservation } from '../../../baseline/runtime/rtc-baseline-runtime-observation.ts';
 
 interface RtcBaselineRuntimeTestAdapters {
-    adapters: DenoRtcBaselineAdapters;
+    adapters: BunRtcBaselineAdapters;
     rootPath: string;
 }
 
@@ -39,7 +39,7 @@ function resolveWorkerFlag(arguments_: readonly string[], name: string) {
     return value.slice(name.length + 3);
 }
 
-function createRtcBaselineTemporaryFilePortFixture(rootPath: string): DenoRtcBaselineAdapters['filePort'] {
+function createRtcBaselineTemporaryFilePortFixture(rootPath: string): BunRtcBaselineAdapters['filePort'] {
     const toTemporaryPath = (path: string) => join(rootPath, path);
     return {
         inspectPath: async (path) => {
@@ -69,7 +69,7 @@ function createRtcBaselineTemporaryFilePortFixture(rootPath: string): DenoRtcBas
     };
 }
 
-function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<DenoRtcBaselineAdapters['filePort'], 'tryAcquireExclusiveFileLock'> {
+function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<BunRtcBaselineAdapters['filePort'], 'tryAcquireExclusiveFileLock'> {
     let writerLockHeld = false;
     const toTemporaryPath = (path: string) => join(rootPath, path);
     return {
@@ -112,7 +112,7 @@ function createRtcBaselineTemporaryWriterLockFixture(rootPath: string): Pick<Den
     };
 }
 
-function createNeutralRtcBaselineSyntheticWorkerFixture(): DenoRtcBaselineAdapters['freshWorker'] {
+function createNeutralRtcBaselineSyntheticWorkerFixture(): BunRtcBaselineAdapters['freshWorker'] {
     return {
         run: async ({ arguments: workerArguments }) => {
             const workloadId = resolveWorkerFlag(workerArguments, 'workload');
@@ -155,7 +155,7 @@ function createNeutralRtcBaselineSyntheticWorkerFixture(): DenoRtcBaselineAdapte
 
 async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRuntimeTestAdapters> {
     const rootPath = await mkdtemp(join(tmpdir(), 'rtc-runtime-observation-'));
-    const adapters: DenoRtcBaselineAdapters = {
+    const adapters: BunRtcBaselineAdapters = {
         filePort: createRtcBaselineTemporaryFilePortFixture(rootPath),
         writerLockRuntime: {
             createOwnerToken: () => '00000000-0000-4000-8000-000000000001',
@@ -180,7 +180,7 @@ async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRun
                 logicalCpuCount: 10,
                 cpuModel: 'Apple M4',
                 totalMemoryBytes: 1,
-                deno: '2.4.0',
+                bun: '2.4.0',
                 executionContext: 'local' as const
             })
         },
@@ -191,7 +191,7 @@ async function createRtcBaselineRuntimeAdaptersFixture(): Promise<RtcBaselineRun
     return { adapters, rootPath };
 }
 
-describe('RTC baseline Deno runtime observation binding', () => {
+describe('RTC baseline Bun runtime observation binding', () => {
     it.each([undefined, 'true', 'false'])('reconciles frozen ALM %s through external recording and finalization', async (selection) => {
         const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
         const environment: Record<string, string> = {
@@ -206,8 +206,8 @@ describe('RTC baseline Deno runtime observation binding', () => {
             Object.fromEntries(
                 names.filter((name) => environment[name] !== undefined).map((name) => [name, environment[name]!])
             );
-        const observe = createRtcBaselineDenoObservation(adapters);
-        const evidence = createRtcBaselineDenoEvidence({
+        const observe = createRtcBaselineBunObservation(adapters);
+        const evidence = createRtcBaselineBunEvidence({
             rootPath: 'tmp/perf/rtc-baseline',
             filePort: adapters.filePort,
             writerLockRuntime: adapters.writerLockRuntime,
@@ -223,7 +223,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             environmentId: 'E3-memory'
         };
         try {
-            expect(await createRtcBaselineDenoRuntime(adapters).initializeBaseline(request)).toEqual({ ok: true, value: undefined });
+            expect(await createRtcBaselineBunRuntime(adapters).initializeBaseline(request)).toEqual({ ok: true, value: undefined });
             const first = await observe(request);
             if (!first.ok) {
                 throw new Error(JSON.stringify(first.issues));
@@ -272,7 +272,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             Object.fromEntries(
                 names.filter((name) => environment[name] !== undefined).map((name) => [name, environment[name]!])
             );
-        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const runtime = createRtcBaselineBunRuntime(adapters);
         const liveBaselineId = '20260816-956a057c9ab5-e3-memory';
         try {
             const initialized = await runtime.initializeBaseline({
@@ -330,7 +330,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         });
         try {
-            const runtime = createRtcBaselineDenoRuntime(adapters, { mode: 'off', source: 'cli' });
+            const runtime = createRtcBaselineBunRuntime(adapters, { mode: 'off', source: 'cli' });
             expect(await runtime.initializeBaseline(createLiveRtcBaselineCaptureRequestFixture())).toMatchObject({ ok: true });
             const stored = JSON.parse(
                 await readFile(join(rootPath, 'tmp/perf/rtc-baseline', createLiveRtcBaselineCaptureRequestFixture().baselineId, 'environment.json'), 'utf8')
@@ -366,7 +366,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         });
         const admission = { mode: 'off', source: 'environment' } satisfies RtcBaselineCaptureAdmission;
-        const runtime = createRtcBaselineDenoRuntime(adapters, admission);
+        const runtime = createRtcBaselineBunRuntime(adapters, admission);
         try {
             expect(await runtime.initializeBaseline(createLiveRtcBaselineCaptureRequestFixture())).toMatchObject({ ok: true });
             ambient = 'native';
@@ -420,7 +420,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             throw new Error('Host observation must not run');
         };
         try {
-            const result = await createRtcBaselineDenoRuntime(adapters).initializeBaseline(createLiveRtcBaselineCaptureRequestFixture());
+            const result = await createRtcBaselineBunRuntime(adapters).initializeBaseline(createLiveRtcBaselineCaptureRequestFixture());
             expect(result).toMatchObject({ ok: false, issues: [expect.objectContaining({ code: 'invalid-rtc-capture-mode' })] });
             expect(effects).toBe(0);
             expect(await readdir(rootPath)).toEqual([]);
@@ -438,7 +438,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
             });
-            const initialized = await createRtcBaselineDenoObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
+            const initialized = await createRtcBaselineBunObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
             if (!initialized.ok) {
                 throw new Error('Observation setup failed');
             }
@@ -490,7 +490,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
                 RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
                 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
             });
-            await createRtcBaselineDenoObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
+            await createRtcBaselineBunObservation(adapters)(createLiveRtcBaselineCaptureRequestFixture());
             expect(hashedPaths).toEqual(expect.arrayContaining([
                 'apps/rallar-black-box/playwright.full-stack.config.ts',
                 'tests/playwright/rallar-black-box/create-group-formation-lifecycle-driver.ts',
@@ -543,7 +543,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
             RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK: '1',
             RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES: '100'
         });
-        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const runtime = createRtcBaselineBunRuntime(adapters);
         const request = createLiveRtcBaselineCaptureRequestFixture();
         try {
             expect(await runtime.initializeBaseline(request)).toMatchObject({ ok: true });
@@ -568,7 +568,7 @@ describe('RTC baseline Deno runtime observation binding', () => {
 
     it('carries the initialized runtime observation into B03 synthetic metric finalization', async () => {
         const { adapters, rootPath } = await createRtcBaselineRuntimeAdaptersFixture();
-        const runtime = createRtcBaselineDenoRuntime(adapters);
+        const runtime = createRtcBaselineBunRuntime(adapters);
         try {
             expect(
                 await runtime.initializeBaseline({

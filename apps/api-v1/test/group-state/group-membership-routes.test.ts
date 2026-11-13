@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
@@ -137,7 +138,7 @@ const EXPECTED_MEMBERSHIP_COMMANDS = [
     }
 ] satisfies readonly AuthenticatedGroupMutationEnqueue[];
 
-Deno.test('group membership commands retain governance and self-service envelopes', () => {
+test('group membership commands retain governance and self-service envelopes', () => {
     const authSession = createGroupStateRouteAuthSession('alice');
     const commandBase = { authSession, scope: TEST_GROUP_SCOPE, traceId: GROUP_ROUTE_TRACE_ID, groupId: 'room-1' } as const;
     const forgedActor = { actorPrincipalId: 'forged-actor', actorSessionId: 'forged-session' };
@@ -178,7 +179,7 @@ Deno.test('group membership commands retain governance and self-service envelope
     assert.deepEqual(commands, EXPECTED_MEMBERSHIP_COMMANDS);
 });
 
-Deno.test(
+test(
     'group membership routes retain every AppInbox envelope and self-service omission',
     async () => {
         const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -231,7 +232,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'group governance routes enqueue safe workflows with authenticated actors',
     verifyGroupGovernanceRoutes
 );

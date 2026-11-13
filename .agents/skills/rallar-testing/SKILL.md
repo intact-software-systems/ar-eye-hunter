@@ -134,7 +134,7 @@ fails validation.
   processes, 10 client lanes plus 5 control lanes. Never reduce these constants,
   the operation matrix, or its assertions to make a change pass.
 - API-v1 black-box topology: memory mode manages one API process. Built-in
-  Postgres cluster profiles manage three Deno API processes sharing one Postgres
+  Postgres cluster profiles manage three Bun API processes sharing one Postgres
   database on ports 18080, 18081, and 18082. Their isolated logs are
   `api-v1-server.log`, `api-v1-server-secondary.log`, and
   `api-v1-server-tertiary.log`; recipes-only mode is externally managed.
@@ -151,7 +151,7 @@ fails validation.
   `npm run perf:api-v1:state-write` and the comparative result gate implemented
   by `node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs`.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
-- Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
+- Server/middleware changes: include `packages/tests/shared-server`, Bun checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.
 - Game changes: include the game app test/build and package tests for shared game/motion/rules code.
 - Black-box runner changes: include `packages/tests/shared-test` and the relevant rallar-black-box Playwright config only when needed.

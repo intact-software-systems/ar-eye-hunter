@@ -1,4 +1,4 @@
-import { assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
 import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarBrowserRtcProvider } from '../../../shared-test/black-box-runner/rallar-browser-rtc-provider.ts';
 
@@ -11,7 +11,7 @@ interface BrowserRoutingPage {
     evaluate(fn: (...args: any[]) => unknown, input?: any): Promise<any>;
 }
 
-Deno.test('createRallarBrowserRtcProvider resolves expect.connection to realtime peerIds', async () => {
+test('createRallarBrowserRtcProvider resolves expect.connection to realtime peerIds', async () => {
     const pagesByConnection: Record<string, any> = {};
     const sentInputs: any[] = [];
 
@@ -195,16 +195,16 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to realtime
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS');
-    assertEquals(sentInputs[0].peerIds, ['bob-rallar-session']);
-    assertEquals(sentInputs[0].roomId, 'room-1');
-    assertEquals(sentInputs[0].data, {
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceSendsToBob[0].status).toEqual('SUCCESS');
+    expect(sentInputs[0].peerIds).toEqual(['bob-rallar-session']);
+    expect(sentInputs[0].roomId).toEqual('room-1');
+    expect(sentInputs[0].data).toEqual({
         text: 'hello bob'
     });
 });
 
-Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages.rtc nextHopPeerIds', async () => {
+test('createRallarBrowserRtcProvider resolves expect.connection to messages.rtc nextHopPeerIds', async () => {
     const pagesByConnection: Record<string, any> = {};
     const connectInputs: any[] = [];
     const sentInputs: any[] = [];
@@ -414,24 +414,21 @@ Deno.test('createRallarBrowserRtcProvider resolves expect.connection to messages
         }
     );
 
-    assertEquals(report.summary.failure, 0);
-    assertEquals(report.resultsByName.aliceSendsToBob[0].status, 'SUCCESS');
-    assertEquals(report.resultsByName.aliceSendsToBob[0].actual.diagnostics.roomRef, roomRef);
-    assertEquals(
-        report.resultsByName.aliceSendsToBob[0].actual.sendResult.nextHopPeerIds,
-        ['bob-rallar-session']
-    );
-    assertEquals(connectInputs[0].roomRef, roomRef);
-    assertEquals(connectInputs[0].rallar.scope, {
+    expect(report.summary.failure).toEqual(0);
+    expect(report.resultsByName.aliceSendsToBob[0].status).toEqual('SUCCESS');
+    expect(report.resultsByName.aliceSendsToBob[0].actual.diagnostics.roomRef).toEqual(roomRef);
+    expect(report.resultsByName.aliceSendsToBob[0].actual.sendResult.nextHopPeerIds).toEqual(['bob-rallar-session']);
+    expect(connectInputs[0].roomRef).toEqual(roomRef);
+    expect(connectInputs[0].rallar.scope).toEqual({
         applicationId: 'app-1',
         workspaceId: 'workspace-a'
     });
-    assertEquals(sentInputs[0].nextHopPeerIds, ['bob-rallar-session']);
-    assertEquals(sentInputs[0].peerIds, undefined);
-    assertEquals(sentInputs[0].roomId, 'room-1');
-    assertEquals(sentInputs[0].roomRef, roomRef);
-    assertEquals(sentInputs[0].minSnapshotVersion, 9);
-    assertEquals(sentInputs[0].payload, {
+    expect(sentInputs[0].nextHopPeerIds).toEqual(['bob-rallar-session']);
+    expect(sentInputs[0].peerIds).toEqual(undefined);
+    expect(sentInputs[0].roomId).toEqual('room-1');
+    expect(sentInputs[0].roomRef).toEqual(roomRef);
+    expect(sentInputs[0].minSnapshotVersion).toEqual(9);
+    expect(sentInputs[0].payload).toEqual({
         text: 'hello bob'
     });
 });

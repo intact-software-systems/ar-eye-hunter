@@ -1,8 +1,9 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { stopApiOnRtcTopologyDeliveryHealthFailure } from '../../src/runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
 
-Deno.test('RTC topology delivery health failure stops claimers, sockets, tasks, then HTTP', async () => {
+test('RTC topology delivery health failure stops claimers, sockets, tasks, then HTTP', async () => {
     const events: string[] = [];
     let rejectHealth: (error: Error) => void = () => undefined;
     const healthFailure = new Promise<never>((_resolve, reject) => {
@@ -35,7 +36,7 @@ Deno.test('RTC topology delivery health failure stops claimers, sockets, tasks, 
     ]);
 });
 
-Deno.test('RTC topology delivery shutdown still closes HTTP after an earlier step fails', async () => {
+test('RTC topology delivery shutdown still closes HTTP after an earlier step fails', async () => {
     const events: string[] = [];
     const healthFailure = Promise.reject<never>(new Error('lease lost'));
     await stopApiOnRtcTopologyDeliveryHealthFailure({

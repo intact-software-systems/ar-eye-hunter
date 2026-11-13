@@ -24,6 +24,7 @@ documents describe the current implementation.
 | `game/`          | Reusable authoritative game command decoding and publication.                                                                                 |
 | `http/`          | Reusable request authentication and HTTP boundary helpers.                                                                                    |
 | `postgres/`      | The shared `PSqlSql` port and transaction helper only.                                                                                        |
+| `process/`       | Server process lifecycle shared by every Bun server: signal-driven graceful stop and exit.                                                    |
 | `queuebox/`      | QueueBox and ResourceInbox PostgreSQL entry, reservation, retry, finalization, results, and maintenance owners.                               |
 | `rallar-ai/`     | RallarAI generation, provider policy, persistence, publication, and HTTP/WebSocket installers.                                                |
 | `rallar-server/` | Final reusable server application assembly.                                                                                                   |
@@ -259,7 +260,7 @@ npx vitest run packages/tests/shared-server/rallar-system/topology
 npx vitest run packages/tests/shared-server/runtime-state
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 npm run typecheck:tests
-cd apps/api-v1 && deno task check
+cd apps/api-v1 && bunx tsc -p tsconfig.json --noEmit
 npm run check:repo-style -- --root packages/shared-server
 npm run check:repo-structure -- --base origin/main
 npm run test:repo-governance

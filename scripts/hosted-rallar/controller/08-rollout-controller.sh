@@ -19,6 +19,10 @@ RALLAR_API_SERVER_TIMING="${RALLAR_API_SERVER_TIMING:-0}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-api-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-controller-role.sh"
+source "${SCRIPT_DIR}/rallar-games-prod-profile.sh"
+source "${SCRIPT_DIR}/rallar-bun-runtime.sh"
+apply_rallar_controller_role
 
 rallar_user_home() {
 	local user="${1:-rallar}"
@@ -134,61 +138,6 @@ cleanup_rollout_disk_pressure() {
 	print_rollout_disk_summary "after rollout cleanup"
 }
 
-is_known_rollout_generated_lockfile() {
-	case "$1" in
-	apps/api-v1/deno.lock | apps/rallar-black-box-control-server/deno.lock)
-		return 0
-		;;
-	*)
-		return 1
-		;;
-	esac
-}
-
-is_full_git_sha() {
-	[[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
-}
-
-update_rollout_checkout() {
-	local checkout_dir="$1"
-	local repo_ref="$2"
-
-	git -C "${checkout_dir}" fetch --prune origin
-	if is_full_git_sha "${repo_ref}"; then
-		git -C "${checkout_dir}" checkout --detach "${repo_ref}"
-		return
-	fi
-
-	# A branch may have been rewritten since the last rollout (a rebased PR branch), so the checkout
-	# follows the remote branch exactly instead of fast-forwarding a diverged local one.
-	git -C "${checkout_dir}" checkout -B "${repo_ref}" "origin/${repo_ref}"
-}
-
-repair_known_rollout_generated_checkout_changes() {
-	local checkout_dir="$1"
-	local status line state file repaired_files=()
-
-	status="$(git -C "${checkout_dir}" status --porcelain)"
-	[[ -z "${status}" ]] && return 0
-
-	while IFS= read -r line; do
-		[[ -z "${line}" ]] && continue
-		state="${line:0:2}"
-		file="${line:3}"
-		if [[ "${state}" == " M" ]] && is_known_rollout_generated_lockfile "${file}"; then
-			repaired_files+=("${file}")
-			continue
-		fi
-		return 0
-	done <<<"${status}"
-
-	[[ "${#repaired_files[@]}" -gt 0 ]] || return 0
-
-	echo "Repairing rollout-generated Deno lockfile drift before controlled rollout:"
-	printf "  %s\n" "${repaired_files[@]}"
-	git -C "${checkout_dir}" checkout -- "${repaired_files[@]}"
-}
-
 sanitize_api_environment_file() {
 	local env_file="$1"
 	local tmp_file key line
@@ -274,6 +223,24 @@ write_api_prod_profile_environment() {
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS" "${operator_client_ids}"
 }
 
+# The role's Bun server units, written by every rollout so a unit never starts a checkout it was not written for.
+write_rollout_role_units() {
+	case "${RALLAR_CONTROLLER_ROLE}" in
+	api)
+		write_rallar_api_v1_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_API_STORE_FAILURE_FILE}"
+		;;
+	control)
+		write_rallar_control_server_unit "${RALLAR_CHECKOUT_DIR}" "${RALLAR_ROLLOUT_CONTROL_STATE_DIR}"
+		;;
+	games)
+		write_rallar_game_server_unit "${RALLAR_RELIC_SERVICE}" "${RALLAR_RELIC_APP_DIR}" "${RALLAR_RELIC_ENV_FILE}" \
+			"${RALLAR_RELIC_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		write_rallar_game_server_unit "${RALLAR_AR_EYE_SERVICE}" "${RALLAR_AR_EYE_APP_DIR}" "${RALLAR_AR_EYE_ENV_FILE}" \
+			"${RALLAR_AR_EYE_STORE_FAILURE_FILE}" "${RALLAR_CHECKOUT_DIR}"
+		;;
+	esac
+}
+
 stopped_services=0
 
 restart_stopped_services_on_error() {
@@ -281,12 +248,15 @@ restart_stopped_services_on_error() {
 	if [[ "${stopped_services}" == "1" ]]; then
 		echo
 		echo "Rollout failed after services were stopped. Attempting to start controller services again." >&2
-		if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
-			echo "::error::rallar-api-v1 stays stopped: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")" >&2
-		else
-			systemctl start rallar-api-v1.service || true
-		fi
-		systemctl start rallar-black-box-control.service || true
+		local service failure_file
+		for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+			failure_file="$(rallar_role_service_failure_file "${service}" || true)"
+			if [[ -n "${failure_file}" && -e "${failure_file}" ]]; then
+				echo "::error::${service} stays stopped: $(cat "${failure_file}")" >&2
+				continue
+			fi
+			systemctl start "${service}" || true
+		done
 		if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
 			systemctl start caddy.service || true
 		else
@@ -353,40 +323,12 @@ resolve_operator_token_ttl_ms() {
 	printf '%s' "${ttl}"
 }
 
-restore_api_diagnostic_configuration() {
-	local key value
-	[[ "${RALLAR_API_CAPTURE_OWNER:-}" == api-* ]] || return 1
-	jq -e '
-	  keys == (["RALLAR_TIMING_LOGS", "RALLAR_APP_INBOX_PHASE_TIMING", "RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT",
-	    "RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE", "RALLAR_RTC_TOPOLOGY_MESH_PARAM_K"] | sort) and
-	  all(to_entries[]; .key as $key | .value |
-	    if .present == false then .value == null and .source == null
-	    else .present == true and .source == "environment" and
-	      (if $key == "RALLAR_TIMING_LOGS" then .value == "0" or .value == "1"
-	       elif $key == "RALLAR_APP_INBOX_PHASE_TIMING" then .value == "true" or .value == "false"
-	       else .value | test("^[1-9][0-9]*$") end) end)' "${RALLAR_API_RESTORE_CONFIGURATION}" >/dev/null
-	while IFS=$'\t' read -r key value; do
-		update_env_value "${RALLAR_API_ENV_FILE}" "${key}" "${value}"
-	done < <(jq -r 'to_entries[] | [.key, (.value.value // "")] | @tsv' "${RALLAR_API_RESTORE_CONFIGURATION}")
-}
-
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
-	restore-api-diagnostics)
-		restore_api_diagnostic_configuration
-		;;
 	checkout-ref)
-		update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+		update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 		printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
 		printf 'checkoutBranch=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" symbolic-ref --short -q HEAD || echo HEAD)"
-		;;
-	repair-known-drift)
-		repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
-		if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
-			git -C "${RALLAR_CHECKOUT_DIR}" status --short >&2
-			return 1
-		fi
-		echo "repairedKnownDenoLockDrift=true"
 		;;
 	cleanup-disk-pressure)
 		cleanup_rollout_disk_pressure
@@ -412,6 +354,10 @@ run_rollout_self_test() {
 		update_api_rtc_topology_env
 		echo "wroteApiOptionalEnvironment=true"
 		;;
+	write-role-units)
+		write_rollout_role_units
+		echo "wroteRoleUnits=true"
+		;;
 	preflight-api-overrides)
 		require_writable_api_diagnostic_configuration
 		echo "writableApiDiagnosticConfiguration=true"
@@ -435,9 +381,9 @@ fi
 
 source "${SCRIPT_DIR}/rallar-controller-lock.sh"
 rallar_lock_controller
-source "${SCRIPT_DIR}/rallar-deno-runtime.sh"
 source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
+source "${SCRIPT_DIR}/rallar-headless-worker-env.sh"
 source "${SCRIPT_DIR}/rallar-deployment-readiness.sh"
 if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
 	public_settings="$(read_rallar_public_spa_settings)"
@@ -453,7 +399,7 @@ fi
 apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
-services=(rallar-api-v1.service rallar-black-box-control.service)
+services=("${RALLAR_ROLE_APP_SERVICES[@]}")
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
 	services+=(caddy.service)
@@ -529,7 +475,6 @@ ensure_operator_token_secret() {
 
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 	update_env_value "${RALLAR_API_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS" "${ttl}"
-	update_env_value "${RALLAR_CONTROL_ENV_FILE}" "RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET" "${secret}"
 }
 
 ensure_api_auth_credential_secret() {
@@ -555,8 +500,8 @@ update_control_allowed_origins() {
 
 require_command git
 require_command npm
-require_command deno
-require_rallar_min_deno_version
+require_command bun
+require_rallar_min_bun_version
 require_command rsync
 require_command curl
 require_command openssl
@@ -567,11 +512,17 @@ if [[ ! -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
 	exit 1
 fi
 
-validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
-require_writable_api_diagnostic_configuration
-operator_token_ttl_ms="$(resolve_operator_token_ttl_ms)"
-
-repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	validate_rallar_api_existing_store_configuration "${RALLAR_API_ENV_FILE}"
+	require_writable_api_diagnostic_configuration
+	operator_token_ttl_ms="$(resolve_operator_token_ttl_ms)"
+	;;
+games)
+	read_rallar_game_database_url "${RALLAR_RELIC_ENV_FILE}" "${RALLAR_RELIC_DATABASE_ROLE}" "${RALLAR_RELIC_DATABASE_NAME}" "${RALLAR_RELIC_STORE_FAILURE_FILE}" >/dev/null
+	read_rallar_game_database_url "${RALLAR_AR_EYE_ENV_FILE}" "${RALLAR_AR_EYE_DATABASE_ROLE}" "${RALLAR_AR_EYE_DATABASE_NAME}" "${RALLAR_AR_EYE_STORE_FAILURE_FILE}" >/dev/null
+	;;
+esac
 
 if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
 	echo "Checkout has local changes; refusing controlled rollout:" >&2
@@ -586,13 +537,20 @@ echo "Checkout: ${RALLAR_CHECKOUT_DIR}"
 echo "Services:"
 printf "  %s\n" "${services[@]}"
 echo
-echo "Note: the rollout preserves the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} and applies migrations before the API starts."
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	echo "Note: the rollout preserves the API-v1 Postgres store ${RALLAR_API_DATABASE_NAME} and applies migrations before the API starts."
+	;;
+games)
+	echo "Note: the rollout preserves the game Postgres stores and applies migrations before the game servers start."
+	;;
+esac
 
 trap restart_stopped_services_on_error ERR
 
 echo "==> Updating git checkout"
 rallar_playwright_operation_stage "rollout-checkout"
-update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+update_rallar_bun_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 current_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
@@ -606,28 +564,26 @@ runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 cleanup_rollout_npm_transients
 print_rollout_disk_summary "after npm dependency cleanup"
 
-configure_rallar_deno_environment /etc/systemd/system
-
-echo "==> Warming Deno caches"
-rallar_playwright_operation_stage "rollout-deno-cache"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
-runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
-	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
-
-if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" || "${RALLAR_CONTROLLER_ROLE}" == "control" ]] &&
+	{ [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; }; then
 	install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"
 fi
 
-echo "==> Building rallar-black-box SPA"
-rallar_playwright_operation_stage "rollout-spa-build"
-build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
+	echo "==> Building rallar-black-box SPA"
+	rallar_playwright_operation_stage "rollout-spa-build"
+	build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
+fi
 
-echo "==> Ensuring the API-v1 PostgreSQL server"
-rallar_playwright_operation_stage "rollout-postgres-server"
-install_rallar_api_postgres_server
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	echo "==> Ensuring the PostgreSQL server"
+	rallar_playwright_operation_stage "rollout-postgres-server"
+	install_rallar_api_postgres_server
+fi
+
+echo "==> Writing systemd units"
+write_rollout_role_units
+systemctl daemon-reload
 
 echo "==> Stopping services for publish/start"
 stopped_services=1
@@ -635,61 +591,72 @@ for service in "${services[@]}"; do
 	systemctl stop "${service}"
 done
 
-echo "==> Publishing SPA static files"
-rm -rf /var/www/rallar-black-box/*
-rsync -a --delete \
-	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
-	/var/www/rallar-black-box/
-install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box/headless
-rsync -a --delete \
-	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
-	/var/www/rallar-black-box/headless/
-chown -R caddy:caddy /var/www/rallar-black-box
-remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist"
-remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist"
-print_rollout_disk_summary "after publishing SPA cleanup"
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
+	echo "==> Publishing SPA static files"
+	rm -rf /var/www/rallar-black-box/*
+	rsync -a --delete \
+		"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
+		/var/www/rallar-black-box/
+	install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box/headless
+	rsync -a --delete \
+		"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
+		/var/www/rallar-black-box/headless/
+	chown -R caddy:caddy /var/www/rallar-black-box
+	remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist"
+	remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist"
+	print_rollout_disk_summary "after publishing SPA cleanup"
 
-echo "==> Writing SPA public env audit"
-write_rallar_black_box_spa_env_file
+	echo "==> Writing SPA public env audit"
+	write_rallar_black_box_spa_env_file
 
-echo "==> Normalizing API environment allowlist"
-normalize_api_environment_allowlist
+	echo "==> Normalizing API environment allowlist"
+	normalize_api_environment_allowlist
 
-echo "==> Updating API CORS origins"
-update_api_cors_origins
+	echo "==> Updating API CORS origins"
+	update_api_cors_origins
 
-echo "==> Updating API RTC topology env"
-update_api_rtc_topology_env
+	echo "==> Updating API RTC topology env"
+	update_api_rtc_topology_env
 
-echo "==> Writing API timing env"
-write_api_timing_environment
-if [[ -n "${RALLAR_API_RESTORE_CONFIGURATION:-}" ]]; then
-	restore_api_diagnostic_configuration
+	echo "==> Writing API timing env"
+	write_api_timing_environment
+
+	echo "==> Ensuring black-box operator token broker secret"
+	ensure_operator_token_secret "${operator_token_ttl_ms}"
+
+	echo "==> Ensuring stable API auth credential secret"
+	ensure_api_auth_credential_secret
+
+	echo "==> Writing API prod profile env"
+	write_api_prod_profile_environment
 fi
 
-echo "==> Updating control-server browser origins"
-update_control_allowed_origins
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "control" ]]; then
+	echo "==> Updating control-server browser origins"
+	update_control_allowed_origins
+fi
 
-echo "==> Ensuring black-box operator token broker secret"
-ensure_operator_token_secret "${operator_token_ttl_ms}"
-
-echo "==> Ensuring stable API auth credential secret"
-ensure_api_auth_credential_secret
-
-echo "==> Writing API prod profile env"
-write_api_prod_profile_environment
-
-rallar_playwright_operation_stage "rollout-postgres-store"
-migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE}")"
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	rallar_playwright_operation_stage "rollout-postgres-store"
+fi
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
+	migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_rallar_api_database_url "${RALLAR_API_ENV_FILE}")"
+elif [[ "${RALLAR_CONTROLLER_ROLE}" == "games" ]]; then
+	select_rallar_postgres_store "${RALLAR_RELIC_DATABASE_ROLE}" "${RALLAR_RELIC_DATABASE_NAME}" "${RALLAR_RELIC_STORE_FAILURE_FILE}"
+	migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_rallar_api_database_url "${RALLAR_RELIC_ENV_FILE}")"
+	select_rallar_postgres_store "${RALLAR_AR_EYE_DATABASE_ROLE}" "${RALLAR_AR_EYE_DATABASE_NAME}" "${RALLAR_AR_EYE_STORE_FAILURE_FILE}"
+	migrate_rallar_api_postgres_store "${RALLAR_CHECKOUT_DIR}" "$(read_rallar_api_database_url "${RALLAR_AR_EYE_ENV_FILE}")"
+fi
 
 echo "==> Writing Caddyfile"
-write_rallar_controller_caddyfile
+write_rallar_role_caddyfile
 
 echo "==> Starting services"
 rallar_playwright_operation_stage "rollout-service-start"
 systemctl daemon-reload
-systemctl start rallar-api-v1.service
-systemctl start rallar-black-box-control.service
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	systemctl start "${service}"
+done
 
 if [[ "${RALLAR_INCLUDE_CADDY}" == "1" || "${RALLAR_INCLUDE_CADDY}" == "true" ]]; then
 	systemctl start caddy.service
@@ -700,35 +667,47 @@ stopped_services=0
 trap - ERR
 
 rallar_playwright_operation_stage "rollout-service-health"
-wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
-wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
-wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
-if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
-	verify_rallar_control_public_cors >/dev/null 2>&1 || {
-		echo 'Public control CORS verification failed for preserved settings.' >&2
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	wait_for_url "API-v1 config" "http://127.0.0.1:8080/api/config"
+	wait_for_url "API-v1 docs" "http://127.0.0.1:8080/api/docs"
+	;;
+control)
+	wait_for_url "control health" "http://127.0.0.1:5180/health" -H "x-forwarded-proto: https"
+	if [[ "${RALLAR_PRESERVE_PUBLIC_SETTINGS:-0}" == 1 ]]; then
+		verify_rallar_control_public_cors >/dev/null 2>&1 || {
+			echo 'Public control CORS verification failed for preserved settings.' >&2
+			exit 1
+		}
+	else
+		verify_rallar_control_public_cors
+	fi
+	;;
+games)
+	wait_for_url "Relic Hunter config" "http://127.0.0.1:${RALLAR_RELIC_PORT}/api/config"
+	wait_for_url "AR Eye Hunter config" "http://127.0.0.1:${RALLAR_AR_EYE_PORT}/api/config"
+	;;
+esac
+
+if [[ "${RALLAR_CONTROLLER_ROLE}" == "api" ]]; then
+	deployment_browser_status="not-verified"
+	if verify_rallar_playwright_browser \
+		"${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"; then
+		deployment_browser_status="passed"
+	elif [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
+		echo "Playwright browser verification failed after an explicit install." >&2
 		exit 1
-	}
-else
-	verify_rallar_control_public_cors
-fi
+	else
+		echo "Playwright browser is not verified for this deployment; run-only Hetzner recipes will be rejected." >&2
+	fi
 
-deployment_browser_status="not-verified"
-if verify_rallar_playwright_browser \
-	"${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"; then
-	deployment_browser_status="passed"
-elif [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-	echo "Playwright browser verification failed after an explicit install." >&2
-	exit 1
-else
-	echo "Playwright browser is not verified for this deployment; run-only Hetzner recipes will be rejected." >&2
+	rallar_playwright_operation_stage "deployment-readiness"
+	RALLAR_DEPLOYMENT_BROWSER_STATUS="${deployment_browser_status}" \
+		RALLAR_DEPLOYMENT_API_HEALTH_STATUS=passed \
+		RALLAR_DEPLOYMENT_CONTROL_HEALTH_STATUS=passed \
+		RALLAR_DEPLOYMENT_PUBLIC_HEALTH_STATUS=passed \
+		write_rallar_deployment_readiness "${RALLAR_CHECKOUT_DIR}"
 fi
-
-rallar_playwright_operation_stage "deployment-readiness"
-RALLAR_DEPLOYMENT_BROWSER_STATUS="${deployment_browser_status}" \
-	RALLAR_DEPLOYMENT_API_HEALTH_STATUS=passed \
-	RALLAR_DEPLOYMENT_CONTROL_HEALTH_STATUS=passed \
-	RALLAR_DEPLOYMENT_PUBLIC_HEALTH_STATUS=passed \
-	write_rallar_deployment_readiness "${RALLAR_CHECKOUT_DIR}"
 
 echo
 "${SCRIPT_DIR}/07-status-controller.sh"

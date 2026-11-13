@@ -1,5 +1,5 @@
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import {
     registerAdminOperationMutationRoutes,

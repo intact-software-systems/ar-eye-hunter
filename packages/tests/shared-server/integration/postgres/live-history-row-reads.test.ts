@@ -366,9 +366,5 @@ function requireDatabaseUrl(): string {
 }
 
 function readEnv(name: string): string | undefined {
-    const globals = globalThis as Readonly<{
-        Deno?: Readonly<{ env: Readonly<{ get(key: string): string | undefined; }>; }>;
-        process?: Readonly<{ env?: Readonly<Record<string, string | undefined>>; }>;
-    }>;
-    return globals.Deno?.env.get(name) ?? globals.process?.env?.[name];
+    return process.env[name];
 }

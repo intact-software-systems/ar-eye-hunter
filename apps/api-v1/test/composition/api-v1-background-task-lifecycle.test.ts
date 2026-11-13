@@ -1,9 +1,10 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-background-task-lifecycle.ts';
 import type { RuntimeStateExpiryLifecycle, RuntimeStateExpiryStartupGeneration } from '../../src/services/runtime-state-expiry-startup.ts';
 
-Deno.test(
+test(
     'background lifecycle unregisters one stop and attempts every remaining stop',
     async () => {
         const calls: string[] = [];
@@ -31,7 +32,7 @@ Deno.test(
     }
 );
 
-Deno.test('background lifecycle starts fresh generations and repeats one stop safely', async () => {
+test('background lifecycle starts fresh generations and repeats one stop safely', async () => {
     const calls: string[] = [];
     const lifecycle = createApiV1BackgroundTaskLifecycle({
         runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls)
@@ -50,7 +51,7 @@ Deno.test('background lifecycle starts fresh generations and repeats one stop sa
     assert.deepEqual(calls, ['begin', 'begin', 'expiry-stop', 'task-stop']);
 });
 
-Deno.test('background lifecycle closes registrations sequentially in reverse ownership order', async () => {
+test('background lifecycle closes registrations sequentially in reverse ownership order', async () => {
     const calls: string[] = [];
     const lifecycle = createApiV1BackgroundTaskLifecycle({
         runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls)

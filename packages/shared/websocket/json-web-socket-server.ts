@@ -3,7 +3,6 @@ import { ExpectedConnectionHolds } from './expected-connection-holds.ts';
 
 export interface WebSocketServerCallbacks {
     onConnection?: (ctx: ConnectionContext) => void;
-    onError?: (ctx: ConnectionContext, ev: Event) => void;
     onClose?: (ctx: ConnectionContext, ev: CloseEvent) => void | Promise<void>;
 
     /**
@@ -24,17 +23,42 @@ export interface EncodedJsonWebSocketMessage {
 }
 
 export namespace ConnectionContext {
+    /**
+     * The server side of one socket as the runtime boundary (Bun's `ServerWebSocket`) exposes it. `send` returns
+     * Bun's status: the bytes written, `-1` when the frame is queued behind backpressure (it is still sent), or `0`
+     * when the socket dropped the frame.
+     */
+    export interface Socket {
+        readonly readyState: number;
+        send(text: string): number;
+        close(code?: number, reason?: string): void;
+    }
+
     export interface Input {
         readonly id: string;
-        readonly socket: WebSocket;
+        readonly socket: Socket;
         readonly generationId?: string;
         readonly generationStartedAtEpochMs?: number;
     }
 }
 
+/** Bun's `send` status for a frame the socket dropped instead of writing or queueing. */
+const DROPPED_FRAME = 0;
+
+/** A frame the socket refused: the send fails exactly as a throwing native send does. */
+export class JsonWebSocketDroppedFrameError extends Error {
+    override readonly name = 'JsonWebSocketDroppedFrameError';
+    readonly connectionId: string;
+
+    constructor(connectionId: string) {
+        super(`JsonWebSocketServer: the socket dropped the frame for ${connectionId}`);
+        this.connectionId = connectionId;
+    }
+}
+
 export class ConnectionContext {
     public readonly id: string;
-    public readonly socket: WebSocket;
+    public readonly socket: ConnectionContext.Socket;
     public readonly generationId: string;
     public readonly generationStartedAtEpochMs: number;
 
@@ -58,7 +82,7 @@ export namespace JsonWebSocketServer {
 
     export interface CreateConnectionInput extends MintGenerationInput {
         readonly id: string;
-        readonly socket: WebSocket;
+        readonly socket: ConnectionContext.Socket;
     }
 
     export interface MintGenerationInput {
@@ -76,6 +100,7 @@ export class JsonWebSocketServer {
     private readonly webSocketServerCallbacks = new Map<string, WebSocketServerCallbacks>();
     private readonly onMessageCallbacks = new Map<string, WebSocketServerOnMessageCallback>();
     private lastGenerationStartedAtEpochMs = -1;
+    private refusal: { readonly code: number; readonly reason: string; } | undefined;
 
     public readonly connections = new Map<string, ConnectionContext>();
     public readonly expectedConnections = new ExpectedConnectionHolds({
@@ -133,65 +158,77 @@ export class JsonWebSocketServer {
     }
 
     // --------------------
-    // Add connection
+    // Connection lifecycle, dispatched by the runtime boundary
     // --------------------
 
-    addConnection(ctx: ConnectionContext): void {
-        const existing = this.connections.get(ctx.id);
-        this.connections.set(ctx.id, ctx);
+    get isAcceptingConnections(): boolean {
+        return this.refusal === undefined;
+    }
 
-        this.addAllEventListeners(ctx);
-        if (existing && existing !== ctx) {
-            this.closeContext(existing, 1000, 'connection-replaced');
+    /**
+     * Shutdown: closes every connection and every socket that registers afterwards. A connect that committed while
+     * the drain ran upgrades after this sweep, so registration itself must refuse it.
+     */
+    stopAcceptingConnections(code: number, reason: string): void {
+        this.refusal = { code, reason };
+        for (const ctx of this.connections.values()) {
+            this.closeContext(ctx, code, reason);
         }
     }
 
-    private addAllEventListeners(ctx: ConnectionContext) {
-        ctx.socket.addEventListener('open', (_: Event) => {
-            this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onConnection?.(ctx);
-                }
-                catch (e) {
-                    console.error('Callback onConnection failed:', e);
+    /** Returns false, after closing the socket, once shutdown has begun. */
+    registerConnection(ctx: ConnectionContext): boolean {
+        if (this.refusal !== undefined) {
+            this.closeContext(ctx, this.refusal.code, this.refusal.reason);
+            return false;
+        }
+        const existing = this.connections.get(ctx.id);
+        this.connections.set(ctx.id, ctx);
+        if (existing && existing !== ctx) {
+            this.closeContext(existing, 1000, 'connection-replaced');
+        }
+        return true;
+    }
+
+    dispatchConnectionMessage(ctx: ConnectionContext, data: unknown): Promise<void> {
+        return this.dispatchMessage(ctx, { data } as MessageEvent);
+    }
+
+    dispatchConnectionClose(ctx: ConnectionContext, code?: number, reason?: string): void {
+        this.dispatchCloseEvent(ctx, { code, reason } as CloseEvent);
+    }
+
+    dispatchConnectionOpen(ctx: ConnectionContext): void {
+        this.expectedConnections.open({ id: ctx.id, generationId: ctx.generationId });
+        for (const cb of this.webSocketServerCallbacks.values()) {
+            try {
+                cb.onConnection?.(ctx);
+            }
+            catch (e) {
+                console.error('Callback onConnection failed:', e);
+            }
+        }
+    }
+
+    private dispatchCloseEvent(ctx: ConnectionContext, ev: CloseEvent): void {
+        if (this.connections.get(ctx.id) === ctx) {
+            this.connections.delete(ctx.id);
+        }
+        this.expectedConnections.release({ id: ctx.id, generationId: ctx.generationId });
+
+        for (const cb of this.webSocketServerCallbacks.values()) {
+            try {
+                const completion = cb.onClose?.(ctx, ev);
+                if (completion) {
+                    void Promise.resolve(completion).catch((error) => {
+                        console.error('Callback onClose failed:', error);
+                    });
                 }
             }
-        });
-
-        ctx.socket.addEventListener('message', (event: MessageEvent) => this.dispatchMessage(ctx, event));
-
-        ctx.socket.addEventListener('error', (ev: Event) => {
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    cb.onError?.(ctx, ev);
-                }
-                catch (e) {
-                    console.error('Callback onError failed:', e);
-                }
+            catch (e) {
+                console.error('Callback onClose failed:', e);
             }
-        });
-
-        ctx.socket.addEventListener('close', (ev: CloseEvent) => {
-            if (this.connections.get(ctx.id) === ctx) {
-                this.connections.delete(ctx.id);
-            }
-            this.expectedConnections.release({ id: ctx.id, generationId: ctx.generationId });
-
-            for (const cb of this.webSocketServerCallbacks.values()) {
-                try {
-                    const completion = cb.onClose?.(ctx, ev);
-                    if (completion) {
-                        void Promise.resolve(completion).catch((error) => {
-                            console.error('Callback onClose failed:', error);
-                        });
-                    }
-                }
-                catch (e) {
-                    console.error('Callback onClose failed:', e);
-                }
-            }
-        });
+        }
     }
 
     private async dispatchMessage(ctx: ConnectionContext, event: MessageEvent): Promise<void> {
@@ -297,7 +334,10 @@ export class JsonWebSocketServer {
         if (evidence !== undefined) {
             evidence.nativeCall = 'invoked';
         }
-        send.call(socket, text);
+        // A dropped frame never reached submission, so the evidence keeps `invoked`, as for a native throw.
+        if (send.call(socket, text) === DROPPED_FRAME) {
+            throw new JsonWebSocketDroppedFrameError(connectionId);
+        }
         if (evidence !== undefined) {
             evidence.nativeCall = 'returned';
         }
@@ -309,14 +349,7 @@ export class JsonWebSocketServer {
             return false;
         }
 
-        try {
-            ctx.socket.send(encoded.text);
-            return true;
-        }
-        catch (error) {
-            console.error(`WebSocket send failed for ${connectionId}`, error);
-            return false;
-        }
+        return this.trySendText(ctx, encoded.text);
     }
 
     trySendEncodedToContext(
@@ -327,14 +360,7 @@ export class JsonWebSocketServer {
             return false;
         }
 
-        try {
-            context.socket.send(encoded.text);
-            return true;
-        }
-        catch (error) {
-            console.error(`WebSocket send failed for ${context.id}`, error);
-            return false;
-        }
+        return this.trySendText(context, encoded.text);
     }
 
     broadcast(data: unknown, filter?: (ctx: ConnectionContext) => boolean): number {
@@ -349,14 +375,24 @@ export class JsonWebSocketServer {
                 continue;
             }
 
-            try {
-                ctx.socket.send(encoded.text);
+            if (this.trySendText(ctx, encoded.text)) {
                 count += 1;
-            }
-            catch (e) {
-                console.error('Broadcast send failed:', e);
             }
         }
         return count;
+    }
+
+    private trySendText(ctx: ConnectionContext, text: string): boolean {
+        try {
+            if (ctx.socket.send(text) === DROPPED_FRAME) {
+                console.error(`WebSocket frame dropped for ${ctx.id}`);
+                return false;
+            }
+            return true;
+        }
+        catch (error) {
+            console.error(`WebSocket send failed for ${ctx.id}`, error);
+            return false;
+        }
     }
 }

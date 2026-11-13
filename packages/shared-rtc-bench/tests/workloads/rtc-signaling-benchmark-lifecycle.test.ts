@@ -13,9 +13,7 @@ import { runRtcPeerConnectionDiagnostics } from '../../workloads/signaling/rtc-p
 import * as Listeners from '../../workloads/signaling/rtc-peer-listener-cleanup-bench.ts';
 
 const baselineId = '20260807-0123456789ab-e1-local';
-const denoPrefix = words(
-    'run --config=packages/shared-rtc-bench/deno.json --allow-read --allow-write'
-);
+const bunPrefix = words('run');
 
 function words(value: string): string[] {
     return value.trim().split(/\s+/);
@@ -269,14 +267,14 @@ it('RTC-B01 diagnostics stay create-new beneath tmp/perf/results', () => {
     onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
     const output = join(directory, 'ice-candidate-queue.json');
     const command = [
-        ...denoPrefix,
+        ...bunPrefix,
         'packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts',
         '--candidates=1',
         '--runs=1',
         `--out=${output}`
     ];
-    expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
+    expect(spawnSync('bun', command, { encoding: 'utf8' }).status).toBe(0);
     const persisted = JSON.parse(readFileSync(output, 'utf8'));
     expect([persisted.schema, persisted.outcome]).toEqual([undefined, undefined]);
-    expect(spawnSync('deno', command, { encoding: 'utf8' }).status).not.toBe(0);
+    expect(spawnSync('bun', command, { encoding: 'utf8' }).status).not.toBe(0);
 });

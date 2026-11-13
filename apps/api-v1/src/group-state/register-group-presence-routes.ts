@@ -1,4 +1,4 @@
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 
 import type {
     ConnectGroupPresenceSessionRequest,

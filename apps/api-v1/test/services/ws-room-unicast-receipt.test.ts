@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -18,7 +19,7 @@ import {
 } from './ws-room-live-runtime.ts';
 import { putRoomSnapshot } from './ws-room-test-runtime.ts';
 
-Deno.test('a receiver room unicast reaches only its addressee and its receipt names the addressee alone (D53)', async () => {
+test('a receiver room unicast reaches only its addressee and its receipt names the addressee alone (D53)', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2', 'session-3']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {
@@ -56,7 +57,7 @@ Deno.test('a receiver room unicast reaches only its addressee and its receipt na
     }
 });
 
-Deno.test('a room unicast to a session outside the room is refused before admission (Q5)', async () => {
+test('a room unicast to a session outside the room is refused before admission (Q5)', async () => {
     const snapshot = createGroupSnapshot(2, ['session-1', 'session-2']);
     const runtime = createLiveRoomRuntime(Date.now());
     try {

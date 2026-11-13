@@ -5,7 +5,7 @@ import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-re
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
 import { decodeViewWatchFamily, decodeViewWatchRequest } from '@shared/api/views/view-watch.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'hono';
 import { toApiMutationFailureResponse, toApiMutationRouteFailure } from '../routes/api-mutation-route-failure.ts';
 import { readApiRequestTraceId } from '../services/read-api-request-trace-id.ts';
 

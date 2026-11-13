@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import { isSafeOutputTransformOnlySpec } from '../scenario-transform/safe-output-transform.ts';
 import { toPublicCorrelationConfig } from './black-box-run-correlation.ts';
 

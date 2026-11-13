@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type { GroupPublicationAuthority } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
@@ -11,7 +12,7 @@ import { createApiV1CapturedRecipientEligibilityFilters } from '../../src/compos
 
 const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
-Deno.test('the durable filter judges a room row by the room\'s live generations and the local filter by this instance\'s sockets', async () => {
+test('the durable filter judges a room row by the room\'s live generations and the local filter by this instance\'s sockets', async () => {
     // Bob is live in the room, with no socket on this instance.
     const filters = createApiV1CapturedRecipientEligibilityFilters({
         socketServer: new JsonWebSocketServer(),

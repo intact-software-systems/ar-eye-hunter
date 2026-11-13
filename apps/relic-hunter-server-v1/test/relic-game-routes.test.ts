@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createRelicGame } from '@relic-hunters/mod.ts';
@@ -13,7 +14,7 @@ import {
     RELIC_TEST_GAME_ID
 } from './relic-game-test-runtime.ts';
 
-Deno.test('a Relic REST reset publishes under the x-request-id of its request', async () => {
+test('a Relic REST reset publishes under the x-request-id of its request', async () => {
     await withPGliteSql(async (database) => {
         const stack = await createRelicTestStack(database);
         const relicGame = installRelicHunterGame({
@@ -47,7 +48,7 @@ Deno.test('a Relic REST reset publishes under the x-request-id of its request', 
     });
 });
 
-Deno.test('snapshot GET is observational until an explicit player initialization', async () => {
+test('snapshot GET is observational until an explicit player initialization', async () => {
     await withPGliteSql(async (database) => {
         const stack = await createRelicTestStack(database);
         let proposals = 0;

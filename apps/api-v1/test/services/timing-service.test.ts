@@ -1,10 +1,11 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { TEST_APP_INBOX_FINISHED_RETENTION_MS } from '../../../../packages/tests/shared-server/rallar-system/app-inbox/test-support/test-app-inbox-finished-retention.ts';
 
 import { toApiAppInboxServiceOptions } from '../../src/services/timing-service.ts';
 
-Deno.test('API app inbox options preserve every resolved wait policy field', () => {
+test('API app inbox options preserve every resolved wait policy field', () => {
     assert.deepEqual(
         toApiAppInboxServiceOptions({
             finishedRetentionMs: TEST_APP_INBOX_FINISHED_RETENTION_MS,

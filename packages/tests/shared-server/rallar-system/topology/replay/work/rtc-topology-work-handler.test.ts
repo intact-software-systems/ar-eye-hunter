@@ -60,6 +60,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-w
 
 import { createTestGroup } from '../../../../../create-test-group.ts';
 import { assembleStateSnapshotMessages } from '../../../../../shared/state-snapshot-test-fixture.ts';
+import { attachTestWebSocket } from '../../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
@@ -214,7 +215,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             generationId: 'socket-alice',
             generationStartedAtEpochMs: nowEpochMs
         });
-        socket.addConnection(connection);
+        attachTestWebSocket(socket, connection);
         native.open();
         const hydrator = new RtcTopologyReconnectHydrator({
             socket,

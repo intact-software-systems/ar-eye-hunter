@@ -16,8 +16,10 @@ import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { ExpectedConnectionHolds } from '@shared/websocket/expected-connection-holds.ts';
-import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
+import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
+import type { Context, Hono } from 'hono';
+import type { WSEvents } from 'hono/ws';
+import { createJsonWebSocketEvents } from '../runtime/create-json-web-socket-events.ts';
 import {
     readAuthorisedWsConnection,
     rememberAuthorisedWsConnection
@@ -36,7 +38,11 @@ export interface RegisterWsRoutesInput {
     >;
     readonly readWsConnectTicket: (ticketDigest: string) => Promise<PersistedWebSocketTicket | undefined>;
     readonly readWsConnectSession: (sessionId: string) => Promise<PersistedAuthSession | undefined>;
-    readonly upgradeWebSocket: (request: Request) => Deno.WebSocketUpgrade;
+    /** `hono/bun`'s `upgradeWebSocket`; it rejects when Bun refuses the upgrade. */
+    readonly upgradeWebSocket: (
+        context: Context,
+        events: WSEvents<ConnectionContext.Socket>
+    ) => Promise<Response>;
     readonly nowEpochMs: () => number;
 }
 
@@ -164,17 +170,21 @@ async function registerAuthorisedWebSocket(
     if (context.req.raw.signal.aborted) {
         return await writeClosedGenerationResponse(context, input, { connect, reason: 'websocket-upgrade-abandoned' });
     }
+    if (!input.socketServer.isAcceptingConnections) {
+        return await writeClosedGenerationResponse(context, input, { connect, reason: 'server-shutting-down' });
+    }
     try {
-        const upgraded = input.upgradeWebSocket(context.req.raw);
+        await input.upgradeWebSocket(
+            context,
+            createJsonWebSocketEvents(input.socketServer, { id: connect.expected.id, ...connect.generation })
+        );
         rememberAuthorisedWsConnection(
             connect.expected.id,
             connect.generation.generationId,
             toAuthorisedWsClientConnection(connect.enqueue)
         );
-        input.socketServer.addConnection(
-            new ConnectionContext({ id: connect.expected.id, socket: upgraded.socket, ...connect.generation })
-        );
-        return upgraded.response;
+        // Bun answers the upgrade itself; the 101 keeps the request's timing and trace on the upgrade path.
+        return new Response(null, { status: 101 });
     }
     catch (error) {
         console.error('WebSocket upgrade failed after its connect committed', error);

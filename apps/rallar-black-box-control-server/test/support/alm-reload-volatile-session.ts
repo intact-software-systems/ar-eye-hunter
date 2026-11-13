@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+
 import { decodeBlackBoxRallarConfigFields } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
@@ -12,7 +14,6 @@ import {
     ALVolatileSessionBudget
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { toALVolatileSessionAdmission } from '@shared/alm/volatile-budget/to-al-volatile-session-admission.ts';
-import { assert } from '@std/assert';
 
 /** A connected fixture page uses the product's volatile ledger for both admission and its stats reading. */
 export class AlmReloadVolatileSession {

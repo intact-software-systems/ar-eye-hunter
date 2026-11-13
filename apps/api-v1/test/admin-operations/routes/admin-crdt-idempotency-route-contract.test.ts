@@ -1,6 +1,7 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 
 import type { AdminOperationMutationRequest } from '@shared-server/rallar-system/admin-operations/admin-operation-request.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
@@ -113,7 +114,7 @@ const ROUTES: readonly MutationRouteCase[] = [
     }
 ];
 
-Deno.test(
+test(
     'all CRDT and admin AppInbox HTTP mutations use path-owned request identity',
     async () => {
         const fixture = createRouteFixture();
@@ -144,7 +145,7 @@ Deno.test(
     }
 );
 
-Deno.test('all replaced CRDT and admin mutation URLs return 404', async () => {
+test('all replaced CRDT and admin mutation URLs return 404', async () => {
     const fixture = createRouteFixture();
 
     for (const route of ROUTES) {
@@ -159,7 +160,7 @@ Deno.test('all replaced CRDT and admin mutation URLs return 404', async () => {
     assert.deepEqual(fixture.calls, []);
 });
 
-Deno.test('all strict CRDT and admin mutation routes reject header request identity', async () => {
+test('all strict CRDT and admin mutation routes reject header request identity', async () => {
     for (const route of ROUTES) {
         const fixture = createRouteFixture();
         const response = await postMutation({
@@ -175,7 +176,7 @@ Deno.test('all strict CRDT and admin mutation routes reject header request ident
     }
 });
 
-Deno.test('all strict CRDT and admin mutation routes reject body request identity', async () => {
+test('all strict CRDT and admin mutation routes reject body request identity', async () => {
     for (const route of ROUTES) {
         const fixture = createRouteFixture();
         const response = await postMutation({
@@ -190,7 +191,7 @@ Deno.test('all strict CRDT and admin mutation routes reject body request identit
     }
 });
 
-Deno.test(
+test(
     'strict CRDT and admin mutation routes authenticate before request validation',
     async () => {
         for (const route of ROUTES) {
@@ -213,7 +214,7 @@ Deno.test(
     }
 );
 
-Deno.test('all strict CRDT and admin routes enforce exact request ID boundaries', async () => {
+test('all strict CRDT and admin routes enforce exact request ID boundaries', async () => {
     for (const route of ROUTES) {
         for (
             const [length, accepted] of [[19, false], [20, true], [128, true], [129, false]] as const

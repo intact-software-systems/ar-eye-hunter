@@ -39,6 +39,7 @@ import type { WsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-
 import { createDefaultWsQueueBoxServerService, type WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 
 const SCOPE = { applicationId: 'app', workspaceId: 'workspace' };
@@ -270,7 +271,7 @@ describe('WS first dequeue authority', () => {
                 .toBe(EntityStatus.COMPLETED);
         }
         const awaitedNative = new TestWebSocket('ws://awaited');
-        fixture.socket.addConnection(new ConnectionContext({ id: 'awaited', socket: awaitedNative, generationId: 'generation' }));
+        attachTestWebSocket(fixture.socket, new ConnectionContext({ id: 'awaited', socket: awaitedNative, generationId: 'generation' }));
         awaitedNative.open();
 
         await expect.poll(() => awaitedNative.sent.length).toBe(1);
@@ -393,7 +394,7 @@ function createFixture(
     const socket = new JsonWebSocketServer();
     const native = new TestWebSocket('ws://peer');
     native.open();
-    socket.addConnection(new ConnectionContext({ id: 'peer', socket: native }));
+    attachTestWebSocket(socket, new ConnectionContext({ id: 'peer', socket: native }));
     const engine = new InboxOutboxEngine();
     const input: WsQueueBoxServerService.Input = {
         name: 'server',

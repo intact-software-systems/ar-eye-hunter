@@ -19,6 +19,7 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
+import { attachTestWebSocket } from '../../shared/websocket/attach-test-web-socket.ts';
 import { createRallarMiddlewareTestRuntime } from './middleware/rallar-middleware-test-runtime.ts';
 import { createClientSnapshot } from './state-sync/http/rest-state-snapshot-read-test-fixtures.ts';
 
@@ -30,8 +31,8 @@ describe('state-sync websocket ingress', () => {
         const webSocketServer = new JsonWebSocketServer();
         const attacker = new RecordingOpenSocket();
         const recipient = new RecordingOpenSocket();
-        webSocketServer.addConnection(new ConnectionContext({ id: 'attacker', socket: attacker }));
-        webSocketServer.addConnection(new ConnectionContext({ id: 'session-alice', socket: recipient }));
+        attachTestWebSocket(webSocketServer, new ConnectionContext({ id: 'attacker', socket: attacker }));
+        attachTestWebSocket(webSocketServer, new ConnectionContext({ id: 'session-alice', socket: recipient }));
         const testRuntime = createRallarMiddlewareTestRuntime({
             resilience: {
                 inbox: createResilience(),
@@ -195,8 +196,9 @@ class RecordingOpenSocket extends EventTarget implements WebSocket {
 
     close(): void {}
 
-    send(data: string): void {
+    send(data: string): number {
         this.sentPayloads.push(data);
+        return data.length;
     }
 
     async dispatchMessage(message: ALMessage): Promise<void> {

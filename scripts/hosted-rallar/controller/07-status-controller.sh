@@ -9,6 +9,19 @@ RALLAR_API_STORE_FAILURE_FILE="${RALLAR_API_STORE_FAILURE_FILE:-/etc/rallar/api-
 RALLAR_CHECKOUT_DIR="${RALLAR_CHECKOUT_DIR:-/opt/rallar/ar-eye-hunter}"
 RALLAR_DEPLOYMENT_READINESS_PATH="${RALLAR_DEPLOYMENT_READINESS_PATH:-/var/lib/rallar-black-box-control/deployment-readiness.json}"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
+if [[ -r "${SCRIPT_DIR}/rallar-controller-role.sh" ]]; then
+	source "${SCRIPT_DIR}/rallar-controller-role.sh"
+fi
+if declare -F apply_rallar_controller_role >/dev/null 2>&1; then
+	apply_rallar_controller_role
+else
+	# Streamed over SSH stdin without sibling scripts; the inspect path hardcodes its own services.
+	RALLAR_CONTROLLER_ROLE="api"
+	RALLAR_ROLE_HAS_POSTGRES=1
+	RALLAR_ROLE_APP_SERVICES=(rallar-api-v1.service)
+fi
+
 inspect_fail() {
 	echo "Hosted inspect could not obtain required nonsecret evidence: $1." >&2
 	return 1
@@ -205,18 +218,24 @@ inspect_services() {
 	local api_state control_state postgres_state caddy_state headless_state
 	local api_process control_process headless_process services processes
 	api_state="$(inspect_service_state rallar-api-v1.service)" || return 1
-	control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
 	postgres_state="$(inspect_service_state postgresql.service)" || return 1
 	caddy_state="$(inspect_service_state caddy.service)" || return 1
-	headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
+	control_state='not-local'
+	headless_state='not-local'
+	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
+	control_process='"not-local"'
+	headless_process='"not-local"'
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
+		control_state="$(inspect_service_state rallar-black-box-control.service)" || return 1
+		headless_state="$(inspect_service_state rallar-black-box-headless-worker.service)" || return 1
+		control_process="$(inspect_service_process rallar-black-box-control.service)" || return 1
+		headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
+	fi
 	services="$(jq -cn \
 		--arg api "${api_state}" --arg control "${control_state}" \
 		--arg postgres "${postgres_state}" --arg caddy "${caddy_state}" \
 		--arg headless "${headless_state}" \
 		'{api: $api, control: $control, postgres: $postgres, caddy: $caddy, headless: $headless}')" || return 1
-	api_process="$(inspect_service_process rallar-api-v1.service)" || return 1
-	control_process="$(inspect_service_process rallar-black-box-control.service)" || return 1
-	headless_process="$(inspect_service_process rallar-black-box-headless-worker.service)" || return 1
 	processes="$(jq -cn --argjson api "${api_process}" --argjson control "${control_process}" \
 		--argjson headless "${headless_process}" '{api: $api, control: $control, headless: $headless}')" || return 1
 	jq -cn --argjson services "${services}" --argjson processes "${processes}" '{services: $services, processes: $processes}'
@@ -249,18 +268,30 @@ inspect_activity() {
 }
 
 inspect_health() {
-	local operator_settings="$1" api_loopback control_loopback api_public control_public
+	local operator_settings="$1"
+	local api_loopback control_loopback api_public control_public
 	local api_base_url control_url control_host control_scheme
-	api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
-	control_loopback="$(inspect_health_code http://127.0.0.1:5180/health)" || return 1
-	api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
-	control_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_BLACK_BOX_CONTROL_URL.value')" || return 1
-	control_scheme=https
-	if [[ "${control_url}" == ws://* ]]; then control_scheme=http; fi
-	control_host="${control_url#*://}"
-	control_host="${control_host%%/*}"
-	api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
-	control_public="$(inspect_health_code "${control_scheme}://${control_host}/health")" || return 1
+	case "${RALLAR_CONTROLLER_ROLE}" in
+	control)
+		api_loopback='not-local'
+		control_loopback="$(inspect_health_code http://127.0.0.1:5180/health)" || return 1
+		control_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_BLACK_BOX_CONTROL_URL.value // empty')" || return 1
+		control_scheme=https
+		if [[ "${control_url}" == ws://* ]]; then control_scheme=http; fi
+		control_host="${control_url#*://}"
+		control_host="${control_host%%/*}"
+		control_public="$(inspect_health_code "${control_scheme}://${control_host}/health")" || return 1
+		api_public='not-configured'
+		;;
+	*)
+		# The api role (and the games role once its hosts are wired) probes its own api-v1 surface.
+		api_loopback="$(inspect_health_code http://127.0.0.1:8080/api/config)" || return 1
+		api_base_url="$(printf '%s' "${operator_settings}" | jq -r '.RALLAR_API_BASE_URL.value')" || return 1
+		api_public="$(inspect_health_code "${api_base_url%/}/api/config")" || return 1
+		control_loopback='not-local'
+		control_public='not-configured'
+		;;
+	esac
 	jq -cn \
 		--arg apiLoopback "${api_loopback}" --arg controlLoopback "${control_loopback}" \
 		--arg apiPublic "${api_public}" --arg controlPublic "${control_public}" \
@@ -281,13 +312,17 @@ inspect_hosted_controller() {
 		return 1
 	}
 	source_state="$(inspect_source_state)" || return 1
-	readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
-		select(.deployedCommit | test("^[0-9a-f]{40}$")) |
-		select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
-		"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || {
-		inspect_fail "readiness"
-		return 1
-	}
+	if [[ "${RALLAR_CONTROLLER_ROLE}" == 'control' ]]; then
+		readiness="$(jq -ce '{deployedCommit, apiHealthStatus, controlHealthStatus, publicHealthStatus} |
+			select(.deployedCommit | test("^[0-9a-f]{40}$")) |
+			select(all(.apiHealthStatus, .controlHealthStatus, .publicHealthStatus; . == "passed" or . == "failed"))' \
+			"${RALLAR_DEPLOYMENT_READINESS_PATH}" 2>/dev/null)" || {
+			inspect_fail "readiness"
+			return 1
+		}
+	else
+		readiness='{"deployedCommit":null,"note":"deployment-readiness is a control-host marker"}'
+	fi
 	database="$(inspect_database)" || return 1
 	services="$(inspect_services)" || return 1
 	activity="$(inspect_activity)" || return 1
@@ -305,11 +340,11 @@ inspect_hosted_controller() {
 if [[ "${1:-}" == "--inspect" ]]; then
 	if ! declare -F read_rallar_api_effective_env_value >/dev/null; then
 		# Normal local invocation; the workflow streams this same reader before this script.
-		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
 		source "${SCRIPT_DIR}/rallar-api-effective-env.sh"
 	fi
 	if ! declare -F read_rallar_public_spa_settings >/dev/null; then
-		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+		SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-}")" && pwd)"
 		source "${SCRIPT_DIR}/rallar-public-spa-env.sh"
 	fi
 	inspect_hosted_controller
@@ -317,37 +352,56 @@ if [[ "${1:-}" == "--inspect" ]]; then
 fi
 
 echo "==> Service status"
-systemctl status rallar-api-v1.service --no-pager || true
-systemctl status rallar-black-box-control.service --no-pager || true
-systemctl status postgresql.service --no-pager || true
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	systemctl status "${service}" --no-pager || true
+done
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	systemctl status postgresql.service --no-pager || true
+fi
 systemctl status caddy.service --no-pager || true
 
 echo
-echo "==> API-v1 configuration profile"
-api_profile=""
-if [[ -r "${RALLAR_API_ENV_FILE}" ]]; then
-	api_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${RALLAR_API_ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
-fi
-if [[ -z "${api_profile}" ]]; then
-	echo "RALLAR_API_CONFIGURATION_PROFILE not found in ${RALLAR_API_ENV_FILE}"
-elif [[ "${api_profile}" == "prod" ]]; then
-	echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; rollouts preserve the store."
-else
-	echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
-fi
+echo "==> Configuration profile"
+case "${RALLAR_CONTROLLER_ROLE}" in
+api)
+	api_profile=""
+	if [[ -r "${RALLAR_API_ENV_FILE}" ]]; then
+		api_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${RALLAR_API_ENV_FILE}" | tail -n 1 | cut -d= -f2- || true)"
+	fi
+	if [[ -z "${api_profile}" ]]; then
+		echo "RALLAR_API_CONFIGURATION_PROFILE not found in ${RALLAR_API_ENV_FILE}"
+	elif [[ "${api_profile}" == "prod" ]]; then
+		echo "RALLAR_API_CONFIGURATION_PROFILE=prod on this VM's Postgres; rollouts preserve the store."
+	else
+		echo "WARNING: RALLAR_API_CONFIGURATION_PROFILE=${api_profile}; the controller runs the prod profile on this VM's Postgres. Run 08-rollout-controller.sh to apply it."
+	fi
+	;;
+games)
+	for env_file in "${RALLAR_RELIC_ENV_FILE}" "${RALLAR_AR_EYE_ENV_FILE}"; do
+		game_profile=""
+		if [[ -r "${env_file}" ]]; then
+			game_profile="$(grep -E '^RALLAR_API_CONFIGURATION_PROFILE=' "${env_file}" | tail -n 1 | cut -d= -f2- || true)"
+		fi
+		printf '%s: %s\n' "$(basename "${env_file}")" "${game_profile:-<missing>}"
+	done
+	;;
+esac
 
-if [[ -e "${RALLAR_API_STORE_FAILURE_FILE}" ]]; then
-	echo "ERROR: $(cat "${RALLAR_API_STORE_FAILURE_FILE}")"
+if [[ "${RALLAR_ROLE_HAS_POSTGRES}" == "1" ]]; then
+	for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+		failure_file="$(rallar_role_service_failure_file "${service}" || true)"
+		if [[ -n "${failure_file}" && -e "${failure_file}" ]]; then
+			echo "ERROR: $(cat "${failure_file}")"
+		fi
+	done
 fi
 
 echo
 echo "==> Memory"
 free -h
 
-echo
-echo "==> Recent API-v1 logs"
-journalctl -u rallar-api-v1.service -n 40 --no-pager || true
-
-echo
-echo "==> Recent control-server logs"
-journalctl -u rallar-black-box-control.service -n 40 --no-pager || true
+for service in "${RALLAR_ROLE_APP_SERVICES[@]}"; do
+	echo
+	echo "==> Recent ${service} logs"
+	journalctl -u "${service}" -n 40 --no-pager || true
+done

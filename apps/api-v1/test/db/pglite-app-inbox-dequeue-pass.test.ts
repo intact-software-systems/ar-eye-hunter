@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
@@ -56,7 +57,7 @@ interface DequeuePassRuntime {
     enqueue(resourceId: string): ReturnType<ReturnType<typeof createAppInboxClientRuntime>['queueEntryWriter']['enqueue']>;
 }
 
-Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handler per claimed item and the handler reports its own', async () => {
+test('PGlite AppInbox dequeue pass reports its statements outside the handler per claimed item and the handler reports its own', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = createDequeuePassRuntime(sql);
         const { timing, engine, queueInbox } = runtime;
@@ -107,7 +108,7 @@ Deno.test('PGlite AppInbox dequeue pass reports its statements outside the handl
     });
 });
 
-Deno.test('PGlite AppInbox dequeue pass claims an overdue retry on the FAIRNESS lane', async () => {
+test('PGlite AppInbox dequeue pass claims an overdue retry on the FAIRNESS lane', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = createDequeuePassRuntime(sql);
         const { timing, engine, queueInbox } = runtime;

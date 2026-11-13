@@ -1,33 +1,34 @@
+import { expect, test } from 'bun:test';
+
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlEventEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { assertEquals, assertStrictEquals } from '@std/assert';
 
 import { trimControlRunEvidence } from '../src/control-runtime-retention.ts';
 import { toInitialControlRunState, type ControlRunState } from '../src/control-service-state.ts';
 
-Deno.test('unbounded and within-limit retention keeps each retained evidence array without copying it', () => {
+test('unbounded and within-limit retention keeps each retained evidence array without copying it', () => {
     for (const bounds of [{}, { events: 10, stats: 10, reports: 10, heartbeats: 10 }]) {
         const run = toRunWithEvents(3);
         const before = { events: run.events, stats: run.stats, reports: run.reports, heartbeats: run.heartbeats };
 
         trimControlRunEvidence(run, [], bounds);
 
-        assertStrictEquals(run.events, before.events);
-        assertStrictEquals(run.stats, before.stats);
-        assertStrictEquals(run.reports, before.reports);
-        assertStrictEquals(run.heartbeats, before.heartbeats);
-        assertEquals(run.events.length, 3);
+        expect(run.events).toBe(before.events);
+        expect(run.stats).toBe(before.stats);
+        expect(run.reports).toBe(before.reports);
+        expect(run.heartbeats).toBe(before.heartbeats);
+        expect(run.events.length).toEqual(3);
     }
 });
 
-Deno.test('bounded retention keeps the newest events up to the limit', () => {
+test('bounded retention keeps the newest events up to the limit', () => {
     const run = toRunWithEvents(5);
 
     trimControlRunEvidence(run, [], { events: 2 });
 
-    assertEquals(run.events.map((event) => event.eventId), ['event-3', 'event-4']);
+    expect(run.events.map((event) => event.eventId)).toEqual(['event-3', 'event-4']);
 });
 
 function toRunWithEvents(count: number): ControlRunState {

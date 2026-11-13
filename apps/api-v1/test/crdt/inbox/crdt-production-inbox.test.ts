@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import type {
@@ -82,7 +83,7 @@ interface ResourceInboxCompletionRow {
     readonly ris_resource: string;
 }
 
-Deno.test(
+test(
     'production CRDT factory fails closed when document policies are unavailable',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -106,7 +107,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'CRDT factory supplies current authority, exact policy, queue wake, and no audit pair',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -186,7 +187,7 @@ const FAILURE_STAGES = [
 ] as const;
 
 for (const stage of FAILURE_STAGES) {
-    Deno.test(`production AppCrdt transaction rolls back at ${stage}`, async () => {
+    test(`production AppCrdt transaction rolls back at ${stage}`, async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
             const database = withInjectedTransactionFailure(sql, stage);
@@ -229,7 +230,7 @@ for (const stage of FAILURE_STAGES) {
     });
 }
 
-Deno.test(
+test(
     'production AppCrdt accepts a new session replay and rejects changed-content collision',
     async () => {
         await withPGliteSql(async (sql) => {
@@ -287,7 +288,7 @@ Deno.test(
     }
 );
 
-Deno.test(
+test(
     'production AppInbox retries a CRDT conflict from a fresh revoked authority read',
     async () => {
         await withPGliteSql(async (sql) => {

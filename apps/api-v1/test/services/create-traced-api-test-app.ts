@@ -1,4 +1,4 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { Hono } from 'hono';
 
 import { createHttpTimingMiddleware } from '../../src/services/http-timing-middleware.ts';
 

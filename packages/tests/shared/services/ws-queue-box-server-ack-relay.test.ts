@@ -29,6 +29,7 @@ import { createInboundTestStores } from '../alm/inbound-runtime-test-fixture.ts'
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 /** Messages one session acknowledges inside one relay window, each aggregated on another instance. */
@@ -461,7 +462,7 @@ async function createServerInstance(input: ServerInstanceInput): Promise<ServerI
     for (const peerId of input.peerIds) {
         sockets[peerId] = new SimulatedWebSocket(`ws://${peerId}`);
         await sockets[peerId].open();
-        socket.addConnection(new ConnectionContext({ id: peerId, socket: sockets[peerId] }));
+        attachTestWebSocket(socket, new ConnectionContext({ id: peerId, socket: sockets[peerId] }));
     }
     const engine = new InboxOutboxEngine();
     engine.start();

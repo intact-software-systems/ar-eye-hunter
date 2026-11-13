@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+
 import { STATE_WRITE_ARTIFACT_SCHEMA_VERSION } from '../compare-api-v1-state-write-results.mjs';
 
 export interface BenchmarkGitIdentity {
@@ -44,15 +46,8 @@ export interface StateWriteBenchmarkArtifact {
 }
 
 export async function readBenchmarkGitIdentity(): Promise<BenchmarkGitIdentity> {
-    const command = new Deno.Command('git', {
-        args: ['rev-parse', 'HEAD', 'HEAD^{tree}'],
-        stdout: 'piped'
-    });
-    const output = await command.output();
-    if (!output.success) {
-        throw new Error('Unable to resolve git commit and tree for benchmark artifact');
-    }
-    const [commit, tree] = new TextDecoder().decode(output.stdout).trim().split('\n');
+    const stdout = execFileSync('git', ['rev-parse', 'HEAD', 'HEAD^{tree}'], { encoding: 'utf8' });
+    const [commit, tree] = stdout.trim().split('\n');
     return { commit: commit!, tree: tree! };
 }
 

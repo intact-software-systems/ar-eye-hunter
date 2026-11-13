@@ -4,7 +4,6 @@ import {
     type AppOutboxInsert
 } from '../../app-outbox/app-outbox-insert.ts';
 
-// deno-lint-ignore no-namespace
 export namespace RtcTopologyOutboxWriter {
     export interface Dependencies {
         readonly recordWrite: () => void;

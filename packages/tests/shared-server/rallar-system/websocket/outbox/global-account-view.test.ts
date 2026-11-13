@@ -25,6 +25,7 @@ import { toALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-t
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerInboundConnectionScopeProof } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 
 interface AccountPublicationFixture {
     readonly publication: ViewInvalidationPublication;
@@ -298,7 +299,7 @@ function connect(node: AccountNodeFixture, id: string): TestWebSocket {
     const native = new TestWebSocket(`ws://${id}`);
     native.open();
     node.natives.set(id, native);
-    node.socket.addConnection(new ConnectionContext({ id, socket: native, generationId: crypto.randomUUID() }));
+    attachTestWebSocket(node.socket, new ConnectionContext({ id, socket: native, generationId: crypto.randomUUID() }));
     if (id !== 'anonymous') {
         node.proofs.set(id, {
             scope: { applicationId: id, workspaceId: 'default' },

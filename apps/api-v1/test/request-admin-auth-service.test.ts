@@ -1,4 +1,5 @@
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 import { requireApiAdminSession } from '../src/services/admin-auth-service.ts';
 
@@ -11,7 +12,7 @@ const ADMIN_SESSION: IssuedAuthSession = {
     expiresAtEpochMs: 1_700_000_060_000
 };
 
-Deno.test('requireApiAdminSession allows configured admin clients', async () => {
+test('requireApiAdminSession allows configured admin clients', async () => {
     const session = await requireApiAdminSession(
         {
             header: () => undefined
@@ -25,7 +26,7 @@ Deno.test('requireApiAdminSession allows configured admin clients', async () => 
     assert.equal(session.clientId, 'platform-admin');
 });
 
-Deno.test('requireApiAdminSession preserves unauthenticated failures', async () => {
+test('requireApiAdminSession preserves unauthenticated failures', async () => {
     await assert.rejects(
         () =>
             requireApiAdminSession(
@@ -41,7 +42,7 @@ Deno.test('requireApiAdminSession preserves unauthenticated failures', async () 
     );
 });
 
-Deno.test('requireApiAdminSession rejects authenticated non-admin clients', async () => {
+test('requireApiAdminSession rejects authenticated non-admin clients', async () => {
     await assert.rejects(
         () =>
             requireApiAdminSession(

@@ -31,6 +31,7 @@ import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-serv
 import { createDefaultWsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
+import { attachTestWebSocket } from '../../../../shared/websocket/attach-test-web-socket.ts';
 import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 
@@ -331,7 +332,7 @@ class RoomFixture {
         const native = new TestWebSocket(`ws://${id}`);
         native.open();
         this.native.set(id, native);
-        this.socket.addConnection(new ConnectionContext({ id, socket: native }));
+        attachTestWebSocket(this.socket, new ConnectionContext({ id, socket: native }));
     }
 
     createService() {

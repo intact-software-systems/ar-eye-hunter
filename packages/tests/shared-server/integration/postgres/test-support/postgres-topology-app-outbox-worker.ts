@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { writeFile } from 'node:fs/promises';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
@@ -64,19 +65,19 @@ interface RegisterTopologyAppOutboxHandlerInput extends TopologyAppOutboxWorkerE
 }
 
 async function main(): Promise<void> {
-    const databaseUrl = Deno.env.get('DATABASE_URL');
+    const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
         throw new Error('DATABASE_URL is required');
     }
-    const rawInput = Deno.env.get('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT');
+    const rawInput = process.env.RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT;
     if (!rawInput) {
         throw new Error('RALLAR_TOPOLOGY_CONCURRENCY_WORKER_INPUT is required');
     }
     const output = await runTopologyAppOutboxWorkerProcess({
         rawInput,
-        workerPid: Deno.pid,
+        workerPid: process.pid,
         createSql: async () => await createRuntimeStatePostgresSql(databaseUrl, 2),
-        writeTrace: async (path, content) => await Deno.writeTextFile(path, content)
+        writeTrace: async (path, content) => await writeFile(path, content, 'utf8')
     });
     console.log(JSON.stringify(output));
 }

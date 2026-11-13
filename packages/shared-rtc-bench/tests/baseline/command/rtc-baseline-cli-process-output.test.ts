@@ -60,12 +60,9 @@ describe('RTC baseline CLI process output', () => {
         );
 
         const output = execFileSync(
-            'deno',
+            'bun',
             [
                 'run',
-                '-A',
-                '--config',
-                'packages/shared-rtc-bench/deno.json',
                 'packages/shared-rtc-bench/baseline/command/run-rtc-baseline-cli.ts',
                 'list-external-attempts',
                 `--baseline-id=${baselineId}`,

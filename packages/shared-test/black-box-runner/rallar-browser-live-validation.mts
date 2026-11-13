@@ -1,5 +1,5 @@
-/// <reference lib="deno.ns" />
-// deno-lint-ignore-file no-explicit-any
+import { mkdir, writeFile } from 'node:fs/promises';
+
 type ValidationMode = 'dry-run' | 'live' | 'both';
 type ValidationTransport = 'realtime' | 'messages.rtc' | 'both';
 
@@ -48,7 +48,7 @@ const SECRET_ENV = [
 function usage(): string {
     return [
         'Usage:',
-        '  deno run -A packages/shared-test/black-box-runner/rallar-browser-live-validation.mts [options]',
+        '  bun run packages/shared-test/black-box-runner/rallar-browser-live-validation.mts [options]',
         '',
         'Options:',
         '  --mode=dry-run|live|both       Default: dry-run',
@@ -163,7 +163,7 @@ function selectedTransports(
 }
 
 function envOrDefault(name: string, fallback: string): string {
-    const value = Deno.env.get(name);
+    const value = process.env[name];
     return value && value.length > 0 ? value : fallback;
 }
 
@@ -202,7 +202,7 @@ function toReplacementArg(replacements: Record<string, string>): string {
 
 function missingLiveEnv(): string[] {
     return REQUIRED_LIVE_ENV.filter((name) => {
-        const value = Deno.env.get(name);
+        const value = process.env[name];
         return !value || value.length === 0;
     });
 }
@@ -226,7 +226,7 @@ function assertLiveEnvironmentIfNeeded(options: CliOptions): void {
 function toSecretMap(): Record<string, string> {
     return Object.fromEntries(
         SECRET_ENV
-            .map((name) => [name, Deno.env.get(name) || ''] as const)
+            .map((name) => [name, process.env[name] || ''] as const)
             .filter(([, value]) => value.length > 0)
     );
 }
@@ -313,7 +313,7 @@ function summarizeRun(run: ValidationRun, verbose: boolean): void {
 }
 
 async function recordRun(run: ValidationRun, recordDir: string): Promise<void> {
-    await Deno.mkdir(recordDir, { recursive: true });
+    await mkdir(recordDir, { recursive: true });
 
     const parsed = tryParseJson(run.stdout);
     const artifact = {
@@ -327,9 +327,10 @@ async function recordRun(run: ValidationRun, recordDir: string): Promise<void> {
         stderr: maskString(run.stderr)
     };
     const filename = `rallar-browser-${run.transport.replace('.', '-')}-${run.mode}.json`;
-    await Deno.writeTextFile(
+    await writeFile(
         `${recordDir.replace(/\/$/, '')}/${filename}`,
-        JSON.stringify(artifact, null, 2)
+        JSON.stringify(artifact, null, 2),
+        'utf8'
     );
 }
 
@@ -341,7 +342,6 @@ async function runScenario(
     const scenarioPath = repoRelativePath(SCENARIOS[transport]);
     const args = [
         'run',
-        '-A',
         repoRelativePath(SCENARIO_CLI),
         '-c',
         scenarioPath,
@@ -353,28 +353,32 @@ async function runScenario(
         args.push('-n');
     }
 
-    const output = await new Deno.Command(Deno.execPath(), {
-        args,
+    const child = Bun.spawn({
+        cmd: [process.execPath, ...args],
         cwd: filePath(REPO_ROOT),
-        stdout: 'piped',
-        stderr: 'piped'
-    }).output();
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited
+    ]);
 
-    const decoder = new TextDecoder();
     return {
         mode,
         transport,
         scenarioPath,
-        success: output.success,
-        code: output.code,
-        stdout: decoder.decode(output.stdout),
-        stderr: decoder.decode(output.stderr),
-        parsedReport: tryParseJson(decoder.decode(output.stdout))
+        success: exitCode === 0,
+        code: exitCode,
+        stdout,
+        stderr,
+        parsedReport: tryParseJson(stdout)
     };
 }
 
 async function main(): Promise<void> {
-    const options = parseArgs(Deno.args);
+    const options = parseArgs(process.argv.slice(2));
     if (options.help) {
         console.log(usage());
         return;
@@ -410,11 +414,11 @@ async function main(): Promise<void> {
     console.log(`Validated ${results.length} run(s), failures: ${failed.length}`);
 
     if (failed.length > 0) {
-        Deno.exit(1);
+        process.exit(1);
     }
 }
 
 main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
-    Deno.exit(1);
+    process.exit(1);
 });

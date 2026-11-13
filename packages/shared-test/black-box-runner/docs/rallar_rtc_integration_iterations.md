@@ -285,7 +285,7 @@ Test cases:
 Example scenario:
 
 ```ts
-Deno.test('rallar-real adapter forwards incoming data messages', async () => {
+test('rallar-real adapter forwards incoming data messages', async () => {
     // fake existing Rallar session
     // adapter wraps it
     // executeBlackBox connect/send/wait

@@ -1,5 +1,5 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
-import { cors } from 'jsr:@hono/hono@4.11.9/cors';
+import type { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { AL_TRACE_ID_HTTP_HEADER } from '@shared/al-contracts/trace/al-trace-id.ts';
@@ -39,14 +39,7 @@ export function installApiHttpMiddleware(app: Hono, input: InstallApiHttpMiddlew
     });
 
     app.use('/api/*', createHttpTimingMiddleware({ timing: input.timing }));
-    app.use('/api/*', async (context, next) => {
-        if (isWebSocketUpgradeRequest(context.req.path, context.req.header('upgrade'))) {
-            await next();
-            return;
-        }
-
-        return await apiCors(context, next);
-    });
+    app.use('/api/*', apiCors);
     app.use('/api/state/*', createStateApiResilienceMiddleware({ configuration: input.stateApi }));
 }
 
@@ -59,8 +52,4 @@ function resolveCorsOrigin(
     }
 
     return allowedOrigins.includes(origin) ? origin : undefined;
-}
-
-function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
-    return path.startsWith('/api/ws/') && upgrade?.trim().toLowerCase() === 'websocket';
 }

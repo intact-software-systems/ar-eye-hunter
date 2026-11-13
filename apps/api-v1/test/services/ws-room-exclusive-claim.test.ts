@@ -1,3 +1,4 @@
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -21,7 +22,7 @@ import { putRoomSnapshot } from './ws-room-test-runtime.ts';
 
 const HELD_BY_OTHER_DETAIL = 'Exclusive resource is held by another session';
 
-Deno.test('a second session\'s exclusive send on a claimed resource is NACKed held-by-other, reaches no one and starts no receipt', async () => {
+test('a second session\'s exclusive send on a claimed resource is NACKed held-by-other, reaches no one and starts no receipt', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const claim = createPickupSend({ room, senderId: 'session-2', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
@@ -47,7 +48,7 @@ Deno.test('a second session\'s exclusive send on a claimed resource is NACKed he
     }
 });
 
-Deno.test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay and reaches no one', async () => {
+test('two sessions claiming one free resource at once: the loser is retained on the conflict, NACKed held-by-other on its replay and reaches no one', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const first = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });
@@ -78,7 +79,7 @@ Deno.test('two sessions claiming one free resource at once: the loser is retaine
     }
 });
 
-Deno.test('the holder\'s exclusive re-send on its claimed resource is admitted, delivered and moves the claim\'s expiry to its own', async () => {
+test('the holder\'s exclusive re-send on its claimed resource is admitted, delivered and moves the claim\'s expiry to its own', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: CLAIM_TTL_MS });
@@ -106,7 +107,7 @@ Deno.test('the holder\'s exclusive re-send on its claimed resource is admitted, 
     }
 });
 
-Deno.test('a claim lapses with its message: the next session\'s exclusive send is admitted, delivered and holds the resource', async () => {
+test('a claim lapses with its message: the next session\'s exclusive send is admitted, delivered and holds the resource', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: CLAIM_TTL_MS });
@@ -134,7 +135,7 @@ Deno.test('a claim lapses with its message: the next session\'s exclusive send i
     }
 });
 
-Deno.test('a shared send on a claimed resource neither consults nor takes the claim, and is delivered', async () => {
+test('a shared send on a claimed resource neither consults nor takes the claim, and is delivered', async () => {
     const { runtime, room } = await createClaimRuntime();
     try {
         const claim = createPickupSend({ room, senderId: 'session-1', ownership: 'exclusive', ttlMs: SEND_TTL_MS });

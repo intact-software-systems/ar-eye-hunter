@@ -2,54 +2,164 @@
 export const reviewedBrowserDispositions = Object.freeze([
     // Independently reviewed owner: Canonical layout geometry and its bounded proposal decoder share one shape.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/ar-eye-hunter/arena-layout.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 61 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/arena-layout.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 61
+    }),
     // Independently reviewed owner: Wave, damage, pickup and respawn transitions cross-update the same arena state and events.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/ar-eye-hunter/simulation.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 169 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/simulation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 169
+    }),
     // Independently reviewed owner: Exports are transitions of one canonical arena simulation used by browser and server.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/ar-eye-hunter/simulation.ts', rule: 'file.responsibility-count', symbol: undefined, maximumMagnitude: 25 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/simulation.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 25
+    }),
     // Independently reviewed owner: One native arena attempt owns read, authorization, compute, validation and atomic game/result writes.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/ar-eye-hunter/server/arena-tournament-mutation.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 52 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/server/arena-tournament-mutation.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
     // Independently reviewed owner: One exact checkpoint decoder checks identity, bounded fields and cross-field projections.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 56 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 56
+    }),
     // Independently reviewed owner: Small local components present one bracket lifecycle from registration through cancellation/results.
     // Exact cap permits no additional complexity and waives no other rule.
-    Object.freeze({ path: 'packages/shared-react/tournament-panel.tsx', rule: 'file.cognitive-load', symbol: undefined, maximumMagnitude: 54 }),
+    Object.freeze({
+        path: 'packages/shared-react/tournament-panel.tsx',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidCombat', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidCombat',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidVitals', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidVitals',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidLoadout', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidLoadout',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidTarget', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidTarget',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidThreat', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidThreat',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidPickup', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidPickup',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidAttack', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidAttack',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidEvent', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidEvent',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidWave', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidWave',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'assertValidArenaPlayer', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertValidArenaPlayer',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireArray', maximumMagnitude: 2 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireArray',
+        maximumMagnitude: 2
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireFinite', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireFinite',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'requireVector', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'requireVector',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'optionalEpochs', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'optionalEpochs',
+        maximumMagnitude: 1
+    }),
     // Stored JSON remains untrusted within the exact checkpoint decoder; no domain unknown escapes.
-    Object.freeze({ path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts', rule: 'boundary.unknown', symbol: 'uniqueIdentities', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/ar-eye-hunter/decode-tournament-arena-checkpoint.ts',
+        rule: 'boundary.unknown',
+        symbol: 'uniqueIdentities',
+        maximumMagnitude: 1
+    }),
     // Private clock ingress is untrusted until exact record checks yield a canonical command.
-    Object.freeze({ path: 'packages/relic-hunters/server/relic-game-mutation-service.ts', rule: 'boundary.unknown', symbol: 'decodeRelicClockCommand', maximumMagnitude: 1 }),
+    Object.freeze({
+        path: 'packages/relic-hunters/server/relic-game-mutation-service.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeRelicClockCommand',
+        maximumMagnitude: 1
+    }),
     // Independent whole-file review: one room moderation view owns confirmation, server outcome,
     // and explicit access-loss presentation. Existing room entry owns admission cancellation;
     // timers and notifications reuse shared primitives. Splitting these short UI transitions

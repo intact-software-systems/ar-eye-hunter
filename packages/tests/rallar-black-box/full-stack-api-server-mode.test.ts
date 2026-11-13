@@ -41,7 +41,7 @@ async function readProfileConfiguration(): Promise<Awaited<ReturnType<typeof rea
     const profileEnvironment = createFullStackApiProfileEnvironment();
     const resource = (name: string) => new URL(`../../../apps/api-v1/resources/${name}`, import.meta.url);
     return await readApiV1Configuration({
-        environment: { get: (name) => profileEnvironment[name] },
+        environment: profileEnvironment,
         hardwareConcurrency: 4,
         readTextFile: (url) => readFile(url, 'utf8'),
         defaultsUrl: resource('configuration/defaults-config.json'),
@@ -72,7 +72,7 @@ const captureProbeEnvironment: NodeJS.ProcessEnv = {
 
 const predeclaredEnvironmentObservation = {
     git: { headCommit: 'a'.repeat(40), headTree: 'b'.repeat(40), ref: 'codex/unit-fixture', clean: true },
-    runtime: { node: 'v24.0.0', npm: '11.0.0', deno: '2.4.0', playwright: '1.55.0', chromium: '140.0.0.0' },
+    runtime: { node: 'v24.0.0', npm: '11.0.0', bun: '2.4.0', playwright: '1.55.0', chromium: '140.0.0.0' },
     host: {
         os: 'darwin',
         kernel: '24.0.0',
@@ -356,14 +356,15 @@ describe('rallar-black-box full-stack API server mode', () => {
                 environment: selectedEnvironment,
                 admittedRtcCaseId: admittedAttempt?.locator.caseId ?? null
             });
-            const commandPrefix = server.command.slice(0, server.command.indexOf('deno run'));
+            const commandPrefix = server.command.slice(0, server.command.indexOf('bun --no-env-file run'));
             const configurationProbe = `
+            import { readFile } from "node:fs/promises";
             import { readApiV1Configuration } from "./apps/api-v1/src/configuration/read-api-v1-configuration.ts";
             const resource = name => new URL("./apps/api-v1/resources/configuration/" + name + "-config.json", import.meta.url);
             const configuration = await readApiV1Configuration({
-                environment: { get: name => Deno.env.get(name) },
+                environment: process.env,
                 hardwareConcurrency: navigator.hardwareConcurrency,
-                readTextFile: url => Deno.readTextFile(url),
+                readTextFile: url => readFile(url, "utf8"),
                 defaultsUrl: resource("defaults"),
                 profileUrls: { dev: resource("dev"), prod: resource("prod"), "prod-hardened": resource("prod-hardened"), "prod-in-memory": resource("prod-in-memory") },
                 staticClientsUrl: new URL("./apps/api-v1/resources/authorised-clients.json", import.meta.url)
@@ -372,7 +373,7 @@ describe('rallar-black-box full-stack API server mode', () => {
         `;
             const actualChildRequests = execFileSync('/bin/sh', [
                 '-c',
-                `${commandPrefix} deno eval --config apps/api-v1/deno.json '${configurationProbe}'`
+                `${commandPrefix} bun --no-env-file --eval '${configurationProbe}'`
             ], {
                 cwd: new URL('../../../apps/rallar-black-box/', import.meta.url),
                 encoding: 'utf8',
@@ -698,7 +699,7 @@ function startFullStackApiCaptureConfigProbe(
         const wrapper = api.command.includes('run-full-stack-api-with-timing.ts');
         process.stdout.write(JSON.stringify({
             wrapper,
-            direct: !wrapper && /(?:^|\s)deno\s+run/.test(api.command),
+            direct: !wrapper && /(?:^|\s)bun\s+--no-env-file\s+run/.test(api.command),
             timingLogs: timing === null ? null : timing[1] === 'true',
             appInboxPhaseTiming: phase === null ? null : phase[1] === 'true',
             reuseExistingServer: api.reuseExistingServer,

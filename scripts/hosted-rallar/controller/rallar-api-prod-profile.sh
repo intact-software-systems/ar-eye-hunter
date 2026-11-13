@@ -11,6 +11,18 @@ RALLAR_API_SECRET_FILE="${RALLAR_API_SECRET_FILE:-/etc/rallar/api-v1.secrets.env
 RALLAR_CONTROL_ENV_FILE="${RALLAR_CONTROL_ENV_FILE:-/etc/rallar/control-server.env}"
 RALLAR_API_DATABASE_URL_PATTERN="^postgres://${RALLAR_API_DATABASE_ROLE}:([0-9a-f]{64})@127\.0\.0\.1:5432/${RALLAR_API_DATABASE_NAME}$"
 
+# Re-points the shared Postgres store helpers at a named role/database/failure-file triple so the
+# same provision/migrate/read functions serve the API-v1 store and each game-server store.
+select_rallar_postgres_store() {
+	local role="$1"
+	local name="$2"
+	local failure_file="$3"
+	RALLAR_API_DATABASE_ROLE="${role}"
+	RALLAR_API_DATABASE_NAME="${name}"
+	RALLAR_API_STORE_FAILURE_FILE="${failure_file}"
+	RALLAR_API_DATABASE_URL_PATTERN="^postgres://${role}:([0-9a-f]{64})@127\.0\.0\.1:5432/${name}$"
+}
+
 install_rallar_api_postgres_server() {
 	if [[ "$(dpkg-query -W -f='${db:Status-Status}' postgresql 2>/dev/null || true)" != "installed" ]]; then
 		echo "==> Installing PostgreSQL from the Ubuntu archive"
@@ -57,7 +69,10 @@ resolve_rallar_api_database_url() {
 validate_rallar_api_existing_store_configuration() {
 	local env_file="$1"
 	local auth_secret operator_secret operator_client_ids control_operator_secret
-	[[ -f "${env_file}" && -r "${env_file}" ]] || { echo "Missing readable controller API environment." >&2; return 1; }
+	[[ -f "${env_file}" && -r "${env_file}" ]] || {
+		echo "Missing readable controller API environment." >&2
+		return 1
+	}
 	read_rallar_api_database_url "${env_file}" >/dev/null || return 1
 	auth_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_AUTH_CREDENTIAL_SECRET)" || return 1
 	operator_secret="$(read_rallar_api_effective_env_value "${env_file}" RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET)" || return 1
@@ -149,9 +164,8 @@ migrate_rallar_api_postgres_store() {
 
 	echo "==> Applying API-v1 Prisma migrations"
 	if ! (
-		cd / &&
-			DATABASE_URL="${database_url}" runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno deno task \
-				--config "${checkout_dir}/apps/api-v1/deno.json" prisma migrate deploy
+		cd "${checkout_dir}/apps/api-v1" &&
+			DATABASE_URL="${database_url}" runuser -u rallar -- bunx prisma migrate deploy
 	); then
 		write_rallar_api_store_failure migrations
 		return 1
@@ -182,11 +196,12 @@ EOF_SQL
 
 require_rallar_api_absent_store() {
 	local existing
-	existing="$(write_rallar_api_postgres_sql <<EOF_SQL
+	existing="$(
+		write_rallar_api_postgres_sql <<EOF_SQL
 SELECT (SELECT count(*) FROM pg_roles WHERE rolname = '${RALLAR_API_DATABASE_ROLE}') || '|' ||
        (SELECT count(*) FROM pg_database WHERE datname = '${RALLAR_API_DATABASE_NAME}');
 EOF_SQL
-)" || return 1
+	)" || return 1
 	if [[ "${existing}" != "0|0" ]]; then
 		echo "Controller database or role already exists; refusing initial provisioning." >&2
 		return 1

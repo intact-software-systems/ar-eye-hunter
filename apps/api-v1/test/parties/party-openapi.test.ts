@@ -1,9 +1,10 @@
 import { requireRecord } from '@shared/api/exact-object-decoding.ts';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { test } from 'bun:test';
+import { Hono } from 'hono';
 import assert from 'node:assert/strict';
 import { installApiDocumentationRoutes } from '../../src/routes/swagger-routes.ts';
 
-Deno.test('published party API describes authenticated private views and exact roster consent', async () => {
+test('published party API describes authenticated private views and exact roster consent', async () => {
     const response = await installApiDocumentationRoutes(new Hono()).request('/api/openapi.json');
     const document = requireRecord(await response.json(), 'OpenAPI');
     const paths = requireRecord(document.paths, 'paths');

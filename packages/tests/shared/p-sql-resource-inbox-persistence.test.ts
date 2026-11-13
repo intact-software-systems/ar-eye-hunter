@@ -71,18 +71,21 @@ describe('PostgreSQL resource inbox persistence', () => {
         const storage = await createResourceInboxTestStorage('retry_fairness');
         onTestFinished(() => storage.close());
         const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
-        for (const row of [
-            { resourceId: 'recent', nextInSeconds: -10, attempts: 1 },
-            { resourceId: 'older', nextInSeconds: -60, attempts: 1 },
-            { resourceId: 'oldest', nextInSeconds: -90, attempts: 1 },
-            { resourceId: 'exhausted', nextInSeconds: -120, attempts: 2 },
-            { resourceId: 'excluded', nextInSeconds: -120, attempts: 1 }
-        ]) {
+        for (
+            const row of [
+                { resourceId: 'recent', nextInSeconds: -10, attempts: 1 },
+                { resourceId: 'older', nextInSeconds: -60, attempts: 1 },
+                { resourceId: 'oldest', nextInSeconds: -90, attempts: 1 },
+                { resourceId: 'exhausted', nextInSeconds: -120, attempts: 2 },
+                { resourceId: 'excluded', nextInSeconds: -120, attempts: 1 }
+            ]
+        ) {
             await seedResourceInboxRow(storage.sql, { ...row, status: EntityStatus.RETRY, startedAgoSeconds: 180, endedAgoSeconds: 150 });
         }
         await storage.sql`update resource_inbox set fk_ext_bank_id = 'active-context' where ri_resource_id = 'excluded'`;
         const selected = await repo.reservations.findOverdueRetryEntriesSkipLocked(
-            new Set(['APP_INBOX']), Date.now() - 30_000,
+            new Set(['APP_INBOX']),
+            Date.now() - 30_000,
             { maxToReserve: 3, maxAttempts: 2, excludedContextIds: new Set(['active-context']) }
         );
         expect([...selected.values()].map((entry) => entry.key.resourceId)).toEqual(['oldest', 'older']);
@@ -92,7 +95,14 @@ describe('PostgreSQL resource inbox persistence', () => {
         const storage = await createResourceInboxTestStorage('work_budgets');
         onTestFinished(() => storage.close());
         const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
-        await seedResourceInboxRow(storage.sql, { resourceId: 'retry', status: EntityStatus.RETRY, attempts: 2, startedAgoSeconds: 60, endedAgoSeconds: 50, nextInSeconds: -40 });
+        await seedResourceInboxRow(storage.sql, {
+            resourceId: 'retry',
+            status: EntityStatus.RETRY,
+            attempts: 2,
+            startedAgoSeconds: 60,
+            endedAgoSeconds: 50,
+            nextInSeconds: -40
+        });
         await seedResourceInboxRow(storage.sql, { resourceId: 'reservation', status: EntityStatus.RESERVED, attempts: 2, startedAgoSeconds: 400 });
         const options = { typeIds: new Set(['APP_INBOX']), reservationLeaseMs: 30_000, finalizationStaleAfterMs: 300_000, staleDueThresholdMs: 30_000 };
         expect(await repo.reservations.readWorkPresences([{ ...options, maxAttempts: 2 }, { ...options, maxAttempts: 3 }]))
@@ -106,17 +116,21 @@ describe('PostgreSQL resource inbox persistence', () => {
         const storage = await createResourceInboxTestStorage('timeout_eligibility');
         onTestFinished(() => storage.close());
         const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
-        for (const row of [
-            { resourceId: 'recent', attempts: 1, startedAgoSeconds: 5 },
-            { resourceId: 'timed-out', attempts: 1, startedAgoSeconds: 60 },
-            { resourceId: 'exhausted', attempts: 2, startedAgoSeconds: 60 },
-            { resourceId: 'expired', attempts: 1, startedAgoSeconds: 60, expired: true }
-        ]) {
+        for (
+            const row of [
+                { resourceId: 'recent', attempts: 1, startedAgoSeconds: 5 },
+                { resourceId: 'timed-out', attempts: 1, startedAgoSeconds: 60 },
+                { resourceId: 'exhausted', attempts: 2, startedAgoSeconds: 60 },
+                { resourceId: 'expired', attempts: 1, startedAgoSeconds: 60, expired: true }
+            ]
+        ) {
             await seedResourceInboxRow(storage.sql, { ...row, status: EntityStatus.RESERVED });
         }
         const selected = await repo.reservations.findTimedOutReservedEntriesSkipLocked({
-            typeIds: new Set(['APP_INBOX']), timeSinceStartMs: 30_000,
-            reservationInput: { maxToReserve: 3, maxAttempts: 2 }, excludedContextIds: new Set()
+            typeIds: new Set(['APP_INBOX']),
+            timeSinceStartMs: 30_000,
+            reservationInput: { maxToReserve: 3, maxAttempts: 2 },
+            excludedContextIds: new Set()
         });
         expect([...selected.values()].map((entry) => entry.key.resourceId)).toEqual(['timed-out']);
     });
@@ -162,7 +176,13 @@ describe('PostgreSQL resource inbox persistence', () => {
         onTestFinished(() => storage.close());
         const repo = createPSqlResourceInboxRepository(storage.sql, () => new Date('1900-01-01'));
         const key = await seedResourceInboxRow(storage.sql, { resourceId: 'recover', status: EntityStatus.RESERVED, attempts: 21, startedAgoSeconds: 400 });
-        const completedKey = await seedResourceInboxRow(storage.sql, { resourceId: 'completed', status: EntityStatus.COMPLETED, attempts: 21, startedAgoSeconds: 400, endedAgoSeconds: 300 });
+        const completedKey = await seedResourceInboxRow(storage.sql, {
+            resourceId: 'completed',
+            status: EntityStatus.COMPLETED,
+            attempts: 21,
+            startedAgoSeconds: 400,
+            endedAgoSeconds: 300
+        });
         const completed = (await repo.entries.findByKey(completedKey))!;
         expect((await repo.finalization.startFinalizationRecovery(completed, 20)).left).toBeDefined();
         expect(await repo.entries.findByKey(completedKey)).toEqual(completed);

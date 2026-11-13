@@ -5,7 +5,6 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
     describe,
     expect,
@@ -15,39 +14,34 @@ import {
 import { runOwnedTestProcess } from '../../../hetzner/owned-test-process.ts';
 
 const repository = path.resolve(__dirname, '../../../../..');
-const perf = path.join(repository, 'apps/api-v1/scripts/perf');
 
 describe('existing state-write CLI native mode composition', () => {
     it.for(['disabled', 'enabled'])('dispatches %s diagnostics through the one runner', async (mode, context) => {
         const directory = await mkdtemp(path.join(tmpdir(), 'state-write-mode-'));
         context.onTestFinished(() => rm(directory, { recursive: true, force: true }));
-        const runner = path.join(directory, 'runner.ts');
+        const preload = path.join(directory, 'preload.ts');
         await writeFile(
-            runner,
-            `export async function runStateWriteBenchmark(options, diagnostics) {
-            console.log(JSON.stringify({ mode: options.diagnostics.kind, composed: diagnostics !== undefined }));
-        }`
+            preload,
+            `import { plugin } from 'bun';
+plugin({
+    name: 'swap-state-write-runner',
+    setup(build) {
+        build.onLoad({ filter: /run-state-write-benchmark\\.ts$/ }, () => ({
+            contents: 'export async function runStateWriteBenchmark(options, diagnostics) {\\n' +
+                '    console.log(JSON.stringify({ mode: options.diagnostics.kind, composed: diagnostics !== undefined }));\\n' +
+                '}',
+            loader: 'ts'
+        }));
+    }
+});
+`
         );
-        const imports = {
-            '@shared/': pathToFileURL(path.join(repository, 'packages/shared/')).href,
-            '@shared-server/': pathToFileURL(path.join(repository, 'packages/shared-server/')).href,
-            '@shared-graph/': pathToFileURL(path.join(repository, 'packages/shared-graph/')).href,
-            [pathToFileURL(path.join(perf, 'state-write/run-state-write-benchmark.ts')).href]: pathToFileURL(runner).href
-        };
-        const importMap = path.join(directory, 'imports.json');
-        await writeFile(importMap, JSON.stringify({ imports }));
         const output = await runOwnedTestProcess(context, {
-            executable: 'deno',
+            executable: 'bun',
             args: [
                 'run',
-                '--no-check',
-                '--allow-read',
-                '--config',
-                'apps/api-v1/deno.json',
-                // The run resolves its own lock, so it never rewrites the tracked one beside the config.
-                `--lock=${path.join(directory, 'deno.lock')}`,
-                '--import-map',
-                importMap,
+                '--preload',
+                preload,
                 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
                 ...(mode === 'enabled' ? ['--diagnostics-dir=tmp/perf/mode-composition'] : [])
             ],

@@ -1,4 +1,6 @@
-import { assert, assertEquals } from '@std/assert';
+import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
     decodeControlBarrierEnvelope,
@@ -64,39 +66,35 @@ interface DispatchClock {
     now: number;
 }
 
-Deno.test('diagnostics during a held send leave the combined ALM dispatch plan exactly as it was', () => {
+test('diagnostics during a held send leave the combined ALM dispatch plan exactly as it was', () => {
     const clock: DispatchClock = { now: 1_000 };
     const manifest = createAlmConformance2AgentEntry().manifest;
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => clock.now }));
     const runId = manifest.controlRunId;
     startCombinedRun(service, manifest);
     const firstSegments = AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId));
-    assertEquals(firstSegments.map((segments) => segments.length), [1, 1]);
+    expect(firstSegments.map((segments) => segments.length)).toEqual([1, 1]);
     const before = service.snapshotRun(runId)!;
     const plans = toReloadPlans(before);
-    assertEquals(plans.length, 2);
+    expect(plans.length).toEqual(2);
 
     const receipts = Array.from({ length: HELD_SEND_DIAGNOSTICS }, (_, index) => {
         clock.now += HELD_SEND_DIAGNOSTIC_INTERVAL_MS;
         return service.receiveClientEnvelope(toAlmDiagnostic({ runId, agentId: AGENTS[index % 2], index, atEpochMs: clock.now }));
     });
 
-    assertEquals(
-        receipts.filter((receipt) => receipt.accepted && !receipt.affectsDispatch).length,
-        HELD_SEND_DIAGNOSTICS,
-        'no diagnostic asks the socket route to recompute dispatch'
-    );
+    expect(receipts.filter((receipt) => receipt.accepted && !receipt.affectsDispatch).length).toEqual(HELD_SEND_DIAGNOSTICS);
     const after = service.snapshotRun(runId)!;
-    assertEquals(after.commands, before.commands, 'queue, dispatch and completion state are unchanged');
-    assertEquals(after.results, before.results);
-    assertEquals(toReloadPlans(after).map((plan) => plan.segments), plans.map((plan) => plan.segments));
+    expect(after.commands).toEqual(before.commands);
+    expect(after.results).toEqual(before.results);
+    expect(toReloadPlans(after).map((plan) => plan.segments)).toEqual(plans.map((plan) => plan.segments));
     for (const [index, plan] of toReloadPlans(after).entries()) {
-        assert(plan.segments === plans[index].segments, 'each root is segmented once, not per message');
+        assert(plan.segments === plans[index].segments);
     }
-    assertEquals(AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId)), [[], []]);
+    expect(AGENTS.map((agentId) => takeAgentDispatchableCommands(service, runId, agentId))).toEqual([[], []]);
 });
 
-Deno.test('register, result and barrier arrivals recompute dispatch; heartbeats and other events do not', () => {
+test('register, result and barrier arrivals recompute dispatch; heartbeats and other events do not', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     const register = service.receiveClientEnvelope(toRegisterEnvelope());
     const queued = assertRight(service.enqueueCommand({
@@ -118,23 +116,20 @@ Deno.test('register, result and barrier arrivals recompute dispatch; heartbeats 
         report: service.receiveClientEnvelope(toEvent('report', 'rallar.bb.report.final'))
     };
 
-    assertEquals(
-        Object.fromEntries(Object.entries(receipts).map(([name, receipt]) => [name, receipt.affectsDispatch])),
-        {
-            register: true,
-            heartbeat: false,
-            result: true,
-            barrier: true,
-            event: false,
-            diagnostic: false,
-            stats: false,
-            report: false
-        }
-    );
+    expect(Object.fromEntries(Object.entries(receipts).map(([name, receipt]) => [name, receipt.affectsDispatch]))).toEqual({
+        register: true,
+        heartbeat: false,
+        result: true,
+        barrier: true,
+        event: false,
+        diagnostic: false,
+        stats: false,
+        report: false
+    });
 });
 
 // The rollup re-evaluates every participant, so the count of evaluations per envelope is the cost being bounded.
-Deno.test('one result envelope evaluates the distributed rollup once for every agent socket and every persistence flush', () => {
+test('one result envelope evaluates the distributed rollup once for every agent socket and every persistence flush', () => {
     const agentCount = 20;
     let evaluations = 0;
     const defaults = toControlServiceInput({ now: () => 1_000 });
@@ -182,16 +177,13 @@ Deno.test('one result envelope evaluates the distributed rollup once for every a
     );
     const persisted = [service.snapshotForPersistence({}), service.snapshotForPersistence({})];
 
-    assertEquals(evaluations, 1);
-    assertEquals(persisted.map((snapshot) => snapshot.distributedRuns?.[0]?.rollup.summary.passedRecipes), [0, 0]);
-    assertEquals(
-        agentIds.map((agentId) => sent.get(agentId)!.map((command) => command.command.kind)),
-        agentIds.map(() => ['recipe.run'])
-    );
-    assertEquals(service.snapshotDistributedRun('dist-1')?.state, 'running');
+    expect(evaluations).toEqual(1);
+    expect(persisted.map((snapshot) => snapshot.distributedRuns?.[0]?.rollup.summary.passedRecipes)).toEqual([0, 0]);
+    expect(agentIds.map((agentId) => sent.get(agentId)!.map((command) => command.command.kind))).toEqual(agentIds.map(() => ['recipe.run']));
+    expect(service.snapshotDistributedRun('dist-1')?.state).toEqual('running');
 });
 
-Deno.test('a registration and a barrier arrival are answered on the socket at once, a diagnostic is not', async () => {
+test('a registration and a barrier arrival are answered on the socket at once, a diagnostic is not', async () => {
     const server = await startControlServer();
     const socket = new WebSocket(server.baseUrl.replace('http:', 'ws:') + '/control');
     try {
@@ -200,12 +192,12 @@ Deno.test('a registration and a barrier arrival are answered on the socket at on
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ commandId: 'queued-before-register', command: { kind: 'health' } })
         });
-        assertEquals(queued.status, 202);
+        expect(queued.status).toEqual(202);
         await queued.json();
         await waitForSocketOpen(socket);
         const frames = collectFrames(socket, { runId: 'run-1', agentId: 'agent-1' });
         socket.send(JSON.stringify(toRegisterEnvelope({ identity: toUnconfiguredAgentIdentity('agent-1', Date.now()) })));
-        assertEquals((await frames.nextCommand()).commandId, 'queued-before-register');
+        expect((await frames.nextCommand()).commandId).toEqual('queued-before-register');
 
         socket.send(JSON.stringify(toEvent('diagnostic', 'rallar.browser.alm.outbound_diagnostics')));
         await waitForRun(server.baseUrl, (run) => run.events.some((event) => event.kind === 'diagnostic'));
@@ -213,7 +205,7 @@ Deno.test('a registration and a barrier arrival are answered on the socket at on
 
         socket.send(JSON.stringify(toBarrierArrival('run-1', 'agent-1')));
         const barrier = await frames.nextBarrier();
-        assertEquals(barrier.resolution, {
+        expect(barrier.resolution).toEqual({
             outcome: 'failed',
             reason: 'no-distributed-run',
             arrivedAgentIds: ['agent-1'],
@@ -226,7 +218,7 @@ Deno.test('a registration and a barrier arrival are answered on the socket at on
     }
 });
 
-Deno.test('an expired reload readiness is judged by the deadline sweep without any agent message', async () => {
+test('an expired reload readiness is judged by the deadline sweep without any agent message', async () => {
     const server = await startControlServer({ RALLAR_BLACK_BOX_DEADLINE_SWEEP_INTERVAL_MS: String(SILENCE_MS / 2) });
     const socket = await registerAgent(server.baseUrl, 'run-1', 'agent-1');
     try {
@@ -252,12 +244,12 @@ Deno.test('an expired reload readiness is judged by the deadline sweep without a
                 }
             })
         });
-        assertEquals(response.status, 202);
+        expect(response.status).toEqual(202);
         await response.json();
         const prefix = await frames.nextCommand();
         socket.send(JSON.stringify(await executeSocketCommand(prefix)));
         const reload = await frames.nextCommand();
-        assertEquals(reload.command.kind, 'agent.reload', 'a result dispatches the next segment at once');
+        expect(reload.command.kind).toEqual('agent.reload');
         socket.send(JSON.stringify(await executeSocketCommand(reload)));
 
         // A run read judges pending reloads itself, so this test reads the persisted snapshot, which does not.
@@ -266,7 +258,7 @@ Deno.test('an expired reload readiness is judged by the deadline sweep without a
             (run) => run.results.some((result) => result.commandId === 'socket-root')
         );
         const root = judged.results.find((result) => result.commandId === 'socket-root')!;
-        assertEquals([root.ok, root.result?.error?.code], [false, 'RALLAR_BLACK_BOX_RELOAD_READY_TIMEOUT']);
+        expect([root.ok, root.result?.error?.code]).toEqual([false, 'RALLAR_BLACK_BOX_RELOAD_READY_TIMEOUT']);
     }
     finally {
         socket.close();
@@ -276,7 +268,7 @@ Deno.test('an expired reload readiness is judged by the deadline sweep without a
 
 // Before the scan was built once per message, each agent's pass resolved a reload owner by scanning every command for
 // every command: 50 agents and 1,000 commands read about 50 million command entries per message.
-Deno.test('one dispatch scan reads each queued command a bounded number of times, however many agents it serves', () => {
+test('one dispatch scan reads each queued command a bounded number of times, however many agents it serves', () => {
     const agentCount = 50;
     const commandsPerAgent = 20;
     const run = toInitialControlRunState('run-1', 1_000);
@@ -304,14 +296,14 @@ Deno.test('one dispatch scan reads each queued command a bounded number of times
         computeDispatchableControlCommands({ scan, agent, nowEpochMs: 1_000 });
     }
 
-    assertEquals(firstAgent.length, commandsPerAgent);
-    assertEquals([...firstAgentReads.keys()].every((commandId) => commandId.startsWith('agent-0-')), true, 'one agent reads only its own commands');
-    assertEquals(firstAgentReads.size, commandsPerAgent);
-    assert(readsAfterScan <= 2 * agentCount * commandsPerAgent, `${readsAfterScan} reads to build the scan`);
-    assert(toTotalReads(reads) <= 4 * agentCount * commandsPerAgent, `${toTotalReads(reads)} reads to serve every agent`);
+    expect(firstAgent.length).toEqual(commandsPerAgent);
+    expect([...firstAgentReads.keys()].every((commandId) => commandId.startsWith('agent-0-'))).toEqual(true);
+    expect(firstAgentReads.size).toEqual(commandsPerAgent);
+    assert(readsAfterScan <= 2 * agentCount * commandsPerAgent);
+    assert(toTotalReads(reads) <= 4 * agentCount * commandsPerAgent);
 });
 
-Deno.test('a heartbeat neither scans dispatch nor evaluates the rollup; the deadline sweep does both', async () => {
+test('a heartbeat neither scans dispatch nor evaluates the rollup; the deadline sweep does both', async () => {
     let evaluations = 0;
     const defaults = toControlServiceInput({ now: () => 1_000 });
     const service = createRallarBlackBoxControlService({
@@ -327,7 +319,7 @@ Deno.test('a heartbeat neither scans dispatch nor evaluates the rollup; the dead
     registerFleetAgents(service, 2);
     const sockets = new ControlAgentSockets(service);
     for (const agentId of ['agent-01', 'agent-02']) {
-        sockets.register({ readyState: 1, send: () => undefined, close: () => undefined }, { runId: 'run-1', agentId });
+        sockets.register({ readyState: 1, send: (text) => text.length, close: () => undefined }, { runId: 'run-1', agentId });
     }
     assertRight(service.createDistributedRun(toDistributedManifest({
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-01', 'agent-02'] }
@@ -343,7 +335,7 @@ Deno.test('a heartbeat neither scans dispatch nor evaluates the rollup; the dead
     stopSweep();
     await timers.advanceTo(10_000);
 
-    assertEquals([afterHeartbeat, evaluations, persisted], [0, 1, 1]);
+    expect([afterHeartbeat, evaluations, persisted]).toEqual([0, 1, 1]);
 });
 
 /** The socket route's order for one accepted client frame: receive, then dispatch to the run's sockets. */
@@ -487,7 +479,7 @@ function decodeSocketFrame(raw: string, identity: ControlClientIdentity): Server
         return barrier.right;
     }
     const parsed = parseControlServerMessage(raw, identity);
-    assert(parsed.ok, 'expected a validated command or barrier frame');
+    assert(parsed.ok);
     return parsed.envelope;
 }
 
@@ -517,17 +509,17 @@ function collectFrames(socket: WebSocket, identity: ControlClientIdentity): Sock
     return {
         nextCommand: async () => {
             const frame = await next();
-            assert(frame.kind === 'command', JSON.stringify(frame));
+            assert(frame.kind === 'command');
             return frame;
         },
         nextBarrier: async () => {
             const frame = await next();
-            assert(frame.kind === 'barrier', JSON.stringify(frame));
+            assert(frame.kind === 'barrier');
             return frame;
         },
         expectSilence: async () => {
             await new Promise((resolve) => setTimeout(resolve, SILENCE_MS));
-            assertEquals(frames, [], 'the server sent a frame');
+            expect(frames).toEqual([]);
         }
     };
 }
@@ -597,10 +589,10 @@ async function waitForPersistedRun(
 async function readPersistedRun(storageDir: string): Promise<ControlRunSnapshot | undefined> {
     let raw: string;
     try {
-        raw = await Deno.readTextFile(`${storageDir}/control-snapshot.json`);
+        raw = await readFile(`${storageDir}/control-snapshot.json`, 'utf8');
     }
     catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
             return undefined;
         }
         throw toError(error);
@@ -612,6 +604,6 @@ async function readPersistedRun(storageDir: string): Promise<ControlRunSnapshot 
         return undefined;
     }
     const decoded = decodeControlRunSnapshot(run);
-    assert(decoded.right !== undefined, decoded.left);
+    assert(decoded.right !== undefined);
     return decoded.right;
 }

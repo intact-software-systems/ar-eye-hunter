@@ -1,10 +1,11 @@
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { test } from 'bun:test';
 import assert from 'node:assert/strict';
 
 import { createManualTimers } from '../../../../packages/tests/shared/resilience/manual-timers.ts';
 import { startEventLoopLagTiming } from '../../src/services/start-event-loop-lag-timing.ts';
 
-Deno.test('event-loop lag timing records one timing line per one-second window', async () => {
+test('event-loop lag timing records one timing line per one-second window', async () => {
     const timers = createManualTimers(0);
     const events: RallarTimingEvent[] = [];
     const stop = startEventLoopLagTiming({
