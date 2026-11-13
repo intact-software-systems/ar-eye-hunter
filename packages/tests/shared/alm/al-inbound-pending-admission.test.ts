@@ -491,14 +491,18 @@ it('a diagnostics sink that throws leaves a replay\'s delivery and its claim unc
         }).toBe(1);
         return delivered.map((delivery) => delivery.id.msgId);
     };
-    const reached: string[] = [];
+    const thrownFor: string[] = [];
 
     const withThrowingSink = await deliveredWith((event) => {
-        reached.push(event.kind);
+        // The ingress states `pending`; the sink fails only on the replay's own verdict, so the guard pinned is the replay's.
+        if (event.kind !== 'admission-outcome' || event.outcome === 'pending') {
+            return;
+        }
+        thrownFor.push(event.outcome);
         throw new Error('sink failed');
     });
 
-    expect(reached).toContain('admission-outcome');
+    expect(thrownFor).toHaveLength(1);
     expect(withThrowingSink).toEqual(await deliveredWith(undefined));
 });
 
