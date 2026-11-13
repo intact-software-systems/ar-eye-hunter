@@ -1519,22 +1519,27 @@ function toWaitCommands(commands: readonly RallarBlackBoxTestCommand[]): readonl
     return toNestedCommands(commands).filter((command): command is RallarBlackBoxTestWaitCommand => command.kind === 'wait');
 }
 
-/** The wait pins its store to the session of a connect that opened a fresh document earlier in the same recipe. */
+/**
+ * The wait pins its store to the session of its fresh document's first connect: a successor's first `rtc.connect`, or
+ * the first `rtc.connect` after the last `agent.reload` before the wait.
+ */
 function expectFreshDocumentRecovery(
     recipe: RallarBlackBoxTestRecipe,
     role: AlmConformanceRole,
     wait: RallarBlackBoxTestWaitCommand
 ): void {
+    const commands = recipe.commands;
     const connectId = SESSION_PIN_PATTERN.exec(wait.match.contains ?? '')?.[1];
-    const connectAt = recipe.commands.findIndex((command) => command.commandId === connectId);
-    const waitAt = recipe.commands.indexOf(wait);
-    const reloadAt = recipe.commands.findIndex((command) => command.kind === 'agent.reload');
+    const waitAt = commands.indexOf(wait);
+    const reloadAt = commands.slice(0, waitAt).findLastIndex((command) => command.kind === 'agent.reload');
+    const documentStart = role === 'successor' ? 0 : reloadAt + 1;
+    const firstConnect = commands.slice(documentStart, waitAt).find((command) => command.kind === 'rtc.connect');
 
     expect(wait.match.topic, wait.commandId).toBe('rallar.browser.alm.storage');
     expect(wait.match.contains, wait.commandId).toContain('"kind":"recovery","storeId":"');
-    expect(recipe.commands[connectAt]?.kind, wait.commandId).toBe('rtc.connect');
-    expect(connectAt, wait.commandId).toBeLessThan(waitAt);
-    expect(role === 'successor' || (reloadAt >= 0 && reloadAt < connectAt), wait.commandId).toBe(true);
+    expect(role === 'successor' || reloadAt >= 0, wait.commandId).toBe(true);
+    expect(firstConnect?.commandId, wait.commandId).toBeDefined();
+    expect(connectId, wait.commandId).toBe(firstConnect?.commandId);
 }
 
 describe('alm-conformance cell parts', () => {
@@ -1582,6 +1587,20 @@ describe('alm-conformance cell parts', () => {
                     'phase_completed'
                 ]);
                 expect(freshWaits.every((wait) => wait.match.sinceCommandIdPrefix === undefined)).toBe(true);
+                const prefix = `alm-ws-${scenario.scenarioKey}-${role}-`;
+                const prologue = scenario.partsByRole[role]!.prologue;
+                // The applied-diagnostics wait reads the prologue connect's own phase, so it closes the prologue unmarked.
+                expect(prologue.map((command) => command.commandId!.slice(prefix.length)).slice(-4)).toEqual([
+                    'ensure-group',
+                    'ensure-member',
+                    'connect',
+                    'applied-diagnostics'
+                ]);
+                expect(prologue.at(-1)).toMatchObject({
+                    kind: 'wait',
+                    match: { topic: 'rallar.browser.connect.phase_completed' }
+                });
+                expect(prologue.at(-1)).not.toHaveProperty('match.sinceCommandIdPrefix');
                 expect(
                     toWaitCommands(scenario.partsByRole[role]!.body).every((wait) =>
                         wait.match.sinceCommandIdPrefix === `alm-ws-${scenario.scenarioKey}-${role}-`

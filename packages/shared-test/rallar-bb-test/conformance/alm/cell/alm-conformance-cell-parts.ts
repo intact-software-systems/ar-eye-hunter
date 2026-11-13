@@ -13,9 +13,10 @@ import { toOwnerLeaseLapseWait } from '../to-pause-command.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
 /**
- * A role's recipe in two parts. The prologue opens the role's page, through the connect. The body is the cell itself,
- * opened by the sender's own storage baseline, and every wait in it reads its own cell's history. A combined recipe
- * shares one prologue and runs each cell's body.
+ * A role's recipe in two parts. The prologue opens the role's page through the connect; a delivery-diagnostics
+ * recipe's prologue also holds the freshness waits before it and the wait for the connect's applied selection after it,
+ * none of them marked. The body is the cell itself, opened by the sender's own storage baseline, and every wait in it
+ * reads its own cell's history. A combined recipe shares one prologue and runs each cell's body.
  */
 export interface AlmConformanceCellParts {
     readonly prologue: readonly RallarBlackBoxTestCommand[];
