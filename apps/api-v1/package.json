@@ -7,7 +7,7 @@
     "start": "bun run src/main.ts",
     "dev": "bun --watch run src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test --timeout=240000 --parallel=4 --no-isolate test/",
+    "test": "bun test --timeout=240000 --parallel=4 --no-isolate --path-ignore-patterns='**/native-receiver-receipts.test.ts' test/ && bun test --timeout=240000 test/db/native-receiver-receipts.test.ts",
     "prisma": "npm exec -- prisma",
     "db:migrate:deploy": "npm run prisma -- migrate deploy",
     "db:migrate:dev": "npm run prisma -- migrate dev",
