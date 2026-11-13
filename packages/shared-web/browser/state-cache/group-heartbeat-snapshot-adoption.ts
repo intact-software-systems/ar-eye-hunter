@@ -2,10 +2,12 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
-    decideGroupSnapshotCausalRevision,
+    isGroupSnapshotCausalRevisionCovered,
     isTuplePreservingGroupLivenessReduction
 } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+
+import { emitBrowserStateReadDiagnostic } from '../state-read/diagnostics.ts';
 
 export function adoptGroupSnapshotsFromHeartbeat(
     observedBeforeHeartbeat: readonly GroupSnapshot[],
@@ -24,7 +26,10 @@ export function adoptGroupSnapshotsFromHeartbeat(
                 observed.causalRevision
             ) === 'equal'
         ) {
-            decideGroupSnapshotCausalRevision(observed, returned);
+            if (!isGroupSnapshotCausalRevisionCovered(observed, returned)) {
+                adoptDivergentGroupSnapshot(observed, returned);
+                continue;
+            }
             const renewed = isGroupHeartbeatSnapshotRenewal(observed, returned);
             const restoredSession = !renewed &&
                 isGroupHeartbeatSessionReappearance(observed, returned);
@@ -42,6 +47,25 @@ export function adoptGroupSnapshotsFromHeartbeat(
 
         groupStateSnapshotsRepository.setGroupStateSnapshot(returned);
     }
+}
+
+/**
+ * The cache holds other content than the server at the same causal tuple, so it labels a revision with rows the
+ * server never wrote there. The heartbeat's snapshot is the server's content at that tuple: it replaces a cached one
+ * still live, without reviving one the cache TTL expired. The diagnostic reports the divergence observed, whether or
+ * not a replacement happened.
+ */
+function adoptDivergentGroupSnapshot(observed: GroupSnapshot, returned: GroupSnapshot): void {
+    if (groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group) !== undefined) {
+        groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(observed, returned);
+    }
+    emitBrowserStateReadDiagnostic({
+        name: 'rallar.browser.state-read',
+        feature: 'group',
+        operation: 'heartbeat',
+        result: 'revision-conflict',
+        durationMs: 0
+    });
 }
 
 export function isGroupHeartbeatSnapshotRenewal(

@@ -40,6 +40,7 @@ import {
     computeGroupPresenceSummaryEntry,
     decodeCanonicalGroupPresenceSummaryEntry
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceInboxWorkPage } from '@shared/queuebox/queue-box-types.ts';
 import { ResourceInboxHandlerRetryableConflict } from '@shared/queuebox/resource-inbox/resource-inbox-handler-outcome.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -49,7 +50,7 @@ import { toEarlierALEnvelopeVersionResource } from '../../../../shared/al-contra
 import { createPSqlAdmissionTestStorage } from '../../../al-runtime/postgres/create-p-sql-admission-test-storage.ts';
 import { GroupBarrierRepository } from '../group-barrier-repository.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createService } from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, createService } from './group-presence-test-runtime.ts';
 
 vi.mock('@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts', async (importOriginal) => {
     const original = await importOriginal<typeof import('@shared-server/rallar-system/group-state/presence/compute-group-presence-summary.ts')>();
@@ -598,6 +599,25 @@ async function seedConnectedGroup(input: SeedConnectedGroupInput): Promise<Seede
             actorPrincipalId: 'owner',
             requestId: `activate-${groupId}-${principalId}`
         });
+    }
+    // The joins' own summary work has run, as it would before the connects claimed here: their group revisions are
+    // the summary's, so the connects' batch carries every revision after it.
+    await convergeSummaryForTest({
+        work: new GroupPresenceSummaryWork({
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
+            recomputeMaxWaitMs: 0,
+            runtimeRepository: runtime,
+            now: () => now,
+            serviceId: 'coalescing-seed',
+            senderPeerId: 'ws-server'
+        }),
+        runtime,
+        ref: groupRef(groupId),
+        commandId: `converge-${groupId}`,
+        nowEpochMs: now
+    });
+    for (const principalId of principalIds) {
         const connect = principalId.slice(0, 32);
         await service.connectPresenceSession(SCOPE, groupId, widen(`${input.groupId}-${connect}-session`), {
             principalId,

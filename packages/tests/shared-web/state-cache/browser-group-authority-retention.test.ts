@@ -41,7 +41,6 @@ import {
     readableAcceptedOverlayCache,
     setCurrentAcceptedServerOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import {
     createActiveClientInstanceFixture,
@@ -366,15 +365,14 @@ describe('browser group authority retention', () => {
                     current.activeSessions.toReversed()
                 )
         }
-    ])('preserves the equal-causal conflict for $caseName after cache expiry', ({ candidate }) => {
+    ])('restores no authority from an equal-causal conflict for $caseName after cache expiry', ({ candidate }) => {
         const current = createRoomAuthority(120_000, 20_000);
         expect(observeGroupStateSnapshot(current)).toBe('inserted');
         vi.setSystemTime(61_001);
         expect(readRtcRoomAuthority()).toBeUndefined();
 
-        expect(() => {
-            adoptGroupSnapshotsFromHeartbeat([current], [candidate(current)]);
-        }).toThrow(StateSnapshotRevisionConflictError);
+        adoptGroupSnapshotsFromHeartbeat([current], [candidate(current)]);
+
         expect(readRtcRoomAuthority()).toBeUndefined();
     });
 
