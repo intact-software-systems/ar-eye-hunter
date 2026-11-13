@@ -710,7 +710,8 @@ and it has no status list.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
-  `scripts/hosted-rallar/controller/rallar-controller-role.sh`).
+  `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
+  campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
 - A relay partition, one RTC edge cut while the others stay, has no fault
   step: `TransportFaultPort.decideSend` sees a carrier and a message, not an
   edge. It needs per-edge control in the transport fault port.
@@ -723,6 +724,17 @@ and it has no status list.
   before routing moves to them, is the complete fix for the RTT re-plan
   failures of manifests 07, 09 and 21 and is not scheduled
   (`plans/active/deno-to-bun-validation.md`).
+- At 50 agents the RTC delivery fails after the connect. With #813 merged,
+  manifests 07 and 09 connect every agent and then fail on delivery: manifest
+  07 (run 43382453664) leaves 2 of 49 receivers under the 95 % threshold, and
+  manifest 09 (run 43383760956) has 9 agents at 0.89 to 0.94 send success
+  against 0.95, with 2 to 3 s bursts of `RALLAR_BB_RTC_SEND_FAILED`. The cause
+  is not established, from one run per manifest (the comment on #813). It caps
+  the campaign's stretch rung (D643): 50 agents are not attempted until the
+  loss has a cause or the stretch load is shown clear of it.
+- The byte sizes the game fixtures send (the AR Eye and position frames) are
+  stated nowhere. Measure them in one small task; the first campaign rung sends
+  those sizes (D643).
 - The changed-range style check (`scripts/check-changed-repo-style.mjs`) scans
   the whole base and the whole head for its per-file rules. A range that
   touches a navigation product source also builds the type-checked program at
