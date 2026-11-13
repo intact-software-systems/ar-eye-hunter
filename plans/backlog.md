@@ -723,9 +723,9 @@ and it has no status list.
   before routing moves to them, is the complete fix for the RTT re-plan
   failures of manifests 07, 09 and 21 and is not scheduled
   (`plans/active/deno-to-bun-validation.md`).
-- Some unit tests run at Vitest's 5-second default timeout, which the Vitest
-  config leaves unset. Diagnose why they overrun before any limit changes
-  (D642).
 - The changed-range style check (`scripts/check-changed-repo-style.mjs`) scans
-  the whole base and the whole head. Ruled to go on (D642): scan the changed
-  files only, then scan base and head in parallel.
+  the whole base and the whole head for its per-file rules. A range that
+  touches a navigation product source also builds the type-checked program at
+  both (`navigationProductChanged` in `computeChangedFindings`). Ruled by the
+  maintainer (2026-11-13): scan the changed files only, then scan base and head
+  in parallel.

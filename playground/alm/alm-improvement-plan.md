@@ -2563,8 +2563,9 @@ S7-ii). Release 15, its Slice 8 (signed receipts on RTC), chosen the same way, i
 Release 16, its Slice 9 (one owner each, then a lane to trust), was chosen by the controller under the maintainer's
 goal from five surveys (D607), as two pull requests: S9-i and S9-ii, both recorded here.
 The addendum's other later outcomes are unsliced, among them an encrypted publication, native publication-key custody
-and the fallback stall windows; D642 replaces D608's order: lane determinism, publication figures and a local baseline, platform fault steps, then receipt
-truth and the held-send path; each is designed in its own pull request. Decision numbers continue from D643.
+and the fallback stall windows; D642 replaces D608's order: lane determinism, publication figures and a local
+baseline, platform fault steps, then receipt truth and the held-send path; each is designed in its own pull request.
+Decision numbers continue from D643.
 
 ## Revision history
 
