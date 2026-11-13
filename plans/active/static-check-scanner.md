@@ -63,8 +63,6 @@ The affected-package run is the same as slice 1.
 
 - Stop scanning the whole tree twice in `toBaseSources`. Scan the diff for
   per-file rules.
-- Take `npm run check:repo-style:navigation-details` off the blocking lane in
-  `.github/workflows/release-gate.yml`. It always exits 0.
 - Stop flagging `Controller`, `Gateway`, and `Facade` in `service.name`.
 - See a `*Command` type whose `{` is not on the same line.
 - When only the checker changes, publish an old-versus-new finding list as a

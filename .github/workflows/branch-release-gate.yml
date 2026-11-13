@@ -187,6 +187,17 @@ jobs:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
       alm_scope: ${{ vars.RALLAR_BLACK_BOX_ALM_SCOPE || 'smoke' }}
 
+  # Observation beside the gate: nothing below waits for it, so it never lengthens the required result.
+  navigation-report-observation:
+    name: IDE navigation report observation
+    needs:
+      - governance-gate
+      - validation-evidence
+    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    uses: ./.github/workflows/navigation-report-observation.yml
+    with:
+      candidate_ref: ${{ github.event.pull_request.head.sha }}
+
   publish-validation-evidence:
     name: Publish validation evidence
     needs:

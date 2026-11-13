@@ -1,0 +1,38 @@
+name: Navigation Report Observation
+
+on:
+  workflow_call:
+    inputs:
+      candidate_ref:
+        description: 'Exact Git revision to report on'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Non-blocking and beside the gates, not inside them: the report cannot fail on findings, nothing reads
+  # it but people, and it cost the Static checks lane about a quarter of its time limit. No caller waits
+  # for this job, so its minutes never lengthen a verdict or a deployment.
+  navigation-report:
+    name: IDE navigation report
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      # The navigation program approaches the runner's default V8 old-space limit.
+      NODE_OPTIONS: --max-old-space-size=6144
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+
+      - name: Report IDE navigation details
+        run: npm run check:repo-style:navigation-details

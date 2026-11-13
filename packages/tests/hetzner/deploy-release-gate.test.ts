@@ -52,6 +52,7 @@ describe('Deploy workflow release gate', () => {
         expect(Object.keys(workflow.jobs).sort()).toEqual([
             'alm-conformance-observation',
             'cloudflare-branch-controls',
+            'navigation-report-observation',
             'release-gate'
         ]);
     });
