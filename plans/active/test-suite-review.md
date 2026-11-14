@@ -27,41 +27,40 @@ PostgreSQL/PGlite for database semantics, and TypeScript for maintained test com
   in draft while the broader plan remains active; use delivery readiness only for a finished,
   reviewed candidate intended for release handoff.
 
-## Slice 1: Close canonical JSON assertion gaps
+## Slice 1: Account for PostgreSQL selection and execution
 
-**Owner:** `packages/shared/encoding/canonical-json.ts`; change only its owning test file,
-`packages/tests/shared/encoding/canonical-json.test.ts`.
+**Owners:** Existing PostgreSQL npm commands and native Vitest configuration; checker/reporter
+under `scripts/`, with CLI fixture tests in `packages/tests/repo/postgres-test-execution.test.ts`.
 
-1. Preserve the literal canonical representations and the separate SHA-256 digest vectors.
-2. Add explicit valid null-prototype and repeated-reference examples. Cover non-finite numbers,
-   sparse and extended arrays, hidden properties, symbol keys, unsupported object values and cycles.
-   Assert that both array and object getters remain unexecuted when rejected.
-3. Run the owning suite and the hash-wrapper suite. Use disposable production copies to verify
-   sensitivity to removed finite-number, symbol-key and descriptor guards and lost cycle cleanup.
-   Tests of existing correct behavior must pass; no artificial failing production change is needed.
-4. Run shared package typecheck and maintained tests typecheck. Review the entire changed test
-   file, with literal expected outputs and no new generic test harness.
+1. Discover PostgreSQL-gated package tests from their explicit environment marker. Use native Vitest file selection for
+   the existing `test:postgres:*` lanes. For unselected candidates, compare dynamic registration
+   with the backend flag on and off, with static parsing disabled. This distinguishes actual
+   conditional cases from fixture strings without recompiling already-selected suites. Retain the
+   separate presence-expiry lane. Fail closed on collection errors and name missing conditional cases.
+2. Add a runtime reporter to the full PostgreSQL npm commands that rejects skipped, todo or pending
+   cases. Keep filtered local invocations available without the completeness flag. Preserve native
+   test failure handling and the intentional repeated presence-expiry run.
+3. Prove acceptance and failure with actual native-runner fixtures: parameterized conditional aliases,
+   a missing mixed-suite overlap case, collection errors, complete execution and declared/runtime skips.
+4. Run the real repository selection audit and an isolated PostgreSQL friends-presence run with the
+   reporter enabled. Run maintained tests typecheck, native configuration checks, formatting and
+   affected style/coupling review. Document that collection proves selection; only runs prove execution.
 
-## Slice 2: Remove the source-only persistence ownership check
+## Slice 2: Review scenario and governance repetition
 
-**Delete:** `packages/tests/shared-server/rallar-system/group-state/persistence/group-state-persistence-ownership.test.ts`.
+**Owners:** Existing scenario/manifest suites and repository governance tests named in the assessment.
 
-1. Trace `createTestGroupStateRepository` into the real aggregate, membership, presence, reads and
-   snapshot owners. Confirm the class strings establish no independent runtime or public contract.
-2. Retain and run `group-state-repository-identity.test.ts`, `group-state-snapshot-assembly.test.ts`,
-   `group-state-repository-write-integrity.test.ts` and the API repository integration suite.
-   In particular, “stores groups by scope, supports slug lookup, and assembles group snapshots”
-   exercises real membership/presence writes and snapshot assembly through the repository facade.
-3. Delete the source-only test; do not add an equivalent file-tree or source-text ratchet.
-4. Run affected shared-server/test typechecks, formatting, coupling/style review and reachability.
-   Review the coherent batch with a fresh reviewer before publishing to the existing draft PR.
+1. Compare repeated assertions with their independent contract and surviving runtime or artifact test.
+   Distinguish generated examples, public workload constants and private implementation choices.
+2. Remove or consolidate only proofs with a named behavioral successor; strengthen a demonstrated
+   gap before deleting its weak substitute. Keep independent publication-integrity checks honest
+   about what they prove, and preserve distinct scenario inputs and backend responsibilities.
+3. Run the affected focused suites and maintained test typecheck. Review every changed file in full
+   and obtain a fresh review before publishing the coherent batch to the existing draft PR.
 
 ## Later outcomes, refined after these slices
 
 - Review further structural candidates individually, preserving durable compatibility boundaries.
-- Strengthen reachability into conditional/backend execution accounting, with positive and
-  negative fixtures and real runner outcomes. Avoid creating a broad hand-maintained case catalog.
-- Review manifest/scenario and governance clusters for repeated coverage and self-derived oracles.
 - Improve browser-suite cohesion and deterministic waits, preserving actual visible-user journeys
   and distinct real-browser responsibilities.
 - Reassess manual mobile and propagation coverage and collect comparable timing/retry evidence

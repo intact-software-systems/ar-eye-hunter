@@ -106,6 +106,19 @@ demonstrates that a successful reachability report is weaker than execution cove
 full file against an isolated database with zero skipped cases. Later strengthen execution
 accounting to detect conditional cases that are never enabled, using runner outcomes as evidence.
 
+The implementation includes that suite and adds two complementary checks. Reachability now also
+uses native Vitest selection for the configured `test:postgres:*` commands. For unselected
+`packages/tests/**/*.test.ts` files mentioning `RALLAR_POSTGRES_INTEGRATION`, it compares dynamic
+registration with the flag enabled and disabled, preserving repeated-title multiplicity. Fixture
+text alone is not treated as conditional coverage. Full PostgreSQL npm runs enable a reporter that
+fails on skipped, todo or pending cases; direct filtered local runs can omit that completeness flag.
+
+These checks cover this explicit PostgreSQL registration convention, not every conditional test.
+They do not establish that the selected npm commands are invoked by every relevant workflow,
+detect every backend switch under an unchanged test name, or audit native Bun-only gates. Native
+collection proves registration and selection; only runtime results prove execution. Keep the
+existing workflow/file reachability check and real backend runs alongside them.
+
 ### Direct assertion gaps: canonical JSON input boundaries
 
 `packages/shared/encoding/canonical-json.ts` explicitly rejects non-finite numbers, sparse arrays,
