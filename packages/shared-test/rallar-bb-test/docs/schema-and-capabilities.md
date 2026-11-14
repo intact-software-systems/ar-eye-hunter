@@ -610,6 +610,11 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
   elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
   no gap NACK and no repair dispatch.
+- In these three cells the receiver, which a copy must find current, writes nothing after the sibling's
+  election, so the sibling's cue that it elected (`entered`, `resubscribed`, `reentered`) is its ordering
+  point: the receiver reads the room's head after that cue, waits until it applied that head, then cues
+  `<cue>-applied`, and the producers wait for that cue before they publish after the election. No cell waits a
+  fixed margin for the election's delta.
 - `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
   producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
   socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
@@ -617,7 +622,7 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   continuation names (`AlmConformanceContinuationDefinition.role`, here the sibling) once its gate holds, here the
   receiver's cue that `p4` was confirmed. The continuation reopens the socket, waits for the token to read `active`
   under the new connection generation, for its subscription row and for its own room presence under that
-  generation (the page restored it), waits a 2 s delta margin and cues `reentered`; the producers probe
+  generation (the page restored it) and cues `reentered`; the producers probe
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
   without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
   dispatches a repair or admits a gap NACK about the cell's tracks.

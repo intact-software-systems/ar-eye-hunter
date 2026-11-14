@@ -9,8 +9,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
@@ -19,6 +17,8 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
+    toElectionAppliedCueCommands,
+    toElectionAppliedCueWait,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -35,6 +35,9 @@ import {
 
 /** The sibling's election after the re-grant: a new one, its first ended by the revoke. */
 const REGRANTED_SUBSCRIPTION = 'sibling-regranted';
+
+/** The sibling's cue that its new election is active, which the receiver applies before the producers publish `p5`. */
+const RESUBSCRIBED = 'resubscribed';
 
 /**
  * An exclusion reads as an omission, never as loss. The sibling elects at the start and receives `p1` and `p2` of
@@ -78,7 +81,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toGrantAppliedHeadCommands(producer, 'revoke-head'),
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
-        toCueWait(producer, 'resubscribed'),
+        toElectionAppliedCueWait(producer, RESUBSCRIBED),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
         ...toNoGapRepairWaits(producer)
     ];
@@ -86,7 +89,8 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 
 /**
  * Each grant change waits for both producers' loops before it. The revoke's delta reaches the receiver, which wrote it,
- * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`.
+ * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`. The
+ * sibling's new election reaches the receiver before its cue lets the producers publish `p5`.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -115,6 +119,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             subscribe: true
         }),
         ...toCueSendCommands(owner, 'regranted'),
+        ...toElectionAppliedCueCommands(owner, RESUBSCRIBED),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),
         ...toUnsubscribeCommands(owner, 'receiver')
@@ -134,8 +139,7 @@ function toExcludedSubscriberCommands(sibling: AlmConformanceStepInput): readonl
         toCueWait(sibling, 'regranted'),
         ...toUnsubscribeCommands(sibling, 'sibling'),
         toSubscribeCommand(sibling, REGRANTED_SUBSCRIPTION),
-        toPauseCommand(sibling, 'subscribe-delta-margin', GRANT_DELTA_MARGIN_MS),
-        ...toCueSendCommands(sibling, 'resubscribed'),
+        ...toCueSendCommands(sibling, RESUBSCRIBED),
         ...toOrderedArrivalWaits(sibling, [5]),
         ...toOrderedPositionWaits({
             step: sibling,

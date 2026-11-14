@@ -730,15 +730,6 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
-- A sibling's election keeps its 2 s `GRANT_DELTA_MARGIN_MS` pause at three sites, because the receiver, which a
-  copy must find current, has no ordering point after the election committed (lane determinism, LD-13):
-  `subscribe-delta-margin` in `subscription-ordered-entry.ts` and in `subscription-ordered-omission.ts`, and
-  `reentered-delta-margin` in `subscription-ordered-reconnect.ts`. The receiver waits for none of the sibling's
-  cues (`entered`, `resubscribed`, `reentered`), and waiting for one would not order the first copy: the producers
-  publish right after the same cue, so the receiver's wait would run beside the publication. A real ordering point
-  needs a cue from the receiver to the producers, sent after the receiver applied the election (its page read the
-  room's head after the election committed, `toGrantAppliedHeadCommands`); the producers wait for that cue before
-  they publish, and then the pause could go.
 - The formation read's `pending` costs one more query per read while the
   coalesced head row is not pending: `readPendingByTopicAndContextId`
   (`packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts`)
@@ -783,9 +774,8 @@ and it has no status list.
   carrying no key of its cell, the activation status's `coverageRate` at the
   first petition (the settle accepts either value), the same-context successor,
   which connects outside the settle, hosted combined recipes, which carry no
-  settle, a role failing before a barrier (the others time out), a cell's own
-  mid-body writes, and the three kept 2 s `GRANT_DELTA_MARGIN_MS` pauses. The
-  first three show as a revision past the floor or a refusal after the body
+  settle, a role failing before a barrier (the others time out), and a cell's
+  own mid-body writes. The first three show as a revision past the floor or a refusal after the body
   began. The restored page is silent unless the restore lands on a new
   revision, since the last `held` event does not prove the room readable. The
   dropped page needs a room the family shares: a connect writes the page's

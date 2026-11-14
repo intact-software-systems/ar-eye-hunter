@@ -7,8 +7,6 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
     PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
@@ -17,6 +15,8 @@ import {
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
+    toElectionAppliedCueCommands,
+    toElectionAppliedCueWait,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -33,6 +33,9 @@ import {
 
 /** The receiver's cue that both producers' `p2` were confirmed, which lets the sibling subscribe. */
 const PUBLISHED_BEFORE_ENTRY = 'published-2';
+
+/** The sibling's cue that its election is active, after which the receiver applies it before the producers publish. */
+const ENTERED = 'entered';
 
 /**
  * A late subscriber enters each producer's track at its first copy. Both producers publish `p1` and `p2` on a track of
@@ -72,7 +75,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, beforeEntry.confirmations, beforeEntry.outsideAudience),
         ...toOrderedPublishCommands({ ...beforeEntry, publication: 1 }),
         ...toOrderedPublishCommands({ ...beforeEntry, publication: 2 }),
-        toCueWait(producer, 'entered'),
+        toElectionAppliedCueWait(producer, ENTERED),
         ...toOrderedPublishCommands({
             step: producer,
             publication: 3,
@@ -85,7 +88,8 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 
 /**
  * The receiver relays that both producers published `p2`: its cue subscription leads its body, so it listens before the
- * cell's `armed` barrier lets either producer cue, and the sibling waits for this one cue alone.
+ * cell's `armed` barrier lets either producer cue, and the sibling waits for this one cue alone. Once the sibling has
+ * elected, the receiver applies the election before it lets the producers publish `p3`.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -94,6 +98,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toCueSendCommands(owner, PUBLISHED_BEFORE_ENTRY),
+        ...toElectionAppliedCueCommands(owner, ENTERED),
         ...toOrderedArrivalWaits(owner, [3]),
         ...toOrderedConfirmedCueWaits(owner, 3),
         ...toUnsubscribeCommands(owner, 'receiver')
@@ -111,8 +116,7 @@ function toLateSubscriberCommands(sibling: AlmConformanceStepInput): readonly Ra
         ...toCueListenCommands(sibling),
         toCueWait(sibling, PUBLISHED_BEFORE_ENTRY),
         toSubscribeCommand(sibling, 'sibling'),
-        toPauseCommand(sibling, 'subscribe-delta-margin', GRANT_DELTA_MARGIN_MS),
-        ...toCueSendCommands(sibling, 'entered'),
+        ...toCueSendCommands(sibling, ENTERED),
         ...toOrderedArrivalWaits(sibling, [3]),
         ...toOrderedPositionWaits({ step: sibling, arrival: 3, positions }),
         ...toOrderedAbsenceWaits(sibling, [1, 2]),

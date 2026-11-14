@@ -6,14 +6,6 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 /** How long a role listens, after its positive witness, for a message or event it must not see. */
 export const SUBSCRIPTION_ABSENCE_MS = 5_000;
 
-/**
- * Lets a sibling's election delta reach every member page's snapshot before the next send that must meet it, where a
- * page that must hold it has no ordering point after the election committed: the receiver, which a copy must find
- * current, waits for no cue and writes nothing after it, so no head read of its own can follow the election. A grant
- * change whose pages all have a point waits for their applied revisions instead (`toGrantAppliedHeadCommands`).
- */
-export const GRANT_DELTA_MARGIN_MS = 2_000;
-
 export interface ResultTextInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;

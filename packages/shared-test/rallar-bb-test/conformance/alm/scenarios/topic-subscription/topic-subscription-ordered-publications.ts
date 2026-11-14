@@ -7,8 +7,11 @@ import type {
 
 import { toOrderingPositionWait } from '../../alm-conformance-diagnostic-waits.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
+import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import {
     toConfirmedCueWait,
+    toCueSendCommands,
+    toCueWait,
     toPublicationWait,
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
@@ -74,6 +77,30 @@ export function toOrderedPublishCommands(
         kind: 'publication',
         orderingKey: step.scenarioKey
     });
+}
+
+/**
+ * The receiver, which a copy must find current, writes nothing after a sibling's election, so the sibling's cue
+ * `elected`, sent after its election's response, is its ordering point: it reads the room's head after that cue, waits
+ * until it applied that head, and only then tells the producers.
+ */
+export function toElectionAppliedCueCommands(
+    receiver: AlmConformanceStepInput,
+    elected: string
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toCueWait(receiver, elected),
+        ...toGrantAppliedHeadCommands(receiver, `${elected}-head`),
+        ...toCueSendCommands(receiver, toElectionAppliedCue(elected))
+    ];
+}
+
+/** A producer's first publication after a sibling's election waits until the receiver applied that election. */
+export function toElectionAppliedCueWait(
+    producer: AlmConformanceStepInput,
+    elected: string
+): RallarBlackBoxTestWaitCommand {
+    return toCueWait(producer, toElectionAppliedCue(elected));
 }
 
 /** Each producer's `publications` arrived on the page, the sender's track first. */
@@ -151,6 +178,10 @@ function toOrderedPublicationNames(publications: readonly number[]): readonly st
 
 function toProducerTrack(producer: AlmConformanceStepInput): OrderedTrack {
     return producer.role === 'sender' ? 'a' : 'c';
+}
+
+function toElectionAppliedCue(elected: string): string {
+    return `${elected}-applied`;
 }
 
 function toOrderedPublicationName(track: OrderedTrack, publication: number): string {

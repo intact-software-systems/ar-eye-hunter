@@ -562,7 +562,7 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...toPublishSteps('probe-ready'),
                     ...toPublishSteps(`${track}-p1`),
                     ...toPublishSteps(`${track}-p2`),
-                    'cue-entered-received',
+                    'cue-entered-applied-received',
                     ...toPublishSteps(`${track}-p3`),
                     'no-repair-dispatch',
                     'no-gap-nack'
@@ -574,7 +574,6 @@ describe('ALM ordered subscription entry conformance', () => {
                 'cue-listen-sent',
                 'cue-published-2-received',
                 'subscribe-sibling',
-                'subscribe-delta-margin',
                 'cue-entered',
                 'cue-entered-sent',
                 ...toPublicationSteps('received', 'a', [3]),
@@ -596,6 +595,11 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toConfirmedCueSteps(2),
                 'cue-published-2',
                 'cue-published-2-sent',
+                'cue-entered-received',
+                'entered-head-read',
+                'entered-head-applied',
+                'cue-entered-applied',
+                'cue-entered-applied-sent',
                 ...toPublicationSteps('received', 'a', [3]),
                 ...toPublicationSteps('received', 'c', [3]),
                 ...toConfirmedCueSteps(3),
@@ -642,7 +646,7 @@ describe('ALM ordered subscription entry conformance', () => {
                 'revoke-head-applied',
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-resubscribed-received',
+                'cue-resubscribed-applied-received',
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
                 'no-gap-nack'
@@ -667,6 +671,11 @@ describe('ALM ordered subscription entry conformance', () => {
             'grant-sender-s',
             'cue-regranted',
             'cue-regranted-sent',
+            'cue-resubscribed-received',
+            'resubscribed-head-read',
+            'resubscribed-head-applied',
+            'cue-resubscribed-applied',
+            'cue-resubscribed-applied-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -683,7 +692,6 @@ describe('ALM ordered subscription entry conformance', () => {
             'unsubscribe-sibling',
             'assert-unsubscribe-sibling-lapsed',
             'subscribe-sibling-regranted',
-            'subscribe-delta-margin',
             'cue-resubscribed',
             'cue-resubscribed-sent',
             ...toPublicationSteps('received', 'a', [5]),
@@ -703,8 +711,6 @@ describe('ALM ordered subscription entry conformance', () => {
                 { operation: 'grant', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } }
             ]);
         expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
-        expect(findStep(requireRoleRecipe(scenario, 'sibling'), 'subscribe-delta-margin'))
-            .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
     });
 
     it.each(ALM_CONFORMANCE_CARRIERS)(
@@ -749,34 +755,53 @@ describe('ALM ordered subscription entry conformance', () => {
         }
     );
 
+    // The receiver, which a copy must find current, has no write after a sibling's election: the sibling's cue is its
+    // ordering point, and the producers publish only once the receiver says it applied the head it read after it.
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'a grant change keeps its fixed pause where the receiver, which a copy must find current, has no cue or write of its own after it, over %s',
+        'a sibling\'s election reaches the producers\' first publication after it through the receiver\'s applied head, with no pause, over %s',
         (carrier) => {
-            const kept = [
-                { scenarioId: 'subscription-ordered-entry', election: 'subscribe-sibling', confirmed: [2, 3] },
-                { scenarioId: 'subscription-ordered-omission', election: 'subscribe-sibling-regranted', confirmed: [2, 4, 5] }
+            const cells = [
+                { scenarioId: 'subscription-ordered-entry', elected: 'entered', next: 'p3' },
+                { scenarioId: 'subscription-ordered-omission', elected: 'resubscribed', next: 'p5' },
+                { scenarioId: 'subscription-ordered-reconnect', elected: 'reentered', next: 'probe-reentered' }
             ] as const;
-            for (const { scenarioId, election, confirmed } of kept) {
+            for (const { scenarioId, elected, next } of cells) {
                 const scenario = findOrderedScenario(carrier, scenarioId);
-                const siblingNames = toStepNames(requireRoleRecipe(scenario, 'sibling'));
+                const receiver = requireRoleRecipe(scenario, 'receiver');
+                const names = toStepNames(receiver);
+                const heard = names.indexOf(`cue-${elected}-received`);
+                const head = `{resultCache.${receiver.recipeId}-${elected}-head-read.value.body.causalRevision`;
 
-                expect(siblingNames[siblingNames.indexOf('subscribe-delta-margin') - 1], `${carrier} ${scenarioId}`).toBe(election);
-                expect(findStep(requireRoleRecipe(scenario, 'sibling'), 'subscribe-delta-margin'), `${carrier} ${scenarioId}`)
-                    .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
-                expect(toReceiverCueWaitNames(requireRoleRecipe(scenario, 'receiver')), `${carrier} ${scenarioId}`)
-                    .toEqual(confirmed.map((publication) => toConfirmedCueSteps(publication)).flat());
+                expect(heard, `${carrier} ${scenarioId}`).toBeGreaterThan(-1);
+                expect(names.slice(heard + 1, heard + 5), `${carrier} ${scenarioId}`).toEqual([
+                    `${elected}-head-read`,
+                    `${elected}-head-applied`,
+                    `cue-${elected}-applied`,
+                    `cue-${elected}-applied-sent`
+                ]);
+                expect(findStep(receiver, `${elected}-head-applied`), `${carrier} ${scenarioId}`).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadMinimums: {
+                            'data.groupRevision': `${head}.groupRevision}`,
+                            'data.presenceRevision': `${head}.presenceRevision}`
+                        },
+                        sinceCommandIdPrefix: `${receiver.recipeId}-`
+                    }
+                });
+                for (const [role, track] of PRODUCER_TRACKS) {
+                    const producerNames = toStepNames(requireRoleRecipe(scenario, role));
+                    const first = next.startsWith('probe') ? next : `${track}-${next}`;
+                    expect(producerNames[producerNames.indexOf(toPublishSteps(first)[0]!) - 1], `${carrier} ${scenarioId} ${role}`)
+                        .toBe(`cue-${elected}-applied-received`);
+                    expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);
+                }
+                const siblingNames = scenarioId === 'subscription-ordered-reconnect'
+                    ? toContinuationStepNames(findBarrieredReconnectScenario(carrier))
+                    : toStepNames(requireRoleRecipe(scenario, 'sibling'));
+                expect(siblingNames.filter((name) => name.endsWith('-delta-margin')), `${carrier} ${scenarioId}`).toEqual([]);
             }
-            const reconnect = findBarrieredReconnectScenario(carrier);
-            const continuationNames = toContinuationStepNames(reconnect);
-            const margin = continuationNames.indexOf('reentered-delta-margin');
-            expect(continuationNames.slice(margin - 1, margin + 2), carrier)
-                .toEqual(['presence-reasserted', 'reentered-delta-margin', 'cue-reentered']);
-            expect(
-                reconnect.continuation?.recipe.commands.find(({ commandId }) => commandId?.endsWith('-reentered-delta-margin')),
-                carrier
-            ).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
-            expect(toReceiverCueWaitNames(requireRoleRecipe(findOrderedScenario(carrier, 'subscription-ordered-reconnect'), 'receiver')), carrier)
-                .toEqual([2, 4, 5].flatMap((publication) => toConfirmedCueSteps(publication)));
         }
     );
 
@@ -957,7 +982,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-reentered-received',
+                'cue-reentered-applied-received',
                 ...toPublishSteps('probe-reentered'),
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
@@ -975,6 +1000,11 @@ describe('ALM ordered subscription reconnect conformance', () => {
             ...toPublicationSteps('received', 'a', [3, 4]),
             ...toPublicationSteps('received', 'c', [3, 4]),
             ...toConfirmedCueSteps(4),
+            'cue-reentered-received',
+            'reentered-head-read',
+            'reentered-head-applied',
+            'cue-reentered-applied',
+            'cue-reentered-applied-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -997,7 +1027,6 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'tokens-reconnected',
             'rows-reconnected',
             'presence-reasserted',
-            'reentered-delta-margin',
             'cue-reentered',
             'cue-reentered-sent',
             ...toPublicationSteps('received', 'a', [5]),
@@ -1145,8 +1174,6 @@ describe('ALM ordered subscription reconnect conformance', () => {
         });
         expect(children('presence-reasserted')[1]).toMatchObject({ match: { topic: 'rallar.bb.http.response', contains: reconnected } });
         expect(children('presence-reasserted')[1]).not.toHaveProperty('absent');
-        expect(continuation.find(({ commandId }) => commandId === `${prefix}-reentered-delta-margin`))
-            .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
     });
 
     it('reads the reopened sibling\'s p5 as an omission after p2 on each track, and p3 and p4 absent', () => {
