@@ -348,17 +348,21 @@ describe('alm-conformance cell parts', () => {
                     ...scenario.roles.map((role) => toAlmConformanceRoleRecipe(scenario, role)!),
                     ...(scenario.continuation ? [scenario.continuation.recipe] : [])
                 ];
-                const polls = recipes.flatMap((recipe) =>
-                    toNestedCommands(recipe.commands).filter((command) => command.commandId?.endsWith('-formation-poll'))
-                );
+                const commands = recipes.flatMap((recipe) => toNestedCommands(recipe.commands));
+                const polls = commands.filter((command) => command.commandId?.endsWith('-formation-poll'));
+                // A sibling cues that it applied a settled layout only after a re-asserted presence re-planned it, and the
+                // receiver polls until the room settled on that layout before its own head read.
+                const resettled = commands.flatMap((command) => {
+                    const cue = command.kind === 'messages.send'
+                        ? /-cue-([a-z0-9-]+)-applied-by-sibling$/.exec(command.commandId ?? '')?.[1]
+                        : undefined;
+                    return cue === undefined ? [] : [`${cellPrefix}-receiver-${cue}-formation-poll`];
+                });
 
                 // Every cell has a receiver, which creates the room and owns it.
                 expect(scenario.roles, scenario.scenarioKey).toContain('receiver');
-                // A re-asserted presence re-plans the layout, so the reconnect cell's receiver polls once more after it.
-                expect(polls.map((command) => command.commandId), scenario.scenarioKey).toEqual([
-                    `${cellPrefix}-receiver-formation-poll`,
-                    ...(scenario.scenarioId === 'subscription-ordered-reconnect' ? [`${cellPrefix}-receiver-reentered-formation-poll`] : [])
-                ]);
+                expect(polls.map((command) => command.commandId), scenario.scenarioKey)
+                    .toEqual([`${cellPrefix}-receiver-formation-poll`, ...resettled]);
                 for (const poll of polls) {
                     expect(poll, scenario.scenarioKey).toMatchObject({
                         kind: 'loop',
