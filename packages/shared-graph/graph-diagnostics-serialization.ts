@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type {
     SerializedGraphInfo,
     SerializedGraphInfoSnapshot,
@@ -5,7 +6,7 @@ import type {
     SerializedWeightedGraphEdge,
     SerializedWeightedGraphNode
 } from '@shared/api/graph-topology-management-types.ts';
-import type { WeightedGraph } from './graph-props.ts';
+import type { EdgeProp, VertexProp, WeightedGraph } from './graph-props.ts';
 import type { GraphInfo, GraphInfoSnapshot } from './shared-graph-types.ts';
 
 type WeightedGraphExport = ReturnType<WeightedGraph['export']>;
@@ -45,7 +46,7 @@ function toSerializedWeightedGraph(exported: WeightedGraphExport): SerializedWei
 function toSerializedNode(node: WeightedGraphExport['nodes'][number]): SerializedWeightedGraphNode {
     return {
         key: node.key,
-        ...(node.attributes === undefined ? {} : { attributes: { ...node.attributes } })
+        ...toOptionalAttributes(node.attributes)
     };
 }
 
@@ -54,7 +55,13 @@ function toSerializedEdge(edge: WeightedGraphExport['edges'][number]): Serialize
         ...(edge.key === undefined ? {} : { key: edge.key }),
         source: edge.source,
         target: edge.target,
-        ...(edge.attributes === undefined ? {} : { attributes: { ...edge.attributes } }),
+        ...toOptionalAttributes(edge.attributes),
         ...(edge.undirected === undefined ? {} : { undirected: edge.undirected })
     };
+}
+
+function toOptionalAttributes(
+    attributes: VertexProp | EdgeProp | undefined
+): Readonly<{ attributes?: ApiJsonObject; }> {
+    return attributes === undefined ? {} : { attributes: { ...attributes } };
 }

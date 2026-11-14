@@ -75,7 +75,7 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
 
     const comparisonSource = toComparisonSource(command);
     if (comparisonSource.kind === 'invalid') {
-        return toInvalidAssertOutcome(command, 'A comparison requires a non-empty comparisonSource.', undefined);
+        return toInvalidAssertOutcome(command, comparisonSource.message, undefined);
     }
     if (
         !isAssertHistoryCovered(command.source, state) ||
@@ -108,16 +108,21 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
 
 type ComparisonSource =
     | Readonly<{ kind: 'absent'; }>
-    | Readonly<{ kind: 'invalid'; }>
+    | Readonly<{ kind: 'invalid'; message: string; }>
     | Readonly<{ kind: 'present'; path: string; }>;
 
 function toComparisonSource(command: AssertCommandEvidence['command']): ComparisonSource {
     if (!isAssertComparison(command)) {
-        return { kind: 'absent' };
+        return command.comparisonSource === undefined
+            ? { kind: 'absent' }
+            : { kind: 'invalid', message: 'A comparisonSource is unsupported for this operator.' };
     }
-    return typeof command.comparisonSource === 'string' && command.comparisonSource.trim().length > 0
+    if (typeof command.comparisonSource !== 'string' || command.comparisonSource.trim().length === 0) {
+        return { kind: 'invalid', message: 'A comparison requires a non-empty comparisonSource.' };
+    }
+    return command.expected === undefined
         ? { kind: 'present', path: command.comparisonSource }
-        : { kind: 'invalid' };
+        : { kind: 'invalid', message: 'A comparison does not take an expected value.' };
 }
 
 function isComparisonSatisfied(

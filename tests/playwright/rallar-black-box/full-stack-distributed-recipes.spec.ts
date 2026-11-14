@@ -43,7 +43,7 @@ import {
     decodeRecord,
     decodeText
 } from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
-import { createDistributedRun, mutateDistributedRun } from './distributed-run-requests.ts';
+import { cancelDistributedRun, createDistributedRun, mutateDistributedRun } from './distributed-run-requests.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     FULL_STACK_CONTROL_WS_URL,
@@ -550,7 +550,7 @@ async function waitForCommandResult(
     let latest: ControlResultEnvelope | undefined;
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        latest = run.results?.find((result) => result.commandId === commandId);
+        latest = run.results.find((result) => result.commandId === commandId);
         return Boolean(latest);
     }, { timeout }).toBe(true);
     if (!latest) {
@@ -582,7 +582,7 @@ async function waitForAgentsInGroup(
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
         return agentIds.every((agentId) => {
-            const agent = run.agents?.find((candidate) => candidate.agentId === agentId);
+            const agent = run.agents.find((candidate) => candidate.agentId === agentId);
             return agent?.connected === true &&
                 agent.identity?.applicationId === group.applicationId &&
                 agent.identity.workspaceId === group.workspaceId &&
@@ -878,7 +878,7 @@ async function waitForBrowserMessage(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) => browserMessageMatches(event, input)) ?? false;
+        return run.events.some((event) => browserMessageMatches(event, input));
     }, { timeout: 75_000 }).toBe(true);
 }
 
@@ -910,11 +910,11 @@ async function waitForRuntimeDiagnostic(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) =>
+        return run.events.some((event) =>
             event.kind === 'diagnostic' &&
             runtimeDiagnosticTypeId(event) === input.diagnosticTypeId &&
             eventReferencesText(event, input.distributedRunId)
-        ) ?? false;
+        );
     }, { timeout: 30_000 }).toBe(true);
 }
 
@@ -956,14 +956,14 @@ async function waitForRealtimePositionPayload(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) => {
+        return run.events.some((event) => {
             const runtimeEvent = runtimeEventPayload(event);
             const data = messageData(event);
             return runtimeEvent.kind === 'message' &&
                 runtimeEvent.transport === 'realtime' &&
                 data.distributedRunId === distributedRunId &&
                 data.topic === 'room.black-box.rtc-realtime.position';
-        }) ?? false;
+        });
     }, { timeout: 75_000 }).toBe(true);
 }
 
@@ -991,7 +991,7 @@ function retainedRealtimeRecipeEvidence(
     const compactedStartResults = distributedRun.commandLinks
         .filter((link) => link.phase === 'start')
         .map((link) => {
-            const result = run.results?.find((candidate) =>
+            const result = run.results.find((candidate) =>
                 candidate.commandId === link.commandId &&
                 candidate.agentId === link.agentId
             );
@@ -1198,13 +1198,13 @@ async function attachDistributedRunSummary(
         body: JSON.stringify(
             {
                 runId,
-                agents: run.agents?.map((agent) => ({
+                agents: run.agents.map((agent) => ({
                     agentId: agent.agentId,
                     connected: agent.connected,
                     identity: agent.identity
                 })),
-                resultCount: run.results?.length ?? 0,
-                eventCount: run.events?.length ?? 0,
+                resultCount: run.results.length,
+                eventCount: run.events.length,
                 distributedRuns: distributed?.distributedRuns
                     ?.filter((item) => item.controlRunId === runId)
                     .map((item) => ({
@@ -1492,7 +1492,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             await handles[1].context.close();
             await expect.poll(async () => {
                 const run = await fetchControlRun(request, runId);
-                return run.agents?.find((agent) => agent.agentId === handles[1].agentId)?.connected;
+                return run.agents.find((agent) => agent.agentId === handles[1].agentId)?.connected;
             }, { timeout: 10_000 }).toBe(false);
             await mutateDistributedRun(request, disconnectManifest.distributedRunId, 'start');
             const running = await waitForDistributedState(
@@ -1507,12 +1507,16 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             expect(disconnectedStart).toBeTruthy();
             const runAfterDisconnect = await fetchControlRun(request, runId);
             expect(
-                runAfterDisconnect.commands?.find((command) =>
-                    command.envelope?.commandId === disconnectedStart?.commandId
+                runAfterDisconnect.commands.find((command) =>
+                    command.envelope.commandId === disconnectedStart?.commandId
                 )
                     ?.completedAtEpochMs
             ).toBeUndefined();
-            const cancelled = await mutateDistributedRun(request, disconnectManifest.distributedRunId, 'cancel');
+            const cancelled = await cancelDistributedRun(
+                request,
+                disconnectManifest.distributedRunId,
+                'Playwright distributed recipe QA cleanup.'
+            );
             expect(cancelled.state).toBe('cancelled');
         }
         finally {

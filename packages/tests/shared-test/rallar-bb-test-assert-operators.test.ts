@@ -145,6 +145,14 @@ describe('rallar-bb-test extended assert operators', () => {
             },
             {
                 kind: 'assert',
+                commandId: 'comparison-with-expected',
+                source: 'messages.0.payload.present',
+                operator: 'equals',
+                expected: 2,
+                comparisonSource: 'messages.0.payload.present'
+            },
+            {
+                kind: 'assert',
                 commandId: 'blank-bound-with-comparison',
                 source: ' ',
                 operator: 'gte',
@@ -152,16 +160,19 @@ describe('rallar-bb-test extended assert operators', () => {
                 comparisonSource: 'messages.0.payload.present'
             }
         ];
-        const values = [];
+        const outcomes = [];
         for (const command of unadmitted) {
             expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
-            values.push((await runtime.execute(command as RallarBlackBoxTestCommand)).value);
+            const result = await runtime.execute(command as RallarBlackBoxTestCommand);
+            outcomes.push({ ok: result.ok, code: result.error?.code, value: result.value });
         }
 
-        expect(values).toEqual([
-            { operator: 'sameUniqueStringSet', exists: false, comparisonExists: false, passed: false },
-            { operator: 'gte', expected: 1, actual: 2, exists: true, passed: true },
-            { operator: 'gte', expected: 1, exists: false, passed: false }
+        const refused = { ok: false, code: 'RALLAR_BLACK_BOX_ASSERT_INVALID' };
+        expect(outcomes).toEqual([
+            { ...refused, value: { operator: 'sameUniqueStringSet', exists: false, comparisonExists: false, passed: false } },
+            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } },
+            { ...refused, value: { operator: 'equals', exists: false, comparisonExists: false, passed: false } },
+            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } }
         ]);
     });
 
