@@ -49,9 +49,18 @@ describe('selectGroupDialPeerIds', () => {
         })).toEqual(['session-a', 'session-b']);
     });
 
-    it('dials the accepted layout and not the planned one while active', () => {
+    it('dials the accepted and the planned layout once each while active', () => {
         expect(selectGroupDialPeerIds({
             lifecycleState: 'active',
+            localSessionId,
+            planned: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-shared', 'session-planned'] }),
+            accepted: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-shared', 'session-accepted'] })
+        })).toEqual(['session-shared', 'session-accepted', 'session-planned']);
+    });
+
+    it('dials the accepted layout and not the planned one while reconfiguring', () => {
+        expect(selectGroupDialPeerIds({
+            lifecycleState: 'reconfiguring',
             localSessionId,
             planned: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-planned'] }),
             accepted: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-accepted'] })

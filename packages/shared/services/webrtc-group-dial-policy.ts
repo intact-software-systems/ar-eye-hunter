@@ -38,6 +38,22 @@ export function selectGroupDialPeerIds(
     }
 }
 
+/**
+ * The peers an active room dials only because a planned layout names them: the
+ * accepted layout's edges and the edges a replaced layout still carries come
+ * first under the connection cap.
+ */
+export function selectGroupEarlyDialPeerIds(
+    input: SelectGroupDialPeerIdsInput
+): readonly PeerId[] {
+    if (input.lifecycleState !== 'active') {
+        return [];
+    }
+    const acceptedPeerIds = new Set(serverLayoutPeerIds(input.accepted, input.localSessionId));
+    return serverLayoutPeerIds(input.planned, input.localSessionId)
+        .filter((peerId) => !acceptedPeerIds.has(peerId));
+}
+
 function serverLayoutPeerIds(
     overlay: OverlayInfo | undefined,
     localSessionId: PeerId

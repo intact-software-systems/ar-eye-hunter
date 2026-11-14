@@ -19,7 +19,11 @@ import {
 } from '../rtc/rtt-reporting-policy.ts';
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
-import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
+import {
+    selectGroupDialPeerIds,
+    selectGroupEarlyDialPeerIds,
+    type SelectGroupDialPeerIdsInput
+} from './webrtc-group-dial-policy.ts';
 import {
     clonePeerOwners,
     emptyGroupManagerDiagnostics,
@@ -445,6 +449,7 @@ export class WebRtcGroupManager {
         const ownership = this.readPeerOwnership();
         const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
         this.removeRetainedDesiredPeers(desiredPeerIds);
+        this.disconnectExpiredRetainedPeers(new Set(this.rtcQBox.knownPeerIds()));
         disconnectAbsentPeerDials({
             desiredPeerIds,
             dialAllowedPeerIds: ownership.dialAllowedPeerIds,
@@ -460,6 +465,7 @@ export class WebRtcGroupManager {
             knownPeerIds: new Set(this.rtcQBox.knownPeerIds()),
             livePeerIds: new Set(this.rtcQBox.activePeerIds()),
             desiredPeerIds,
+            earlyDialPeerIds: this.earlyDialPeerIds(),
             connectablePeerIds: Array.from(desiredPeerIds).filter(
                 (peerId) => ownership.dialAllowedPeerIds.has(peerId) && !peerIdsWithNoReconnectableLanes.has(peerId)
             ),
@@ -638,12 +644,28 @@ export class WebRtcGroupManager {
     }
 
     private dialPeerIdsForSnapshot(snapshot: AnyGroupPresence, groupRef: GroupRef): readonly PeerId[] {
-        return selectGroupDialPeerIds({
+        return selectGroupDialPeerIds(this.toDialSelectionInput(snapshot, groupRef));
+    }
+
+    private earlyDialPeerIds(): ReadonlySet<PeerId> {
+        const peerIds = new Set<PeerId>();
+        for (const group of this.groupsByKey.values()) {
+            const snapshot = group.readGroup();
+            if (snapshot) {
+                selectGroupEarlyDialPeerIds(this.toDialSelectionInput(snapshot, group.groupRef))
+                    .forEach((peerId) => peerIds.add(peerId));
+            }
+        }
+        return peerIds;
+    }
+
+    private toDialSelectionInput(snapshot: AnyGroupPresence, groupRef: GroupRef): SelectGroupDialPeerIdsInput {
+        return {
             lifecycleState: snapshot.group.lifecycleState,
             localSessionId: this.rtcQBox.input.sessionId,
             planned: readOverlayForGroup(this.plannedOverlayCache, groupRef),
             accepted: readOverlayForGroup(this.acceptedOverlayCache, groupRef)
-        });
+        };
     }
 
     private rttReportingCandidatePeerIds(degreeLimit: number): readonly PeerId[] {

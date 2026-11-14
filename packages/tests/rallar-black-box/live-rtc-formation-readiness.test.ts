@@ -201,7 +201,7 @@ function toReadinessResult(command: LiveRtcControlClient.ExecuteInput, observati
                     formationAttemptCount: 1,
                     causalRevision: { groupRevision: 20, presenceRevision: 10 },
                     transportState: 'flowing',
-                    dialing: 'accepted',
+                    dialing: 'accepted-and-planned',
                     memberPolicy: { maxConcurrentEdgeSetups: 4, transports: 'rtc-and-ws' },
                     room: {
                         state: 'open',

@@ -29,6 +29,7 @@ interface AdmissionRuntime {
     readonly manager: WebRtcGroupManager;
     readonly connection: NativeRtcConnectionFixture;
     readonly acceptedOverlays: LatestRepository<string, OverlayInfo>;
+    readonly plannedOverlays: LatestRepository<string, OverlayInfo>;
 }
 
 const STAGE_EXPECTATIONS = [
@@ -36,7 +37,7 @@ const STAGE_EXPECTATIONS = [
     { lifecycleState: 'forming', permitsPlanned: false, permitsAccepted: false },
     { lifecycleState: 'planned', permitsPlanned: false, permitsAccepted: false },
     { lifecycleState: 'connecting', permitsPlanned: true, permitsAccepted: false },
-    { lifecycleState: 'active', permitsPlanned: false, permitsAccepted: true },
+    { lifecycleState: 'active', permitsPlanned: true, permitsAccepted: true },
     { lifecycleState: 'reconfiguring', permitsPlanned: false, permitsAccepted: true },
     { lifecycleState: 'reconnecting', permitsPlanned: true, permitsAccepted: true }
 ] as const;
@@ -173,20 +174,9 @@ describe('browser RTC peer admission', () => {
         expect(nativeRuntime.createdConnections).toEqual([]);
     });
 
-    it('rejects a lagging planned offer after activation while retaining an established peer', async () => {
+    it('admits a planned-layout peer\'s offer while the room is active and holds that planned layout', async () => {
         const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
-        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
-        const established = runtime.connection.nativePeer('peer-planned');
-        established.setConnected();
-        for (const channel of established.channels) {
-            await channel.open();
-        }
-        const active: GroupSnapshot = {
-            ...runtime.group,
-            group: { ...runtime.group.group, snapshotVersion: 4, lifecycleState: 'active' },
-            causalRevision: { groupRevision: 4, presenceRevision: 4 }
-        };
-        await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+        const established = await activateWithEstablishedPlannedPeer(runtime);
 
         expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
         expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
@@ -194,12 +184,61 @@ describe('browser RTC peer admission', () => {
         await runtime.connection.receive(offer('peer-planned'));
         await runtime.connection.receive(offer('peer-accepted'));
 
-        expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
+        expect(runtime.connection.nativePeer('peer-planned').remoteDescription?.type).toBe('offer');
         expect(runtime.connection.nativePeer('peer-accepted').remoteDescription?.type).toBe('offer');
-        expect(nativeRuntime.createdConnections).toHaveLength(2);
-        expect(runtime.connection.service.knownPeerIds()).toEqual(['peer-accepted']);
+        expect(runtime.connection.service.knownPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-planned']);
     });
+
+    it.each([
+        {
+            planned: 'cleared',
+            replan: (runtime: AdmissionRuntime) => runtime.plannedOverlays.delete(toScopedOverlayId(runtime.group.group))
+        },
+        {
+            planned: 'replaced by a layout that does not name the peer',
+            replan: (runtime: AdmissionRuntime) =>
+                runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                    ...acceptedOverlay(runtime.group),
+                    overlayVersion: 3,
+                    nextHopSessionIds: ['peer-shared']
+                })
+        }
+    ])(
+        'refuses that peer\'s offer once the planned layout is $planned, while retaining an established peer',
+        async (scenario) => {
+            const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
+            const established = await activateWithEstablishedPlannedPeer(runtime);
+            scenario.replan(runtime);
+
+            expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
+            expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
+            runtime.connection.service.removePeerIfPresent('peer-planned');
+            await runtime.connection.receive(offer('peer-planned'));
+            await runtime.connection.receive(offer('peer-accepted'));
+
+            expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
+            expect(runtime.connection.nativePeer('peer-accepted').remoteDescription?.type).toBe('offer');
+            expect(nativeRuntime.createdConnections).toHaveLength(2);
+            expect(runtime.connection.service.knownPeerIds()).toEqual(['peer-accepted']);
+        }
+    );
 });
+
+async function activateWithEstablishedPlannedPeer(runtime: AdmissionRuntime) {
+    expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
+    const established = runtime.connection.nativePeer('peer-planned');
+    established.setConnected();
+    for (const channel of established.channels) {
+        await channel.open();
+    }
+    const active: GroupSnapshot = {
+        ...runtime.group,
+        group: { ...runtime.group.group, snapshotVersion: 4, lifecycleState: 'active' },
+        causalRevision: { groupRevision: 4, presenceRevision: 4 }
+    };
+    await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+    return established;
+}
 
 async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<AdmissionRuntime> {
     const snapshot = createGroupSnapshotFixture({
@@ -258,7 +297,7 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
     // outbound and inbound tests must each attempt creation from an empty service.
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     await connection.service.connectSignaler();
-    return { group, manager, connection, acceptedOverlays };
+    return { group, manager, connection, acceptedOverlays, plannedOverlays };
 }
 
 function acceptedOverlay(group: GroupSnapshot): OverlayInfo {

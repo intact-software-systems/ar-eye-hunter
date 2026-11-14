@@ -20,6 +20,7 @@ import {
     acceptActiveLayoutGroup,
     createClientInfo,
     createGroupSnapshot,
+    createOverlayInfo,
     createRtcConnectionHarness,
     type RtcConnectionHarness
 } from './web-rtc-group-manager-test-fixture.ts';
@@ -417,6 +418,163 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         });
     });
 });
+
+describe('WebRtcGroupManager planned layouts', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('an active room dials its published planned layout\'s peers before the promotion', async () => {
+        const fixture = createPlannedLayoutFixture();
+
+        await fixture.manager.acceptGroupUpdate(fixture.group);
+
+        expect(fixture.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b']);
+        expect(fixture.manager.state().desiredPeerIds).toEqual(['peer-a', 'peer-b']);
+    });
+
+    it('a planned layout replaced before its promotion keeps its dialled peers only for the overlay transition grace', async () => {
+        vi.useFakeTimers();
+        const fixture = createPlannedLayoutFixture();
+        fixture.manager.startReconcileWakes();
+        await fixture.manager.acceptGroupUpdate(fixture.group);
+        fixture.rtcQBox.nativePeer('peer-b').setConnected();
+
+        fixture.plannedOverlayCache.set(
+            toScopedOverlayId(fixture.group.group),
+            createOverlayInfo(fixture.group, ['peer-c'], 3)
+        );
+        await fixture.manager.notifyOverlayTopologyChanged();
+
+        expect(fixture.manager.state().desiredPeerIds).toEqual(['peer-a', 'peer-c']);
+        expect(fixture.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-b', 'peer-c']);
+
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
+        expect(fixture.rtcQBox.knownPeerIds()).toContain('peer-b');
+
+        await vi.advanceTimersByTimeAsync(2);
+        expect(fixture.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-c']);
+        fixture.manager.stopReconcileWakes();
+    });
+
+    it('a reconfiguring room still holds its planned layout without dialling it', async () => {
+        const fixture = createPlannedLayoutFixture();
+
+        await fixture.manager.acceptGroupUpdate({
+            ...fixture.group,
+            group: { ...fixture.group.group, lifecycleState: 'reconfiguring' }
+        });
+
+        expect(fixture.rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        expect(fixture.manager.state().desiredPeerIds).toEqual(['peer-a']);
+    });
+});
+
+describe('WebRtcGroupManager planned layouts under the connection cap', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('a planned layout\'s peers never evict an edge retained for an overlay transition', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', ['a1', 'a2', 'a3', 'a4', 'a5']);
+        await fixture.setLayout('accepted', ['p1', 'p2', 'p3', 'p4', 'p5']);
+        expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
+            ['a1', 'a2', 'a3', 'a4', 'a5', 'p1', 'p2', 'p3', 'p4', 'p5']
+        );
+
+        await fixture.setLayout('planned', ['q1', 'q2', 'q3', 'q4', 'q5']);
+
+        expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
+            ['a1', 'a2', 'a3', 'a4', 'a5', 'p1', 'p2', 'p3', 'p4', 'p5']
+        );
+        expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
+
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+        await fixture.connectKnownPeers();
+
+        expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
+            ['p1', 'p2', 'p3', 'p4', 'p5', 'q1', 'q2', 'q3', 'q4', 'q5']
+        );
+    });
+
+    it('planned peers are dialled up to the budget the accepted and retained peers leave', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', ['a1', 'a2', 'a3', 'a4', 'a5']);
+        await fixture.setLayout('accepted', ['p1', 'p2', 'p3']);
+
+        await fixture.setLayout('planned', ['q1', 'q2', 'q3', 'q4', 'q5']);
+
+        expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
+            ['a1', 'a2', 'a3', 'a4', 'a5', 'p1', 'p2', 'p3', 'q1', 'q2']
+        );
+        expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
+    });
+});
+
+function createCapFixture(maxPeerConnections: number) {
+    const rtcQBox = createRtcConnectionHarness('self');
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const manager = new WebRtcGroupManager(rtcQBox.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        acceptedOverlayCache,
+        plannedOverlayCache
+    }, { maxPeerConnections, onOverlayAdopted: async () => {} });
+    manager.startReconcileWakes();
+    const peerIds = ['a', 'p', 'q'].flatMap((prefix) => [1, 2, 3, 4, 5].map((index) => `${prefix}${index}`));
+    const group = createGroupSnapshot({
+        groupId: 'group-1',
+        membershipVersion: 1,
+        memberSessionIds: ['self', ...peerIds],
+        maxConcurrentEdgeSetups: 20
+    });
+    let overlayVersion = 0;
+
+    async function connectKnownPeers(): Promise<void> {
+        for (const peerId of rtcQBox.knownPeerIds()) {
+            rtcQBox.nativePeer(peerId).setConnected();
+        }
+        await manager.whenReconciled();
+    }
+
+    async function setLayout(role: 'accepted' | 'planned', nextHopSessionIds: readonly string[]): Promise<void> {
+        const cache = role === 'accepted' ? acceptedOverlayCache : plannedOverlayCache;
+        overlayVersion += 1;
+        cache.set(toScopedOverlayId(group.group), createOverlayInfo(group, nextHopSessionIds, overlayVersion));
+        await manager.acceptGroupUpdate(group);
+        await manager.notifyOverlayTopologyChanged();
+        await connectKnownPeers();
+    }
+
+    return { manager, rtcQBox, setLayout, connectKnownPeers };
+}
+
+function createPlannedLayoutFixture() {
+    const rtcQBox = createRtcConnectionHarness('self');
+    const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const manager = new WebRtcGroupManager(rtcQBox.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        acceptedOverlayCache,
+        plannedOverlayCache
+    }, { onOverlayAdopted: async () => {} });
+    const group = createGroupSnapshot({
+        groupId: 'group-1',
+        membershipVersion: 1,
+        memberSessionIds: ['self', 'peer-a', 'peer-b', 'peer-c']
+    });
+    const overlayId = toScopedOverlayId(group.group);
+    acceptedOverlayCache.set(overlayId, createOverlayInfo(group, ['peer-a'], 1));
+    plannedOverlayCache.set(overlayId, createOverlayInfo(group, ['peer-b'], 2));
+    return { manager, rtcQBox, group, plannedOverlayCache };
+}
 
 interface RetiredLayoutFixture {
     readonly manager: WebRtcGroupManager;

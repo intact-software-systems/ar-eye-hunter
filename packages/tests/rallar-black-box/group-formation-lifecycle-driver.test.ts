@@ -301,7 +301,7 @@ function toReplacementFormationReadiness(
             causalRevision: { groupRevision: 1, presenceRevision: 1 },
             activeSessionCount: 3,
             transportState: 'flowing',
-            dialing: 'accepted',
+            dialing: 'accepted-and-planned',
             memberPolicy: { maxConcurrentEdgeSetups: 4, transports: 'rtc-and-ws' },
             room: {
                 state: 'open',
@@ -853,7 +853,7 @@ describe('group formation lifecycle driver', () => {
                         causalRevision: { groupRevision: 1, presenceRevision: 1 },
                         activeSessionCount: sessionIds.length,
                         transportState: 'flowing',
-                        dialing: 'accepted',
+                        dialing: 'accepted-and-planned',
                         memberPolicy: {
                             maxConcurrentEdgeSetups: 4,
                             transports: 'rtc-and-ws'

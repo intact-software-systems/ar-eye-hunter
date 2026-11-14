@@ -6,6 +6,8 @@ export type OutboundDialPlanInput = Readonly<{
     /** Known peers whose native connection is still connecting or connected. */
     livePeerIds: ReadonlySet<PeerId>;
     desiredPeerIds: ReadonlySet<PeerId>;
+    /** Peers wanted only through a published planned layout: dialled after every other new dial, and only into what the cap leaves. */
+    earlyDialPeerIds: ReadonlySet<PeerId>;
     connectablePeerIds: readonly PeerId[];
     serverDesiredPeerIds: ReadonlySet<PeerId>;
 }>;
@@ -34,17 +36,26 @@ export function computeOutboundDialPlan(
     input: OutboundDialPlanInput
 ): OutboundDialPlan {
     const known = input.connectablePeerIds.filter((peerId) => input.knownPeerIds.has(peerId));
-    const newCandidates = input.connectablePeerIds.filter((peerId) => !input.knownPeerIds.has(peerId));
+    const unknownCandidates = input.connectablePeerIds.filter((peerId) => !input.knownPeerIds.has(peerId));
+    const isEarly = (peerId: PeerId): boolean =>
+        input.earlyDialPeerIds.has(peerId) && !input.serverDesiredPeerIds.has(peerId);
+    const newCandidates = unknownCandidates.filter((peerId) => !isEarly(peerId));
     const desiredKnownCount = Array.from(input.knownPeerIds)
         .filter((peerId) => input.desiredPeerIds.has(peerId))
         .length;
+    const retainedKnownCount = input.knownPeerIds.size - desiredKnownCount;
+    const earlyBudget = Math.max(
+        0,
+        input.maxPeerConnections - desiredKnownCount - retainedKnownCount - newCandidates.length
+    );
 
     return {
         livePeerIds: known.filter((peerId) => input.livePeerIds.has(peerId)),
         deadKnownPeerIds: known.filter((peerId) => !input.livePeerIds.has(peerId)),
         candidatePeerIds: [
             ...newCandidates.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
-            ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
+            ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId)),
+            ...unknownCandidates.filter(isEarly).slice(0, earlyBudget)
         ],
         newDialBudget: Math.max(0, input.maxPeerConnections - desiredKnownCount)
     };
