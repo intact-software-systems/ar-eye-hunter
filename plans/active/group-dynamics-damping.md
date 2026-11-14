@@ -23,16 +23,18 @@ The overlap and the early dial are in pull request #823 (make-before-break), not
 
 **What the server does today** (on `main`):
 
-| Mechanism         | What it bounds                                                                                                | Where                                                                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Re-plan window    | A membership, presence or leader change re-plans after 500 ms of quiet, but never later than the max wait     | `computeTopologyReplanDueAt`, `topology/replay/work/rtc-topology-coalesced-group-revision-work.ts`  |
-| Max wait          | 4 500 ms server default (`topology.recompute.formationMaxWaitMs`); 5 000 ms in the default lifecycle policy   | `defaults-config.json`, `group-lifecycle-policy-presets.ts`                                         |
-| Expected members  | Once the room holds the members it expects, the re-plan is due at once (D288)                                 | the same function; `resolveTopologyExpectedMemberCount`                                             |
-| Layout-age floor  | A plan is not replaced before it is 1 000 ms old                                                              | `GROUP_MINIMUM_LAYOUT_AGE_MS`                                                                       |
-| Stage gate        | A `connecting` or `reconnecting` room keeps its active layout                                                 | `resolveTopologyPlanAction`                                                                         |
-| Replanning policy | `auto` and `debounced` plan; `commanded` holds automatic work until the application asks                      | the same function; the lifecycle policy's `topology.replanning`                                     |
-| RTT-only re-plans | Held until the layout is 15 s old; refinement at most every 30 s; a tree is kept unless 25 % and 10 ms better | `rttReplanMinimumLayoutAgeMs`, `rttRefinement.minIntervalMs`, `resolve-rtt-refinement-next-hops.ts` |
-| Promotion         | An active room's plan is promoted at once; there is no cooldown                                               | `topology-promotion-request.ts`                                                                     |
+| Mechanism             | What it bounds                                                                                                                                                                                                                                                                                                                                                                    | Where                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Re-plan window        | A membership, presence or leader change re-plans after 500 ms of quiet, but never later than the max wait                                                                                                                                                                                                                                                                         | `computeTopologyReplanDueAt`, `topology/replay/work/rtc-topology-coalesced-group-revision-work.ts`  |
+| Max wait              | 4 500 ms server default (`topology.recompute.formationMaxWaitMs`); 5 000 ms in the default lifecycle policy                                                                                                                                                                                                                                                                       | `defaults-config.json`, `group-lifecycle-policy-presets.ts`                                         |
+| Expected members      | Once the room holds the members it expects, the re-plan is due at once (D288)                                                                                                                                                                                                                                                                                                     | the same function; `resolveTopologyExpectedMemberCount`                                             |
+| Layout-age floor      | A plan is not replaced before it is 1 000 ms old                                                                                                                                                                                                                                                                                                                                  | `GROUP_MINIMUM_LAYOUT_AGE_MS`                                                                       |
+| Stage gate            | A `connecting` or `reconnecting` room keeps its active layout                                                                                                                                                                                                                                                                                                                     | `resolveTopologyPlanAction`                                                                         |
+| Replanning policy     | `auto` and `debounced` plan; `commanded` holds automatic work until the application asks                                                                                                                                                                                                                                                                                          | the same function; the lifecycle policy's `topology.replanning`                                     |
+| RTT-only re-plans     | Held until the layout is 15 s old; refinement at most every 30 s; a tree is kept unless 25 % and 10 ms better                                                                                                                                                                                                                                                                     | `rttReplanMinimumLayoutAgeMs`, `rttRefinement.minIntervalMs`, `resolve-rtt-refinement-next-hops.ts` |
+| Promotion             | An active room's plan is promoted at once; there is no cooldown                                                                                                                                                                                                                                                                                                                   | `topology-promotion-request.ts`                                                                     |
+| Incremental evolution | A membership change evolves the accepted graph: an unchanged member keeps its edges, so browsers change O(delta) connections. The whole graph is rebuilt only when a tree's leader must be re-rooted, when more than max(2, a quarter of the room) changed at once (joins alone never count on a tree), when the incremental update fails, or when the result breaks an invariant | `computeEvolvedTopologyNextHops`, `topology/planning/evolve-planned-topology.ts`                    |
+| Topology kind         | Under `auto` a room is a star below 5 members, a tree from 5 and a mesh from 16, with exit widths against flapping                                                                                                                                                                                                                                                                | `topology.planning` in `defaults-config.json`                                                       |
 
 **A burst is not only the first fill.** The expected-members rule covers one burst: the first,
 up to the room's capacity or its admission limit. The same burst of arrivals can come at any
@@ -44,9 +46,13 @@ a minute across all principals and 60 per principal
 (`RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`, `..._PRINCIPAL_RATE_LIMIT`), answering `429`
 with `Retry-After: 60` past them. Those limits protect the server; they do not follow the room.
 
-**The gap.** Every bound above is a clock. None of them looks at how restless the room is. Under
-steady coming and going the max wait forces a re-plan and a promotion about every 4.5 to 5 s, so each
-promotion lands inside the previous layout's 15 s overlap. Evidence from #823: two promotions about
+**The gap.** Every bound on timing above is a clock. None of them looks at how restless the room
+is, and none tells a small evolved change from a rebuild of the whole graph: both are due in the
+same window and both are promoted at once. Under steady coming and going the max wait forces a
+re-plan and a promotion about every 4.5 to 5 s, so each promotion lands inside the previous
+layout's 15 s overlap. Most of those are small. The expensive ones are the rebuilds, and a burst
+is exactly what causes one: more than a quarter of the room changing at once, a leader that must
+be re-rooted, a room crossing the size at which its kind changes. Evidence from #823: two promotions about
 a second apart are reachable on the ordinary path (two joins in a row), and a second promotion
 inside one overlap was lossy until that pull request's fix. The fix makes it safe; it does not
 make it cheap.
@@ -73,8 +79,17 @@ no longer than a stated bound, and decide from what the room is doing.**
 | Repair  | A member that others depend on left; its dependants get a new upstream. Only they change.       | At once                                            |
 | Reshape | The planner recomputes the room's graph: kind, degree, parents. Many members' edges may change. | Held back while the room is restless, with a bound |
 
-Today the planner knows one kind of work. Attach and repair are a re-plan like any other, so a
-join can move members it has nothing to do with.
+The planner already makes this distinction when it plans: attach and repair are its incremental
+evolution, reshape is its rebuild. What is missing is that nothing after the planner reads it.
+The window, the promotion and the cost to browsers are decided the same way for both.
+
+**When a joiner cannot be attached cheaply.** Sometimes evolution cannot place a joiner and only
+a rebuild would. While the reshape gate is closed the joiner is in the room over WS either way,
+and what it gets on RTC is decided by whether an edge would live longer than it takes to set up.
+If the gate opens within about the time an RTC edge needs to come up, the joiner waits: a forced
+edge would be replaced as soon as it was ready. If the gate is further away, it gets one forced
+edge now, to a member that has room. The setup time is the one the room already measures for the
+gate.
 
 **The signal is the room's own behaviour, not a clock.** A layout pays for itself when it lives
 longer than it costs. The room is _restless_ when it asks for a reshape sooner than the last one
@@ -189,22 +204,28 @@ Nothing here changes behaviour.
 Done when the recipe's report exists for `auto` and `debounced` rooms of three sizes and the
 figures are in the pull request.
 
-### Slice 2 — attach and repair without a reshape
+### Slice 2 — the kind of each plan is a fact the timing reads
 
-- The planner gains an incremental path: given the accepted layout and one membership change, it
-  returns the smallest change that gives a joiner its edges, or a departed member's dependants a
-  new upstream, within the degree limit. When no such change exists it says so and a reshape is
-  due.
-- The existing full plan stays the reshape path.
-- Pinned by planner tests: a join changes only the joiner's edges and its new neighbours'; a
-  leaf's leave changes nobody else; a relay's leave changes only its dependants.
+- The planner's result already says whether it evolved the graph or rebuilt it, and why. That
+  fact is carried to the work that times and promotes the plan, and recorded with the layout, so
+  the measurement of slice 1 can count rebuilds by reason.
+- A change of kind and a quality or RTT refinement are named as reshapes beside the four rebuild
+  reasons, so "reshape" has one definition.
+- Pinned by tests at the planner and at the work that times it: a join on a tree is an attach; a
+  leaf's leave is a repair that changes nobody else; a relay's leave changes only its dependants;
+  each rebuild reason is a reshape.
+- No timing changes yet. This slice only makes the distinction visible where the gates will read
+  it.
 
-Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved members.
+Done when the recipe of slice 1 reports, per run, how many promotions were attaches, repairs and
+reshapes, and the reshapes by reason.
 
 ### Later, decided after slice 2
 
 - The two gates of "Mechanism": one pure function over stored state, with the lifecycle policy's
   `topology` section carrying the reshape gate's two bounds.
+- The forced edge for a joiner that cannot be attached cheaply while the reshape gate is far from
+  opening.
 - The quality bound that asks for a reshape of a patched graph.
 - Folding in the two server paths that re-plan without the tree-keeping gate (leader rooting
   after a failed update, the mesh rebuild), which #823 leaves for a follow-up.
@@ -221,21 +242,43 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 
 Decided by the maintainer on 2026-11-14.
 
-| #  | Question                                           | Decision                                                                                                                                                                                              |
-| -- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1  | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                                                                                                |
-| 2  | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.                                                                                   |
-| 3  | How long a restless room may run without a reshape | Never less than 15 s between two reshapes and never more than 60 s while one is wanted. First decided as a doubling from 15 s to 60 s; decision 10 made the gap between those bounds follow the room. |
-| 4  | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them.                                                                       |
-| 5  | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.                                                                                  |
-| 6  | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                                                                                          |
-| 7  | The first fill against later bursts                | One phenomenon. The first fill is a challenge, and the same burst can come sporadically at any point of a room's life; one rule covers both.                                                          |
-| 8  | What the damping is                                | Back pressure on the joiners. Its strength is dynamic: it follows the room, it is not a fixed pair of numbers.                                                                                        |
-| 9  | Where a joiner feels the pressure                  | On its RTC attach. Everyone is admitted and in the room over WS at once; the room takes joiners onto RTC in batches it can afford. The door does not slow.                                            |
-| 10 | What the dynamic strength follows                  | How the room absorbed the last change: how long the new edges took to come up, and whether the layout survived. Not the arrival rate.                                                                 |
-| 11 | What reshapes a patched graph                      | A quality bound: the server asks for a reshape only when a fresh plan would be better by more than a bound, as tree refinement does today.                                                            |
-| 12 | The gate's shape                                   | A token bucket of one, with an interval that adapts. Not a sliding-window limit, not a leaky bucket.                                                                                                  |
-| 13 | Order against the other work                       | After make-before-break (#823) merges. This plan absorbs that pull request's follow-up for the two re-plan paths without the tree-keeping gate.                                                       |
+| #  | Question                                                               | Decision                                                                                                                                                                                              |
+| -- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | Which restlessness first                                               | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                                                                                                |
+| 2  | What a joiner experiences while reshaping is held                      | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.                                                                                   |
+| 3  | How long a restless room may run without a reshape                     | Never less than 15 s between two reshapes and never more than 60 s while one is wanted. First decided as a doubling from 15 s to 60 s; decision 10 made the gap between those bounds follow the room. |
+| 4  | Who decides                                                            | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them.                                                                       |
+| 5  | The max wait (product decision 31)                                     | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.                                                                                  |
+| 6  | Measure first                                                          | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                                                                                          |
+| 7  | The first fill against later bursts                                    | One phenomenon. The first fill is a challenge, and the same burst can come sporadically at any point of a room's life; one rule covers both.                                                          |
+| 8  | What the damping is                                                    | Back pressure on the joiners. Its strength is dynamic: it follows the room, it is not a fixed pair of numbers.                                                                                        |
+| 9  | Where a joiner feels the pressure                                      | On its RTC attach. Everyone is admitted and in the room over WS at once; the room takes joiners onto RTC in batches it can afford. The door does not slow.                                            |
+| 10 | What the dynamic strength follows                                      | How the room absorbed the last change: how long the new edges took to come up, and whether the layout survived. Not the arrival rate.                                                                 |
+| 11 | What reshapes a patched graph                                          | A quality bound: the server asks for a reshape only when a fresh plan would be better by more than a bound, as tree refinement does today.                                                            |
+| 12 | The gate's shape                                                       | A token bucket of one, with an interval that adapts. Not a sliding-window limit, not a leaky bucket.                                                                                                  |
+| 13 | Order against the other work                                           | After make-before-break (#823) merges. This plan absorbs that pull request's follow-up for the two re-plan paths without the tree-keeping gate.                                                       |
+| 14 | A joiner that cannot be attached incrementally while a reshape is held | Decided by edge lifetime: it waits on WS when the gate opens within about an edge's setup time, and gets one forced edge when the gate is further away.                                               |
+
+## Calls the plan makes
+
+An independent reader asked what a builder would still have to guess. These are the plan's own
+answers; they are not the maintainer's decisions and can be overturned.
+
+- **A batch is the re-plan window.** The attach gate is the existing coalescing window of the
+  room's re-plan work, made adaptive. No joiner is held out of a layout individually; whoever has
+  arrived when the token is spent is in that plan.
+- **Which policy fields.** `maxReplanWaitMs` keeps its place and becomes the attach gate's upper
+  bound (decision 5). The reshape gate's two bounds are new fields in the policy's `topology`
+  section. That is a contract change: the OpenAPI schema, the presets, the decoders and their
+  tests.
+- **Which rooms.** Rooms whose policy says `auto` or `debounced`. A `commanded` room is
+  unchanged: its automatic work is already held, and a reshape the application commands is not
+  gated.
+- **How long the gate's state lives.** It is cleared when the room's layout is removed or its
+  topology configuration changes. There is no migration: the stores are wipeable.
+- **Slice 1 does not need #823's counters** to count promotions and changed edges, but "landed
+  inside the previous overlap" is only meaningful once the overlap exists, which is one reason the
+  work starts after #823 merges (decision 13).
 
 ## For the measuring slice to establish
 
