@@ -1522,17 +1522,28 @@ completing typed `ws` sends and cold RTC handshakes inside the recipe budgets
 on the Postgres API, and a per-cell flake ledger whose entries each carry a
 root cause (D639).
 
+Each lane cell starts from a declared, settled room (D646). The lane's
+parameters, each read once when the spec loads and refused with its accepted
+values before any browser starts, are `RALLAR_BLACK_BOX_ALM_ORDER`
+(`declared`, the default, or `shuffled`), `RALLAR_BLACK_BOX_ALM_SEED` (an
+integer from 0 to 4294967295, only with `shuffled`; a family that names none
+mints one; the lane prints the seed and the artifact records it as
+`cellOrder`), `RALLAR_BLACK_BOX_ALM_ROOMS` (`family`, the default, or `cell`;
+four-role families always run `cell` and same-context families `family`),
+`RALLAR_BLACK_BOX_ALM_ONLY` (scenario keys; a key that no cell of the selected
+scope and carriers runs is refused) and `RALLAR_BLACK_BOX_ALM_SKIP` (scenario
+ids, which win over `_ONLY`). A red is rerun first with the same seed.
+
 ### After Slice 9
 
 The nine slices deliver the advertised modes: browser publications over `ws`,
 `rtc` and `rtc-with-ws-fallback`, with grants, subscriptions, signed
 publishers and receipts, ordered entry and pacing. What the addendum still owes
 for those modes is its measurement half (§9) and the maintainer's adoption
-(§6). The next outcomes, in this order, are a lane whose cells each start from a
-declared, settled room; publication figures in the stage, with one shared
-histogram and the local half of a same-regime baseline; and a platform fault
-vocabulary, with an API instance stopped, paused or restarted, its database
-sessions cut, and seeded loss and delay on a browser carrier, that recipes can
+(§6). The next outcomes, in this order, are publication figures in the stage,
+with one shared histogram and the local half of a same-regime baseline; and a
+platform fault vocabulary, with an API instance stopped, paused or restarted,
+its database sessions cut, and seeded loss and delay on a browser carrier, that recipes can
 name. Receipt truth and the held-send path follow, proven with those steps; a
 retained admission then starts its `admitted` receipt only once its replay
 commits. With the figures in place and the contracts adopted, the addendum is

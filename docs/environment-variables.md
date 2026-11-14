@@ -599,6 +599,20 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR`  | No       | None                             | Directory for live RTC matrix diagnostics output.                                                     |
 | `VITE_RALLAR_TOKEN`                         | No       | None                             | Access token for the generic restored-session real-provider smoke.                                    |
 
+The ALM conformance lane reads its parameters once, when the spec loads, and only while
+`RALLAR_BLACK_BOX_FULL_STACK` is set (`decodeAlmLaneParameters`). An empty or blank value takes the
+default. A value outside the accepted set, a `RALLAR_BLACK_BOX_ALM_SEED` without
+`RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or
+a `RALLAR_BLACK_BOX_ALM_ONLY` key that no cell of the selected scope and carriers runs throws a
+`RangeError` that names the value and what is accepted, before any browser starts. A `shuffled` family
+shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The lane
+prints `ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
+family's first cell, and the observation artifact records the same plan as `cellOrder`
+(`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`). To rerun a red, set the same
+`RALLAR_BLACK_BOX_ALM_ORDER=shuffled` and `RALLAR_BLACK_BOX_ALM_SEED=<seed>` with the same scope,
+carriers and rooms, and rerun it first with the same seed; `RALLAR_BLACK_BOX_ALM_ONLY=<scenarioKey>`
+then narrows the rerun to one cell.
+
 Agent-specific test variables are accepted in both long and short forms in
 some tests:
 

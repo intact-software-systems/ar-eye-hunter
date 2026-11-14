@@ -195,6 +195,102 @@ the room's writes, not with the messages a cell sends. The bridged event carries
 no connection, actor or lane context, so a consumer keys it by page; a reloaded
 page starts with an empty cache and states `held` afresh.
 
+## Lane Cell Settle
+
+The applied-revision event is the witness of the ALM conformance lane's cell settle. A cell starts
+its body from a settled room: the server holds no queued replan and describes one layout, and every
+page has applied the room's head. The settle exists only when recipe creation is given
+`cellSettle: 'barriered'` (`CreateAlmConformanceRecipesInput`,
+`conformance/alm/alm-conformance-scenario-definition.ts`). The lane spec passes it. The hosted
+combiner and every other caller leave it absent, so their recipes carry no settle barrier, poll or
+head read.
+
+A settle role is every role of the cell except the same-context `successor`, which connects as a
+step of the cell, after the lease of the owner page lapsed, and carries no barrier. The `receiver`
+creates the room and owns it. A settled role runs this, in order:
+
+1. Its prologue: ensure the room, join, connect.
+2. The `connected` barrier. Every settle role has connected, so every settle role is a member.
+3. The `receiver` only: the cell's start state (below), then the formation poll.
+4. The `formation-settled` barrier.
+5. Every settle role: its own head read and the wait for its page to have applied that head.
+6. Its arming run: the leading run of its body that is `fault.inject` commands and cue
+   subscriptions. A role arms its faults here, so no role's first send meets an unarmed recipient.
+7. The `armed` barrier, then the rest of the body.
+
+The three barriers are the ordinary `barrier` command. A barrier id is
+`<cellPrefix>-<phase>` and a role's command id `<cellPrefix>-<role>-<phase>`, with
+`cellPrefix` = `alm-<carrier>-<scenarioKey>`. The barrier names the settle roles as participants. Its
+timeout is the longest time any one role spends waiting through the other roles' commands since the
+barrier before it, plus `RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS`. The lane registers the
+participants as one distributed run per family, started by hand with one trivial `health` root per
+role and its own barrier disabled. A same-context family registers one per cell, naming the cell's
+current owner page as `sender`. Because the roots are trivial, a barrier reports `participant-failed`
+only from a root's own result: a role whose recipe fails before a barrier leaves the others to the
+barrier's `timed-out`.
+
+**The formation poll** (`formation-poll`, the `receiver` only) repeats every 250 ms for up to
+`CONNECT_READINESS_TIMEOUT_MS` (30 s). Each attempt reads
+`GET …/groups/{groupId}/formation` and then `GET …/groups/{groupId}` under the `receiver`'s session,
+and the first attempt in which every fact holds ends the poll:
+
+- `pending` of the formation read equals `null`;
+- `layoutStale` of the formation read equals `false`;
+- `causalRevision.groupRevision` and `causalRevision.presenceRevision` of the formation read equal
+  the same fields of the group read's `causalRevision`;
+- `group.activationStatus.formationEpoch` equals `group.formationEpoch`;
+- for each of `groupRevision`, `presenceRevision`, `version` and `state`,
+  `group.activationStatus.coverageBasisLayoutIdentity.<key>` equals
+  `group.acceptedLayoutIdentity.<key>`.
+
+An equality fact passes only when both paths exist. A room with no activation status or no accepted
+layout therefore never settles, and the poll ends without success at its 30 s bound. The view's
+`condition` is not read: it falls back to a derived band when the stored status is not current. The
+identity keys are compared one by one because an `assert` equality compares JSON text, which is
+sensitive to key order.
+
+**The head read and the applied-revision floor.** The barrier carries no data, so each settle role
+reads the room's head itself after `formation-settled`: `GET …/groups/{groupId}` under its own
+session, whose `causalRevision` is at or past the `receiver`'s accepted read. It then waits for the
+`rallar.browser.group_state.applied` event of its own page with `data.change` `held`, the cell's
+`groupRef`, and `data.groupRevision` and `data.presenceRevision` at or above the read's two
+revisions. The wait reads the page's whole history (`metadata.historyFrom: 'page'`, below), for
+30 s. Every settle role's connect wrote presence before the read, so the floor's `presenceRevision`
+is above any `held` event an earlier cell left on the page, and a `removed` event never matches.
+
+**The start state.** A cell that grants its topic declares `startGrants` for every principal of its
+roles. For each principal the `receiver` writes a revoke of `subscribe` together with every
+permission the principal must not hold (the revoke also deletes the principal's subscription rows),
+then, when the principal holds any permission, a grant of what it holds. A write that changes
+nothing costs no revision. In a settled cell each write is one `POST
+…/publication-grants/{principal}/{revoke|grant}/requests/{requestId}`, sent after `connected`, when
+every grantee is a member. It accepts only status 200 and is not retried: a failed start write fails
+its cell at once. In an unsettled cell, and for a grant that is a step of a cell's body, the write
+is polled instead: it repeats every 250 ms for up to 90 s (`SUBSCRIPTION_PHASE_MS`) until one
+attempt answers 200, because a grantee that has not joined yet is refused `member-not-active`.
+
+**The two wait selectors.** Both are fields of a wait's `match`:
+
+- `sinceCommandIdPrefix` is the cell's history mark. Every wait of a cell's body or continuation
+  that names no start of its own carries the role's own command prefix, so it reads only events of
+  its own cell. The mark opens at the first event on the page whose `commandId` starts with that
+  prefix; that event can come before the command's result. A wait that names its own start must name
+  a command of its own cell, or recipe creation throws. A wait with
+  `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, and a store's
+  recovery that a fresh document reports during its first connect. Once the runtime evicted any
+  event, a wait with a prefix ends `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`, since the first event of
+  the command is no longer provable.
+- `payloadMinimums` maps payload paths to floors. A floor is a finite number or exactly one
+  `{resultCache.<commandId>.<path>}` reference to a number an earlier command returned. The event
+  matches only when every path holds a number at or above its floor. A text that is not exactly one
+  reference, or a reference that names no number, ends the wait `invalid`.
+
+**The assert comparison.** `assert` with `operator: 'equals'` names exactly one of `expected` and
+`comparisonSource`; control validation rejects both and neither. With
+`comparisonSource` it passes only when both paths exist and hold the same JSON value, compared as
+JSON text, so object key order matters. [schema-and-capabilities.md](./schema-and-capabilities.md)
+owns the operator list.
+
 ## State Read Diagnostics
 
 The browser's `BrowserStateReadDiagnosticEvent`
