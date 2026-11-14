@@ -19,6 +19,7 @@ import {
     isRallarBlackBoxAssertOperator,
     RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
+import { isAssertComparison } from './is-assert-comparison.ts';
 
 export interface AssertCommandEvidence {
     readonly command: RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;
@@ -111,9 +112,7 @@ type ComparisonSource =
     | Readonly<{ kind: 'present'; path: string; }>;
 
 function toComparisonSource(command: AssertCommandEvidence['command']): ComparisonSource {
-    const isComparison = command.operator === 'sameUniqueStringSet' ||
-        (command.operator === 'equals' && command.comparisonSource !== undefined);
-    if (!isComparison) {
+    if (!isAssertComparison(command)) {
         return { kind: 'absent' };
     }
     return typeof command.comparisonSource === 'string' && command.comparisonSource.trim().length > 0
@@ -168,7 +167,7 @@ export function toAssertSourceRoots(evidence: Pick<AssertCommandEvidence, 'state
 
 function toAssertResultValue(input: ToAssertResultValueInput): RallarBlackBoxTestAssertResultValue {
     const { command, source, comparison, passed } = input;
-    if (command.comparisonSource !== undefined) {
+    if (isAssertComparison(command)) {
         return {
             operator: command.operator,
             actual: source.exists ? source.value : undefined,
@@ -192,20 +191,19 @@ function toInvalidAssertOutcome(
     message: string,
     details: Readonly<{ operator: string; supportedOperators: readonly string[]; }> | undefined
 ): RallarBlackBoxTestCommandOutcome {
-    const value: RallarBlackBoxTestAssertResultValue =
-        command.operator === 'sameUniqueStringSet' || command.comparisonSource !== undefined
-            ? {
-                operator: command.operator,
-                exists: false,
-                comparisonExists: false,
-                passed: false
-            }
-            : {
-                operator: command.operator,
-                expected: command.expected,
-                exists: false,
-                passed: false
-            };
+    const value: RallarBlackBoxTestAssertResultValue = isAssertComparison(command)
+        ? {
+            operator: command.operator,
+            exists: false,
+            comparisonExists: false,
+            passed: false
+        }
+        : {
+            operator: command.operator,
+            expected: command.expected,
+            exists: false,
+            passed: false
+        };
     return {
         status: 'failed',
         value,

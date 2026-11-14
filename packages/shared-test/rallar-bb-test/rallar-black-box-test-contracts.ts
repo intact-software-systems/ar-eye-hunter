@@ -1110,7 +1110,7 @@ export interface RallarBlackBoxTestWaitResultValue {
 
 export type {
     RallarBlackBoxTestAssertResultValue,
-    RallarBlackBoxTestSetAssertResultValue,
+    RallarBlackBoxTestComparisonAssertResultValue,
     RallarBlackBoxTestValueAssertResultValue
 } from './assert/assert-result-contracts.ts';
 

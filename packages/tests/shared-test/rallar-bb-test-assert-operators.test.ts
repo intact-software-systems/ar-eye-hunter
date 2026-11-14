@@ -8,6 +8,8 @@ import { areSameUniqueStringSet } from '../../shared-test/rallar-bb-test/assert/
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -126,6 +128,41 @@ describe('rallar-bb-test extended assert operators', () => {
             expect(result.ok, name).toBe(false);
             expect(result.value, name).toMatchObject({ operator: 'equals', passed: false });
         }
+    });
+
+    it('admission and the outcome judge the same commands to be comparisons', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { present: 2 } });
+        const unadmitted: readonly RallarBlackBoxTestJsonValue[] = [
+            { kind: 'assert', commandId: 'set-without-comparison', source: 'messages.0.payload.present', operator: 'sameUniqueStringSet' },
+            {
+                kind: 'assert',
+                commandId: 'bound-with-comparison',
+                source: 'messages.0.payload.present',
+                operator: 'gte',
+                expected: 1,
+                comparisonSource: 'messages.0.payload.present'
+            },
+            {
+                kind: 'assert',
+                commandId: 'blank-bound-with-comparison',
+                source: ' ',
+                operator: 'gte',
+                expected: 1,
+                comparisonSource: 'messages.0.payload.present'
+            }
+        ];
+        const values = [];
+        for (const command of unadmitted) {
+            expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
+            values.push((await runtime.execute(command as RallarBlackBoxTestCommand)).value);
+        }
+
+        expect(values).toEqual([
+            { operator: 'sameUniqueStringSet', exists: false, comparisonExists: false, passed: false },
+            { operator: 'gte', expected: 1, actual: 2, exists: true, passed: true },
+            { operator: 'gte', expected: 1, exists: false, passed: false }
+        ]);
     });
 
     it('reads recorded evidence in the JSON form a control connection carries', async () => {

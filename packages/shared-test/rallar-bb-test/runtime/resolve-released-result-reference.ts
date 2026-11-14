@@ -1,4 +1,5 @@
 import { toAssertSourceRoots } from '../assert/compute-assert-command-outcome.ts';
+import { isAssertComparison } from '../assert/is-assert-comparison.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
@@ -31,7 +32,7 @@ export function resolveReleasedResultReference(
         return undefined;
     }
     const sources = command.kind === 'assert'
-        ? [command.source, ...(command.comparisonSource === undefined ? [] : [command.comparisonSource])]
+        ? [command.source, ...(isAssertComparison(command) ? [command.comparisonSource] : [])]
         : toReferenceTexts(command).filter((text) => typeof text === 'string').flatMap(readResultReferencesInText);
     const unavailable = sources.filter((source) => typeof source === 'string')
         .find((source) => isReleasedSourceReference(source, evidence)) ??
