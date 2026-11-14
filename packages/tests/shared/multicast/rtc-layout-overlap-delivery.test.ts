@@ -1,18 +1,29 @@
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling, resolveALMessageExpireAtMs, type ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import {
+    acceptMeshLayout,
+    CHAIN_PREVIOUS,
+    CHAIN_PROMOTED,
+    createLayoutMesh,
+    createOriginFrame,
+    DIAMOND_PREVIOUS,
+    DIAMOND_PROMOTED,
+    DIAMOND_SESSION_IDS,
+    exchangeUntilQuiet,
+    readAdmissionReasons,
+    readCopies,
+    toAcceptedLayout,
+    toOpenEdgePeerIds,
+    toPromotedLayout,
+    useFakeClock,
+    type LayoutMesh,
+    type SessionNextHops,
+    type TransportCopy
+} from './rtc-layout-mesh-fixture.ts';
 import {
     createOriginOverlay,
     createOriginReceiverMulticast,
@@ -32,28 +43,11 @@ import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc
  * These tests pin what a peer delivers, forwards, answers and refuses when that happens.
  */
 
-type SessionNextHops = Readonly<Record<string, readonly string[]>>;
-
 interface OverlapMeshInput {
     /** The origin `a` first; the order of the others is the order the exchange carries their frames in. */
     readonly sessionIds: readonly string[];
     readonly previousTree: SessionNextHops;
     readonly promotedTree: SessionNextHops;
-}
-
-/** The origin `a` and a relay pipeline for every other session, each holding its edges of both layouts open. */
-interface OverlapMesh {
-    readonly origin: RtcOriginOverlayFixture;
-    readonly peers: ReadonlyMap<string, RtcRelayOverlayFixture>;
-    readonly edges: ReadonlyMap<string, readonly string[]>;
-    /** How many frames of each directed edge the exchange already carried. */
-    readonly carriedCounts: Map<string, number>;
-}
-
-interface TransportCopy {
-    readonly fromPeerId: string;
-    readonly toPeerId: string;
-    readonly message: ALMessage;
 }
 
 interface PositionFrameInput {
@@ -102,30 +96,10 @@ interface FrozenOverlapShape extends OverlapMeshInput {
     readonly edges: readonly string[];
 }
 
-/** What the transport does to each copy it carries: the copy that arrives, and how long it travels. */
-interface ExchangeTransit {
-    toCarried(message: ALMessage): ALMessage;
-    readonly delayMs: number;
-}
-
-const DIRECT_TRANSIT: ExchangeTransit = { toCarried: (message) => message, delayMs: 0 };
-
 /** Every copy one exchange may carry before the test fails: a loop that does not stop exceeds it. */
 const EXCHANGE_COPY_BUDGET = 60;
 
 const ACK_TIMEOUT_MS = 2_000;
-
-/** The re-plan keeps the causal revision the fixture's layout was planned from: only the layout version moves. */
-const PROMOTED_LAYOUT_IDENTITY = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
-
-/** `d` has two parents during the overlap: `b` in the replaced layout, `c` in the promoted one; `e` hangs below `d`. */
-const DIAMOND_PREVIOUS: SessionNextHops = { a: ['b', 'c'], b: ['a', 'd'], c: ['a'], d: ['b', 'e'], e: ['d'] };
-const DIAMOND_PROMOTED: SessionNextHops = { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c', 'e'], e: ['d'] };
-const DIAMOND_SESSION_IDS = ['a', 'b', 'c', 'd', 'e'];
-
-/** The chain `a`, `b`, `c`, `d` re-planned to `a`, `c`, `d`, `b`. */
-const CHAIN_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
-const CHAIN_PROMOTED: SessionNextHops = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
 
 /** The subtree `d`, `e` moves from below `b` to below `c`. */
 const MOVED_SUBTREE_PREVIOUS: SessionNextHops = { a: ['b', 'c'], b: ['a', 'd', 'e'], c: ['a'], d: ['b'], e: ['b'] };
@@ -142,88 +116,19 @@ const SQUARE_PROMOTED: SessionNextHops = { a: ['b'], b: ['a', 'e'], c: ['d'], d:
 /** A visited list already at its cap of 64 with sessions that left: every id a relay appends past it falls away. */
 const VISITED_AT_CAP = Array.from({ length: 64 }, (_, index) => `left-${index}`);
 
-function toPromotedSnapshot(snapshot: GroupSnapshot): GroupSnapshot {
-    return { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: PROMOTED_LAYOUT_IDENTITY } };
-}
-
-function toPromotedOverlay(tree: SessionNextHops, sessionId: string): OverlayInfo {
-    return { ...createOriginOverlay(tree[sessionId] ?? [], tree), overlayVersion: PROMOTED_LAYOUT_IDENTITY.version };
-}
-
-function toOpenEdgePeerIds(input: OverlapMeshInput, sessionId: string): readonly string[] {
-    return [...new Set([...(input.previousTree[sessionId] ?? []), ...(input.promotedTree[sessionId] ?? [])])];
-}
-
 /** Every session promotes the re-planned layout at the same instant, now. */
-function createOverlapMesh(input: OverlapMeshInput): OverlapMesh {
-    const snapshot = createOriginSnapshot(input.sessionIds, 4);
-    const origin = createRtcOriginOverlayFixture({
-        snapshot,
-        nextHopPeerIds: input.previousTree.a ?? [],
-        nextHopsBySessionId: input.previousTree
+function createOverlapMesh(input: OverlapMeshInput): LayoutMesh {
+    const mesh = createLayoutMesh({
+        snapshot: createOriginSnapshot(input.sessionIds, 4),
+        initialTree: input.previousTree,
+        sessionIds: input.sessionIds,
+        openEdgePeerIds: (sessionId) => toOpenEdgePeerIds(sessionId, [input.previousTree, input.promotedTree]),
+        copyBudget: EXCHANGE_COPY_BUDGET
     });
-    origin.groups.accept('room', toPromotedSnapshot(snapshot));
-    origin.acceptOverlay(toPromotedOverlay(input.promotedTree, 'a'));
-    origin.ready.peerIds = toOpenEdgePeerIds(input, 'a');
-    const edges = new Map<string, readonly string[]>([['a', toOpenEdgePeerIds(input, 'a')]]);
-    const peers = new Map<string, RtcRelayOverlayFixture>();
-    for (const sessionId of input.sessionIds.filter((peerId) => peerId !== 'a')) {
-        const neighbourPeerIds = toOpenEdgePeerIds(input, sessionId);
-        const initialOverlay = createOriginOverlay(input.previousTree[sessionId] ?? [], input.previousTree);
-        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds, initialOverlay });
-        peer.acceptSnapshot(toPromotedSnapshot(snapshot));
-        peer.acceptOverlay(toPromotedOverlay(input.promotedTree, sessionId));
-        peers.set(sessionId, peer);
-        edges.set(sessionId, neighbourPeerIds);
+    for (const sessionId of input.sessionIds) {
+        acceptMeshLayout(mesh, sessionId, toPromotedLayout(input.promotedTree));
     }
-    return { origin, peers, edges, carriedCounts: new Map() };
-}
-
-/**
- * Carries every new frame over every open edge, in the order of the mesh's sessions, until no edge has one. A frame
- * that reaches the origin is a control it accepts, or a copy it only records. More than the budget fails the test.
- */
-async function exchangeUntilQuiet(mesh: OverlapMesh, transit: ExchangeTransit = DIRECT_TRANSIT): Promise<readonly TransportCopy[]> {
-    const carried: TransportCopy[] = [];
-    for (let moved = true; moved;) {
-        moved = false;
-        for (const [fromPeerId, toPeerIds] of mesh.edges) {
-            for (const toPeerId of toPeerIds) {
-                const key = `${fromPeerId}>${toPeerId}`;
-                const sent = await readEdge(mesh, fromPeerId, toPeerId);
-                const fresh = sent.slice(mesh.carriedCounts.get(key) ?? 0);
-                mesh.carriedCounts.set(key, sent.length);
-                for (const sentMessage of fresh) {
-                    const message = transit.toCarried(sentMessage);
-                    carried.push({ fromPeerId, toPeerId, message });
-                    expect(carried.length, 'the exchange stops within its copy budget')
-                        .toBeLessThanOrEqual(EXCHANGE_COPY_BUDGET);
-                    if (transit.delayMs > 0) {
-                        await vi.advanceTimersByTimeAsync(transit.delayMs);
-                    }
-                    await carry(mesh, { fromPeerId, toPeerId, message });
-                    moved = true;
-                }
-            }
-        }
-    }
-    return carried;
-}
-
-async function readEdge(mesh: OverlapMesh, fromPeerId: string, toPeerId: string): Promise<readonly ALMessage[]> {
-    return fromPeerId === 'a'
-        ? mesh.origin.channels[toPeerId]?.sent ?? []
-        : await mesh.peers.get(fromPeerId)!.readSent(toPeerId);
-}
-
-async function carry(mesh: OverlapMesh, copy: TransportCopy): Promise<void> {
-    if (copy.toPeerId !== 'a') {
-        await mesh.peers.get(copy.toPeerId)!.receive(copy.message, copy.fromPeerId);
-        return;
-    }
-    if (parseALControlMessage(copy.message) !== undefined) {
-        await mesh.origin.manager.acceptControlMessage(copy.message);
-    }
+    return mesh;
 }
 
 /** The edges `message` itself crossed, in carrying order. */
@@ -245,14 +150,6 @@ function readControlEdges(carried: readonly TransportCopy[]): readonly string[] 
             : control.type;
         return [`${copy.fromPeerId}>${copy.toPeerId} ${detail}`];
     });
-}
-
-function readCopies(messages: readonly ALMessage[], message: ALMessage): number {
-    return messages.filter((sent) => sent.id.msgId === message.id.msgId).length;
-}
-
-function readAdmissionReasons(peer: RtcRelayOverlayFixture, message: ALMessage): readonly string[] {
-    return peer.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.msgId === message.id.msgId ? [event.reason] : []);
 }
 
 /** The copy as a sender that stamps no deadline would carry it: no expiry instant and no expiry policy. */
@@ -281,7 +178,7 @@ function createPositionFrame(input: PositionFrameInput): ALMessage {
 }
 
 /** The origin's copies to `b` and `c`, each relayed by its own pipeline, and those relays' copies to `d`. */
-async function relayToBothParentsOfD(mesh: OverlapMesh, frames: readonly ALMessage[]): Promise<RelayedCopies> {
+async function relayToBothParentsOfD(mesh: LayoutMesh, frames: readonly ALMessage[]): Promise<RelayedCopies> {
     for (const frame of frames) {
         await enqueueAndDrain(mesh.origin.manager, frame);
     }
@@ -316,18 +213,6 @@ function planOriginFanout(qos: ALQosPolicyRequest, msgId: string, layouts: Origi
             ? undefined
             : { neighborPeerIds: layouts.replacedPeerIds, nextHopsBySessionId: undefined }
     }).forwarding.nextHopPeerIds;
-}
-
-function useFakeClock(): void {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
 }
 
 describe('a frame carried by both layouts during the replaced-layout overlap', () => {
@@ -637,15 +522,17 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             neighbourPeerIds: ['a', 'c', 'd'],
             initialOverlay: createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS)
         });
-        child.acceptSnapshot(toPromotedSnapshot(snapshot));
-        child.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'c'));
+        const promotedChild = toAcceptedLayout(snapshot, toPromotedLayout(CHAIN_PROMOTED), 'c');
+        child.acceptSnapshot(promotedChild.snapshot);
+        child.acceptOverlay(promotedChild.overlay);
         return {
             origin,
             child,
             relay,
             promoteRelay: () => {
-                relay.acceptSnapshot(toPromotedSnapshot(snapshot));
-                relay.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'b'));
+                const promotedRelay = toAcceptedLayout(snapshot, toPromotedLayout(CHAIN_PROMOTED), 'b');
+                relay.acceptSnapshot(promotedRelay.snapshot);
+                relay.acceptOverlay(promotedRelay.overlay);
             }
         };
     }
@@ -659,10 +546,6 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             await tail.child.receive(copy, 'b');
         }
         return copies;
-    }
-
-    function createTailFrame(reliability: 'at-least-once' | 'best-effort', resourceId: string): ALMessage {
-        return reliability === 'at-least-once' ? createOriginReceiverMulticast(resourceId) : createPositionFrame({ resourceId });
     }
 
     // `b` promotes exactly half the overlap after `c`, so its forwarding over the replaced edge ends at the instant
@@ -682,7 +565,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
                 if (sendAtMs === FORWARDING_HALF_MS) {
                     tail.promoteRelay();
                 }
-                const frame = createTailFrame(reliability, `tail-${sendAtMs}`);
+                const frame = createOriginFrame(reliability, `tail-${sendAtMs}`);
                 const sentFromMs = Date.now() - startMs;
                 const copies = await relayToChild(tail, frame);
                 sends.push({ sentFromMs, sentUntilMs: Date.now() - startMs, copies: copies.length });
@@ -712,7 +595,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             await vi.advanceTimersByTimeAsync(relayLagMs);
             tail.promoteRelay();
             await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS - relayLagMs);
-            const frame = createTailFrame(reliability, 'tail');
+            const frame = createOriginFrame(reliability, 'tail');
             const copies = await relayToChild(tail, frame);
             expect(copies).toHaveLength(1);
             expect(tail.child.readRoomAdmission(copies[0]!, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
@@ -734,7 +617,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
         await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS + 1);
         tail.promoteRelay();
         await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS - 1);
-        const frame = createTailFrame('at-least-once', 'tail');
+        const frame = createOriginFrame('at-least-once', 'tail');
         await relayToChild(tail, frame);
         await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
 

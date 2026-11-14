@@ -1,44 +1,33 @@
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { isRtcRoomSnapshotRefreshReason } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
 import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 
 import {
-    createOriginOverlay,
-    createOriginReceiverMulticast,
-    createOriginSnapshot,
-    createRtcOriginOverlayFixture,
-    enqueueAndDrain,
-    ORIGIN_ROOM,
-    type RtcOriginOverlayFixture
-} from './rtc-origin-overlay-fixture.ts';
-import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
+    acceptMeshLayout,
+    createLayoutMesh,
+    createOriginFrame,
+    exchangeOver,
+    exchangeUntilQuiet,
+    readAdmissionReasons,
+    readCopies,
+    toAcceptedLayout,
+    toOpenEdgePeerIds,
+    useFakeClock,
+    type FrameReliability,
+    type LayoutMesh,
+    type RoomLayout,
+    type TransportCopy
+} from './rtc-layout-mesh-fixture.ts';
+import { createOriginSnapshot, enqueueAndDrain } from './rtc-origin-overlay-fixture.ts';
 
 /**
  * A room's layout promoted twice or more inside one overlap, L1 then L2 then L3. A sender still forwarding over an L1
  * edge reaches a receiver that has replaced L1 and then L2; the receiver admits every replaced layout whose own window
  * is still open. These tests pin what happens to the message: delivered once, and by which path.
  */
-
-type Reliability = 'at-least-once' | 'best-effort';
-type SessionNextHops = Readonly<Record<string, readonly string[]>>;
-
-interface RoomLayout {
-    readonly tree: SessionNextHops;
-    readonly version: number;
-}
 
 /** A layout a session accepts, `atMs` after the room's first promotion. */
 interface TimedPromotion {
@@ -66,20 +55,8 @@ interface PromotionMeshInput {
     readonly clockStepBackMs?: number;
 }
 
-interface PromotionMesh {
-    readonly origin: RtcOriginOverlayFixture;
-    readonly peers: ReadonlyMap<string, RtcRelayOverlayFixture>;
-    readonly edges: ReadonlyMap<string, readonly string[]>;
-    readonly carriedCounts: Map<string, number>;
+interface PromotionMesh extends LayoutMesh {
     readonly viaGroupSnapshot: readonly string[];
-}
-
-interface TransportCopy {
-    readonly fromPeerId: string;
-    readonly toPeerId: string;
-    readonly message: ALMessage;
-    /** When the copy was carried, measured from the send. */
-    readonly atMs: number;
 }
 
 /** What happened to one frame at the receiver `d`, at its sender `b`, and at the origin. */
@@ -142,24 +119,10 @@ function toSteppedPromotions(...layouts: readonly RoomLayout[]): readonly TimedP
     return layouts.map((layout, index) => ({ layout, atMs: index * SEND_AT_MS }));
 }
 
-function toLayoutSnapshot(snapshot: GroupSnapshot, layout: RoomLayout): GroupSnapshot {
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            acceptedLayoutIdentity: { groupRevision: 1, presenceRevision: 1, version: layout.version, state: 'active' }
-        }
-    };
-}
-
-function toLayoutOverlay(layout: RoomLayout, sessionId: string): OverlayInfo {
-    return { ...createOriginOverlay(layout.tree[sessionId] ?? [], layout.tree), overlayVersion: layout.version };
-}
-
 /** Every edge of every layout the session knows is open (early dial), unless the case closes it. */
-function toOpenEdgePeerIds(sessionId: string, layouts: SessionLayouts, closedEdges: readonly string[]): readonly string[] {
+function toKnownOpenEdgePeerIds(sessionId: string, layouts: SessionLayouts, closedEdges: readonly string[]): readonly string[] {
     const known = [L1, ...layouts.promotions.map((promotion) => promotion.layout), ...(layouts.planned === undefined ? [] : [layouts.planned])];
-    return [...new Set(known.flatMap((layout) => layout.tree[sessionId] ?? []))]
+    return toOpenEdgePeerIds(sessionId, known.map((layout) => layout.tree))
         .filter((peerId) => !closedEdges.includes(`${sessionId}>${peerId}`) && !closedEdges.includes(`${peerId}>${sessionId}`));
 }
 
@@ -190,19 +153,12 @@ function toSenderBehindCase(input: SenderBehindCase): PromotionMeshInput {
 }
 
 function applyPromotion(mesh: PromotionMesh, sessionId: string, layout: RoomLayout): void {
-    const snapshot = toLayoutSnapshot(createOriginSnapshot(SESSION_IDS, 4), layout);
-    if (sessionId === 'a') {
-        mesh.origin.groups.accept('room', snapshot);
-        mesh.origin.acceptOverlay(toLayoutOverlay(layout, 'a'));
+    if (!mesh.viaGroupSnapshot.includes(sessionId)) {
+        acceptMeshLayout(mesh, sessionId, layout);
         return;
     }
-    const peer = mesh.peers.get(sessionId)!;
-    if (mesh.viaGroupSnapshot.includes(sessionId)) {
-        peer.acceptSnapshotPromotion(snapshot, toLayoutOverlay(layout, sessionId));
-        return;
-    }
-    peer.acceptSnapshot(snapshot);
-    peer.acceptOverlay(toLayoutOverlay(layout, sessionId));
+    const accepted = toAcceptedLayout(mesh.snapshot, layout, sessionId);
+    mesh.peers.get(sessionId)!.acceptSnapshotPromotion(accepted.snapshot, accepted.overlay);
 }
 
 /**
@@ -211,21 +167,20 @@ function applyPromotion(mesh: PromotionMesh, sessionId: string, layout: RoomLayo
  * due later is applied when its time comes.
  */
 async function createPromotionMesh(input: PromotionMeshInput): Promise<PromotionMesh> {
-    const snapshot = createOriginSnapshot(SESSION_IDS, 4);
-    const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: L1.tree.a!, nextHopsBySessionId: L1.tree });
-    origin.ready.peerIds = toOpenEdgePeerIds('a', input.sessions.a!, input.closedEdges);
-    const edges = new Map<string, readonly string[]>([['a', origin.ready.peerIds]]);
-    const peers = new Map<string, RtcRelayOverlayFixture>();
-    for (const [sessionId, layouts] of Object.entries(input.sessions).filter(([sessionId]) => sessionId !== 'a')) {
-        const neighbourPeerIds = toOpenEdgePeerIds(sessionId, layouts, input.closedEdges);
-        const initialOverlay = toLayoutOverlay(L1, sessionId);
-        peers.set(sessionId, createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds, initialOverlay }));
-        edges.set(sessionId, neighbourPeerIds);
-        if (layouts.planned !== undefined) {
-            peers.get(sessionId)!.acceptPlannedOverlay(toLayoutOverlay(layouts.planned, sessionId));
+    const layoutMesh = createLayoutMesh({
+        snapshot: createOriginSnapshot(SESSION_IDS, 4),
+        initialTree: L1.tree,
+        sessionIds: Object.keys(input.sessions),
+        openEdgePeerIds: (sessionId) => toKnownOpenEdgePeerIds(sessionId, input.sessions[sessionId]!, input.closedEdges),
+        copyBudget: EXCHANGE_COPY_BUDGET
+    });
+    for (const [sessionId, peer] of layoutMesh.peers) {
+        const planned = input.sessions[sessionId]!.planned;
+        if (planned !== undefined) {
+            peer.acceptPlannedOverlay(toAcceptedLayout(layoutMesh.snapshot, planned, sessionId).overlay);
         }
     }
-    const mesh = { origin, peers, edges, carriedCounts: new Map(), viaGroupSnapshot: input.viaGroupSnapshot ?? [] };
+    const mesh = { ...layoutMesh, viaGroupSnapshot: input.viaGroupSnapshot ?? [] };
     for (const [sessionId, layouts] of Object.entries(input.sessions)) {
         for (const { layout, atMs } of layouts.promotions) {
             setTimeout(() => applyPromotion(mesh, sessionId, layout), atMs);
@@ -238,56 +193,8 @@ async function createPromotionMesh(input: PromotionMeshInput): Promise<Promotion
     return mesh;
 }
 
-async function exchangeUntilQuiet(mesh: PromotionMesh, sentAtMs: number): Promise<readonly TransportCopy[]> {
-    const carried: TransportCopy[] = [];
-    for (let moved = true; moved;) {
-        moved = false;
-        for (const [fromPeerId, toPeerIds] of mesh.edges) {
-            for (const toPeerId of toPeerIds) {
-                const key = `${fromPeerId}>${toPeerId}`;
-                const sent = fromPeerId === 'a'
-                    ? mesh.origin.channels[toPeerId]?.sent ?? []
-                    : await mesh.peers.get(fromPeerId)!.readSent(toPeerId);
-                const fresh = sent.slice(mesh.carriedCounts.get(key) ?? 0);
-                mesh.carriedCounts.set(key, sent.length);
-                for (const message of fresh) {
-                    const copy = { fromPeerId, toPeerId, message, atMs: Date.now() - sentAtMs };
-                    carried.push(copy);
-                    expect(carried.length, 'the exchange stops within its copy budget').toBeLessThanOrEqual(EXCHANGE_COPY_BUDGET);
-                    await carry(mesh, copy);
-                    moved = true;
-                }
-            }
-        }
-    }
-    return carried;
-}
-
-async function carry(mesh: PromotionMesh, copy: TransportCopy): Promise<void> {
-    if (copy.toPeerId !== 'a') {
-        await mesh.peers.get(copy.toPeerId)!.receive(copy.message, copy.fromPeerId);
-        return;
-    }
-    if (parseALControlMessage(copy.message) !== undefined) {
-        await mesh.origin.manager.acceptControlMessage(copy.message);
-    }
-}
-
-async function exchangeOver(mesh: PromotionMesh, totalMs: number, sentAtMs: number): Promise<readonly TransportCopy[]> {
-    const carried = [...await exchangeUntilQuiet(mesh, sentAtMs)];
-    for (let elapsedMs = 0; elapsedMs < totalMs; elapsedMs += 500) {
-        await vi.advanceTimersByTimeAsync(500);
-        carried.push(...await exchangeUntilQuiet(mesh, sentAtMs));
-    }
-    return carried;
-}
-
 function isFrameCopyInto(copy: TransportCopy, frame: ALMessage, toPeerId: string): boolean {
     return copy.toPeerId === toPeerId && copy.message.id.msgId === frame.id.msgId;
-}
-
-function readAdmissionReasons(peer: RtcRelayOverlayFixture, message: ALMessage): readonly string[] {
-    return peer.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.msgId === message.id.msgId ? [event.reason] : []);
 }
 
 async function readReceiverAnswers(mesh: PromotionMesh): Promise<readonly string[]> {
@@ -300,28 +207,28 @@ async function readReceiverAnswers(mesh: PromotionMesh): Promise<readonly string
 }
 
 /** Sends one frame from the origin, carries every copy until quiet, then lets every receipt and the frame run out. */
-async function observeFrame(input: PromotionMeshInput, reliability: Reliability): Promise<ReceiverObservation> {
+async function observeFrame(input: PromotionMeshInput, reliability: FrameReliability): Promise<ReceiverObservation> {
     const mesh = await createPromotionMesh(input);
     const receiver = mesh.peers.get('d')!;
-    const frame = createFrame(reliability, 'second-promotion');
+    const frame = createOriginFrame(reliability, 'second-promotion');
     const sentAtMs = Date.now();
     await enqueueAndDrain(mesh.origin.manager, frame);
-    const first = await exchangeUntilQuiet(mesh, sentAtMs);
+    const first = await exchangeUntilQuiet(mesh);
     const firstIntoReceiver = first.filter((copy) => isFrameCopyInto(copy, frame, 'd'));
     const verdicts = firstIntoReceiver.map((copy) => {
         const verdict = receiver.readRoomAdmission(copy.message, copy.fromPeerId);
         return `${copy.fromPeerId} ${verdict.kind} ${verdict.kind === 'pending' ? verdict.reason : 'cause' in verdict ? verdict.cause : '-'}`;
     });
-    const later = await exchangeOver(mesh, SETTLE_MS, sentAtMs);
+    const later = await exchangeOver(mesh, SETTLE_MS);
     const admissionReasons = readAdmissionReasons(receiver, frame);
     return {
         copiesIntoReceiver: firstIntoReceiver.map((copy) => `${copy.fromPeerId}>d`),
         verdicts,
         copiesIntoReceiverOverTime: [...first, ...later]
             .filter((copy) => isFrameCopyInto(copy, frame, 'd'))
-            .map((copy) => `${copy.fromPeerId}>d@${copy.atMs}`),
+            .map((copy) => `${copy.fromPeerId}>d@${copy.carriedAtMs - sentAtMs}`),
         admissionReasons,
-        deliveredCopies: receiver.delivered.filter((message) => message.id.msgId === frame.id.msgId).length,
+        deliveredCopies: readCopies(receiver.delivered, frame),
         receiverAnswers: await readReceiverAnswers(mesh),
         roomRefreshReasons: admissionReasons.filter(isRtcRoomSnapshotRefreshReason),
         originOutcome: mesh.origin.settlements.filter((settlement) => !settlement.kind.startsWith('attempt')).at(-1)
@@ -333,38 +240,13 @@ function toEdges(copiesOverTime: readonly string[]): readonly string[] {
 }
 
 /** An at-least-once frame's receipt completes with nothing unconfirmed; a best-effort frame keeps no receipt. */
-function expectDeliveredOutcome(observed: ReceiverObservation, reliability: Reliability): void {
+function expectDeliveredOutcome(observed: ReceiverObservation, reliability: FrameReliability): void {
     if (reliability === 'at-least-once') {
         expect(observed.originOutcome).toMatchObject(COMPLETE_AND_CONFIRMED);
     }
     else {
         expect(observed.originOutcome).toBeUndefined();
     }
-}
-
-function createFrame(reliability: Reliability, resourceId: string): ALMessage {
-    return reliability === 'at-least-once'
-        ? createOriginReceiverMulticast(resourceId)
-        : newALMulticastMessage(
-            'a',
-            { topicId: 'position', resourceId, contextId: 'room' },
-            ORIGIN_ROOM,
-            'position.frame.v1',
-            { resourceId },
-            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
-        );
-}
-
-function useFakeClock(): void {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
 }
 
 describe.each([
