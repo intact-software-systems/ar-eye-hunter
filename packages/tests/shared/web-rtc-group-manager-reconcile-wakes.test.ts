@@ -585,8 +585,27 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
         await fixture.setLayouts({ accepted: peerRange('c'), planned: peerRange('c') });
 
         expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+        expect(fixture.manager.readDiagnostics()).toMatchObject({ retainedEvictionCount: 5, disconnectCount: 0 });
         await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
         expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+    });
+
+    it('a replaced layout\'s edge that the next plan names again keeps its place among the retained edges', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('accepted', peerRange('p'));
+        await fixture.setLayout('planned', ['a5', 'q1', 'q2', 'q3', 'q4']);
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('p')]);
+
+        await fixture.acceptSecondRoom(['c1']);
+
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a').slice(1), 'c1', ...peerRange('p')]);
+        expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(1);
+
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+        await fixture.connectKnownPeers();
+        expect(fixture.rtcQBox.knownPeerIds()).toContain('a5');
+        expect(fixture.rtcQBox.knownPeerIds()).not.toContain('a2');
     });
 
     it('a second room\'s accepted peers are dialled although the first room\'s early peers fill the cap', async () => {
@@ -605,17 +624,17 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
         await fixture.setLayout('accepted', peerRange('a'));
         await fixture.setLayout('accepted', peerRange('p'));
         await fixture.setLayout('planned', peerRange('q'));
-        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(false);
+        expect(fixture.manager.admitInboundPeer('q1')).toBe('held');
 
         // Each check runs before the wake the removal schedules.
         fixture.rtcQBox.service.removePeerIfPresent('p1');
-        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(false);
-        expect(fixture.manager.isInboundPeerWithinCap('p1')).toBe(true);
+        expect(fixture.manager.admitInboundPeer('q1')).toBe('held');
+        expect(fixture.manager.admitInboundPeer('p1')).toBe('admitted');
         await fixture.manager.whenReconciled();
         expect(fixture.rtcQBox.knownPeerIds()).toContain('p1');
 
         fixture.rtcQBox.service.removePeerIfPresent('a1');
-        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(true);
+        expect(fixture.manager.admitInboundPeer('q1')).toBe('admitted');
     });
 
     it('an early peer deferred by the cap is dialled when a retained edge closes before its grace', async () => {

@@ -23,6 +23,8 @@ import {
     computeConnectionCapSpend,
     selectEarlyOnlyDialPeerIds,
     selectGroupDialPeerIds,
+    selectRetentionsEndedByDesire,
+    type ConnectionCapInboundVerdict,
     type ConnectionCapSpend,
     type SelectGroupDialPeerIdsInput
 } from './webrtc-group-dial-policy.ts';
@@ -323,9 +325,11 @@ export class WebRtcGroupManager {
         return this.readPeerOwnership().dialAllowedPeerIds.has(peerId);
     }
 
-    /** Whether an offer from a dial-allowed peer may open a connection under the cap now. */
-    isInboundPeerWithinCap(peerId: PeerId): boolean {
-        return this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), peerId).inboundAdmitted;
+    /** Answers an offer from a dial-allowed peer; at a full cap it first closes the early peers the ranking names. */
+    admitInboundPeer(peerId: PeerId): ConnectionCapInboundVerdict {
+        const { verdict, closePeerIds } = this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), peerId).inbound;
+        this.closePeersOverCap(closePeerIds);
+        return verdict;
     }
 
     state(): WebRtcGroupManagerState {
@@ -465,7 +469,7 @@ export class WebRtcGroupManager {
         this.diagnostics.reconcileRunCount += 1;
         const ownership = this.readPeerOwnership();
         const desiredPeerIds = new Set(ownership.groupsByPeerId.keys());
-        this.removeRetainedDesiredPeers(desiredPeerIds);
+        this.removeRetainedDesiredPeers(desiredPeerIds, ownership.earlyDialPeerIds);
         this.disconnectExpiredRetainedPeers(new Set(this.rtcQBox.knownPeerIds()));
         disconnectAbsentPeerDials({
             desiredPeerIds,
@@ -517,9 +521,13 @@ export class WebRtcGroupManager {
         this.waitingDialCount = started.deferredCount + started.pacedCount;
     }
 
-    /** A desired early peer closed here waits for a free slot like a deferred dial. */
     private evictPeersOverCap(knownPeerIds: ReadonlySet<PeerId>): void {
-        for (const peerId of this.computeCapSpend(knownPeerIds, null).evictPeerIds) {
+        this.closePeersOverCap(this.computeCapSpend(knownPeerIds, null).evictPeerIds);
+    }
+
+    /** A desired early peer closed here waits for a free slot like a deferred dial. */
+    private closePeersOverCap(peerIds: readonly PeerId[]): void {
+        for (const peerId of peerIds) {
             try {
                 this.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
                 this.recordEvictedOverCap(peerId);
@@ -844,13 +852,20 @@ export class WebRtcGroupManager {
         }
     }
 
-    private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>): void {
+    /** A replaced layout's edge that a planned layout names again stays retained, and ranked so, until its grace ends. */
+    private removeRetainedDesiredPeers(desiredPeerIds: Set<PeerId>, earlyDialPeerIds: ReadonlySet<PeerId>): void {
         disconnectUnansweredRetainedDials({
             desiredPeerIds,
             retainedPeerConnections: this.retainedPeerConnections,
             rtcQBox: this.rtcQBox
         });
-        for (const peerId of desiredPeerIds) {
+        const endedPeerIds = selectRetentionsEndedByDesire({
+            desiredPeerIds,
+            earlyDialPeerIds,
+            retainedPeerConnections: this.retainedPeerConnections,
+            nowEpochMs: this.now()
+        });
+        for (const peerId of endedPeerIds) {
             this.retainedPeerConnections.delete(peerId);
         }
     }

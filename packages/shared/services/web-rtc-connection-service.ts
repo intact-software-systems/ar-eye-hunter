@@ -365,6 +365,7 @@ export class WebRtcConnectionService {
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
 
     private inboundPeerCreationPolicy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined;
+    private inboundPeerCapPolicy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined;
     private outboundDialPolicy: WebRtcConnectionService.OutboundDialPolicy | undefined;
 
     public readonly signaler: QRtcSignalingTransport;
@@ -396,6 +397,17 @@ export class WebRtcConnectionService {
         policy?: WebRtcConnectionService.InboundPeerCreationPolicy
     ): WebRtcConnectionService {
         this.inboundPeerCreationPolicy = policy;
+        return this;
+    }
+
+    /**
+     * Asked only for a new peer's signal at a full cap; without it that signal is refused. An `allow` admits only
+     * once the policy has freed a slot, and a `retry` holds the signal.
+     */
+    setInboundPeerCapPolicy(
+        policy?: WebRtcConnectionService.InboundPeerCreationPolicy
+    ): WebRtcConnectionService {
+        this.inboundPeerCapPolicy = policy;
         return this;
     }
 
@@ -653,7 +665,7 @@ export class WebRtcConnectionService {
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
             return false;
         }
-        const answer = this.readInboundPeerCreationAdmission(signal);
+        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCreationPolicy, signal);
         return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
     }
 
@@ -685,10 +697,9 @@ export class WebRtcConnectionService {
             return { allowed: false, reason: 'missing-peer-answer' };
         }
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
-            this.observeSignalRoute('peer-cap', message, undefined);
-            return { allowed: false, reason: 'max-peer-connections' };
+            return this.shouldCreatePeerAtPeerCap(message);
         }
-        const answer = this.readInboundPeerCreationAdmission(message);
+        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCreationPolicy, message);
         switch (answer.kind) {
             case 'no-policy':
                 this.observeSignalRoute('allow-without-policy', message, undefined);
@@ -709,13 +720,31 @@ export class WebRtcConnectionService {
         }
     }
 
-    /** The creation policy's own answer for `signal`; each caller records its own route. */
-    private readInboundPeerCreationAdmission(signal: QRtcSignalingMessage): InboundPeerCreationPolicyAnswer {
-        if (!this.inboundPeerCreationPolicy) {
+    private shouldCreatePeerAtPeerCap(message: QRtcSignalingMessage): PeerCreationAdmission {
+        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCapPolicy, message);
+        const admission = answer.kind === 'answered' ? answer.admission : undefined;
+        if (admission?.retryInboundSignal) {
+            this.observeSignalRoute('policy-retry', message, undefined);
+            return admission;
+        }
+        if (admission?.allowed && this.peerEntryByPeerId.size < this.maxPeerConnections()) {
+            this.observeSignalRoute('policy-allow', message, undefined);
+            return admission;
+        }
+        this.observeSignalRoute('peer-cap', message, undefined);
+        return { allowed: false, reason: 'max-peer-connections' };
+    }
+
+    /** A creation policy's own answer for `signal`; each caller records its own route. */
+    private readInboundPeerCreationAdmission(
+        policy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined,
+        signal: QRtcSignalingMessage
+    ): InboundPeerCreationPolicyAnswer {
+        if (!policy) {
             return { kind: 'no-policy' };
         }
         try {
-            const decision = this.inboundPeerCreationPolicy({
+            const decision = policy({
                 peerId: signal.fromId,
                 signalType: signal.signalType,
                 message: signal

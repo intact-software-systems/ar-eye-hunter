@@ -95,11 +95,20 @@ export interface ConnectionCapSpendInput {
     readonly desiredPeerIds: ReadonlySet<PeerId>;
     /** Desired peers wanted only through an active room's planned layout. */
     readonly earlyDialPeerIds: ReadonlySet<PeerId>;
-    /** Known peers kept after they stopped being desired. */
+    /** Known peers kept after they stopped being accepted. */
     readonly retainedPeers: readonly CapRetainedPeer[];
     /** Desired peers not yet known that this pass may dial, in dial order. */
     readonly candidatePeerIds: readonly PeerId[];
     readonly inboundPeerId: PeerId | null;
+}
+
+/** `held` waits for a free slot; `refused` is the cap's plain refusal. */
+export type ConnectionCapInboundVerdict = 'admitted' | 'held' | 'refused';
+
+export interface ConnectionCapInbound {
+    readonly verdict: ConnectionCapInboundVerdict;
+    /** Early peers to close so the offer fits. */
+    readonly closePeerIds: readonly PeerId[];
 }
 
 export interface ConnectionCapSpend {
@@ -109,55 +118,110 @@ export interface ConnectionCapSpend {
     readonly dialPeerIds: readonly PeerId[];
     /** Early candidates no free slot holds; they wait for a slot to free. */
     readonly deferredPeerIds: readonly PeerId[];
-    /** What closes, in close order, to bring the known peers (and the inbound one) within the cap. */
+    /** What closes, in close order, to bring the known peers within the cap. */
     readonly evictPeerIds: readonly PeerId[];
-    /** `false` when there is no inbound offer. */
-    readonly inboundAdmitted: boolean;
+    /** `refused` when there is no inbound offer. */
+    readonly inbound: ConnectionCapInbound;
+}
+
+export interface RetentionsEndedByDesireInput {
+    readonly desiredPeerIds: ReadonlySet<PeerId>;
+    readonly earlyDialPeerIds: ReadonlySet<PeerId>;
+    readonly retainedPeerConnections: ReadonlyMap<
+        PeerId,
+        CapRetainedPeer & { readonly expiresAtEpochMs: number | null; }
+    >;
+    readonly nowEpochMs: number;
 }
 
 /**
- * The one ranking every spend of the peer-connection cap reads. Accepted peers always fit: they close early peers
- * first (retained ones oldest first, then desired ones), then edges retained from a replaced accepted layout, oldest
- * first. An early peer takes only a slot that is free after every known peer and every accepted candidate, and never
- * closes anything. With no early peer every answer is the cap rule that applied before early dialling.
+ * The retentions that end because their peer is desired again. A replaced accepted layout's edge that a planned layout
+ * names again keeps its retention, and so its rank, until its grace ends; it then stays connected as an early peer.
+ */
+export function selectRetentionsEndedByDesire(input: RetentionsEndedByDesireInput): readonly PeerId[] {
+    return Array.from(input.desiredPeerIds).filter((peerId) => {
+        const retained = input.retainedPeerConnections.get(peerId);
+        const replacedEdgeInGrace = retained !== undefined && !retained.earlyDial &&
+            (retained.expiresAtEpochMs ?? 0) > input.nowEpochMs;
+        return !(replacedEdgeInGrace && input.earlyDialPeerIds.has(peerId));
+    });
+}
+
+interface CapClosingOrder {
+    /** Retained early peers oldest first, then desired early peers. */
+    readonly earlyPeerIds: readonly PeerId[];
+    /** Edges retained from a replaced accepted layout, oldest first, even while a planned layout names them again. */
+    readonly replacedPeerIds: readonly PeerId[];
+}
+
+/**
+ * The one ranking every spend of the peer-connection cap reads. Accepted peers always fit: outbound they close early
+ * peers first (retained ones oldest first, then desired ones), then edges retained from a replaced accepted layout,
+ * oldest first; an inbound accepted offer at a full cap closes early peers only, and is refused as before when there
+ * are too few. An early peer takes only a slot that is free after every known peer and every accepted candidate, and
+ * never closes anything. With no early peer every answer is the cap rule that applied before early dialling.
  */
 export function computeConnectionCapSpend(input: ConnectionCapSpendInput): ConnectionCapSpend {
-    const isEarly = (peerId: PeerId): boolean => input.earlyDialPeerIds.has(peerId);
-    const knownAcceptedCount = Array.from(input.knownPeerIds)
-        .filter((peerId) => input.desiredPeerIds.has(peerId) && !isEarly(peerId))
-        .length;
-    const acceptedCandidates = input.candidatePeerIds.filter((peerId) => !isEarly(peerId));
-    const earlyCandidates = input.candidatePeerIds.filter(isEarly);
+    const isAccepted = (peerId: PeerId): boolean =>
+        input.desiredPeerIds.has(peerId) && !input.earlyDialPeerIds.has(peerId);
+    const knownAcceptedCount = Array.from(input.knownPeerIds).filter(isAccepted).length;
+    const acceptedCandidates = input.candidatePeerIds.filter(isAccepted);
+    const earlyCandidates = input.candidatePeerIds.filter((peerId) => !isAccepted(peerId));
     const freeSlotCount = Math.max(0, input.maxPeerConnections - input.knownPeerIds.size - acceptedCandidates.length);
-    const inboundPeerId = input.inboundPeerId;
-    const inboundAccepted = inboundPeerId !== null && input.desiredPeerIds.has(inboundPeerId) &&
-        !isEarly(inboundPeerId);
-    const inboundSlotCount = inboundPeerId !== null && inboundAccepted && !input.knownPeerIds.has(inboundPeerId)
-        ? 1
-        : 0;
+    const closingOrder = computeCapClosingOrder(input, isAccepted);
+    const overflow = input.knownPeerIds.size - input.maxPeerConnections;
 
     return {
         acceptedDialBudget: Math.max(0, input.maxPeerConnections - knownAcceptedCount),
         dialPeerIds: [...acceptedCandidates, ...earlyCandidates.slice(0, freeSlotCount)],
         deferredPeerIds: earlyCandidates.slice(freeSlotCount),
-        evictPeerIds: computeEvictPeerIds(input, input.knownPeerIds.size + inboundSlotCount),
-        inboundAdmitted: inboundAccepted || (inboundPeerId !== null && isEarly(inboundPeerId) && freeSlotCount > 0)
+        evictPeerIds: overflow <= 0
+            ? []
+            : [...closingOrder.earlyPeerIds, ...closingOrder.replacedPeerIds].slice(0, overflow),
+        inbound: computeCapInbound({ input, isAccepted, freeSlotCount, closingOrder })
     };
 }
 
-function computeEvictPeerIds(input: ConnectionCapSpendInput, occupiedSlotCount: number): readonly PeerId[] {
-    const overflow = occupiedSlotCount - input.maxPeerConnections;
-    if (overflow <= 0) {
-        return [];
+interface CapInboundInput {
+    readonly input: ConnectionCapSpendInput;
+    readonly isAccepted: (peerId: PeerId) => boolean;
+    readonly freeSlotCount: number;
+    readonly closingOrder: CapClosingOrder;
+}
+
+function computeCapInbound(inbound: CapInboundInput): ConnectionCapInbound {
+    const { input } = inbound;
+    const inboundPeerId = input.inboundPeerId;
+    if (inboundPeerId === null || !input.desiredPeerIds.has(inboundPeerId)) {
+        return { verdict: 'refused', closePeerIds: [] };
     }
+    if (!inbound.isAccepted(inboundPeerId)) {
+        return { verdict: inbound.freeSlotCount > 0 ? 'admitted' : 'held', closePeerIds: [] };
+    }
+    const overflow = input.knownPeerIds.size + (input.knownPeerIds.has(inboundPeerId) ? 0 : 1) -
+        input.maxPeerConnections;
+    if (overflow <= 0) {
+        return { verdict: 'admitted', closePeerIds: [] };
+    }
+    return inbound.closingOrder.earlyPeerIds.length >= overflow
+        ? { verdict: 'admitted', closePeerIds: inbound.closingOrder.earlyPeerIds.slice(0, overflow) }
+        : { verdict: 'refused', closePeerIds: [] };
+}
+
+function computeCapClosingOrder(
+    input: ConnectionCapSpendInput,
+    isAccepted: (peerId: PeerId) => boolean
+): CapClosingOrder {
     const retained = input.retainedPeers
-        .filter((peer) => input.knownPeerIds.has(peer.peerId) && !input.desiredPeerIds.has(peer.peerId))
+        .filter((peer) => input.knownPeerIds.has(peer.peerId) && !isAccepted(peer.peerId))
         .sort((left, right) => left.retainedOrder - right.retainedOrder);
+    const retainedPeerIds = new Set(retained.map((peer) => peer.peerId));
     const knownEarlyPeerIds = Array.from(input.knownPeerIds)
-        .filter((peerId) => input.desiredPeerIds.has(peerId) && input.earlyDialPeerIds.has(peerId));
-    return [
-        ...retained.filter((peer) => peer.earlyDial).map((peer) => peer.peerId),
-        ...knownEarlyPeerIds,
-        ...retained.filter((peer) => !peer.earlyDial).map((peer) => peer.peerId)
-    ].slice(0, overflow);
+        .filter((peerId) =>
+            input.desiredPeerIds.has(peerId) && input.earlyDialPeerIds.has(peerId) && !retainedPeerIds.has(peerId)
+        );
+    return {
+        earlyPeerIds: [...retained.filter((peer) => peer.earlyDial).map((peer) => peer.peerId), ...knownEarlyPeerIds],
+        replacedPeerIds: retained.filter((peer) => !peer.earlyDial).map((peer) => peer.peerId)
+    };
 }
