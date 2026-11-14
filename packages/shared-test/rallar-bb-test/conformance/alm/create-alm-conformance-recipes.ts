@@ -397,7 +397,7 @@ function toStepInput(
 
 function toDefinitionMessages(definition: AlmConformanceScenarioDefinition): AlmConformanceMessages {
     return definition.startGrants === undefined
-        ? { messageSelector: definition.messageSelector }
+        ? { messageSelector: definition.messageSelector, topic: definition.topic }
         : { messageSelector: definition.messageSelector, startGrants: definition.startGrants };
 }
 

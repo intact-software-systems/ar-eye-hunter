@@ -145,16 +145,19 @@ export interface AlmConformanceStartGrant {
 /**
  * A cell's messages. Without a `messageSelector`, each connect subscribes the scenario's own typed channel; with one,
  * every connect subscribes its lanes to that topic instead, so its pages hear the server's own publications there.
- * Exactly when the topic is granted, the cell also declares the permissions it starts from.
+ * Exactly when the topic is granted, the cell also declares the permissions it starts from. A cell that does not grant
+ * its topic may declare that its typed channel publishes and listens on the world topic; absent, it uses the room topic.
  */
 export type AlmConformanceMessages =
     | {
         readonly messageSelector?: AlmConformanceMessageSelector & { readonly access?: undefined; };
         readonly startGrants?: undefined;
+        readonly topic?: 'world';
     }
     | {
         readonly messageSelector: AlmConformanceMessageSelector & { readonly access: 'granted'; };
         readonly startGrants: readonly AlmConformanceStartGrant[];
+        readonly topic?: undefined;
     };
 
 /** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */

@@ -7,6 +7,7 @@ import type {
 } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RESPONSE_MARGIN_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
+import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
@@ -76,10 +77,10 @@ function toPrincipalUpsertCommands(
 
 function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): RallarBlackBoxTestHttpRequestCommand {
     const { applicationId, workspaceId } = sender.input.group;
-    const commandId = toCommandId(sender, `profile-${n}`);
+    const requestSuffix = toPrincipalWriteRequestSuffix(sender.input.carrier, sender.scenarioKey, n);
     return {
         kind: 'http.request',
-        commandId,
+        commandId: toCommandId(sender, `profile-${n}`),
         timeoutMs: toBudgetMs(PRINCIPAL_WRITE_TIMEOUT_MS, sender.input.deadlineMs),
         metadata: {
             purpose: 'Write the signed-in principal, so the server publishes a client-state event to its sessions.'
@@ -87,7 +88,7 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
         request: {
             method: 'PUT',
             path: `/api/state/apps/${applicationId}/workspaces/${workspaceId}/clients/{auth.clientId}/principal` +
-                `/requests/${commandId}`,
+                `/requests/alm-conformance-{runtimeIdentity}-${requestSuffix}`,
             body: {
                 username: '{auth.username}',
                 displayName: `server-ordered-entry ${n}`,
@@ -97,6 +98,11 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
         },
         response: { body: 'json', acceptedStatusCodes: [200, 201] }
     };
+}
+
+/** What every page's copy of a write's event carries of its request id: the runtime identity is the writer page's own. */
+function toPrincipalWriteRequestSuffix(carrier: AlmConformanceCarrier, scenarioKey: string, n: number): string {
+    return `${carrier}-${scenarioKey}-sender-profile-${n}`;
 }
 
 /**
@@ -150,9 +156,10 @@ function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTe
             connection: toConnectionName(step),
             payloadFields: {
                 'data.topicId': AppTopics.clientStateEvent,
-                'data.payload.principalId': toPrincipalPlaceholder('sender'),
-                'data.payload.requestId': toCommandId({ ...step, role: 'sender' }, `profile-${PRINCIPAL_WRITE_COUNT}`)
-            }
+                'data.payload.principalId': toPrincipalPlaceholder('sender')
+            },
+            payloadPath: 'data.payload.requestId',
+            contains: `-${toPrincipalWriteRequestSuffix(step.input.carrier, step.scenarioKey, PRINCIPAL_WRITE_COUNT)}`
         },
         timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
     };

@@ -18,6 +18,10 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const PREFIX = 'alm-ws-server-ordered-entry';
 
+function toWriteRequestId(n: number): string {
+    return `alm-conformance-{runtimeIdentity}-ws-server-ordered-entry-sender-profile-${n}`;
+}
+
 function readServerOrderedEntry(): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput('ws'))
         .find((candidate) => candidate.scenarioId === 'server-ordered-entry');
@@ -61,7 +65,7 @@ describe('ALM server-ordered-entry cell', () => {
             command.kind === 'http.request' && command.request.path?.includes('/principal/') === true ? [command.request.path] : []
         );
         expect(writes).toEqual(
-            [1, 2, 3].map((n) => `/api/state/apps/app/workspaces/ws/clients/{auth.clientId}/principal/requests/${PREFIX}-sender-profile-${n}`)
+            [1, 2, 3].map((n) => `/api/state/apps/app/workspaces/ws/clients/{auth.clientId}/principal/requests/${toWriteRequestId(n)}`)
         );
         for (const n of [1, 2, 3]) {
             expect(findCommand(sender, `${PREFIX}-sender-profile-${n}`)).toMatchObject({
@@ -98,9 +102,10 @@ describe('ALM server-ordered-entry cell', () => {
                     connection: role === 'sender' ? 'sender' : 'receiver',
                     payloadFields: {
                         'data.topicId': 'client-state.event',
-                        'data.payload.principalId': 'principal-alice',
-                        'data.payload.requestId': `${PREFIX}-sender-profile-3`
+                        'data.payload.principalId': 'principal-alice'
                     },
+                    payloadPath: 'data.payload.requestId',
+                    contains: '-ws-server-ordered-entry-sender-profile-3',
                     sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 timeoutMs: 27_000
@@ -147,6 +152,29 @@ describe('ALM server-ordered-entry cell', () => {
                 timeoutMs: 5_000
             });
         }
+    });
+
+    it('no wait on a principal-scoped track names an absolute seq', () => {
+        const scenario = readServerOrderedEntry();
+        const seqConstraints = [scenario.sender, scenario.receiver, scenario.sibling!].flatMap((recipe) =>
+            recipe.commands.flatMap((command) => {
+                if (command.kind === 'wait') {
+                    const fields = Object.entries({ ...command.match.payloadFields, ...command.match.payloadMinimums });
+                    return fields.filter(([path]) => /seq$/i.test(path)).map(([path, value]) => `${command.commandId} ${path}=${value}`);
+                }
+                return command.kind === 'assert' && /seq$/i.test(command.source)
+                    ? [`${command.commandId} ${command.operator} ${command.expected}`]
+                    : [];
+            })
+        );
+
+        expect(seqConstraints.toSorted()).toEqual([
+            `${PREFIX}-receiver-entered data.priorSeq=0`,
+            `${PREFIX}-sender-entered data.priorSeq=0`,
+            `${PREFIX}-sender-entered-above-first gt 1`,
+            `${PREFIX}-sibling-entered data.priorSeq=0`
+        ]);
+        expect(seqConstraints.filter((constraint) => constraint.includes('data.seq'))).toEqual([]);
     });
 
     it('validates every command against the recipe schema and the control protocol', () => {

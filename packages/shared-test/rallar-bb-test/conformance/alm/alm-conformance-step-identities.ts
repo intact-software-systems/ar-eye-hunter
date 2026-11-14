@@ -17,12 +17,15 @@ const ALM_CONFORMANCE_WORLD_TOPIC_ID = 'app.alm-conformance.world';
 /** The granted topic the lanes' API profiles install; only a session that elected to receive it is sent its messages. */
 export const ALM_CONFORMANCE_GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 
-/** A scenario whose selector is granted publishes and listens on that selector's topic. */
+/**
+ * A scenario whose selector is granted publishes and listens on that selector's topic; one that declares the world
+ * topic, on it; any other on the room topic.
+ */
 export function toScenarioTopicId(step: AlmConformanceStepInput): string {
     if (step.messages.messageSelector?.access === 'granted') {
         return step.messages.messageSelector.topicId;
     }
-    return step.scenarioId === 'world-routing' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
+    return step.messages.topic === 'world' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
 }
 
 /** A world send names no room, so it publishes on the world topic; any other send on its scenario's topic. */

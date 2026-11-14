@@ -21,6 +21,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 export interface Permissions {
     readonly publish: boolean;
@@ -64,16 +65,12 @@ const STATES: readonly Held[] = [
     { ...BOTH, row: true }
 ];
 
-function toFlatCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => command.kind === 'loop' ? [command, ...toFlatCommands(command.commands)] : [command]);
-}
-
 export function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean {
     return command.metadata?.cellStartState === ALM_CELL_START_STATE_METADATA.cellStartState;
 }
 
 export function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readonly GrantRequest[] {
-    return toFlatCommands(commands).flatMap((command): readonly GrantRequest[] => {
+    return toNestedCommands(commands).flatMap((command): readonly GrantRequest[] => {
         const request = command.kind === 'http.request' ? (command as RallarBlackBoxTestHttpRequestCommand).request : undefined;
         const match = request?.path?.match(/\/publication-grants\/([^/]+)\/(grant|revoke)\/requests\//);
         const body = request?.body as Permissions | undefined;

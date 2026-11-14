@@ -6,7 +6,11 @@ import {
     ALM_CONFORMANCE_RTC_CARRIERS,
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toOrderingKey } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts';
+import type {
+    AlmConformanceStepInput,
+    CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -554,5 +558,22 @@ describe('ordering-resync authors a real gap over the RTC carriers', () => {
             'relay-resync-nack',
             'stats'
         ]);
+    });
+});
+
+describe('ALM ordering key', () => {
+    it('two scenario keys of one scenario id name two ordering keys', () => {
+        const toStep = (scenarioKey: string): AlmConformanceStepInput => ({
+            input: toConformanceInput('rtc'),
+            scenarioId: 'ordering-resync',
+            scenarioKey,
+            role: 'sender',
+            roles: ['sender', 'receiver'],
+            messages: {},
+            connect: undefined
+        });
+
+        expect(toOrderingKey(toStep('ordering-resync'))).toBe('alm-rtc-ordering-resync');
+        expect(toOrderingKey(toStep('ordering-resync-twin'))).toBe('alm-rtc-ordering-resync-twin');
     });
 });

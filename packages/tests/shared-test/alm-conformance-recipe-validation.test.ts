@@ -19,6 +19,7 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 /**
  * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
@@ -317,6 +318,32 @@ describe('ALM conformance recipe validation', () => {
                 }
             }
         }
+    });
+
+    it('every mutation request id of every cell carries {runtimeIdentity}', () => {
+        const withoutIdentity: string[] = [];
+        let mutations = 0;
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const cellSettle of [undefined, 'barriered'] as const) {
+                const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
+                for (const scenario of createAlmConformanceRecipes(input)) {
+                    for (const recipe of toPageRecipes(scenario)) {
+                        for (const command of toNestedCommands(recipe.commands)) {
+                            if (command.kind !== 'http.request' || command.request.method === 'GET') {
+                                continue;
+                            }
+                            mutations += 1;
+                            if (!command.request.path!.split('/').at(-1)!.includes('{runtimeIdentity}')) {
+                                withoutIdentity.push(command.commandId!);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        expect(mutations).toBeGreaterThan(0);
+        expect(withoutIdentity).toEqual([]);
     });
 
     it('accepts every command over the control protocol', () => {

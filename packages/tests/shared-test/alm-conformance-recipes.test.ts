@@ -204,17 +204,21 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
  * A message wait matches no typeId of its own, so it names its pair through what it matches: the marker and carrier
  * of the payload it equals (a cue marker is the pair's key with `-cues`), the pair's typeId as a payload field or in
  * the text it contains, or a trace or request id field naming an identity one of the pair's roles authored
- * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes).
+ * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes), or a trace or request id path whose
+ * contained text names `-<carrier>-<key>-<role>-`: a page cannot name another agent's runtime identity, which leads the
+ * id.
  */
 function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: AlmConformanceCarrier, key: string): boolean {
     const typeId = `alm.conformance.${carrier}.${key}`;
     const equals = match.equals;
     const fields = Object.entries(match.payloadFields ?? {});
     const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
+    const authoredSuffixes = ALM_CONFORMANCE_ROLES.map((role) => `-${carrier}-${key}-${role}-`);
     return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
         fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
-        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id)));
+        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id))) ||
+        (/\.(traceId|requestId)$/u.test(match.payloadPath ?? '') && authoredSuffixes.some((suffix) => match.contains?.includes(suffix) === true));
 }
 
 /** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */

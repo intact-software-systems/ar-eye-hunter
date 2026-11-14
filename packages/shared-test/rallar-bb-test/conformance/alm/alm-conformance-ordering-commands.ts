@@ -12,6 +12,7 @@ import {
     toSendCommand
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
 /** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
 export function toOrderedSendCommands(
@@ -67,7 +68,7 @@ export function toSettledStateCommands(
 }
 
 export function toOrderingKey(sender: AlmConformanceStepInput): string {
-    return `alm-${sender.input.carrier}-${sender.scenarioId}`;
+    return toAlmCellCommandPrefix(sender.input.carrier, sender.scenarioKey);
 }
 
 /**

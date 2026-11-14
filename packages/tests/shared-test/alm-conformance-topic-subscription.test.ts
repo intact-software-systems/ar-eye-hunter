@@ -29,6 +29,7 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import { describeDeclaredStartStates, PERMISSIONS, type DeclaredState, type StartStateTable } from './describe-declared-start-states.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const FOUR_ROLE_IDS = [
@@ -72,15 +73,10 @@ function toRoleRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBo
     return scenario.roles.flatMap((role) => toAlmConformanceRoleRecipe(scenario, role) ?? []);
 }
 
-/** Every command a recipe runs, the children of each poll included. */
-function toFlatCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => command.kind === 'loop' ? [command, ...toFlatCommands(command.commands)] : [command]);
-}
-
 function toGrantRequests(
     recipe: RallarBlackBoxTestRecipe
 ): readonly Pick<RallarBlackBoxTestHttpRequestCommand['request'], 'path' | 'body'>[] {
-    return toFlatCommands(recipe.commands).flatMap((command) =>
+    return toNestedCommands(recipe.commands).flatMap((command) =>
         command.kind === 'http.request' && command.request.path?.includes('/publication-grants/')
             ? [{ path: command.request.path, body: command.request.body }]
             : []
@@ -89,7 +85,7 @@ function toGrantRequests(
 
 /** A request id as the page resolves it: a 13-character runtime identity and a poll's first attempt. */
 function toResolvedRequestIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
-    return toFlatCommands(recipe.commands).flatMap((command) => {
+    return toNestedCommands(recipe.commands).flatMap((command) => {
         const path = command.kind === 'http.request' ? command.request.path : undefined;
         const requestId = path?.split('/requests/')[1];
         return requestId === undefined
@@ -224,7 +220,7 @@ describe('ALM topic subscription conformance', () => {
     it('publisher-b recipes carry the sender commands', () => {
         const [delivery] = toTopicSubscriptionScenarios('ws');
         const sends = (recipe: RallarBlackBoxTestRecipe | undefined) =>
-            toFlatCommands(recipe?.commands ?? []).flatMap((command) =>
+            toNestedCommands(recipe?.commands ?? []).flatMap((command) =>
                 command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.topicId === GRANTED_TOPIC_ID
                     ? [command.payload]
                     : []
@@ -297,13 +293,13 @@ describe('ALM topic subscription conformance', () => {
     it('keeps the successor\'s election, which the replaced owner page\'s later row reads name', () => {
         const successor = toTopicSubscriptionScenarios('ws').find(({ laneFamily }) => laneFamily === 'same-context');
 
-        expect(toFlatCommands(successor?.successor?.commands ?? []).filter(({ kind }) => kind === 'messages.unsubscribe'))
+        expect(toNestedCommands(successor?.successor?.commands ?? []).filter(({ kind }) => kind === 'messages.unsubscribe'))
             .toEqual([]);
     });
 
     it('pins the revoke-disconnected sibling to nothing received and a refused re-assertion, and the receiver to both', () => {
         const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
-        const sibling = toFlatCommands(scenario?.sibling?.commands ?? []);
+        const sibling = toNestedCommands(scenario?.sibling?.commands ?? []);
         const receiver = scenario?.receiver.commands ?? [];
         const publicationWaits = (commands: readonly RallarBlackBoxTestCommand[]) =>
             commands.flatMap((command) => command.kind === 'wait' && command.commandId?.includes('-publication-') ? [command.absent === true] : []);
@@ -888,8 +884,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
             expect(receiver.commands.map(({ commandId }) => commandId)).toContain(gate);
             expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, scenario.continuation!.recipe)).toMatchObject({ ok: true });
             // The continuation runs on the sibling's open page, so its ids stay apart from the first recipe's.
-            const continuation = toFlatCommands(scenario.continuation!.recipe.commands);
-            const firstIds = new Set(toFlatCommands(requireRoleRecipe(scenario, 'sibling').commands).map(({ commandId }) => commandId));
+            const continuation = toNestedCommands(scenario.continuation!.recipe.commands);
+            const firstIds = new Set(toNestedCommands(requireRoleRecipe(scenario, 'sibling').commands).map(({ commandId }) => commandId));
             expect(continuation.filter(({ commandId }) => firstIds.has(commandId))).toEqual([]);
             expect(continuation.map(({ kind }) => kind)).not.toContain('rtc.connect');
         }

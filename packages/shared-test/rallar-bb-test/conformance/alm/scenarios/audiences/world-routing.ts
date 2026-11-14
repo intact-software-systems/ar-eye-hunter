@@ -41,6 +41,7 @@ export const worldRouting: AlmConformanceScenarioDefinition = {
     carriers: ALM_CONFORMANCE_CARRIERS,
     roles: ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
     laneFamily: 'same-principal',
+    topic: 'world',
     toSenderCommands: toWorldSenderCommands,
     toRecipientCommands: (recipient) =>
         recipient.input.carrier === 'rtc'
