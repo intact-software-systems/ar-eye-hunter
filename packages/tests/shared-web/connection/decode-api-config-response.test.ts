@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
 import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
+import { DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS } from '@shared/services/web-rtc-group-manager.ts';
 
 const API_URL = new URL('https://api.example.test/api/config');
 
@@ -40,6 +41,10 @@ describe('the /api/config boundary decoder', () => {
         const value = { ...SERVED, rtcReplacedLayoutOverlapMs: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS + 1 };
 
         expect(decodeApiConfigResponse(value, API_URL).left).toBe(NO_OVERLAP);
+    });
+
+    it('accepts at most the connection grace that keeps a replaced layout\'s edges open', () => {
+        expect(MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS).toBeLessThanOrEqual(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS);
     });
 
     it.each([-1, 1.5, '7000', null])('refuses the overlap %j, which is not a whole number of milliseconds in range', (overlap) => {
