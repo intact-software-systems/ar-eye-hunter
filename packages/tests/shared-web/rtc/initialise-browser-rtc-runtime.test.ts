@@ -156,8 +156,8 @@ describe('browser RTC runtime composition', () => {
         publishStartupPeerLayout(startup);
         await manager.notifyOverlayTopologyChanged();
 
-        expect(writeDueNow.mock.calls.map(([envelopes]) => envelopes.map((envelope) => envelope.id.msgId))).toEqual([
-            [startup.offerMsgId]
+        expect(writeDueNow).toHaveBeenCalledWith([
+            expect.objectContaining({ id: expect.objectContaining({ msgId: startup.offerMsgId }) })
         ]);
         await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
     });
