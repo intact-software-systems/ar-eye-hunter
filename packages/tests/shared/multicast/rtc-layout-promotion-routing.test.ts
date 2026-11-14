@@ -280,7 +280,7 @@ describe('a promotion a browser learns of snapshot first, before the promoted la
         expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
     });
 
-    it('a promoted layout that never arrives leaves nothing in force once the overlap has passed', async () => {
+    it('a promoted layout that arrives after the overlap has passed leaves nothing in force', async () => {
         const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
         const frame = createPositionFrame(100, 'at-least-once');
         const relayed = await relayOverPreviousLayout(frame, snapshot);

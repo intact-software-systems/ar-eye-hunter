@@ -74,7 +74,6 @@ interface AcceptedLayoutChange {
     readonly held: OverlayInfo | undefined;
     /** The replaced layouts recorded while `held` was accepted, newest first. */
     readonly recorded: readonly OverlayLayoutTransition[];
-    /** The live server layout that takes the accepted slot; `null` when the taker is not one. */
     readonly taker: AcceptedLayoutTaker | null;
     readonly nowEpochMs: number;
     readonly manager?: RepositoryManager;
@@ -595,10 +594,6 @@ function reportOverlayDrop(
     return outcome;
 }
 
-/**
- * Removes an accepted layout the group snapshot no longer names. When the snapshot names a live layout that dominates
- * it, the removal records the replacement the arrival of that layout completes; otherwise it clears the history.
- */
 function removeMismatchedAcceptedOverlayAndRecordTransition(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
