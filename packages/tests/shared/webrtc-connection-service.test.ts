@@ -428,7 +428,48 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(fixture.service.readPeer('y-peer')).toBeDefined();
         expect(fixture.service.readPeer('z-peer')).toBeUndefined();
     });
+
+    it('asks an admission written as a class through its own methods, below and at the cap', async () => {
+        const admission = new RecordingPeerAdmission();
+        const fixture = createFixture({ ...createInput(), maxPeerConnections: 1 }, admission);
+        await fixture.service.connectSignaler();
+
+        await fixture.receive(offer());
+        await fixture.receive(offer('another-peer'));
+
+        expect(admission.askedPeerIds).toEqual(['z-peer', 'another-peer']);
+        expect(fixture.service.knownPeerIds()).toEqual(['another-peer']);
+    });
 });
+
+/** Admits every new peer, making room at a full cap by closing the peer it admitted before. */
+class RecordingPeerAdmission implements WebRtcConnectionService.PeerAdmission {
+    readonly askedPeerIds: string[] = [];
+
+    decideInbound(signal: WebRtcConnectionService.InboundPeerCreationPolicyInput): 'allow' {
+        this.askedPeerIds.push(signal.peerId);
+        return 'allow';
+    }
+
+    decideInboundAtCap(
+        signal: WebRtcConnectionService.InboundPeerCreationPolicyInput,
+        peers: WebRtcConnectionService.ClosableAdmissionPeers
+    ): 'allow' {
+        for (const peerId of this.askedPeerIds) {
+            peers.disconnectPeer(peerId, {});
+        }
+        this.askedPeerIds.push(signal.peerId);
+        return 'allow';
+    }
+
+    wouldAdmitInboundAtCap(): boolean {
+        return true;
+    }
+
+    decideOutbound(): 'allow' {
+        return 'allow';
+    }
+}
 
 describe('WebRtcConnectionService peer and lane lifecycle', () => {
     it.each([false, true])('reuses the native peer when creation observers ensure it again (deny later dials: %s)', async (denyLaterDials) => {

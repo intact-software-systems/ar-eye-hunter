@@ -656,7 +656,7 @@ export class WebRtcConnectionService {
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
             return !this.attemptBudget.wouldRefuse(signal.fromId) && this.wouldPeerCapPolicyAdmit(signal);
         }
-        const answer = this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInbound, signal);
+        const answer = this.readInboundPeerCreationAdmission(signal, 'below-cap');
         return answer.kind === 'answered' && answer.admission.allowed;
     }
 
@@ -690,7 +690,7 @@ export class WebRtcConnectionService {
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
             return this.shouldCreatePeerAtPeerCap(message);
         }
-        const answer = this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInbound, message);
+        const answer = this.readInboundPeerCreationAdmission(message, 'below-cap');
         switch (answer.kind) {
             case 'threw':
                 this.observeSignalRoute('policy-threw', message, undefined);
@@ -725,7 +725,7 @@ export class WebRtcConnectionService {
     private shouldCreatePeerAtPeerCap(message: QRtcSignalingMessage): PeerCreationAdmission {
         const answer = this.attemptBudget.wouldRefuse(message.fromId)
             ? undefined
-            : this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInboundAtCap, message);
+            : this.readInboundPeerCreationAdmission(message, 'at-cap');
         if (answer?.kind === 'threw') {
             console.error(`Inbound RTC peer cap policy failed for ${message.fromId}`, answer.error);
         }
@@ -742,13 +742,17 @@ export class WebRtcConnectionService {
         return { allowed: false, reason: 'max-peer-connections' };
     }
 
-    /** An inbound admission decision's own answer for `signal`; each caller records its own route. */
+    /** The admission's own answer for `signal` below or at the cap; each caller records its own route. */
     private readInboundPeerCreationAdmission(
-        decide: WebRtcConnectionService.PeerAdmission['decideInbound'],
-        signal: QRtcSignalingMessage
+        signal: QRtcSignalingMessage,
+        cap: 'below-cap' | 'at-cap'
     ): InboundPeerCreationPolicyAnswer {
+        const { peerAdmission } = this.dependencies;
         try {
-            const decision = decide(toInboundPeerCreationPolicyInput(signal), this);
+            const input = toInboundPeerCreationPolicyInput(signal);
+            const decision = cap === 'at-cap'
+                ? peerAdmission.decideInboundAtCap(input, this)
+                : peerAdmission.decideInbound(input, this);
             return { kind: 'answered', admission: this.toPeerCreationAdmission(decision) };
         }
         catch (caught) {
