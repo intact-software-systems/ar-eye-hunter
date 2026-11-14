@@ -80,7 +80,7 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits on every page for the last write, its entry at prior 0 on the sender principal track from its own cell\'s history, and no before-entry; the sender above seq 1', () => {
+    it('waits on every page for the last write, its entry at prior 0 on the sender principal track from the page\'s history, and no before-entry; the sender above seq 1', () => {
         const scenario = readServerOrderedEntry();
         const expectations = [
             ['sender', scenario.sender, { aboveFirstSeq: true }],
@@ -122,10 +122,11 @@ describe('ALM server-ordered-entry cell', () => {
                         'data.kind': 'ordering-position',
                         'data.status': 'entered',
                         'data.priorSeq': 0
-                    },
-                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
+                    }
                 },
-                timeoutMs: 27_000
+                timeoutMs: 27_000,
+                // The page entered the track at its first copy, in whichever cell of the family ran first.
+                metadata: { historyFrom: 'page' }
             });
             if (entry.aboveFirstSeq) {
                 // The principal's track carries every earlier lane connect of it on the same API, so only "above 1" is stable.

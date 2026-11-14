@@ -23,8 +23,8 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toWaitCommands } from './to-wait-commands.ts';
 
 /**
- * One of the two classes of wait that read the page's history (`toCellHistoryMarkedCommands`; the settle's head wait
- * is the other): a store's recovery that a fresh document (a successor page, or the page after `agent.reload`) reports
+ * One of the three classes of wait that read the page's history (`toCellHistoryMarkedCommands`; the settle's head wait
+ * is another): a store's recovery that a fresh document (a successor page, or the page after `agent.reload`) reports
  * during its first connect, before that connect's result opens the cell's mark.
  */
 const FRESH_DOCUMENT_RECOVERY_WAITS = [
@@ -33,6 +33,18 @@ const FRESH_DOCUMENT_RECOVERY_WAITS = [
     'delivery-reload-sender-recovered-session-inbound',
     'delivery-reload-sender-recovered-original-store'
 ] as const;
+
+/**
+ * Another of the three: a page enters a principal's server-ordered track once while its session keeps the track, at
+ * its first copy, in whichever cell of the family that was.
+ */
+const PRINCIPAL_TRACK_ENTRY_WAITS = [
+    'server-ordered-entry-sender-entered',
+    'server-ordered-entry-receiver-entered',
+    'server-ordered-entry-sibling-entered'
+] as const;
+
+const PAGE_HISTORY_WAITS = [...FRESH_DOCUMENT_RECOVERY_WAITS, ...PRINCIPAL_TRACK_ENTRY_WAITS] as const;
 
 const SESSION_PIN_PATTERN = /\{resultCache\.([^}]+)\.value\.sessionId\}/;
 
@@ -70,7 +82,7 @@ function expectPrincipalTrackEntry(wait: RallarBlackBoxTestWaitCommand): void {
     expect(wait.match.contains, wait.commandId).toMatch(/^"trackKey":"\{resultCache\.[^}]+\.contextId\}:\{resultCache\.[^}]+\.senderId\}:$/);
 }
 
-/** An `entered` wait on a track the cell does not key, which a page enters once per connection. */
+/** An `entered` wait on a track the cell does not key may only read the page's history, since the page entered it once. */
 function isFirstContactOutsideTheCell(wait: RallarBlackBoxTestWaitCommand, scenarioKey: string): boolean {
     const fields = wait.match.payloadFields ?? {};
     const entry = fields['data.kind'] === 'ordering-position' && fields['data.status'] === 'entered';
@@ -151,7 +163,12 @@ describe('alm-conformance cell parts', () => {
                             pageHistoryWaits.push(name);
                             expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBeUndefined();
                             expect(validateRallarBlackBoxTestCommand(wait), wait.commandId).toMatchObject({ ok: true });
-                            expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
+                            if ((PRINCIPAL_TRACK_ENTRY_WAITS as readonly string[]).includes(name)) {
+                                expectPrincipalTrackEntry(wait);
+                            }
+                            else {
+                                expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
+                            }
                             continue;
                         }
                         // The one wait that starts later in its own cell: the sibling's removal, read from `armed` on.
@@ -170,10 +187,10 @@ describe('alm-conformance cell parts', () => {
         }
 
         // A further page-history wait is a red test, not a silent drift.
-        expect(new Set(pageHistoryWaits)).toEqual(new Set(FRESH_DOCUMENT_RECOVERY_WAITS));
+        expect(new Set(pageHistoryWaits)).toEqual(new Set(PAGE_HISTORY_WAITS));
     });
 
-    it('an entry wait on a track its cell does not key reads its own cell\'s history, in a room the cell declares its own', () => {
+    it('an entry wait on a track its cell does not key reads the page\'s history, whichever cell entered the track', () => {
         const outsideTheCell: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
@@ -181,18 +198,14 @@ describe('alm-conformance cell parts', () => {
                     const waits = toWaitCommands(scenario.partsByRole[role]!.body)
                         .filter((wait) => isFirstContactOutsideTheCell(wait, scenario.scenarioKey));
                     for (const wait of waits) {
-                        outsideTheCell.push(wait.commandId!);
-                        expectPrincipalTrackEntry(wait);
-                        expect(scenario.room, wait.commandId).toBe('own');
-                        expect(wait.metadata?.historyFrom, wait.commandId).toBeUndefined();
-                        expect(wait.match.sinceCommandIdPrefix, wait.commandId)
-                            .toBe(`alm-${carrier}-${scenario.scenarioKey}-${role}-`);
+                        outsideTheCell.push(wait.commandId!.slice(`alm-${carrier}-`.length));
+                        expect(wait.metadata?.historyFrom, wait.commandId).toBe('page');
                     }
                 }
             }
         }
 
-        expect(outsideTheCell.length).toBeGreaterThan(0);
+        expect(new Set(outsideTheCell)).toEqual(new Set(PRINCIPAL_TRACK_ENTRY_WAITS));
     });
 
     it('the delivery-diagnostics freshness waits read the whole page history', () => {

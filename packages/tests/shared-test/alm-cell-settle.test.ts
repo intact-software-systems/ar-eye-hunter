@@ -404,7 +404,7 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('a barriered role recipe reads the page\'s history only in its head-applied wait and its fresh-document recoveries', () => {
+    it('a barriered role recipe reads the page\'s history only in its head-applied wait, its principal-track entries and its fresh-document recoveries', () => {
         const pageHistoryWaits = new Set<string>();
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
@@ -430,6 +430,7 @@ describe('alm-conformance cell parts', () => {
         expect(pageHistoryWaits).toEqual(
             new Set([
                 'head-applied',
+                'entered',
                 'recovered-original-store',
                 'recovered-checkpoint-store',
                 'recovered-session-inbound'

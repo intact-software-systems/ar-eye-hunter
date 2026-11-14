@@ -353,15 +353,11 @@ describe('the ALM lane plan', () => {
         expect(plan.cells.length).toBeGreaterThan(0);
     });
 
-    it('a cell whose definition declares a room of its own plans one in a family room, and the others plan the family\'s', () => {
-        const declared = toFamilyCatalog('same-principal').filter((scenario) => scenario.room === 'own');
+    it('no same-principal cell declares a room of its own, so the family plans its one room', () => {
         const plan = resolveAlmLanePlan(toPlanInput('same-principal', { rooms: 'family' }));
 
-        expect(declared.map((scenario) => scenario.scenarioKey)).toEqual(['server-ordered-entry']);
-        expect(plan.cells).toEqual(
-            plan.cells.map(({ scenarioKey }) => ({ scenarioKey, room: scenarioKey === 'server-ordered-entry' ? 'cell' : 'family' }))
-        );
-        expect(plan.cellOrder.rooms).toBe('family');
+        expect(toFamilyCatalog('same-principal').filter((scenario) => scenario.room === 'own')).toEqual([]);
+        expect(plan.cells).toEqual(toPlannedCells(plan, 'family'));
     });
 
     it('every four-role cell declares a room of its own, so it plans one whatever the room parameter says', () => {

@@ -21,13 +21,16 @@ export function toWaitHistoryMetadata(
  * Starts every wait of the commands, nested ones included, at the first event of any of its own cell's commands, so no
  * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before
  * the command's result. A wait that already names its own start keeps it, and that start must be a command of its own
- * cell: any other is a programmer error, thrown naming the wait. A wait that declares `historyFrom: 'page'` in its
- * metadata reads the page's whole history, in two classes: a store's recovery that a fresh document reports during
- * its first connect, pinned to that connect's session, so no earlier cell's recovery can match it; and the settle's wait
- * for the room's head, which matches only `held` applications at or above the head's revisions: in a room per cell no
- * earlier cell left one, while in a room the family shares an earlier cell's last `held` event can sit at the head's
- * revisions, since a connect's presence write advances `presenceRevision` only when the room's presence-summary work
- * runs, and `removed` events are not matched. Any other wait must follow at least one of its cell's own commands.
+ * cell: any other is a programmer error, thrown naming the wait. A wait for a fact of something that outlives a cell
+ * reads the page's whole history and declares `historyFrom: 'page'` in its metadata; every other wait reads its cell's
+ * and must follow at least one of its cell's own commands. There are three such facts: a fresh document's first
+ * recovery of a store, pinned to its first connect's session, so no earlier cell's recovery can match it; the room's
+ * applied head the settle waits for, which matches only `held` applications at or above the head's revisions: in a
+ * room no earlier cell used none is left, while in a room the family shares an earlier cell's last `held` event can
+ * sit at the head's revisions, since a connect's presence write advances `presenceRevision` only when the room's
+ * presence-summary work runs, and `removed` events are not matched; and a page's first entry on a principal's
+ * server-ordered track, which the page's session keeps across a closed connection and a change of room, so the page
+ * states it once, in whichever cell ran first, matched on the track of the cell's own arrival.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,

@@ -276,9 +276,16 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
   that names no start of its own carries the role's own command prefix, so it reads only events of
   its own cell. The mark opens at the first event on the page whose `commandId` starts with that
   prefix; that event can come before the command's result. If no event of the prefix exists yet, it opens at the next event recorded. A wait that names its own start must name
-  a command of its own cell, or recipe creation throws. A wait with
-  `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, and a store's
-  recovery that a fresh document reports during its first connect. Once the runtime evicted any
+  a command of its own cell, or recipe creation throws. A wait for a fact of something that outlives
+  a cell carries `metadata.historyFrom: 'page'` and keeps the page's whole history: the head wait
+  above, a store's recovery that a fresh document reports during its first connect, and
+  `server-ordered-entry`'s `entered` on the sender principal's track. A page states that entry once
+  while its session keeps the track: the session's inbound store
+  (`browser-session-inbound:<sessionId>`, `shared-web/browser/al-runtime/browser-al-runtime-identity.ts`)
+  holds the track's position, a `close` command closes the page's sockets and its Rallar connection
+  but not that store, and the next connect restores the same session. So with a room per family, a
+  room of its own or closed connections alike, an earlier cell's entry satisfies the wait, and it
+  does not show that the cell's own connects produced one. Once the runtime evicted any
   event, a wait with a prefix ends `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`, since the first event of
   the command is no longer provable.
 - `payloadMinimums` maps payload paths to floors. A floor is a finite number or exactly one
