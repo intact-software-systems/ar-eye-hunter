@@ -6,3 +6,12 @@ export interface OverlayLayoutTransition {
     readonly replacedBy: GroupLayoutIdentity;
     readonly replacedAtEpochMs: number;
 }
+
+export function isLayoutTransitionInsideWindow(
+    transition: OverlayLayoutTransition,
+    nowMs: number,
+    windowMs: number
+): boolean {
+    const elapsedMs = nowMs - transition.replacedAtEpochMs;
+    return elapsedMs >= 0 && elapsedMs < windowMs;
+}

@@ -2,7 +2,10 @@ import type { ALOverlayLayout } from '../../al-contracts/resolve-al-owned-child-
 import type { OverlayInfo } from '../../api/api-config.ts';
 import type { GroupRef } from '../../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
-import type { OverlayLayoutTransition } from '../../repository/overlay-layout-transition.ts';
+import {
+    isLayoutTransitionInsideWindow,
+    type OverlayLayoutTransition
+} from '../../repository/overlay-layout-transition.ts';
 import { isOverlayIdentity } from '../../repository/to-overlay-layout-identity.ts';
 
 export interface RtcRoomLayoutHistory {
@@ -84,21 +87,14 @@ function resolveReplacedLayoutEdges(
         return NO_REPLACED_LAYOUT_EDGES;
     }
     const overlapMs = input.history.replacedLayoutOverlapMs;
-    const forwards = isInsideWindow(
-        input.nowMs - newest.replacedAtEpochMs,
-        computeReplacedLayoutForwardingMs(overlapMs)
-    );
+    const forwards = isLayoutTransitionInsideWindow(newest, input.nowMs, computeReplacedLayoutForwardingMs(overlapMs));
     const admittedPeerIds = chain
-        .filter((transition) => isInsideWindow(input.nowMs - transition.replacedAtEpochMs, overlapMs))
+        .filter((transition) => isLayoutTransitionInsideWindow(transition, input.nowMs, overlapMs))
         .flatMap((transition) => toALOverlayLayout(transition.replaced, authorizedPeerIdSet).neighborPeerIds);
     return {
         previous: forwards ? toALOverlayLayout(newest.replaced, authorizedPeerIdSet) : null,
         admittedPeerIds
     };
-}
-
-function isInsideWindow(elapsedMs: number, windowMs: number): boolean {
-    return elapsedMs >= 0 && elapsedMs < windowMs;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '../api/api-config.ts';
-import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
+import { isLayoutTransitionInsideWindow, type OverlayLayoutTransition } from './overlay-layout-transition.ts';
 
 /**
  * A memory guard, not a timing bound. Time bounds the history; this count only keeps a clock that never advances, or
@@ -18,10 +18,8 @@ export function computeRecordedLayoutTransitions(
     recorded: readonly OverlayLayoutTransition[],
     transition: OverlayLayoutTransition
 ): readonly OverlayLayoutTransition[] {
-    const nowEpochMs = transition.replacedAtEpochMs;
     const kept = recorded.filter((entry) =>
-        entry.replacedAtEpochMs <= nowEpochMs &&
-        nowEpochMs < entry.replacedAtEpochMs + MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS
+        isLayoutTransitionInsideWindow(entry, transition.replacedAtEpochMs, MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS)
     );
     return [transition, ...kept].slice(0, MAX_RECORDED_LAYOUT_TRANSITIONS);
 }
