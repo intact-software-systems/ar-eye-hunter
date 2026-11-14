@@ -5,11 +5,11 @@ import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.t
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
 import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
 
-export const ALM_LANE_ORDERS = ['declared', 'shuffled'] as const;
+const ALM_LANE_ORDERS = ['declared', 'shuffled'] as const;
 
 export type AlmLaneOrder = typeof ALM_LANE_ORDERS[number];
 
-export const ALM_LANE_ROOMS = ['family', 'cell'] as const;
+const ALM_LANE_ROOMS = ['family', 'cell'] as const;
 
 export type AlmLaneRooms = typeof ALM_LANE_ROOMS[number];
 

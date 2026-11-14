@@ -10,7 +10,7 @@ export interface AlmLaneCellSelection {
     readonly skip: readonly string[];
 }
 
-export interface AlmLaneSelectableCell extends Pick<AlmConformanceScenario, 'scenarioId' | 'tags'> {
+interface AlmLaneSelectableCell extends Pick<AlmConformanceScenario, 'scenarioId' | 'tags'> {
     readonly carrier: AlmConformanceCarrier;
 }
 

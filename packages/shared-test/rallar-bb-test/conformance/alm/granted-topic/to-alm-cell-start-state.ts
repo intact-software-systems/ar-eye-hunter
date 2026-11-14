@@ -25,7 +25,7 @@ export function toAlmCellStartState(step: AlmConformanceStepInput): readonly Ral
 }
 
 /** Whether a write asks again after a refusal: a grantee that may not have joined yet is asked until it has. */
-export type AlmCellStartWriteAttempts = 'once' | 'until-accepted';
+type AlmCellStartWriteAttempts = 'once' | 'until-accepted';
 
 /**
  * One principal's way to its declared state from any state, rows included: a revoke of `subscribe` with every

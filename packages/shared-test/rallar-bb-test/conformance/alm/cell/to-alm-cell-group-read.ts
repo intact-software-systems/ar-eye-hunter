@@ -4,7 +4,7 @@ import { MESSAGE_CONTROL_TIMEOUT_MS, toBudgetMs } from '../alm-conformance-budge
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toRoomRef } from '../alm-conformance-step-identities.ts';
 
-export interface AlmCellGroupReadInput {
+interface AlmCellGroupReadInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     /** The group's snapshot, or its formation view. */

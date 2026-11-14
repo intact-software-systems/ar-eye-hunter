@@ -55,7 +55,7 @@ export interface ResultFactInput {
 }
 
 /** `source` equals `comparisonSource`; both are result paths and both must exist. */
-export interface ResultComparisonFactInput {
+interface ResultComparisonFactInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly source: string;
@@ -139,7 +139,7 @@ export function toResultFact(fact: ResultFactInput): RallarBlackBoxTestCommand {
     };
 }
 
-export function toResultComparisonFact(fact: ResultComparisonFactInput): RallarBlackBoxTestCommand {
+function toResultComparisonFact(fact: ResultComparisonFactInput): RallarBlackBoxTestCommand {
     return {
         kind: 'assert',
         commandId: toCommandId(fact.step, `assert-${fact.name}`),
