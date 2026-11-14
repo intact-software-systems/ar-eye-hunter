@@ -44,7 +44,7 @@ export function selectGroupDialPeerIds(
  * `active` dials early: `reconnecting` wants both layouts' peers as fully as the
  * accepted ones.
  */
-export function selectGroupEarlyDialPeerIds(
+function selectGroupEarlyDialPeerIds(
     input: SelectGroupDialPeerIdsInput
 ): readonly PeerId[] {
     if (input.lifecycleState !== 'active' || resolveDialLayoutRoles(input.lifecycleState) !== 'accepted-and-planned') {

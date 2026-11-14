@@ -265,7 +265,7 @@ export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
  * Why an early-dial peer's offer waits: no connection slot is free for it. The end of every reconcile pass releases
  * these holds, so a slot freed by a closed peer or an ended grace admits the held offer at once.
  */
-export const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
+const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
 
 export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
