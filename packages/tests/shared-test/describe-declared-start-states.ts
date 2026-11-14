@@ -70,11 +70,17 @@ export function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean
     return command.metadata?.cellStartState === ALM_CELL_START_STATE_METADATA.cellStartState;
 }
 
+const GRANT_BODY_KEYS: readonly string[] = ['topicId', 'publish', 'subscribe'];
+
 export function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readonly GrantRequest[] {
     return toNestedCommands(commands).flatMap((command): readonly GrantRequest[] => {
         const request = command.kind === 'http.request' ? (command as RallarBlackBoxTestHttpRequestCommand).request : undefined;
         const match = request?.path?.match(/\/publication-grants\/([^/]+)\/(grant|revoke)\/requests\//);
         const body = request?.body as (Permissions & Readonly<{ topicId: string; }>) | undefined;
+        const unexpectedKeys = Object.keys(body ?? {}).filter((key) => !GRANT_BODY_KEYS.includes(key));
+        if (match !== null && match !== undefined && unexpectedKeys.length > 0) {
+            throw new Error(`grant request ${command.commandId} carries keys beyond the grant body: ${unexpectedKeys.join(', ')}`);
+        }
         return match === null || match === undefined || body === undefined
             ? []
             : [{
