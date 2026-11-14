@@ -772,13 +772,28 @@ and it has no status list.
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
   refused transiently; a retry would then need its own ruling.
-- The settle (D647) does not close four windows: an older presence-summary row
-  expanding after the barrier (the outstanding-work read of the line above), an
-  `rtt-refresh` promotion (`pending` never reports it), a heartbeat that drops
-  or restores a session or the presence expiry reconciliation that runs every
-  60 s (`DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS`,
+- The settle (D647) does not close these windows: an older presence-summary row
+  expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
+  promotion (`pending` never reports it), a heartbeat that drops or restores a
+  session or the presence expiry reconciliation that runs every 60 s
+  (`DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS`,
   `packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts`),
-  and a page whose cache lapsed and was restored at the same revision. The
+  a page whose cache lapsed and was restored at the same revision, a page whose
+  cache dropped the room after an earlier cell's `held` event and did not
+  restore it, an un-tagged late event of an earlier cell that matches a wait
+  carrying no key of its cell, the activation status's `coverageRate` at the
+  first petition (the settle accepts either value), the same-context successor,
+  which connects outside the settle, hosted combined recipes, which carry no
+  settle, a role failing before a barrier (the others time out), a cell's own
+  mid-body writes, and the three kept 2 s `GRANT_DELTA_MARGIN_MS` pauses. The
   first three show as a revision past the floor or a refusal after the body
-  began; the fourth is silent unless the restore lands on a new revision, since
-  the last `held` event does not prove the room readable.
+  began. The restored page is silent unless the restore lands on a new
+  revision, since the last `held` event does not prove the room readable. The
+  dropped page needs a room the family shares: a connect writes the page's
+  presence session, but `presenceRevision` advances only when the room's
+  presence-summary work runs, so the head's floor can equal the earlier `held`
+  event's revisions; it shows as the cell's first read of the room failing on
+  that page, a settle that passed on a page holding nothing, seen as that
+  cell's failure. The late event shows as a wait that passes on an
+  earlier cell's event: a wait's history opens at its cell's first event, and
+  every event after it is a candidate, tagged or not.

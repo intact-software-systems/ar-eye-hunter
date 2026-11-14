@@ -14,9 +14,10 @@ import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
  * cell: any other is a programmer error, thrown naming the wait. A wait that declares `historyFrom: 'page'` in its
  * metadata reads the page's whole history, in three classes: a store's recovery that a fresh document reports during
  * its first connect, pinned to that connect's session, so no earlier cell's recovery can match it; the settle's wait for
- * the room's head, which matches only `held` applications at or above the head's revisions: every settle role's connect
- * in the cell wrote presence before the head read, so its `presenceRevision` floor is above any `held` event an earlier
- * cell left, and `removed` events are not matched; and a page's entry on a principal's server-ordered track, which the
+ * the room's head, which matches only `held` applications at or above the head's revisions: in a room per cell no
+ * earlier cell left one, while in a room the family shares an earlier cell's last `held` event can sit at the head's
+ * revisions, since a connect's presence write advances `presenceRevision` only when the room's presence-summary work
+ * runs, and `removed` events are not matched; and a page's entry on a principal's server-ordered track, which the
  * page states once, at its first copy, in whichever cell of the family ran first, matched on the track of the cell's own
  * arrival. Any other wait must follow at least one of its cell's own commands.
  */

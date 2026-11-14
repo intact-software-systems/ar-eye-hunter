@@ -17,10 +17,12 @@ export interface AppliedHeadWaitInput {
     readonly name: string;
     readonly purpose: string;
     /**
-     * `page` reads the page's whole history, which the settle's wait needs: every settle role's connect in the cell
-     * wrote presence before the read, so the head's `presenceRevision` floor is above any `held` event an earlier cell
-     * left on the page, and a `removed` event, which the page emits when its cache drops the group, is not matched.
-     * `cell` reads from the cell's own first event on the page, as every other wait of the cell does.
+     * `page` reads the page's whole history, which the settle's wait needs. In a room per cell no earlier cell left a
+     * `held` event of the room. In a room the family shares, a connect writes the page's presence session, but the
+     * room's `presenceRevision` advances only when its presence-summary work runs, so the head's floor can equal the
+     * revisions of a `held` event an earlier cell left, which matches even when the page's cache dropped the room
+     * since: an open window of D647. A `removed` event, which the page emits when its cache drops the group, is not
+     * matched. `cell` reads from the cell's own first event on the page, as every other wait of the cell does.
      */
     readonly history: 'page' | 'cell';
 }
