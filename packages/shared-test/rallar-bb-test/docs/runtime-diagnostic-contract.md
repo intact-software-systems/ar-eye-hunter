@@ -279,13 +279,14 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
   a command of its own cell, or recipe creation throws. A wait for a fact of something that outlives
   a cell carries `metadata.historyFrom: 'page'` and keeps the page's whole history: the head wait
   above, a store's recovery that a fresh document reports during its first connect, and
-  `server-ordered-entry`'s `entered` on the sender principal's track. A page states that entry once
-  while its session keeps the track: the session's inbound store
-  (`browser-session-inbound:<sessionId>`, `shared-web/browser/al-runtime/browser-al-runtime-identity.ts`)
-  holds the track's position, a `close` command closes the page's sockets and its Rallar connection
-  but not that store, and the next connect restores the same session. So with a room per family, a
-  room of its own or closed connections alike, an earlier cell's entry satisfies the wait, and it
-  does not show that the cell's own connects produced one. Once the runtime evicted any
+  `server-ordered-entry`'s `entered` with `priorSeq` 0 on the sender principal's track. A page states
+  `entered` at every connect, since a connect's volatile inbound lane holds no position
+  (`createBrowserALVolatileInboundRuntimeStores`), but its prior is the WS server's last-sent
+  sequence to the session (`ordering.priorSeqByRecipient`, keyed by session id). A `close` command
+  does not log out, and the next connect restores the same session, so only the session's first
+  entry carries prior 0. So with a room per family, a room of its own or closed connections alike,
+  an earlier cell's entry satisfies the wait, and it does not show that the cell's own connects
+  produced one. Once the runtime evicted any
   event, a wait with a prefix ends `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`, since the first event of
   the command is no longer provable.
 - `payloadMinimums` maps payload paths to floors. A floor is a finite number or exactly one
@@ -754,8 +755,9 @@ publication succeed. The event's `data` is the event itself:
 - `ordering-position` carries `workerId`, `trackKey`, `seq`, `priorSeq`,
   `status` and `carrier`: a recipient's position event on an ordering track,
   stated by the inbound admission after its commit, so a replayed pending
-  admission states one too. `status` is `entered` (the first copy on a track
-  an authority recorded, opening it at `seq`), `omitted` (a copy whose record
+  admission states one too. `status` is `entered` (a recorded copy admitted
+  while the recipient's runtime holds no live position on the track, opening
+  it at `seq`; a new connect's volatile lane holds none), `omitted` (a copy whose record
   names the recipient's own position as its prior, delivered across the
   sequences never meant for it), `witnessed` (a frozen recipient that may not
   deliver, its position moved to `seq`; only a copy that moved it) or

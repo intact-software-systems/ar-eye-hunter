@@ -28,9 +28,10 @@ export function toWaitHistoryMetadata(
  * applied head the settle waits for, which matches only `held` applications at or above the head's revisions: in a
  * room no earlier cell used there is none, while in a room the family shares an earlier cell's last `held` event can
  * sit at the head's revisions, since a connect's presence write advances `presenceRevision` only when the room's
- * presence-summary work runs, and `removed` events are not matched; and a page's first entry on a principal's
- * server-ordered track, which the page's session keeps across a closed connection and a change of room, so the page
- * states it once, in whichever cell ran first, matched on the track of the cell's own arrival.
+ * presence-summary work runs, and `removed` events are not matched; and a session's prior-0 entry on a principal's
+ * server-ordered track: the server records what it sent each session, and the lane's next connect restores the same
+ * session, so only the session's first entry carries prior 0, in whichever cell of the family first connected, matched
+ * on the track of the cell's own arrival.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,

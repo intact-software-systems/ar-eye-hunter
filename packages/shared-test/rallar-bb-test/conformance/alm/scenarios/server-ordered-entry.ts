@@ -39,11 +39,13 @@ const ORDERING_POSITION = 'ordering-position';
  * track also carries every earlier lane connect of the principal.
  * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
- * A page enters the track once while its session keeps the track's position, which outlives a closed connection and a
- * change of room, at its first copy in whichever cell of the family ran first, so the entry wait reads the page's whole
- * history, matched on the track of the cell's own arrival: an earlier cell's entry satisfies it, so it does not show
- * that this cell's connects produced one. No page states `before-entry` in the window after the last write's copy
- * arrived.
+ * A page states `entered` at each new connect, whose volatile inbound lane holds no position, but the prior on it is
+ * the WS server's last-sent sequence to the page's session on the track, so `priorSeq` 0 comes once per session per
+ * track. The lane keeps a family's sessions across its cells: its close does not log out, and the next connect restores
+ * the same session. So only the entry in whichever cell of the family first connected carries prior 0, and the entry
+ * wait reads the page's whole history, matched on the track of the cell's own arrival: an earlier cell's entry
+ * satisfies it, so it does not show that this cell's connects produced one. No page states `before-entry` in the
+ * window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',

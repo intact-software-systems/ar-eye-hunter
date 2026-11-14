@@ -35,8 +35,9 @@ const FRESH_DOCUMENT_RECOVERY_WAITS = [
 ] as const;
 
 /**
- * Another of the three: a page enters a principal's server-ordered track once while its session keeps the track, at
- * its first copy, in whichever cell of the family that was.
+ * Another of the three: a session's prior-0 entry on a principal's server-ordered track, which the session states once,
+ * since the server records what it sent the session and the lane's next connect restores it, in whichever cell of the
+ * family first connected.
  */
 const PRINCIPAL_TRACK_ENTRY_WAITS = [
     'server-ordered-entry-sender-entered',
