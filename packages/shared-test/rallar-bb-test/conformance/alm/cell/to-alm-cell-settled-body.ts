@@ -28,7 +28,7 @@ export function toAlmCellSettledBody(
     step: AlmConformanceStepInput,
     partsByRole: AlmCellPartsByRole
 ): readonly RallarBlackBoxTestCommand[] {
-    const parts = requireAlmCellParts(partsByRole, step.role);
+    const parts = requireAlmCellParts(partsByRole, step.scenarioKey, step.role);
     const body = parts.body;
     if (step.input.cellSettle !== 'barriered' || !isSettleRole(step.role)) {
         return toAlmCellPlacedBody(parts);
@@ -43,11 +43,12 @@ export function toAlmCellSettledBody(
             participants: settleRoles
         }));
     const settleOf = (role: AlmConformanceRole) =>
-        toMarkedSettle({ ...step, role }, requireAlmCellParts(partsByRole, role).startState);
-    const armingOf = (role: AlmConformanceRole) => toAlmCellArming(requireAlmCellParts(partsByRole, role).body).arming;
+        toMarkedSettle({ ...step, role }, requireAlmCellParts(partsByRole, step.scenarioKey, role).startState);
+    const armingOf = (role: AlmConformanceRole) =>
+        toAlmCellArming(requireAlmCellParts(partsByRole, step.scenarioKey, role).body).arming;
     const { formation, head } = settleOf(step.role);
     return [
-        toBarrier('connected', (role) => requireAlmCellParts(partsByRole, role).prologue),
+        toBarrier('connected', (role) => requireAlmCellParts(partsByRole, step.scenarioKey, role).prologue),
         ...formation,
         toBarrier('formation-settled', (role) => settleOf(role).formation),
         ...head,

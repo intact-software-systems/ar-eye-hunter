@@ -41,11 +41,12 @@ export type AlmCellPartsByRole = Readonly<Partial<Record<AlmConformanceRole, Alm
 
 export function requireAlmCellParts(
     partsByRole: AlmCellPartsByRole,
+    scenarioKey: string,
     role: AlmConformanceRole
 ): AlmConformanceCellParts {
     const parts = partsByRole[role];
     if (parts === undefined) {
-        throw new Error(`The cell declares ${role} without its parts.`);
+        throw new Error(`ALM scenario ${scenarioKey} declares ${role} without its parts.`);
     }
     return parts;
 }

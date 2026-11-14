@@ -8,6 +8,7 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '@shared-test/rallar-bb-test/barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import { CONNECT_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { requireAlmCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
@@ -41,6 +42,11 @@ function toBarrierCommands(recipe: RallarBlackBoxTestRecipe): readonly RallarBla
 }
 
 describe('alm-conformance cell parts', () => {
+    it('a role the cell declares without its parts names the scenario and the role', () => {
+        expect(() => requireAlmCellParts({}, 'claim-first-wins', 'recipient-b'))
+            .toThrow('ALM scenario claim-first-wins declares recipient-b without its parts.');
+    });
+
     it('every settle role of a barriered cell meets at its cell\'s connected barrier right after its prologue, naming the cell\'s settle roles', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {

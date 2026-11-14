@@ -378,6 +378,12 @@ describe('the ALM lane plan', () => {
         expect(toPlannedRooms(['shared', 'own', 'shared'], 'cell')).toEqual(['cell-a', 'cell-b', 'cell-c']);
     });
 
+    it('a chained family plans its one room for every cell, one that declares a room of its own included', () => {
+        const plan = resolveAlmLanePlan({ ...toDeclaredRoomInput(['shared', 'own', 'shared'], 'cell'), family: 'same-context' });
+
+        expect(plan.cells.map((cell) => cell.room)).toEqual(['family', 'family', 'family']);
+    });
+
     it('every agent closes its connections exactly where the room changes, and at the end outside the family\'s room', () => {
         const toCloses = (declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms) => {
             const plan = resolveAlmLanePlan(toDeclaredRoomInput(declared, rooms));

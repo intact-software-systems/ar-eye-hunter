@@ -153,7 +153,7 @@ export interface AlmConformanceScenario {
     readonly ownerEnd: AlmConformanceOwnerEnd | undefined;
     /** Whether the cell reshapes its room's topology; the lane plan orders a shared room by it. */
     readonly roomTopology: AlmConformanceRoomTopology;
-    /** Where the cell runs; the lane plan gives an `own` cell a room of its own in any family that opens its sessions. */
+    /** Where the cell runs; the lane plan gives an `own` cell a room of its own unless its family chains its sessions. */
     readonly room: AlmConformanceCellRoom;
     /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;

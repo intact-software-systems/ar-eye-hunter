@@ -314,7 +314,7 @@ function toAlmConformanceCombinedCommands(
     if (rtcScenario === undefined) {
         throw new Error('Combined ALM recipes require an RTC scenario.');
     }
-    const rtcPrologue = requireAlmCellParts(rtcScenario.partsByRole, role).prologue;
+    const rtcPrologue = requireAlmCellParts(rtcScenario.partsByRole, rtcScenario.scenarioKey, role).prologue;
     const rtcConnect = rtcPrologue.find((command) => command.kind === 'rtc.connect');
     if (rtcConnect === undefined) {
         throw new Error(`Generated ALM scenario ${rtcScenario.scenarioKey} has no ${role} rtc.connect prologue.`);
@@ -330,9 +330,9 @@ function toAlmConformanceCombinedCommands(
             toBarrieredScenarioCommands(
                 scenario,
                 role,
-                toAlmCellPlacedBody(requireAlmCellParts(scenario.partsByRole, role)).map((command) =>
-                    command.kind === 'rtc.connect' ? toConnect(command) : command
-                )
+                toAlmCellPlacedBody(requireAlmCellParts(scenario.partsByRole, scenario.scenarioKey, role)).map((
+                    command
+                ) => command.kind === 'rtc.connect' ? toConnect(command) : command)
             )
         )
     ];

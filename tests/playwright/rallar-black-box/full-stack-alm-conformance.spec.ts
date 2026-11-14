@@ -625,12 +625,12 @@ async function assertScenarioEvidence(
     }
     const unconfirmedRole = toAlmUnconfirmedReceiptRole(scenario.sender);
     if (unconfirmedRole !== undefined) {
-        await assertRevokedRoleUnconfirmed(run, scenario, { evidence, unconfirmedRole });
+        await assertUnconfirmedReceiptRole(run, scenario, { evidence, unconfirmedRole });
     }
 }
 
-/** No receipt of the cell may confirm the role its sender names, such as a sibling revoked while disconnected. */
-async function assertRevokedRoleUnconfirmed(
+/** No receipt of the cell may confirm the role its sender's recipe names. */
+async function assertUnconfirmedReceiptRole(
     run: AgentRun,
     scenario: AlmConformanceScenario,
     unconfirmed: Readonly<{ evidence: readonly ScenarioRoleEvidence[]; unconfirmedRole: AlmConformanceRole; }>

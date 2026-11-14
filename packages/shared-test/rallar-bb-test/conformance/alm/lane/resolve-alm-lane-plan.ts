@@ -55,7 +55,7 @@ const ALM_LANE_FAMILY_ROOM = 'family';
 /**
  * Which cells of a family run, in which order and in which room. A cell runs in a room of its own when the room
  * parameter asks for one per cell or its definition declares one; a family whose pages chain one session from cell to
- * cell shares the family's room whatever the parameter asks. No cell rejoins a room its pages left: the shared-room
+ * cell runs every cell in the family's one room, whatever the parameter asks or a definition declares. No cell rejoins a room its pages left: the shared-room
  * cells after a cell in its own room run in a fresh shared room. In a room the family shares, every cell that reshapes
  * the room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes within the two groups.
  */
@@ -73,9 +73,10 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
         only: parameters.only,
         mintSeed: input.mintSeed
     });
-    const rooms = ALM_CONFORMANCE_FAMILY_SESSIONS[input.family] === 'chained' ? 'family' : parameters.rooms;
+    const chained = ALM_CONFORMANCE_FAMILY_SESSIONS[input.family] === 'chained';
+    const rooms = chained ? 'family' : parameters.rooms;
     const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
-    const roomKeys = toAlmLaneRoomKeys(placed, rooms);
+    const roomKeys = chained ? placed.map(() => ALM_LANE_FAMILY_ROOM) : toAlmLaneRoomKeys(placed, rooms);
     return {
         cells: placed.map((scenario, index) => ({ scenarioKey: scenario.scenarioKey, room: roomKeys[index]! })),
         cellOrder: {
