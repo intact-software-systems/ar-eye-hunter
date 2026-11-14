@@ -52,7 +52,8 @@ import {
     toAlmLaneCellGroup,
     type AlmLaneCellOrderRecord,
     type AlmLanePlan,
-    type AlmLanePlannedCell
+    type AlmLanePlannedCell,
+    type AlmLaneRoomKey
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 import { toAlmLaneEmptyPlanReason } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
 import {
@@ -403,7 +404,7 @@ function toPlannedScenarios(
     planned: Readonly<{ family: AlmConformanceLaneFamily; plan: AlmLanePlan; }>
 ): readonly PlannedScenario[] {
     const selection = toRunSelection(run);
-    const createdByRoom = new Map<string, readonly AlmConformanceScenario[]>();
+    const createdByRoom = new Map<AlmLaneRoomKey, readonly AlmConformanceScenario[]>();
     return planned.plan.cells.map((cell) => {
         const created = createdByRoom.get(cell.room) ??
             createFamilyScenarios(

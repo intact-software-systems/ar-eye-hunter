@@ -24,6 +24,7 @@ import {
     toAlmLaneCellGroup,
     type AlmLanePlan,
     type AlmLanePlannedCell,
+    type AlmLaneRoomKey,
     type ResolveAlmLanePlanInput
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 import { toAlmLaneEmptyPlanReason } from '@shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
@@ -367,7 +368,14 @@ describe('the ALM lane plan', () => {
         expect(declared.map((scenario) => scenario.scenarioKey)).toEqual(['subscription-ordered-reconnect']);
         expect(plan.cells.find((cell) => cell.scenarioKey === 'subscription-ordered-reconnect')?.room)
             .toBe('cell-subscription-ordered-reconnect');
-        expect(new Set(plan.cells.map((cell) => cell.room)).size).toBeGreaterThan(1);
+        expect(plan.cells.map((cell) => cell.room)).toEqual([
+            'family',
+            'family',
+            'family',
+            'family',
+            'family',
+            'cell-subscription-ordered-reconnect'
+        ]);
     });
 
     it('names each room by key: a shared-room cell after a cell in its own room gets a fresh shared room', () => {
@@ -526,7 +534,7 @@ describe('the reason an emptied plan skips its family', () => {
     });
 });
 
-function toPlannedCells(plan: AlmLanePlan, room: string): readonly AlmLanePlannedCell[] {
+function toPlannedCells(plan: AlmLanePlan, room: AlmLaneRoomKey): readonly AlmLanePlannedCell[] {
     return plan.cells.map(({ scenarioKey }) => ({ scenarioKey, room }));
 }
 
@@ -544,6 +552,6 @@ function toDeclaredRoomInput(declared: readonly ('shared' | 'own')[], rooms: Alm
     };
 }
 
-function toPlannedRooms(declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms): readonly string[] {
+function toPlannedRooms(declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms): readonly AlmLaneRoomKey[] {
     return resolveAlmLanePlan(toDeclaredRoomInput(declared, rooms)).cells.map((cell) => cell.room);
 }

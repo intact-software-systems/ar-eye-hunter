@@ -25,13 +25,18 @@ export interface ResolveAlmLanePlanInput {
 
 type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags' | 'roomTopology' | 'room'>;
 
+/**
+ * The key of a room, which `toAlmLaneCellGroup` names: `family`, the family's first room; `family-<n>`, a later room
+ * the family's cells share; `cell-<scenarioKey>`, a room of the cell's own.
+ */
+export type AlmLaneRoomKey =
+    | typeof ALM_LANE_FAMILY_ROOM
+    | `${typeof ALM_LANE_FAMILY_ROOM}-${number}`
+    | `cell-${string}`;
+
 export interface AlmLanePlannedCell {
     readonly scenarioKey: string;
-    /**
-     * The key of the room the cell runs in, which `toAlmLaneCellGroup` names: `family`, the family's first room;
-     * `family-<n>`, a later room the family's cells share; `cell-<scenarioKey>`, a room of the cell's own.
-     */
-    readonly room: string;
+    readonly room: AlmLaneRoomKey;
 }
 
 /** What the observation artifact records of the plan, so a run can be replayed in its order. */
@@ -50,7 +55,7 @@ export interface AlmLanePlan {
 }
 
 /** The key of the room a family's first shared cells run in: the family's own group. */
-const ALM_LANE_FAMILY_ROOM = 'family';
+const ALM_LANE_FAMILY_ROOM = 'family' as const;
 
 /**
  * Which cells of a family run, in which order and in which room. A cell runs in a room of its own when the room
@@ -77,9 +82,10 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
     const chained = ALM_CONFORMANCE_FAMILY_SESSIONS[input.family] === 'chained';
     const rooms = chained ? 'family' : parameters.rooms;
     const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
-    const roomKeys = chained ? placed.map(() => ALM_LANE_FAMILY_ROOM) : toAlmLaneRoomKeys(placed, rooms);
     return {
-        cells: placed.map((scenario, index) => ({ scenarioKey: scenario.scenarioKey, room: roomKeys[index]! })),
+        cells: chained
+            ? placed.map(({ scenarioKey }) => ({ scenarioKey, room: ALM_LANE_FAMILY_ROOM }))
+            : toAlmLanePlannedCells(placed, rooms),
         cellOrder: {
             mode: parameters.order,
             seed: ordered.seed,
@@ -115,20 +121,26 @@ function toKeptTopologyFirst(scenarios: readonly AlmLanePlanCell[]): readonly Al
 }
 
 /** A shared-room cell after a cell in its own room opens a fresh shared room once the family's current one was used. */
-function toAlmLaneRoomKeys(scenarios: readonly AlmLanePlanCell[], rooms: AlmLaneRooms): readonly string[] {
+function toAlmLanePlannedCells(
+    scenarios: readonly AlmLanePlanCell[],
+    rooms: AlmLaneRooms
+): readonly AlmLanePlannedCell[] {
     let shared = 1;
     let sharedUsed = false;
     let sharedLeft = false;
     return scenarios.map((scenario) => {
         if (rooms === 'cell' || scenario.room === 'own') {
             sharedLeft = sharedUsed;
-            return `cell-${scenario.scenarioKey}`;
+            return { scenarioKey: scenario.scenarioKey, room: `cell-${scenario.scenarioKey}` };
         }
         if (sharedLeft) {
             shared += 1;
             sharedLeft = false;
         }
         sharedUsed = true;
-        return shared === 1 ? ALM_LANE_FAMILY_ROOM : `${ALM_LANE_FAMILY_ROOM}-${shared}`;
+        return {
+            scenarioKey: scenario.scenarioKey,
+            room: shared === 1 ? ALM_LANE_FAMILY_ROOM : `${ALM_LANE_FAMILY_ROOM}-${shared}`
+        };
     });
 }
