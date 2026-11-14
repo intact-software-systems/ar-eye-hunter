@@ -1,4 +1,5 @@
 import { AppTopics } from '@shared/api/api-config.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
     RallarBlackBoxTestCommand,
@@ -6,7 +7,11 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../rallar-black-box-test-contracts.ts';
 
-import { MESSAGE_CONTROL_TIMEOUT_MS, RESPONSE_MARGIN_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
+import {
+    CONNECT_READINESS_TIMEOUT_MS,
+    MESSAGE_CONTROL_TIMEOUT_MS,
+    toBudgetMs
+} from '../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import { toVerdictTimeoutMs } from '../alm-conformance-diagnostic-waits.ts';
 import { toResultAssertion } from '../alm-conformance-message-commands.ts';
@@ -21,7 +26,7 @@ import {
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
 import { ALM_ADMIN_REALTIME_PATH } from '../identity/assess-alm-server-originated-identity.ts';
-import { toPauseCommand } from '../to-pause-command.ts';
+import { toPollCommand, toPollResult } from '../poll/alm-conformance-poll-commands.ts';
 
 /** The server's group-state deltas reach a page over WS only. */
 const SERVER_ORIGINATED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -30,6 +35,8 @@ const SERVER_ORIGINATED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 const TRACED_STATUSES: readonly AlmConformanceSelfMembershipStatus[] = ['left', 'active'];
 
 const READ_ADMIN_REALTIME = 'read-admin-realtime';
+const ADMIN_RECEIPT_RECORDED = 'admin-receipt-recorded';
+const ADMIN_RECEIPT_FIELD = 'body.almReceipts.diagnostics.messages';
 
 /**
  * A send the server originates: each traced membership write of the sender reaches the receiver as a `group-state.event`
@@ -52,23 +59,55 @@ export const serverOriginated: AlmConformanceScenarioDefinition = {
     toRecipientCommands: toServerOriginatedReceiverCommands
 };
 
-/** The ACK leaves at admission, so one settle margin after the last delta its receipt entry is recorded. */
+/**
+ * The server records the receiver's ACK of the last delta with no event on any page, so the receiver repeats the admin
+ * read until the entry holds it, as the settle's formation poll repeats its reads, and only then reads and asserts.
+ */
 function toServerOriginatedReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...TRACED_STATUSES.map((status) => toTracedDeltaWait(receiver, status)),
-        toPauseCommand(receiver, 'receipt-settles', RESPONSE_MARGIN_MS),
-        toAdminRealtimeReadCommand(receiver),
+        toAdminReceiptRecordedPollCommand(receiver),
+        toAdminRealtimeReadCommand(receiver, READ_ADMIN_REALTIME),
         toResultAssertion({
             step: receiver,
             name: 'assert-admin-receipt',
             resultName: READ_ADMIN_REALTIME,
-            field: 'body.almReceipts.diagnostics.messages',
+            field: ADMIN_RECEIPT_FIELD,
             operator: 'matchesShape',
-            expected: [{ traceId: toRequestTraceId(receiver, 'active'), lastSettlementKind: 'acknowledgement' }]
+            expected: toAcknowledgedEntryShape(receiver)
         })
     ];
+}
+
+function toAdminReceiptRecordedPollCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const readName = `${ADMIN_RECEIPT_RECORDED}-${READ_ADMIN_REALTIME}`;
+    const childId = toCommandId(receiver, readName);
+    return toPollCommand({
+        step: receiver,
+        name: ADMIN_RECEIPT_RECORDED,
+        phaseMs: CONNECT_READINESS_TIMEOUT_MS,
+        commandTimeoutMs: MESSAGE_CONTROL_TIMEOUT_MS,
+        commands: [
+            toAdminRealtimeReadCommand(receiver, readName),
+            {
+                kind: 'assert',
+                commandId: toCommandId(receiver, `assert-${ADMIN_RECEIPT_RECORDED}`),
+                source: `${
+                    toPollResult({ step: receiver, name: ADMIN_RECEIPT_RECORDED, index: 1, childId })
+                }.${ADMIN_RECEIPT_FIELD}`,
+                operator: 'matchesShape',
+                expected: toAcknowledgedEntryShape(receiver),
+                timeoutMs: MESSAGE_CONTROL_TIMEOUT_MS
+            }
+        ]
+    });
+}
+
+/** The process-local receipt entry of the last traced delta, settled by the receiver's ACK. */
+function toAcknowledgedEntryShape(step: AlmConformanceStepInput): ApiJsonValue {
+    return [{ traceId: toRequestTraceId(step, 'active'), lastSettlementKind: 'acknowledgement' }];
 }
 
 /** The sender's command id names each trace, so both roles derive it, and it stays in the trace grammar. */
@@ -99,10 +138,13 @@ function toTracedDeltaWait(
     };
 }
 
-function toAdminRealtimeReadCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestHttpRequestCommand {
+function toAdminRealtimeReadCommand(
+    receiver: AlmConformanceStepInput,
+    name: string
+): RallarBlackBoxTestHttpRequestCommand {
     return {
         kind: 'http.request',
-        commandId: toCommandId(receiver, READ_ADMIN_REALTIME),
+        commandId: toCommandId(receiver, name),
         timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, receiver.input.deadlineMs),
         metadata: { purpose: 'Read the receipt entries this API process records, as a platform admin.' },
         request: { method: 'GET', path: ALM_ADMIN_REALTIME_PATH },

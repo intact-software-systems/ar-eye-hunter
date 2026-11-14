@@ -843,16 +843,17 @@ scenario channel on both connects, so both pages hear the server's group-state d
 rejoins it through the self-service membership route, each request under its own `x-request-id`
 (`alm-ws-server-originated-sender-trace-left`, then `-trace-active`), and asserts that each response echoes it. The
 receiver waits for each delta as a `rallar.browser.ws.message` whose `data.topicId` is `group-state.event` and whose
-envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's, holds one second
-for its ACK to settle, reads `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform admin under
-`prod-in-memory`) and asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
+envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's. No page sees the
+server record its ACK, so it repeats `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform
+admin under `prod-in-memory`) with the settle's poll budget until the entry below holds, then reads it once more and
+asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
 rejoin's trace and `lastSettlementKind` `acknowledgement`. Those entries are process-local, so the cell runs in the
 one-process local lane: hosted manifest 18 withholds it, since its combined connect carries the scenario topic's
 selector. The identity assessment joins the echo, the one receiver wait that names each trace, the delta's `msgId`, and
 the admin entry of the last trace, confirmed by the receiver's own session. The traces are the same in every run, since
 neither a wait's `payloadFields` nor an assert's `expected` resolves placeholders, so an API process that outlives one
-run may still list an earlier run's entry under the trace; the session join, not the recipe assert, scopes the entry to
-the run.
+run may still list an earlier run's entry under the trace, which then also ends the poll early; the session join, not
+the recipe assert, scopes the entry to the run.
 
 The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
 sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's

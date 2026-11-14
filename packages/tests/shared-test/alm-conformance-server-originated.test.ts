@@ -15,6 +15,7 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { AL_TRACE_ID_PATTERN } from '@shared/al-contracts/trace/al-trace-id.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 const PREFIX = 'alm-ws-server-originated';
 const TRACE_LEFT = `${PREFIX}-sender-trace-left`;
@@ -83,7 +84,7 @@ describe('ALM server-originated cell', () => {
         expect(TRACE_LEFT).not.toBe(TRACE_ACTIVE);
     });
 
-    it('observes each traced delta, holds one settle margin and reads the admin receipt entry', () => {
+    it('observes each traced delta, polls the admin read until it records the ACK, then reads and asserts the receipt entry', () => {
         const receiver = readServerOriginated().receiver;
         expect(toScenarioCommandIds(receiver, 'receiver')).toEqual([
             'ensure-group',
@@ -91,7 +92,7 @@ describe('ALM server-originated cell', () => {
             'connect',
             'delta-trace-left',
             'delta-trace-active',
-            'receipt-settles',
+            'admin-receipt-recorded',
             'read-admin-realtime',
             'assert-admin-receipt',
             'stats'
@@ -114,12 +115,24 @@ describe('ALM server-originated cell', () => {
                 timeoutMs: 27_000
             });
         }
-        expect(findCommand(receiver, `${PREFIX}-receiver-receipt-settles`)).toMatchObject({
-            kind: 'wait',
-            match: { kind: 'diagnostic' },
-            absent: true,
-            timeoutMs: 1_000
-        });
+        // The server records the ACK with no event on any page: its own read, repeated until it holds, orders the read.
+        const poll = findCommand(receiver, `${PREFIX}-receiver-admin-receipt-recorded`);
+        const pollRead = `${PREFIX}-receiver-admin-receipt-recorded-read-admin-realtime`;
+        expect(poll).toMatchObject({ kind: 'loop', until: 'first-success' });
+        expect(poll.kind === 'loop' ? poll.commands : []).toMatchObject([
+            { kind: 'http.request', commandId: pollRead, request: { method: 'GET', path: '/api/admin/operations/realtime' } },
+            {
+                kind: 'assert',
+                source: `resultCache.${PREFIX}-receiver-admin-receipt-recorded:i{loop.iteration}:c1:${pollRead}.value.body.almReceipts.diagnostics.messages`,
+                operator: 'matchesShape',
+                expected: [{ traceId: TRACE_ACTIVE, lastSettlementKind: 'acknowledgement' }]
+            }
+        ]);
+        expect(
+            toNestedCommands(receiver.commands).filter((command) =>
+                command.kind === 'wait' && command.match.kind === 'diagnostic' && command.match.topic === 'rallar.black-box.alm.pause'
+            )
+        ).toEqual([]);
         expect(findCommand(receiver, `${PREFIX}-receiver-read-admin-realtime`)).toMatchObject({
             kind: 'http.request',
             request: { method: 'GET', path: '/api/admin/operations/realtime' },
