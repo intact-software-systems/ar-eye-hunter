@@ -32,12 +32,13 @@ const ORDERING_POSITION = 'ordering-position';
  * own sessions and every co-member's. The sender writes its principal three times.
  * The lane starts the sender last and each recipient only once its connect barrier released
  * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:104` `runRecipesOnAgents` with `toStartOrder` at :203,
- * `tests/playwright/rallar-black-box/full-stack-helpers.ts:706` `startRecipientRecipeRun`), so the sender principal's
- * track carries at least the sibling's connect event before the sender's own: the sender enters above seq 1, prior 0,
- * the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq is not the cell's: on one API the
- * track also carries every earlier lane connect of the principal.
- * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
- * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
+ * `tests/playwright/rallar-black-box/full-stack-helpers.ts:706` `startRecipientRecipeRun`), so in the family's first
+ * cell the sender principal's track carries at least the sibling's connect event before the sender's own: the sender's
+ * session enters above seq 1, prior 0, the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq
+ * is not the cell's: on one API the track also carries every earlier lane connect of the principal.
+ * The sibling, the principal's second session, enters the same track, prior 0, at its session's first copy on it.
+ * The receiver, a co-member of another principal, enters the sender principal's track, prior 0, at its session's first
+ * copy on it.
  * A page states `entered` at each new connect, whose volatile inbound lane holds no position, but the prior on it is
  * the WS server's last-sent sequence to the page's session on the track, so `priorSeq` 0 comes once per session per
  * track. The lane keeps a family's sessions across its cells: its close does not log out, and the next connect restores

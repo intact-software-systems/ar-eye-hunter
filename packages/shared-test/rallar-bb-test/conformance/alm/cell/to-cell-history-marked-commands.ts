@@ -29,9 +29,9 @@ export function toWaitHistoryMetadata(
  * room no earlier cell used there is none, while in a room the family shares an earlier cell's last `held` event can
  * sit at the head's revisions, since a connect's presence write advances `presenceRevision` only when the room's
  * presence-summary work runs, and `removed` events are not matched; and a session's prior-0 entry on a principal's
- * server-ordered track: the server records what it sent each session, and the lane's next connect restores the same
- * session, so only the session's first entry carries prior 0, in whichever cell of the family first connected, matched
- * on the track of the cell's own arrival.
+ * server-ordered track, a fact of the session, which outlives the cell: the server records what it sent each session,
+ * and the lane's next connect restores the same session, so only the session's first entry carries prior 0, in
+ * whichever cell of the family first connected, matched on the track of the cell's own arrival.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,
