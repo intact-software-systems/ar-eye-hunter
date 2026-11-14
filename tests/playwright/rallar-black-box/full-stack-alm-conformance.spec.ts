@@ -392,7 +392,9 @@ function toEmptyPlanReason(
     family: AlmConformanceLaneFamily,
     otherwise: string
 ): string {
-    return toAlmLaneEmptyPlanReason({ only: requireLaneParameters().only, family, carrier, otherwise });
+    const { only, skip } = requireLaneParameters();
+    const scenarios = createFamilyScenarios(toPlanningSelection(), carrier, family);
+    return toAlmLaneEmptyPlanReason({ only, family, carrier, scope, skip, scenarios, otherwise });
 }
 
 /** Printed before the first cell, so a run that dies mid-way can be replayed with the same seed. */

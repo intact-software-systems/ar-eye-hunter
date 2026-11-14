@@ -42,7 +42,6 @@ import type {
 import { closeParticipantContext } from './close-participant-context.ts';
 import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
-import { trackStartedRecipeRun } from './track-started-recipe-runs.ts';
 
 export interface FullStackUser {
     readonly username: string;
@@ -215,6 +214,8 @@ export interface RecipeRunAgent {
 export interface RecipeRun {
     readonly request: APIRequestContext;
     readonly runId: string;
+    /** Every root the run started, in start order: the owner of the run waits for them before it reads the pages. */
+    readonly startedRoots: StartedRecipeRun[];
     readSnapshot(): Promise<ControlRunSnapshot>;
 }
 
@@ -647,6 +648,7 @@ export async function createTwoAgentRun(
         group,
         sender,
         receiver,
+        startedRoots: [],
         readSnapshot: async () => await readControlRun(input.request, input.runId),
         close: async () => await closeTwoAgentParticipants([sender, receiver])
     };
@@ -695,15 +697,21 @@ export async function startRecipeRun(
     recipe: RallarBlackBoxTestRecipe
 ): Promise<StartedRecipeRun> {
     const commandId = await enqueueRecipeRun(run, agent, recipe);
-    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
-    const root: RecipeRunRoot = {
+    return startRecipeRoot(run, {
         agentId: agent.agentId,
         commandId,
         cancel: { kind: 'recipe.cancel', targetCommandId: commandId, reason: toRecipeCancelReason(commandId) }
-    };
+    });
+}
+
+function startRecipeRoot(run: RecipeRun, root: RecipeRunRoot): StartedRecipeRun {
+    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
     let outcome: Promise<RecipeRunOutcome> | undefined;
-    const started = { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
-    trackStartedRecipeRun(run, started);
+    const started = {
+        commandId: root.commandId,
+        readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs)
+    };
+    run.startedRoots.push(started);
     return started;
 }
 
@@ -1132,6 +1140,7 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.sender.commandId,
         command: pair.sender.command
     });
+    const sender = startRecipeRoot(run, toReloadRunRoot(run.sender, pair.sender.commandId));
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
@@ -1139,13 +1148,8 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.receiver.commandId,
         command: pair.receiver.command
     });
-    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
-    return requireRecipePairOutcome(
-        await Promise.allSettled([
-            readRecipeRunOutcome(run, toReloadRunRoot(run.sender, pair.sender.commandId), deadlineAtMs),
-            readRecipeRunOutcome(run, toReloadRunRoot(run.receiver, pair.receiver.commandId), deadlineAtMs)
-        ])
-    );
+    const receiver = startRecipeRoot(run, toReloadRunRoot(run.receiver, pair.receiver.commandId));
+    return requireRecipePairOutcome(await Promise.allSettled([sender.readOutcome(), receiver.readOutcome()]));
 }
 
 /** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */

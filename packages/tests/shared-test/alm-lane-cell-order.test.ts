@@ -387,13 +387,24 @@ describe('the ALM lane plan', () => {
 
 describe('the reason an emptied plan skips its family', () => {
     const otherwise = 'no full baseline ALM scenario runs over ws';
+    const base = { family: 'addressed', carrier: 'rtc', scope: 'full', skip: [], otherwise } as const;
+    const fullCell: Pick<AlmConformanceScenario, 'scenarioId' | 'tags'> = { scenarioId: 'delivery-baseline', tags: ['full'] };
+    const smokeOnlyCell: Pick<AlmConformanceScenario, 'scenarioId' | 'tags'> = { scenarioId: 'volatile-default', tags: ['smoke'] };
 
     it('is the family\'s own reason while no cell was named', () => {
-        expect(toAlmLaneEmptyPlanReason({ only: [], family: 'two-agent', carrier: 'ws', otherwise })).toBe(otherwise);
+        expect(toAlmLaneEmptyPlanReason({ ...base, only: [], scenarios: [fullCell] })).toBe(otherwise);
     });
 
-    it('names the keys and the family when RALLAR_BLACK_BOX_ALM_ONLY emptied it', () => {
-        expect(toAlmLaneEmptyPlanReason({ only: ['claim-first-wins', 'durable-opt-in'], family: 'addressed', carrier: 'rtc', otherwise }))
+    it('names the keys and the family when RALLAR_BLACK_BOX_ALM_ONLY emptied a family that would run cells', () => {
+        expect(toAlmLaneEmptyPlanReason({ ...base, only: ['claim-first-wins', 'durable-opt-in'], scenarios: [fullCell] }))
             .toBe('RALLAR_BLACK_BOX_ALM_ONLY=claim-first-wins,durable-opt-in plans no cell of addressed over rtc');
+    });
+
+    it('keeps the family\'s own reason when it is empty for another cause, whatever was named', () => {
+        const noCellInScope = { ...base, only: ['claim-first-wins'], scenarios: [smokeOnlyCell] };
+        const everyCellSkipped = { ...base, only: ['claim-first-wins'], scenarios: [fullCell], skip: ['delivery-baseline'] };
+
+        expect(toAlmLaneEmptyPlanReason(noCellInScope)).toBe(otherwise);
+        expect(toAlmLaneEmptyPlanReason(everyCellSkipped)).toBe(otherwise);
     });
 });

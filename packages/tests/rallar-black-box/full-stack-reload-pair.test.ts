@@ -69,6 +69,7 @@ describe('local paired reload enqueue', () => {
                     runId: 'actual-local-run',
                     sender: { agentId: 'actual-sender' },
                     receiver: { agentId: 'actual-receiver' },
+                    startedRoots: [],
                     readSnapshot: async () => {
                         readBeforeBothEnqueued ||= posted.length !== 2;
                         return toRunSnapshot(posted.map((command) => toRootResult(command, undefined)));
@@ -96,6 +97,10 @@ describe('local paired reload enqueue', () => {
                         receiver: { agentId: 'actual-receiver', commandId: outcome.receiver.commandId }
                     });
                     expect(toAlmReloadPair(posted[1].command)).toEqual(pair);
+                    expect(run.startedRoots.map(({ commandId }) => commandId)).toEqual([
+                        outcome.sender.commandId,
+                        outcome.receiver.commandId
+                    ]);
                     expect(posted.map((command) => command.command.timeoutMs)).toEqual([180_000, 180_000]);
                     expect(outcome).toEqual({
                         sender: { commandId: `${scenario.sender.recipeId}-run`, ok: true, summary: 'ok' },
@@ -122,6 +127,7 @@ describe('local paired reload enqueue', () => {
             runId: 'actual-local-run',
             sender: { agentId: 'actual-sender' },
             receiver: { agentId: 'actual-receiver' },
+            startedRoots: [],
             readSnapshot: async () => {
                 nowEpochMs += 30_000;
                 const cancelled = cancelledAgents();

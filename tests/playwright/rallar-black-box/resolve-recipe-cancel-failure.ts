@@ -12,7 +12,8 @@ export interface ResolveRecipeCancelFailureInput {
  * The agent answers a `recipe.cancel` with `cancelRequested: true` when it aborted the target, and with
  * `cancelRequested: false` and the reason `target-not-exclusively-active` when the target is not the one top-level
  * command the agent runs: nothing was cancelled, so waiting for the target's result waits for a recipe that still runs.
- * Undefined means no failure: no answer yet, or the ordinary one.
+ * Undefined means no failure: no answer yet, or the ordinary one. The control protocol owns no decoder for a refused
+ * cancel, so this is the only reader of the answer's value.
  */
 export function resolveRecipeCancelFailure(input: ResolveRecipeCancelFailureInput): string | undefined {
     const { answer } = input;

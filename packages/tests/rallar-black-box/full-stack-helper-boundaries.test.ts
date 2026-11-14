@@ -289,6 +289,7 @@ describe('recipient recipe promise ownership', () => {
         const run: RecipeRun = {
             request,
             runId: 'lifetime',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads++;
                 return barrier.promise;
@@ -369,6 +370,7 @@ describe('recipient barrier failure', () => {
         const run: RecipeRun = {
             request,
             runId: 'lifetime',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads++;
                 throw failure;
@@ -434,6 +436,7 @@ describe('control poll timeouts', () => {
         const run: RecipeRun = {
             request,
             runId: 'poll-timeout',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads += 1;
                 nowEpochMs += stepMs;
@@ -692,7 +695,7 @@ describe('control poll timeouts', () => {
         }
     });
 
-    it('waits for a started root that nobody read when the body failed, so the observation never reads a page whose root runs', async () => {
+    it('a run handed to the owner as a spread copy still has its started roots awaited, so the observation never reads a page whose root runs', async () => {
         const control = await openRecordingControlRequest('poll-timeout');
         try {
             // The clock starts at 1 000 and each read moves it by 1 000, so the root's result lands at the third read; the body
@@ -706,7 +709,7 @@ describe('control poll timeouts', () => {
             const bodyFailure = new Error('the scenario failed after starting a root');
 
             await expect(runObservedFamily({
-                run: Object.assign(run, { close: async () => {} }),
+                run: { ...run, close: async () => {} },
                 testInfo: { errors: [] },
                 body: async () => {
                     await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
@@ -720,6 +723,66 @@ describe('control poll timeouts', () => {
 
             expect(observed.reads).toBeGreaterThanOrEqual(3);
             expect(observed.posted).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('two runs do not see each other\'s roots', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            const { run: first, readCount } = createSilentRun(
+                control.request,
+                1_000,
+                (nowEpochMs) => nowEpochMs >= 4_000 ? [toFailedRootResult('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')] : []
+            );
+            const second: RecipeRun = { ...first, startedRoots: [] };
+            const readsWhenObserved: number[] = [];
+
+            await startRecipeRun(first, { agentId: 'sender' }, baseline.sender);
+            await runObservedFamily({
+                run: { ...second, close: async () => {} },
+                testInfo: { errors: [] },
+                body: async () => {},
+                observe: async () => {
+                    readsWhenObserved.push(readCount());
+                }
+            });
+
+            expect(first.startedRoots.map(({ commandId }) => commandId)).toEqual([rootCommandId]);
+            expect(second.startedRoots).toEqual([]);
+            expect(readsWhenObserved).toEqual([0]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('returns a root whose result is present although its cancel was refused', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            const refused = toCancelAnswer({
+                ok: true,
+                value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'target-not-exclusively-active' }
+            });
+            const { run } = createSilentRun(
+                control.request,
+                30_000,
+                () =>
+                    control.posted.some(({ command }) => command.kind === 'recipe.cancel')
+                        ? [refused, toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]
+                        : []
+            );
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            await expect(started.readOutcome()).resolves.toEqual({
+                commandId: rootCommandId,
+                ok: false,
+                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+            });
         }
         finally {
             vi.restoreAllMocks();
@@ -947,6 +1010,7 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 runId: 'outcome-owner',
                 sender: { agentId: 'sender' },
                 receiver: { agentId: 'recipient' },
+                startedRoots: [],
                 readSnapshot: () => readControlRun(request, 'outcome-owner')
             };
             const running = runner === 'agents'
@@ -1267,7 +1331,7 @@ describe('the observed family run', () => {
 
     interface Family {
         readonly events: string[];
-        readonly run: { close(): Promise<void>; };
+        readonly run: { close(): Promise<void>; startedRoots: []; };
     }
 
     function createFamily(closeResult: Error | undefined = undefined): Family {
@@ -1275,6 +1339,7 @@ describe('the observed family run', () => {
         return {
             events,
             run: {
+                startedRoots: [],
                 close: async () => {
                     events.push('close');
                     if (closeResult !== undefined) {
@@ -1349,6 +1414,27 @@ describe('the observed family run', () => {
         expect(family.events).toEqual(['body', 'observe:passed', 'close']);
     });
 
+    it('does not let a rejecting wait for the roots replace the body\'s error or skip the observation and the close', async () => {
+        const family = createFamily();
+        const stuckRoot = { commandId: 'stuck', readOutcome: async () => await Promise.reject(new Error('still running')) };
+        const input = toInput(family, { body: bodyFailure });
+
+        await expect(runObservedFamily({ ...input, run: { ...family.run, startedRoots: [stuckRoot] } }))
+            .rejects.toBe(bodyFailure);
+
+        expect(family.events).toEqual(['body', 'observe:failed', 'close']);
+    });
+
+    it('fails the run with the wait\'s failure after a passing body, and still observes and closes', async () => {
+        const family = createFamily();
+        const stuckRoot = { commandId: 'stuck', readOutcome: async () => await Promise.reject(new Error('still running')) };
+
+        await expect(runObservedFamily({ ...toInput(family, {}), run: { ...family.run, startedRoots: [stuckRoot] } }))
+            .rejects.toThrow('still running');
+
+        expect(family.events).toEqual(['body', 'observe:passed', 'close']);
+    });
+
     it('fails the run with the close\'s failure after a passing body and a passing observation', async () => {
         const family = createFamily(closeFailure);
 
@@ -1399,6 +1485,24 @@ describe('closing a participant whose page cleanup may never settle', () => {
         finally {
             vi.useRealTimers();
         }
+    });
+
+    it('reports both failures when the cleanup failed and the close then failed', async () => {
+        const cleanupFailure = new Error('the cleanup failed');
+        const closeFailure = new Error('the close failed');
+        const participant = {
+            page: {} as Playwright.Page,
+            context: { close: async () => await Promise.reject(closeFailure) } as unknown as Playwright.BrowserContext
+        };
+
+        const reported = await closeParticipantContext(participant, async () => await Promise.reject(cleanupFailure))
+            .then(() => undefined, (error: unknown) => error);
+
+        expect(reported).toBeInstanceOf(AggregateError);
+        expect((reported as AggregateError).errors).toEqual([cleanupFailure, closeFailure]);
+        expect((reported as AggregateError).message).toBe(
+            'The page cleanup failed (the cleanup failed) and then closing its context failed.'
+        );
     });
 
     it('closes the context when the cleanup fails, and reports the failure after the close', async () => {
