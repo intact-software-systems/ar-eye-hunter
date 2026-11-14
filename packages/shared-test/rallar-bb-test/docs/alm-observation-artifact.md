@@ -22,7 +22,7 @@ role `sender`, `receiver` or `recipient-b`. The snapshot decoder attributes only
 `alm-receiver-` agent ids, so the inbound events of the `recipient-b` page read `unattributed`.
 
 A four-role cell (the `four-role family over <carrier>` test, which runs only the topic subscription
-scenarios of the `four-role` lane family, each in a room of its own) writes the same three files as
+scenarios of the `four-role` lane family) writes the same three files as
 `<carrier>-<scope>-four-role*.json`, and its job log line ends in `family=four-role`. Its
 page-diagnostics file carries all four pages, with role `sender`, `publisher-b`, `receiver` or
 `sibling`; the `publisher-b` and `sibling` agent ids start `alm-publisher-b-` and `alm-sibling-`, which
@@ -89,7 +89,7 @@ records what the runner was doing while the cell ran:
   (the catalog order) or `shuffled`; `seed` is the seed a shuffled family used, given or minted, and
   `null` for `declared`; `rooms` is `family` (one room for the family) or `cell` (a room of its own
   per cell) as the family ran it: a same-context family reads `family`, whatever was asked. A cell
-  whose definition declares a room of its own (`room: 'own'`: every four-role cell) runs in one under either value, and every connection closes after a cell in
+  whose definition declares a room of its own (`room: 'own'`: `subscription-ordered-reconnect`) runs in one under either value, and every connection closes after a cell in
   a room of its own and before one; `scenarioKeys` lists the cells in the order they ran. In a room the family shares, a cell that reshapes the room's topology (its definition
   declares `roomTopology: 'reshaped'`) runs after every cell that keeps it; a shuffle permutes within the two
   groups. The job-log line ends in `order=… seed=… rooms=…` (`seed=none` for `declared`).

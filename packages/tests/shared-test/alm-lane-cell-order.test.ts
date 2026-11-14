@@ -360,15 +360,17 @@ describe('the ALM lane plan', () => {
         expect(plan.cells).toEqual(toPlannedCells(plan, 'family'));
     });
 
-    it('every four-role cell declares a room of its own, so it plans one whatever the room parameter says', () => {
-        expect(toFamilyCatalog('four-role').every((scenario) => scenario.room === 'own')).toBe(true);
-        for (const rooms of ['family', 'cell'] as const) {
-            const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms }));
+    it('only subscription-ordered-reconnect declares a room of its own, which it plans in a family room', () => {
+        const declared = toFamilyCatalog('four-role').filter((scenario) => scenario.room === 'own');
+        const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms: 'family' }));
 
-            expect(plan.cells.length, rooms).toBeGreaterThan(0);
-            expect(plan.cells, rooms).toEqual(toPlannedCells(plan, 'cell'));
-            expect(plan.cellOrder.rooms, rooms).toBe(rooms);
-        }
+        expect(declared.map((scenario) => scenario.scenarioKey)).toEqual(['subscription-ordered-reconnect']);
+        expect(plan.cells).toEqual(
+            plan.cells.map(({ scenarioKey }) => ({
+                scenarioKey,
+                room: scenarioKey === 'subscription-ordered-reconnect' ? 'cell' : 'family'
+            }))
+        );
     });
 
     it('every agent closes its connections after a cell in a room of its own and before one', () => {

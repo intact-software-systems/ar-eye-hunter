@@ -136,11 +136,9 @@ export type AlmConformanceOwnerEnd = 'close' | 'flush-and-crash';
 export type AlmConformanceRoomTopology = 'kept' | 'reshaped';
 
 /**
- * Where a cell runs: `family`, the room its family's cells share; `own`, a room of its own, which every page of the cell
- * connects to afresh and leaves after it. A cell needs its own room when its waits need a room or connections no earlier
- * cell left: `subscription-ordered-reconnect`'s sibling-left wait counts the room's `activeSessionCount`, which a session
- * an earlier cell left in the room would raise, and the other four-role cells, which share its roles, the room's one
- * granted topic and its start states, have only ever run in rooms of their own.
+ * Where a cell runs: `family`, the room its family's cells share; `own`, a room of its own. A cell needs its own room
+ * when one of its waits reads something an earlier cell would leave in a shared room: `subscription-ordered-reconnect`'s
+ * sibling-left wait counts the room's `activeSessionCount`, which a session an earlier cell left in the room would raise.
  */
 export type AlmConformanceCellRoom = 'family' | 'own';
 
