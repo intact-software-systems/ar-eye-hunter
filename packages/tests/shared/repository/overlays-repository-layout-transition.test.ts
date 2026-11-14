@@ -47,7 +47,7 @@ describe('overlay repository layout transition', () => {
         setPlannedOverlayById(OVERLAY_ID, planned);
         nowEpochMs = 5_000;
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(planned) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
         const transition = readTransition();
         expect(transition).toEqual({
@@ -66,6 +66,7 @@ describe('overlay repository layout transition', () => {
 
         reconcileAcceptedOverlayIdentity({
             overlayId: OVERLAY_ID,
+            roomRef: ROOM,
             acceptedIdentity: toOverlayLayoutIdentity(incomparable)
         });
 
@@ -101,7 +102,7 @@ describe('overlay repository layout transition', () => {
         const planned = overlay({ version: 3 });
         setAcceptedOverlayById(OVERLAY_ID, bootstrap);
         setPlannedOverlayById(OVERLAY_ID, planned);
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(planned) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
         expect(acceptedLayout()).toEqual(planned);
         expect(readTransition()).toBeUndefined();
@@ -117,7 +118,7 @@ describe('overlay repository layout transition', () => {
 
         const planned = overlay({ version: 3, groupRef: OTHER_ROOM });
         setPlannedOverlayById(OVERLAY_ID, planned);
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(planned) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
         expect(acceptedLayout()).toEqual(planned);
         expect(readTransition()).toBeUndefined();
@@ -144,7 +145,7 @@ describe('overlay repository layout transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
 
         removeAcceptedOverlayById(OVERLAY_ID);
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: undefined });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: undefined });
 
         expect(readTransition()).toBeUndefined();
     });
@@ -159,7 +160,7 @@ describe('overlay repository layout transition', () => {
         nowEpochMs = 3_000;
         setPlannedOverlayById(OVERLAY_ID, third);
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(third) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(third) });
 
         expect(readableLayoutTransitionCache().readAllValues()).toEqual([[
             { replaced: second, replacedBy: toOverlayLayoutIdentity(third), replacedAtEpochMs: 3_000 },
@@ -218,7 +219,7 @@ describe('overlay repository layout transition', () => {
         expect(setAcceptedOverlayById(OVERLAY_ID, { ...replacing })).toBe('equal');
         expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, { ...replacing })).toBe('equal');
         setPlannedOverlayById(OVERLAY_ID, replacing);
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(replacing) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(replacing) });
         expect(setAcceptedOverlayById(OVERLAY_ID, replaced)).toBe('dominated-dropped');
 
         expect(readTransitions()).toEqual(recorded);
@@ -268,7 +269,7 @@ describe('overlay repository layout transition', () => {
         },
         {
             removal: 'through a group snapshot that names no accepted layout',
-            remove: (held: OverlayInfo) => reconcileAcceptedOverlayIdentity({ overlayId: held.overlayId, acceptedIdentity: undefined })
+            remove: (held: OverlayInfo) => reconcileAcceptedOverlayIdentity({ overlayId: held.overlayId, roomRef: ROOM, acceptedIdentity: undefined })
         }
     ])('a removal of the accepted layout clears the transition ($removal)', ({ remove }) => {
         const promoted = overlay({ version: 2 });
@@ -342,7 +343,7 @@ describe('overlay repository layout transition when the group snapshot names the
         setAcceptedOverlayById(OVERLAY_ID, held);
         nowEpochMs = 5_000;
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
 
         const recorded = [{ replaced: held, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs: 5_000 }];
         expect(findAcceptedOverlayById(OVERLAY_ID)).toBeUndefined();
@@ -358,7 +359,7 @@ describe('overlay repository layout transition when the group snapshot names the
         promoteAt([1, 2], 2_000);
         nowEpochMs = 3_000;
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 3 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 3 })) });
         expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, overlay({ version: 3 }))).toBe('initial-set');
 
         expect(readTransitions()).toEqual([
@@ -374,7 +375,7 @@ describe('overlay repository layout transition when the group snapshot names the
     ])('records nothing when the snapshot names a layout that does not dominate the held one, or is not live ($order)', ({ named }) => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ groupRevision: 4, presenceRevision: 6, version: 7 }));
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(named) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(named) });
         expect(readTransitions()).toBeUndefined();
         setAcceptedOverlayById(OVERLAY_ID, named);
 
@@ -389,7 +390,7 @@ describe('overlay repository layout transition when the group snapshot names the
         setAcceptedOverlayById(OVERLAY_ID, layout);
         const promoted = overlay({ version: 2 });
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
         expect(readTransitions()).toBeUndefined();
         setAcceptedOverlayById(OVERLAY_ID, promoted);
 
@@ -398,7 +399,7 @@ describe('overlay repository layout transition when the group snapshot names the
 
     it('a different layout that takes the empty slot clears the transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
 
         expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 3 }))).toBe('initial-set');
 
@@ -407,7 +408,7 @@ describe('overlay repository layout transition when the group snapshot names the
 
     it('the promoted identity held by a layout of another room does not keep the transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
 
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2, groupRef: OTHER_ROOM }));
 
@@ -419,9 +420,9 @@ describe('overlay repository layout transition when the group snapshot names the
         { snapshot: 'no layout', acceptedIdentity: undefined }
     ])('a later snapshot that names $snapshot before the arrival clears the transition', ({ acceptedIdentity }) => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
 
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity });
         expect(readTransitions()).toBeUndefined();
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
 
@@ -431,11 +432,11 @@ describe('overlay repository layout transition when the group snapshot names the
     it('a snapshot that names the same layout again keeps the transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
         const promotedIdentity = toOverlayLayoutIdentity(overlay({ version: 2 }));
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: promotedIdentity });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: promotedIdentity });
         const recorded = readTransitions();
 
         nowEpochMs = 2_000;
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: promotedIdentity });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: promotedIdentity });
 
         expect(readTransitions()).toEqual(recorded);
         expect(recorded).toHaveLength(1);
@@ -443,7 +444,7 @@ describe('overlay repository layout transition when the group snapshot names the
 
     it('removing the room between the removal and the arrival clears the transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
 
         expect(removeAcceptedOverlayByGroupRef(ROOM)).toBe(false);
         expect(readTransitions()).toBeUndefined();
@@ -455,7 +456,7 @@ describe('overlay repository layout transition when the group snapshot names the
     it('keeps the removal instant when the clock steps back before the arrival', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
         nowEpochMs = 5_000;
-        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
 
         nowEpochMs = 4_000;
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));

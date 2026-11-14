@@ -63,6 +63,7 @@ export async function acceptGroupSnapshotUpdate(
 
     overlaysRepository.reconcileAcceptedOverlayIdentity({
         overlayId: toScopedOverlayId(snapshot.group),
+        roomRef: snapshot.group,
         acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined
     });
     createAndSetBootstrapOverlays([snapshot], bootstrapOverlayPolicy);

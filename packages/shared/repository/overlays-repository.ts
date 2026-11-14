@@ -64,6 +64,7 @@ interface SetOverlayInput {
 
 interface ReconcileAcceptedOverlayIdentityInput {
     readonly overlayId: string;
+    readonly roomRef: GroupRef;
     readonly acceptedIdentity: GroupLayoutIdentity | undefined;
     readonly manager?: RepositoryManager;
 }
@@ -611,7 +612,7 @@ function removeMismatchedAcceptedOverlay(
         overlayId: input.overlayId,
         held,
         recorded,
-        taker: toSnapshotAcceptedLayoutTaker(input, held ?? recorded[0]?.replaced),
+        taker: toSnapshotAcceptedLayoutTaker(input),
         nowEpochMs: readOverlayRepositoryNow(input.manager),
         manager: input.manager
     };
@@ -620,14 +621,9 @@ function removeMismatchedAcceptedOverlay(
     return removed;
 }
 
-/** The layout the snapshot names accepted, as the taker of the slot `slotLayout` was, or is recorded as, replaced in. */
-function toSnapshotAcceptedLayoutTaker(
-    input: ReconcileAcceptedOverlayIdentityInput,
-    slotLayout: OverlayInfo | undefined
-): AcceptedLayoutTaker | null {
-    return slotLayout !== undefined && slotLayout.overlayId === input.overlayId &&
-            input.acceptedIdentity?.state === 'active'
-        ? { roomRef: slotLayout.groupRef, identity: input.acceptedIdentity }
+function toSnapshotAcceptedLayoutTaker(input: ReconcileAcceptedOverlayIdentityInput): AcceptedLayoutTaker | null {
+    return input.acceptedIdentity?.state === 'active'
+        ? { roomRef: input.roomRef, identity: input.acceptedIdentity }
         : null;
 }
 

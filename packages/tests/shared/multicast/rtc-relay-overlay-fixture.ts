@@ -261,6 +261,7 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
             setCurrentPlannedServerOverlayById(overlayId, overlay, this.dependencies.overlayRepositories);
             reconcileAcceptedOverlayIdentity({
                 overlayId,
+                roomRef: snapshot.group,
                 acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined,
                 manager: this.dependencies.overlayRepositories
             });
@@ -274,6 +275,7 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
         for (const overlayId of overlayIds) {
             reconcileAcceptedOverlayIdentity({
                 overlayId,
+                roomRef: snapshot.group,
                 acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined,
                 manager: overlayRepositories
             });
