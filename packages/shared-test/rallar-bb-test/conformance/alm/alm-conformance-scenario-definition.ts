@@ -136,6 +136,16 @@ export type AlmConformanceOwnerEnd = 'close' | 'flush-and-crash';
 export type AlmConformanceRoomTopology = 'kept' | 'reshaped';
 
 /**
+ * Where a cell runs: `family`, the room its family's cells share; `own`, a room of its own, which every page of the cell
+ * connects to afresh and leaves after it. A cell needs its own room when its waits need a room or connections no earlier
+ * cell left: `subscription-ordered-reconnect`'s sibling-left wait counts the room's `activeSessionCount`, which a session
+ * an earlier cell left in the room would raise, and the other four-role cells, which share its roles, the room's one
+ * granted topic and its start states, have only ever run in rooms of their own; `server-ordered-entry`'s pages enter a
+ * principal's server-ordered track once per connection, so its `entered` waits need connections no earlier cell opened.
+ */
+export type AlmConformanceCellRoom = 'family' | 'own';
+
+/**
  * A connect's `RallarMessageSelector`, which this browser-loaded catalog cannot import: the topic its lanes subscribe.
  * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
  */
@@ -231,6 +241,20 @@ export const ALM_CONFORMANCE_LANE_FAMILIES = [
 
 export type AlmConformanceLaneFamily = typeof ALM_CONFORMANCE_LANE_FAMILIES[number];
 
+/**
+ * How a family's pages hold their sessions from cell to cell: `opened`, each page connects for each cell; `chained`, a
+ * same-context cell's successor page takes its owner page's session into the next cell and the receiver page stays
+ * connected, so the family's cells share the family's room whatever the lane asks.
+ */
+export const ALM_CONFORMANCE_FAMILY_SESSIONS: Readonly<Record<AlmConformanceLaneFamily, 'opened' | 'chained'>> = {
+    'two-agent': 'opened',
+    addressed: 'opened',
+    'three-agent': 'opened',
+    'same-context': 'chained',
+    'same-principal': 'opened',
+    'four-role': 'opened'
+};
+
 export type AlmConformanceScenarioDefinition = AlmConformanceScenarioCore & AlmConformanceMessages;
 
 interface AlmConformanceScenarioCore {
@@ -285,6 +309,8 @@ interface AlmConformanceScenarioCore {
      * lane plan then runs the cell after every cell that keeps it, in a room the family shares.
      */
     readonly roomTopology?: Extract<AlmConformanceRoomTopology, 'reshaped'>;
+    /** Absent, the cell runs in its family's room; `own` when it needs a room of its own (`AlmConformanceCellRoom`). */
+    readonly room?: Extract<AlmConformanceCellRoom, 'own'>;
     /**
      * Absent when no receipt is judged against one role. Otherwise the role none of the sender's receipts may confirm,
      * which the lane reads from the sender recipe's metadata after the run.

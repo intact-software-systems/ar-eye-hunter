@@ -39,10 +39,9 @@ const ORDERING_POSITION = 'ordering-position';
  * track also carries every earlier lane connect of the principal.
  * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
- * In a room per family a page enters the track once, at its first connect of the family, in whichever cell ran first,
- * so the entry wait alone reads the page's whole history; there an earlier cell's entry satisfies it, so it does not show
- * that this cell's own connects produced one. In a room per cell every connection closes after its cell, and a page
- * enters again in each. No page states `before-entry` in the window after the last write's copy arrived.
+ * A page enters the track once per connection, so the cell runs in a room of its own, which every page connects to
+ * afresh: each entry wait reads its own cell's history and shows that this cell's connects produced the entry. No page
+ * states `before-entry` in the window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -51,6 +50,7 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     carriers: ['ws'],
     roles: ALM_CONFORMANCE_SAME_PRINCIPAL_ROLES,
     laneFamily: 'same-principal',
+    room: 'own',
     messageSelector: { topicId: AppTopics.clientStateEvent },
     principalRoles: ['sender'],
     toSenderCommands: (sender) => [
@@ -121,7 +121,7 @@ function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): r
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
             contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:`,
             payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 },
-            historyFrom: 'page'
+            historyFrom: 'cell'
         }),
         ...(aboveFirstSeq
             ? [toResultAssertion({

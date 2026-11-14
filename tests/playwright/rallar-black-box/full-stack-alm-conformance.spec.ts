@@ -47,6 +47,7 @@ import {
     type AlmLaneParameters
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
 import {
+    isAlmLaneCellClosedAfter,
     resolveAlmLanePlan,
     toAlmLaneCellGroup,
     type AlmLaneCellOrderRecord,
@@ -525,9 +526,9 @@ async function runAlmConformanceScenarios(
     family: TwoAgentScenarioFamily,
     plan: AlmLanePlan
 ): Promise<void> {
-    for (const { cell, scenario } of toPlannedScenarios(run, carrier, { family, plan })) {
+    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
         await runPairCell(run, scenario);
-        if (cell.room === 'cell') {
+        if (isAlmLaneCellClosedAfter(plan, index)) {
             await closeAgentConnections(toPairAgentRun(run), cell.scenarioKey);
         }
     }
@@ -590,7 +591,7 @@ async function runAgentScenarios(
     family: AgentScenarioFamily,
     plan: AlmLanePlan
 ): Promise<void> {
-    for (const { cell, scenario } of toPlannedScenarios(run, carrier, { family, plan })) {
+    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
         const recipes = new Map(scenario.roles.map((role) => [role, requireRoleRecipe(scenario, role)] as const));
         const outcomes = await runRecipesOnAgents(run, recipes, scenario.continuation);
         const evidence = scenario.roles.map((role) => ({
@@ -609,7 +610,7 @@ async function runAgentScenarios(
                 .toBe(true);
         }
         await assertScenarioEvidence(run, scenario, evidence);
-        if (cell.room === 'cell') {
+        if (isAlmLaneCellClosedAfter(plan, index)) {
             await closeAgentConnections(run, cell.scenarioKey);
         }
     }

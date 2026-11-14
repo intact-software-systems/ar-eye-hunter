@@ -582,7 +582,7 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_ALM_CARRIERS`             | No       | All carriers                     | Comma-separated ALM conformance carriers (`ws`, `rtc`, `rtc-with-ws-fallback`); others are refused.   |
 | `RALLAR_BLACK_BOX_ALM_ORDER`                | No       | `declared`                       | ALM lane cell order. Supported values: `declared`, `shuffled`.                                        |
 | `RALLAR_BLACK_BOX_ALM_SEED`                 | No       | Minted per family                | Seed of a shuffled ALM lane order, an integer from 0 to 4294967295; only with `shuffled`.             |
-| `RALLAR_BLACK_BOX_ALM_ROOMS`                | No       | `family`                         | ALM lane room per `family` or per `cell`; four-role always `cell`, same-context always `family`.      |
+| `RALLAR_BLACK_BOX_ALM_ROOMS`                | No       | `family`                         | ALM lane room per `family` or per `cell`; a declared own-room cell `cell`, same-context `family`.     |
 | `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins, a key no selected scope or carrier runs is refused.  |
 | `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                                               |
 | `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke.                           |

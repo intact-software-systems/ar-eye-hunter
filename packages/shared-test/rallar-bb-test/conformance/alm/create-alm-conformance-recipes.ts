@@ -19,6 +19,7 @@ import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
+    AlmConformanceCellRoom,
     AlmConformanceContinuationDefinition,
     AlmConformanceLaneFamily,
     AlmConformanceMessages,
@@ -152,6 +153,8 @@ export interface AlmConformanceScenario {
     readonly ownerEnd: AlmConformanceOwnerEnd | undefined;
     /** Whether the cell reshapes its room's topology; the lane plan orders a shared room by it. */
     readonly roomTopology: AlmConformanceRoomTopology;
+    /** Where the cell runs; the lane plan gives an `own` cell a room of its own in any family that opens its sessions. */
+    readonly room: AlmConformanceCellRoom;
     /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;
 }
@@ -357,6 +360,7 @@ function toAlmConformanceScenario(
         successorGate: undefined,
         ownerEnd: definition.roles.includes('successor') ? definition.ownerEnd ?? 'close' : undefined,
         roomTopology: definition.roomTopology ?? 'kept',
+        room: definition.room ?? 'family',
         continuation: undefined
     };
     return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };

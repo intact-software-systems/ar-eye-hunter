@@ -22,14 +22,12 @@ export function toWaitHistoryMetadata(
  * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before
  * the command's result. A wait that already names its own start keeps it, and that start must be a command of its own
  * cell: any other is a programmer error, thrown naming the wait. A wait that declares `historyFrom: 'page'` in its
- * metadata reads the page's whole history, in three classes: a store's recovery that a fresh document reports during
- * its first connect, pinned to that connect's session, so no earlier cell's recovery can match it; the settle's wait for
- * the room's head, which matches only `held` applications at or above the head's revisions: in a room per cell no
+ * metadata reads the page's whole history, in two classes: a store's recovery that a fresh document reports during
+ * its first connect, pinned to that connect's session, so no earlier cell's recovery can match it; and the settle's wait
+ * for the room's head, which matches only `held` applications at or above the head's revisions: in a room per cell no
  * earlier cell left one, while in a room the family shares an earlier cell's last `held` event can sit at the head's
  * revisions, since a connect's presence write advances `presenceRevision` only when the room's presence-summary work
- * runs, and `removed` events are not matched; and a page's entry on a principal's server-ordered track, which in a
- * room per family the page states once, at its first copy, in whichever cell of the family ran first, matched on the
- * track of the cell's own arrival. Any other wait must follow at least one of its cell's own commands.
+ * runs, and `removed` events are not matched. Any other wait must follow at least one of its cell's own commands.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,

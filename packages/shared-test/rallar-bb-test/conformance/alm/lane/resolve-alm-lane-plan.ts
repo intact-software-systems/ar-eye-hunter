@@ -1,9 +1,10 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 
 import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
-import type {
-    AlmConformanceLaneFamily,
-    AlmConformanceTag
+import {
+    ALM_CONFORMANCE_FAMILY_SESSIONS,
+    type AlmConformanceLaneFamily,
+    type AlmConformanceTag
 } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
 import type { AlmLaneOrder, AlmLaneParameters, AlmLaneRooms } from './decode-alm-lane-parameters.ts';
@@ -22,14 +23,11 @@ export interface ResolveAlmLanePlanInput {
     readonly mintSeed: () => number;
 }
 
-type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags' | 'roomTopology'>;
+type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags' | 'roomTopology' | 'room'>;
 
 export interface AlmLanePlannedCell {
     readonly scenarioKey: string;
-    /**
-     * `cell` runs the cell in a room of its own, named by `toAlmLaneCellGroup`, and every agent closes its room
-     * connection after the cell, so the next cell's connect joins its own room.
-     */
+    /** `cell` runs the cell in a room of its own, named by `toAlmLaneCellGroup`. */
     readonly room: AlmLaneRooms;
 }
 
@@ -38,6 +36,7 @@ export interface AlmLaneCellOrderRecord {
     readonly mode: AlmLaneOrder;
     /** The seed a shuffled order used, given or minted; null for the declared order. */
     readonly seed: number | null;
+    /** The room parameter as the family ran it; a cell that declares a room of its own runs in one under either. */
     readonly rooms: AlmLaneRooms;
     readonly scenarioKeys: readonly string[];
 }
@@ -48,12 +47,10 @@ export interface AlmLanePlan {
 }
 
 /**
- * Which cells of a family run, in which order and in which room. A
- * four-role cell always runs in a room of its own: a connect to an unchanged room reuses the open connection without a
- * join, so a sibling whose dropped socket closed its presence would carry it into the next cell. Same-context cells
- * chain one session from page to page, so they never get a room of their own. In a room the family shares, every
- * cell that reshapes the room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes
- * within the two groups.
+ * Which cells of a family run, in which order and in which room. A cell runs in a room of its own when the room
+ * parameter asks for one per cell or its definition declares one; a family whose pages chain one session from cell to
+ * cell shares the family's room whatever the parameter asks. In a room the family shares, every cell that reshapes the
+ * room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes within the two groups.
  */
 export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan {
     const { parameters } = input;
@@ -69,13 +66,28 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
         only: parameters.only,
         mintSeed: input.mintSeed
     });
-    const rooms = resolveAlmLaneRooms(input.family, parameters.rooms);
+    const rooms = ALM_CONFORMANCE_FAMILY_SESSIONS[input.family] === 'chained' ? 'family' : parameters.rooms;
     const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
-    const scenarioKeys = placed.map((scenario) => scenario.scenarioKey);
     return {
-        cells: scenarioKeys.map((scenarioKey) => ({ scenarioKey, room: rooms })),
-        cellOrder: { mode: parameters.order, seed: ordered.seed, rooms, scenarioKeys }
+        cells: placed.map((scenario) => ({
+            scenarioKey: scenario.scenarioKey,
+            room: scenario.room === 'own' ? 'cell' : rooms
+        })),
+        cellOrder: {
+            mode: parameters.order,
+            seed: ordered.seed,
+            rooms,
+            scenarioKeys: placed.map((scenario) => scenario.scenarioKey)
+        }
     };
+}
+
+/**
+ * Every agent closes its room connections after a cell in a room of its own, so the next cell connects afresh, and
+ * after a cell whose next one runs in a room of its own, so that cell opens connections no earlier cell opened.
+ */
+export function isAlmLaneCellClosedAfter(plan: AlmLanePlan, index: number): boolean {
+    return plan.cells[index]?.room === 'cell' || plan.cells[index + 1]?.room === 'cell';
 }
 
 /** A cell of its own room names the family's room with its scenario key. */
@@ -91,15 +103,4 @@ function toKeptTopologyFirst(scenarios: readonly AlmLanePlanCell[]): readonly Al
         ...scenarios.filter((scenario) => scenario.roomTopology === 'kept'),
         ...scenarios.filter((scenario) => scenario.roomTopology === 'reshaped')
     ];
-}
-
-function resolveAlmLaneRooms(family: AlmConformanceLaneFamily, requested: AlmLaneRooms): AlmLaneRooms {
-    switch (family) {
-        case 'four-role':
-            return 'cell';
-        case 'same-context':
-            return 'family';
-        default:
-            return requested;
-    }
 }

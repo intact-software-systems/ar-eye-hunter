@@ -53,6 +53,7 @@ export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = 
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
+    room: 'own',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
     startGrants: [

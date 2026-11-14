@@ -88,9 +88,10 @@ records what the runner was doing while the cell ran:
   [`docs/environment-variables.md`](../../../../docs/environment-variables.md) holds. `mode` is `declared`
   (the catalog order) or `shuffled`; `seed` is the seed a shuffled family used, given or minted, and
   `null` for `declared`; `rooms` is `family` (one room for the family) or `cell` (a room of its own
-  per cell, every connection closed after it) as the family ran it: a four-role family always reads
-  `cell` and a same-context family `family`, whatever was asked; `scenarioKeys` lists the cells in
-  the order they ran. In a room the family shares, a cell that reshapes the room's topology (its definition
+  per cell) as the family ran it: a same-context family reads `family`, whatever was asked. A cell
+  whose definition declares a room of its own (`room: 'own'`: every four-role cell and
+  `server-ordered-entry`) runs in one under either value, and every connection closes after a cell in
+  a room of its own and before one; `scenarioKeys` lists the cells in the order they ran. In a room the family shares, a cell that reshapes the room's topology (its definition
   declares `roomTopology: 'reshaped'`) runs after every cell that keeps it; a shuffle permutes within the two
   groups. The job-log line ends in `order=… seed=… rooms=…` (`seed=none` for `declared`).
 - `regime` — `normal`, `slow`, or `unclassified`: `perOperation`'s class when it is measured,

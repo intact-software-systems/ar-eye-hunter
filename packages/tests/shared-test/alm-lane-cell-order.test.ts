@@ -19,6 +19,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
 import { resolveAlmLaneCellOrder } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-cell-order.ts';
 import {
+    isAlmLaneCellClosedAfter,
     resolveAlmLanePlan,
     toAlmLaneCellGroup,
     type AlmLanePlan,
@@ -352,14 +353,43 @@ describe('the ALM lane plan', () => {
         expect(plan.cells.length).toBeGreaterThan(0);
     });
 
-    it('four-role cells run in a room of their own whatever the room parameter says', () => {
+    it('a cell whose definition declares a room of its own plans one in a family room, and the others plan the family\'s', () => {
+        const declared = toFamilyCatalog('same-principal').filter((scenario) => scenario.room === 'own');
+        const plan = resolveAlmLanePlan(toPlanInput('same-principal', { rooms: 'family' }));
+
+        expect(declared.map((scenario) => scenario.scenarioKey)).toEqual(['server-ordered-entry']);
+        expect(plan.cells).toEqual(
+            plan.cells.map(({ scenarioKey }) => ({ scenarioKey, room: scenarioKey === 'server-ordered-entry' ? 'cell' : 'family' }))
+        );
+        expect(plan.cellOrder.rooms).toBe('family');
+    });
+
+    it('every four-role cell declares a room of its own, so it plans one whatever the room parameter says', () => {
+        expect(toFamilyCatalog('four-role').every((scenario) => scenario.room === 'own')).toBe(true);
         for (const rooms of ['family', 'cell'] as const) {
             const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms }));
 
             expect(plan.cells.length, rooms).toBeGreaterThan(0);
             expect(plan.cells, rooms).toEqual(toPlannedCells(plan, 'cell'));
-            expect(plan.cellOrder.rooms, rooms).toBe('cell');
+            expect(plan.cellOrder.rooms, rooms).toBe(rooms);
         }
+    });
+
+    it('every agent closes its connections after a cell in a room of its own and before one', () => {
+        const plan = {
+            cells: [
+                { scenarioKey: 'a', room: 'family' },
+                { scenarioKey: 'b', room: 'family' },
+                { scenarioKey: 'c', room: 'cell' },
+                { scenarioKey: 'd', room: 'family' },
+                { scenarioKey: 'e', room: 'cell' },
+                { scenarioKey: 'f', room: 'cell' }
+            ],
+            cellOrder: { mode: 'declared', seed: null, rooms: 'family', scenarioKeys: ['a', 'b', 'c', 'd', 'e', 'f'] }
+        } as const;
+
+        expect(plan.cells.map((_cell, index) => isAlmLaneCellClosedAfter(plan, index)))
+            .toEqual([false, true, true, true, true, true]);
     });
 
     it('same-context cells are shuffled and never get a room of their own', () => {
@@ -373,7 +403,7 @@ describe('the ALM lane plan', () => {
         expect(plan.cellOrder).toEqual({ mode: 'shuffled', seed: 3, rooms: 'family', scenarioKeys: shuffled });
     });
 
-    it('a room per cell gives every cell of any agent family a room of its own', () => {
+    it('a room per cell gives every cell of any agent family a room of its own; a family room gives one where declared', () => {
         const agentFamilies = ALM_CONFORMANCE_LANE_FAMILIES.filter((family) => family !== 'same-context');
         for (const family of agentFamilies) {
             const perCell = resolveAlmLanePlan(toPlanInput(family, { rooms: 'cell' }));
@@ -381,7 +411,12 @@ describe('the ALM lane plan', () => {
 
             expect(perCell.cells.length, family).toBeGreaterThan(0);
             expect(perCell.cells, family).toEqual(toPlannedCells(perCell, 'cell'));
-            expect(perFamily.cells, family).toEqual(toPlannedCells(perFamily, family === 'four-role' ? 'cell' : 'family'));
+            const declaredRooms = new Map(
+                toFamilyCatalog(family).map((scenario) => [scenario.scenarioKey, scenario.room === 'own' ? 'cell' : 'family'])
+            );
+            expect(perFamily.cells, family).toEqual(
+                perFamily.cells.map(({ scenarioKey }) => ({ scenarioKey, room: declaredRooms.get(scenarioKey) }))
+            );
         }
     });
 
