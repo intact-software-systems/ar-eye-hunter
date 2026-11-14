@@ -148,6 +148,20 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             })).toEqual([]);
         });
 
+        it('owns nothing when one layout has the recipient visited and the other puts it behind the sender', () => {
+            // The promotion kept `a-b` and moved `c` from under `b` to under `a`.
+            const accepted = { a: ['b', 'c'], b: ['a', 'e'], c: ['a'], e: ['b', 'f'], f: ['e'] };
+
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: accepted.b,
+                overlayNextHopsBySessionId: accepted,
+                previousOverlayLayout: { neighborPeerIds: REPLACED.b, nextHopsBySessionId: REPLACED }
+            })).toEqual([]);
+        });
+
         // Green on first run.
         it('keeps every neighbour with one layout in force, as before the overlap', () => {
             expect(resolveALOwnedChildPeerIds(COPY_TO_B, {

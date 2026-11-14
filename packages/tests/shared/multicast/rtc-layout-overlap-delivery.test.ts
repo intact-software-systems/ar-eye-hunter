@@ -779,6 +779,16 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
                 recipientPeerIds: ['c'],
                 edges: ['a>b', 'a>c']
             },
+            // The promotion keeps `a-b` and moves `c` from under `b` to under `a`: at `b` the accepted layout puts `c`
+            // behind its sender and the replaced layout has `c` visited, so neither layout alone tells `b` to own nothing.
+            {
+                shape: 'the recipient moved to the sender\'s side of a kept edge',
+                sessionIds: ['a', 'b', 'c', 'e', 'f'],
+                previousTree: REVIEW_PREVIOUS,
+                promotedTree: { a: ['b', 'c'], b: ['a', 'e'], c: ['a'], e: ['b', 'f'], f: ['e'] },
+                recipientPeerIds: ['c'],
+                edges: ['a>b', 'a>c']
+            },
             // Green on first run: random-k is clamped to the accepted neighbour count and keeps the accepted child first, so
             // the origin addresses no replaced-layout neighbour that could fall back.
             {
