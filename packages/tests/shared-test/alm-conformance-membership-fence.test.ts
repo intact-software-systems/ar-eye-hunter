@@ -21,6 +21,7 @@ import type {
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
@@ -169,7 +170,8 @@ describe('fenced-delivery', () => {
                 connection: 'receiver',
                 payloadPath: 'data',
                 contains: `"typeId":"alm.conformance.${carrier}.fenced-delivery","rosterVersion":` +
-                    `{resultCache.alm-${carrier}-fenced-delivery-recipient-b-read-roster.value.body.group.rosterVersion},`
+                    `{resultCache.alm-${carrier}-fenced-delivery-recipient-b-read-roster.value.body.group.rosterVersion},`,
+                sinceCommandIdPrefix: `alm-${carrier}-fenced-delivery-recipient-b-`
             },
             timeoutMs: 5_000
         });
@@ -184,6 +186,7 @@ describe('fenced-delivery', () => {
                         ? { status: 'ok', value: { status: 200, body: { group: { rosterVersion: 4 } } } }
                         : undefined
             });
+            writeAlmCellStartEvents(runtime, recipientB.commands);
             runtime.recordEvent({
                 kind: 'message',
                 connection: 'receiver',
@@ -276,7 +279,8 @@ describe('fenced-catch-up', () => {
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
                 contains: '"typeId":"al.control.nack.v3",' +
-                    `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}"${outcome}`
+                    `"targetMsgId":"{resultCache.alm-${carrier}-fenced-catch-up-sender-send-1.value.msgId}"${outcome}`,
+                sinceCommandIdPrefix: `alm-${carrier}-fenced-catch-up-sender-`
             },
             timeoutMs: 27_000
         });
@@ -320,7 +324,8 @@ describe('fenced-catch-up', () => {
                     'data.typeId': 'alm.conformance.rtc.fenced-catch-up'
                 },
                 payloadPath: 'data',
-                contains: '"typeId":"alm.conformance.rtc.fenced-catch-up","carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync'
+                contains: '"typeId":"alm.conformance.rtc.fenced-catch-up","carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync',
+                sinceCommandIdPrefix: 'alm-rtc-fenced-catch-up-receiver-'
             },
             timeoutMs: 27_000
         });

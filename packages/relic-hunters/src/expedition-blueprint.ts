@@ -1,11 +1,14 @@
+import { isApiJsonObject, type ApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import {
     failRallarAiValidation,
-    okRallarAiValidation,
     validateRallarAiJsonSchemaValue,
     type RallarAiJsonSchema,
     type RallarAiValidationIssue,
     type RallarAiValidationResult
 } from '@shared/rallar-ai/mod.ts';
+import { computeShuffledOrder } from '@shared/random/compute-shuffled-order.ts';
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { RelicDefinition, RelicExpeditionSetupSource, RelicRoom, RelicRoomKind } from './model.ts';
 
 export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID = 'relic-hunters.expedition-blueprint';
@@ -172,54 +175,50 @@ export const RELIC_EXPEDITION_BLUEPRINT_SCHEMA: RallarAiJsonSchema = {
     }
 };
 
-export function validateRelicExpeditionBlueprint(
+/** A blueprint as a model or a caller gave it: refused with every schema and expedition-rule issue. */
+export function decodeRelicExpeditionBlueprint(
     value: unknown
-): RallarAiValidationResult {
-    const schemaValidation = validateRallarAiJsonSchemaValue(
-        RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
-        value
-    );
-    const issues = [...schemaValidation.issues];
+): Either<RallarAiValidationResult, RelicExpeditionBlueprint> {
+    return decodeExpedition(value, toBlueprintRuleIssues);
+}
 
-    if (!isRecord(value)) {
-        return failRallarAiValidation(issues);
-    }
+/** A blueprint that also fits the castle scene: refused with every blueprint issue, then every visual misfit. */
+export function decodeRelicExpeditionVisualFit(
+    value: unknown
+): Either<RallarAiValidationResult, RelicExpeditionBlueprint> {
+    return decodeExpedition(value, (candidate) => [
+        ...toBlueprintRuleIssues(candidate),
+        ...toVisualFitIssues(candidate)
+    ]);
+}
 
-    const rooms = Array.isArray(value.rooms) ? value.rooms : [];
-    const relics = Array.isArray(value.relics) ? value.relics : [];
-    validateRooms(rooms, issues);
-    validateRelics(relics, rooms, issues);
-
+function decodeExpedition(
+    value: unknown,
+    toRuleIssues: (candidate: ApiJsonObject) => readonly RallarAiValidationIssue[]
+): Either<RallarAiValidationResult, RelicExpeditionBlueprint> {
+    const issues = [
+        ...validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues,
+        ...(isApiJsonObject(value) ? toRuleIssues(value) : [])
+    ];
     return issues.length === 0
-        ? okRallarAiValidation()
-        : failRallarAiValidation(issues);
+        ? Either.ofRight(value as RelicExpeditionBlueprint)
+        : Either.ofLeft(failRallarAiValidation(issues));
 }
 
-export function assertRelicExpeditionBlueprint(
-    value: unknown
-): asserts value is RelicExpeditionBlueprint {
-    const validation = validateRelicExpeditionBlueprint(value);
-    if (!validation.ok) {
-        throw new Error(
-            `Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`
-        );
-    }
+function toBlueprintRuleIssues(candidate: ApiJsonObject): readonly RallarAiValidationIssue[] {
+    const issues: RallarAiValidationIssue[] = [];
+    const rooms = toJsonList(candidate.rooms).filter(isApiJsonObject);
+    validateRooms(rooms, issues);
+    validateRelics(toJsonList(candidate.relics), rooms, issues);
+    return issues;
 }
 
-export function validateRelicExpeditionVisualFit(
-    value: unknown
-): RallarAiValidationResult {
-    const baseValidation = validateRelicExpeditionBlueprint(value);
-    const issues = [...baseValidation.issues];
-
-    if (!isRecord(value)) {
-        return failRallarAiValidation(issues);
-    }
-
+function toVisualFitIssues(candidate: ApiJsonObject): readonly RallarAiValidationIssue[] {
+    const issues: RallarAiValidationIssue[] = [];
     if (
-        typeof value.theme !== 'string' ||
+        typeof candidate.theme !== 'string' ||
         !RELIC_EXPEDITION_VISUAL_THEMES.includes(
-            value.theme as typeof RELIC_EXPEDITION_VISUAL_THEMES[number]
+            candidate.theme as typeof RELIC_EXPEDITION_VISUAL_THEMES[number]
         )
     ) {
         issues.push(issue(
@@ -229,8 +228,8 @@ export function validateRelicExpeditionVisualFit(
         ));
     }
 
-    const rooms = Array.isArray(value.rooms) ? value.rooms.filter(isRecord) : [];
-    const roomById = new Map<string, Record<string, unknown>>();
+    const rooms = toJsonList(candidate.rooms).filter(isApiJsonObject);
+    const roomById = new Map<string, ApiJsonObject>();
     for (const room of rooms) {
         if (typeof room.id === 'string') {
             roomById.set(room.id, room);
@@ -249,10 +248,10 @@ export function validateRelicExpeditionVisualFit(
         validateVisualCoordinate(room.x, `${path}.x`, RELIC_EXPEDITION_VISUAL_LIMITS.maxAbsX, issues);
         validateVisualCoordinate(room.z, `${path}.z`, RELIC_EXPEDITION_VISUAL_LIMITS.maxAbsZ, issues);
 
-        if (!Array.isArray(room.neighbors) || typeof room.id !== 'string') {
+        if (typeof room.id !== 'string') {
             continue;
         }
-        for (const neighborId of room.neighbors) {
+        for (const neighborId of toJsonList(room.neighbors)) {
             if (typeof neighborId !== 'string' || room.id > neighborId) {
                 continue;
             }
@@ -270,27 +269,13 @@ export function validateRelicExpeditionVisualFit(
             }
         }
     }
-
-    return issues.length === 0
-        ? okRallarAiValidation()
-        : failRallarAiValidation(issues);
-}
-
-export function assertRelicExpeditionVisualFit(
-    value: unknown
-): asserts value is RelicExpeditionBlueprint {
-    const validation = validateRelicExpeditionVisualFit(value);
-    if (!validation.ok) {
-        throw new Error(
-            `Invalid Relic expedition visual fit: ${validation.errors.join('; ')}`
-        );
-    }
+    return issues;
 }
 
 export function createProceduralRelicExpeditionBlueprint(
     options: CreateProceduralRelicExpeditionBlueprintOptions
 ): RelicExpeditionBlueprint {
-    const random = createSeededRandom(options.seed);
+    const random = createSeededRandom(computeSeedHash(options.seed));
     const mirror = random() >= 0.5 ? -1 : 1;
     const verticalOffset = Math.floor(random() * 3) - 1;
     const includeGallery = random() >= 0.35;
@@ -385,10 +370,9 @@ export function relicsFromRelicExpeditionBlueprint(
 }
 
 function validateRooms(
-    rawRooms: readonly unknown[],
+    rooms: readonly ApiJsonObject[],
     issues: RallarAiValidationIssue[]
 ): void {
-    const rooms = rawRooms.filter(isRecord);
     const roomIds = new Set<string>();
     const coordinates = new Set<string>();
 
@@ -413,19 +397,17 @@ function validateRooms(
         }
         coordinates.add(coordinateKey);
 
-        if (Array.isArray(room.neighbors)) {
-            const neighborIds = new Set<string>();
-            for (const [neighborIndex, neighborId] of room.neighbors.entries()) {
-                const neighborPath = `${path}.neighbors[${neighborIndex}]`;
-                if (neighborId === room.id) {
-                    issues.push(issue(neighborPath, 'self-neighbor', 'Room cannot neighbor itself.'));
-                }
-                if (typeof neighborId === 'string' && neighborIds.has(neighborId)) {
-                    issues.push(issue(neighborPath, 'duplicate-neighbor', 'Neighbor id must be unique per room.'));
-                }
-                if (typeof neighborId === 'string') {
-                    neighborIds.add(neighborId);
-                }
+        const neighborIds = new Set<string>();
+        for (const [neighborIndex, neighborId] of toJsonList(room.neighbors).entries()) {
+            const neighborPath = `${path}.neighbors[${neighborIndex}]`;
+            if (neighborId === room.id) {
+                issues.push(issue(neighborPath, 'self-neighbor', 'Room cannot neighbor itself.'));
+            }
+            if (typeof neighborId === 'string' && neighborIds.has(neighborId)) {
+                issues.push(issue(neighborPath, 'duplicate-neighbor', 'Neighbor id must be unique per room.'));
+            }
+            if (typeof neighborId === 'string') {
+                neighborIds.add(neighborId);
             }
         }
     }
@@ -446,10 +428,7 @@ function validateRooms(
     }
 
     for (const room of rooms) {
-        if (!Array.isArray(room.neighbors)) {
-            continue;
-        }
-        for (const neighborId of room.neighbors) {
+        for (const neighborId of toJsonList(room.neighbors)) {
             if (typeof neighborId !== 'string') {
                 continue;
             }
@@ -460,7 +439,7 @@ function validateRooms(
                 );
                 continue;
             }
-            if (!Array.isArray(neighbor.neighbors) || !neighbor.neighbors.includes(room.id)) {
+            if (!toJsonList(neighbor.neighbors).includes(room.id)) {
                 issues.push(
                     issue(
                         `$.rooms.${room.id}.neighbors`,
@@ -490,16 +469,16 @@ function validateRooms(
 }
 
 function validateRelics(
-    rawRelics: readonly unknown[],
-    rawRooms: readonly unknown[],
+    relics: readonly ApiJsonValue[],
+    rooms: readonly ApiJsonObject[],
     issues: RallarAiValidationIssue[]
 ): void {
-    const roomIds = new Set(rawRooms.filter(isRecord).map((room) => room.id).filter(isString));
+    const roomIds = new Set(rooms.map((room) => room.id).filter(isString));
     const relicIds = new Set<string>();
 
-    for (const [index, relic] of rawRelics.entries()) {
+    for (const [index, relic] of relics.entries()) {
         const path = `$.relics[${index}]`;
-        if (!isRecord(relic)) {
+        if (!isApiJsonObject(relic)) {
             continue;
         }
         if (typeof relic.id !== 'string' || !isStableId(relic.id)) {
@@ -523,7 +502,7 @@ function proceduralRelics(
     rooms: readonly RelicExpeditionBlueprintRoom[]
 ): readonly RelicExpeditionBlueprintRelic[] {
     const candidateRooms = rooms;
-    const names = shuffle([
+    const names = computeShuffledOrder([
         'Crimson Fan of Quarterly Losses',
         'Jade Oni Severance Seal',
         'Silver Bell of Mandatory Cheer',
@@ -632,7 +611,7 @@ function room(
 }
 
 function proceduralTheme(random: () => number): string {
-    return shuffle(RELIC_EXPEDITION_VISUAL_THEMES, random)[0] ?? 'Morning Garden Keep';
+    return computeShuffledOrder(RELIC_EXPEDITION_VISUAL_THEMES, random)[0] ?? 'Morning Garden Keep';
 }
 
 function themedName(theme: string, roomName: string): string {
@@ -640,7 +619,7 @@ function themedName(theme: string, roomName: string): string {
 }
 
 function reachableRoomIds(
-    rooms: readonly Record<string, unknown>[],
+    rooms: readonly ApiJsonObject[],
     startRoomId: string
 ): Set<string> {
     const byId = new Map(rooms.map((room) => [room.id, room]));
@@ -653,10 +632,10 @@ function reachableRoomIds(
         }
         reachable.add(roomId);
         const room = byId.get(roomId);
-        if (!room || !Array.isArray(room.neighbors)) {
+        if (!room) {
             continue;
         }
-        for (const neighborId of room.neighbors) {
+        for (const neighborId of toJsonList(room.neighbors)) {
             if (typeof neighborId === 'string' && !reachable.has(neighborId)) {
                 queue.push(neighborId);
             }
@@ -665,28 +644,13 @@ function reachableRoomIds(
     return reachable;
 }
 
-function createSeededRandom(seed: string): () => number {
-    let state = 2166136261;
+function computeSeedHash(seed: string): number {
+    let hash = 2166136261;
     for (const char of seed) {
-        state ^= char.charCodeAt(0);
-        state = Math.imul(state, 16777619) >>> 0;
+        hash ^= char.charCodeAt(0);
+        hash = Math.imul(hash, 16777619) >>> 0;
     }
-    return () => {
-        state += 0x6D2B79F5;
-        let value = state;
-        value = Math.imul(value ^ value >>> 15, value | 1);
-        value ^= value + Math.imul(value ^ value >>> 7, value | 61);
-        return ((value ^ value >>> 14) >>> 0) / 4294967296;
-    };
-}
-
-function shuffle<T>(values: readonly T[], random: () => number): readonly T[] {
-    const next = [...values];
-    for (let index = next.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(random() * (index + 1));
-        [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-    }
-    return next;
+    return hash;
 }
 
 function toStableId(value: string): string {
@@ -701,20 +665,20 @@ function issue(path: string, code: string, message: string): RallarAiValidationI
     return { path, code, message };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+function toJsonList(value: ApiJsonValue | undefined): readonly ApiJsonValue[] {
+    return Array.isArray(value) ? value : [];
 }
 
-function isString(value: unknown): value is string {
+function isString(value: ApiJsonValue): value is string {
     return typeof value === 'string';
 }
 
-function isNumber(value: unknown): value is number {
+function isNumber(value: ApiJsonValue | undefined): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
 function validateVisualCoordinate(
-    value: unknown,
+    value: ApiJsonValue | undefined,
     path: string,
     maxAbsValue: number,
     issues: RallarAiValidationIssue[]

@@ -18,6 +18,10 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const PREFIX = 'alm-ws-server-ordered-entry';
 
+function toWriteRequestId(n: number): string {
+    return `alm-conformance-{runtimeIdentity}-ws-server-ordered-entry-sender-profile-${n}`;
+}
+
 function readServerOrderedEntry(): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput('ws'))
         .find((candidate) => candidate.scenarioId === 'server-ordered-entry');
@@ -61,7 +65,7 @@ describe('ALM server-ordered-entry cell', () => {
             command.kind === 'http.request' && command.request.path?.includes('/principal/') === true ? [command.request.path] : []
         );
         expect(writes).toEqual(
-            [1, 2, 3].map((n) => `/api/state/apps/app/workspaces/ws/clients/{auth.clientId}/principal/requests/${PREFIX}-sender-profile-${n}`)
+            [1, 2, 3].map((n) => `/api/state/apps/app/workspaces/ws/clients/{auth.clientId}/principal/requests/${toWriteRequestId(n)}`)
         );
         for (const n of [1, 2, 3]) {
             expect(findCommand(sender, `${PREFIX}-sender-profile-${n}`)).toMatchObject({
@@ -76,12 +80,12 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits on every page for the last write, its entry at prior 0 and no before-entry; the sender above seq 1 and the receiver on the sender principal track', () => {
+    it('waits on every page for the last write, its entry at prior 0 on the sender principal track from the page\'s history, and no before-entry; the sender above seq 1', () => {
         const scenario = readServerOrderedEntry();
         const expectations = [
-            ['sender', scenario.sender, { track: true, aboveFirstSeq: true }],
-            ['sibling', scenario.sibling!, { track: false, aboveFirstSeq: false }],
-            ['receiver', scenario.receiver, { track: true, aboveFirstSeq: false }]
+            ['sender', scenario.sender, { aboveFirstSeq: true }],
+            ['sibling', scenario.sibling!, { aboveFirstSeq: false }],
+            ['receiver', scenario.receiver, { aboveFirstSeq: false }]
         ] as const;
         for (const [role, recipe, entry] of expectations) {
             const names = ['last-write-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
@@ -98,9 +102,11 @@ describe('ALM server-ordered-entry cell', () => {
                     connection: role === 'sender' ? 'sender' : 'receiver',
                     payloadFields: {
                         'data.topicId': 'client-state.event',
-                        'data.payload.principalId': 'principal-alice',
-                        'data.payload.requestId': `${PREFIX}-sender-profile-3`
-                    }
+                        'data.payload.principalId': 'principal-alice'
+                    },
+                    payloadPath: 'data.payload.requestId',
+                    contains: '-ws-server-ordered-entry-sender-profile-3',
+                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 timeoutMs: 27_000
             });
@@ -111,14 +117,16 @@ describe('ALM server-ordered-entry cell', () => {
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.inbound_diagnostics',
                     payloadPath: 'data',
-                    ...(entry.track ? { contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:` } : {}),
+                    contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:`,
                     payloadFields: {
                         'data.kind': 'ordering-position',
                         'data.status': 'entered',
                         'data.priorSeq': 0
                     }
                 },
-                timeoutMs: 27_000
+                timeoutMs: 27_000,
+                // The page entered the track at its first copy, in whichever cell of the family ran first.
+                metadata: { historyFrom: 'page' }
             });
             if (entry.aboveFirstSeq) {
                 // The principal's track carries every earlier lane connect of it on the same API, so only "above 1" is stable.
@@ -138,12 +146,36 @@ describe('ALM server-ordered-entry cell', () => {
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.inbound_diagnostics',
                     payloadPath: 'data',
-                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' }
+                    payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry' },
+                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
                 },
                 absent: true,
                 timeoutMs: 5_000
             });
         }
+    });
+
+    it('no wait on a principal-scoped track names an absolute seq', () => {
+        const scenario = readServerOrderedEntry();
+        const seqConstraints = [scenario.sender, scenario.receiver, scenario.sibling!].flatMap((recipe) =>
+            recipe.commands.flatMap((command) => {
+                if (command.kind === 'wait') {
+                    const fields = Object.entries({ ...command.match.payloadFields, ...command.match.payloadMinimums });
+                    return fields.filter(([path]) => /seq$/i.test(path)).map(([path, value]) => `${command.commandId} ${path}=${value}`);
+                }
+                return command.kind === 'assert' && /seq$/i.test(command.source)
+                    ? [`${command.commandId} ${command.operator} ${command.expected}`]
+                    : [];
+            })
+        );
+
+        expect(seqConstraints.toSorted()).toEqual([
+            `${PREFIX}-receiver-entered data.priorSeq=0`,
+            `${PREFIX}-sender-entered data.priorSeq=0`,
+            `${PREFIX}-sender-entered-above-first gt 1`,
+            `${PREFIX}-sibling-entered data.priorSeq=0`
+        ]);
+        expect(seqConstraints.filter((constraint) => constraint.includes('data.seq'))).toEqual([]);
     });
 
     it('validates every command against the recipe schema and the control protocol', () => {

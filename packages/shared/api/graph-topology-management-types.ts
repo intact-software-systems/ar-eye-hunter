@@ -1,22 +1,23 @@
+import type { ApiJsonObject } from './api-json-value.ts';
 import type { GroupRef, GroupStateCausalRevision } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 
 export type SerializedWeightedGraphNode = Readonly<{
     key: string;
-    attributes?: unknown;
+    attributes?: ApiJsonObject;
 }>;
 
 export type SerializedWeightedGraphEdge = Readonly<{
     key?: string;
     source: string;
     target: string;
-    attributes?: unknown;
+    attributes?: ApiJsonObject;
     undirected?: boolean;
 }>;
 
 export type SerializedWeightedGraph = Readonly<{
-    attributes?: unknown;
-    options?: unknown;
+    attributes?: ApiJsonObject;
+    options?: ApiJsonObject;
     nodes: readonly SerializedWeightedGraphNode[];
     edges: readonly SerializedWeightedGraphEdge[];
 }>;
@@ -159,11 +160,21 @@ export type GroupTopologyManagementView = Readonly<{
     pending: PendingTopologyReplan | null;
 }>;
 
-/** Decision 11's transient half: a replan is queued and due at T. */
+/**
+ * Decision 11's transient half: a group-revision replan of the group is queued — the coalesced head, a replan parked
+ * behind a settled head, an explicit reconfigure or a topology-config write. RTT-refresh work is not reported.
+ */
 export interface PendingTopologyReplan {
     readonly reconfigureQueued: boolean;
+    /**
+     * The earliest due coalesced row's due time, not a bound on when the room settles; null for a per-command or
+     * undecodable row.
+     */
     readonly dueAtEpochMs: number | null;
-    /** Up by one for every change merged into the queued replan; null when the queued row no longer decodes. */
+    /**
+     * The reported row's own coalescing count: the head's counts every merge into it, a parked replan starts at 1, so
+     * it is not comparable across reads; null for a per-command or undecodable row.
+     */
     readonly generation: number | null;
 }
 
@@ -206,7 +217,7 @@ export type GroupTopologyValidationIssue = Readonly<{
     code: string;
     path?: readonly (string | number)[];
     message: string;
-    details?: Record<string, unknown>;
+    details?: ApiJsonObject;
 }>;
 
 export type GroupTopologyValidationErrorResponse = Readonly<{

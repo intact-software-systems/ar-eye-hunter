@@ -78,7 +78,17 @@ function isWaitEventMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxT
             const lookup = decodePayloadPathValue(event.payload, path);
             return lookup.exists && isSameJsonValue(lookup.value, expected);
         }) &&
+        isWaitEventPayloadMinimumsMatch(event, match) &&
         isWaitEventPayloadMatch(event, match);
+}
+
+/** Floors arrive resolved to numbers; a floor still held as text never matches. */
+function isWaitEventPayloadMinimumsMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxTestWaitMatch): boolean {
+    return Object.entries(match.payloadMinimums ?? {}).every(([path, minimum]) => {
+        const lookup = decodePayloadPathValue(event.payload, path);
+        return typeof minimum === 'number' && lookup.exists && typeof lookup.value === 'number' &&
+            lookup.value >= minimum;
+    });
 }
 
 function isWaitEventPayloadMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxTestWaitMatch): boolean {

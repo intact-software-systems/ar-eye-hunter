@@ -18,9 +18,13 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';
-import { toReadPollCommand } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -42,6 +46,7 @@ import { toPathTopologyConfigCommand } from './to-path-topology-config-command.t
 export const receiptedRelayPath: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-relay-path',
     scenarioKey: 'receipted-relay-path',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
@@ -68,15 +73,16 @@ function toRelayPathSenderCommands(sender: AlmConformanceStepInput): readonly Ra
 }
 
 /**
- * The receiver owns the run's group, so it PUTs the path; it says the path is set only once the sender, which starts
- * last, says it listens. It reads its own receipt before it waits for the sender's `sender-read` cue, so by the reset
- * both origins have read.
+ * The receiver owns the run's group, so it PUTs the path. It subscribes to the cues first, so it listens before the
+ * cell's `armed` barrier lets the sender say it is ready, and it says the path is set only once the sender says it
+ * listens. It reads its own receipt before it waits for the sender's `sender-read` cue, so by the reset both origins
+ * have read.
  */
 function toRelayPathOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(owner);
     return [
-        toPathTopologyConfigCommand(owner, 'tree'),
         ...toCueListenCommands(cue),
+        toPathTopologyConfigCommand(owner, 'tree'),
         toCueWait(cue, 'ready'),
         ...toCueSendCommands(cue, 'tree'),
         ...toRelayPathOriginCommands(owner),
@@ -106,10 +112,15 @@ function toTreeInForcePollCommand(origin: AlmConformanceStepInput): RallarBlackB
     return toReadPollCommand({
         step: origin,
         name: 'tree-in-force',
-        read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) }),
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        reads: [{
+            name: 'read',
+            read: (readName) => ({ ...toOverlayNextHopsCommand(origin), commandId: toCommandId(origin, readName) })
+        }],
         facts: [{
             name: 'tree-in-force-topology',
-            field: 'rallar.formation.accepted.overlay.topology',
+            source: { read: 'read', field: 'rallar.formation.accepted.overlay.topology' },
             operator: 'equals',
             expected: 'tree'
         }]

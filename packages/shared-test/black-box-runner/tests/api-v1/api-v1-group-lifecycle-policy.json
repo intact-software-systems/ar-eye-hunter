@@ -391,6 +391,130 @@
       }
     },
     {
+      "name": "formationPendingIsAQueuedReplanOrNull",
+      "description": "Contract only: pending is null or a queued replan whose due time and generation are integers or null. That pending also reports a replan parked behind a settled head is proven by the Postgres and PGlite tests that park one with the real writer; RTT-refresh work is not reported.",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "bodyAnyOf": [
+          {
+            "pending": null
+          },
+          {
+            "pending": {
+              "reconfigureQueued": true,
+              "dueAtEpochMs": "integer",
+              "generation": "integer"
+            }
+          },
+          {
+            "pending": {
+              "reconfigureQueued": true,
+              "dueAtEpochMs": "integer",
+              "generation": null
+            }
+          },
+          {
+            "pending": {
+              "reconfigureQueued": true,
+              "dueAtEpochMs": null,
+              "generation": "integer"
+            }
+          },
+          {
+            "pending": {
+              "reconfigureQueued": true,
+              "dueAtEpochMs": null,
+              "generation": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "formationSettlesWithNothingPendingAndNoStaleLayout",
+      "description": "Polls the formation read until no replan is pending and the layout is not stale. No timing or stability is asserted: RTT refinement may still move the room.",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "pending": null,
+          "layoutStale": false
+        }
+      }
+    },
+    {
+      "name": "aCommandedReconfigureQueuesAReplan",
+      "description": "An explicit reconfigure queues a per-command group-revision replan, which pending reports with a null due time and generation while it waits. Whether a read catches it waiting is a race, so the proof that it is reported is the PGlite test that queues one through the same mutation; this step and the next pin only that the room settles again.",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/topology/reconfigure/requests/pending-commanded-reconfigure-{runId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "publish": true
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "formationSettlesAfterTheCommandedReconfigure",
+      "description": "Polls until the commanded replan has run: no replan pending and the layout not stale. No timing or stability is asserted.",
+      "type": "http.poll-until",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{optimisticGroupId}/formation",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "poll": {
+          "maxAttempts": 20,
+          "maxDurationMs": 15000,
+          "backoffMs": 100,
+          "backoffMultiplier": 1.5
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "pending": null,
+          "layoutStale": false
+        }
+      }
+    },
+    {
       "name": "absentPolicyJoinAdmitsInstantly",
       "type": "http",
       "connection": "primary",

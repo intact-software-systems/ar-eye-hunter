@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceStepInput,
+    CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { ALM_CONFORMANCE_TOPIC_ID, toScenarioTopicId } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-step-identities.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { readAlmReceiptRolesEntries } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-receipt-role-identity.ts';
+import { worldRouting } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/audiences/world-routing.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -20,6 +25,7 @@ const AUDIENCE_SCENARIO_IDS = ['principal-delivery', 'fixed-list-delivery', 'wor
 const PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 const RECEIPT_WINDOW = [
     'received-self-1',
+    'observe-acknowledged-1',
     'receipts-1',
     'assert-receipt-state-1',
     'assert-receipt-receiptMode-1',
@@ -293,5 +299,23 @@ describe('world-routing', () => {
         expect(await readVerdictTail(scenario.sender, direct)).toBe(true);
         expect(await readVerdictTail(scenario.sender, handedOver)).toBe(false);
         expect(await readVerdictTail(scenario.sender, { ...direct, carrierFallback: handedOver.carrierFallback })).toBe(false);
+    });
+});
+
+describe('ALM conformance scenario topic', () => {
+    const toStep = (scenarioId: AlmConformanceStepInput['scenarioId'], messages: AlmConformanceStepInput['messages']): AlmConformanceStepInput => ({
+        input: toConformanceInput('ws'),
+        scenarioId,
+        scenarioKey: scenarioId,
+        role: 'sender',
+        roles: ['sender', 'receiver'],
+        messages,
+        connect: undefined
+    });
+
+    it('world-routing declares its topic, and the scenario topic is the declaration or the room topic, whatever the scenario id', () => {
+        expect(worldRouting.topic).toBe('world');
+        expect(toScenarioTopicId(toStep('delivery-baseline', { topic: worldRouting.topic }))).toBe('app.alm-conformance.world');
+        expect(toScenarioTopicId(toStep('world-routing', {}))).toBe(ALM_CONFORMANCE_TOPIC_ID);
     });
 });

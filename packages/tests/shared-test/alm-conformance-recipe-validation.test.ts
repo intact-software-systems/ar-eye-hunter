@@ -19,6 +19,7 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
 
 /**
  * `not-yet-in-sync` is withheld from `ws`: its first hop must be RTC.
@@ -316,6 +317,63 @@ describe('ALM conformance recipe validation', () => {
                     requestIds.add(requestId);
                 }
             }
+        }
+    });
+
+    // A mutation request is every `http.request` whose method is not GET; its path ends in `/requests/<requestId>`.
+    // Every cell mutates at least once: its prologue ensures the run's group.
+    it('every mutation request id of every cell carries {runtimeIdentity}', () => {
+        const findings: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const cellSettle of [undefined, 'barriered'] as const) {
+                const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
+                for (const scenario of createAlmConformanceRecipes(input)) {
+                    const cell = `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`;
+                    const mutations = toPageRecipes(scenario)
+                        .flatMap((recipe) => toNestedCommands(recipe.commands))
+                        .flatMap((command) => command.kind === 'http.request' && command.request.method !== 'GET' ? [command] : []);
+                    if (mutations.length === 0) {
+                        findings.push(`${cell}: no mutation request`);
+                    }
+                    for (const mutation of mutations) {
+                        const [requests, requestId] = mutation.request.path!.split('/').slice(-2);
+                        if (requests !== 'requests' || !requestId!.includes('{runtimeIdentity}')) {
+                            findings.push(`${cell}: ${mutation.commandId} ${mutation.request.path}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        expect(findings).toEqual([]);
+    });
+
+    // The lane plan runs a cell that reshapes its room after the other cells of a shared room; a cell that writes the
+    // room's topology config and does not say so would be shuffled in among them.
+    it('every cell that writes its room\'s topology config declares that it reshapes the room, and no other does', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const cellSettle of [undefined, 'barriered'] as const) {
+                const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
+                for (const scenario of createAlmConformanceRecipes(input)) {
+                    const writesTopology = toPageRecipes(scenario)
+                        .flatMap((recipe) => toNestedCommands(recipe.commands))
+                        .some((command) => command.kind === 'http.request' && command.request.path!.includes('/topology/config/'));
+
+                    expect(scenario.roomTopology, `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`)
+                        .toBe(writesTopology ? 'reshaped' : 'kept');
+                }
+            }
+        }
+    });
+
+    // The lane keeps a cell of a scope when it carries the scope's tag, so the full scope runs a cell only if it is tagged.
+    it('every cell of the catalog carries the full tag', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const untagged = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .filter((scenario) => !scenario.tags.includes('full'))
+                .map((scenario) => scenario.scenarioKey);
+
+            expect(untagged, carrier).toEqual([]);
         }
     });
 

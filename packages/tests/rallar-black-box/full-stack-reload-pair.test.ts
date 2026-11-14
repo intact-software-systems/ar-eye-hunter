@@ -69,6 +69,7 @@ describe('local paired reload enqueue', () => {
                     runId: 'actual-local-run',
                     sender: { agentId: 'actual-sender' },
                     receiver: { agentId: 'actual-receiver' },
+                    startedRoots: [],
                     readSnapshot: async () => {
                         readBeforeBothEnqueued ||= posted.length !== 2;
                         return toRunSnapshot(posted.map((command) => toRootResult(command, undefined)));
@@ -96,6 +97,10 @@ describe('local paired reload enqueue', () => {
                         receiver: { agentId: 'actual-receiver', commandId: outcome.receiver.commandId }
                     });
                     expect(toAlmReloadPair(posted[1].command)).toEqual(pair);
+                    expect(run.startedRoots.map(({ commandId }) => commandId)).toEqual([
+                        outcome.sender.commandId,
+                        outcome.receiver.commandId
+                    ]);
                     expect(posted.map((command) => command.command.timeoutMs)).toEqual([180_000, 180_000]);
                     expect(outcome).toEqual({
                         sender: { commandId: `${scenario.sender.recipeId}-run`, ok: true, summary: 'ok' },
@@ -110,6 +115,32 @@ describe('local paired reload enqueue', () => {
         );
     }
 
+    it('keeps the first root, which the owner of the run waits for, when the second enqueue fails', async () => {
+        const control = await openRecordingControlRequest('actual-local-run', (recorded) => {
+            if (recorded.agentId === 'actual-receiver') {
+                throw new Error('The control server refused the receiver\'s root.');
+            }
+        });
+        const run: RecipePairRun = {
+            request: control.request,
+            runId: 'actual-local-run',
+            sender: { agentId: 'actual-sender' },
+            receiver: { agentId: 'actual-receiver' },
+            startedRoots: [],
+            readSnapshot: async () => toRunSnapshot([])
+        };
+        try {
+            await expect(runRecipePairOnTwoAgents(run, reloadScenario)).rejects.toThrow('refused the receiver');
+
+            expect(control.posted.map(({ agentId }) => agentId)).toEqual(['actual-sender', 'actual-receiver']);
+            expect(run.startedRoots.map(({ commandId }) => commandId)).toEqual([control.posted[0].commandId]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('stops a reload pair with no result past its grace through each agent\'s untargeted recipe.cancel', async () => {
         const control = await openRecordingControlRequest('actual-local-run');
         const posted = control.posted;
@@ -122,6 +153,7 @@ describe('local paired reload enqueue', () => {
             runId: 'actual-local-run',
             sender: { agentId: 'actual-sender' },
             receiver: { agentId: 'actual-receiver' },
+            startedRoots: [],
             readSnapshot: async () => {
                 nowEpochMs += 30_000;
                 const cancelled = cancelledAgents();

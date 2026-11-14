@@ -1012,3 +1012,80 @@ alm-observation-artifact.md the ledger readings' decode.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts packages/tests/shared-test/rallar-browser-runtime/publication-diagnostic-rows.test.ts packages/tests/shared-test/rallar-browser-runtime/payload-free-diagnostics.test.ts
 ```
+
+```text
+Title: wait.match may start its history at a command prefix and compare numbers with floors
+Date: 2026-11-13
+Owner: ALM lane determinism 2-ii, Task 3 (LD-8, LD-9)
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (wait.match)
+- validateRallarBlackBoxTestCommand wait.match allowlist
+
+Old shape:
+wait.match could bound its history only by wall clock (sinceEpochMs) and compare payload values only for equality
+(payloadFields, equals) or text containment (contains).
+
+New shape:
+wait.match.sinceCommandIdPrefix (string) starts the wait's history at the first event whose commandId starts with
+it, else at the next event; beside an owner's history start, such as a barrier's, the later one wins. It needs a
+history that has evicted nothing: once any event was evicted the wait fails with RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE.
+wait.match.payloadMinimums maps payload paths to floors: each path must reach
+a number at or above its floor in the same event. A floor is a finite number or exactly one
+{resultCache.<commandId>.<path>} reference, the timeoutFrom grammar; a reference naming no finite number fails the
+wait with RALLAR_BLACK_BOX_WAIT_INVALID, and a reference to a released result with RALLAR_BLACK_BOX_RESULT_RELEASED.
+
+Migration:
+None; a recipe without either field means what it meant.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md gains "Wait History From A Command" and "Wait Numeric Floors".
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-wait-absence.test.ts packages/tests/shared-test/rallar-bb-test-wait-payload-fields.test.ts packages/tests/shared-test/rallar-bb-test-wait-result-reference.test.ts packages/tests/shared-test/rallar-bb-runtime/result-release.test.ts
+```
+
+```text
+Title: an equals assert may compare two evidence paths
+Date: 2026-11-13
+Owner: ALM lane determinism 2-ii, Task 4 (LD-25)
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (assert)
+- validateRallarBlackBoxTestCommand assert branch
+
+Old shape:
+assert.comparisonSource was accepted only with operator sameUniqueStringSet. equals took expected, and an equals
+without expected was accepted although it could only fail.
+
+New shape:
+assert.operator equals with comparisonSource (and no expected) passes only when both paths exist and hold the same
+JSON value; the result value carries comparisonActual and comparisonExists. equals now names exactly one of expected
+or comparisonSource: control validation and the command schema reject an equals with neither. No other operator
+takes a comparisonSource.
+
+Migration:
+A recipe without comparisonSource means what it meant. No recipe or manifest in the repository used equals with
+neither expected nor comparisonSource. A control agent built before this change rejects equals with comparisonSource
+at command validation; equals is a baseline operator, so the capability preflight does not gate the new form. An
+agent and a recipe that uses the form ship together.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the equals assert operator.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts packages/tests/shared-test/rallar-bb-test-set-operator-admission.test.ts packages/tests/shared-test/rallar-bb-runtime/result-release.test.ts
+```

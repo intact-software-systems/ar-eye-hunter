@@ -7,13 +7,15 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
@@ -24,7 +26,6 @@ import {
     toOrderedPublishCommands,
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-polls.ts';
 import {
     computeUnelectedOutsideCount,
     toCueListenCommands,
@@ -51,6 +52,7 @@ export const subscriptionOrderedOmission: AlmConformanceScenarioDefinition = {
     laneFamily: 'four-role',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toExcludedSubscriberCommands(recipient)
@@ -73,6 +75,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
         toCueWait(producer, 'revoked'),
+        ...toGrantAppliedHeadCommands(producer, 'revoke-head'),
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         toCueWait(producer, 'resubscribed'),
@@ -81,19 +84,36 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
     ];
 }
 
-/** Each grant change waits for both producers' loops before it, and its delta reaches the pages before its cue. */
+/**
+ * Each grant change waits for both producers' loops before it. The revoke's delta reaches the receiver, which wrote it,
+ * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`.
+ */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
-        toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: false, subscribe: true }),
-        toPauseCommand(owner, 'revoke-delta-margin', GRANT_DELTA_MARGIN_MS),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'revoke',
+            grantee: 'sender',
+            publish: false,
+            subscribe: true
+        }),
+        ...toGrantAppliedHeadCommands(owner, 'revoke-head'),
         ...toCueSendCommands(owner, 'revoked'),
         ...toOrderedArrivalWaits(owner, [3, 4]),
         ...toOrderedConfirmedCueWaits(owner, 4),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: false, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'grant',
+            grantee: 'sender',
+            publish: false,
+            subscribe: true
+        }),
         ...toCueSendCommands(owner, 'regranted'),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),

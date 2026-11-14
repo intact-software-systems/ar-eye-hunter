@@ -18,6 +18,7 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 const CLAIM_SCENARIO_IDS = ['claim-first-wins', 'claim-expires-reclaims', 'claim-refused-on-rtc'] as const;
 const PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 const RECEIPT_READ = [
+    'observe-acknowledged-1',
     'receipts-1',
     'assert-receipt-state-1',
     'assert-receipt-receiptMode-1',
@@ -68,18 +69,20 @@ function isClaimScenario(scenario: AlmConformanceScenario): boolean {
     return CLAIM_SCENARIO_IDS.some((scenarioId) => scenarioId === scenario.scenarioId);
 }
 
-/** Runs the named handle read and the assertions that follow it, answering the read with one observation. */
+/** Runs the named handle read and the assertions on its result, answering the read with one observation. */
 async function readTail(recipe: RallarBlackBoxTestRecipe, from: string, observation: object): Promise<boolean> {
-    const start = recipe.commands.findIndex((command) => command.commandId === `${recipe.recipeId}-${from}`);
-    const following = recipe.commands.slice(start + 1);
-    const end = following.findIndex((command) => command.kind !== 'assert');
+    const read = recipe.commands.find((command) => command.commandId === `${recipe.recipeId}-${from}`);
+    const assertions = recipe.commands.filter((command) => command.kind === 'assert' && command.source.startsWith(`resultCache.${read?.commandId}.value.`));
+    if (read === undefined || assertions.length === 0) {
+        return false;
+    }
     const runtime = createDefaultRallarBlackBoxTestRuntime({
         commandExecutor: (command) =>
             command.kind === 'messages.observe' || command.kind === 'messages.receipts'
                 ? { status: 'ok', value: observation }
                 : undefined
     });
-    const commands = [recipe.commands[start], ...following.slice(0, end === -1 ? following.length : end)];
+    const commands = [read, ...assertions];
     return (await runtime.execute({ kind: 'recipe.run', recipe: { ...recipe, commands } })).ok;
 }
 
@@ -181,7 +184,6 @@ describe('claim-first-wins', () => {
                 ...(carrier === 'ws' ? ['receipt-admitted-1'] : []),
                 'received-self-1',
                 ...RECEIPT_READ,
-                'observe-acknowledged-1',
                 'assert-one-attempt-1',
                 'assert-ws-attempt-1',
                 'assert-no-fallback-1',

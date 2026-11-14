@@ -9,6 +9,7 @@ import {
     toRefusedReceiverCommands,
     toRewritingPublisherCommands
 } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The sender's page names each frame it signed as recipient-b's: that member's live session and its registered key,
@@ -24,6 +25,7 @@ export const grantedRtcForgedSender: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'sender', 'recipient-b'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [...LISTENER_AND_PUBLISHER_START_GRANTS, { grantee: 'recipient-b', publish: false, subscribe: false }],
     toSenderCommands: (sender) =>
         toRewritingPublisherCommands(sender, { forgeSender: { principal: toPrincipalPlaceholder('recipient-b') } }),
     toRecipientCommands: (recipient) =>

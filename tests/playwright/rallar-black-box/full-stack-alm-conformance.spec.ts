@@ -4,6 +4,7 @@ import {
     type Frame,
     type TestInfo
 } from '@playwright/test';
+import { randomInt } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -20,23 +21,12 @@ import {
     ALM_CONFORMANCE_THREE_AGENT_ROLES,
     type AlmConformanceRole
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type {
-    AlmConformanceLaneFamily,
-    CreateAlmConformanceRecipesInput
+import {
+    ALM_CONFORMANCE_LANE_FAMILIES,
+    type AlmConformanceLaneFamily,
+    type CreateAlmConformanceRecipesInput
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
-import {
-    decodeALMObservationPageDiagnosticsFile,
-    type ALMObservationPageDiagnosticsFile
-} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
-import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import { toAlmReloadCheckpoints } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import {
-    computeALMObservationRegime,
-    createUnreadableALMObservationRegime,
-    toALMObservationRegimeSummary,
-    type ALMObservationCellOutcome,
-    type ALMObservationRegime
-} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -47,7 +37,37 @@ import {
     hasAlmIdentityEvidence,
     type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
-import { assessSubscriptionRevokeDisconnected } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
+import {
+    assessAlmUnconfirmedReceiptRole,
+    toAlmUnconfirmedReceiptRole
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
+import {
+    ALM_LANE_DEFAULT_SELECTION,
+    decodeAlmLaneParameters,
+    type AlmLaneParameters
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
+import {
+    isAlmLaneRoomLeftAfter,
+    resolveAlmLanePlan,
+    toAlmLaneCellGroup,
+    type AlmLaneCellOrderRecord,
+    type AlmLanePlan,
+    type AlmLanePlannedCell,
+    type AlmLaneRoomKey
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
+import { toAlmLaneEmptyPlanReason } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
+import {
+    decodeALMObservationPageDiagnosticsFile,
+    type ALMObservationPageDiagnosticsFile
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-page-diagnostics.ts';
+import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
+import {
+    computeALMObservationRegime,
+    createUnreadableALMObservationRegime,
+    toALMObservationRegimeSummary,
+    type ALMObservationCellOutcome,
+    type ALMObservationRegime
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -55,8 +75,10 @@ import {
     createAgentRun,
     runRecipesOnAgents,
     toAgentRunPrincipalIds,
+    type AgentRecipeRun,
     type AgentRun
 } from './full-stack-agent-run.ts';
+import { startCellGateRun } from './full-stack-cell-gate-run.ts';
 import {
     createTwoAgentRun,
     readFullStackConfig,
@@ -68,6 +90,7 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
+import { runObservedFamily } from './run-observed-family.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
@@ -83,6 +106,12 @@ interface ObservationCell {
     readonly testInfo: TestInfo;
     readonly carrier: AlmConformanceCarrier;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly cellOrder: AlmLaneCellOrderRecord;
+}
+
+interface PlannedScenario {
+    readonly cell: AlmLanePlannedCell;
+    readonly scenario: AlmConformanceScenario;
 }
 
 interface ScenarioRoleEvidence {
@@ -102,6 +131,7 @@ interface ObservationRegimeInput {
     readonly snapshot: ControlRunSnapshot;
     readonly carrier: AlmConformanceCarrier;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly cellOrder: AlmLaneCellOrderRecord;
     readonly pageDiagnosticsFile: ALMObservationPageDiagnosticsFile | undefined;
 }
 
@@ -116,6 +146,7 @@ interface ObservationFiles {
 interface SameContextCell {
     readonly run: TwoAgentRun;
     readonly carrier: AlmConformanceCarrier;
+    readonly plan: AlmLanePlan;
     readonly testInfo: TestInfo;
     /** The cell's pages; each scenario's successor joins them, so the observation reads every page that ran. */
     readonly participants: TwoAgentRunParticipant[];
@@ -129,17 +160,12 @@ const AGENT_FAMILY_ROLES: Readonly<Record<AgentScenarioFamily, readonly AlmConfo
 };
 
 const config = readFullStackConfig();
-const scope = process.env.RALLAR_BLACK_BOX_ALM_SCOPE === 'full' ? 'full' : 'smoke';
-const carriers = toCarrierSelection(process.env.RALLAR_BLACK_BOX_ALM_CARRIERS);
-
-/** Comma-separated scenario ids withheld from the lane; each one needs a recorded ruling. */
-const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
+const laneParameters = config.enabled ? readLaneParameters() : undefined;
+/** A disabled lane decodes nothing: every test skips, so its titles name the lane's default selection. */
+const { scope, carriers } = laneParameters ?? ALM_LANE_DEFAULT_SELECTION;
 // Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
 // scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
 // its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
@@ -160,11 +186,14 @@ test.describe('ALM conformance lane', () => {
         for (const family of ['two-agent', 'addressed'] as const) {
             const title = family === 'two-agent' ? 'baseline' : family;
             test(`${title} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-                test.skip(
-                    family === 'addressed' && selectScenarios(toPlanningSelection(), carrier, family).length === 0,
-                    `no ${scope} addressed ALM scenario runs over ${carrier}`
+                const { plan, emptyReason } = planFamily(
+                    carrier,
+                    family,
+                    `no ${scope} ${title} ALM scenario runs over ${carrier}`
                 );
+                test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+                announcePlan(carrier, family, plan);
 
                 const run = await createTwoAgentRun({
                     browser,
@@ -175,37 +204,43 @@ test.describe('ALM conformance lane', () => {
                         : `alm-${carrier}-${family}-${uniqueSuffix()}`
                 });
 
-                let scenarioFailed = false;
-                try {
-                    await runAlmConformanceScenarios(run, carrier, family);
-                }
-                catch (scenarioError) {
-                    scenarioFailed = true;
-                    throw scenarioError;
-                }
-                finally {
-                    await recordObservation({
-                        run,
-                        family,
-                        participants: [run.sender, run.receiver],
-                        testInfo,
-                        carrier,
-                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
-                    });
-                    await run.close();
-                }
+                await runObservedFamily({
+                    run,
+                    testInfo,
+                    body: async () => {
+                        await startCellGateRun({
+                            run,
+                            cellKey: undefined,
+                            agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
+                        });
+                        await runAlmConformanceScenarios(run, carrier, family, plan);
+                    },
+                    observe: (cellOutcome) =>
+                        recordObservation({
+                            run,
+                            family,
+                            participants: [run.sender, run.receiver],
+                            testInfo,
+                            carrier,
+                            cellOutcome,
+                            cellOrder: plan.cellOrder
+                        })
+                });
             });
         }
 
         for (const family of ['three-agent', 'same-principal', 'four-role'] as const) {
             test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-                test.skip(
-                    selectScenarios(toPlanningSelection(), carrier, family).length === 0,
+                const { plan, emptyReason } = planFamily(
+                    carrier,
+                    family,
                     `no ${scope} ALM scenario over ${carrier} declares the ${
                         AGENT_FAMILY_ROLES[family].join(', ')
                     } roles`
                 );
+                test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+                announcePlan(carrier, family, plan);
 
                 const run = await createAgentRun({
                     browser,
@@ -214,34 +249,36 @@ test.describe('ALM conformance lane', () => {
                     runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
                     roles: AGENT_FAMILY_ROLES[family]
                 });
-                let scenarioFailed = false;
-                try {
-                    await runAgentScenarios(run, carrier, family);
-                }
-                catch (scenarioError) {
-                    scenarioFailed = true;
-                    throw scenarioError;
-                }
-                finally {
-                    await recordObservation({
-                        run,
-                        family,
-                        participants: [...run.agents.values()],
-                        testInfo,
-                        carrier,
-                        cellOutcome: toCellOutcome(testInfo, scenarioFailed)
-                    });
-                    await run.close();
-                }
+                await runObservedFamily({
+                    run,
+                    testInfo,
+                    body: async () => {
+                        await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
+                        await runAgentScenarios(run, carrier, family, plan);
+                    },
+                    observe: (cellOutcome) =>
+                        recordObservation({
+                            run,
+                            family,
+                            participants: [...run.agents.values()],
+                            testInfo,
+                            carrier,
+                            cellOutcome,
+                            cellOrder: plan.cellOrder
+                        })
+                });
             });
         }
 
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-            test.skip(
-                selectScenarios(toPlanningSelection(), carrier, 'same-context').length === 0,
+            const { plan, emptyReason } = planFamily(
+                carrier,
+                'same-context',
                 `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
             );
+            test.skip(plan.cells.length === 0, emptyReason);
             test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
+            announcePlan(carrier, 'same-context', plan);
 
             const run = await createTwoAgentRun({
                 browser,
@@ -250,50 +287,26 @@ test.describe('ALM conformance lane', () => {
                 runId: `alm-${carrier}-same-context-${uniqueSuffix()}`
             });
             const participants: TwoAgentRunParticipant[] = [run.sender, run.receiver];
-            let scenarioFailed = false;
-            try {
-                await runSameContextScenarios({ run, carrier, testInfo, participants });
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    family: 'same-context',
-                    participants,
-                    testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed)
-                });
-                await run.close();
-            }
+            await runObservedFamily({
+                run,
+                testInfo,
+                body: async () => await runSameContextScenarios({ run, carrier, plan, testInfo, participants }),
+                observe: (cellOutcome) =>
+                    recordObservation({
+                        run,
+                        family: 'same-context',
+                        participants,
+                        testInfo,
+                        carrier,
+                        cellOutcome,
+                        cellOrder: plan.cellOrder
+                    })
+            });
         });
     }
 });
 
-/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
-function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
-    const requested = (value ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-    if (requested.length === 0) {
-        return ALM_CONFORMANCE_CARRIERS;
-    }
-    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
-    if (unsupported.length > 0) {
-        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
-    }
-    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
-}
-
-function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
-    return ALM_CONFORMANCE_CARRIERS.some((carrier) => carrier === value);
-}
-
-function selectScenarios(
+function createFamilyScenarios(
     selection: ScenarioSelectionInput,
     carrier: AlmConformanceCarrier,
     family: AlmConformanceLaneFamily
@@ -304,11 +317,108 @@ function selectScenarios(
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS,
         laneFamilies: [family],
-        recoveryOwner: 'record'
-    }).filter((scenario) =>
-        (scope === 'full' || scenario.tags.includes('smoke')) &&
-        !skippedScenarioIds.includes(scenario.scenarioId)
+        recoveryOwner: 'record',
+        cellSettle: 'barriered'
+    });
+}
+
+/**
+ * An unknown value of any lane parameter, or a named cell this selection cannot run, is refused when the spec loads,
+ * before any browser starts.
+ */
+function readLaneParameters(): AlmLaneParameters {
+    const catalog = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+        ALM_CONFORMANCE_LANE_FAMILIES.flatMap((family) =>
+            createFamilyScenarios(toPlanningSelection(), carrier, family)
+                .map(({ scenarioId, scenarioKey, tags }) => ({ carrier, scenarioId, scenarioKey, tags }))
+        )
     );
+    const values = {
+        scope: process.env.RALLAR_BLACK_BOX_ALM_SCOPE,
+        carriers: process.env.RALLAR_BLACK_BOX_ALM_CARRIERS,
+        order: process.env.RALLAR_BLACK_BOX_ALM_ORDER,
+        seed: process.env.RALLAR_BLACK_BOX_ALM_SEED,
+        rooms: process.env.RALLAR_BLACK_BOX_ALM_ROOMS,
+        only: process.env.RALLAR_BLACK_BOX_ALM_ONLY,
+        skip: process.env.RALLAR_BLACK_BOX_ALM_SKIP
+    };
+    return decodeAlmLaneParameters({ values, catalog }).fold(
+        (issues) => {
+            throw new RangeError(`The ALM lane parameters are refused: ${issues.join(' ')}`);
+        },
+        (parameters) => parameters
+    );
+}
+
+/** Only an enabled lane decodes its parameters, so no other full-stack run reads them. */
+function requireLaneParameters(): AlmLaneParameters {
+    if (laneParameters === undefined) {
+        throw new Error('The ALM conformance lane plans no cell while RALLAR_BLACK_BOX_FULL_STACK is not set.');
+    }
+    return laneParameters;
+}
+
+interface FamilyPlan {
+    readonly plan: AlmLanePlan;
+    /** Why the family plans no cell over the carrier; read only when it plans none. */
+    readonly emptyReason: string;
+}
+
+/**
+ * The family's one plan, which decides its skip and is announced and run: a shuffled family that names no seed mints
+ * one here, once, so the seed printed is the seed used. The plan and the reason read the one catalog built here.
+ */
+function planFamily(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily, otherwise: string): FamilyPlan {
+    const parameters = requireLaneParameters();
+    const scenarios = createFamilyScenarios(toPlanningSelection(), carrier, family);
+    const { only, skip } = parameters;
+    return {
+        plan: resolveAlmLanePlan({
+            family,
+            carrier,
+            scenarios,
+            scope,
+            parameters,
+            mintSeed: () => randomInt(0, 2 ** 31)
+        }),
+        emptyReason: toAlmLaneEmptyPlanReason({ only, family, carrier, scope, skip, scenarios, otherwise })
+    };
+}
+
+/** Printed before the first cell, so a run that dies mid-way can be replayed with the same seed. */
+function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily, plan: AlmLanePlan): void {
+    const { mode, seed, rooms, scenarioKeys } = plan.cellOrder;
+    console.info(
+        `ALM lane plan ${carrier}-${scope} family=${family}: order=${mode} seed=${seed ?? 'none'} rooms=${rooms} ` +
+            `cells=${scenarioKeys.join(',')}`
+    );
+}
+
+/**
+ * Each planned cell with its scenario for the run's agents. The family's scenarios are created once per planned room,
+ * for that room's group.
+ */
+function toPlannedScenarios(
+    run: TwoAgentRun | AgentRun,
+    carrier: AlmConformanceCarrier,
+    planned: Readonly<{ family: AlmConformanceLaneFamily; plan: AlmLanePlan; }>
+): readonly PlannedScenario[] {
+    const selection = toRunSelection(run);
+    const createdByRoom = new Map<AlmLaneRoomKey, readonly AlmConformanceScenario[]>();
+    return planned.plan.cells.map((cell) => {
+        const created = createdByRoom.get(cell.room) ??
+            createFamilyScenarios(
+                { ...selection, group: toAlmLaneCellGroup(selection.group, cell) },
+                carrier,
+                planned.family
+            );
+        createdByRoom.set(cell.room, created);
+        const scenario = created.find((candidate) => candidate.scenarioKey === cell.scenarioKey);
+        if (scenario === undefined) {
+            throw new Error(`${cell.scenarioKey} is planned but not created over ${carrier}.`);
+        }
+        return { cell, scenario };
+    });
 }
 
 /** A same-context successor is the sender's own principal on a second page of its context. */
@@ -338,12 +448,26 @@ function toPlanningSelection(): ScenarioSelectionInput {
 function toObservationRegime(
     input: ObservationRegimeInput
 ): ALMObservationRegime {
-    const { carrier, cellOutcome, pageDiagnosticsFile } = input;
+    const { carrier, cellOutcome, cellOrder, pageDiagnosticsFile } = input;
     return decodeALMObservationSnapshot(input.snapshot).fold(
         (snapshotIssues) =>
-            createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues, pageDiagnosticsFile }),
+            createUnreadableALMObservationRegime({
+                carrier,
+                scope,
+                cellOutcome,
+                cellOrder,
+                snapshotIssues,
+                pageDiagnosticsFile
+            }),
         (decoded) =>
-            computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome, pageDiagnosticsFile })
+            computeALMObservationRegime({
+                snapshot: decoded,
+                carrier,
+                scope,
+                cellOutcome,
+                cellOrder,
+                pageDiagnosticsFile
+            })
     );
 }
 
@@ -390,73 +514,83 @@ function toObservationFileName(
     return retry === 0 ? cell : `${cell}-retry${retry}`;
 }
 
-/** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
-function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
-    return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
-}
-
 function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {
     return JSON.stringify(value, null, 2);
 }
 
-/** Soft assertions so one run exercises every in-scope scenario and reports all of them. */
+/** Soft assertions so one run exercises every planned scenario and reports all of them. */
 async function runAlmConformanceScenarios(
     run: TwoAgentRun,
     carrier: AlmConformanceCarrier,
-    family: TwoAgentScenarioFamily
+    family: TwoAgentScenarioFamily,
+    plan: AlmLanePlan
 ): Promise<void> {
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, family)) {
-        let senderNavigations = 0;
-        let receiverNavigations = 0;
-        const onSenderNavigation = (frame: Frame): void => {
-            if (frame === run.sender.page.mainFrame()) {
-                senderNavigations += 1;
-            }
-        };
-        const onReceiverNavigation = (frame: Frame): void => {
-            if (frame === run.receiver.page.mainFrame()) {
-                receiverNavigations += 1;
-            }
-        };
-        const reload = toAlmReloadCheckpoints(scenario.sender.metadata?.almReloadCheckpoints) !== undefined;
-        if (reload) {
-            run.sender.page.on('framenavigated', onSenderNavigation);
-            run.receiver.page.on('framenavigated', onReceiverNavigation);
-        }
-        let outcome: RecipePairOutcome;
-        try {
-            outcome = await runRecipePairOnTwoAgents(run, scenario);
-        }
-        finally {
-            if (reload) {
-                run.sender.page.off('framenavigated', onSenderNavigation);
-                run.receiver.page.off('framenavigated', onReceiverNavigation);
-            }
-        }
-        if (reload) {
-            expect.soft(senderNavigations, 'reload replaces the actual sender main-frame document once').toBe(1);
-            expect.soft(receiverNavigations, 'receiver retains its document and subscriptions').toBe(0);
-        }
-        expect.soft(outcome.receiver.ok, `${scenario.scenarioKey} receiver: ${outcome.receiver.summary}`)
-            .toBe(true);
-        expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
-            .toBe(true);
-        if (hasAlmIdentityEvidence(scenario.sender)) {
-            await assertScenarioIdentity(run, scenario, [
-                { role: 'sender', agent: run.sender, outcome: outcome.sender },
-                { role: 'receiver', agent: run.receiver, outcome: outcome.receiver }
-            ]);
+    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
+        await runPairCell(run, scenario);
+        if (isAlmLaneRoomLeftAfter(plan, index)) {
+            await closeAgentConnections(toPairAgentRun(run), cell.scenarioKey);
         }
     }
+}
+
+async function runPairCell(run: TwoAgentRun, scenario: AlmConformanceScenario): Promise<void> {
+    const outcome = await runPairWatchingReloads(run, scenario);
+    expect.soft(outcome.receiver.ok, `${scenario.scenarioKey} receiver: ${outcome.receiver.summary}`)
+        .toBe(true);
+    expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
+        .toBe(true);
+    if (hasAlmIdentityEvidence(scenario.sender)) {
+        await assertScenarioIdentity(run, scenario, [
+            { role: 'sender', agent: run.sender, outcome: outcome.sender },
+            { role: 'receiver', agent: run.receiver, outcome: outcome.receiver }
+        ]);
+    }
+}
+
+/** A reload cell replaces the sender's main-frame document once and leaves the receiver's. */
+async function runPairWatchingReloads(run: TwoAgentRun, scenario: AlmConformanceScenario): Promise<RecipePairOutcome> {
+    if (toAlmReloadCheckpoints(scenario.sender.metadata?.almReloadCheckpoints) === undefined) {
+        return await runRecipePairOnTwoAgents(run, scenario);
+    }
+    let senderNavigations = 0;
+    let receiverNavigations = 0;
+    const onSenderNavigation = (frame: Frame): void => {
+        if (frame === run.sender.page.mainFrame()) {
+            senderNavigations += 1;
+        }
+    };
+    const onReceiverNavigation = (frame: Frame): void => {
+        if (frame === run.receiver.page.mainFrame()) {
+            receiverNavigations += 1;
+        }
+    };
+    run.sender.page.on('framenavigated', onSenderNavigation);
+    run.receiver.page.on('framenavigated', onReceiverNavigation);
+    let outcome: RecipePairOutcome;
+    try {
+        outcome = await runRecipePairOnTwoAgents(run, scenario);
+    }
+    finally {
+        run.sender.page.off('framenavigated', onSenderNavigation);
+        run.receiver.page.off('framenavigated', onReceiverNavigation);
+    }
+    expect.soft(senderNavigations, 'reload replaces the actual sender main-frame document once').toBe(1);
+    expect.soft(receiverNavigations, 'receiver retains its document and subscriptions').toBe(0);
+    return outcome;
+}
+
+/** The pair's two agents by role, so a change of room closes their connections as any family's. */
+function toPairAgentRun(run: TwoAgentRun): AgentRecipeRun {
+    return { ...run, agents: new Map([['sender', run.sender], ['receiver', run.receiver]]) };
 }
 
 async function runAgentScenarios(
     run: AgentRun,
     carrier: AlmConformanceCarrier,
-    family: AgentScenarioFamily
+    family: AgentScenarioFamily,
+    plan: AlmLanePlan
 ): Promise<void> {
-    for (const planned of selectScenarios(toRunSelection(run), carrier, family)) {
-        const scenario = family === 'four-role' ? toOwnRoomScenario(run, carrier, planned) : planned;
+    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
         const recipes = new Map(scenario.roles.map((role) => [role, requireRoleRecipe(scenario, role)] as const));
         const outcomes = await runRecipesOnAgents(run, recipes, scenario.continuation);
         const evidence = scenario.roles.map((role) => ({
@@ -474,50 +608,41 @@ async function runAgentScenarios(
             )
                 .toBe(true);
         }
-        if (hasAlmIdentityEvidence(scenario.sender)) {
-            await assertScenarioIdentity(run, scenario, evidence);
-        }
-        if (scenario.scenarioId === 'subscription-revoke-disconnected') {
-            await assertRevokeDisconnectedReceipts(run, scenario, evidence);
-        }
-        if (family === 'four-role') {
-            await closeAgentConnections(run, scenario.scenarioKey);
+        await assertScenarioEvidence(run, scenario, evidence);
+        if (isAlmLaneRoomLeftAfter(plan, index)) {
+            await closeAgentConnections(run, cell.scenarioKey);
         }
     }
 }
 
-/**
- * A four-role cell runs in a room of its own, and the lane closes every agent's connection after it. A connect to an
- * unchanged room reuses the open connection without a join, so a sibling whose dropped socket closed its room
- * presence carried that closed presence into the next cell's readiness.
- */
-function toOwnRoomScenario(
-    run: AgentRun,
-    carrier: AlmConformanceCarrier,
-    planned: AlmConformanceScenario
-): AlmConformanceScenario {
-    const group = { ...run.group, groupId: `${run.group.groupId}-${planned.scenarioKey}` };
-    const scenario = selectScenarios({ ...toRunSelection(run), group }, carrier, 'four-role')
-        .find((candidate) => candidate.scenarioId === planned.scenarioId);
-    if (scenario === undefined) {
-        throw new Error(`${planned.scenarioKey} is not planned in its own room.`);
-    }
-    return scenario;
-}
-
-/** Neither receipt of the revoke-disconnected cell may confirm the sibling. */
-async function assertRevokeDisconnectedReceipts(
+/** The identity rules and the unconfirmed-role receipt check, each selected by the sender recipe's metadata. */
+async function assertScenarioEvidence(
     run: AgentRun,
     scenario: AlmConformanceScenario,
     evidence: readonly ScenarioRoleEvidence[]
 ): Promise<void> {
-    const participants = toIdentityParticipants(await run.readSnapshot(), scenario, evidence);
-    const issues = assessSubscriptionRevokeDisconnected({
+    if (hasAlmIdentityEvidence(scenario.sender)) {
+        await assertScenarioIdentity(run, scenario, evidence);
+    }
+    const unconfirmedRole = toAlmUnconfirmedReceiptRole(scenario.sender);
+    if (unconfirmedRole !== undefined) {
+        await assertUnconfirmedReceiptRole(run, scenario, { evidence, unconfirmedRole });
+    }
+}
+
+/** No receipt of the cell may confirm the role its sender's recipe names. */
+async function assertUnconfirmedReceiptRole(
+    run: AgentRun,
+    scenario: AlmConformanceScenario,
+    unconfirmed: Readonly<{ evidence: readonly ScenarioRoleEvidence[]; unconfirmedRole: AlmConformanceRole; }>
+): Promise<void> {
+    const participants = toIdentityParticipants(await run.readSnapshot(), scenario, unconfirmed.evidence);
+    const issues = assessAlmUnconfirmedReceiptRole({
         runId: run.runId,
         sender: requireRoleParticipant(participants, 'sender'),
-        sibling: requireRoleParticipant(participants, 'sibling')
+        unconfirmed: requireRoleParticipant(participants, unconfirmed.unconfirmedRole)
     });
-    expect.soft(issues, `${scenario.scenarioKey}: no receipt confirms the sibling`).toEqual([]);
+    expect.soft(issues, `${scenario.scenarioKey}: no receipt confirms the ${unconfirmed.unconfirmedRole}`).toEqual([]);
 }
 
 function requireRoleParticipant(
@@ -559,24 +684,27 @@ function requireRoleOutcome(
 }
 
 /**
- * Each scenario ends the page that owns the sender's session, so its successor owns the session for the next one.
- * `flush-on-hide` ends it through its lifecycle flush and a crash; every other scenario closes it.
+ * Each scenario ends the page that owns the sender's session, as its definition declares, so its successor owns the
+ * session for the next one. The cells follow the plan's order; each starts its own gate run, because its owner page
+ * changes every cell.
  */
 async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
-    const { run, carrier, testInfo, participants } = cell;
+    const { run, carrier, plan, testInfo, participants } = cell;
     let owner = run.sender;
-    for (const scenario of selectScenarios(toRunSelection(run), carrier, 'same-context')) {
-        if (scenario.successor === undefined) {
+    for (const { scenario } of toPlannedScenarios(run, carrier, { family: 'same-context', plan })) {
+        if (scenario.successor === undefined || scenario.ownerEnd === undefined) {
             throw new Error(`${scenario.scenarioKey} runs on one context without a successor recipe.`);
         }
         const successor = await openSuccessorPage({ testInfo, run, owner });
         participants.push(successor);
-        const ownerEnd = scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close';
-        const successorGate = scenario.successorGate?.commandId;
-        const outcome = await runRecipeTrioOnSameContext(run, { owner, successor, ownerEnd, successorGate }, {
-            ...scenario,
-            successor: scenario.successor
+        await startCellGateRun({
+            run,
+            cellKey: scenario.scenarioKey,
+            agentsByRole: new Map([['sender', owner], ['receiver', run.receiver]])
         });
+        const successorGate = scenario.successorGate?.commandId;
+        const pages = { owner, successor, ownerEnd: scenario.ownerEnd, successorGate };
+        const outcome = await runRecipeTrioOnSameContext(run, pages, { ...scenario, successor: scenario.successor });
         for (const role of ['receiver', 'sender', 'successor'] as const) {
             expect.soft(outcome[role].ok, `${scenario.scenarioKey} ${role}: ${outcome[role].summary}`).toBe(true);
         }
@@ -628,6 +756,7 @@ async function recordObservation(
             snapshot,
             carrier: cell.carrier,
             cellOutcome: cell.cellOutcome,
+            cellOrder: cell.cellOrder,
             pageDiagnosticsFile: toDecodedPageDiagnosticsFile(pageDiagnosticsFile)
         });
         const fileName = toObservationFileName(cell.carrier, cell.family, cell.testInfo.retry);

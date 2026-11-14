@@ -7,7 +7,7 @@ import {
     toBarrierResolvedEvent,
     type ControlBarrierEnvelope
 } from '@shared-test/rallar-bb-test/barrier/control-barrier-protocol.ts';
-import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '@shared-test/rallar-bb-test/barrier/wait-for-barrier.ts';
+import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '@shared-test/rallar-bb-test/barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { distributedRecipePreflight } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight.ts';
 import type {

@@ -9584,7 +9584,10 @@ components:
 
     PendingTopologyReplan:
       type: object
-      description: A replan is queued and due; carried as null when none is.
+      description: >-
+        A group-revision replan of the group is queued: the coalesced head row, a replan parked behind a settled
+        head, an explicit reconfigure or a topology-config write; carried as null when none is. RTT-refresh work is
+        not reported, and neither is a row other than the head that does not decode.
       required: [reconfigureQueued, dueAtEpochMs, generation]
       properties:
         reconfigureQueued:
@@ -9594,12 +9597,18 @@ components:
             - integer
             - 'null'
           format: int64
+          description: >-
+            The due time of the earliest due coalesced row, not a bound on when the room settles; null when only a
+            per-command reconfigure or topology-config replan, or a head that no longer decodes, is queued.
         generation:
           type:
             - integer
             - 'null'
           format: int64
-          description: Up by one for every change merged into the queued replan; null when the queued row no longer decodes.
+          description: >-
+            The reported row's own coalescing count: the head's is up by one for every change merged into it, a
+            replan parked behind a settled head starts at 1, so it is not comparable across reads; null wherever
+            dueAtEpochMs is null.
 
     RallarOverlayTopologySnapshot:
       type: object

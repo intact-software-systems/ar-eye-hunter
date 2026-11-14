@@ -155,6 +155,7 @@ describe('ALM run on an agent per role', () => {
                 ['sibling', { agentId: 'sibling-agent' }],
                 ['publisher-b', { agentId: 'publisher-b-agent' }]
             ]),
+            startedRoots: [],
             readSnapshot: async () => {
                 await receiverConnected.promise;
                 return {
@@ -247,6 +248,7 @@ describe('ALM run on an agent per role', () => {
                 ['receiver', { agentId: 'receiver-agent' }],
                 ['sibling', { agentId: 'sibling-agent' }]
             ]),
+            startedRoots: [],
             readSnapshot: async () => ({
                 runId: 'gated-run',
                 createdAtEpochMs: 1,
@@ -313,6 +315,7 @@ describe('ALM run on an agent per role', () => {
                 ['sender', { agentId: 'sender-agent' }],
                 ['receiver', { agentId: 'receiver-agent' }]
             ]),
+            startedRoots: [],
             readSnapshot: async () => ({
                 runId: 'four-role-run',
                 createdAtEpochMs: 1,
@@ -365,6 +368,7 @@ describe('ALM run on an agent per role', () => {
                 ['sender', { agentId: 'sender-agent' }],
                 ['receiver', { agentId: 'receiver-agent' }]
             ]),
+            startedRoots: [],
             readSnapshot: async () => {
                 nowEpochMs += 30_000;
                 return {
@@ -431,6 +435,7 @@ describe('ALM run on an agent per role', () => {
                 ['sender', { agentId: 'sender-agent' }],
                 ['receiver', { agentId: 'receiver-agent' }]
             ]),
+            startedRoots: [],
             readSnapshot: async () => {
                 reads += 1;
                 nowEpochMs += 10_000;

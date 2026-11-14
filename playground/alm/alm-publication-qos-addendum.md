@@ -1522,17 +1522,22 @@ completing typed `ws` sends and cold RTC handshakes inside the recipe budgets
 on the Postgres API, and a per-cell flake ledger whose entries each carry a
 root cause (D639).
 
+Each lane cell starts from a declared, settled room (D647). The lane's
+parameters are `RALLAR_BLACK_BOX_ALM_ORDER`, `RALLAR_BLACK_BOX_ALM_SEED`,
+`RALLAR_BLACK_BOX_ALM_ROOMS`, `RALLAR_BLACK_BOX_ALM_ONLY` and
+`RALLAR_BLACK_BOX_ALM_SKIP`; their defaults, refusals, composition and replay
+are in [`docs/environment-variables.md`](../../docs/environment-variables.md).
+
 ### After Slice 9
 
 The nine slices deliver the advertised modes: browser publications over `ws`,
 `rtc` and `rtc-with-ws-fallback`, with grants, subscriptions, signed
 publishers and receipts, ordered entry and pacing. What the addendum still owes
 for those modes is its measurement half (§9) and the maintainer's adoption
-(§6). The next outcomes, in this order, are a lane whose cells each start from a
-declared, settled room; publication figures in the stage, with one shared
-histogram and the local half of a same-regime baseline; and a platform fault
-vocabulary, with an API instance stopped, paused or restarted, its database
-sessions cut, and seeded loss and delay on a browser carrier, that recipes can
+(§6). The next outcomes, in this order, are make-before-break routing (D644);
+publication figures in the stage, with one shared histogram and the local half
+of a same-regime baseline; and a platform fault vocabulary, with an API instance stopped, paused or restarted,
+its database sessions cut, and seeded loss and delay on a browser carrier, that recipes can
 name. Receipt truth and the held-send path follow, proven with those steps; a
 retained admission then starts its `admitted` receipt only once its replay
 commits. With the figures in place and the contracts adopted, the addendum is

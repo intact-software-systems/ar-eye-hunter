@@ -87,6 +87,24 @@ describe('GroupTopologyConfigQueryService', () => {
         });
     });
 
+    // A replan parked behind a settled coalesced head reports its own row (a parked row's generation starts at 1); a
+    // commanded one has no coalesced row, so neither a due time nor a generation.
+    it.each(
+        [
+            { replan: 'parked', pending: { reconfigureQueued: true, dueAtEpochMs: 4_500, generation: 1 } },
+            { replan: 'commanded', pending: { reconfigureQueued: true, dueAtEpochMs: null, generation: null } }
+        ] as const
+    )('carries a $replan replan queued behind a settled head as the view\'s pending', async ({ pending }) => {
+        const query = new GroupTopologyConfigQueryService({
+            findGroupSnapshotByRef: async () => undefined,
+            readLocalTopologySnapshot: () => undefined,
+            readPendingTopologyReplan: async () => pending,
+            serverDefaults: { topologyKind: 'tree', degreeLimit: 7 }
+        });
+
+        await expect(query.readTopologyView(GROUP_REF)).resolves.toMatchObject({ pending });
+    });
+
     it('does not expose direct config writes outside AppInbox execution', () => {
         const service = createGroupTopologyRuntimeOwners({
             findGroupSnapshotByRef: async () => undefined,

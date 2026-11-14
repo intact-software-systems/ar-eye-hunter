@@ -1,6 +1,6 @@
-import { Either } from '../../../../shared/resilience/Either.ts';
-import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
-import { isAlmConformanceRole, type AlmConformanceRole } from './alm-conformance-roles.ts';
+import { Either } from '../../../../../shared/resilience/Either.ts';
+import type { RallarBlackBoxTestRecord } from '../../../rallar-black-box-test-contracts.ts';
+import { isAlmConformanceRole, type AlmConformanceRole } from '../alm-conformance-roles.ts';
 
 export type ALMObservationPageDiagnosticKind = 'pageerror' | 'console-error' | 'console-warning';
 

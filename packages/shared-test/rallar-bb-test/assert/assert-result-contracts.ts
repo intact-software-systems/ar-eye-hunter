@@ -4,7 +4,7 @@ import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-
 
 export type RallarBlackBoxTestAssertResultValue =
     | RallarBlackBoxTestValueAssertResultValue
-    | RallarBlackBoxTestSetAssertResultValue;
+    | RallarBlackBoxTestComparisonAssertResultValue;
 
 export interface RallarBlackBoxTestValueAssertResultValue {
     readonly operator: Exclude<RallarBlackBoxTestAssertOperator, 'sameUniqueStringSet'>;
@@ -14,8 +14,8 @@ export interface RallarBlackBoxTestValueAssertResultValue {
     readonly passed: boolean;
 }
 
-export interface RallarBlackBoxTestSetAssertResultValue {
-    readonly operator: 'sameUniqueStringSet';
+export interface RallarBlackBoxTestComparisonAssertResultValue {
+    readonly operator: 'equals' | 'sameUniqueStringSet';
     readonly expected?: never;
     readonly actual?: ApiJsonValue;
     readonly comparisonActual?: ApiJsonValue;

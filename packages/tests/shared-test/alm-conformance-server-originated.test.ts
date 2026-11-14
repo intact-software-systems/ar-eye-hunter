@@ -108,7 +108,8 @@ describe('ALM server-originated cell', () => {
                         'data.topicId': 'group-state.event',
                         'data.traceId': traceId,
                         'data.payload.event.traceId': traceId
-                    }
+                    },
+                    sinceCommandIdPrefix: `${PREFIX}-receiver-`
                 },
                 timeoutMs: 27_000
             });

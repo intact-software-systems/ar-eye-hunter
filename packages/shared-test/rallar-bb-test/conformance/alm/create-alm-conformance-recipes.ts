@@ -9,33 +9,39 @@ import {
     MINIMUM_POST_EXPIRY_OBSERVATION_MS,
     RESPONSE_MARGIN_MS
 } from './alm-conformance-budgets.ts';
+import {
+    toAlmConformanceCellParts,
+    type AlmCellPartsByRole,
+    type AlmConformanceCellParts,
+    type AlmConformanceCellPartsInput
+} from './alm-conformance-cell-parts.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
-import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
+    AlmConformanceCellRoom,
     AlmConformanceContinuationDefinition,
     AlmConformanceLaneFamily,
+    AlmConformanceMessages,
+    AlmConformanceOwnerEnd,
     AlmConformanceRecipeGate,
+    AlmConformanceRoomTopology,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
     AlmConformanceStepInput,
     AlmConformanceTag,
     CreateAlmConformanceRecipesInput
 } from './alm-conformance-scenario-definition.ts';
-import {
-    toConnectCommand,
-    toEnsureGroupCommand,
-    toSelfMembershipCommand,
-    toStatsCommand
-} from './alm-conformance-session-commands.ts';
+import { toStatsCommand } from './alm-conformance-session-commands.ts';
 import {
     toCommandId,
-    toConnectionName,
     toRoomRef,
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
+import { toAlmCellSettledBody } from './cell/to-alm-cell-settled-body.ts';
+import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { resolveAlmConformancePrincipals } from './resolve-alm-conformance-principals.ts';
 import { fixedListDelivery } from './scenarios/audiences/fixed-list-delivery.ts';
 import { principalDelivery } from './scenarios/audiences/principal-delivery.ts';
@@ -118,7 +124,6 @@ import { capacityTracks } from './scenarios/volatile-bound/capacity-tracks.ts';
 import { capacity } from './scenarios/volatile-bound/capacity.ts';
 import { volatileDefault } from './scenarios/volatile-default.ts';
 import { wsUnicastReceipt } from './scenarios/ws-unicast-receipt.ts';
-import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
 
 export interface AlmConformanceScenario {
     readonly scenarioId: AlmConformanceScenarioId;
@@ -136,9 +141,20 @@ export interface AlmConformanceScenario {
     readonly sibling: RallarBlackBoxTestRecipe | undefined;
     /** The second producer's recipe; undefined exactly when `roles` does not declare `publisher-b`. */
     readonly publisherB: RallarBlackBoxTestRecipe | undefined;
+    /**
+     * Each declared role's recipe in its parts, so a combined recipe shares one prologue and runs each body. A role
+     * recipe of a `barriered` cell also holds its cell's barriers: one after its prologue, one after its arming run.
+     */
+    readonly partsByRole: AlmCellPartsByRole;
     readonly tags: readonly AlmConformanceTag[];
     /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
     readonly successorGate: AlmConformanceScenarioGate | undefined;
+    /** How the lane ends the owner page before its successor runs; undefined exactly when `roles` declares no successor. */
+    readonly ownerEnd: AlmConformanceOwnerEnd | undefined;
+    /** Whether the cell reshapes its room's topology; the lane plan orders a shared room by it. */
+    readonly roomTopology: AlmConformanceRoomTopology;
+    /** Where the cell runs; the lane plan gives an `own` cell a room of its own unless its family chains its sessions. */
+    readonly room: AlmConformanceCellRoom;
     /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;
 }
@@ -164,24 +180,21 @@ interface AlmRecipeDiagnosticSelection {
     readonly deliveryDiagnostics: boolean;
 }
 
-interface AlmConformanceRecipeInput extends AlmConformanceStepInput {
-    readonly commands: readonly RallarBlackBoxTestCommand[];
-    readonly almDiagnostics: boolean;
-    readonly deliveryDiagnostics: boolean;
+interface AlmConformanceRecipeInput extends AlmConformanceCellPartsInput {
     /** Set only on the sender of a scenario that pins its receipt identity. */
     readonly receiptRoles: AlmConformanceReceiptRoles | undefined;
     /** Set on both roles of a scenario whose sender reloads its page. */
     readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
     /** Set only on the sender of a scenario at least one of whose origins must relay its send. */
     readonly relayedReceiptOrigins: readonly AlmConformanceRole[] | undefined;
+    /** Set only on the sender of a scenario none of whose receipts may confirm that role. */
+    readonly unconfirmedReceiptRole: AlmConformanceRole | undefined;
 }
 
-const ALM_DIAGNOSTIC_TOPICS = [
-    'rallar.browser.alm.outbound_diagnostics',
-    'rallar.browser.alm.inbound_diagnostics',
-    'rallar.browser.alm.storage',
-    'rallar.browser.alm.storage_reset'
-];
+interface AlmConformanceRoleCell {
+    readonly recipe: RallarBlackBoxTestRecipe;
+    readonly parts: AlmConformanceCellParts;
+}
 
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
@@ -192,8 +205,9 @@ const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
     RESPONSE_MARGIN_MS;
 
 /**
- * `volatileDefault` runs first on its pages, before any scenario leaves durable work there. The hosted
- * combined recipe hoists every `delivery-reload` ahead of it, so there it runs after durable work.
+ * `volatileDefault` is declared first. Its storage window opens with a reset, so only durable work an earlier cell
+ * left on a timer inside that window could count against its zero; a shuffled lane order or the hosted combined
+ * recipe, which hoists every `delivery-reload` ahead of it, may expose that.
  */
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     volatileDefault,
@@ -274,8 +288,6 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListDelivered,
     grantedRtcListNonHolder,
     grantedRtcListLaneRoles,
-    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step, so
-    // they close the list: no cell that keeps the room's default topology runs after them.
     receiptedRelayPath,
     grantedRtcRelayOnly,
     grantedRtcOrderedRelay
@@ -330,42 +342,38 @@ function toAlmConformanceScenario(
     definition: AlmConformanceScenarioDefinition,
     diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
-    const toRoleRecipe = (role: AlmConformanceRole): RallarBlackBoxTestRecipe => {
-        const step = toStepInput(input, definition, role);
-        const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
-            ? definition.toSenderCommands(step)
-            : definition.toRecipientCommands(step);
-        const receiptRoles = role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined;
-        const reloadCheckpoint = definition.toReloadCheckpoint?.(step);
-        const relayedReceiptOrigins = role === 'sender' ? definition.relayedReceiptOrigins : undefined;
-        return resolveAlmConformancePrincipals(
-            toAlmConformanceRecipe({
-                ...step,
-                ...diagnostics,
-                commands,
-                receiptRoles,
-                reloadCheckpoint,
-                relayedReceiptOrigins
-            }),
-            input.principalIdsByRole
-        );
-    };
+    const cells = toRoleCells(input, definition, diagnostics);
+    const toDeclaredRecipe = (role: AlmConformanceRole) => cells.get(role)?.recipe;
     const scenario: AlmConformanceScenario = {
         scenarioId: definition.scenarioId,
         scenarioKey: definition.scenarioKey,
         roles: definition.roles,
         laneFamily: definition.laneFamily,
         tags: definition.tags,
-        sender: toRoleRecipe('sender'),
-        receiver: toRoleRecipe('receiver'),
-        recipientB: definition.roles.includes('recipient-b') ? toRoleRecipe('recipient-b') : undefined,
-        successor: definition.roles.includes('successor') ? toRoleRecipe('successor') : undefined,
-        sibling: definition.roles.includes('sibling') ? toRoleRecipe('sibling') : undefined,
-        publisherB: definition.roles.includes('publisher-b') ? toRoleRecipe('publisher-b') : undefined,
+        sender: toRequiredRecipe(definition, toDeclaredRecipe('sender')),
+        receiver: toRequiredRecipe(definition, toDeclaredRecipe('receiver')),
+        recipientB: toDeclaredRecipe('recipient-b'),
+        successor: toDeclaredRecipe('successor'),
+        sibling: toDeclaredRecipe('sibling'),
+        publisherB: toDeclaredRecipe('publisher-b'),
+        partsByRole: Object.fromEntries([...cells].map(([role, cell]) => [role, cell.parts])),
         successorGate: undefined,
+        ownerEnd: definition.roles.includes('successor') ? definition.ownerEnd ?? 'close' : undefined,
+        roomTopology: definition.roomTopology ?? 'kept',
+        room: definition.room ?? 'family',
         continuation: undefined
     };
     return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };
+}
+
+function toRequiredRecipe(
+    definition: AlmConformanceScenarioDefinition,
+    recipe: RallarBlackBoxTestRecipe | undefined
+): RallarBlackBoxTestRecipe {
+    if (recipe === undefined) {
+        throw new Error(`${definition.scenarioKey} must declare both the sender and the receiver.`);
+    }
+    return recipe;
 }
 
 /** The recipes the lane holds back until a command of a role recipe passed: the successor, and a continuation. */
@@ -396,9 +404,15 @@ function toStepInput(
         scenarioKey: definition.scenarioKey,
         role,
         roles: definition.roles,
-        messageSelector: definition.messageSelector,
+        messages: toDefinitionMessages(definition),
         connect: definition.connect
     };
+}
+
+function toDefinitionMessages(definition: AlmConformanceScenarioDefinition): AlmConformanceMessages {
+    return definition.startGrants === undefined
+        ? { messageSelector: definition.messageSelector, topic: definition.topic }
+        : { messageSelector: definition.messageSelector, startGrants: definition.startGrants };
 }
 
 interface ToScenarioGateInput {
@@ -424,7 +438,7 @@ function toScenarioGate(gateInput: ToScenarioGateInput): AlmConformanceScenarioG
 
 /**
  * The role's later steps run on the connection its first recipe opened, so the recipe carries no prologue; its own
- * stats read ends the recipe.
+ * stats read ends the recipe. Its waits read the cell's history, the role's first recipe included.
  */
 function toContinuationRecipe(
     input: CreateAlmConformanceRecipesInput,
@@ -434,7 +448,7 @@ function toContinuationRecipe(
     const step = toStepInput(input, definition, continuation.role);
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
-        recipeId: `alm-${input.carrier}-${definition.scenarioKey}-${continuation.role}-continuation`,
+        recipeId: `${toAlmCellCommandPrefix(input.carrier, definition.scenarioKey)}-${continuation.role}-continuation`,
         name: `ALM conformance ${definition.scenarioKey} ${continuation.role} continuation over ${input.carrier}`,
         continueOnFailure: false,
         metadata: {
@@ -443,34 +457,81 @@ function toContinuationRecipe(
             scenarioId: definition.scenarioId,
             group: toRoomRef(input.group)
         },
-        commands: [...continuation.toCommands(step), toStatsCommand(step, 'continuation-stats')]
+        commands: toCellHistoryMarkedCommands(step, [
+            ...continuation.toCommands(step),
+            toStatsCommand(step, 'continuation-stats')
+        ])
     };
     return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
-function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
+/** Every declared role's cell; a role's settle reads the other roles' parts, so all parts come first. */
+function toRoleCells(
+    input: CreateAlmConformanceRecipesInput,
+    definition: AlmConformanceScenarioDefinition,
+    diagnostics: AlmRecipeDiagnosticSelection
+): ReadonlyMap<AlmConformanceRole, AlmConformanceRoleCell> {
+    const recipeInputs = definition.roles.map((role) => {
+        const step = toStepInput(input, definition, role);
+        const commands = role === 'sender' || role === 'successor' || role === 'publisher-b'
+            ? definition.toSenderCommands(step)
+            : definition.toRecipientCommands(step);
+        const recipeInput: AlmConformanceRecipeInput = {
+            ...step,
+            ...diagnostics,
+            commands,
+            receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
+            reloadCheckpoint: definition.toReloadCheckpoint?.(step),
+            relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
+            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined
+        };
+        return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
+    });
+    const partsByRole = Object.fromEntries(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts]));
+    return new Map(recipeInputs.map(({ recipeInput, parts }) => [
+        recipeInput.role,
+        toRoleCell(recipeInput, parts, toAlmCellSettledBody(recipeInput, partsByRole))
+    ]));
+}
+
+/** The role's recipe, its prologue then its settled body, and its parts, all with the role's principals resolved. */
+function toRoleCell(
+    recipeInput: AlmConformanceRecipeInput,
+    parts: AlmConformanceCellParts,
+    settledBody: readonly RallarBlackBoxTestCommand[]
+): AlmConformanceRoleCell {
+    const toResolvedRecipe = (commands: readonly RallarBlackBoxTestCommand[]) =>
+        resolveAlmConformancePrincipals(
+            toAlmConformanceRecipe(recipeInput, commands),
+            recipeInput.input.principalIdsByRole
+        );
+    const recipe = toResolvedRecipe([...parts.prologue, ...settledBody]);
+    const resolvedParts = toResolvedRecipe([...parts.prologue, ...parts.startState, ...parts.body]).commands;
+    const startStateEnd = parts.prologue.length + parts.startState.length;
+    return {
+        recipe,
+        parts: {
+            prologue: resolvedParts.slice(0, parts.prologue.length),
+            startState: resolvedParts.slice(parts.prologue.length, startStateEnd),
+            body: resolvedParts.slice(startStateEnd)
+        }
+    };
+}
+
+function toAlmConformanceRecipe(
+    recipe: AlmConformanceRecipeInput,
+    commands: readonly RallarBlackBoxTestCommand[]
+): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
-    const connect = toConnectCommand(recipe);
     return {
         schemaVersion: 1,
-        recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
+        recipeId: `${toAlmCellCommandPrefix(carrier, recipe.scenarioKey)}-${recipe.role}`,
         name: recipe.deliveryDiagnostics
             ? `ALM delivery diagnostics ${recipe.almDiagnostics ? 'On' : 'Off'} ${recipe.role} over ${carrier}`
             : `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
         metadata: toAlmConformanceRecipeMetadata(recipe),
-        commands: [
-            ...(recipe.deliveryDiagnostics ? toFreshDiagnosticHistoryCommands(recipe) : []),
-            toEnsureGroupCommand(recipe),
-            toSelfMembershipCommand(recipe, 'active'),
-            ...(recipe.role === 'successor' ? [toOwnerLeaseLapseWait(recipe)] : []),
-            { ...connect, rallar: { ...connect.rallar, almDiagnostics: recipe.almDiagnostics } },
-            ...(recipe.deliveryDiagnostics ? [toAppliedDiagnosticsWait(recipe)] : []),
-            ...toConnectedStorageCountersCommands(recipe),
-            ...recipe.commands,
-            toStatsCommand(recipe, 'stats'),
-            ...(recipe.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(recipe) : [])
-        ]
+        commands
     };
 }
 
@@ -491,19 +552,11 @@ function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): Rall
             : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] }),
         ...(recipe.relayedReceiptOrigins === undefined
             ? {}
-            : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) })
+            : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) }),
+        ...(recipe.unconfirmedReceiptRole === undefined
+            ? {}
+            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole })
     };
-}
-
-/**
- * Pre-send evidence. A sender whose send exhausts its budget stops the recipe before the
- * post-receipts counters run, so this reading is the only IndexedDB operation count a timed-out
- * scenario leaves behind, and the pair brackets the operations one typed send spends.
- */
-function toConnectedStorageCountersCommands(
-    step: AlmConformanceStepInput
-): readonly RallarBlackBoxTestCommand[] {
-    return step.role === 'sender' ? [toStorageCountersCommand(step, 'storage-counters-connected', false)] : [];
 }
 
 /** Names the send whose receipt the roles describe, so a combined recipe carries one entry per scenario. */
@@ -525,46 +578,4 @@ function toRelayedReceiptOriginsMetadata(
     origins: readonly AlmConformanceRole[]
 ): readonly RallarBlackBoxTestRecord[] {
     return origins.map((role) => ({ role, handleId: toSendHandleId({ ...step, role, index: 1 }) }));
-}
-
-function toFreshDiagnosticHistoryCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [...ALM_DIAGNOSTIC_TOPICS, 'rallar.browser.connect.phase_completed'].map((topic) => ({
-        kind: 'wait',
-        commandId: toCommandId(step, `fresh-${topic.split('.').at(-1)}`),
-        match: { kind: 'diagnostic', topic },
-        absent: true,
-        timeoutMs: 0
-    }));
-}
-
-function toAppliedDiagnosticsWait(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestCommand {
-    return {
-        kind: 'wait',
-        commandId: toCommandId(recipe, 'applied-diagnostics'),
-        match: {
-            kind: 'diagnostic',
-            connection: toConnectionName(recipe),
-            topic: 'rallar.browser.connect.phase_completed',
-            payloadFields: { 'data.phase': 'rallar-connect', 'data.almDiagnostics': recipe.almDiagnostics }
-        },
-        timeoutMs: 0
-    };
-}
-
-function toDeliveryDiagnosticEvidenceCommands(recipe: AlmConformanceRecipeInput): readonly RallarBlackBoxTestCommand[] {
-    const topics = recipe.almDiagnostics
-        ? [
-            recipe.role === 'sender'
-                ? 'rallar.browser.alm.outbound_diagnostics'
-                : 'rallar.browser.alm.inbound_diagnostics'
-        ]
-        : ALM_DIAGNOSTIC_TOPICS;
-    return topics.map((topic) => ({
-        kind: 'wait',
-        commandId: toCommandId(recipe, `diagnostic-${topic.split('.').at(-1)}`),
-        match: { kind: 'diagnostic', topic },
-        ...(recipe.almDiagnostics ? {} : { absent: true }),
-        // Delivery and the receiver's authored negative-control window bound this already retained interval.
-        timeoutMs: 0
-    }));
 }

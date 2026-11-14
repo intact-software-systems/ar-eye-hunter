@@ -36,6 +36,7 @@ import {
 
 import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+import { runObservedFamily } from '../../../tests/playwright/rallar-black-box/run-observed-family.ts';
 
 import { openRecordingControlRequest, type RecordingControlRequest } from './recording-control-request-fixture.ts';
 
@@ -287,6 +288,7 @@ describe('recipient recipe promise ownership', () => {
         const run: RecipeRun = {
             request,
             runId: 'lifetime',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads++;
                 return barrier.promise;
@@ -367,6 +369,7 @@ describe('recipient barrier failure', () => {
         const run: RecipeRun = {
             request,
             runId: 'lifetime',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads++;
                 throw failure;
@@ -432,6 +435,7 @@ describe('control poll timeouts', () => {
         const run: RecipeRun = {
             request,
             runId: 'poll-timeout',
+            startedRoots: [],
             readSnapshot: async () => {
                 reads += 1;
                 nowEpochMs += stepMs;
@@ -573,6 +577,211 @@ describe('control poll timeouts', () => {
                 `${rootCommandId} is still running after its deadline and cancellation`
             );
             expect(toPostedKinds(control)).toEqual(['recipe.run', 'recipe.cancel']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    const cancelCommandId = `cancel-${rootCommandId}`;
+
+    function toCancelAnswer(
+        input: { readonly ok: boolean; readonly value?: Readonly<Record<string, string | boolean>>; readonly error?: { code: string; message: string; }; }
+    ): ControlResultEnvelope {
+        return {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'poll-timeout',
+            agentId: 'sender',
+            commandId: cancelCommandId,
+            ok: input.ok,
+            ...(input.error === undefined ? {} : { error: input.error }),
+            result: {
+                commandId: cancelCommandId,
+                kind: 'recipe.cancel',
+                status: input.ok ? 'ok' : 'failed',
+                ok: input.ok,
+                startedAtEpochMs: 0,
+                endedAtEpochMs: 0,
+                durationMs: 0,
+                value: input.value
+            }
+        };
+    }
+
+    // The cancel's answer is there at the first read after the cancel; the root's result, if any, from the second. Each
+    // read moves the clock by 25 000 ms, so a lane that waits for the root alone spends a second read of the grace on it.
+    async function readOutcomeAfterCancelAnswered(
+        answer: ControlResultEnvelope,
+        rootResult: readonly ControlResultEnvelope[]
+    ): Promise<{ readonly outcome: Promise<unknown>; readonly readsAfterCancel: () => number; close(): Promise<void>; }> {
+        const control = await openRecordingControlRequest('poll-timeout');
+        let readsAfterCancel = 0;
+        const { run } = createSilentRun(control.request, 25_000, () => {
+            if (!control.posted.some(({ command }) => command.kind === 'recipe.cancel')) {
+                return [];
+            }
+            readsAfterCancel += 1;
+            return readsAfterCancel === 1 ? [answer] : [answer, ...rootResult];
+        });
+        const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+        return { outcome: started.readOutcome(), readsAfterCancel: () => readsAfterCancel, close: () => control.close() };
+    }
+
+    it('fails the family at once when the cancel is answered target-not-exclusively-active, naming the command and the agent', async () => {
+        const refused = toCancelAnswer({
+            ok: true,
+            value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'target-not-exclusively-active' }
+        });
+        const read = await readOutcomeAfterCancelAnswered(refused, []);
+        try {
+            await expect(read.outcome).rejects.toThrow(
+                `recipe.cancel ${cancelCommandId} to agent sender was answered target-not-exclusively-active`
+            );
+            expect(read.readsAfterCancel()).toBe(1);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it('lets the run end as before when the cancel is answered with the ordinary answer', async () => {
+        const accepted = toCancelAnswer({
+            ok: true,
+            value: { cancelRequested: true, targetCommandId: rootCommandId, reason: 'late' }
+        });
+        const read = await readOutcomeAfterCancelAnswered(accepted, [toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]);
+        try {
+            await expect(read.outcome).resolves.toEqual({
+                commandId: rootCommandId,
+                ok: false,
+                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it.each([
+        {
+            title: 'a refusal with a reason the lane does not know',
+            answer: { ok: true, value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'something-new' } },
+            named: 'was answered an unknown answer'
+        },
+        {
+            title: 'an answer that carries no value',
+            answer: { ok: true },
+            named: 'was answered an unknown answer'
+        },
+        {
+            title: 'an error answer',
+            answer: { ok: false, error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'no such agent' } },
+            named: 'was answered the error RALLAR_BLACK_BOX_COMMAND_FAILED: no such agent'
+        }
+    ])('fails the family at once on $title, naming it', async ({ answer, named }) => {
+        const read = await readOutcomeAfterCancelAnswered(toCancelAnswer(answer), []);
+        try {
+            await expect(read.outcome).rejects.toThrow(`recipe.cancel ${cancelCommandId} to agent sender ${named}`);
+            expect(read.readsAfterCancel()).toBe(1);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it('a run handed to the owner as a spread copy still has its started roots awaited, so the observation never reads a page whose root runs', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The clock starts at 1 000 and each read moves it by 1 000, so the root's result lands at the third read; the body
+            // fails right after starting it.
+            const { run, readCount } = createSilentRun(
+                control.request,
+                1_000,
+                (nowEpochMs) => nowEpochMs >= 4_000 ? [toFailedRootResult('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')] : []
+            );
+            const observed: { reads: number; posted: readonly string[]; } = { reads: 0, posted: [] };
+            const bodyFailure = new Error('the scenario failed after starting a root');
+
+            await expect(runObservedFamily({
+                run: { ...run, close: async () => {} },
+                testInfo: { errors: [] },
+                body: async () => {
+                    await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+                    throw bodyFailure;
+                },
+                observe: async () => {
+                    observed.reads = readCount();
+                    observed.posted = toPostedKinds(control);
+                }
+            })).rejects.toBe(bodyFailure);
+
+            expect(observed.reads).toBeGreaterThanOrEqual(3);
+            expect(observed.posted).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('two runs do not see each other\'s roots', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            const { run: first, readCount } = createSilentRun(
+                control.request,
+                1_000,
+                (nowEpochMs) => nowEpochMs >= 4_000 ? [toFailedRootResult('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')] : []
+            );
+            const second: RecipeRun = { ...first, startedRoots: [] };
+            const readsWhenObserved: number[] = [];
+
+            await startRecipeRun(first, { agentId: 'sender' }, baseline.sender);
+            await runObservedFamily({
+                run: { ...second, close: async () => {} },
+                testInfo: { errors: [] },
+                body: async () => {},
+                observe: async () => {
+                    readsWhenObserved.push(readCount());
+                }
+            });
+
+            expect(first.startedRoots.map(({ commandId }) => commandId)).toEqual([rootCommandId]);
+            expect(second.startedRoots).toEqual([]);
+            expect(readsWhenObserved).toEqual([0]);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
+    it('returns a root whose result is present although its cancel was refused', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            const refused = toCancelAnswer({
+                ok: true,
+                value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'target-not-exclusively-active' }
+            });
+            const { run } = createSilentRun(
+                control.request,
+                30_000,
+                () =>
+                    control.posted.some(({ command }) => command.kind === 'recipe.cancel')
+                        ? [refused, toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]
+                        : []
+            );
+            const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+
+            await expect(started.readOutcome()).resolves.toEqual({
+                commandId: rootCommandId,
+                ok: false,
+                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+            });
         }
         finally {
             vi.restoreAllMocks();
@@ -800,6 +1009,7 @@ describe('recipient outcome ownership after its connect barrier', () => {
                 runId: 'outcome-owner',
                 sender: { agentId: 'sender' },
                 receiver: { agentId: 'recipient' },
+                startedRoots: [],
                 readSnapshot: () => readControlRun(request, 'outcome-owner')
             };
             const running = runner === 'agents'

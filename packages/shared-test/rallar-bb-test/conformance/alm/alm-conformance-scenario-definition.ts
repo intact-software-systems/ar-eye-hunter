@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-cont
 
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
-import type { AlmConformanceRole } from './alm-conformance-roles.ts';
+import type { AlmConformancePrincipalRole, AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 
 export interface CreateAlmConformanceRecipesInput {
@@ -28,6 +28,13 @@ export interface CreateAlmConformanceRecipesInput {
      * recipient's connect and lets `ordering-resync` wait for its invocation.
      */
     readonly recoveryOwner?: 'record';
+    /**
+     * Absent, no cell's roles meet before its body: the hosted combined recipe orders its blocks with barriers of its
+     * own, and a caller without a started distributed run has no participants to meet. `barriered` makes every role but
+     * the successor settle its cell's room between its prologue and its body, at the cell's `connected`,
+     * `formation-settled` and `armed` barriers.
+     */
+    readonly cellSettle?: 'barriered';
 }
 
 export type AlmConformanceScenarioId =
@@ -116,6 +123,26 @@ export type AlmConformanceScenarioId =
 export type AlmConformanceTag = 'smoke' | 'full';
 
 /**
+ * How the lane ends a same-context owner page before its successor owns the session: closed, or through a lifecycle
+ * flush and a renderer crash, which runs no `pagehide` listener and no later timer, so the successor restores only what
+ * the page saved before the crash.
+ */
+export type AlmConformanceOwnerEnd = 'close' | 'flush-and-crash';
+
+/**
+ * What a cell does to its room's topology: `kept` leaves the room's default, `reshaped` writes the room's topology config
+ * during the cell and resets it at the cell's end, so a cell that keeps the default must not follow it in a shared room.
+ */
+export type AlmConformanceRoomTopology = 'kept' | 'reshaped';
+
+/**
+ * Where a cell runs: `family`, the room its family's cells share; `own`, a room of its own. A cell needs its own room
+ * when one of its waits reads something an earlier cell would leave in a shared room: `subscription-ordered-reconnect`'s
+ * sibling-left wait counts the room's `activeSessionCount`, which a session an earlier cell left in the room would raise.
+ */
+export type AlmConformanceCellRoom = 'family' | 'own';
+
+/**
  * A connect's `RallarMessageSelector`, which this browser-loaded catalog cannot import: the topic its lanes subscribe.
  * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
  */
@@ -123,6 +150,35 @@ export interface AlmConformanceMessageSelector {
     readonly topicId: string;
     readonly access?: 'granted';
 }
+
+/**
+ * What `grantee`'s principal holds on the granted topic when the cell's body starts, whatever an earlier cell left: the
+ * room owner writes it once every role is a member. A principal that no start grant names for a role of the cell
+ * makes the cell uncreatable.
+ */
+export interface AlmConformanceStartGrant {
+    readonly grantee: AlmConformancePrincipalRole;
+    readonly publish: boolean;
+    readonly subscribe: boolean;
+}
+
+/**
+ * A cell's messages. Without a `messageSelector`, each connect subscribes the scenario's own typed channel; with one,
+ * every connect subscribes its lanes to that topic instead, so its pages hear the server's own publications there.
+ * Exactly when the topic is granted, the cell also declares the permissions it starts from. A cell that does not grant
+ * its topic may declare that its typed channel publishes and listens on the world topic; absent, it uses the room topic.
+ */
+export type AlmConformanceMessages =
+    | {
+        readonly messageSelector?: AlmConformanceMessageSelector & { readonly access?: undefined; };
+        readonly startGrants?: undefined;
+        readonly topic?: 'world';
+    }
+    | {
+        readonly messageSelector: AlmConformanceMessageSelector & { readonly access: 'granted'; };
+        readonly startGrants: readonly AlmConformanceStartGrant[];
+        readonly topic?: undefined;
+    };
 
 /** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */
 export interface AlmConformanceConnect {
@@ -155,8 +211,8 @@ export interface AlmConformanceStepInput {
     readonly role: AlmConformanceRole;
     /** Every role the scenario declares, which decides how many ready peers each connect waits for. */
     readonly roles: readonly AlmConformanceRole[];
-    /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
-    readonly messageSelector: AlmConformanceMessageSelector | undefined;
+    /** The definition's messages: the selector every connect carries, and a granted topic's start grants. */
+    readonly messages: AlmConformanceMessages;
     /** The definition's connect readiness; undefined waits for every other peer. */
     readonly connect: AlmConformanceConnect | undefined;
 }
@@ -182,7 +238,23 @@ export const ALM_CONFORMANCE_LANE_FAMILIES = [
 
 export type AlmConformanceLaneFamily = typeof ALM_CONFORMANCE_LANE_FAMILIES[number];
 
-export interface AlmConformanceScenarioDefinition {
+/**
+ * How a family's pages hold their sessions from cell to cell: `opened`, each page connects for each cell; `chained`, a
+ * same-context cell's successor page takes its owner page's session into the next cell and the receiver page stays
+ * connected, so the family's cells share the family's room whatever the lane asks.
+ */
+export const ALM_CONFORMANCE_FAMILY_SESSIONS: Readonly<Record<AlmConformanceLaneFamily, 'opened' | 'chained'>> = {
+    'two-agent': 'opened',
+    addressed: 'opened',
+    'three-agent': 'opened',
+    'same-context': 'chained',
+    'same-principal': 'opened',
+    'four-role': 'opened'
+};
+
+export type AlmConformanceScenarioDefinition = AlmConformanceScenarioCore & AlmConformanceMessages;
+
+interface AlmConformanceScenarioCore {
     readonly scenarioId: AlmConformanceScenarioId;
     readonly scenarioKey: string;
     readonly tags: readonly AlmConformanceTag[];
@@ -199,11 +271,6 @@ export interface AlmConformanceScenarioDefinition {
      * when it declares `sibling` without `publisher-b`.
      */
     readonly laneFamily: AlmConformanceLaneFamily;
-    /**
-     * Absent, each connect subscribes the scenario's own typed channel. Otherwise every connect subscribes its lanes to
-     * this selector instead, so its pages hear the server's own publications on that topic.
-     */
-    readonly messageSelector?: AlmConformanceMessageSelector;
     /**
      * Absent, a connect that waits for ready peers waits for every other peer of the scenario. A scenario whose overlay
      * gives a connect fewer next hops, such as a path whose leaf has one, names the count instead.
@@ -232,6 +299,20 @@ export interface AlmConformanceScenarioDefinition {
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
     /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
     readonly successorGate?: AlmConformanceRecipeGate;
+    /** Absent, the lane closes a same-context owner page; otherwise how it ends that page. */
+    readonly ownerEnd?: AlmConformanceOwnerEnd;
+    /**
+     * Absent, the cell keeps its room's default topology. `reshaped` when a step writes the room's topology config: the
+     * lane plan then runs the cell after every cell that keeps it, in a room the family shares.
+     */
+    readonly roomTopology?: Extract<AlmConformanceRoomTopology, 'reshaped'>;
+    /** Absent, the cell runs in its family's room; `own` when it needs a room of its own (`AlmConformanceCellRoom`). */
+    readonly room?: Extract<AlmConformanceCellRoom, 'own'>;
+    /**
+     * Absent when no receipt is judged against one role. Otherwise the role none of the sender's receipts may confirm,
+     * which the lane reads from the sender recipe's metadata after the run.
+     */
+    readonly unconfirmedReceiptRole?: AlmConformanceRole;
     /** Absent when every role runs one recipe; otherwise one role's later steps, which wait for another role. */
     readonly continuation?: AlmConformanceContinuationDefinition;
 }

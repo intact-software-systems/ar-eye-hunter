@@ -5,7 +5,10 @@ import {
 } from 'vitest';
 
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
-import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
+import {
+    NON_EXPIRING_SEND_TIMEOUT_MS,
+    RESPONSE_MARGIN_MS
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
@@ -27,6 +30,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
@@ -191,17 +195,21 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
  * A message wait matches no typeId of its own, so it names its pair through what it matches: the marker and carrier
  * of the payload it equals (a cue marker is the pair's key with `-cues`), the pair's typeId as a payload field or in
  * the text it contains, or a trace or request id field naming an identity one of the pair's roles authored
- * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes).
+ * (`alm-<carrier>-<key>-<role>-...`, so no key matches the ids of a key it prefixes), or a trace or request id path whose
+ * contained text names `-<carrier>-<key>-<role>-`: a page cannot name another agent's runtime identity, which leads the
+ * id.
  */
 function isPairScopedMessageWait(match: RallarBlackBoxTestWaitMatch, carrier: AlmConformanceCarrier, key: string): boolean {
     const typeId = `alm.conformance.${carrier}.${key}`;
     const equals = match.equals;
     const fields = Object.entries(match.payloadFields ?? {});
     const authoredIds = ALM_CONFORMANCE_ROLES.map((role) => `alm-${carrier}-${key}-${role}-`);
+    const authoredSuffixes = ALM_CONFORMANCE_ROLES.map((role) => `-${carrier}-${key}-${role}-`);
     return (isJsonRecordValue(equals) && (equals.marker === key || equals.marker === `${key}-cues`) && equals.carrier === carrier) ||
         fields.some(([, value]) => value === typeId) ||
         match.contains?.includes(`"typeId":"${typeId}"`) === true ||
-        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id)));
+        fields.some(([field, value]) => /\.(traceId|requestId)$/u.test(field) && typeof value === 'string' && authoredIds.some((id) => value.startsWith(id))) ||
+        (/\.(traceId|requestId)$/u.test(match.payloadPath ?? '') && authoredSuffixes.some((suffix) => match.contains?.includes(suffix) === true));
 }
 
 /** An admission-outcome wait routes on the typeId its `contains` names; a control is scoped by its own protocol id. */
@@ -381,6 +389,29 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
     ]);
 }
 
+/** The handle reached a state its recipient lists no longer change in. */
+function isTerminalObserve(command: RallarBlackBoxTestCommand, handleId: string): boolean {
+    return command.kind === 'messages.observe' && command.handleId === handleId && command.state.length > 0 &&
+        command.state.every((state) => state === 'acknowledged' || state === 'expired');
+}
+
+/**
+ * The origin committed the control that confirms a recipient of the send: over ws the server's `complete` receipt,
+ * whose `admitted` receipt arrives first, and over an rtc leg a recipient's ACK.
+ */
+function isRecipientConfirmationWait(
+    command: RallarBlackBoxTestCommand,
+    sendId: string,
+    carrier: AlmConformanceCarrier
+): boolean {
+    const answered = `"targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`;
+    const confirmation = carrier === 'ws'
+        ? `"typeId":"${AL_CONTROL_RECEIPT_TYPE_ID}",${answered},"reason":"none","phase":"complete"`
+        : `"typeId":"${AL_CONTROL_ACK_TYPE_ID}",${answered}`;
+    return command.kind === 'wait' && command.absent !== true && command.match.kind === 'diagnostic' &&
+        command.match.contains?.includes(confirmation) === true;
+}
+
 describe('alm-conformance recipe family', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)('names each %s scenario the lane family whose agents it needs', (carrier) => {
         const scenarios = createAlmConformanceRecipes(toConformanceInput(carrier));
@@ -506,7 +537,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role,
                 roles,
-                messageSelector: undefined,
+                messages: {},
                 connect: undefined
             })
                 .readiness?.minReadyPeers;
@@ -525,7 +556,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role: 'sender',
                 roles: threeRoles,
-                messageSelector: undefined,
+                messages: {},
                 connect: undefined
             })
                 .readiness
@@ -541,7 +572,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role,
                 roles: threeRoles,
-                messageSelector: undefined,
+                messages: {},
                 connect: { minReadyPeers: 1 }
             })
                 .readiness?.minReadyPeers;
@@ -564,7 +595,7 @@ describe('alm-conformance recipe family', () => {
                     scenarioKey: 'probe',
                     role,
                     roles: sameContext,
-                    messageSelector: undefined,
+                    messages: {},
                     connect: undefined
                 })
                     .readiness?.minReadyPeers,
@@ -580,7 +611,7 @@ describe('alm-conformance recipe family', () => {
             scenarioKey: 'probe',
             role: 'successor',
             roles: ['sender', 'receiver', 'successor'],
-            messageSelector: undefined,
+            messages: {},
             connect: undefined
         });
 
@@ -949,7 +980,8 @@ describe('alm-conformance recipe family', () => {
                 topic: 'rallar.browser.alm.outbound_diagnostics',
                 payloadPath: 'data',
                 contains: '"typeId":"al.control.nack.v3","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}",' +
-                    '"outcome":"committed"'
+                    '"outcome":"committed"',
+                sinceCommandIdPrefix: 'alm-ws-ordering-resync-sender-'
             },
             timeoutMs: 27_000
         }]);
@@ -1061,6 +1093,35 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    // A refusal, an admission or an elapsed window says nothing of another control's commit: a receipt read is ordered
+    // by its own fact.
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'reads a receipt whose recipient lists a role asserts only after an event that settles them over %s: a terminal observe of the handle, or the committed admission of the control that confirms recipients of its send',
+        (carrier) => {
+            const settles = (command: RallarBlackBoxTestCommand, handleId: string, sendId: string) =>
+                isTerminalObserve(command, handleId) || isRecipientConfirmationWait(command, sendId, carrier);
+            const recipes = toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)));
+            const listReads = recipes.flatMap((recipe) => {
+                const commands = toNestedCommands(recipe.commands);
+                return commands.flatMap((read, readIndex) => {
+                    const asserted = (command: RallarBlackBoxTestCommand) =>
+                        command.kind === 'assert' && command.source.startsWith(`resultCache.${read.commandId}.value.`) &&
+                        command.source.includes('RecipientPeerIds');
+                    if (read.kind !== 'messages.receipts' || !commands.some(asserted)) {
+                        return [];
+                    }
+                    const sendIndex = commands.findIndex((command) => isRallarBlackBoxTestMessagesSendCommand(command) && command.handleId === read.handleId);
+                    const sendId = commands[sendIndex]?.commandId ?? '';
+                    const settled = sendIndex >= 0 &&
+                        commands.slice(sendIndex + 1, readIndex).some((command) => settles(command, read.handleId, sendId));
+                    return [[read.commandId, settled] as const];
+                });
+            });
+            expect(listReads.length).toBeGreaterThan(0);
+            expect(listReads.filter(([, settled]) => !settled).map(([commandId]) => commandId)).toEqual([]);
+        }
+    );
+
     describe('receipted-audience scenarios (three agents)', () => {
         const receiptedOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) => {
             const scenario = createAlmConformanceRecipes(toConformanceInput(carrier)).find((candidate) => candidate.scenarioKey === key);
@@ -1080,7 +1141,7 @@ describe('alm-conformance recipe family', () => {
                 ? `received:${command.count}${command.absent === true ? ':absent' : ''}`
                 : command.kind;
 
-        it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
+        it('reads every receipt only after the scenario window and the ending of its handle, pinning its mode and the length of each recipient list', () => {
             // expected = confirmed + unconfirmed + outside the audience
             const tails = {
                 'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
@@ -1090,9 +1151,10 @@ describe('alm-conformance recipe family', () => {
                 'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
             for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
-                const tail = receiptedOf('rtc', key).sender.commands.slice(-9, -1);
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-10, -1);
                 expect(tail.map(shapeOf), key).toEqual([
                     'received:1:absent',
+                    'messages.observe',
                     'messages.receipts',
                     'assert',
                     'assert',
@@ -1101,6 +1163,8 @@ describe('alm-conformance recipe family', () => {
                     'assert',
                     'assert'
                 ]);
+                expect(tail.flatMap((command) => command.kind === 'messages.observe' ? command.state : []), key)
+                    .toEqual([ending]);
                 expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
                     .toEqual([ending, 'receiver', expected, confirmed, unconfirmed, outside]);
             }
@@ -1313,11 +1377,65 @@ describe('alm-conformance recipe family', () => {
             }
         });
 
+        // The refusal of a proofless ACK runs before any await, so it can overtake the commit of the genuine one.
+        it('reads the forged-ACK receipt mid-window only once its own page committed the receiver\'s genuine ACK of the send, in the cell\'s history', () => {
+            const sender = receiptedOf('rtc', 'forged-recipient-ack').sender.commands;
+            const indexOf = (suffix: string) => sender.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const genuine = indexOf('-sender-genuine-ack-admitted-1');
+            expect(sender[genuine]).toEqual({
+                kind: 'wait',
+                commandId: 'alm-rtc-forged-recipient-ack-sender-genuine-ack-admitted-1',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    payloadPath: 'data',
+                    contains: '"typeId":"al.control.ack.v3",' +
+                        '"targetMsgId":"{resultCache.alm-rtc-forged-recipient-ack-sender-send-1.value.msgId}","outcome":"committed"',
+                    sinceCommandIdPrefix: 'alm-rtc-forged-recipient-ack-sender-'
+                },
+                timeoutMs: expect.any(Number)
+            });
+            const send = indexOf('-sender-send-1');
+            expect(send).toBeGreaterThan(-1);
+            expect(indexOf('-sender-forged-recipient-ack-refused')).toBe(genuine - 1);
+            expect(indexOf('-sender-receipts-mid-window')).toBe(genuine + 1);
+            expect(send).toBeLessThan(genuine);
+        });
+
+        // A refused raw ACK says nothing of the genuine ones, and the window only lets time pass.
+        it.each(
+            [
+                ['rtc', 'unknown-ack-version', 'unknown-ack-version-refused'],
+                ['rtc', 'unsigned-ack-refused', 'unsigned-ack-refused'],
+                ['rtc-with-ws-fallback', 'unknown-ack-version', 'unknown-ack-version-refused'],
+                ['rtc-with-ws-fallback', 'unsigned-ack-refused', 'unsigned-ack-refused']
+            ] as const
+        )('reads the %s %s receipt after the refusal and the window only once its handle is acknowledged', (carrier, key, refusal) => {
+            const sender = receiptedOf(carrier, key).sender.commands;
+            const prefix = `alm-${carrier}-${key}-sender-`;
+            const indexOf = (name: string) => sender.findIndex((command) => command.commandId === `${prefix}${name}`);
+            const observe = indexOf('observe-acknowledged-1');
+            expect(sender[observe]).toEqual({
+                kind: 'messages.observe',
+                commandId: `${prefix}observe-acknowledged-1`,
+                connection: expect.any(String),
+                handleId: `alm-${carrier}-${key}-send-1`,
+                state: ['acknowledged'],
+                timeoutMs: expect.any(Number)
+            });
+            expect(indexOf(refusal)).toBeGreaterThan(-1);
+            expect(indexOf(refusal)).toBeLessThan(indexOf('received-self-1'));
+            expect(indexOf('received-self-1')).toBe(observe - 1);
+            expect(indexOf('receipts-1')).toBe(observe + 1);
+        });
+
         it('reshapes the room into a path, has the sender and the owner each send a non-granted receipted multicast and read its own receipt after its window, and resets the config after both read', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
             const cellTypeId = 'alm.conformance.rtc.receipted-relay-path';
             const receiver = bodyOf(scenario.receiver);
-            expect(receiver[0]).toMatchObject({
+            // The owner subscribes to the cues first, then PUTs the path.
+            expect(receiver.slice(0, 2).map((command) => command.metadata?.cellArming)).toEqual(['cue-subscription', 'cue-subscription']);
+            expect(receiver[2]).toMatchObject({
                 kind: 'http.request',
                 request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } } }
             });

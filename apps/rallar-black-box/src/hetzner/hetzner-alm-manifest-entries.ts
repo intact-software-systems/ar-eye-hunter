@@ -4,9 +4,17 @@ import {
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { requireAlmCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
+import {
+    toAlmCellBarrier,
+    type AlmCellBarrierPhase
+} from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-barrier.ts';
+import { toAlmCellCommandPrefix } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-command-prefix.ts';
+import { toAlmCellPlacedBody } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-placed-body.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -41,7 +49,6 @@ import { serverOriginated } from '@shared-test/rallar-bb-test/conformance/alm/sc
 import { capacityAge } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-age.ts';
 import { capacityTracks } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/volatile-bound/capacity-tracks.ts';
 import type {
-    RallarBlackBoxTestBarrierCommand,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
@@ -307,79 +314,60 @@ function toAlmConformanceCombinedCommands(
     if (rtcScenario === undefined) {
         throw new Error('Combined ALM recipes require an RTC scenario.');
     }
-    const rtc = toRoleRecipe(rtcScenario, role);
-    const rtcConnect = rtc.commands.find((command) => command.kind === 'rtc.connect');
+    const rtcPrologue = requireAlmCellParts(rtcScenario.partsByRole, rtcScenario.scenarioKey, role).prologue;
+    const rtcConnect = rtcPrologue.find((command) => command.kind === 'rtc.connect');
     if (rtcConnect === undefined) {
-        throw new Error(`Generated ALM recipe ${rtc.recipeId} has no rtc.connect prologue.`);
+        throw new Error(`Generated ALM scenario ${rtcScenario.scenarioKey} has no ${role} rtc.connect prologue.`);
     }
     const messageTypeIds = computeCombinedAlmMessageTypeIds(scenarios, role);
     const toConnect = (command: RallarBlackBoxTestRtcConnectCommand) =>
         toCombinedAlmConnect(command, rtcConnect.readiness, messageTypeIds);
-    const prologueEnd = rtc.commands.indexOf(rtcConnect);
-    const prologue = rtc.commands.slice(0, prologueEnd + 1).filter((command) =>
-        command.kind === 'http.request' || command.kind === 'rtc.connect'
-    ).map((command) => command.kind === 'rtc.connect' ? toConnect(command) : command);
+    const prologue = rtcPrologue.filter((command) => command.kind === 'http.request' || command.kind === 'rtc.connect')
+        .map((command) => command.kind === 'rtc.connect' ? toConnect(command) : command);
     return [
         ...prologue,
-        ...scenarios.flatMap((scenario) => {
-            const recipe = toRoleRecipe(scenario, role);
-            const commands = recipe.commands;
-            const scenarioConnectAt = commands.findIndex((command) => command.kind === 'rtc.connect');
-            if (scenarioConnectAt < 0) {
-                throw new Error(`Generated ALM recipe ${recipe.recipeId} has no rtc.connect prologue.`);
-            }
-            return toBarrieredScenarioCommands(
+        ...scenarios.flatMap((scenario) =>
+            toBarrieredScenarioCommands(
                 scenario,
                 role,
-                commands.slice(scenarioConnectAt + 1).map((command) =>
-                    command.kind === 'rtc.connect' ? toConnect(command) : command
-                )
-            );
-        })
+                toAlmCellPlacedBody(requireAlmCellParts(scenario.partsByRole, scenario.scenarioKey, role)).map((
+                    command
+                ) => command.kind === 'rtc.connect' ? toConnect(command) : command)
+            )
+        )
     ];
 }
 
 /**
  * The combined recipe runs every role at once, so only barriers order one role's block against another's (D62).
  * `start`: every role finished the previous scenario, so no ACK of it is still owed when a fault is armed.
- * `armed`: every role armed the faults leading its block, so the sender sends into them.
+ * `armed`: every role ran the arming run leading its block, its faults and its cue subscription, so the sender sends
+ * into the faults and every cue reaches a role that listens.
  */
 function toBarrieredScenarioCommands(
     scenario: AlmConformanceScenario,
     role: AlmConformanceRole,
     commands: readonly RallarBlackBoxTestCommand[]
 ): readonly RallarBlackBoxTestCommand[] {
-    const firstStep = commands.findIndex((command) => command.kind !== 'fault.inject');
-    const armedEnd = firstStep < 0 ? commands.length : firstStep;
-    const scenarioPrefix = toScenarioCarrierAndKey(scenario);
-    return [
-        toScenarioBarrier(scenarioPrefix, role, 'start'),
-        ...commands.slice(0, armedEnd),
-        toScenarioBarrier(scenarioPrefix, role, 'armed'),
-        ...commands.slice(armedEnd)
-    ];
+    const { arming, rest } = toAlmCellArming(commands);
+    const toBarrier = (phase: AlmCellBarrierPhase) =>
+        toAlmCellBarrier({
+            cellPrefix: toAlmCellCommandPrefix(toScenarioCarrier(scenario), scenario.scenarioKey),
+            role,
+            phase,
+            timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS,
+            participants: undefined
+        });
+    return [toBarrier('start'), ...arming, toBarrier('armed'), ...rest];
 }
 
-function toScenarioBarrier(
-    scenarioPrefix: string,
-    role: AlmConformanceRole,
-    phase: 'start' | 'armed'
-): RallarBlackBoxTestBarrierCommand {
-    return {
-        kind: 'barrier',
-        commandId: `${scenarioPrefix}-${role}-${phase}`,
-        barrierId: `${scenarioPrefix}-${phase}`,
-        timeoutMs: ALM_COMBINED_SCENARIO_BARRIER_TIMEOUT_MS
-    };
-}
-
-/** Matches `toCommandId`'s own `alm-<carrier>-<scenarioKey>` prefix; `scenarioId` alone collides across scenarioKeys. */
-function toScenarioCarrierAndKey(scenario: AlmConformanceScenario): string {
-    const carrier = scenario.sender.metadata?.carrier;
-    if (typeof carrier !== 'string') {
+/** A scenario names no carrier of its own; its recipes' metadata does. */
+function toScenarioCarrier(scenario: AlmConformanceScenario): AlmConformanceCarrier {
+    const carrier = ALM_CONFORMANCE_CARRIERS.find((candidate) => candidate === scenario.sender.metadata?.carrier);
+    if (carrier === undefined) {
         throw new Error(`Generated ALM scenario ${scenario.scenarioKey} is missing its carrier metadata.`);
     }
-    return `alm-${carrier}-${scenario.scenarioKey}`;
+    return carrier;
 }
 
 /**

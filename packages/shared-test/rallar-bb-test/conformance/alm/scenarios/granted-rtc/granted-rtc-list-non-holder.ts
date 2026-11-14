@@ -6,23 +6,21 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import {
-    TOPIC_SUBSCRIPTION_SELECTOR,
-    toUnsubscribeCommands
-} from '../topic-subscription/topic-subscription-commands.ts';
+import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
     toPublicationWait,
     toPublishUntilConfirmedCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
-import { GRANTED_RTC_CARRIERS, toGrantedRtcOwnerCommands, toRtcArrivalWait } from './granted-rtc-commands.ts';
+import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
+import { toConfirmingOwnerCommands } from './to-confirming-owner-commands.ts';
 
 /**
  * The sender lists the receiver's principal and recipient-b's, but recipient-b holds `publish` alone, so the frozen
  * audience leaves it out silently: one copy's receipt expects the receiver, it confirms, nobody ends outside the
- * audience, and recipient-b delivers nothing. A grant only adds permissions and the room's three-agent cells share
- * it, so the owner revokes the `subscribe` an earlier cell granted recipient-b before it grants the sender.
+ * audience, and recipient-b delivers nothing.
  */
 export const grantedRtcListNonHolder: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-list-non-holder',
@@ -33,6 +31,7 @@ export const grantedRtcListNonHolder: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [...LISTENER_AND_PUBLISHER_START_GRANTS, { grantee: 'recipient-b', publish: true, subscribe: false }],
     toSenderCommands: (sender) =>
         toPublishUntilConfirmedCommands({
             step: sender,
@@ -44,21 +43,9 @@ export const grantedRtcListNonHolder: AlmConformanceScenarioDefinition = {
         }),
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
-            ? toNonHolderOwnerCommands(recipient)
+            ? toConfirmingOwnerCommands(recipient)
             : toNonHolderCommands(recipient)
 };
-
-function toNonHolderOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        ...toGrantedRtcOwnerCommands(owner, [
-            { operation: 'grant', grantee: 'recipient-b', publish: true, subscribe: false },
-            { operation: 'revoke', grantee: 'recipient-b', publish: false, subscribe: true }
-        ]),
-        toRtcArrivalWait(owner),
-        toConfirmedCueWait(owner, 'publication'),
-        ...toUnsubscribeCommands(owner, 'receiver')
-    ];
-}
 
 function toNonHolderCommands(recipient: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [

@@ -7,6 +7,7 @@ import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conforma
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 describe('ALM lifecycle recipe evidence', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
@@ -210,6 +211,7 @@ async function expectPayloadWaitRejects(
 ): Promise<void> {
     for (const specimen of specimens) {
         const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
+        writeAlmCellStartEvents(runtime, [command]);
         runtime.recordEvent({
             kind: 'message',
             topic: 'typed',
@@ -226,6 +228,7 @@ async function expectReplacementPair(
     carrier: AlmConformanceCarrier
 ): Promise<void> {
     const runtime = createDefaultRallarBlackBoxTestRuntime({ sleep: async () => {} });
+    writeAlmCellStartEvents(runtime, [replacement]);
     runtime.recordEvent(toLifecycleEvent('actual-replacement', { marker: 'delivery-lifecycle', specimen: 'supersedence', carrier, revision: 'replacement' }));
     expect((await runtime.execute(replacement)).value).toMatchObject({ event: { payload: { data: { msgId: 'actual-replacement' } } } });
     runtime.recordEvent(toLifecycleEvent('escaped-old', { marker: 'delivery-lifecycle', specimen: 'supersedence', carrier, revision: 'old' }));

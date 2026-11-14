@@ -6,7 +6,12 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
+import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -14,24 +19,19 @@ import {
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import { toGenerationChangePollCommand } from './topic-subscription-generation-polls.ts';
-import { toReadPollCommand } from './topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
     toCueSendCommands,
     toCueWait,
+    toEndedReceiptCommands,
     toPublicationWait,
     toPublishCommands,
-    toPublishUntilConfirmedCommands,
-    toReceiptsCommand
+    toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
-
-/** Covers the window between the sender's last readiness probe and its receipt reads, so the receipts have settled. */
-const RECEIPT_SETTLE_MS = 2_000;
 
 /**
  * Revoke while disconnected: the sibling's product socket drops, and a probe publishes until the receiver alone is
@@ -49,23 +49,37 @@ export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = 
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
-    principalRoles: ['receiver', 'sender'],
+    principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: false, subscribe: true },
+        { grantee: 'publisher-b', publish: false, subscribe: false },
+        { grantee: 'sender', publish: true, subscribe: true }
+    ],
+    unconfirmedReceiptRole: 'sibling',
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient)
 };
 
-/** The sender reads both receipts after the run's last step; the lane joins them to the sibling's session. */
+/**
+ * The sender reads both receipts once each publication's handle has ended, so no later confirmation can change them;
+ * the lane joins them to the sibling's session.
+ */
 const SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS = ['publication-1', 'publication-2'] as const;
 
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 'receiver'),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true }),
         toPublicationWait(owner, 'publication-1', false),
-        toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: false, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'revoke',
+            grantee: 'sender',
+            publish: false,
+            subscribe: true
+        }),
         ...toCueSendCommands(owner, 'revoked'),
         toPublicationWait(owner, 'publication-2', false),
         ...toUnsubscribeCommands(owner, 'receiver')
@@ -89,8 +103,15 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
         toReadPollCommand({
             step: sibling,
             name: 'rows-revoked',
-            read: (readName) => toSubscriptionRowsCommand(sibling, readName),
-            facts: [{ name: 'rows-revoked-empty', field: 'body.subscriptions', operator: 'length', expected: 0 }]
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(sibling, readName) }],
+            facts: [{
+                name: 'rows-revoked-empty',
+                source: { read: 'read', field: 'body.subscriptions' },
+                operator: 'length',
+                expected: 0
+            }]
         }),
         toProductSocketCommand(sibling, 'reopen'),
         toGenerationChangePollCommand({
@@ -124,7 +145,8 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
         ...toPublishCommands(sender, 'publication-1'),
         toCueWait(sender, 'revoked'),
         ...toPublishCommands(sender, 'publication-2'),
-        toPauseCommand(sender, 'receipt-settle', RECEIPT_SETTLE_MS),
-        ...SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS.map((publication) => toReceiptsCommand(sender, publication))
+        ...SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS.flatMap((publication) =>
+            toEndedReceiptCommands(sender, publication)
+        )
     ];
 }

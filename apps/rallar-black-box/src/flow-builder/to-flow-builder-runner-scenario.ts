@@ -154,7 +154,8 @@ function toRunnerCheckStep(
                 request: {
                     source: command.source,
                     operator: command.operator,
-                    expected: command.expected
+                    expected: command.expected,
+                    comparisonSource: command.comparisonSource
                 }
             };
     }

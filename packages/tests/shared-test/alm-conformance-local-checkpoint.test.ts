@@ -230,7 +230,8 @@ describe('checkpoint-recovery', () => {
             kind: 'diagnostic',
             topic: STORAGE_TOPIC,
             payloadPath: 'data',
-            contains: toRecoveryMatch(sender, toCheckpointStorePrefix(carrier), 'reconnect')
+            contains: toRecoveryMatch(sender, toCheckpointStorePrefix(carrier), 'reconnect'),
+            sinceCommandIdPrefix: `${sender.recipeId}-`
         });
         expect(findCommand(sender, 'assert-recovered-claimed')).toMatchObject({
             kind: 'assert',
@@ -340,6 +341,24 @@ describe('checkpoint-lag', () => {
 });
 
 describe('flush-on-hide', () => {
+    // The lane ends the owner page as the cell declares, so no scenario id decides it.
+    it('ends its owner page by its lifecycle flush and a crash, where every other same-context cell closes it', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const sameContext = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .filter((scenario) => scenario.laneFamily === 'same-context');
+
+            expect(sameContext.length, carrier).toBeGreaterThan(0);
+            expect(
+                Object.fromEntries(sameContext.map((scenario) => [scenario.scenarioKey, scenario.ownerEnd])),
+                carrier
+            ).toEqual(Object.fromEntries(sameContext.map((scenario) => [
+                scenario.scenarioKey,
+                scenario.scenarioId === 'flush-on-hide' ? 'flush-and-crash' : 'close'
+            ])));
+        }
+        expect(findScenario('ws', 'checkpoint-recovery').ownerEnd).toBeUndefined();
+    });
+
     it.each(['ws', 'rtc'] as const)('has the %s owner admit one held send and end its recipe inside the interval', (carrier) => {
         const { sender } = findScenario(carrier, 'flush-on-hide');
 

@@ -106,6 +106,7 @@ describe('same-context ALM run', () => {
                 runId: 'same-context-run',
                 sender: { agentId: 'owner-agent' },
                 receiver: { agentId: 'receiver-agent' },
+                startedRoots: [],
                 readSnapshot: async () => ({
                     runId: 'same-context-run',
                     createdAtEpochMs: 1,
@@ -241,6 +242,7 @@ it('rejects without starting the successor when the owner\'s gate neither passes
         runId: 'same-context-gate-timeout',
         sender: { agentId: 'owner-agent' },
         receiver: { agentId: 'receiver-agent' },
+        startedRoots: [],
         readSnapshot: async () => {
             nowEpochMs += 30_000;
             return {

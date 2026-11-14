@@ -93,8 +93,8 @@ export function toOrderedAbsenceWaits(
 }
 
 /**
- * None of the named publications arrived on the page. Every absence reads the page's whole history, so the first
- * one's window for a late copy covers the others, which read the history alone.
+ * None of the named publications arrived on the page during the cell. Every absence reads the cell's whole history, so
+ * the first one's window for a late copy covers the others, which read that history alone.
  */
 export function toPublicationAbsenceWaits(
     step: AlmConformanceStepInput,

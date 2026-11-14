@@ -1,4 +1,5 @@
 import {
+    NOT_COMPLETED_RETRYABLE_STATUSES,
     toKeyAsString,
     type EntityStatus,
     type Key,
@@ -100,6 +101,21 @@ export class PSqlResourceInboxEntryReader {
             from resource_inbox
             where ri_topic_id = ${topicId}
               and ri_resource_id = ${resourceId}
+              and expire_ts > ${now}
+            order by ri_row_id
+        `;
+        return rows.map(toDomain);
+    }
+
+    /** The live rows of one topic and context that the queue will still attempt: waiting (NEW, RETRY) or executing. */
+    async readPendingByTopicAndContextId(topicId: string, contextId: string): Promise<readonly ResourceEntry[]> {
+        const now = this.now();
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select *
+            from resource_inbox
+            where fk_ext_bank_id = ${contextId}
+              and ri_topic_id = ${topicId}
+              and ri_status = any(${[...NOT_COMPLETED_RETRYABLE_STATUSES]}::text[])
               and expire_ts > ${now}
             order by ri_row_id
         `;

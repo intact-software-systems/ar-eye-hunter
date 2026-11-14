@@ -408,12 +408,19 @@ const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELD
     equals: anySchema,
     contains: stringSchema,
     exists: booleanSchema,
-    sinceEpochMs: { type: 'integer', minimum: 0 }
+    sinceEpochMs: { type: 'integer', minimum: 0 },
+    sinceCommandIdPrefix: stringSchema,
+    payloadMinimums: {
+        type: 'object',
+        additionalProperties: {
+            oneOf: [{ type: 'number' }, { type: 'string', pattern: WAIT_TIMEOUT_FROM_PATTERN_SOURCE }]
+        }
+    }
 });
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS.filter((operator) => operator !== 'equals')
 };
 
 const parallelGroupSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.parallelGroup, {
@@ -631,11 +638,22 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
             },
             {
                 type: 'object',
+                required: ['kind', 'source', 'operator', 'expected'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: { const: 'equals' },
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
                 required: ['kind', 'source', 'operator', 'comparisonSource'],
                 properties: {
                     ...commandBaseProperties('assert'),
                     source: nonEmptyStringSchema,
-                    operator: { const: 'sameUniqueStringSet' },
+                    operator: { enum: ['equals', 'sameUniqueStringSet'] },
                     comparisonSource: nonEmptyStringSchema
                 },
                 additionalProperties: false

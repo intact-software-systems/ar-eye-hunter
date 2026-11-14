@@ -71,6 +71,23 @@ it says so: capture a stamp before the step that should produce the event, and p
 Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
 same hazard `absent: true` carries in the other direction.
 
+## Wait History From A Command
+
+`wait.match.sinceCommandIdPrefix` starts the wait's history at the first event whose `commandId` starts with the
+prefix, and at the next event when none does yet. It resolves once, when the wait starts. Conformance cells that share
+one page name their commands under a cell prefix, so a wait sees only its own cell's history rather than an earlier
+cell's traffic. Beside an owner's own history start, such as a barrier's, the later of the two wins. A prefix wait needs
+a history that has evicted nothing: retained events cannot prove that the oldest retained event of the prefix was its
+first, so under a `recent` history the wait fails with `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction.
+
+## Wait Numeric Floors
+
+`wait.match.payloadMinimums` maps payload paths to floors: every path must reach a number at or above its floor in
+the same event, so a page that reached one revision but not the other does not match. A floor is a finite number or
+exactly one `{resultCache.<commandId>.<path>}` reference with the `wait.timeoutFrom` grammar below, resolved once
+when the wait starts. A reference naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`, and any
+other text is refused when the recipe is loaded.
+
 ## Wait Result References
 
 A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number
@@ -312,10 +329,11 @@ connection closes.
 
 The `receipted-audience` conformance scenarios run on three agents: `sender`,
 `receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
-sender reads its receipt only after the scenario window, never by polling
-`acknowledged`, and pins the state the handle ended in (`acknowledged` for a receipt
-that completes, `expired` for one that ends timed out), the receipt mode and the
-length of each recipient list. Every send payload names its carrier, and the raw ACK
+sender reads its receipt only after the scenario window and, on its own page, the
+observe of its handle at the ending it expects, which resolves at any terminal
+state; it never polls `acknowledged` on another page. It pins the state the
+handle ended in (`acknowledged` for a receipt that completes, `expired` for one
+that ends timed out), the receipt mode and the length of each recipient list. Every send payload names its carrier, and the raw ACK
 of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
 runs every carrier on one page never matches an earlier carrier's event. Its
 recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
@@ -323,12 +341,18 @@ receipt confirms, leaves unconfirmed and records outside the audience
 (`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
 together. The identity assessment joins each list to the sessions of those roles
 after the run, reading the receipt the handle ended in: the sender's last read of
-that handle, after any mid-window read.
+that handle, after any mid-window read. In every conformance cell, a receipt read
+whose recipient lists a role asserts follows, after its send, an event that
+settles those lists: a terminal observe of the handle (a non-empty list of
+`acknowledged` and `expired`), or the role's own `committed` `control-admission`
+of the control that confirms a recipient of the send (an `al.control.ack.v3` over
+an rtc leg, over `ws` the server's `complete` `al.control.receipt.v1`). A refusal
+of another control proves no such commit, and a window only lets time pass.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
-  first receipt frame, the `admitted` one, and the `acknowledged` read proves the
-  `complete` one.
+  first receipt frame, the `admitted` one, and the `acknowledged` observe and read
+  prove the `complete` one.
 - `missing-recipient-retry`: `recipient-b` holds its ACK back with a fault it keeps
   armed until it is released. A one-shot `drop` would not lose the ACK: the RTC
   channel settles a dropped frame `not-ready` and its sender resubmits it 50 ms
@@ -366,7 +390,12 @@ that handle, after any mid-window read.
   it, the receiver submits a raw `al.control.ack.v3` whose
   `logicalRecipientPeerId` names that session, with `proof: null`. The sender waits
   for the origin's `rejected` `control-admission` of it with `proofRefusal`
-  `missing-proof`, reads its receipt mid-window and asserts it is not yet
+  `missing-proof`. That refusal runs before any await, while the receiver's
+  genuine ACK commits only after its signature check, so the refusal can
+  overtake it: the sender also waits, in its cell's history, for its own
+  `committed` `control-admission` of an `al.control.ack.v3` answering the send,
+  which before the release can only be the receiver's. Only then does it read
+  its receipt mid-window and assert it is not yet
   `acknowledged` (at least one recipient unconfirmed, at most one confirmed), then
   cues `recipient-b` to release; the receipt ends `acknowledged` with both
   recipients confirmed. Its cues travel on a type of their own
@@ -497,7 +526,7 @@ send: `recipient-b` sends on its own connection, and its handle id names the rol
   its admission and receiving the reclaim. `recipient-b` receives that send, holds
   3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
   exclusive send on the resource is admitted and delivered to the sender and the receiver;
-  it reads its receipt `acknowledged` after its own absence window.
+  it reads its receipt `acknowledged` after its own absence window and its observe of the handle.
 - `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
   send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
   'unsupported'` and no carrier attempt.
@@ -564,7 +593,8 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   socket is down, and the receiver then revokes the principal's
   `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
   The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
-  sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
+  sibling. The sender reads each receipt once its publication's handle has ended, which no later
+  confirmation changes, not after a pause. A clean close removes the sibling's live generation at once, so no dispatch is held
   for it; the held-dispatch revocation is proven server-side by
   `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
@@ -1410,6 +1440,13 @@ Operators:
 - `equals` / `notEquals` / `contains` / `exists` — historical semantics kept:
   `notEquals` passes when the path is missing, and `gte` / `lte` accept only
   values that are already numbers.
+- `equals` names an expected value or a comparison source, never both and
+  never neither. With `expected` it compares the path with that value. With
+  `comparisonSource` it compares two evidence paths and passes only when both
+  paths exist and hold the same JSON value, so a missing path on either side
+  fails; the result value then carries `actual`, `comparisonActual`, `exists`
+  and `comparisonExists`. Only `equals` and `sameUniqueStringSet` take a
+  `comparisonSource`.
 - `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.

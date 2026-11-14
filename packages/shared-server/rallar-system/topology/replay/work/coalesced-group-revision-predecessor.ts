@@ -4,7 +4,6 @@ import { decodeRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-e
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
-    tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkEnvelope
 } from '../../../app-outbox/coalesced-app-outbox-work.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-entry.ts';
@@ -22,26 +21,9 @@ export interface PreviousCoalescedGroupRevisionWork {
     readonly messageIdentity: CoalescedMessageIdentity;
 }
 
-export interface CurrentCoalescedGroupRevisionPredecessor {
-    readonly kind: 'current';
-    readonly entry: ResourceEntry;
-    readonly work: PreviousCoalescedGroupRevisionWork;
-}
-
-/** Of a head stamped with an unsupported envelope version, only the coalescing generation the compare-and-set guards is read. */
-export interface UnsupportedCoalescedGroupRevisionPredecessor {
-    readonly kind: 'unsupported';
-    readonly entry: ResourceEntry;
-    readonly generation: number;
-}
-
-export type CoalescedGroupRevisionPredecessor =
-    | CurrentCoalescedGroupRevisionPredecessor
-    | UnsupportedCoalescedGroupRevisionPredecessor;
-
 /**
- * The stored head as a writer may use it; anything that is neither current coalesced work nor an unsupported envelope
- * version with a coalescing generation is corrupt and fails closed.
+ * The stored head as a writer may use it; anything that is not current coalesced work, a row in an envelope version
+ * this build does not support among it, is corrupt and fails closed.
  *
  * A stored coalesced row never rewrites its created-audit columns — both the
  * pending merge and the terminal revival compare-and-set update the resource,
@@ -51,12 +33,9 @@ export type CoalescedGroupRevisionPredecessor =
  * work contract that release idempotency checks. The latest request and due
  * times live in the coalesced metadata, not the message identity.
  */
-export function decodeCoalescedGroupRevisionPredecessor(entry: ResourceEntry): CoalescedGroupRevisionPredecessor {
+export function decodeCoalescedGroupRevisionPredecessor(entry: ResourceEntry): PreviousCoalescedGroupRevisionWork {
     try {
         const decoded = decodeRtcTopologyWorkEntry(entry);
-        if (decoded.left?.code === 'unsupported') {
-            return { kind: 'unsupported', entry, generation: decodeUnsupportedCoalescedGeneration(entry) };
-        }
         if (decoded.left) {
             throw new TypeError(decoded.left.message);
         }
@@ -72,7 +51,7 @@ export function decodeCoalescedGroupRevisionPredecessor(entry: ResourceEntry): C
             expiresAtEpochMs: message.constraints?.expiresAtMs ?? NEVER_EXPIRE_TS.epochMilliseconds
         };
         const data = { ...work, [COALESCED_APP_OUTBOX_WORK_FIELD]: work[COALESCED_APP_OUTBOX_WORK_FIELD] };
-        return { kind: 'current', entry, work: { envelope: { ...envelope, data }, messageIdentity } };
+        return { envelope: { ...envelope, data }, messageIdentity };
     }
     catch (cause) {
         throw new TypeError(
@@ -82,23 +61,32 @@ export function decodeCoalescedGroupRevisionPredecessor(entry: ResourceEntry): C
     }
 }
 
-/** The stored row's current coalesced work, or null when it is unsupported or corrupt. */
+/** The stored row's current coalesced work, or null when it is corrupt. */
 export function decodeCurrentCoalescedGroupRevisionWork(
     entry: ResourceEntry
 ): PreviousCoalescedGroupRevisionWork | null {
     try {
-        const predecessor = decodeCoalescedGroupRevisionPredecessor(entry);
-        return predecessor.kind === 'current' ? predecessor.work : null;
+        return decodeCoalescedGroupRevisionPredecessor(entry);
     }
     catch {
         return null;
     }
 }
 
-function decodeUnsupportedCoalescedGeneration(entry: ResourceEntry): number {
-    const generation = tryReadCoalescedAppOutboxWorkEnvelope(entry)?.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
-    if (generation === undefined || !Number.isSafeInteger(generation) || generation < 1) {
-        throw new TypeError('Unsupported coalesced group-revision predecessor has no coalescing generation');
+/**
+ * The overlay a stored group-revision row replans, a per-command row (an explicit reconfigure or a topology-config
+ * receipt) among them; null for RTT-refresh work and for a row that does not decode.
+ */
+export function decodeGroupRevisionWorkOverlayId(entry: ResourceEntry): string | null {
+    try {
+        const message = decodeRtcTopologyWorkEntry(entry).right;
+        if (message === undefined) {
+            return null;
+        }
+        const work = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
+        return work.kind === 'group-revision' ? work.overlayId : null;
     }
-    return generation;
+    catch {
+        return null;
+    }
 }

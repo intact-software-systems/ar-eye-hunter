@@ -24,6 +24,7 @@ import {
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
 import { toPathMemberCommands, toPathOwnerCommands, toPathSenderCommands } from './granted-rtc-path.ts';
+import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /** The track's publications, each named after its place on the track. */
 const PUBLICATIONS = [1, 2, 3] as const;
@@ -40,12 +41,14 @@ const PUBLICATIONS = [1, 2, 3] as const;
 export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-ordered-relay',
     scenarioKey: 'granted-rtc-ordered-relay',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: GRANTED_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PATH_START_GRANTS,
     connect: { minReadyPeers: 1 },
     toSenderCommands: (sender) => toPathSenderCommands(sender, toHeldTrackCommands(sender)),
     toRecipientCommands: (recipient) =>

@@ -16,6 +16,7 @@ import {
     toPublishUntilCueCommand,
     toRtcArrivalWait
 } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The sender holds `publish`, the receiver `subscribe` and an active election. The sender's page signs each `ack: 'none'`
@@ -31,13 +32,14 @@ export const grantedRtcDelivered: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: (sender) => [...toCueListenCommands(sender), toPublishUntilCueCommand(sender, 'received')],
     toRecipientCommands: toDeliveredReceiverCommands
 };
 
 function toDeliveredReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(receiver, []),
+        ...toGrantedRtcOwnerCommands(receiver),
         toRtcArrivalWait(receiver),
         ...toCueSendCommands(receiver, 'received'),
         ...toUnsubscribeCommands(receiver, 'receiver')

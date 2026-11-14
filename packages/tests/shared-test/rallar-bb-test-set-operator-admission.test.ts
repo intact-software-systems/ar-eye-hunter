@@ -86,6 +86,29 @@ describe('set assertion control admission', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
     });
 
+    it('an assert names an expected value or a comparison source, never both', () => {
+        const comparison = { kind: 'assert', source: 'state.a', operator: 'equals', comparisonSource: 'state.b' };
+        const both = { ...comparison, expected: 1 };
+        const blank = { ...comparison, comparisonSource: ' ' };
+        const otherOperator = { kind: 'assert', source: 'state.a', operator: 'gte', comparisonSource: 'state.b' };
+
+        expect(validateRallarBlackBoxTestCommand(comparison).ok).toBe(true);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, comparison).ok).toBe(true);
+        for (const command of [both, blank, otherOperator]) {
+            expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+        }
+    });
+
+    it('an equals assert names an expected value or a comparison source', () => {
+        const neither = { kind: 'assert', source: 'state.a', operator: 'equals' };
+
+        expect(validateRallarBlackBoxTestCommand(neither).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand({ ...neither, expected: null }).ok).toBe(true);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, neither).ok).toBe(false);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, { ...neither, expected: null }).ok).toBe(true);
+    });
+
     it('accepts the distinct set shape and an existing value operator in both validators', () => {
         for (
             const command of [

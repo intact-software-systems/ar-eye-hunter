@@ -309,7 +309,8 @@ describe('backpressure-deferred', () => {
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.outbound_diagnostics',
                     payloadPath: 'data',
-                    contains: `"cause":"backpressured","action":"defer","priority":5,"msgId":"{resultCache.${scenario.sender.recipeId}-send-1.value.msgId}"`
+                    contains: `"cause":"backpressured","action":"defer","priority":5,"msgId":"{resultCache.${scenario.sender.recipeId}-send-1.value.msgId}"`,
+                    sinceCommandIdPrefix: `${scenario.sender.recipeId}-`
                 },
                 timeoutMs: 10_000
             });

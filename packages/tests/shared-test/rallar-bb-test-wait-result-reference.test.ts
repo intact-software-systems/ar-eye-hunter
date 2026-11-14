@@ -13,7 +13,7 @@ function createRuntimeWithSentMessage() {
         },
         commandExecutor: (command) =>
             command.kind === 'messages.send'
-                ? { status: 'ok', value: { handleId: 'send-2', msgId: 'msg-2', carrier: 'ws', status: 'queued' } }
+                ? { status: 'ok', value: { handleId: 'send-2', msgId: 'msg-2', carrier: 'ws', status: 'queued', sequence: 4 } }
                 : undefined
     });
     return runtime;
@@ -127,5 +127,27 @@ describe('rallar-bb-test wait result references', () => {
         expect(violated.error?.details).toHaveProperty('match.contains', '"targetMsgId":"msg-2"');
         expect(violated.value).not.toHaveProperty('match');
         expect(unresolved.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_INVALID');
+    });
+
+    // A floor carries the timeoutFrom grammar: the whole value is one token, never a token inside other text.
+    it('reads a numeric floor only from a value that is exactly one result reference', async () => {
+        const runtime = createRuntimeWithSentMessage();
+        await executeSend(runtime);
+        runtime.recordEvent({ kind: 'diagnostic', topic: NACK_TOPIC, payload: { data: { sequence: 4 } } });
+        const toFloorWait = (commandId: string, minimum: string): RallarBlackBoxTestWaitCommand => ({
+            kind: 'wait',
+            commandId,
+            timeoutMs: 20,
+            match: { kind: 'diagnostic', topic: NACK_TOPIC, payloadMinimums: { 'data.sequence': minimum } }
+        });
+
+        const exact = await runtime.execute(toFloorWait('floor-exact', '{resultCache.send-2.value.sequence}'));
+        const embedded = await runtime.execute(toFloorWait('floor-embedded', 'at least {resultCache.send-2.value.sequence}'));
+
+        expect(exact.status).toBe('ok');
+        expect(embedded.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+            details: { path: 'data.sequence', minimum: 'at least {resultCache.send-2.value.sequence}' }
+        });
     });
 });

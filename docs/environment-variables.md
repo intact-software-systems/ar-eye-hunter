@@ -577,9 +577,13 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_LIVE_DISTRIBUTED_RECIPES` | No       | Disabled                         | Alternate boolean gate for live distributed recipe tests.                                             |
 | `RALLAR_BLACK_BOX_LIVE_RTC_MATRIX`          | No       | Disabled                         | Boolean gate for the live three-browser RTC matrix.                                                   |
 | `RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS`       | No       | Disabled                         | Boolean gate for exhaustive live RTC scenarios.                                                       |
-| `RALLAR_BLACK_BOX_ALM_SCOPE`                | No       | `smoke`                          | Scenario coverage for the ALM conformance lane. Supported values: `smoke`, `full`.                    |
-| `RALLAR_BLACK_BOX_ALM_SKIP`                 | No       | Empty                            | Comma-separated ALM conformance scenario IDs withheld from the lane.                                  |
-| `RALLAR_BLACK_BOX_ALM_CARRIERS`             | No       | All carriers                     | Comma-separated ALM conformance carriers (`ws`, `rtc`, `rtc-with-ws-fallback`).                       |
+| `RALLAR_BLACK_BOX_ALM_SCOPE`                | No       | `smoke`                          | Scenario coverage for the ALM conformance lane: `smoke` or `full`; any other value is refused.        |
+| `RALLAR_BLACK_BOX_ALM_SKIP`                 | No       | Empty                            | Comma-separated ALM scenario IDs (not keys) withheld from the lane; an unknown ID is refused.         |
+| `RALLAR_BLACK_BOX_ALM_CARRIERS`             | No       | All carriers                     | Comma-separated ALM conformance carriers (`ws`, `rtc`, `rtc-with-ws-fallback`); others are refused.   |
+| `RALLAR_BLACK_BOX_ALM_ORDER`                | No       | `declared`                       | ALM lane cell order. Supported values: `declared`, `shuffled`.                                        |
+| `RALLAR_BLACK_BOX_ALM_SEED`                 | No       | Minted per family                | Seed of a shuffled ALM lane order, an integer from 0 to 4294967295; only with `shuffled`.             |
+| `RALLAR_BLACK_BOX_ALM_ROOMS`                | No       | `family`                         | ALM lane room per `family` or per `cell`; a declared own-room cell `cell`, same-context `family`.     |
+| `RALLAR_BLACK_BOX_ALM_ONLY`                 | No       | Every cell                       | Comma-separated ALM scenario keys; `_SKIP` wins, a key no selected scope or carrier runs is refused.  |
 | `VITE_RALLAR_GROUP_ID`                      | No       | None                             | Alias for `VITE_RALLAR_ROOM_ID` in the live RTC matrix.                                               |
 | `VITE_RALLAR_CLIENT_ID`                     | No       | Derived from username or default | Client ID for generic agent A full-stack helpers and restore-session smoke.                           |
 | `VITE_RALLAR_EXPIRES_AT_EPOCH_MS`           | No       | Future test fallback             | Expiry timestamp for generic restored-session smoke.                                                  |
@@ -594,6 +598,25 @@ These are read by tests under `tests/playwright/rallar-black-box`.
 | `RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES`    | No       | None                             | Retention soak cycle count recorded in evidence; the evidence check expects `100`.                    |
 | `RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR`  | No       | None                             | Directory for live RTC matrix diagnostics output.                                                     |
 | `VITE_RALLAR_TOKEN`                         | No       | None                             | Access token for the generic restored-session real-provider smoke.                                    |
+
+The ALM conformance lane reads its parameters once, when the spec loads, and only while
+`RALLAR_BLACK_BOX_FULL_STACK` is set (`decodeAlmLaneParameters`). An empty or blank value takes the
+default, so an unset repository variable, which a workflow step receives as an empty string, runs the
+`smoke` scope over every carrier. A value outside the accepted set, `RALLAR_BLACK_BOX_ALM_SCOPE` and
+`RALLAR_BLACK_BOX_ALM_CARRIERS` included, a `RALLAR_BLACK_BOX_ALM_SEED` without
+`RALLAR_BLACK_BOX_ALM_ORDER=shuffled`, a `RALLAR_BLACK_BOX_ALM_SKIP` entry that is not a scenario ID, or
+a `RALLAR_BLACK_BOX_ALM_ONLY` key that no cell of the selected scope and carriers runs throws a
+`RangeError` that names the value and what is accepted, before any browser starts. A `shuffled` family
+shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same
+seed gives the same order of the same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell
+whose definition declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
+no page rejoins a room it left. The lane
+prints `ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
+family's first cell, and the observation artifact records the same plan as `cellOrder`
+(`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`). To rerun a red, set the same
+`RALLAR_BLACK_BOX_ALM_ORDER=shuffled` and `RALLAR_BLACK_BOX_ALM_SEED=<seed>` with the same scope,
+carriers and rooms, and rerun it first with the same seed; `RALLAR_BLACK_BOX_ALM_ONLY=<scenarioKey>`
+then narrows the rerun to one cell.
 
 Agent-specific test variables are accepted in both long and short forms in
 some tests:

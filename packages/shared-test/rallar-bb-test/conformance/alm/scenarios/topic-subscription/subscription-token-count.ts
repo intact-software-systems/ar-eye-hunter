@@ -7,18 +7,19 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
+import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
+import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
-import {
-    toReadPollCommand,
-    toResultFact
-} from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -40,20 +41,25 @@ export const subscriptionTokenCount: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
-    principalRoles: ['receiver', 'sender'],
+    principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: false, subscribe: true },
+        { grantee: 'publisher-b', publish: false, subscribe: false },
+        { grantee: 'sender', publish: false, subscribe: false }
+    ],
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toSubscriberCommands(recipient)
 };
 
 /**
- * The receiver releases `t1` before it grants the sender's principal, so the sibling's election, and with it the
- * readiness of `publication-1`, follows the release.
+ * The sender's principal holds nothing at the start: the receiver grants it `publish` and `subscribe` only after it
+ * released `t1`, so the sibling's election, and with it the readiness of `publication-1`, follows the release. That
+ * grant is the cell's subject, which no start state can stand in for.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 't1'),
         toSubscribeCommand(owner, 't2'),
         ...toRowCountCommands(owner, 'rows-two-tokens', 1),
@@ -61,6 +67,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         toTokenReadCommand(owner, 'tokens-after-t1'),
         ...(['lapsed', 'active'] as const).map((status, index) =>
             toResultFact({
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
                 step: owner,
                 name: `tokens-after-t1-${index}-${status}`,
                 source: toTokenStatusSource(owner, index),
@@ -69,14 +76,28 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             })
         ),
         ...toRowCountCommands(owner, 'rows-one-token', 1),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'grant',
+            grantee: 'sender',
+            publish: true,
+            subscribe: true
+        }),
         toPublicationWait(owner, 'publication-1', false),
         ...toUnsubscribeCommands(owner, 't2'),
         toReadPollCommand({
             step: owner,
             name: 'rows-released',
-            read: (readName) => toSubscriptionRowsCommand(owner, readName),
-            facts: [{ name: 'rows-released-empty', field: 'body.subscriptions', operator: 'length', expected: 0 }]
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            reads: [{ name: 'read', read: (readName) => toSubscriptionRowsCommand(owner, readName) }],
+            facts: [{
+                name: 'rows-released-empty',
+                source: { read: 'read', field: 'body.subscriptions' },
+                operator: 'length',
+                expected: 0
+            }]
         }),
         ...toCueSendCommands(owner, 'released'),
         toPublicationWait(owner, 'publication-2', true)
@@ -120,6 +141,7 @@ function toRowCountCommands(
     return [
         read,
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: owner,
             name: `${name}-count`,
             source: `resultCache.${read.commandId}.value.body.subscriptions`,

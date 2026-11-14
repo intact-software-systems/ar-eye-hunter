@@ -1,5 +1,8 @@
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
@@ -13,15 +16,14 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
-import { toGrantedSend } from './to-granted-send.ts';
+import { ALM_CELL_CUE_SUBSCRIPTION_METADATA } from '../../cell/to-alm-cell-arming.ts';
 import {
-    SUBSCRIPTION_ABSENCE_MS,
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS,
-    toPollCommand,
-    toPollResult,
-    toResultFact
-} from './topic-subscription-polls.ts';
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
+import { toGrantedSend } from './to-granted-send.ts';
+import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;
@@ -94,39 +96,46 @@ function toPublishUntilConfirmedPoll(publication: TopicPublicationInput): Rallar
     const handleId = `${toCommandId(step, name)}-{loop.iteration}`;
     const observe = toCommandId(step, `${name}-observe`);
     const receipt = toPollResult({ step, name, index: 2, childId: observe });
-    return toPollCommand(step, name, [
-        {
-            ...toGrantedSend({
-                step,
-                payload: toPublicationPayload(step, name, publication.kind),
-                orderingKey: publication.orderingKey,
-                audience: publication.audience
-            }),
-            commandId: toCommandId(step, `${name}-send`),
-            handleId
-        },
-        {
-            kind: 'messages.observe',
-            commandId: observe,
-            connection: toConnectionName(step),
-            handleId,
-            state: ['acknowledged'],
-            timeoutMs: CONFIRMATION_WAIT_MS
-        },
-        ...([
-            ['expected', publication.confirmations + publication.outsideAudience],
-            ['confirmed', publication.confirmations],
-            ['outsideAudience', publication.outsideAudience]
-        ] as const).map(([list, expected]) =>
-            toResultFact({
-                step,
-                name: `${name}-${list}`,
-                source: `${receipt}.${list}RecipientPeerIds`,
-                operator: 'length',
-                expected
-            })
-        )
-    ]);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commands: [
+            {
+                ...toGrantedSend({
+                    step,
+                    payload: toPublicationPayload(step, name, publication.kind),
+                    orderingKey: publication.orderingKey,
+                    audience: publication.audience
+                }),
+                commandId: toCommandId(step, `${name}-send`),
+                handleId
+            },
+            {
+                kind: 'messages.observe',
+                commandId: observe,
+                connection: toConnectionName(step),
+                handleId,
+                state: ['acknowledged'],
+                timeoutMs: CONFIRMATION_WAIT_MS
+            },
+            ...([
+                ['expected', publication.confirmations + publication.outsideAudience],
+                ['confirmed', publication.confirmations],
+                ['outsideAudience', publication.outsideAudience]
+            ] as const).map(([list, expected]) =>
+                toResultFact({
+                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+                    step,
+                    name: `${name}-${list}`,
+                    source: `${receipt}.${list}RecipientPeerIds`,
+                    operator: 'length',
+                    expected
+                })
+            )
+        ]
+    });
 }
 
 function toConfirmedCue(name: string): string {
@@ -143,6 +152,7 @@ export function toPublishCommands(step: AlmConformanceStepInput, name: string): 
             handleId: send
         },
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-admitted`,
             source: `resultCache.${send}.value.status`,
@@ -163,38 +173,59 @@ export function toRejectedPublishCommands(
     reason: string
 ): readonly RallarBlackBoxTestCommand[] {
     const send = toCommandId(step, `${name}-send`);
-    const observe = toCommandId(step, `${name}-observe`);
+    const observe = toPublicationObserveCommand(step, name, 'rejected', REJECTION_WAIT_MS);
     return [
         {
             ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
             commandId: send,
             handleId: send
         },
-        {
-            kind: 'messages.observe',
-            commandId: observe,
-            connection: toConnectionName(step),
-            handleId: send,
-            state: ['rejected'],
-            timeoutMs: REJECTION_WAIT_MS
-        },
+        observe,
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-refusal-reason`,
-            source: `resultCache.${observe}.value.failure.reason`,
+            source: `resultCache.${observe.commandId}.value.failure.reason`,
             operator: 'equals',
             expected: reason
         })
     ];
 }
 
-export function toReceiptsCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
+/**
+ * A publication's receipt, read once its handle has ended: a receipt's lists stop changing at a terminal state. The
+ * observe resolves at any terminal state, so what the receipt reads is still the read's to judge.
+ */
+export function toEndedReceiptCommands(
+    step: AlmConformanceStepInput,
+    name: string
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toPublicationObserveCommand(step, name, 'acknowledged', SUBSCRIPTION_PHASE_MS),
+        {
+            kind: 'messages.receipts',
+            commandId: toCommandId(step, `${name}-receipts`),
+            connection: toConnectionName(step),
+            handleId: toCommandId(step, `${name}-send`),
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        }
+    ];
+}
+
+/** The publication's handle reaches `state` or any terminal state. */
+function toPublicationObserveCommand(
+    step: AlmConformanceStepInput,
+    name: string,
+    state: ALDeliveryState,
+    timeoutMs: number
+): RallarBlackBoxTestMessagesObserveCommand {
     return {
-        kind: 'messages.receipts',
-        commandId: toCommandId(step, `${name}-receipts`),
+        kind: 'messages.observe',
+        commandId: toCommandId(step, `${name}-observe`),
         connection: toConnectionName(step),
         handleId: toCommandId(step, `${name}-send`),
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        state: [state],
+        timeoutMs
     };
 }
 
@@ -214,10 +245,14 @@ export function toPublicationWait(
 
 /**
  * A cue travels on the members topic under the cell's type. A role hears it only through the typed channel its own
- * send there opens, so every role that waits for a cue sends this one first, before any cue it waits for can be sent.
+ * send there opens, so every role that waits for a cue leads its body with this pair: it is the role's arming run,
+ * which a barriered cell completes on every role before any role's body sends a cue.
  */
 export function toCueListenCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return toCueSendCommands(step, 'listen');
+    return toCueSendCommands(step, 'listen').map((command) => ({
+        ...command,
+        metadata: ALM_CELL_CUE_SUBSCRIPTION_METADATA
+    }));
 }
 
 /**

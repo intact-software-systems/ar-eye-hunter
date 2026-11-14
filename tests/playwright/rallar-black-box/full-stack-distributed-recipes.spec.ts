@@ -9,11 +9,14 @@ import {
 } from '@playwright/test';
 import {
     deriveDistributedRunMonitor,
-    deriveDistributedRunWarningRegressionReport
+    deriveDistributedRunWarningRegressionReport,
+    type DistributedRunWarningRegressionReport
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-    type ControlCommandEnvelope
+    type ControlCommandEnvelope,
+    type ControlEventEnvelope,
+    type ControlResultEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlDistributedRunArtifactBundle,
@@ -29,8 +32,18 @@ import {
     createRallarBlackBoxRtcRealtimeRecipe,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
+import {
+    decodeFiniteNumber,
+    decodeRecord,
+    decodeText
+} from '../../../packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { cancelDistributedRun, createDistributedRun, mutateDistributedRun } from './distributed-run-requests.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     FULL_STACK_CONTROL_WS_URL,
@@ -81,83 +94,6 @@ type ConsoleArtifactEntry = Readonly<{
     }>;
     atEpochMs: number;
     knownHarmless: boolean;
-}>;
-
-type ControlResult = Readonly<{
-    agentId?: string;
-    commandId?: string;
-    ok?: boolean;
-    result?: Readonly<{
-        value?: unknown;
-    }>;
-    error?: unknown;
-}>;
-
-type ControlEvent = Readonly<{
-    kind?: string;
-    agentId?: string;
-    commandId?: string;
-    eventId?: string;
-    atEpochMs?: number;
-    payload?: unknown;
-}>;
-
-type ControlRunReply = Readonly<{
-    agents?: readonly Readonly<{
-        agentId?: string;
-        connected?: boolean;
-        identity?: Readonly<{
-            applicationId?: string;
-            workspaceId?: string;
-            groupId?: string;
-        }>;
-    }>[];
-    commands?: readonly Readonly<{
-        envelope?: Readonly<{
-            agentId?: string;
-            commandId?: string;
-        }>;
-        completedAtEpochMs?: number;
-    }>[];
-    results?: readonly ControlResult[];
-    events?: readonly ControlEvent[];
-}>;
-
-type DistributedRunSnapshot = Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    state: string;
-    targetAgentIds: readonly string[];
-    commandLinks: readonly Readonly<{
-        phase: string;
-        agentId: string;
-        commandId: string;
-        recipeId?: string;
-    }>[];
-    rollup: Readonly<{
-        ok: boolean;
-        failures: readonly Readonly<{
-            kind: string;
-            key: string;
-            state: string;
-            error?: Readonly<{
-                code?: string;
-                message?: string;
-            }>;
-        }>[];
-        summary: Readonly<{
-            participants: number;
-            readyParticipants: number;
-            passedParticipants: number;
-            failedParticipants: number;
-            passedRecipes: number;
-            failedRecipes: number;
-        }>;
-    }>;
-    error?: Readonly<{
-        code?: string;
-        message?: string;
-    }>;
 }>;
 
 const config = readFullStackConfig();
@@ -355,29 +291,15 @@ function pathSegment(value: string): string {
     return encodeURIComponent(value);
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
+function resultValue(result: ControlResultEnvelope): RallarBlackBoxTestRecord {
+    return decodeRecord(result.result?.value);
 }
 
-function stringValue(value: unknown): string | undefined {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+function eventPayload(event: ControlEventEnvelope): RallarBlackBoxTestRecord {
+    return decodeRecord(event.payload);
 }
 
-function numberValue(value: unknown): number | undefined {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function resultValue(result: ControlResult): Record<string, unknown> {
-    return asRecord(result.result?.value);
-}
-
-function eventPayload(event: ControlEvent): Record<string, unknown> {
-    return asRecord(event.payload);
-}
-
-function runtimeEventPayload(event: ControlEvent): Record<string, unknown> {
+function runtimeEventPayload(event: ControlEventEnvelope): RallarBlackBoxTestRecord {
     const payload = eventPayload(event);
     if (
         payload.kind !== undefined ||
@@ -386,13 +308,13 @@ function runtimeEventPayload(event: ControlEvent): Record<string, unknown> {
     ) {
         return payload;
     }
-    return asRecord(payload.payload ?? payload);
+    return decodeRecord(payload.payload ?? payload);
 }
 
-function messageData(event: ControlEvent): Record<string, unknown> {
+function messageData(event: ControlEventEnvelope): RallarBlackBoxTestRecord {
     const runtimeEvent = runtimeEventPayload(event);
-    const runtimePayload = asRecord(runtimeEvent.payload);
-    return asRecord(runtimePayload.data ?? runtimeEvent.data);
+    const runtimePayload = decodeRecord(runtimeEvent.payload);
+    return decodeRecord(runtimePayload.data ?? runtimeEvent.data);
 }
 
 async function openControlAgent(
@@ -473,7 +395,7 @@ async function openScriptedControlAgent(
         agentId: string;
         group: RallarBlackBoxDistributedGroupRef;
         providerMode?: string;
-        onCommand?: (command: ControlCommandEnvelope) => unknown;
+        onCommand?: (command: ControlCommandEnvelope) => ControlResultEnvelope | undefined;
     }>
 ): Promise<WebSocket> {
     const socket = new WebSocket(FULL_STACK_CONTROL_WS_URL);
@@ -556,7 +478,7 @@ function scriptedControlResult(
         errorCode?: string;
         errorMessage?: string;
     }>
-): Readonly<Record<string, unknown>> {
+): ControlResultEnvelope {
     const now = Date.now();
     const error = input.ok
         ? undefined
@@ -592,10 +514,10 @@ function scriptedControlResult(
 async function fetchControlRun(
     request: APIRequestContext,
     runId: string
-): Promise<ControlRunReply> {
+): Promise<ControlRunSnapshot> {
     const response = await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`);
     expect(response.ok()).toBe(true);
-    return await response.json() as ControlRunReply;
+    return await response.json() as ControlRunSnapshot;
 }
 
 async function enqueueCommand(
@@ -603,7 +525,7 @@ async function enqueueCommand(
     runId: string,
     agentId: string,
     commandId: string,
-    command: unknown
+    command: RallarBlackBoxTestCommand
 ): Promise<void> {
     const response = await request.post(
         `${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
@@ -624,11 +546,11 @@ async function waitForCommandResult(
     runId: string,
     commandId: string,
     timeout = 45_000
-): Promise<ControlResult> {
-    let latest: ControlResult | undefined;
+): Promise<ControlResultEnvelope> {
+    let latest: ControlResultEnvelope | undefined;
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        latest = run.results?.find((result) => result.commandId === commandId);
+        latest = run.results.find((result) => result.commandId === commandId);
         return Boolean(latest);
     }, { timeout }).toBe(true);
     if (!latest) {
@@ -642,9 +564,9 @@ async function executeOk(
     runId: string,
     agentId: string,
     commandId: string,
-    command: unknown,
+    command: RallarBlackBoxTestCommand,
     timeout?: number
-): Promise<ControlResult> {
+): Promise<ControlResultEnvelope> {
     await enqueueCommand(request, runId, agentId, commandId, command);
     const result = await waitForCommandResult(request, runId, commandId, timeout);
     expect(result.ok).toBe(true);
@@ -660,7 +582,7 @@ async function waitForAgentsInGroup(
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
         return agentIds.every((agentId) => {
-            const agent = run.agents?.find((candidate) => candidate.agentId === agentId);
+            const agent = run.agents.find((candidate) => candidate.agentId === agentId);
             return agent?.connected === true &&
                 agent.identity?.applicationId === group.applicationId &&
                 agent.identity.workspaceId === group.workspaceId &&
@@ -728,39 +650,15 @@ async function configureAgentsForDistributedGroup(
     }
 }
 
-async function createDistributedRun(
-    request: APIRequestContext,
-    manifest: RallarBlackBoxDistributedRunManifest
-): Promise<DistributedRunSnapshot> {
-    const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
-        data: { manifest }
-    });
-    expect(response.status()).toBe(201);
-    return await response.json() as DistributedRunSnapshot;
-}
-
 async function fetchDistributedRun(
     request: APIRequestContext,
     distributedRunId: string
-): Promise<DistributedRunSnapshot> {
+): Promise<ControlDistributedRunSnapshot> {
     const response = await request.get(
         `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as DistributedRunSnapshot;
-}
-
-async function mutateDistributedRun(
-    request: APIRequestContext,
-    distributedRunId: string,
-    action: 'stage' | 'start' | 'cancel'
-): Promise<DistributedRunSnapshot> {
-    const response = await request.post(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
-        action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
-    );
-    expect(response.status()).toBe(202);
-    return await response.json() as DistributedRunSnapshot;
+    return await response.json() as ControlDistributedRunSnapshot;
 }
 
 async function waitForDistributedState(
@@ -768,8 +666,8 @@ async function waitForDistributedState(
     distributedRunId: string,
     state: string,
     timeout = 45_000
-): Promise<DistributedRunSnapshot> {
-    let latest: DistributedRunSnapshot | undefined;
+): Promise<ControlDistributedRunSnapshot> {
+    let latest: ControlDistributedRunSnapshot | undefined;
     try {
         await expect.poll(async () => {
             latest = await fetchDistributedRun(request, distributedRunId);
@@ -873,7 +771,7 @@ function distributedManifest(
 async function runToPassed(
     request: APIRequestContext,
     manifest: RallarBlackBoxDistributedRunManifest
-): Promise<DistributedRunSnapshot> {
+): Promise<ControlDistributedRunSnapshot> {
     await createDistributedRun(request, manifest);
     await mutateDistributedRun(request, manifest.distributedRunId, 'stage');
     await waitForDistributedState(request, manifest.distributedRunId, 'ready');
@@ -954,7 +852,7 @@ async function setupGroupMembership(
 }
 
 function browserMessageMatches(
-    event: ControlEvent,
+    event: ControlEventEnvelope,
     input: Readonly<{
         agentId: string;
         transport: 'ws' | 'realtime';
@@ -980,11 +878,11 @@ async function waitForBrowserMessage(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) => browserMessageMatches(event, input)) ?? false;
+        return run.events.some((event) => browserMessageMatches(event, input));
     }, { timeout: 75_000 }).toBe(true);
 }
 
-function eventReferencesText(event: ControlEvent, text: string): boolean {
+function eventReferencesText(event: ControlEventEnvelope, text: string): boolean {
     try {
         return JSON.stringify(event.payload).includes(text);
     }
@@ -993,13 +891,13 @@ function eventReferencesText(event: ControlEvent, text: string): boolean {
     }
 }
 
-function runtimeDiagnosticTypeId(event: ControlEvent): string | undefined {
+function runtimeDiagnosticTypeId(event: ControlEventEnvelope): string | undefined {
     const runtimeEvent = runtimeEventPayload(event);
-    const payload = asRecord(runtimeEvent.payload);
-    return stringValue(payload.diagnosticTypeId) ??
-        stringValue(runtimeEvent.diagnosticTypeId) ??
-        stringValue(payload.topic) ??
-        stringValue(runtimeEvent.topic);
+    const payload = decodeRecord(runtimeEvent.payload);
+    return decodeText(payload.diagnosticTypeId) ??
+        decodeText(runtimeEvent.diagnosticTypeId) ??
+        decodeText(payload.topic) ??
+        decodeText(runtimeEvent.topic);
 }
 
 async function waitForRuntimeDiagnostic(
@@ -1012,11 +910,11 @@ async function waitForRuntimeDiagnostic(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) =>
+        return run.events.some((event) =>
             event.kind === 'diagnostic' &&
             runtimeDiagnosticTypeId(event) === input.diagnosticTypeId &&
             eventReferencesText(event, input.distributedRunId)
-        ) ?? false;
+        );
     }, { timeout: 30_000 }).toBe(true);
 }
 
@@ -1058,20 +956,20 @@ async function waitForRealtimePositionPayload(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await fetchControlRun(request, runId);
-        return run.events?.some((event) => {
+        return run.events.some((event) => {
             const runtimeEvent = runtimeEventPayload(event);
             const data = messageData(event);
             return runtimeEvent.kind === 'message' &&
                 runtimeEvent.transport === 'realtime' &&
                 data.distributedRunId === distributedRunId &&
                 data.topic === 'room.black-box.rtc-realtime.position';
-        }) ?? false;
+        });
     }, { timeout: 75_000 }).toBe(true);
 }
 
 function retainedRealtimeRecipeEvidence(
-    run: ControlRunReply,
-    distributedRun: DistributedRunSnapshot
+    run: ControlRunSnapshot,
+    distributedRun: ControlDistributedRunSnapshot
 ): Readonly<{
     compactedStartResults: readonly Readonly<{
         agentId: string;
@@ -1093,7 +991,7 @@ function retainedRealtimeRecipeEvidence(
     const compactedStartResults = distributedRun.commandLinks
         .filter((link) => link.phase === 'start')
         .map((link) => {
-            const result = run.results?.find((candidate) =>
+            const result = run.results.find((candidate) =>
                 candidate.commandId === link.commandId &&
                 candidate.agentId === link.agentId
             );
@@ -1101,32 +999,32 @@ function retainedRealtimeRecipeEvidence(
             return {
                 agentId: link.agentId,
                 ok: result?.ok,
-                resultCount: numberValue(value.resultCount),
-                failureCount: numberValue(value.failureCount),
+                resultCount: decodeFiniteNumber(value.resultCount),
+                failureCount: decodeFiniteNumber(value.failureCount),
                 resultsOmitted: value.resultsOmitted === true
             };
         });
     const loopStats = distributedRun.targetAgentIds.map((agentId) => {
-        const matchingStats = (run.events ?? []).flatMap((event) => {
+        const matchingStats = run.events.flatMap((event) => {
             if (event.agentId !== agentId || event.kind !== 'stats') {
                 return [];
             }
             const runtimeEvent = runtimeEventPayload(event);
-            const stats = asRecord(runtimeEvent.payload);
-            const load = asRecord(stats.load);
+            const stats = decodeRecord(runtimeEvent.payload);
+            const load = decodeRecord(stats.load);
             if (load.latestLoopCommandId !== 'rtc-realtime-position-loop') {
                 return [];
             }
-            const pacing = asRecord(load.latestPacing);
-            const sends = asRecord(load.latestSends);
+            const pacing = decodeRecord(load.latestPacing);
+            const sends = decodeRecord(load.latestSends);
             return [{
                 agentId,
-                latestLoopCommandId: stringValue(load.latestLoopCommandId),
-                plannedIterations: numberValue(pacing.plannedIterations),
-                completedIterations: numberValue(pacing.completedIterations),
-                sendCount: numberValue(sends.sendCount),
-                succeeded: numberValue(sends.succeeded),
-                failed: numberValue(sends.failed)
+                latestLoopCommandId: decodeText(load.latestLoopCommandId),
+                plannedIterations: decodeFiniteNumber(pacing.plannedIterations),
+                completedIterations: decodeFiniteNumber(pacing.completedIterations),
+                sendCount: decodeFiniteNumber(sends.sendCount),
+                succeeded: decodeFiniteNumber(sends.succeeded),
+                failed: decodeFiniteNumber(sends.failed)
             }];
         });
         return matchingStats.at(-1) ?? {
@@ -1267,8 +1165,8 @@ function rtcRealtimeDistributedRecipe(
                     if (child.kind !== 'rtc.send') {
                         return child;
                     }
-                    const send = asRecord(child.send);
-                    const data = asRecord(send.data);
+                    const send = decodeRecord(child.send);
+                    const data = decodeRecord(send.data);
                     return {
                         ...child,
                         send: {
@@ -1294,19 +1192,19 @@ async function attachDistributedRunSummary(
     const run = await fetchControlRun(request, runId);
     const distributedResponse = await request.get(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`);
     const distributed = distributedResponse.ok()
-        ? await distributedResponse.json() as Readonly<{ distributedRuns?: readonly DistributedRunSnapshot[]; }>
+        ? await distributedResponse.json() as Readonly<{ distributedRuns?: readonly ControlDistributedRunSnapshot[]; }>
         : undefined;
     await testInfo.attach('distributed-recipe-run-summary.json', {
         body: JSON.stringify(
             {
                 runId,
-                agents: run.agents?.map((agent) => ({
+                agents: run.agents.map((agent) => ({
                     agentId: agent.agentId,
                     connected: agent.connected,
                     identity: agent.identity
                 })),
-                resultCount: run.results?.length ?? 0,
-                eventCount: run.events?.length ?? 0,
+                resultCount: run.results.length,
+                eventCount: run.events.length,
                 distributedRuns: distributed?.distributedRuns
                     ?.filter((item) => item.controlRunId === runId)
                     .map((item) => ({
@@ -1326,7 +1224,7 @@ async function attachDistributedRunSummary(
 async function attachDistributedWarningRegressionReport(
     testInfo: TestInfo,
     name: string,
-    report: unknown
+    report: DistributedRunWarningRegressionReport
 ): Promise<void> {
     await testInfo.attach(`${name}.json`, {
         body: JSON.stringify(report, null, 2),
@@ -1594,7 +1492,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             await handles[1].context.close();
             await expect.poll(async () => {
                 const run = await fetchControlRun(request, runId);
-                return run.agents?.find((agent) => agent.agentId === handles[1].agentId)?.connected;
+                return run.agents.find((agent) => agent.agentId === handles[1].agentId)?.connected;
             }, { timeout: 10_000 }).toBe(false);
             await mutateDistributedRun(request, disconnectManifest.distributedRunId, 'start');
             const running = await waitForDistributedState(
@@ -1609,12 +1507,16 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             expect(disconnectedStart).toBeTruthy();
             const runAfterDisconnect = await fetchControlRun(request, runId);
             expect(
-                runAfterDisconnect.commands?.find((command) =>
-                    command.envelope?.commandId === disconnectedStart?.commandId
+                runAfterDisconnect.commands.find((command) =>
+                    command.envelope.commandId === disconnectedStart?.commandId
                 )
                     ?.completedAtEpochMs
             ).toBeUndefined();
-            const cancelled = await mutateDistributedRun(request, disconnectManifest.distributedRunId, 'cancel');
+            const cancelled = await cancelDistributedRun(
+                request,
+                disconnectManifest.distributedRunId,
+                'Playwright distributed recipe QA cleanup.'
+            );
             expect(cancelled.state).toBe('cancelled');
         }
         finally {
@@ -1771,8 +1673,8 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             ]);
             const wsArtifact = await fetchDistributedArtifact(request, wsDistributedRunId);
             const wsWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: wsPassed as ControlDistributedRunSnapshot,
-                controlRun: await fetchControlRun(request, runId) as ControlRunSnapshot,
+                distributedRun: wsPassed,
+                controlRun: await fetchControlRun(request, runId),
                 artifactBundle: wsArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [wsMessageId],
@@ -1848,8 +1750,8 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             const rtcArtifact = await fetchDistributedArtifact(request, rtcDistributedRunId);
             expect(rtcArtifact.files?.['distributed-run.json']).toContain(rtcMessageId);
             const rtcWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: rtcPassed as ControlDistributedRunSnapshot,
-                controlRun: await fetchControlRun(request, runId) as ControlRunSnapshot,
+                distributedRun: rtcPassed,
+                controlRun: await fetchControlRun(request, runId),
                 artifactBundle: rtcArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [rtcMessageId],
@@ -1907,8 +1809,8 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             const realtimeControlRun = await fetchControlRun(request, runId);
             const realtimeArtifact = await fetchDistributedArtifact(request, realtimeDistributedRunId);
             const realtimeMonitor = deriveDistributedRunMonitor({
-                distributedRun: realtimePassed as ControlDistributedRunSnapshot,
-                controlRun: realtimeControlRun as ControlRunSnapshot,
+                distributedRun: realtimePassed,
+                controlRun: realtimeControlRun,
                 artifactBundle: realtimeArtifact as ControlDistributedRunArtifactBundle
             });
             const retainedRealtimeEvidence = retainedRealtimeRecipeEvidence(
@@ -1944,8 +1846,8 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             expect(realtimeMonitor.compositeDrilldowns).toEqual([]);
 
             const realtimeWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: realtimePassed as ControlDistributedRunSnapshot,
-                controlRun: realtimeControlRun as ControlRunSnapshot,
+                distributedRun: realtimePassed,
+                controlRun: realtimeControlRun,
                 artifactBundle: realtimeArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [

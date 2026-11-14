@@ -279,6 +279,37 @@ test('named participant roles resolve through the start links of the distributed
     ]);
 });
 
+test('a barrier resolves for agents whose arrivals come from plain roots once a run with trivial start roots has started', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 10_000 }));
+    const roles = { sender: 'agent-1', receiver: 'agent-2' };
+    for (const agentId of Object.values(roles)) {
+        service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId, identity: toFleetIdentity(agentId) }));
+    }
+    const healthRecipe = toDistributedManifest().recipes[0]!;
+    assertRight(service.createDistributedRun(toDistributedManifest({
+        recipes: Object.keys(roles).map((role) => ({ ...healthRecipe, recipeId: `gate-${role}`, role })),
+        roleAssignments: Object.entries(roles).map(([role, agentId]) => ({ role, agentId, recipeIds: [], variables: {} }))
+    })));
+    assertRight(service.startDistributedRun('dist-1'));
+    acknowledgeDispatched(service, 'run-1', Object.values(roles));
+    for (const agentId of Object.values(roles)) {
+        assertRight(service.enqueueCommand({
+            runId: 'run-1',
+            agentId,
+            commandId: `cell-${agentId}`,
+            command: { kind: 'recipe.run', recipe: { schemaVersion: 1, recipeId: 'cell', commands: [{ kind: 'health', commandId: 'cell-health' }] } }
+        }));
+    }
+
+    const participants = ['sender', 'receiver'];
+    service.receiveClientEnvelope(toArrival({ agentId: roles.sender, participants }));
+    expect(toResolutions(service, 'run-1', roles.sender)).toEqual([]);
+    service.receiveClientEnvelope(toArrival({ agentId: roles.receiver, participants }));
+    const released: ControlBarrierResolution = { outcome: 'released', arrivedAgentIds: [roles.sender, roles.receiver] };
+    expect(toResolutions(service, 'run-1', roles.sender)).toEqual([released]);
+    expect(toResolutions(service, 'run-1', roles.receiver)).toEqual([released]);
+});
+
 test('the agent socket carries a due barrier resolution beside its commands', () => {
     const service = toRunningTwoAgentRun({ now: 10_000 });
     const sockets = new ControlAgentSockets(service);

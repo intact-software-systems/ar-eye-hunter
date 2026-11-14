@@ -8,6 +8,8 @@ import { areSameUniqueStringSet } from '../../shared-test/rallar-bb-test/assert/
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -69,6 +71,111 @@ describe('rallar-bb-test extended assert operators', () => {
             })).ok
         ).toBe(false);
     });
+    it('equals with a comparison source passes only when both paths exist and hold the same JSON value', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'revision',
+            payload: { first: { groupRevision: 7, presenceRevision: 2 }, second: { groupRevision: 7, presenceRevision: 2 }, later: 8 }
+        });
+
+        const same = await runtime.execute({
+            kind: 'assert',
+            commandId: 'revisions-same',
+            source: 'messages.0.payload.first',
+            operator: 'equals',
+            comparisonSource: 'messages.0.payload.second'
+        });
+        expect(same.ok).toBe(true);
+        expect(same.value).toEqual({
+            operator: 'equals',
+            actual: { groupRevision: 7, presenceRevision: 2 },
+            comparisonActual: { groupRevision: 7, presenceRevision: 2 },
+            exists: true,
+            comparisonExists: true,
+            passed: true
+        });
+
+        const different = await runtime.execute({
+            kind: 'assert',
+            commandId: 'revisions-different',
+            source: 'messages.0.payload.first.groupRevision',
+            operator: 'equals',
+            comparisonSource: 'messages.0.payload.later'
+        });
+        expect(different.ok).toBe(false);
+        expect(different.value).toMatchObject({ actual: 7, comparisonActual: 8, exists: true, comparisonExists: true, passed: false });
+    });
+
+    it('equals with a comparison source fails when either path is missing', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { present: 7 } });
+
+        for (
+            const [name, source, comparisonSource] of [
+                ['comparison', 'messages.0.payload.present', 'messages.0.payload.absent'],
+                ['source', 'messages.0.payload.absent', 'messages.0.payload.present'],
+                ['both', 'messages.0.payload.absent', 'messages.0.payload.alsoAbsent']
+            ] as const
+        ) {
+            const result = await runtime.execute({
+                kind: 'assert',
+                commandId: `missing-${name}`,
+                source,
+                operator: 'equals',
+                comparisonSource
+            });
+            expect(result.ok, name).toBe(false);
+            expect(result.value, name).toMatchObject({ operator: 'equals', passed: false });
+        }
+    });
+
+    it('admission and the outcome judge the same commands to be comparisons', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { present: 2 } });
+        const unadmitted: readonly RallarBlackBoxTestJsonValue[] = [
+            { kind: 'assert', commandId: 'set-without-comparison', source: 'messages.0.payload.present', operator: 'sameUniqueStringSet' },
+            {
+                kind: 'assert',
+                commandId: 'bound-with-comparison',
+                source: 'messages.0.payload.present',
+                operator: 'gte',
+                expected: 1,
+                comparisonSource: 'messages.0.payload.present'
+            },
+            {
+                kind: 'assert',
+                commandId: 'comparison-with-expected',
+                source: 'messages.0.payload.present',
+                operator: 'equals',
+                expected: 2,
+                comparisonSource: 'messages.0.payload.present'
+            },
+            {
+                kind: 'assert',
+                commandId: 'blank-bound-with-comparison',
+                source: ' ',
+                operator: 'gte',
+                expected: 1,
+                comparisonSource: 'messages.0.payload.present'
+            }
+        ];
+        const outcomes = [];
+        for (const command of unadmitted) {
+            expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
+            const result = await runtime.execute(command as RallarBlackBoxTestCommand);
+            outcomes.push({ ok: result.ok, code: result.error?.code, value: result.value });
+        }
+
+        const refused = { ok: false, code: 'RALLAR_BLACK_BOX_ASSERT_INVALID' };
+        expect(outcomes).toEqual([
+            { ...refused, value: { operator: 'sameUniqueStringSet', exists: false, comparisonExists: false, passed: false } },
+            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } },
+            { ...refused, value: { operator: 'equals', exists: false, comparisonExists: false, passed: false } },
+            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } }
+        ]);
+    });
+
     it('reads recorded evidence in the JSON form a control connection carries', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({

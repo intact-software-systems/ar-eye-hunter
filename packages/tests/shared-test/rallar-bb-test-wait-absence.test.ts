@@ -400,6 +400,105 @@ describe('rallar-bb-test wait absence', () => {
     });
 });
 
+describe('rallar-bb-test wait history from a command prefix', () => {
+    const FORBIDDEN = { kind: 'message', topic: 'room.forbidden-topic' } as const;
+
+    function createClockedRuntime(eventHistory?: { mode: 'recent'; maxEvents: number; }) {
+        let now = 1_000;
+        return createDefaultRallarBlackBoxTestRuntime({
+            now: () => now,
+            sleep: async (ms) => {
+                now += ms;
+            },
+            ...(eventHistory === undefined ? {} : { eventHistory })
+        });
+    }
+
+    function toPrefixedAbsence(commandId: string, sinceCommandIdPrefix: string): RallarBlackBoxTestWaitCommand {
+        return { kind: 'wait', commandId, absent: true, timeoutMs: 1_000, match: { ...FORBIDDEN, sinceCommandIdPrefix } };
+    }
+
+    // Conformance cells share one page, so an earlier cell's traffic must not count against the next cell's window.
+    it('an absence wait with a command prefix ignores a match recorded before the prefix\'s first event', async () => {
+        const runtime = createClockedRuntime();
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:send' });
+        runtime.recordEvent({ kind: 'event', topic: 'cell.started', commandId: 'cell-b:start' });
+
+        const result = await runtime.execute(toPrefixedAbsence('cell-b:quiet', 'cell-b:'));
+
+        expect(result.status).toBe('ok');
+        expect(result.value).toEqual({ matched: false, absent: true });
+    });
+
+    it('an absence wait with a command prefix fails on a match recorded after it', async () => {
+        const runtime = createClockedRuntime();
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:send' });
+        runtime.recordEvent({ kind: 'event', topic: 'cell.started', commandId: 'cell-b:start' });
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:late', payload: { marker: 'after' } });
+
+        const result = await runtime.execute(toPrefixedAbsence('cell-b:quiet', 'cell-b:'));
+
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
+        expect(result.value).toHaveProperty('event.payload.marker', 'after');
+    });
+
+    it('starts at the next event when no retained event carries the prefix yet', async () => {
+        const runtime = createClockedRuntime();
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:send' });
+
+        const result = await runtime.execute(toPrefixedAbsence('cell-b:quiet', 'cell-b:'));
+
+        expect(result.status).toBe('ok');
+    });
+
+    // Retained events cannot prove that the oldest retained event of the prefix was its first, so a start read from them
+    // could open the window late and hide a forbidden event recorded in between.
+    it('a wait with a command prefix is history-unavailable once events were evicted, even when a later event of the prefix is retained', async () => {
+        const runtime = createClockedRuntime({ mode: 'recent', maxEvents: 2 });
+        runtime.recordEvent({ kind: 'event', topic: 'cell.started', commandId: 'cell-b:start' });
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-a:late' });
+        runtime.recordEvent({ kind: 'event', topic: 'cell.sent', commandId: 'cell-b:send' });
+
+        const result = await runtime.execute(toPrefixedAbsence('cell-b:quiet', 'cell-b:'));
+
+        expect(result.error?.code).toBe('RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE');
+    });
+
+    it('keeps an owner\'s later history start over the prefix\'s earlier first event', async () => {
+        const runtime = createClockedRuntime();
+        runtime.recordEvent({ kind: 'event', topic: 'cell.started', commandId: 'cell-b:start' });
+        runtime.recordEvent({ ...FORBIDDEN, commandId: 'cell-b:send' });
+        const history = runtime.state().eventHistory;
+        const cancellation = new AbortController();
+
+        const result = await waitForEvent({
+            command: { ...toPrefixedAbsence('cell-b:quiet', 'cell-b:'), commandId: 'cell-b:quiet', timeoutMs: 0 },
+            historyStart: { runtimeId: history.runtimeId, generation: history.generation, ordinal: history.totalEvents + 1 },
+            now: () => 1_000,
+            sleep: async () => {},
+            cancellationSignal: cancellation.signal,
+            cancelRequested: () => false,
+            currentStatus: () => 'running',
+            currentEvents: () => runtime.state().events,
+            currentEventHistory: () => runtime.state().eventHistory,
+            resultCache: {},
+            subscribe: () => () => {}
+        });
+
+        expect(result.status).toBe('ok');
+    });
+
+    it('publishes the prefix through the command schema and the control validation', () => {
+        const command = toPrefixedAbsence('cell-b:quiet', 'cell-b:');
+
+        expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
+        expect(formatJsonSchemaValidationErrors(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).errors)).toBe('');
+        const numeric = { ...command, match: { ...command.match, sinceCommandIdPrefix: 7 } };
+        expect(validateRallarBlackBoxTestCommand(numeric)).toMatchObject({ ok: false, error: 'wait.match.sinceCommandIdPrefix must be a string.' });
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, numeric).ok).toBe(false);
+    });
+});
+
 describe('rallar-bb-test wait timeout counted from an earlier epoch', () => {
     const ACCEPTED_AT_REFERENCE = '{resultCache.readiness.value.formation.accepted.overlay.updatedAtEpochMs}';
 

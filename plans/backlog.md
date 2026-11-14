@@ -371,30 +371,21 @@ and it has no status list.
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to
   edit.
-- Lane cells of the shared-room families, every family but four-role, which has
-  a room per cell (`toOwnRoomScenario` in
-  `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`),
-  inherit the room's grants, subscriptions, roster and topology from the cells
-  before them, and correct for it with revokes that assume the preceding cell
-  ran; `RALLAR_BLACK_BOX_ALM_SKIP` or the smoke scope changes a cell's start
-  state (S9-ii, D629). Waits on a declared start state per cell: an idempotent
-  grant and subscription reset at each granted cell's start.
+- Lane cells that share a room (under `RALLAR_BLACK_BOX_ALM_ROOMS=family`,
+  every cell of every family except one whose definition declares
+  `room: 'own'`, today only `subscription-ordered-reconnect`) inherit what
+  earlier cells left in the room: a granted cell declares its own start
+  grants and subscription rows, and a cell that reshapes the topology runs
+  after every cell that keeps it (`resolveAlmLanePlan`, in a shared room), but
+  no other room state is declared per cell. A selection
+  (`RALLAR_BLACK_BOX_ALM_SKIP`, `_ONLY` or the smoke scope) changes what a cell
+  inherits; `RALLAR_BLACK_BOX_ALM_ROOMS=cell` gives every family but
+  same-context a room per cell. Waits on a ruling which other cells need a
+  declared start state.
 - The lane's fixed users keep principal-scoped server state across families and
   runs (the principal ordering track; the memberships of every earlier room)
   (S9-ii, D633). `server-ordered-entry` asserts relative to it; no other cell
   is audited for it.
-- A cell's waits and absence waits read the page's whole event history, not the
-  cell's own (S9-ii): `server-ordered-entry`'s `no-before-entry` and the
-  sibling's `entered` hold only because that cell runs first on its pages.
-  Waits on a per-cell history start.
-- `toOrderingKey`
-  (`packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`)
-  is keyed by `scenarioId` while every other lane identity is keyed by
-  `scenarioKey` (S9-ii): a scenario with a second ordered variant would share
-  one ordering key.
-- `server-ordered-entry`'s principal-upsert request id carries no
-  `{runtimeIdentity}` (S9-ii): it is unique across runs only because the queue
-  context includes the session.
 - A full lane run issues about 160 room-create requests that the API refuses
   `group-already-exists` (S9-ii): every role of every cell ensures its room, and
   `alm-conformance-session-commands.ts` accepts the 409. Each costs one
@@ -422,11 +413,6 @@ and it has no status list.
   admission withholds its `admitted` receipt until its replay commits, in the
   receipt-truth slice (`writeAdmittedReceipt`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
-- Nothing pins that `packages/tests/tsconfig.json` includes
-  `tests/playwright/**` (S9-ii, D637):
-  `packages/tests/repo/tests-typecheck-gate.test.ts` reads the aliases, not the
-  include list, so dropping the line leaves `tests/playwright/**` untyped with
-  every gate green. Waits on a repo test that reads the include list.
 - `assessAlmRelayedReceipt`
   (`packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-relayed-receipt.ts`)
   is selected by metadata but assumes a three-page path: two recipients
@@ -440,23 +426,6 @@ and it has no status list.
   (S9-ii, D637): the control protocol exports no body contract or decoder both
   could use; its owner is
   `packages/shared-test/rallar-bb-test/control-protocol.ts`.
-- `toSettledStateCommands` lives in
-  `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`
-  though five of its nine callers are not ordering cells (S9-ii). Its owner is
-  `alm-conformance-message-commands.ts`, whose 11 runtime exports make the
-  move a split review.
-- Two catalog tests keep a loop-only recipe flattener of their own
-  (`toFlatCommands` in
-  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts` and
-  `packages/tests/shared-test/alm-conformance-topic-subscription.test.ts`)
-  beside `toNestedCommands`
-  (`packages/tests/shared-test/to-nested-commands.ts`) (S9-ii). The shared one
-  also walks `parallel` children, so replacing them changes what each test
-  reads and needs its assertions checked, not a rename.
-- The ALM lane does not read a `recipe.cancel` command's own answer (S9-ii,
-  D628), so a cancel answered `target-not-exclusively-active` costs a needless
-  30 s before the family fails; owner
-  `tests/playwright/rallar-black-box/full-stack-helpers.ts`.
 - The reload pair's pin in
   `packages/tests/rallar-black-box/full-stack-reload-pair.test.ts` sorts by
   descending `agentId` to put the sender first (S9-ii); a sort by role would
@@ -466,10 +435,6 @@ and it has no status list.
   has no overall bound (S9-ii, D628): a cleanup longer than the lane's 30 s
   grace makes the lane cancel a recipe that was already timing out, and the
   cell reads `cancelled` instead of `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
-- A root still live when the ALM lane records a family's observation can add
-  events to it (S9-ii): `recordObservation` runs just before `run.close()` in
-  the same `finally`
-  (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`).
 - The browser's state-read diagnostics sink is a process-wide setter
   (`setBrowserStateReadDiagnosticsSink`,
   `packages/shared-web/browser/state-read/diagnostics.ts`) with last-writer-wins
@@ -690,6 +655,10 @@ and it has no status list.
   that refuses any other advance, plus one retention case (retention builds its
   own result). Waits on a ruling that first tells fence rewrites, which keep the
   version, apart from event-bearing writes.
+- A black-box wait with `wait.match.sinceCommandIdPrefix` under a `recent` event history fails with
+  `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction, because the runner keeps no record of each
+  command's first event ordinal. Such a record would make the wait exact under `recent`; nothing needs it while every
+  lane runs a `full` history.
 - No read states that a group's presence-summary work is outstanding, so a
   page or a lane cannot tell a settled room from one whose summary delta is
   still due. The formation view carries the group's causal revision and
@@ -761,3 +730,69 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
+- A sibling's election keeps its 2 s `GRANT_DELTA_MARGIN_MS` pause at three sites, because the receiver, which a
+  copy must find current, has no ordering point after the election committed (lane determinism, LD-13):
+  `subscribe-delta-margin` in `subscription-ordered-entry.ts` and in `subscription-ordered-omission.ts`, and
+  `reentered-delta-margin` in `subscription-ordered-reconnect.ts`. The receiver waits for none of the sibling's
+  cues (`entered`, `resubscribed`, `reentered`), and waiting for one would not order the first copy: the producers
+  publish right after the same cue, so the receiver's wait would run beside the publication. A real ordering point
+  needs a cue from the receiver to the producers, sent after the receiver applied the election (its page read the
+  room's head after the election committed, `toGrantAppliedHeadCommands`); the producers wait for that cue before
+  they publish, and then the pause could go.
+- The formation read's `pending` costs one more query per read while the
+  coalesced head row is not pending: `readPendingByTopicAndContextId`
+  (`packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts`)
+  selects the group's unexpired topology-topic rows that the queue will still
+  attempt. It rides the `fk_ext_bank_id` prefix of `resource_inbox_unique_k` and
+  filters topic and status on those rows. Measured once with `explain analyze`
+  at 10 000 retained rows: about 1 to 2 ms; no index was added. Its cost grows
+  with the room's unexpired inbox rows of every topic, since only
+  `fk_ext_bank_id` is indexed (`resource_inbox_unique_k`); it waits on a
+  measurement at fleet scale before an index.
+- `server-ordered-entry`'s last-write wait names the write by `contains` of its
+  request id's sender part (`toLastWriteArrivalWait`,
+  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/server-ordered-entry.ts`),
+  since the writer page's runtime identity is unknowable to the other pages. A
+  suffix-anchored text operator for waits would make that match exact again.
+- `RecipeRun.startedRoots`
+  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) is a mutable
+  array on a readonly contract, filled by `startRecipeRoot` as a side effect
+  and shared by spread copies. An explicit owner of a run's started roots,
+  constructed with the run and passed where roots start and where they are
+  awaited, would make that visible.
+- `packages/shared-test/rallar-bb-test/conformance/alm` holds 20 direct
+  production files, the layout rule's limit
+  (`directTypeScriptFileCount` in `scripts/repo-style-check/layout-rules.mjs`):
+  the next file needs a sub-folder decision first.
+- A settled cell writes its start-state grants once each
+  (`toTopicGrantOnceCommand` in `granted-topic/to-topic-grant-command.ts`,
+  chosen by `granted-topic/to-alm-cell-start-state.ts`), so a
+  transient failure of one write, a 5xx or a 5 s timeout, fails the cell. The
+  poll it replaced repeated every 250 ms for up to 90 s
+  (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
+  refused transiently; a retry would then need its own ruling.
+- The settle (D647) does not close these windows: an older presence-summary row
+  expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
+  promotion (`pending` never reports it), a heartbeat that drops or restores a
+  session or the presence expiry reconciliation that runs every 60 s
+  (`DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS`,
+  `packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts`),
+  a page whose cache lapsed and was restored at the same revision, a page whose
+  cache dropped the room after an earlier cell's `held` event and did not
+  restore it, an un-tagged late event of an earlier cell that matches a wait
+  carrying no key of its cell, the activation status's `coverageRate` at the
+  first petition (the settle accepts either value), the same-context successor,
+  which connects outside the settle, hosted combined recipes, which carry no
+  settle, a role failing before a barrier (the others time out), a cell's own
+  mid-body writes, and the three kept 2 s `GRANT_DELTA_MARGIN_MS` pauses. The
+  first three show as a revision past the floor or a refusal after the body
+  began. The restored page is silent unless the restore lands on a new
+  revision, since the last `held` event does not prove the room readable. The
+  dropped page needs a room the family shares: a connect writes the page's
+  presence session, but `presenceRevision` advances only when the room's
+  presence-summary work runs, so the head's floor can equal the earlier `held`
+  event's revisions; it shows as the cell's first read of the room failing on
+  that page, a settle that passed on a page holding nothing, seen as that
+  cell's failure. The late event shows as a wait that passes on an
+  earlier cell's event: a wait's history opens at its cell's first event, and
+  every event after it is a candidate, tagged or not.

@@ -12,6 +12,16 @@ export type InvalidWaitTimeoutFrom =
     | Readonly<{ kind: 'not-one-reference'; timeoutFrom: string; }>
     | Readonly<{ kind: 'unresolved-reference'; reference: string; }>;
 
+export type InvalidWaitPayloadMinimum =
+    | Readonly<{ kind: 'not-one-reference'; path: string; minimum: string; }>
+    | Readonly<{ kind: 'unresolved-reference'; path: string; reference: string; }>;
+
+type InvalidResultNumberReference =
+    | Readonly<{ kind: 'not-one-reference'; }>
+    | Readonly<{ kind: 'unresolved-reference'; reference: string; }>;
+
+type ResolvedPayloadMinimums = Readonly<Record<string, number>>;
+
 /**
  * A wait's `timeoutFrom` as a recipe authors it: exactly one result reference, which a loop child may key by its
  * `{loop.*}` placeholders; the schema and the control validation hold a recipe to it when it is loaded.
@@ -63,9 +73,54 @@ export function resolveWaitTimeoutFromEpochMs(
     timeoutFrom: string,
     resultCache: RallarBlackBoxTestState['resultCache']
 ): Either<InvalidWaitTimeoutFrom, number> {
-    const reference = SINGLE_RESULT_REFERENCE_PATTERN.exec(timeoutFrom)?.[1];
+    return resolveResultNumber(timeoutFrom, resultCache).mapLeft((invalid): InvalidWaitTimeoutFrom =>
+        invalid.kind === 'not-one-reference' ? { kind: invalid.kind, timeoutFrom } : invalid
+    );
+}
+
+/** A text floor carries the `timeoutFrom` grammar and resolves to the finite number an earlier command returned. */
+export function resolveWaitPayloadMinimums(
+    match: RallarBlackBoxTestWaitMatch,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<InvalidWaitPayloadMinimum, RallarBlackBoxTestWaitMatch> {
+    const payloadMinimums = match.payloadMinimums;
+    if (payloadMinimums === undefined) {
+        return Either.ofRight(match);
+    }
+    return Object.entries(payloadMinimums).reduce(
+        (resolved, [path, minimum]) =>
+            resolved.flatMap(
+                (invalid) => Either.ofLeft<InvalidWaitPayloadMinimum, ResolvedPayloadMinimums>(invalid),
+                (floors) =>
+                    resolveWaitPayloadMinimum(path, minimum, resultCache).mapRight((floor) => ({
+                        ...floors,
+                        [path]: floor
+                    }))
+            ),
+        Either.ofRight<InvalidWaitPayloadMinimum, ResolvedPayloadMinimums>({})
+    ).mapRight((floors) => ({ ...match, payloadMinimums: floors }));
+}
+
+function resolveWaitPayloadMinimum(
+    path: string,
+    minimum: number | string,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<InvalidWaitPayloadMinimum, number> {
+    if (typeof minimum === 'number') {
+        return Either.ofRight(minimum);
+    }
+    return resolveResultNumber(minimum, resultCache).mapLeft((invalid): InvalidWaitPayloadMinimum =>
+        invalid.kind === 'not-one-reference' ? { kind: invalid.kind, path, minimum } : { ...invalid, path }
+    );
+}
+
+function resolveResultNumber(
+    text: string,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<InvalidResultNumberReference, number> {
+    const reference = SINGLE_RESULT_REFERENCE_PATTERN.exec(text)?.[1];
     if (reference === undefined) {
-        return Either.ofLeft({ kind: 'not-one-reference', timeoutFrom });
+        return Either.ofLeft({ kind: 'not-one-reference' });
     }
     const lookup = decodePayloadPathValue(resultCache, reference.slice(RESULT_REFERENCE_ROOT.length));
     return lookup.exists && typeof lookup.value === 'number' && Number.isFinite(lookup.value)

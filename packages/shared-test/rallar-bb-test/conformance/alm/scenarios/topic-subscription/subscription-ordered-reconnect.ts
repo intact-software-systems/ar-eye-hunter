@@ -8,8 +8,10 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { toSiblingLeftWait } from './to-sibling-left-wait.ts';
+import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toProductSocketCommand,
@@ -30,7 +32,6 @@ import {
     toOrderedPublishCommands,
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-polls.ts';
 import {
     computeUnelectedOutsideCount,
     toCueListenCommands,
@@ -56,8 +57,10 @@ export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
+    room: 'own',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient),
@@ -83,6 +86,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, subscribed.confirmations, outsideAudience),
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
+        toSiblingLeftWait(producer),
         ...toPublishUntilConfirmedCommands({ ...receiverAlone, name: 'probe-receiver-alone', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 3 }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 4 }),
@@ -96,7 +100,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toOrderedArrivalWaits(owner, [3, 4]),

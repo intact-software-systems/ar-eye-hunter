@@ -8,8 +8,9 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
@@ -23,7 +24,6 @@ import {
     toOrderedPublishCommands,
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-polls.ts';
 import {
     computeUnelectedOutsideCount,
     toCueListenCommands,
@@ -51,6 +51,7 @@ export const subscriptionOrderedEntry: AlmConformanceScenarioDefinition = {
     laneFamily: 'four-role',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toLateSubscriberCommands(recipient)
@@ -83,13 +84,13 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 }
 
 /**
- * The receiver relays that both producers published `p2`: it starts first, so it hears each producer's cue, while
- * publisher-b may publish both before the sibling, which starts after it, listens on the members topic.
+ * The receiver relays that both producers published `p2`: its cue subscription leads its body, so it listens before the
+ * cell's `armed` barrier lets either producer cue, and the sibling waits for this one cue alone.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toCueSendCommands(owner, PUBLISHED_BEFORE_ENTRY),

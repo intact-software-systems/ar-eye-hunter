@@ -20,6 +20,7 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
+import { toAlmCellRequestId, toAlmCellRequestIdSuffix } from '../cell/to-alm-cell-request-id.ts';
 import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
 import { toPauseCommand } from '../to-pause-command.ts';
 
@@ -27,24 +28,22 @@ const PRINCIPAL_WRITE_COUNT = 3;
 const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
 const ORDERING_POSITION = 'ordering-position';
 
-/** The entry a page states: on the sender principal's track or on any track, and whether its seq must exceed 1. */
-interface AlmOrderingEntry {
-    readonly onSenderTrack: boolean;
-    readonly aboveFirstSeq: boolean;
-}
-
 /**
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
  * The lane starts the sender last and each recipient only once its connect barrier released
- * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:103` `runRecipesOnAgents` with `toStartOrder` at :202,
- * `tests/playwright/rallar-black-box/full-stack-helpers.ts:686` `startRecipientRecipeRun`), so the sender principal's
+ * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:104` `runRecipesOnAgents` with `toStartOrder` at :203,
+ * `tests/playwright/rallar-black-box/full-stack-helpers.ts:706` `startRecipientRecipeRun`), so the sender principal's
  * track carries at least the sibling's connect event before the sender's own: the sender enters above seq 1, prior 0,
  * the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq is not the cell's: on one API the
  * track also carries every earlier lane connect of the principal.
- * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1.
+ * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
- * No page states `before-entry` in the window after the last write's copy arrived.
+ * A page enters the track once while its session keeps the track's position, which outlives a closed connection and a
+ * change of room, at its first copy in whichever cell of the family ran first, so the entry wait reads the page's whole
+ * history, matched on the track of the cell's own arrival: an earlier cell's entry satisfies it, so it does not show
+ * that this cell's connects produced one. No page states `before-entry` in the window after the last write's copy
+ * arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -57,11 +56,16 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     principalRoles: ['sender'],
     toSenderCommands: (sender) => [
         ...toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
-        ...toOrderingEntryCommands(sender, { onSenderTrack: true, aboveFirstSeq: true })
+        ...toOrderingEntryCommands({ step: sender, aboveFirstSeq: true })
     ],
-    toRecipientCommands: (recipient) =>
-        toOrderingEntryCommands(recipient, { onSenderTrack: recipient.role !== 'sibling', aboveFirstSeq: false })
+    toRecipientCommands: (recipient) => toOrderingEntryCommands({ step: recipient, aboveFirstSeq: false })
 };
+
+interface OrderingEntryInput {
+    readonly step: AlmConformanceStepInput;
+    /** The sender also asserts that it entered above seq 1, past the sibling's connect event. */
+    readonly aboveFirstSeq: boolean;
+}
 
 /** Each write settles before the next, so each event leaves the server as its own copy. */
 function toPrincipalUpsertCommands(
@@ -76,10 +80,9 @@ function toPrincipalUpsertCommands(
 
 function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): RallarBlackBoxTestHttpRequestCommand {
     const { applicationId, workspaceId } = sender.input.group;
-    const commandId = toCommandId(sender, `profile-${n}`);
     return {
         kind: 'http.request',
-        commandId,
+        commandId: toCommandId(sender, `profile-${n}`),
         timeoutMs: toBudgetMs(PRINCIPAL_WRITE_TIMEOUT_MS, sender.input.deadlineMs),
         metadata: {
             purpose: 'Write the signed-in principal, so the server publishes a client-state event to its sessions.'
@@ -87,7 +90,7 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
         request: {
             method: 'PUT',
             path: `/api/state/apps/${applicationId}/workspaces/${workspaceId}/clients/{auth.clientId}/principal` +
-                `/requests/${commandId}`,
+                `/requests/${toAlmCellRequestId(sender, toPrincipalWriteName(n))}`,
             body: {
                 username: '{auth.username}',
                 displayName: `server-ordered-entry ${n}`,
@@ -99,15 +102,16 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
     };
 }
 
+function toPrincipalWriteName(n: number): string {
+    return `profile-${n}`;
+}
+
 /**
  * The page's lanes hear `client-state.event` alone on this cell. A page also enters every co-member principal's
  * track, so an entry on the sender principal's track names it: the ordering key and the server's peer id of the
  * last write's copy, which the page waits for first, so the absence window after it covers every write.
  */
-function toOrderingEntryCommands(
-    step: AlmConformanceStepInput,
-    entry: AlmOrderingEntry
-): readonly RallarBlackBoxTestCommand[] {
+function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): readonly RallarBlackBoxTestCommand[] {
     const arrival = toLastWriteArrivalWait(step);
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
     return [
@@ -116,10 +120,11 @@ function toOrderingEntryCommands(
             step,
             name: 'entered',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            ...(entry.onSenderTrack ? { contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:` } : {}),
-            payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 }
+            contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:`,
+            payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 },
+            historyFrom: 'page'
         }),
-        ...(entry.aboveFirstSeq
+        ...(aboveFirstSeq
             ? [toResultAssertion({
                 step,
                 name: 'entered-above-first',
@@ -133,13 +138,18 @@ function toOrderingEntryCommands(
             step,
             name: 'no-before-entry',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'before-entry' },
             absent: true
         })
     ];
 }
 
-/** The copy of the sender's last principal write, whose event names the write's request id. */
+/**
+ * The copy of the sender's last principal write, whose event names the write's request id. Every page's copy carries
+ * the writer page's runtime identity, so a page names the write by the id's sender part; the wait contract has no
+ * anchored text operator, so the part is matched by `contains`.
+ */
 function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -150,9 +160,10 @@ function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTe
             connection: toConnectionName(step),
             payloadFields: {
                 'data.topicId': AppTopics.clientStateEvent,
-                'data.payload.principalId': toPrincipalPlaceholder('sender'),
-                'data.payload.requestId': toCommandId({ ...step, role: 'sender' }, `profile-${PRINCIPAL_WRITE_COUNT}`)
-            }
+                'data.payload.principalId': toPrincipalPlaceholder('sender')
+            },
+            payloadPath: 'data.payload.requestId',
+            contains: toAlmCellRequestIdSuffix({ ...step, role: 'sender' }, toPrincipalWriteName(PRINCIPAL_WRITE_COUNT))
         },
         timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
     };
