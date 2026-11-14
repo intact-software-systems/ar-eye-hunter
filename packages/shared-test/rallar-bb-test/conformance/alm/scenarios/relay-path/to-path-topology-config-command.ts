@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
+import { toAlmCellRequestIdSuffix } from '../../cell/to-alm-cell-request-id.ts';
 import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../granted-topic/subscription-phase-budgets.ts';
 
 /** Three sessions in a tree whose degree is at most two form a path; `meshParamK` may not exceed the degree limit. */
@@ -21,7 +22,7 @@ export function toPathTopologyConfigCommand(
         request: {
             method: change === 'tree' ? 'PUT' : 'DELETE',
             path: `${toAlmCellGroupPath(owner)}/topology/config/requests/` +
-                `alm-topology-{runtimeIdentity}-${owner.input.carrier}-${owner.scenarioKey}-${name}`,
+                `alm-topology-{runtimeIdentity}${toAlmCellRequestIdSuffix(owner, name)}`,
             ...(change === 'tree' ? { body: { config: PATH_TOPOLOGY } } : {})
         },
         response: { body: 'json', acceptedStatusCodes: [200] },

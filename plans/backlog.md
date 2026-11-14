@@ -752,13 +752,6 @@ and it has no status list.
   `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/server-ordered-entry.ts`),
   since the writer page's runtime identity is unknowable to the other pages. A
   suffix-anchored text operator for waits would make that match exact again.
-- `relay-path`'s topology-config request id is built in place
-  (`-${carrier}-${scenarioKey}-${name}`, no role;
-  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/relay-path/to-path-topology-config-command.ts`)
-  beside its owner `cell/to-alm-cell-request-id.ts`. Routing it through the
-  owner changes the request ids pinned in
-  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts`; no hosted
-  manifest carries them.
 - `RecipeRun.startedRoots`
   (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) is a mutable
   array on a readonly contract, filled by `startRecipeRoot` as a side effect
