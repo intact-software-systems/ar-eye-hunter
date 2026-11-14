@@ -199,9 +199,9 @@ The resulting overlay snapshot includes:
 
 Browsers receive `AppTopics.overlayTopology` snapshots over WebSocket. The
 browser converts each snapshot into local `OverlayInfo`, including
-`degreeLimit`, for its own session. `WebRtcGroupManager` then uses
-`overlay.nextHopSessionIds` as both the steady-state desired RTC peer signal
-and the preferred RTT reporting set.
+`degreeLimit`, for its own session. The peer ledger holds
+`overlay.nextHopSessionIds` as the steady-state desired RTC peer signal, which
+`WebRtcGroupManager` reconciles and takes as the preferred RTT reporting set.
 
 Durable config and temporary override PUT/DELETE routes go through AppInbox.
 They atomically apply the optimistic state change, current idempotency receipt,

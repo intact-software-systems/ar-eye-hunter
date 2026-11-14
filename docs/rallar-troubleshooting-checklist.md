@@ -124,8 +124,8 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
   reason on each `notReady[]` entry, not on the room-level result.
 - Inbound RTC offers from peers the local group cache does not yet allow are
   not dropped: the browser's peer admission answers `retry` with reason
-  `stage-layout-mismatch`, the offer is held, and the browser's next layout
-  adoption releases it (the transport's redelivery remains the fallback). Hard rejects still apply to malformed/self/wrong-target
+  `stage-layout-mismatch`, the offer is held, and a layout adoption
+  releases the held offers it now admits (the transport's redelivery remains the fallback). Hard rejects still apply to malformed/self/wrong-target
   signals, answers for unknown peers, and exhausted or cap-blocked peers.
 
 ## Realtime Data Channels
