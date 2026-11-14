@@ -280,6 +280,30 @@ describe('a promotion a browser learns of snapshot first, before the promoted la
         expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
     });
 
+    it('while no accepted layout is held, an own send meets the carrier gap, exactly as in a room whose accepted layout is not cached', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(105, 'at-least-once');
+        const { session: sender, promoted } = promoteSnapshotFirst('a', snapshot);
+        const uncached = createRtcRelayOverlayFixture({
+            selfPeerId: 'a',
+            snapshot,
+            neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
+            initialOverlay: createOriginOverlay(readNextHops(PREVIOUS_TREE, 'a'), PREVIOUS_TREE)
+        });
+        uncached.acceptSnapshot(promoted.snapshot);
+
+        const inGap = await sender.enqueue(frame);
+        const withoutLayout = await uncached.enqueue(frame);
+
+        expect(inGap.verdict).toEqual(withoutLayout.verdict);
+        expect(inGap.verdict).toMatchObject({
+            kind: 'unroutable',
+            reason: 'no-route',
+            detail: expect.stringContaining('in a carrier gap: RTC room has no cached overlay that is its exact accepted layout')
+        });
+        expect(readCopies(await sender.readSent('b'), frame)).toBe(0);
+    });
+
     it('a promoted layout that arrives after the overlap has passed leaves nothing in force', async () => {
         const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
         const frame = createPositionFrame(100, 'at-least-once');
