@@ -47,7 +47,7 @@ import {
     type AlmLaneParameters
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
 import {
-    isAlmLaneCellClosedAfter,
+    isAlmLaneRoomLeftAfter,
     resolveAlmLanePlan,
     toAlmLaneCellGroup,
     type AlmLaneCellOrderRecord,
@@ -403,17 +403,15 @@ function toPlannedScenarios(
     planned: Readonly<{ family: AlmConformanceLaneFamily; plan: AlmLanePlan; }>
 ): readonly PlannedScenario[] {
     const selection = toRunSelection(run);
-    const familyRoom = planned.plan.cells.some((cell) => cell.room === 'family')
-        ? createFamilyScenarios(selection, carrier, planned.family)
-        : [];
+    const createdByRoom = new Map<string, readonly AlmConformanceScenario[]>();
     return planned.plan.cells.map((cell) => {
-        const created = cell.room === 'family'
-            ? familyRoom
-            : createFamilyScenarios(
+        const created = createdByRoom.get(cell.room) ??
+            createFamilyScenarios(
                 { ...selection, group: toAlmLaneCellGroup(selection.group, cell) },
                 carrier,
                 planned.family
             );
+        createdByRoom.set(cell.room, created);
         const scenario = created.find((candidate) => candidate.scenarioKey === cell.scenarioKey);
         if (scenario === undefined) {
             throw new Error(`${cell.scenarioKey} is planned but not created over ${carrier}.`);
@@ -528,7 +526,7 @@ async function runAlmConformanceScenarios(
 ): Promise<void> {
     for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
         await runPairCell(run, scenario);
-        if (isAlmLaneCellClosedAfter(plan, index)) {
+        if (isAlmLaneRoomLeftAfter(plan, index)) {
             await closeAgentConnections(toPairAgentRun(run), cell.scenarioKey);
         }
     }
@@ -610,7 +608,7 @@ async function runAgentScenarios(
                 .toBe(true);
         }
         await assertScenarioEvidence(run, scenario, evidence);
-        if (isAlmLaneCellClosedAfter(plan, index)) {
+        if (isAlmLaneRoomLeftAfter(plan, index)) {
             await closeAgentConnections(run, cell.scenarioKey);
         }
     }

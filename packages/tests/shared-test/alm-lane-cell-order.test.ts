@@ -19,7 +19,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
 import { resolveAlmLaneCellOrder } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-cell-order.ts';
 import {
-    isAlmLaneCellClosedAfter,
+    isAlmLaneRoomLeftAfter,
     resolveAlmLanePlan,
     toAlmLaneCellGroup,
     type AlmLanePlan,
@@ -365,29 +365,30 @@ describe('the ALM lane plan', () => {
         const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms: 'family' }));
 
         expect(declared.map((scenario) => scenario.scenarioKey)).toEqual(['subscription-ordered-reconnect']);
-        expect(plan.cells).toEqual(
-            plan.cells.map(({ scenarioKey }) => ({
-                scenarioKey,
-                room: scenarioKey === 'subscription-ordered-reconnect' ? 'cell' : 'family'
-            }))
-        );
+        expect(plan.cells.find((cell) => cell.scenarioKey === 'subscription-ordered-reconnect')?.room)
+            .toBe('cell-subscription-ordered-reconnect');
+        expect(new Set(plan.cells.map((cell) => cell.room)).size).toBeGreaterThan(1);
     });
 
-    it('every agent closes its connections after a cell in a room of its own and before one', () => {
-        const plan = {
-            cells: [
-                { scenarioKey: 'a', room: 'family' },
-                { scenarioKey: 'b', room: 'family' },
-                { scenarioKey: 'c', room: 'cell' },
-                { scenarioKey: 'd', room: 'family' },
-                { scenarioKey: 'e', room: 'cell' },
-                { scenarioKey: 'f', room: 'cell' }
-            ],
-            cellOrder: { mode: 'declared', seed: null, rooms: 'family', scenarioKeys: ['a', 'b', 'c', 'd', 'e', 'f'] }
-        } as const;
+    it('names each room by key: a shared-room cell after a cell in its own room gets a fresh shared room', () => {
+        expect(toPlannedRooms(['shared', 'own', 'shared', 'shared'], 'family'))
+            .toEqual(['family', 'cell-b', 'family-2', 'family-2']);
+        expect(toPlannedRooms(['own', 'shared', 'shared'], 'family')).toEqual(['cell-a', 'family', 'family']);
+        expect(toPlannedRooms(['shared', 'shared', 'own'], 'family')).toEqual(['family', 'family', 'cell-c']);
+        expect(toPlannedRooms(['shared', 'own', 'shared'], 'cell')).toEqual(['cell-a', 'cell-b', 'cell-c']);
+    });
 
-        expect(plan.cells.map((_cell, index) => isAlmLaneCellClosedAfter(plan, index)))
-            .toEqual([false, true, true, true, true, true]);
+    it('every agent closes its connections exactly where the room changes, and at the end outside the family\'s room', () => {
+        const toCloses = (declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms) => {
+            const plan = resolveAlmLanePlan(toDeclaredRoomInput(declared, rooms));
+            return plan.cells.map((_cell, index) => isAlmLaneRoomLeftAfter(plan, index));
+        };
+
+        expect(toCloses(['shared', 'own', 'shared', 'shared'], 'family')).toEqual([true, true, false, true]);
+        expect(toCloses(['own', 'shared', 'shared'], 'family')).toEqual([true, false, false]);
+        expect(toCloses(['shared', 'shared', 'own'], 'family')).toEqual([false, true, true]);
+        expect(toCloses(['shared', 'shared'], 'family')).toEqual([false, false]);
+        expect(toCloses(['shared', 'shared'], 'cell')).toEqual([true, true]);
     });
 
     it('same-context cells are shuffled and never get a room of their own', () => {
@@ -408,13 +409,15 @@ describe('the ALM lane plan', () => {
             const perFamily = resolveAlmLanePlan(toPlanInput(family, { rooms: 'family' }));
 
             expect(perCell.cells.length, family).toBeGreaterThan(0);
-            expect(perCell.cells, family).toEqual(toPlannedCells(perCell, 'cell'));
-            const declaredRooms = new Map(
-                toFamilyCatalog(family).map((scenario) => [scenario.scenarioKey, scenario.room === 'own' ? 'cell' : 'family'])
+            expect(perCell.cells, family).toEqual(
+                perCell.cells.map(({ scenarioKey }) => ({ scenarioKey, room: `cell-${scenarioKey}` }))
             );
-            expect(perFamily.cells, family).toEqual(
-                perFamily.cells.map(({ scenarioKey }) => ({ scenarioKey, room: declaredRooms.get(scenarioKey) }))
+            const declared = new Set(
+                toFamilyCatalog(family).filter((scenario) => scenario.room === 'own').map((scenario) => scenario.scenarioKey)
             );
+            for (const cell of perFamily.cells) {
+                expect(cell.room.startsWith('cell-'), cell.scenarioKey).toBe(declared.has(cell.scenarioKey));
+            }
         }
     });
 
@@ -484,8 +487,10 @@ describe('the ALM lane plan', () => {
     it('names a room of its own per cell, and the family\'s room otherwise', () => {
         const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
-        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'cell' }))
-            .toEqual({ ...group, groupId: 'room-alm-claim' });
+        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'cell-claim' }))
+            .toEqual({ ...group, groupId: 'room-alm-cell-claim' });
+        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family-2' }))
+            .toEqual({ ...group, groupId: 'room-alm-family-2' });
         expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family' }))
             .toBe(group);
     });
@@ -515,6 +520,24 @@ describe('the reason an emptied plan skips its family', () => {
     });
 });
 
-function toPlannedCells(plan: AlmLanePlan, room: AlmLaneRooms): readonly AlmLanePlannedCell[] {
+function toPlannedCells(plan: AlmLanePlan, room: string): readonly AlmLanePlannedCell[] {
     return plan.cells.map(({ scenarioKey }) => ({ scenarioKey, room }));
+}
+
+/** A two-agent catalog's first cells, each declaring a room of its own or not, in declared order. */
+function toDeclaredRoomInput(declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms): ResolveAlmLanePlanInput {
+    const catalog = toFamilyCatalog('two-agent').slice(0, declared.length);
+    const keys = ['a', 'b', 'c', 'd'];
+    return {
+        ...toPlanInput('two-agent', { rooms }),
+        scenarios: catalog.map((scenario, index) => ({
+            ...scenario,
+            scenarioKey: keys[index]!,
+            room: declared[index] === 'own' ? 'own' : 'family'
+        }))
+    };
+}
+
+function toPlannedRooms(declared: readonly ('shared' | 'own')[], rooms: AlmLaneRooms): readonly string[] {
+    return resolveAlmLanePlan(toDeclaredRoomInput(declared, rooms)).cells.map((cell) => cell.room);
 }

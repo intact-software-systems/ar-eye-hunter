@@ -27,8 +27,11 @@ type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey'
 
 export interface AlmLanePlannedCell {
     readonly scenarioKey: string;
-    /** `cell` runs the cell in a room of its own, named by `toAlmLaneCellGroup`. */
-    readonly room: AlmLaneRooms;
+    /**
+     * The key of the room the cell runs in, which `toAlmLaneCellGroup` names: `family`, the family's first room;
+     * `family-<n>`, a later room the family's cells share; `cell-<scenarioKey>`, a room of the cell's own.
+     */
+    readonly room: string;
 }
 
 /** What the observation artifact records of the plan, so a run can be replayed in its order. */
@@ -46,11 +49,15 @@ export interface AlmLanePlan {
     readonly cellOrder: AlmLaneCellOrderRecord;
 }
 
+/** The key of the room a family's first shared cells run in: the family's own group. */
+const ALM_LANE_FAMILY_ROOM = 'family';
+
 /**
  * Which cells of a family run, in which order and in which room. A cell runs in a room of its own when the room
  * parameter asks for one per cell or its definition declares one; a family whose pages chain one session from cell to
- * cell shares the family's room whatever the parameter asks. In a room the family shares, every cell that reshapes the
- * room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes within the two groups.
+ * cell shares the family's room whatever the parameter asks. No cell rejoins a room its pages left: the shared-room
+ * cells after a cell in its own room run in a fresh shared room. In a room the family shares, every cell that reshapes
+ * the room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes within the two groups.
  */
 export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan {
     const { parameters } = input;
@@ -68,11 +75,9 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
     });
     const rooms = ALM_CONFORMANCE_FAMILY_SESSIONS[input.family] === 'chained' ? 'family' : parameters.rooms;
     const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
+    const roomKeys = toAlmLaneRoomKeys(placed, rooms);
     return {
-        cells: placed.map((scenario) => ({
-            scenarioKey: scenario.scenarioKey,
-            room: scenario.room === 'own' ? 'cell' : rooms
-        })),
+        cells: placed.map((scenario, index) => ({ scenarioKey: scenario.scenarioKey, room: roomKeys[index]! })),
         cellOrder: {
             mode: parameters.order,
             seed: ordered.seed,
@@ -83,19 +88,21 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
 }
 
 /**
- * Every agent closes its room connections after a cell in a room of its own, so the next cell connects afresh, and
- * after a cell whose next one runs in a room of its own, so that cell opens connections no earlier cell opened.
+ * Every agent closes its room connections where the next cell runs in another room, and after the family's last cell
+ * unless it ran in the family's first room, so no page stays in a room it will not use again.
  */
-export function isAlmLaneCellClosedAfter(plan: AlmLanePlan, index: number): boolean {
-    return plan.cells[index]?.room === 'cell' || plan.cells[index + 1]?.room === 'cell';
+export function isAlmLaneRoomLeftAfter(plan: AlmLanePlan, index: number): boolean {
+    const room = plan.cells[index]?.room;
+    const next = plan.cells[index + 1];
+    return next === undefined ? room !== ALM_LANE_FAMILY_ROOM : next.room !== room;
 }
 
-/** A cell of its own room names the family's room with its scenario key. */
+/** The family's first room is the family's group; every other room names that group with its key. */
 export function toAlmLaneCellGroup(
     group: RallarBlackBoxDistributedGroupRef,
     cell: AlmLanePlannedCell
 ): RallarBlackBoxDistributedGroupRef {
-    return cell.room === 'cell' ? { ...group, groupId: `${group.groupId}-${cell.scenarioKey}` } : group;
+    return cell.room === ALM_LANE_FAMILY_ROOM ? group : { ...group, groupId: `${group.groupId}-${cell.room}` };
 }
 
 function toKeptTopologyFirst(scenarios: readonly AlmLanePlanCell[]): readonly AlmLanePlanCell[] {
@@ -103,4 +110,23 @@ function toKeptTopologyFirst(scenarios: readonly AlmLanePlanCell[]): readonly Al
         ...scenarios.filter((scenario) => scenario.roomTopology === 'kept'),
         ...scenarios.filter((scenario) => scenario.roomTopology === 'reshaped')
     ];
+}
+
+/** A shared-room cell after a cell in its own room opens a fresh shared room once the family's current one was used. */
+function toAlmLaneRoomKeys(scenarios: readonly AlmLanePlanCell[], rooms: AlmLaneRooms): readonly string[] {
+    let shared = 1;
+    let sharedUsed = false;
+    let sharedLeft = false;
+    return scenarios.map((scenario) => {
+        if (rooms === 'cell' || scenario.room === 'own') {
+            sharedLeft = sharedUsed;
+            return `cell-${scenario.scenarioKey}`;
+        }
+        if (sharedLeft) {
+            shared += 1;
+            sharedLeft = false;
+        }
+        sharedUsed = true;
+        return shared === 1 ? ALM_LANE_FAMILY_ROOM : `${ALM_LANE_FAMILY_ROOM}-${shared}`;
+    });
 }

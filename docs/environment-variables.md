@@ -608,7 +608,9 @@ default, so an unset repository variable, which a workflow step receives as an e
 a `RALLAR_BLACK_BOX_ALM_ONLY` key that no cell of the selected scope and carriers runs throws a
 `RangeError` that names the value and what is accepted, before any browser starts. A `shuffled` family
 shuffles its cells with the seed; a family that names none mints one in `0` to `2147483647`. The same
-seed gives the same order of the same cells on every machine. The lane
+seed gives the same order of the same cells on every machine. Under `RALLAR_BLACK_BOX_ALM_ROOMS=family` a cell
+whose definition declares a room of its own runs in one, and the family's later cells run in a fresh shared room, so
+no page rejoins a room it left. The lane
 prints `ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…` before the
 family's first cell, and the observation artifact records the same plan as `cellOrder`
 (`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`). To rerun a red, set the same
