@@ -187,6 +187,11 @@ runtime saving is justified. The initial inventory's lack of a local full-suite 
   leaf teardown and retained exceptions. Those lower-level proofs do not replace the real browser
   journey, and the browser startup check does not replace them. Splitting the large file alone would
   not reduce proof redundancy.
+- **Matchmaking idle reads: establish the idle precondition.** Release validation exposed a startup
+  race: social panels became visible before the WebSocket connection triggered its canonical recovery
+  reads. The journey now tracks social requests from before sign-in, waits for both players to connect,
+  then requires completed requests and a fresh quiet interval. Its original 2.2-second no-read assertion
+  remains unchanged; connection recovery is permitted, recurring polling still fails.
 - **Mobile controls: strengthen the existing proof.** Observe both a new shot sequence and a new
   effect while Fire is held, replacing a 180 ms sleep. The three applicable local device/orientation
   cases pass; the three opposite-orientation combinations intentionally skip. This does not resolve
