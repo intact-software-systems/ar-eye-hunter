@@ -76,6 +76,14 @@ interface TailSend {
     readonly copies: number;
 }
 
+interface OriginFanoutLayouts {
+    readonly acceptedPeerIds: readonly string[];
+    /** Absent, no replaced layout is in force. */
+    readonly replacedPeerIds: readonly string[] | undefined;
+    /** The neighbours whose edge is open now. */
+    readonly readyPeerIds: readonly string[];
+}
+
 /** A chain whose child `c` has promoted; `promoteRelay` promotes its previous parent `b`. */
 interface ChainTail {
     readonly origin: RtcOriginOverlayFixture;
@@ -259,14 +267,21 @@ async function relayToBothParentsOfD(mesh: OverlapMesh, frames: readonly ALMessa
 
 /** The origin `a`, whose accepted child is `c` and whose replaced layout's child, in force, is `b`. */
 function planOriginNextHops(qos: ALQosPolicyRequest, msgId: string): readonly string[] {
+    return planOriginFanout(qos, msgId, { acceptedPeerIds: ['c'], replacedPeerIds: ['b'], readyPeerIds: ['b', 'c'] });
+}
+
+/** The origin `a`'s next hops for one frame over its accepted neighbours and, when one is in force, a replaced layout's. */
+function planOriginFanout(qos: ALQosPolicyRequest, msgId: string, layouts: OriginFanoutLayouts): readonly string[] {
     const frame = createPositionFrame({ resourceId: msgId, qos });
     return planALMessageHandling({ ...frame, id: { ...frame.id, msgId } }, {
         nowMs: frame.id.ts,
         selfPeerId: 'a',
-        connectedPeerIds: ['b', 'c'],
-        groupMemberPeerIds: ['a', 'b', 'c'],
-        overlayNeighborPeerIds: ['c'],
-        previousOverlayLayout: { neighborPeerIds: ['b'], nextHopsBySessionId: undefined }
+        connectedPeerIds: layouts.readyPeerIds,
+        groupMemberPeerIds: ['a', ...layouts.acceptedPeerIds, ...layouts.replacedPeerIds ?? []],
+        overlayNeighborPeerIds: layouts.acceptedPeerIds,
+        previousOverlayLayout: layouts.replacedPeerIds === undefined
+            ? undefined
+            : { neighborPeerIds: layouts.replacedPeerIds, nextHopsBySessionId: undefined }
     }).forwarding.nextHopPeerIds;
 }
 
@@ -625,11 +640,28 @@ describe('fanout selection over the union of two layouts', () => {
         }
     });
 
-    // Expected failure, found on first run: `random-k` re-ranks every owned child by message id, the replaced layout's
-    // included, under the accepted neighbour count, so a frame can go only to the replaced child `b`.
-    it.fails('under random-k fanout accepted children are chosen before replaced ones', () => {
+    // `random-k` ranks within each layout: the ready accepted children by rank, then the ready replaced-layout children,
+    // then the accepted neighbour count cuts the list.
+    it('under random-k fanout accepted children are chosen before replaced ones', () => {
         for (const msgId of MSG_IDS) {
             expect(planOriginNextHops({ fanout: { algo: 'random-k' } }, msgId)).toContain('c');
         }
+    });
+
+    it('under random-k fanout a replaced-layout child fills in when fewer accepted children are ready than the limit', () => {
+        const layouts = { acceptedPeerIds: ['c', 'd'], replacedPeerIds: ['b'], readyPeerIds: ['b', 'c'] };
+        for (const msgId of MSG_IDS) {
+            expect(planOriginFanout({ fanout: { algo: 'random-k' } }, msgId, layouts)).toEqual(['c', 'b']);
+        }
+    });
+
+    // Peer ids of different lengths: the rank of `${msgId}:${peerId}` then orders them differently from one id to the
+    // next (with ids of one length that differ in one character the order hardly ever changes).
+    it('with no replaced layout in force random-k selects as before', () => {
+        const layouts = { acceptedPeerIds: ['birch', 'cedar', 'dogwood'], replacedPeerIds: undefined, readyPeerIds: ['birch', 'cedar', 'dogwood'] };
+        const selections = ['frame-0', 'frame-1', 'frame-2', 'frame-5'].map((msgId) =>
+            planOriginFanout({ fanout: { algo: 'random-k', opts: { limit: 2 } } }, msgId, layouts)
+        );
+        expect(selections).toEqual([['dogwood', 'birch'], ['dogwood', 'birch'], ['birch', 'cedar'], ['birch', 'cedar']]);
     });
 });

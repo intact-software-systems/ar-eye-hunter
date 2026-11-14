@@ -745,27 +745,38 @@ function resolveNextHopPeerIds(
     );
     return msg.targets?.mode === 'unicast'
         ? reachablePeerIds
-        : applyFanoutSelection(reachablePeerIds, effective, msg.id.msgId);
+        : applyFanoutSelection(
+            {
+                msgId: msg.id.msgId,
+                peerIds: reachablePeerIds,
+                acceptedPeerIds: new Set(context.overlayNeighborPeerIds)
+            },
+            effective
+        );
 }
 
-function applyFanoutSelection(
-    candidates: readonly string[],
-    effective: ALQosEffectivePolicy,
-    msgId: string
-): readonly string[] {
+/** The ready children one copy may go to: the accepted layout's first, then a replaced layout's while one is in force. */
+interface ALFanoutCandidates {
+    readonly msgId: string;
+    readonly peerIds: readonly string[];
+    readonly acceptedPeerIds: ReadonlySet<string>;
+}
+
+function applyFanoutSelection(candidates: ALFanoutCandidates, effective: ALQosEffectivePolicy): readonly string[] {
+    const { msgId, peerIds, acceptedPeerIds } = candidates;
+    const limit = effective.fanout.opts.limit ?? peerIds.length;
     switch (effective.fanout.algo) {
         case 'all':
-            return candidates;
-        case 'limit': {
-            const limit = effective.fanout.opts.limit ?? candidates.length;
-            return candidates.slice(0, limit);
-        }
-        case 'random-k': {
-            const limit = effective.fanout.opts.limit ?? candidates.length;
-            return [...candidates]
-                .sort((left, right) => stableRank(`${msgId}:${left}`) - stableRank(`${msgId}:${right}`))
+            return peerIds;
+        case 'limit':
+            return peerIds.slice(0, limit);
+        case 'random-k':
+            return [...peerIds]
+                .sort((left, right) =>
+                    Number(!acceptedPeerIds.has(left)) - Number(!acceptedPeerIds.has(right)) ||
+                    stableRank(`${msgId}:${left}`) - stableRank(`${msgId}:${right}`)
+                )
                 .slice(0, limit);
-        }
     }
 }
 
