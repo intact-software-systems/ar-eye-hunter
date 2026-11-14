@@ -3,7 +3,7 @@ export const POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID = 1114;
 export interface PostgresTimestampWithoutTimeZoneTextType {
     readonly to: number;
     readonly from: number[];
-    readonly serialize: (value: string) => string;
+    readonly serialize: (value: string | Date) => string;
     readonly parse: (value: string) => string;
 }
 
@@ -11,7 +11,7 @@ export function createPostgresTimestampWithoutTimeZoneTextType(): PostgresTimest
     return {
         to: POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID,
         from: [POSTGRES_TIMESTAMP_WITHOUT_TIME_ZONE_OID],
-        serialize: (value: string) => value,
+        serialize: (value: string | Date) => value instanceof Date ? value.toISOString() : value,
         parse: (value: string) => value
     };
 }

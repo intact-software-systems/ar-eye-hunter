@@ -1,29 +1,20 @@
-import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+
+import { load } from 'js-yaml';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
-
-interface WorkflowCallTrigger {
-    readonly inputs?: Readonly<Record<string, unknown>>;
-    readonly outputs?: Readonly<Record<string, unknown>>;
-}
-
-interface WorkflowDocument {
-    readonly on: Readonly<{ workflow_call: WorkflowCallTrigger; }>;
-    readonly jobs: Readonly<Record<string, unknown>>;
-}
-
-function readWorkflow(workflowPath: string): WorkflowDocument {
-    return load(readFileSync(workflowPath, 'utf8')) as WorkflowDocument;
-}
 
 describe('governance gate workflow', () => {
     it('runs the canonical local gate in a bounded reusable workflow', () => {
         const workflowPath = path.join(repoRoot, '.github/workflows/governance-gate.yml');
 
-        const workflow = readWorkflow(workflowPath);
+        const workflow = load(readFileSync(workflowPath, 'utf8'));
 
         expect(workflow).toMatchObject({
             name: 'Governance Gate',
@@ -47,7 +38,7 @@ describe('governance gate workflow', () => {
                         },
                         {
                             uses: 'actions/setup-node@v7',
-                            with: { 'node-version': 24, cache: 'npm' }
+                            with: { 'node-version': 26, cache: 'npm' }
                         },
                         { name: 'Install dependencies', run: 'npm ci --ignore-scripts' },
                         { name: 'Run governance gate', run: 'npm run check:governance-gate' }
@@ -55,7 +46,7 @@ describe('governance gate workflow', () => {
                 }
             }
         });
-        expect(workflow.on.workflow_call.outputs).toBeUndefined();
+        expect(workflow).not.toHaveProperty('on.workflow_call.outputs');
     });
 
     it('binds every phase to the real owner-focused package command', () => {
@@ -97,7 +88,7 @@ describe('governance gate workflow', () => {
     it('makes the broad branch release job depend on governance without copying checks', () => {
         const workflowPath = path.join(repoRoot, '.github/workflows/branch-release-gate.yml');
 
-        const workflow = readWorkflow(workflowPath);
+        const workflow = load(readFileSync(workflowPath, 'utf8'));
 
         expect(workflow).toMatchObject({
             jobs: {
@@ -118,12 +109,7 @@ describe('governance gate workflow', () => {
                 }
             }
         });
-        expect(workflow.jobs['validation-evidence']).toMatchObject({
-            needs: 'governance-gate'
-        });
-        const branchSource = readFileSync(workflowPath, 'utf8');
-        expect(branchSource).not.toContain('npm run check:plan-adaptation');
-        expect(branchSource).not.toContain('npm run check:repo-structure');
-        expect(branchSource).not.toContain('npm run test:pr-human-review');
+        expect(workflow).toHaveProperty('jobs.validation-evidence.needs', 'governance-gate');
+        expect(workflow).not.toHaveProperty('jobs.release-gate.steps');
     });
 });

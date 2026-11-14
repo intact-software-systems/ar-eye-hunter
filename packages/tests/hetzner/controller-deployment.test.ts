@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import playwrightPackage from 'playwright/package.json';
 import {
     describe,
     expect,
@@ -420,7 +421,8 @@ describe('Hetzner controller contracts and effects', () => {
         context.onTestFinished(() => rm(tmp, { recursive: true, force: true }));
         const readinessPath = path.join(tmp, 'deployment-readiness.json');
         const browserRoot = path.join(tmp, 'browsers');
-        const browserDir = path.join(browserRoot, 'versions', '1.61.1-chromium-test');
+        const browserVersionPath = `versions/${playwrightPackage.version}-chromium-test`;
+        const browserDir = path.join(browserRoot, browserVersionPath);
         const { stdout: commitOutput } = await runOwnedTestProcess(context, {
             executable: 'git',
             args: ['rev-parse', 'HEAD'],
@@ -430,7 +432,7 @@ describe('Hetzner controller contracts and effects', () => {
         });
         const commitSha = commitOutput.trim();
         await mkdir(browserDir, { recursive: true });
-        await symlink('versions/1.61.1-chromium-test', path.join(browserRoot, 'active'));
+        await symlink(browserVersionPath, path.join(browserRoot, 'active'));
 
         const scriptPath = path.join(
             repoRoot,
@@ -458,7 +460,7 @@ describe('Hetzner controller contracts and effects', () => {
             schemaVersion: 1,
             deployedCommit: commitSha,
             packageLockSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
-            playwrightVersion: '1.61.1',
+            playwrightVersion: playwrightPackage.version,
             browserEngine: 'chromium',
             browserPath: path.join(browserRoot, 'active'),
             browserStatus: 'passed',

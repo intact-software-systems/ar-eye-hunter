@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Tool · Rallar Black Box Headless" type="js.build_tools.npm" folderName="Tools">
+    <package-json value="$PROJECT_DIR$/apps/rallar-black-box-headless/package.json" />
+    <command value="run" />
+    <scripts>
+      <script value="dev" />
+    </scripts>
+    <node-interpreter value="project" />
+    <package-manager value="npm" />
+    <method v="2" />
+  </configuration>
+</component>

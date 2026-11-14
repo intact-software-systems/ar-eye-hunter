@@ -1,4 +1,5 @@
-import Ajv from 'ajv';
+import Ajv, { type ValidateFunction } from 'ajv';
+import addFormats from 'ajv-formats';
 import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import {
@@ -20,7 +21,7 @@ import { createFormationView } from './rooms/formation/room-formation-test-fixtu
 
 const document = requireRecord(load(readFileSync('apps/api-v1/resources/api-v1-openapi.yaml', 'utf8')), 'OpenAPI');
 const components = requireRecord(document.components, 'components');
-const validator = new Ajv({ allErrors: true, unknownFormats: ['int64'] });
+const validator = addFormats(new Ajv({ allErrors: true, strict: false, formats: { int64: true } }));
 const groupRef = { applicationId: 'app', workspaceId: 'default', groupId: 'room' };
 const clientRef = { applicationId: 'app', workspaceId: 'default', principalId: 'alice' };
 const audit = createAuditStampFixture(1000, 'alice');
@@ -370,7 +371,7 @@ describe('Rallar group public contracts', () => {
     });
 });
 
-function createSchemaValidator(schemaName: string): Ajv.ValidateFunction {
+function createSchemaValidator(schemaName: string): ValidateFunction {
     return validator.compile({ $ref: `#/components/schemas/${schemaName}`, components });
 }
 
