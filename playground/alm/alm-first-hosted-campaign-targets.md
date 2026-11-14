@@ -143,16 +143,18 @@ without make-before-break routing, which is what those runs measured (built sinc
   `apps/api-v1/src/configuration/read-api-v1-configuration-environment.ts`), and #810's churn gate was in the build. The
   layouts replaced in the two runs were 32 s and 37 s old. A re-plan can therefore land inside any stream longer than 15 s,
   at any room size, including the first rung's 5-minute window.
-- Make-before-break routing, where a new layout's edges open before routing moves to them, is built (D644, D645). No hosted
-  run has read it yet, and a hosted read is the prerequisite of the first rung and of the stretch rung.
+- Make-before-break routing, where a new layout's edges open before routing moves to them, is built (D644, D645). D643's condition on it is met when this slice is merged. The maintainer approved two guidance
+  runs after the merge (hosted manifests 07 and 09, once each); no hosted run has read it yet.
 - Reproduced in unit tests of the routing code before D645, for an at-least-once and a best-effort frame: a browser routed only over
   the layout it held as accepted and kept no copy of the previous one, and in an active or reconfiguring group
   the new layout's edges were dialled only after the switch, so all three signatures appear while the previous edges are
   still open (dropped links stay open for 15 s). With the layout switch removed from the same fixtures, every frame is
   delivered.
-- The `unauthorized` refusal is confirmed from the code: a hop that is not a neighbour in the accepted layout is refused
-  with "RTC relay edge is not permitted by current server room topology", and no NACK is sent
-  (`resolveRtcRoomEdgeDenial` in `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`).
+- The `unauthorized` refusal was confirmed from the code before D645: a hop that was not a neighbour in the accepted layout was
+  refused with "RTC relay edge is not permitted by current server room topology", and no NACK was sent. Today the rule owner
+  (`resolveRtcRoomRoutingEdges`, with `resolveRtcRoomEdgeDenial`) admits a hop that is a neighbour of a replaced layout inside its
+  open window, holds a hop that is a neighbour of a planned layout as `pending` and answers it not yet in sync, and refuses any
+  other hop as `unauthorized` with no NACK.
 - Still open: which server path produced the two hosted re-plans, with neither run recording the server's planning
   decision. Two paths can switch to a high-churn layout with no membership change and both skip #810's churn gate: the
   rebuild used as it is when a tree's leader-rooting or an update failure asks for a full rebuild, and the mesh rebuild,
@@ -168,14 +170,14 @@ without make-before-break routing, which is what those runs measured (built sinc
 - Formation at 15 passed hosted (D435).
 - Manifest 21 passed at 50 agents on this fleet at about 13 deliveries per second.
 - Browsers run on GitHub-hosted runners, off the api host.
-- It waits for a hosted read of make-before-break routing (D645): a 5-minute window is long enough for a re-plan to land inside it.
+- It waits for make-before-break routing (D643, D644): a 5-minute window is long enough for a re-plan to land inside it.
 - Not established: that any 15-agent delivery manifest has a recorded hosted pass. The first action is to find or make
   one.
 
 **Stretch rung.** 50 agents as five rooms of ten, one publisher per room at 2 messages a second, 90 deliveries per
 second. Five publishers per room would be 450 per second, about half of manifest 07's failing load, and waits.
 
-It is not attempted until a hosted run has read make-before-break routing (D645). Other known limits:
+It is not attempted until make-before-break routing is built (D643); that condition is met when this slice is merged. Other known limits:
 
 - A re-plan in the middle of a window can fail a run for a reason that is not the platform's service level until then
   (`plans/active/deno-to-bun-validation.md`).

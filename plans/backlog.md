@@ -785,5 +785,5 @@ and it has no status list.
   until their deadline. At a 30 s send lifetime, three members of one room cannot each sustain more than about
   16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
   publication work, not a defect of the overlap.
-- Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is dropped;
-  a failing early dial can leave the edge in its dial cooldown at promotion.
+- Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
+  the cap closes early peers only for it.
