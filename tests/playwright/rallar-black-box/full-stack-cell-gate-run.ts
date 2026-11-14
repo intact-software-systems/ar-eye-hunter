@@ -1,17 +1,12 @@
-import { expect } from '@playwright/test';
-
 import type { AlmConformanceRole } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type {
-    ControlDistributedRunCommandLink,
-    ControlDistributedRunSnapshot
-} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlDistributedRunCommandLink } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { createDistributedRun, mutateDistributedRun } from './distributed-run-requests.ts';
 import {
     findControlResult,
-    FULL_STACK_CONTROL_BASE_URL,
     readControlRunUntil,
     type RecipeRun,
     type RecipeRunAgent
@@ -78,16 +73,9 @@ export function toCellGateRunManifest(input: CellGateRunInput): RallarBlackBoxDi
 /** Registers and starts the gate run, and returns once every start root answered ok. */
 export async function startCellGateRun(input: StartCellGateRunInput): Promise<void> {
     const manifest = toCellGateRunManifest(input);
-    const created = await input.run.request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
-        data: { manifest }
-    });
-    expect(created.status(), await created.text()).toBe(201);
-    const response = await input.run.request.post(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}/start`
-    );
-    const startText = await response.text();
-    expect(response.status(), startText).toBe(202);
-    const started = JSON.parse(startText) as ControlDistributedRunSnapshot;
+    await createDistributedRun(input.run.request, manifest);
+    const started = await mutateDistributedRun(input.run.request, manifest.distributedRunId, 'start');
+    const startText = JSON.stringify(started);
     const starts = started.commandLinks.filter((link) => link.phase === 'start');
     if (starts.length !== manifest.recipes.length) {
         throw new Error(`${manifest.distributedRunId} did not start a root per role. Start response: ${startText}`);
