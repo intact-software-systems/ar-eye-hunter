@@ -4,9 +4,10 @@ import type { GroupRef } from '../../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
 import {
     isLayoutTransitionInsideWindow,
+    isLayoutTransitionReplacedBy,
     type OverlayLayoutTransition
 } from '../../repository/overlay-layout-transition.ts';
-import { isOverlayIdentity } from '../../repository/to-overlay-layout-identity.ts';
+import { toOverlayLayoutIdentity } from '../../repository/to-overlay-layout-identity.ts';
 
 export interface RtcRoomLayoutHistory {
     /** Every layout this session replaced for the room that is still recorded, newest first; empty when none. */
@@ -117,10 +118,7 @@ function resolveReplacingTransitionChain(input: ResolveRtcRoomRoutingEdgesInput)
     const chain: OverlayLayoutTransition[] = [];
     let replacer: OverlayInfo = input.accepted;
     for (const transition of input.history.transitions) {
-        if (
-            !isRoomLayoutOverlay(transition.replaced, input.roomRef) ||
-            !isOverlayIdentity(replacer, transition.replacedBy)
-        ) {
+        if (!isLayoutTransitionReplacedBy(transition, input.roomRef, toOverlayLayoutIdentity(replacer))) {
             break;
         }
         chain.push(transition);

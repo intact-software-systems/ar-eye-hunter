@@ -1,7 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
-    isSameGroupLayoutIdentity,
     resolveGroupLayoutRole,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -28,7 +27,7 @@ import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { computeRecordedLayoutTransitions } from './compute-recorded-layout-transitions.ts';
 import { isRoomLayoutOverlay } from './is-accepted-room-layout-overlay.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
-import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
+import { isLayoutTransitionReplacedBy, type OverlayLayoutTransition } from './overlay-layout-transition.ts';
 import { isOverlayIdentity, toOverlayLayoutIdentity } from './to-overlay-layout-identity.ts';
 
 export interface OverlayRepositoryOptions
@@ -555,8 +554,7 @@ function computeAcceptedLayoutTransitions(change: AcceptedLayoutChange): readonl
     }
     if (held === undefined) {
         const newest = recorded[0];
-        return newest !== undefined && isRoomLayoutOverlay(newest.replaced, taker.roomRef) &&
-                isSameGroupLayoutIdentity(newest.replacedBy, taker.identity)
+        return newest !== undefined && isLayoutTransitionReplacedBy(newest, taker.roomRef, taker.identity)
             ? recorded
             : null;
     }
