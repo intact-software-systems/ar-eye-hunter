@@ -374,10 +374,11 @@ and it has no status list.
 - Lane cells of the shared-room families, every family but four-role, inherit
   what earlier cells left in the room: a granted cell declares its own start
   grants and subscription rows, and a cell that reshapes the topology runs
-  after every cell that keeps it (D646), but no other room state is declared
-  per cell. A selection (`RALLAR_BLACK_BOX_ALM_SKIP`, `_ONLY` or the smoke
-  scope) changes what a cell inherits; `RALLAR_BLACK_BOX_ALM_ROOMS=cell` gives
-  a family a room per cell. Waits on a ruling which other cells need a
+  after every cell that keeps it (`resolveAlmLanePlan`, in a shared room), but
+  no other room state is declared per cell. A selection
+  (`RALLAR_BLACK_BOX_ALM_SKIP`, `_ONLY` or the smoke scope) changes what a cell
+  inherits; `RALLAR_BLACK_BOX_ALM_ROOMS=cell` gives every family but
+  same-context a room per cell. Waits on a ruling which other cells need a
   declared start state.
 - The lane's fixed users keep principal-scoped server state across families and
   runs (the principal ordering track; the memberships of every earlier room)
@@ -747,18 +748,20 @@ and it has no status list.
   (`packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts`)
   selects the group's unexpired topology-topic rows that the queue will still
   attempt. It rides the `fk_ext_bank_id` prefix of `resource_inbox_unique_k` and
-  filters status and topic on those rows, so its cost grows with the room's
-  unexpired work rows and no index covers the status. Unmeasured; waits on a
+  filters topic and status on those rows. Measured once with `explain analyze`
+  at 10 000 retained rows: about 1 to 2 ms; no index was added. Its cost grows
+  with the room's unexpired inbox rows of every topic, since only
+  `fk_ext_bank_id` is indexed (`resource_inbox_unique_k`); it waits on a
   measurement at fleet scale before an index.
 - The flow builder's conversion to the legacy runner's step
   (`apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts`)
   copies an assert's `source`, `operator` and `expected` only, so it drops
-  `comparisonSource` silently, as it already drops `sameUniqueStringSet`'s
-  second path. It should refuse the form or carry it. The rule that an `equals`
-  names exactly one of `expected` and `comparisonSource` is checked by control
-  validation (`packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts`),
-  not expressed in the TypeScript union of `RallarBlackBoxTestAssertCommand`,
-  which admits an `equals` with neither.
+  `comparisonSource` silently, for `equals` and for `sameUniqueStringSet`. It
+  should refuse the form or carry it. The TypeScript union of
+  `RallarBlackBoxTestAssertCommand` forbids an `equals` with both `expected`
+  and `comparisonSource` but admits one with neither; control validation
+  refuses neither
+  (`packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts`).
 - `packages/shared-test/rallar-bb-test/conformance/alm` holds 20 direct
   production files, the layout rule's limit
   (`directTypeScriptFileCount` in `scripts/repo-style-check/layout-rules.mjs`):
@@ -769,9 +772,13 @@ and it has no status list.
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
   refused transiently; a retry would then need its own ruling.
-- The settle (D646) does not close four windows: an older presence-summary row
-  expanding after the barrier, an `rtt-refresh` promotion (`pending` never
-  reports it), a heartbeat that is more than a renewal or the 60 s presence
-  expiry, and a page whose cache lapsed and was restored at the same revision
-  (the last `held` event does not prove the room readable). Each shows as a
-  revision past the floor or a refusal after the body began.
+- The settle (D647) does not close four windows: an older presence-summary row
+  expanding after the barrier (the outstanding-work read of the line above), an
+  `rtt-refresh` promotion (`pending` never reports it), a heartbeat that drops
+  or restores a session or the presence expiry reconciliation that runs every
+  60 s (`DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS`,
+  `packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts`),
+  and a page whose cache lapsed and was restored at the same revision. The
+  first three show as a revision past the floor or a refusal after the body
+  began; the fourth is silent unless the restore lands on a new revision, since
+  the last `held` event does not prove the room readable.

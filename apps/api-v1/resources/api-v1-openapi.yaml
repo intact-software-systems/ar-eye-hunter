@@ -9587,7 +9587,8 @@ components:
       description: >-
         A group-revision replan of the group is queued: the coalesced head row, a replan parked behind a settled
         head, an explicit reconfigure or a topology-config write; carried as null when none is. RTT-refresh work is
-        not reported.
+        not reported. A per-command row stored in an older envelope version is not reported: the AL envelope codec
+        refuses it as unsupported and it carries no coalescing envelope that names its overlay.
       required: [reconfigureQueued, dueAtEpochMs, generation]
       properties:
         reconfigureQueued:
@@ -9599,7 +9600,8 @@ components:
           format: int64
           description: >-
             The due time of the earliest due coalesced row, not a bound on when the room settles; null when only a
-            per-command reconfigure or topology-config replan, or a row that no longer decodes, is queued.
+            per-command reconfigure or topology-config replan, a coalesced row in an older envelope version, or a
+            row that no longer decodes is queued.
         generation:
           type:
             - integer

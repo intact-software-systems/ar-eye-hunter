@@ -221,9 +221,8 @@ creates the room and owns it. A settled role runs this, in order:
 The three barriers are the ordinary `barrier` command. A barrier id is
 `<cellPrefix>-<phase>` and a role's command id `<cellPrefix>-<role>-<phase>`, with
 `cellPrefix` = `alm-<carrier>-<scenarioKey>`. The barrier names the settle roles as participants. Its
-timeout is the longest time any one role spends waiting through the other roles' commands since the
-barrier before it, plus `RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS`. The lane registers the
-participants as one distributed run per family, started by hand with one trivial `health` root per
+timeout is the longest sum of the other roles' command timeouts since the barrier before it, plus `RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS`. The lane registers the
+participants as one distributed run per family, started with `startMode: 'manual'` and one trivial `health` root per
 role and its own barrier disabled. A same-context family registers one per cell, naming the cell's
 current owner page as `sender`. Because the roots are trivial, a barrier reports `participant-failed`
 only from a root's own result: a role whose recipe fails before a barrier leaves the others to the
@@ -245,9 +244,7 @@ and the first attempt in which every fact holds ends the poll:
 
 An equality fact passes only when both paths exist. A room with no activation status or no accepted
 layout therefore never settles, and the poll ends without success at its 30 s bound. The view's
-`condition` is not read: it falls back to a derived band when the stored status is not current. The
-identity keys are compared one by one because an `assert` equality compares JSON text, which is
-sensitive to key order.
+`condition` is not read: it falls back to a derived band when the stored status is not current. The poll compares each identity key on its own, so key order cannot matter.
 
 **The head read and the applied-revision floor.** The barrier carries no data, so each settle role
 reads the room's head itself after `formation-settled`: `GET …/groups/{groupId}` under its own
@@ -264,8 +261,7 @@ permission the principal must not hold (the revoke also deletes the principal's 
 then, when the principal holds any permission, a grant of what it holds. A write that changes
 nothing costs no revision. In a settled cell each write is one `POST
 …/publication-grants/{principal}/{revoke|grant}/requests/{requestId}`, sent after `connected`, when
-every grantee is a member. It accepts only status 200 and is not retried: a failed start write fails
-its cell at once. In an unsettled cell, and for a grant that is a step of a cell's body, the write
+every grantee is a member. It accepts only status 200 and is not retried: a failed start write fails the receiver's recipe at once. In an unsettled cell, and for a grant that is a step of a cell's body, the write
 is polled instead: it repeats every 250 ms for up to 90 s (`SUBSCRIPTION_PHASE_MS`) until one
 attempt answers 200, because a grantee that has not joined yet is refused `member-not-active`.
 
@@ -274,7 +270,7 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
 - `sinceCommandIdPrefix` is the cell's history mark. Every wait of a cell's body or continuation
   that names no start of its own carries the role's own command prefix, so it reads only events of
   its own cell. The mark opens at the first event on the page whose `commandId` starts with that
-  prefix; that event can come before the command's result. A wait that names its own start must name
+  prefix; that event can come before the command's result. If no event of the prefix exists yet, it opens at the next event recorded. A wait that names its own start must name
   a command of its own cell, or recipe creation throws. A wait with
   `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, and a store's
   recovery that a fresh document reports during its first connect. Once the runtime evicted any
