@@ -134,8 +134,8 @@ gap; the audit does not claim no indirect caller test could detect any of these 
 
 ### Known manual and measurement gaps
 
-The five manual suites cover Relic focused UI, Relic two-browser propagation, mobile canvas
-controls, ALM durable-send latency and deployed Quick Join. Their registry gives owners and
+At the initial baseline, five manual suites covered Relic focused UI, Relic two-browser propagation,
+mobile canvas controls, ALM durable-send latency and deployed Quick Join. Their registry gives owners and
 reasons. Manual latency/deployment workloads are intentional; mobile rendering and propagation
 remain release-confidence gaps to reassess, not tests to silently delete or blindly enable.
 
@@ -143,6 +143,69 @@ No assertion-strength baseline or per-case execution/skip history was establishe
 proposing large reductions, collect runner-native durations, retries and conditional-case outcomes
 from comparable runs. Use targeted fault injection/mutation for high-risk contracts. Line coverage
 can locate unexercised branches but cannot establish assertion quality on its own.
+
+### Measured CI cost, without a reduction claim
+
+The [successful dependency-upgrade release run](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/43504666695)
+provides a single-run profile on the Node 26 dependency baseline. Selected actual test-step durations:
+
+| Step                                  |    Duration |
+| ------------------------------------- | ----------: |
+| Move-together, scheduling and friends |      15m42s |
+| Relic room entry and spectating       |      14m37s |
+| Relic tournaments                     |      13m48s |
+| Matchmaking in both games             |         13m |
+| Tooling unit tests                    |       9m11s |
+| Main unit-test shards                 | 5m28s–7m49s |
+| Recipe Console browser shards         | 3m44s–6m12s |
+| PostgreSQL shared-server integration  |       2m46s |
+
+These are test-step wall durations, excluding other job steps; concurrent jobs must not be summed
+as end-to-end wait time. They identify worthwhile profiling targets, especially browser setup and
+journeys. They do not establish which individual tests are expensive or redundant. This run was
+attempt one, but job metadata does not supply Playwright's internal retries or a per-case flake
+history. Older runs used different revisions/dependencies, so no before/after comparison or claimed
+runtime saving is justified. The initial inventory's lack of a local full-suite timing baseline remains.
+
+## Disposition of broader candidates
+
+- **Scenario and RTC CLI suites: retain distinct cases.** Both invoke the Bun CLI; that is not itself
+  a distinct backend proof. The inspected cases do distinguish executable interaction output from
+  report output, long/short/config dry-run entry points, unknown-provider bypass, synthetic output
+  extraction, direct-target precedence, broadcast, close and reconnect behavior. Similar fixture
+  shapes alone do not justify dropping these partitions. Shared setup and file cohesion remain
+  possible maintenance work, without an assumed case-count reduction.
+- **Governance: remove the weaker repeated workflow check.** Parsed workflow tests retain the exact
+  PR trigger and per-PR cancellation contract, and delivery-command tests retain terminal merged
+  behavior. The removed combined source-string scan could not prove the absence of tracked writes.
+  Distinct template and documentation-publication assertions remain, with names that describe
+  publication rather than agent compliance.
+- **Browser mounting and polling: retain the distinct layers.** The navigation suite's 300 ms absence
+  observation is a startup/mounting check, not a multi-period polling proof. The control-query suite
+  independently advances fake time through the 5-second poll boundary and 30 seconds after stop,
+  verifying non-overlap, cleanup and suppression of late results. Mount-policy tests exercise safe
+  leaf teardown and retained exceptions. Those lower-level proofs do not replace the real browser
+  journey, and the browser startup check does not replace them. Splitting the large file alone would
+  not reduce proof redundancy.
+- **Mobile controls: strengthen the existing proof.** Observe both a new shot sequence and a new
+  effect while Fire is held, replacing a 180 ms sleep. The three applicable local device/orientation
+  cases pass; the three opposite-orientation combinations intentionally skip. This does not resolve
+  the registry's historical Linux rendering timeouts, so the suite remains manual pending
+  [Linux CI qualification](https://github.com/intact-software-systems/ar-eye-hunter/issues/829).
+- **Relic propagation: retain the unique workload and check usability.** Current CI continuity tests
+  cover Keeper departure, lease expiry, withdrawal and uncertain HTTP Join recovery. The manual suite
+  additionally checks round-cue recovery and a held WebSocket command surviving a checkpoint/reload
+  exactly once. Its initial local execution failed during setup because Refresh matched six buttons;
+  that was unusable coverage, not broken product propagation. Exact locators restore both scenarios
+  locally. The command-hold fixture also keeps old sockets blocked after release, preventing an
+  old-page retry from falsely satisfying the reload-recovery assertion. They are now selected by a
+  separate development-mode step in the existing Relic continuity
+  CI lane, preserving the preceding built-SPA run and both artifact reports. The manual registry now
+  has four workloads. Linux qualification requires the current candidate's release-gate result.
+- **Latency and deployed journeys: retain their separate workload boundaries.** ALM latency needs
+  the same local machine and workload for comparison. Deployed Quick Join needs an explicit deployment
+  and provisioned account. Neither should become a generic timing gate or silently run against an
+  unspecified deployment.
 
 ## Criteria for future decisions
 
@@ -172,6 +235,7 @@ Prefer deletion of redundant _proofs_ and unnecessary setup over cosmetic count 
 3. **Coverage-led review, selected by the maintainer:** preserve unique proofs, remove demonstrated
    redundancy, close gaps, and measure the resulting volume. It can legitimately increase count.
 
-Implementation proceeds in small, reviewed slices through
-`plans/active/test-suite-review.md`. The plan and PR should remain honest about the difference
-between completed changes and the broader candidates above.
+The reviewed implementation is delivered through
+[PR #828](https://github.com/intact-software-systems/ar-eye-hunter/pull/828). Git history preserves
+the implementation plan; this dated assessment keeps the distinction between measured findings,
+completed improvements and remaining evidence limits.

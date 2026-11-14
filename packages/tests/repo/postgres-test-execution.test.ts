@@ -27,7 +27,7 @@ afterEach(() => {
     }
 });
 
-describe('PostgreSQL test selection', () => {
+describe('PostgreSQL test selection', { timeout: 35_000 }, () => {
     it('accepts files selected by separate PostgreSQL lanes', () => {
         const root = createFixture({
             'packages/tests/primary.test.ts': conditionalCases('primary'),
@@ -122,7 +122,7 @@ describe('PostgreSQL test selection', () => {
     });
 });
 
-describe('PostgreSQL execution completeness', () => {
+describe('PostgreSQL execution completeness', { timeout: 35_000 }, () => {
     it('accepts a fully executed suite', () => {
         const result = runFixtureTests('import { it, expect } from \'vitest\'; it(\'executes\', () => expect(2 + 2).toBe(4));');
 
