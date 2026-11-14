@@ -1,9 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    resolveGroupLayoutRole,
-    type GroupLayoutIdentity
-} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -24,11 +21,19 @@ import {
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 
-import { computeRecordedLayoutTransitions } from './compute-recorded-layout-transitions.ts';
+import {
+    computeAcceptedLayoutTransitions,
+    type AcceptedLayoutChange,
+    type AcceptedLayoutTaker
+} from './compute-accepted-layout-transitions.ts';
 import { isRoomLayoutOverlay } from './is-accepted-room-layout-overlay.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
-import { isLayoutTransitionReplacedBy, type OverlayLayoutTransition } from './overlay-layout-transition.ts';
-import { isOverlayIdentity, toOverlayLayoutIdentity } from './to-overlay-layout-identity.ts';
+import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
+import {
+    compareOverlayLayoutIdentity,
+    isOverlayIdentity,
+    toOverlayLayoutIdentity
+} from './to-overlay-layout-identity.ts';
 
 export interface OverlayRepositoryOptions
     extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
@@ -67,21 +72,6 @@ interface ReconcileAcceptedOverlayIdentityInput {
     readonly roomRef: GroupRef;
     readonly acceptedIdentity: GroupLayoutIdentity | undefined;
     readonly manager?: RepositoryManager;
-}
-
-interface AcceptedLayoutChange {
-    readonly overlayId: string;
-    readonly held: OverlayInfo | undefined;
-    /** The replaced layouts recorded while `held` was accepted, newest first. */
-    readonly recorded: readonly OverlayLayoutTransition[];
-    readonly taker: AcceptedLayoutTaker | null;
-    readonly nowEpochMs: number;
-    readonly manager?: RepositoryManager;
-}
-
-interface AcceptedLayoutTaker {
-    readonly roomRef: GroupRef;
-    readonly identity: GroupLayoutIdentity;
 }
 
 interface RemoveOverlayIfUnchangedInput {
@@ -391,20 +381,6 @@ function compareOverlayInfoIdentity(
     return compareOverlayLayoutIdentity(toOverlayLayoutIdentity(left), toOverlayLayoutIdentity(right));
 }
 
-function compareOverlayLayoutIdentity(
-    left: GroupLayoutIdentity,
-    right: GroupLayoutIdentity
-): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
-    const role = resolveGroupLayoutRole({ publication: left, accepted: right });
-    return role === 'accepted'
-        ? 'equal'
-        : role === 'planned'
-        ? 'dominates'
-        : role === 'superseded'
-        ? 'dominated'
-        : 'incomparable';
-}
-
 function configureRoleOverlayRepository(
     token: RepositoryToken<ObservableLatestRepository<string, OverlayInfo>>,
     options: OverlayRepositoryOptions,
@@ -540,35 +516,6 @@ function setLayoutTransitionsForAcceptedChange(change: AcceptedLayoutChange): vo
         change.overlayId,
         transitions
     );
-}
-
-/**
- * The history after the accepted slot changes, or `null` when it clears. A live layout of the room that dominates the
- * held one records its replacement. A taker of the empty slot keeps the history only when it is the layout the
- * newest entry, recorded when a group snapshot removed the held layout before this one arrived, names as its replacer.
- */
-function computeAcceptedLayoutTransitions(change: AcceptedLayoutChange): readonly OverlayLayoutTransition[] | null {
-    const { held, recorded, taker } = change;
-    if (taker === null) {
-        return null;
-    }
-    if (held === undefined) {
-        const newest = recorded[0];
-        return newest !== undefined && isLayoutTransitionReplacedBy(newest, taker.roomRef, taker.identity)
-            ? recorded
-            : null;
-    }
-    if (
-        !isRoomLayoutOverlay(held, taker.roomRef) ||
-        compareOverlayLayoutIdentity(taker.identity, toOverlayLayoutIdentity(held)) !== 'dominates'
-    ) {
-        return null;
-    }
-    return computeRecordedLayoutTransitions(recorded, {
-        replaced: held,
-        replacedBy: taker.identity,
-        replacedAtEpochMs: change.nowEpochMs
-    });
 }
 
 function readRecordedLayoutTransitions(
