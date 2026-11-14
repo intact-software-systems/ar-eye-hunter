@@ -13,7 +13,7 @@ export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
 const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
 
 /** The rooms' answers the browser's admission reads; the ledger's retention stays out of its reach. */
-export type BrowserRtcPeerAdmissionLedger = Pick<
+type BrowserRtcPeerAdmissionLedger = Pick<
     WebRtcGroupPeerLedger,
     'isPeerDialAllowedByAnyGroup' | 'resolveInboundPeer' | 'hasClosableEarlyPeer' | 'admitInboundPeer'
 >;
