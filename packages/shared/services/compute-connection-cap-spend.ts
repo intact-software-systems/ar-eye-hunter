@@ -48,9 +48,9 @@ interface CapClosingOrder {
 /**
  * The one ranking every spend of the peer-connection cap reads. Accepted peers always fit: outbound they close early
  * peers first (retained ones oldest first, then desired ones), then edges retained from a replaced accepted layout,
- * oldest first; an inbound accepted offer at a full cap closes early peers only, and is refused as before when there
- * are too few. An early peer takes only a slot that is free after every known peer and every accepted candidate, and
- * never closes anything. With no early peer every answer is the cap rule that applied before early dialling.
+ * oldest first; an inbound accepted offer at a full cap closes early peers only, and is refused when there are too few.
+ * An early peer takes only a slot that is free after every known peer and every accepted candidate, and never closes
+ * anything. With no early peer only retained edges close, and an inbound offer at a full cap is refused.
  */
 export function computeConnectionCapSpend(input: ConnectionCapSpendInput): ConnectionCapSpend {
     const isAccepted = (peerId: PeerId): boolean =>

@@ -243,7 +243,7 @@ describe('browser RTC peer admission', () => {
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
         });
 
-        it('an accepted peer\'s offer at a full cap with no early peer is answered as before', async () => {
+        it('an accepted peer\'s offer at a full cap with no early peer is refused and no peer closes', async () => {
             const runtime = await createFullCapRuntime({ accepted, planned: accepted });
             // The replaced layout's edges stay retained for their grace and fill the cap with the new layout's.
             for (const overlays of [runtime.acceptedOverlays, runtime.plannedOverlays]) {
@@ -339,7 +339,7 @@ describe('browser RTC peer admission', () => {
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...newPeers]);
         });
 
-        it('with no early peer known, such an offer at the cap is denied as before', async () => {
+        it('with no early peer known, such an offer at the cap is refused, not held', async () => {
             const fullAccepted = [...accepted, ...early];
             const runtime = await createFullCapRuntime({ accepted: fullAccepted, planned: fullAccepted });
 

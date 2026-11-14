@@ -153,7 +153,7 @@ describe('computeConnectionCapSpend', () => {
         expect(computeConnectionCapSpend({ ...input, maxPeerConnections: 2 }).evictPeerIds).toEqual(['c1', 'a1']);
     });
 
-    it('with no early peer the ranking is the base\'s', () => {
+    it('with no early peer only retained edges close, oldest first, and an offer at a full cap is refused', () => {
         const retained = [
             { peerId: 'retained-2', earlyDial: false, retainedOrder: 1 },
             { peerId: 'retained-1', earlyDial: false, retainedOrder: 0 }
