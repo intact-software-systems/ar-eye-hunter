@@ -98,7 +98,7 @@ export class WebRtcGroupPeerLedger {
         this.maxPeerConnections = config.maxPeerConnections;
         this.nowEpochMs = config.nowEpochMs;
         this.retainedPeers = new RetainedPeerConnections({
-            overlayTransitionGraceMs: config.overlayTransitionGraceMs,
+            overlayTransitionGraceMs: Math.max(0, config.overlayTransitionGraceMs),
             nowEpochMs: config.nowEpochMs,
             diagnostics: this.diagnostics
         });
