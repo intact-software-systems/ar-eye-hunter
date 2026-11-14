@@ -124,8 +124,9 @@ borrow either authority.
 ### Held planning and dialing stages
 
 Dormant and forming suppress topology planning; planned and reconfiguring hold the candidate without
-dialing it. An active room also dials the edges of its published planned layout before that layout is
-promoted. Connect freezes that exact candidate in connecting/reconnecting until activation, failure
+dialing it. By stage, the layouts a room dials are: dormant, forming and planned, none; connecting, the planned layout;
+active, the accepted and the planned layout, so an active room dials the edges of its published planned
+layout before that layout is promoted; reconfiguring, the accepted layout only; reconnecting, both. Connect freezes that exact candidate in connecting/reconnecting until activation, failure
 or reset. Browser dial gates enforce these distinctions, including cold-cache/bootstrap paths.
 Accepted traffic remains usable during reconfiguration; the separate transport valve can halt it.
 

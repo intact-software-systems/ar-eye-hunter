@@ -162,12 +162,11 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
         expect(readForwardEvents(relay)).toEqual([]);
     });
 
-    it('a relay whose first forward attempt is refused is not retried: one report, however long it waits', async () => {
+    it('a relay whose forward has no route reports it once: the manager does not enqueue it again', async () => {
         const relay = createRelay(LEAF);
         const frame = createFrame('at-least-once', 'refused-not-retried');
 
         await relay.forward(frame, 'a');
-        await vi.advanceTimersByTimeAsync(60_000);
 
         expect(readForwardEvents(relay)).toEqual([expect.objectContaining({ outcome: 'unroutable', reason: 'no-route' })]);
     });

@@ -732,8 +732,8 @@ and it has no status list.
   refused frames from the old parent (`unauthorized`) and a switched relay
   stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
   age defaults to 15 s, so a re-plan can land inside any longer stream. Make-before-break
-  routing in the browser (D645) is built for it; no hosted run has read it yet. It caps both
-  campaign rungs until one does (D643).
+  routing in the browser (D645) is built for it; no hosted run has read it yet. The delivery loss caps
+  both campaign rungs until a hosted run reads the build (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
   `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`). Open: which
@@ -763,28 +763,27 @@ and it has no status list.
   code standard counts as construction debt. Building the policies before the
   service, or giving the service one required policies input, removes it.
 - Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
-  `not-yet-in-sync`. The outbound control admission accepts the NACK only from the frame's owner
-  (`validate-al-outbound-control-admission.ts`); the relay's timed retry re-plans through the originating
+  `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
+  that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating
   planner and finds no route; the origin's receipt keeps an unconfirmed hop and the relay records a false
   `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing.
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
-  layout's frame from an unauthorized one without a time window (study Family F). Later.
+  layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
-  rebuild, belong to the group dynamics damping plan (`plans/active/group-dynamics-damping.md`), in its own
-  pull request.
+  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
 - Relay forward observability gaps: a pending relayed forward that later ends refused is not reported; a forward
   dropped on the inbound side (`planForwarding` returns undefined) is not reported; the `admission-outcome`
   diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
 - `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
-  peer ids of equal length that differ only in late characters, for every message id; ids that differ early
+  peer ids of equal length that differ only in late characters, for almost every message id; ids that differ early
   flip. Pre-existing.
 - Cold ordered track during an overlap: the first frame of a stream that starts during an overlap can be lost at
   a receiver with no state for the track. An entry rule for ordered tracks is its own slice.
 - Session volatile admission budget against a room stream: with `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000),
-  `AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS` (30 000 ms) and `AL_VOLATILE_SESSION_OWN_SHARE` (0.5), three
-  members of one room cannot each sustain 20 volatile messages a second (about 16.7 each); the browser spec of
-  the overlap runs at 10. A workload figure for the publication work, not a defect of the overlap.
-- Origin repair across a moved path: an origin's repair exhausts when the only working path moved behind a hop
-  that already reported complete.
+  `AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS` (30 000 ms) and `AL_VOLATILE_SESSION_OWN_SHARE` (0.5), a session
+  refuses an own send once the total would pass 1 000 admissions and its own count would pass 500. Own sends count
+  until their deadline. At a 30 s send lifetime, three members of one room cannot each sustain more than about
+  16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
+  publication work, not a defect of the overlap.
 - Peer cap and the early dial: an accepted offer at a cap full of a replaced layout's retained edges is dropped;
   a failing early dial can leave the edge in its dial cooldown at promotion.
