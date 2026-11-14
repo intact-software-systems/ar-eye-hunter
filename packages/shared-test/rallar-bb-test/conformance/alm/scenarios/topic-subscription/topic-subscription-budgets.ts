@@ -7,9 +7,10 @@ import { toCommandId } from '../../alm-conformance-step-identities.ts';
 export const SUBSCRIPTION_ABSENCE_MS = 5_000;
 
 /**
- * Lets a grant, revoke or election's delta reach every member page's snapshot before the next send that must meet it:
- * a sender's own check judges a grant first, and no recipient refuses a copy as `not-yet-in-sync`, whose resend is a
- * repair dispatch of its own.
+ * Lets a sibling's election delta reach every member page's snapshot before the next send that must meet it, where a
+ * page that must hold it has no ordering point after the election committed: the receiver, which a copy must find
+ * current, waits for no cue and writes nothing after it, so no head read of its own can follow the election. A grant
+ * change whose pages all have a point waits for their applied revisions instead (`toGrantAppliedHeadCommands`).
  */
 export const GRANT_DELTA_MARGIN_MS = 2_000;
 

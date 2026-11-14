@@ -586,6 +586,8 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishSteps(`${track}-p1`),
                 ...toPublishSteps(`${track}-p2`),
                 'cue-revoked-received',
+                'revoke-head-read',
+                'revoke-head-applied',
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
                 'cue-resubscribed-received',
@@ -603,7 +605,8 @@ describe('ALM ordered subscription entry conformance', () => {
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
             'revoke-sender-s',
-            'revoke-delta-margin',
+            'revoke-head-read',
+            'revoke-head-applied',
             'cue-revoked',
             'cue-revoked-sent',
             ...toPublicationSteps('received', 'a', [3, 4]),
@@ -646,8 +649,74 @@ describe('ALM ordered subscription entry conformance', () => {
             { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
             { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
         ]);
-        expect(findStep(receiver, 'revoke-delta-margin')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
+        expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
+        expect(findStep(requireRoleRecipe(scenario, 'sibling'), 'subscribe-delta-margin'))
+            .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
     });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'subscription-ordered-omission: every page the revoke must reach waits for its applied revision after its cue or its own write instead of a fixed pause over %s',
+        (carrier) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+            const pagesAfterRevoke = [
+                { role: 'receiver', after: 'revoke-sender-s' },
+                { role: 'sender', after: 'cue-revoked-received' },
+                { role: 'publisher-b', after: 'cue-revoked-received' }
+            ] as const;
+
+            for (const { role, after } of pagesAfterRevoke) {
+                const recipe = requireRoleRecipe(scenario, role);
+                const names = toStepNames(recipe);
+                const head = `{resultCache.${recipe.recipeId}-revoke-head-read.value.body.causalRevision`;
+
+                expect(names.indexOf(after), `${carrier} ${role}`).toBeGreaterThan(-1);
+                expect(names.slice(names.indexOf(after) + 1, names.indexOf(after) + 3), `${carrier} ${role}`)
+                    .toEqual(['revoke-head-read', 'revoke-head-applied']);
+                expect(findStep(recipe, 'revoke-head-read'), `${carrier} ${role}`).toMatchObject({
+                    kind: 'http.request',
+                    request: { method: 'GET' },
+                    timeoutMs: 5_000
+                });
+                expect(findStep(recipe, 'revoke-head-applied'), `${carrier} ${role}`).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadFields: { 'data.change': 'held', 'data.groupRef.groupId': 'room-alm' },
+                        payloadMinimums: {
+                            'data.groupRevision': `${head}.groupRevision}`,
+                            'data.presenceRevision': `${head}.presenceRevision}`
+                        },
+                        sinceCommandIdPrefix: `${recipe.recipeId}-`
+                    },
+                    timeoutMs: 30_000
+                });
+                expect(findStep(recipe, 'revoke-head-applied'), `${carrier} ${role}`).not.toHaveProperty('absent');
+            }
+            expect(toStepNames(requireRoleRecipe(scenario, 'sibling'))).not.toContain('revoke-head-read');
+        }
+    );
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'a grant change keeps its fixed pause where the receiver, which a copy must find current, has no cue or write of its own after it, over %s',
+        (carrier) => {
+            const kept = [
+                ['subscription-ordered-entry', 'sibling', 'subscribe-delta-margin'],
+                ['subscription-ordered-omission', 'sibling', 'subscribe-delta-margin']
+            ] as const;
+            for (const [scenarioId, role, pause] of kept) {
+                const scenario = findOrderedScenario(carrier, scenarioId);
+                expect(findStep(requireRoleRecipe(scenario, role), pause), `${carrier} ${scenarioId}`)
+                    .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
+                expect(
+                    toStepNames(requireRoleRecipe(scenario, 'receiver')).filter((name) => name.includes('cue-entered') || name.includes('cue-resubscribed')),
+                    `${carrier} ${scenarioId}`
+                )
+                    .toEqual([]);
+            }
+            const reconnect = findBarrieredReconnectScenario(carrier);
+            expect(toContinuationStepNames(reconnect)).toContain('reentered-delta-margin');
+        }
+    );
 
     it.each(
         [

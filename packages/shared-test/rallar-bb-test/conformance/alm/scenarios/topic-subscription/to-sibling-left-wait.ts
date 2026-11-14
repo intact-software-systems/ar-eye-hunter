@@ -4,6 +4,7 @@ import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-def
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toAlmCellBarrierCommandId } from '../../cell/to-alm-cell-barrier.ts';
 import { toAlmCellCommandPrefix } from '../../cell/to-alm-cell-command-prefix.ts';
+import { toHeldGroupAppliedMatch } from '../../cell/to-held-group-applied-match.ts';
 import { SUBSCRIPTION_PHASE_MS } from '../../granted-topic/subscription-phase-budgets.ts';
 
 /**
@@ -14,20 +15,11 @@ import { SUBSCRIPTION_PHASE_MS } from '../../granted-topic/subscription-phase-bu
  * out, so a hosted manifest for this cell must carry an `armed` barrier.
  */
 export function toSiblingLeftWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
-    const group = step.input.group;
     return {
         kind: 'wait',
         commandId: toCommandId(step, 'sibling-left'),
         match: {
-            kind: 'diagnostic',
-            topic: 'rallar.browser.group_state.applied',
-            payloadFields: {
-                'data.change': 'held',
-                'data.groupRef.applicationId': group.applicationId,
-                'data.groupRef.workspaceId': group.workspaceId,
-                'data.groupRef.groupId': group.groupId,
-                'data.activeSessionCount': step.roles.length - 1
-            },
+            ...toHeldGroupAppliedMatch(step, { 'data.activeSessionCount': step.roles.length - 1 }),
             sinceCommandIdPrefix: toAlmCellBarrierCommandId({
                 cellPrefix: toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey),
                 role: step.role,

@@ -478,6 +478,40 @@ describe('the granted rtc cells', () => {
         }
     );
 
+    it.each(['rtc', 'rtc-with-ws-fallback'] as const)(
+        'granted-rtc-revoked-publisher: every page the revoke must reach waits for its applied revision after its cue instead of a fixed pause over %s',
+        (carrier) => {
+            const { sender, receiver } = toGrantedRtcScenarioOver('granted-rtc-revoked-publisher', carrier);
+            const names = toFlatCommands(sender).map((command) => (command.commandId ?? '').replace(`${sender?.recipeId}-`, ''));
+            const head = `{resultCache.${sender?.recipeId}-revoke-head-read.value.body.causalRevision`;
+
+            expect(names.indexOf('cue-revoked-received')).toBeGreaterThan(-1);
+            expect(names.slice(names.indexOf('cue-revoked-received') + 1, names.indexOf('cue-revoked-received') + 3))
+                .toEqual(['revoke-head-read', 'revoke-head-applied']);
+            expect(names.indexOf('revoke-head-applied')).toBeLessThan(names.findIndex((name) => name.startsWith('publication-2-')));
+            expect(toFlatCommands(sender).find((command) => command.commandId === `${sender?.recipeId}-revoke-head-read`))
+                .toMatchObject({ kind: 'http.request', request: { method: 'GET' } });
+            expect(toFlatCommands(sender).find((command) => command.commandId === `${sender?.recipeId}-revoke-head-applied`))
+                .toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadMinimums: {
+                            'data.groupRevision': `${head}.groupRevision}`,
+                            'data.presenceRevision': `${head}.presenceRevision}`
+                        }
+                    },
+                    timeoutMs: 30_000
+                });
+            for (const recipe of [sender, receiver]) {
+                expect(toFlatCommands(recipe).some((command) => command.commandId?.endsWith('-revoke-delta-margin')), recipe?.recipeId)
+                    .toBe(false);
+            }
+            // The receiver wrote the revoke, and nothing it judges waits on its own page's snapshot.
+            expect(toFlatCommands(receiver).some((command) => command.commandId?.includes('-revoke-head-'))).toBe(false);
+        }
+    );
+
     it('reshapes the room into a path before the sender publishes, and proves the publisher-only member never delivers', () => {
         const { sender, receiver, recipientB } = toGrantedRtcScenario('granted-rtc-relay-only');
         const topology = toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'));

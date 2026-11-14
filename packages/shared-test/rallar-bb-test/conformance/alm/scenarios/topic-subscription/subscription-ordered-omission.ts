@@ -7,6 +7,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
@@ -74,6 +75,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
         toCueWait(producer, 'revoked'),
+        ...toGrantAppliedHeadCommands(producer, 'revoke-head'),
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
         toCueWait(producer, 'resubscribed'),
@@ -82,7 +84,10 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
     ];
 }
 
-/** Each grant change waits for both producers' loops before it, and its delta reaches the pages before its cue. */
+/**
+ * Each grant change waits for both producers' loops before it. The revoke's delta reaches the receiver, which wrote it,
+ * before its cue, and each producer, which reads the room's head after that cue, before it publishes `p3`.
+ */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
@@ -97,7 +102,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             publish: false,
             subscribe: true
         }),
-        toPauseCommand(owner, 'revoke-delta-margin', GRANT_DELTA_MARGIN_MS),
+        ...toGrantAppliedHeadCommands(owner, 'revoke-head'),
         ...toCueSendCommands(owner, 'revoked'),
         ...toOrderedArrivalWaits(owner, [3, 4]),
         ...toOrderedConfirmedCueWaits(owner, 4),
