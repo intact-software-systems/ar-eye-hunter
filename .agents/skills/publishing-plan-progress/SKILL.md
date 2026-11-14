@@ -22,8 +22,10 @@ into a second implementation lifecycle.
    lists, progress records, or machine metadata fences. A written multi-slice spec, when one is
    useful, lives at `plans/active/<topic>.md` as `plans/README.md` describes; it is not a status
    catalog, and the pull request remains the delivery record.
-5. Publish coherent reviewed slices without empty commits or shared governance-file updates. Continue
-   safe implementation without waiting for review.
+5. Publish coherent reviewed slices without empty commits or shared governance-file updates.
+   Keep the PR in draft during implementation. Draft CI runs governance and type checks; run focused
+   behavioural tests locally. Continue safe implementation without waiting for review, and batch
+   related fixes before pushing.
 
 The GitHub pull request is the remote delivery entity. Its current diff, checks, reviews,
 conversations, mergeability, and merged state are authoritative.
@@ -44,6 +46,18 @@ evidence.
 After affected validation is complete, run `npm run pr:delivery -- ready` once. It may mark the
 draft ready, but it arms native auto-merge only after GitHub reports approval. It never performs an
 immediate administrator merge.
+
+Marking ready starts the broad release handoff gate. Stay with the PR and monitor the new run using
+read-only status checks and bounded waits until the current candidate's required result succeeds,
+or a concrete blocker requires human input. `WAIT_CI` is ongoing work, not permission to declare
+completion. Do not repeatedly invoke `ready` while waiting. An earlier draft awaiting-handoff
+failure may still be visible while GitHub queues the ready-triggered run; inspect the new run
+before treating that old refusal as a regression.
+
+Classify failures before retrying. Rerun only the failed jobs for a confirmed transient failure.
+When code changes are needed, return to draft before pushing the revision batch, complete focused
+validation, and mark ready again. A push while ready still validates its new candidate. Only an
+explicit successful required result is verification; skipped checks and older revisions are not.
 
 - With an available reviewer, request native review. After approval, run `ready` once so GitHub can
   own the merge without more human governance.

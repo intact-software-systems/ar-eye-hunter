@@ -1,10 +1,11 @@
-import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
-import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
+import { requireRecord } from '@shared/api/exact-object-decoding.ts';
 import { toApiV1PublicConfiguration } from '../../../../apps/api-v1/src/configuration/to-api-v1-public-configuration.ts';
 
 const document = requireRecord(load(readFileSync('apps/api-v1/resources/api-v1-openapi.yaml', 'utf8')), 'OpenAPI');
@@ -12,14 +13,14 @@ const components = requireRecord(document.components, 'components');
 const schemas = requireRecord(components.schemas, 'schemas');
 
 it('publishes structurally valid JSON Schema constraints for every API component', () => {
-    const validator = new Ajv({ allErrors: true, unknownFormats: ['int64'] });
+    const validator = addFormats(new Ajv({ allErrors: true, strict: false, formats: { int64: true } }));
     const valid = validator.validateSchema({ definitions: schemas });
     expect(validator.errors).toBeNull();
     expect(valid).toBe(true);
 });
 
 it('accepts pending room admission and rejects an active membership without a joined stamp', () => {
-    const validate = new Ajv({ allErrors: true, unknownFormats: ['int64'] }).compile({
+    const validate = addFormats(new Ajv({ allErrors: true, strict: false, formats: { int64: true } })).compile({
         $ref: '#/components/schemas/GroupMember',
         components
     });
@@ -44,7 +45,7 @@ it('accepts pending room admission and rejects an active membership without a jo
 });
 
 it('accepts explicit null failure details while rejecting invalid non-null values', () => {
-    const validate = new Ajv({ allErrors: true, unknownFormats: ['int64'] }).compile({
+    const validate = addFormats(new Ajv({ allErrors: true, strict: false, formats: { int64: true } })).compile({
         $ref: '#/components/schemas/ApiMutationFailure',
         components
     });
@@ -64,7 +65,7 @@ it('accepts explicit null failure details while rejecting invalid non-null value
 });
 
 it('requires the replaced-layout overlap on the body api-v1 serves at /api/config', () => {
-    const validate = new Ajv({ allErrors: true, unknownFormats: ['int64'] }).compile({
+    const validate = addFormats(new Ajv({ allErrors: true, strict: false, formats: { int64: true } })).compile({
         $ref: '#/components/schemas/ApiConfig',
         components
     });

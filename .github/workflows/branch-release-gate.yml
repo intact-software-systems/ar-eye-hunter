@@ -7,6 +7,7 @@ on:
       - synchronize
       - reopened
       - ready_for_review
+      - converted_to_draft
       - labeled
       - unlabeled
 
@@ -25,9 +26,29 @@ jobs:
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
 
+  draft-checks:
+    name: Draft type checks
+    if: ${{ !cancelled() && github.event.pull_request.draft == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Check workspace and test types
+        run: npm run typecheck
+
   validation-evidence:
     name: Select validation evidence
     needs: governance-gate
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -43,7 +64,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Select same-PR validation evidence
         id: selection
         continue-on-error: true
@@ -100,6 +121,7 @@ jobs:
 
   game-changes:
     name: Detect game changes
+    if: ${{ !cancelled() && github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -127,7 +149,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/release-gate.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -142,7 +164,7 @@ jobs:
       - governance-gate
       - validation-evidence
       - game-changes
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' && needs.game-changes.outputs.run_games == 'true' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' && needs.game-changes.outputs.run_games == 'true' }}
     uses: ./.github/workflows/games-release-gate.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -154,7 +176,7 @@ jobs:
       - validation-evidence
       - game-changes
       - games-release-gate
-    if: ${{ always() }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     outputs:
@@ -181,7 +203,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/alm-conformance-observation.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -193,7 +215,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'broad' }}
     uses: ./.github/workflows/navigation-report-observation.yml
     with:
       candidate_ref: ${{ github.event.pull_request.head.sha }}
@@ -205,7 +227,7 @@ jobs:
       - validation-evidence
       - release-gate
       - games-release-result
-    if: ${{ !cancelled() && needs.release-gate.result == 'success' && needs.games-release-result.outputs.result != 'failure' && needs.validation-evidence.outputs.mode == 'broad' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.release-gate.result == 'success' && needs.games-release-result.outputs.result != 'failure' && needs.validation-evidence.outputs.mode == 'broad' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -215,7 +237,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Create validation evidence
         run: >-
           mkdir -p .artifacts/validation-evidence &&
@@ -242,7 +264,7 @@ jobs:
     needs:
       - governance-gate
       - validation-evidence
-    if: ${{ !cancelled() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'rtc-observation' }}
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.mode == 'rtc-observation' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -252,7 +274,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
       - uses: oven-sh/setup-bun@v2
@@ -271,7 +293,9 @@ jobs:
             if (!Array.isArray(paths) || paths.length === 0) {
               throw new Error("RTC observation selection must contain at least one archive");
             }
-            for (const path of paths) console.log(path);
+            for (const path of paths) {
+              console.log(path);
+            }
           ' \
             "$RTC_OBSERVATION_ARCHIVES_JSON" |
           while IFS= read -r archive_path; do
@@ -313,12 +337,21 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v7
+        if: ${{ github.event.pull_request.draft == false }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v7
+        if: ${{ github.event.pull_request.draft == false }}
         with:
-          node-version: 24
+          node-version: 26
+      - name: Await release handoff
+        if: ${{ github.event.pull_request.draft == true }}
+        run: |
+          echo 'Draft PR: release verification is awaiting handoff. Mark ready for review when the candidate is complete.' >> "$GITHUB_STEP_SUMMARY"
+          echo '::error::Release verification is awaiting handoff; mark this draft PR ready for review.'
+          exit 1
       - name: Conclude Branch Release Gate
+        if: ${{ github.event.pull_request.draft == false }}
         run: >-
           node scripts/validation-evidence.mjs conclude
           --governance-result "${{ needs.governance-gate.result }}"

@@ -25,8 +25,30 @@ another path, status tells the administrator to disable it on that PR first. `re
 an immediate or administrator merge.
 
 Check state comes only from the newest `Branch Release Gate result` on the current pull request
-revision. A missing result is pending; failures and pending states from unrelated or retired checks
-are report-only and do not create agent work.
+revision. A missing or unfinished result is pending. Only explicit success passes; skipped,
+neutral, and unrecognized completed outcomes fail closed. Failures and pending states from
+unrelated or retired checks are report-only and do not create agent work.
+
+## Draft development and release handoff
+
+Keep implementation and review-fix batches in draft. Draft updates run governance and workspace/test
+type checks; the agent runs focused behavioural tests for the changed code locally. Broad release
+suites, observations, and evidence selection/publication are not admitted in draft. The stable
+release result deliberately fails with an awaiting-handoff summary: a skipped required job would
+be treated as successful by GitHub.
+
+After implementation, focused validation, and review, invoke `ready` once. GitHub's
+`ready_for_review` event starts validation of the completed candidate. The command reports current
+state; it does not block until CI finishes. The agent must continue monitoring the new run with
+read-only status checks and bounded waits. Do not send a completion handoff while `WAIT_CI` remains.
+The preceding draft refusal can remain visible while GitHub queues the new run; inspect the
+ready-triggered run before treating that older result as an actionable test failure.
+
+Classify failed checks before changing code or rerunning jobs. For code fixes, return the PR to draft
+before pushing the revision batch, then mark ready again when complete. `converted_to_draft` cancels
+the superseded broad run. A push while still ready runs validation for the new candidate; earlier
+results do not approve it. Existing verified-content reuse and RTC observation policies remain
+unchanged for ready PRs. Review and merge permissions remain unchanged.
 
 ## Commands
 

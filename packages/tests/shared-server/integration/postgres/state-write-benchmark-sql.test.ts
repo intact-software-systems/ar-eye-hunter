@@ -10,6 +10,33 @@ import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgre
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
 describe('state-write benchmark PostgreSQL observations', () => {
+    postgresIt('writes Date parameters as UTC timestamps without losing exact text observations', async () => {
+        const sql = createStateWriteBenchmarkSql({
+            databaseUrl: requirePostgresDatabaseUrl(),
+            maxConnections: 1,
+            applicationName: 'state-write-date-parameter-test'
+        });
+        try {
+            const rows = await sql.begin(async (transaction) => {
+                await transaction`set local time zone 'America/New_York'`;
+                await transaction`create temporary table timestamp_parameters (
+                    observed timestamp(6) not null
+                ) on commit drop`;
+                await transaction`insert into timestamp_parameters values (${new Date('2026-11-13T00:30:12.123Z')})`;
+                await transaction`insert into timestamp_parameters values (${'2026-11-13 00:30:12.123456'})`;
+                return await transaction`select observed from timestamp_parameters order by observed`;
+            });
+
+            expect([...rows]).toEqual([
+                { observed: '2026-11-13 00:30:12.123' },
+                { observed: '2026-11-13 00:30:12.123456' }
+            ]);
+        }
+        finally {
+            await sql.end();
+        }
+    });
+
     postgresIt('preserves a microsecond timestamp through an exact conditional write', async () => {
         const sql = createStateWriteBenchmarkSql({
             databaseUrl: requirePostgresDatabaseUrl(),
