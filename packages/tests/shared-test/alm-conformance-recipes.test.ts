@@ -395,21 +395,49 @@ function isTerminalObserve(command: RallarBlackBoxTestCommand, handleId: string)
         command.state.every((state) => state === 'acknowledged' || state === 'expired');
 }
 
+/** A receipt read, the send it reads, and the assertions on its recipient lists, on one carrier. */
+interface ReceiptListRead {
+    readonly carrier: AlmConformanceCarrier;
+    readonly handleId: string;
+    readonly sendId: string;
+    readonly listAssertions: readonly RallarBlackBoxTestAssertCommand[];
+}
+
 /**
- * The origin committed the control that confirms a recipient of the send: over ws the server's `complete` receipt,
- * whose `admitted` receipt arrives first, and over an rtc leg a recipient's ACK.
+ * The origin committed the control that confirms recipients of the send, as many as the read's assertions require: over
+ * ws the server's `complete` receipt, whose `admitted` receipt arrives first and which confirms the whole audience, and
+ * over an rtc leg a recipient's ACK, which confirms that recipient alone, so it settles a read that requires at most one
+ * confirmed recipient.
  */
-function isRecipientConfirmationWait(
-    command: RallarBlackBoxTestCommand,
-    sendId: string,
-    carrier: AlmConformanceCarrier
-): boolean {
-    const answered = `"targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`;
-    const confirmation = carrier === 'ws'
+function isRecipientConfirmationWait(command: RallarBlackBoxTestCommand, read: ReceiptListRead): boolean {
+    const answered = `"targetMsgId":"{resultCache.${read.sendId}.value.msgId}","outcome":"committed"`;
+    const confirmation = read.carrier === 'ws'
         ? `"typeId":"${AL_CONTROL_RECEIPT_TYPE_ID}",${answered},"reason":"none","phase":"complete"`
         : `"typeId":"${AL_CONTROL_ACK_TYPE_ID}",${answered}`;
-    return command.kind === 'wait' && command.absent !== true && command.match.kind === 'diagnostic' &&
+    const confirmsEnough = read.carrier === 'ws' || toRequiredConfirmations(read.listAssertions) <= 1;
+    return confirmsEnough && command.kind === 'wait' && command.absent !== true && command.match.kind === 'diagnostic' &&
         command.match.contains?.includes(confirmation) === true;
+}
+
+/** The floor the assertions set on a confirmed list's length: `equals` and `gte` at their value, `gt` above it. */
+function toRequiredConfirmations(listAssertions: readonly RallarBlackBoxTestAssertCommand[]): number {
+    return Math.max(
+        0,
+        ...listAssertions
+            .filter((assertion) => assertion.source.endsWith('.confirmedRecipientPeerIds.length'))
+            .map(({ operator, expected }) =>
+                typeof expected !== 'number' ? 0 : operator === 'gt'
+                    ? expected + 1
+                    : operator === 'equals' || operator === 'gte'
+                    ? expected
+                    : 0
+            )
+    );
+}
+
+/** A terminal observe of the read's handle, or the committed confirmation of as many recipients as the read requires. */
+function settlesReceiptListRead(command: RallarBlackBoxTestCommand, read: ReceiptListRead): boolean {
+    return isTerminalObserve(command, read.handleId) || isRecipientConfirmationWait(command, read);
 }
 
 describe('alm-conformance recipe family', () => {
@@ -1098,22 +1126,21 @@ describe('alm-conformance recipe family', () => {
     it.each(ALM_CONFORMANCE_CARRIERS)(
         'reads a receipt whose recipient lists a role asserts only after an event that settles them over %s: a terminal observe of the handle, or the committed admission of the control that confirms recipients of its send',
         (carrier) => {
-            const settles = (command: RallarBlackBoxTestCommand, handleId: string, sendId: string) =>
-                isTerminalObserve(command, handleId) || isRecipientConfirmationWait(command, sendId, carrier);
             const recipes = toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)));
             const listReads = recipes.flatMap((recipe) => {
                 const commands = toNestedCommands(recipe.commands);
                 return commands.flatMap((read, readIndex) => {
-                    const asserted = (command: RallarBlackBoxTestCommand) =>
+                    const listAssertions = commands.filter((command): command is RallarBlackBoxTestAssertCommand =>
                         command.kind === 'assert' && command.source.startsWith(`resultCache.${read.commandId}.value.`) &&
-                        command.source.includes('RecipientPeerIds');
-                    if (read.kind !== 'messages.receipts' || !commands.some(asserted)) {
+                        command.source.includes('RecipientPeerIds')
+                    );
+                    if (read.kind !== 'messages.receipts' || listAssertions.length === 0) {
                         return [];
                     }
                     const sendIndex = commands.findIndex((command) => isRallarBlackBoxTestMessagesSendCommand(command) && command.handleId === read.handleId);
-                    const sendId = commands[sendIndex]?.commandId ?? '';
+                    const listRead = { carrier, handleId: read.handleId, sendId: commands[sendIndex]?.commandId ?? '', listAssertions };
                     const settled = sendIndex >= 0 &&
-                        commands.slice(sendIndex + 1, readIndex).some((command) => settles(command, read.handleId, sendId));
+                        commands.slice(sendIndex + 1, readIndex).some((command) => settlesReceiptListRead(command, listRead));
                     return [[read.commandId, settled] as const];
                 });
             });
@@ -1121,6 +1148,39 @@ describe('alm-conformance recipe family', () => {
             expect(listReads.filter(([, settled]) => !settled).map(([commandId]) => commandId)).toEqual([]);
         }
     );
+
+    it('counts one recipient\'s committed ACK as settling a read that requires at most one confirmed recipient, and the server\'s complete receipt as settling any', () => {
+        const confirmedAtLeast = (expected: number): RallarBlackBoxTestAssertCommand => ({
+            kind: 'assert',
+            commandId: 'assert-confirmed',
+            source: 'resultCache.read.value.confirmedRecipientPeerIds.length',
+            operator: 'gte',
+            expected
+        });
+        const committed = (typeId: string, phase: string): RallarBlackBoxTestWaitCommand => ({
+            kind: 'wait',
+            commandId: 'confirmation',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound',
+                contains: `"typeId":"${typeId}","targetMsgId":"{resultCache.send.value.msgId}","outcome":"committed"${phase}`
+            },
+            timeoutMs: 1_000
+        });
+        const ack = committed(AL_CONTROL_ACK_TYPE_ID, '');
+        const receipt = committed(AL_CONTROL_RECEIPT_TYPE_ID, ',"reason":"none","phase":"complete"');
+        const read = (carrier: AlmConformanceCarrier, expected: number) => ({
+            carrier,
+            handleId: 'handle',
+            sendId: 'send',
+            listAssertions: [confirmedAtLeast(expected)]
+        });
+
+        expect(settlesReceiptListRead(ack, read('rtc', 1))).toBe(true);
+        expect(settlesReceiptListRead(ack, read('rtc', 2))).toBe(false);
+        expect(settlesReceiptListRead(ack, read('rtc-with-ws-fallback', 2))).toBe(false);
+        expect(settlesReceiptListRead(receipt, read('ws', 2))).toBe(true);
+    });
 
     describe('receipted-audience scenarios (three agents)', () => {
         const receiptedOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) => {

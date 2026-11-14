@@ -1,5 +1,4 @@
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
-import { toVerdictCommands } from '../../alm-conformance-message-commands.ts';
 import {
     toAudienceSendCommands,
     toReceiptWindowCommands,
@@ -28,7 +27,8 @@ const BOTH_CONFIRMED: AlmConformanceReceiptRoles = {
  * Recipient-b, once it has received it, claims the same resource from its own session while the sender's claim lives:
  * the trusted server NACKs it `held-by-other` and nobody receives it, which the receiver's second window and the
  * sender's own window prove. Recipient-b's closing window keeps its page until its ACK of the sender's claim has left.
- * The WS route's facts are read on the observe of the acknowledged handle that already orders the receipt read.
+ * The WS route's facts are the receipt window's ending facts, read on the observe of the acknowledged handle that
+ * orders the receipt read.
  */
 export const claimFirstWins: AlmConformanceScenarioDefinition = {
     scenarioId: 'claim-first-wins',
@@ -46,8 +46,12 @@ export const claimFirstWins: AlmConformanceScenarioDefinition = {
             claim: toClaim(sender)
         }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' }),
-        ...toVerdictCommands(sender, 'acknowledged', WS_ROUTE_FACTS).filter(({ kind }) => kind === 'assert')
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: WS_ROUTE_FACTS
+        })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toSingleArrivalReceiverCommands(recipient) : [

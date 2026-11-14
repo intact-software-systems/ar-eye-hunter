@@ -49,7 +49,7 @@ export interface ResultFactInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly source: string;
-    readonly operator: 'equals' | 'notEquals' | 'length' | 'exists' | 'matches';
+    readonly operator: 'equals' | 'notEquals' | 'length' | 'exists' | 'matches' | 'matchesShape';
     readonly expected: ApiJsonValue;
     readonly timeoutMs: number;
 }

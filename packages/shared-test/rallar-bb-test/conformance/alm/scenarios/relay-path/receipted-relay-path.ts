@@ -103,7 +103,12 @@ function toRelayPathOriginCommands(origin: AlmConformanceStepInput): readonly Ra
         toReceivedCommand({ ...origin, index: 1, count: 1, absent: false }),
         toOverlayNextHopsCommand(origin),
         toOriginSelfAbsenceCommand(origin),
-        ...toReceiptReadCommands(origin, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptReadCommands(origin, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ];
 }
 

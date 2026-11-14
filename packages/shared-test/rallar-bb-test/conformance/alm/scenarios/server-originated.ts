@@ -26,7 +26,7 @@ import {
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
 import { ALM_ADMIN_REALTIME_PATH } from '../identity/assess-alm-server-originated-identity.ts';
-import { toPollCommand, toPollResult } from '../poll/alm-conformance-poll-commands.ts';
+import { toReadPollCommand } from '../poll/alm-conformance-poll-commands.ts';
 
 /** The server's group-state deltas reach a page over WS only. */
 const SERVER_ORIGINATED_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -82,26 +82,18 @@ function toServerOriginatedReceiverCommands(
 }
 
 function toAdminReceiptRecordedPollCommand(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
-    const readName = `${ADMIN_RECEIPT_RECORDED}-${READ_ADMIN_REALTIME}`;
-    const childId = toCommandId(receiver, readName);
-    return toPollCommand({
+    return toReadPollCommand({
         step: receiver,
         name: ADMIN_RECEIPT_RECORDED,
         phaseMs: CONNECT_READINESS_TIMEOUT_MS,
         commandTimeoutMs: MESSAGE_CONTROL_TIMEOUT_MS,
-        commands: [
-            toAdminRealtimeReadCommand(receiver, readName),
-            {
-                kind: 'assert',
-                commandId: toCommandId(receiver, `assert-${ADMIN_RECEIPT_RECORDED}`),
-                source: `${
-                    toPollResult({ step: receiver, name: ADMIN_RECEIPT_RECORDED, index: 1, childId })
-                }.${ADMIN_RECEIPT_FIELD}`,
-                operator: 'matchesShape',
-                expected: toAcknowledgedEntryShape(receiver),
-                timeoutMs: MESSAGE_CONTROL_TIMEOUT_MS
-            }
-        ]
+        reads: [{ name: READ_ADMIN_REALTIME, read: (readName) => toAdminRealtimeReadCommand(receiver, readName) }],
+        facts: [{
+            name: ADMIN_RECEIPT_RECORDED,
+            source: { read: READ_ADMIN_REALTIME, field: ADMIN_RECEIPT_FIELD },
+            operator: 'matchesShape',
+            expected: toAcknowledgedEntryShape(receiver)
+        }]
     });
 }
 

@@ -41,7 +41,8 @@ function toDeliveryBaselineSenderCommands(
         ...toReceiptReadCommands(sender, {
             roles: { confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] },
             ending: 'acknowledged',
-            mode: 'receiver'
+            mode: 'receiver',
+            endingFacts: []
         }),
         toStorageCountersCommand(sender, 'storage-counters', false)
     ];

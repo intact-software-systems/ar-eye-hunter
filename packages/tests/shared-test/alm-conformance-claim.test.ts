@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { toReceiptReadCommands } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-receipt-commands.ts';
+import type { AlmConformanceStepInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -292,6 +294,37 @@ describe('claim-first-wins', () => {
                 .toEqual([false, false, false, false, false, false, false]);
         }
     );
+
+    it('reads the receipt window\'s ending facts on the observe that orders its receipt read, after the receipt\'s own assertions', () => {
+        const sender: AlmConformanceStepInput = {
+            input: toConformanceInput('ws'),
+            scenarioId: 'claim-first-wins',
+            scenarioKey: 'claim-first-wins',
+            role: 'sender',
+            roles: ['sender', 'receiver', 'recipient-b'],
+            messages: {},
+            connect: undefined
+        };
+        const commands = toReceiptReadCommands(sender, {
+            roles: { confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] },
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: [['one-attempt', 'attempts', 'equals', 1]]
+        });
+        const prefix = 'alm-ws-claim-first-wins-sender-';
+
+        expect(commands.map((command) => (command.commandId ?? '').replace(prefix, ''))).toEqual([
+            ...RECEIPT_READ,
+            'assert-one-attempt-1'
+        ]);
+        expect(commands.filter((command) => command.kind === 'messages.observe')).toHaveLength(1);
+        expect(commands.at(-1)).toMatchObject({
+            kind: 'assert',
+            source: `resultCache.${prefix}observe-acknowledged-1.value.attempts`,
+            operator: 'equals',
+            expected: 1
+        });
+    });
 
     it('has the receiver receive the sender\'s claim once and no second copy through its window', () => {
         const receiver = findScenario('ws', 'claim-first-wins').receiver;

@@ -1,9 +1,11 @@
 import { NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { toVerdictCommands } from '../../alm-conformance-message-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conformance-scenario-definition.ts';
-import { toClaimRouteCommands, toClaimSendCommand } from './claim-commands.ts';
+import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
+import { toClaimSendCommand } from './claim-commands.ts';
 
 /** No server stands on the RTC path to arbitrate a claim; under the fallback strategy the browser routes it to WS. */
 const CLAIM_REFUSED_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc'];
@@ -21,7 +23,7 @@ export const claimRefusedOnRtc: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     toSenderCommands: (sender) => [
         toClaimSendCommand(sender, NON_EXPIRING_TTL_MS),
-        ...toClaimRouteCommands(sender)
+        ...toVerdictCommands(sender, 'rejected', toRtcRefusalFacts('unsupported'))
     ],
     toRecipientCommands: (recipient) => [toReceivedCommand({ ...recipient, index: 1, count: 1, absent: true })]
 };

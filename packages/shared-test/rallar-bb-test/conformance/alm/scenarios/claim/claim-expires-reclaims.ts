@@ -74,7 +74,8 @@ function toReclaimCommands(reclaimer: AlmConformanceStepInput): readonly RallarB
         ...toReceiptReadCommands(reclaimer, {
             roles: SENDER_AND_RECEIVER_CONFIRMED,
             ending: 'acknowledged',
-            mode: 'receiver'
+            mode: 'receiver',
+            endingFacts: []
         })
     ];
 }

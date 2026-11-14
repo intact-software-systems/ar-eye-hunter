@@ -96,7 +96,12 @@ const aggregatedReceipt: AlmConformanceScenarioDefinition = {
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'all-logical-recipients' }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: toSingleArrivalReceiverCommands
 };
@@ -124,7 +129,8 @@ const missingRecipientRetry: AlmConformanceScenarioDefinition = {
         ...toReceiptWindowCommands(sender, {
             roles: toRetryReceiptRoles(sender.input.carrier),
             ending: sender.input.carrier === 'ws' ? 'expired' : 'acknowledged',
-            mode: 'receiver'
+            mode: 'receiver',
+            endingFacts: []
         })
     ],
     toRecipientCommands: toRetryRecipientCommands
@@ -145,7 +151,12 @@ const frozenAudienceMembership: AlmConformanceScenarioDefinition = {
     toReceiptRoles: () => RECIPIENT_B_UNCONFIRMED,
     toSenderCommands: (sender) => [
         ...toAudienceSendCommands({ sender, ttlMs: EXPIRY_TTL_MS, ack: 'all-logical-recipients' }),
-        ...toReceiptWindowCommands(sender, { roles: RECIPIENT_B_UNCONFIRMED, ending: 'expired', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: RECIPIENT_B_UNCONFIRMED,
+            ending: 'expired',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: toMembershipRecipientCommands
 };
@@ -177,7 +188,12 @@ const unknownAckVersion: AlmConformanceScenarioDefinition = {
             contains: '"carrier":"rtc","outcome":"rejected","reason":"unsupported"',
             timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
         }),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: toUnknownAckVersionRecipientCommands
 };
@@ -204,7 +220,12 @@ export const unsignedAckRefused: AlmConformanceScenarioDefinition = {
             controlTypeId: AL_CONTROL_ACK_TYPE_ID,
             proofRefusal: 'missing-proof'
         }),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: toUnsignedAckRecipientCommands
 };
@@ -422,7 +443,12 @@ function toForgedAckSenderCommands(sender: AlmConformanceStepInput): readonly Ra
         toMidWindowAssertion('unconfirmedRecipientPeerIds.length', 'gte', 1),
         toMidWindowAssertion('confirmedRecipientPeerIds.length', 'lte', 1),
         ...toCueSendCommands(cue, 'release'),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ];
 }
 

@@ -37,7 +37,12 @@ export const fixedListDelivery: AlmConformanceScenarioDefinition = {
             audience: { recipientPeers: ['receiver'] }
         }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: RECEIVER_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
