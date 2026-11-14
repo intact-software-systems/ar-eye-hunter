@@ -356,7 +356,7 @@ export function removePlannedOverlayByIdIfIdentity(
 export function reconcileAcceptedOverlayIdentity(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
-    let changed = removeMismatchedAcceptedOverlay(input);
+    let changed = removeMismatchedAcceptedOverlayAndRecordTransition(input);
     if (input.acceptedIdentity === undefined) {
         return changed;
     }
@@ -599,7 +599,7 @@ function reportOverlayDrop(
  * Removes an accepted layout the group snapshot no longer names. When the snapshot names a live layout that dominates
  * it, the removal records the replacement the arrival of that layout completes; otherwise it clears the history.
  */
-function removeMismatchedAcceptedOverlay(
+function removeMismatchedAcceptedOverlayAndRecordTransition(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
     const repository = requireObservableLatestRepository(acceptedOverlayRepositoryToken, input.manager);
@@ -612,7 +612,7 @@ function removeMismatchedAcceptedOverlay(
         overlayId: input.overlayId,
         held,
         recorded,
-        taker: toSnapshotAcceptedLayoutTaker(input),
+        taker: resolveSnapshotAcceptedLayoutTaker(input),
         nowEpochMs: readOverlayRepositoryNow(input.manager),
         manager: input.manager
     };
@@ -621,7 +621,7 @@ function removeMismatchedAcceptedOverlay(
     return removed;
 }
 
-function toSnapshotAcceptedLayoutTaker(input: ReconcileAcceptedOverlayIdentityInput): AcceptedLayoutTaker | null {
+function resolveSnapshotAcceptedLayoutTaker(input: ReconcileAcceptedOverlayIdentityInput): AcceptedLayoutTaker | null {
     return input.acceptedIdentity?.state === 'active'
         ? { roomRef: input.roomRef, identity: input.acceptedIdentity }
         : null;
