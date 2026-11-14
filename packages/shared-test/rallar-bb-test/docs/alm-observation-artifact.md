@@ -84,12 +84,16 @@ records what the runner was doing while the cell ran:
 
 - `cellOrder` — `{ mode, seed, rooms, scenarioKeys }`: how the family's cells ran, as the lane plan
   ([`conformance/alm/lane/resolve-alm-lane-plan.ts`](../conformance/alm/lane/resolve-alm-lane-plan.ts))
-  decided it from `RALLAR_BLACK_BOX_ALM_ORDER`, `_SEED`, `_ROOMS` and `_ONLY`. `mode` is `declared`
+  decided it from `RALLAR_BLACK_BOX_ALM_ORDER`, `_SEED`, `_ROOMS`, `_ONLY` and `_SKIP`, which compose in one way:
+  `_SKIP` wins over `_ONLY`, `_ONLY` keeps cells within `_SCOPE` and `_CARRIERS` (a named key no selected plan runs
+  is refused with the reason), and `_SEED` is accepted only with `shuffled`. `mode` is `declared`
   (the catalog order) or `shuffled`; `seed` is the seed a shuffled family used, given or minted, and
   `null` for `declared`; `rooms` is `family` (one room for the family) or `cell` (a room of its own
   per cell, every connection closed after it) as the family ran it: a four-role family always reads
   `cell` and a same-context family `family`, whatever was asked; `scenarioKeys` lists the cells in
-  the order they ran. The same seed gives the same order of the same cells on every machine, so
+  the order they ran. In a room the family shares, a cell that reshapes the room's topology (its definition
+  declares `roomTopology: 'reshaped'`) runs after every cell that keeps it; a shuffle permutes within the two
+  groups. The same seed gives the same order of the same cells on every machine, so
   `RALLAR_BLACK_BOX_ALM_ORDER=shuffled RALLAR_BLACK_BOX_ALM_SEED=<seed>` replays a family. The lane
   prints the plan (`ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…`)
   before the family's first cell, and the job-log line ends in `order=… seed=… rooms=…`

@@ -11,14 +11,15 @@ import { resolveAlmLaneCellOrder } from './resolve-alm-lane-cell-order.ts';
 export interface ResolveAlmLanePlanInput {
     readonly family: AlmConformanceLaneFamily;
     /** The family's catalog cells on the run's carrier, in declared order. */
-    readonly scenarios: readonly Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags'>[];
+    readonly scenarios: readonly AlmLanePlanCell[];
     readonly scope: AlmConformanceTag;
-    /** Withheld by a recorded ruling: such a cell never runs, even when `only` names it. */
-    readonly skippedScenarioIds: readonly string[];
+    /** A cell whose id `skip` names never runs, even when `only` names its key. */
     readonly parameters: AlmLaneParameters;
     /** Called once, for a shuffled order that names no seed. */
     readonly mintSeed: () => number;
 }
+
+type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey' | 'tags' | 'roomTopology'>;
 
 export interface AlmLanePlannedCell {
     readonly scenarioKey: string;
@@ -46,13 +47,15 @@ export interface AlmLanePlan {
  * Which cells of a family run, in which order, in which room, and whether every connection closes after each. A
  * four-role cell always runs in a room of its own: a connect to an unchanged room reuses the open connection without a
  * join, so a sibling whose dropped socket closed its presence would carry it into the next cell. Same-context cells
- * chain one session from page to page, so they never get a room of their own.
+ * chain one session from page to page, so they never get a room of their own. In a room the family shares, every
+ * cell that reshapes the room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes
+ * within the two groups.
  */
 export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan {
     const { parameters } = input;
     const ordered = resolveAlmLaneCellOrder({
         scenarios: input.scenarios.filter((scenario) =>
-            scenario.tags.includes(input.scope) && !input.skippedScenarioIds.includes(scenario.scenarioId)
+            scenario.tags.includes(input.scope) && !parameters.skip.includes(scenario.scenarioId)
         ),
         order: parameters.order,
         seed: parameters.seed,
@@ -60,7 +63,8 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
         mintSeed: input.mintSeed
     });
     const rooms = resolveAlmLaneRooms(input.family, parameters.rooms);
-    const scenarioKeys = ordered.scenarios.map((scenario) => scenario.scenarioKey);
+    const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
+    const scenarioKeys = placed.map((scenario) => scenario.scenarioKey);
     return {
         cells: scenarioKeys.map((scenarioKey) => ({
             scenarioKey,
@@ -77,6 +81,13 @@ export function toAlmLaneCellGroup(
     cell: AlmLanePlannedCell
 ): RallarBlackBoxDistributedGroupRef {
     return cell.room === 'cell' ? { ...group, groupId: `${group.groupId}-${cell.scenarioKey}` } : group;
+}
+
+function toKeptTopologyFirst(scenarios: readonly AlmLanePlanCell[]): readonly AlmLanePlanCell[] {
+    return [
+        ...scenarios.filter((scenario) => scenario.roomTopology === 'kept'),
+        ...scenarios.filter((scenario) => scenario.roomTopology === 'reshaped')
+    ];
 }
 
 function resolveAlmLaneRooms(family: AlmConformanceLaneFamily, requested: AlmLaneRooms): AlmLaneRooms {

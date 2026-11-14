@@ -16,6 +16,7 @@ import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-relay-only',
     scenarioKey: 'granted-rtc-relay-only',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: GRANTED_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,

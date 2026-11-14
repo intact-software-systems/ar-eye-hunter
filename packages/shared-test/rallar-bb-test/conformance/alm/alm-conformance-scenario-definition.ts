@@ -130,6 +130,12 @@ export type AlmConformanceTag = 'smoke' | 'full';
 export type AlmConformanceOwnerEnd = 'close' | 'flush-and-crash';
 
 /**
+ * What a cell does to its room's topology: `kept` leaves the room's default, `reshaped` writes the room's topology config
+ * during the cell and resets it at the cell's end, so a cell that keeps the default must not follow it in a shared room.
+ */
+export type AlmConformanceRoomTopology = 'kept' | 'reshaped';
+
+/**
  * A connect's `RallarMessageSelector`, which this browser-loaded catalog cannot import: the topic its lanes subscribe.
  * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
  */
@@ -274,6 +280,11 @@ interface AlmConformanceScenarioCore {
     readonly successorGate?: AlmConformanceRecipeGate;
     /** Absent, the lane closes a same-context owner page; otherwise how it ends that page. */
     readonly ownerEnd?: AlmConformanceOwnerEnd;
+    /**
+     * Absent, the cell keeps its room's default topology. `reshaped` when a step writes the room's topology config: the
+     * lane plan then runs the cell after every cell that keeps it, in a room the family shares.
+     */
+    readonly roomTopology?: Extract<AlmConformanceRoomTopology, 'reshaped'>;
     /**
      * Absent when no receipt is judged against one role. Otherwise the role none of the sender's receipts may confirm,
      * which the lane reads from the sender recipe's metadata after the run.

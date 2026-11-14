@@ -46,6 +46,7 @@ import { toPathTopologyConfigCommand } from './to-path-topology-config-command.t
 export const receiptedRelayPath: AlmConformanceScenarioDefinition = {
     scenarioId: 'receipted-relay-path',
     scenarioKey: 'receipted-relay-path',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: ALM_CONFORMANCE_RTC_ALONE_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,

@@ -14,7 +14,7 @@ import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-t
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import {
     assessSubscriptionRevokeDisconnected,
-    readAlmUnconfirmedReceiptRole
+    toAlmUnconfirmedReceiptRole
 } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -1035,10 +1035,10 @@ describe('ALM ordered subscription reconnect conformance', () => {
     it('only the revoke-disconnected sender names the role none of its receipts may confirm', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             const named = createAlmConformanceRecipes(toConformanceInput(carrier))
-                .flatMap((scenario) => readAlmUnconfirmedReceiptRole(scenario.sender) === undefined ? [] : [scenario]);
+                .flatMap((scenario) => toAlmUnconfirmedReceiptRole(scenario.sender) === undefined ? [] : [scenario]);
 
             expect(named.map((scenario) => scenario.scenarioKey), carrier).toEqual(['subscription-revoke-disconnected']);
-            expect(readAlmUnconfirmedReceiptRole(named[0]!.sender), carrier).toBe('sibling');
+            expect(toAlmUnconfirmedReceiptRole(named[0]!.sender), carrier).toBe('sibling');
         }
     });
 

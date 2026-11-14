@@ -348,6 +348,31 @@ describe('ALM conformance recipe validation', () => {
         expect(findings).toEqual([]);
     });
 
+    // The lane plan runs a cell that reshapes its room after the other cells of a shared room; a cell that writes the
+    // room's topology config and does not say so would be shuffled in among them.
+    it('every cell that writes its room\'s topology config declares that it reshapes the room, and no other does', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                const writesTopology = toPageRecipes(scenario)
+                    .flatMap((recipe) => toNestedCommands(recipe.commands))
+                    .some((command) => command.kind === 'http.request' && command.request.path!.includes('/topology/config/'));
+
+                expect(scenario.roomTopology, `${carrier} ${scenario.scenarioKey}`).toBe(writesTopology ? 'reshaped' : 'kept');
+            }
+        }
+    });
+
+    // The lane keeps a cell of a scope when it carries the scope's tag, so the full scope runs a cell only if it is tagged.
+    it('every cell of the catalog carries the full tag', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const untagged = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .filter((scenario) => !scenario.tags.includes('full'))
+                .map((scenario) => scenario.scenarioKey);
+
+            expect(untagged, carrier).toEqual([]);
+        }
+    });
+
     it('accepts every command over the control protocol', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const recipe of toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)))) {

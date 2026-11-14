@@ -41,6 +41,7 @@ const PUBLICATIONS = [1, 2, 3] as const;
 export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-ordered-relay',
     scenarioKey: 'granted-rtc-ordered-relay',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: GRANTED_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,

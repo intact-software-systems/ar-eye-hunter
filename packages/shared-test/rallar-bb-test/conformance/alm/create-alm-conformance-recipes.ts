@@ -18,6 +18,7 @@ import type {
     AlmConformanceMessages,
     AlmConformanceOwnerEnd,
     AlmConformanceRecipeGate,
+    AlmConformanceRoomTopology,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
     AlmConformanceStepInput,
@@ -148,6 +149,8 @@ export interface AlmConformanceScenario {
     readonly successorGate: AlmConformanceScenarioGate | undefined;
     /** How the lane ends the owner page before its successor runs; undefined exactly when `roles` declares no successor. */
     readonly ownerEnd: AlmConformanceOwnerEnd | undefined;
+    /** Whether the cell reshapes its room's topology; the lane plan orders a shared room by it. */
+    readonly roomTopology: AlmConformanceRoomTopology;
     /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;
 }
@@ -198,8 +201,9 @@ const MINIMUM_DEADLINE_MS = MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS +
     RESPONSE_MARGIN_MS;
 
 /**
- * `volatileDefault` runs first on its pages, before any scenario leaves durable work there. The hosted
- * combined recipe hoists every `delivery-reload` ahead of it, so there it runs after durable work.
+ * `volatileDefault` is declared first. Its storage window opens with a reset, so only durable work an earlier cell
+ * left on a timer inside that window could count against its zero; a shuffled lane order or the hosted combined
+ * recipe, which hoists every `delivery-reload` ahead of it, may expose that.
  */
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     volatileDefault,
@@ -280,8 +284,6 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     grantedRtcListDelivered,
     grantedRtcListNonHolder,
     grantedRtcListLaneRoles,
-    // The room's three-agent cells share it, and these three reshape its topology until each one's own last step, so
-    // they close the list: no cell that keeps the room's default topology runs after them.
     receiptedRelayPath,
     grantedRtcRelayOnly,
     grantedRtcOrderedRelay
@@ -353,6 +355,7 @@ function toAlmConformanceScenario(
         partsByRole: Object.fromEntries([...cells].map(([role, cell]) => [role, cell.parts])),
         successorGate: undefined,
         ownerEnd: definition.roles.includes('successor') ? definition.ownerEnd ?? 'close' : undefined,
+        roomTopology: definition.roomTopology ?? 'kept',
         continuation: undefined
     };
     return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };

@@ -17,7 +17,7 @@ export interface SubscriptionRevokeDisconnectedEvidence {
 }
 
 /** The role none of the sender's receipts may confirm, as its recipe's metadata names it; undefined when none. */
-export function readAlmUnconfirmedReceiptRole(sender: RallarBlackBoxTestRecipe): AlmConformanceRole | undefined {
+export function toAlmUnconfirmedReceiptRole(sender: RallarBlackBoxTestRecipe): AlmConformanceRole | undefined {
     const role = sender.metadata?.almUnconfirmedReceiptRole;
     return typeof role === 'string' && isAlmConformanceRole(role) ? role : undefined;
 }
