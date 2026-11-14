@@ -26,7 +26,7 @@ interface HeldSignalFixture {
 
 const SELF = 'a-self';
 const LAYOUT_REASON = 'stage-layout-mismatch';
-const INITIALIZING_REASON = 'browser-runtime-initializing';
+const OTHER_REASON = 'other-hold-reason';
 const SIGNAL_TTL_MS = 60_000;
 
 let nativeRuntime: NativeRtcRuntime;
@@ -54,7 +54,7 @@ it('brings due the held signals the adopted layout now admits, once', async () =
 
 it('leaves a signal held for another reason, or still refused, to its own retry', async () => {
     const fixture = await createHeldSignalFixture();
-    fixture.refusalReasons.set('y-peer', INITIALIZING_REASON);
+    fixture.refusalReasons.set('y-peer', OTHER_REASON);
     await fixture.deliver(toSignalEnvelope('y-peer', 'offer-from-y'));
     const offer = toSignalEnvelope('z-peer', 'offer-from-z');
     await fixture.deliver(offer);
