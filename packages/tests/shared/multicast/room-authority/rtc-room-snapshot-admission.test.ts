@@ -386,10 +386,10 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         }
     });
 
-    // A stored forward re-planned at dispatch against a parent that is now only a planned-layout neighbour (a
-    // re-parented row's retried copy names its current parent) is held for the next eligibility read, as any
-    // not-yet-in-sync re-plan is, instead of completing unforwarded as an unauthorized re-plan does.
-    it('a stored forward re-planned against an awaited parent is held, where an unauthorized parent ends it', () => {
+    // The retry decision on a plan alone, not a stored, re-parented forward end to end: a plan against a parent that
+    // is now only a planned-layout neighbour is one the inbound runtime retries, as any not-yet-in-sync plan is, where
+    // a plan against an unauthorized parent is not retried.
+    it('a relayed plan against an awaited parent is one the inbound runtime retries, and one against an unauthorized parent is not', () => {
         expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned }))))
             .toBe(true);
         expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger' })))).toBe(false);

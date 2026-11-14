@@ -21,8 +21,9 @@ import {
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 /**
- * What a relay does with the copy it forwarded when its child answers not yet in sync, or never answers. These tests
- * document a known gap: a relay re-sends nothing to its child. A relay-side re-send would turn them red.
+ * What a relay does with the copy it forwarded when its child answers not yet in sync, or never answers. The NACK test
+ * and the never-answers test document a known gap: a relay re-sends nothing to its child, and a relay-side re-send
+ * would turn them red. The first test only pins the relay's row and receipt, and would stay green.
  */
 
 type ChildAnswer = 'awaits-layout-promotion' | 'awaits-room-snapshot' | 'never';
