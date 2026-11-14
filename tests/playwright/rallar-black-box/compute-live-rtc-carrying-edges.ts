@@ -25,6 +25,14 @@ export interface LiveRtcCarryingEdges {
      */
     readonly directSentMs: readonly [number, number] | null;
     readonly relayedSentMs: readonly [number, number] | null;
+    readonly bothSentMs: readonly [number, number] | null;
+    /** Every frame acknowledged to the direct hop at all, `direct` and `both`, by its original send time. */
+    readonly directOrBothSentMs: readonly [number, number] | null;
+    /**
+     * An observation: how long after the origin's promotion the first frame acknowledged to the direct hop was sent,
+     * which shows whether the replaced edge was still open right after the promotion.
+     */
+    readonly firstDirectSentMs: number | null;
 }
 
 export interface LiveRtcCarryingEdgesInput {
@@ -49,6 +57,9 @@ export function computeLiveRtcCarryingEdges(input: LiveRtcCarryingEdgesInput): L
         sentMs: frame.startedAtEpochMs - input.promotedAtEpochMs
     }));
     const count = (edge: CarryingEdge): number => classified.filter((frame) => frame.edge === edge).length;
+    const directOrBothSentMs = toSentRange(
+        classified.filter((frame) => frame.edge === 'direct' || frame.edge === 'both')
+    );
     return {
         origin: input.origin.prefix,
         receiver: input.receiver,
@@ -59,7 +70,10 @@ export function computeLiveRtcCarryingEdges(input: LiveRtcCarryingEdgesInput): L
         both: count('both'),
         unobserved: count('unobserved'),
         directSentMs: toSentRange(classified.filter((frame) => frame.edge === 'direct')),
-        relayedSentMs: toSentRange(classified.filter((frame) => frame.edge === 'relayed'))
+        relayedSentMs: toSentRange(classified.filter((frame) => frame.edge === 'relayed')),
+        bothSentMs: toSentRange(classified.filter((frame) => frame.edge === 'both')),
+        directOrBothSentMs,
+        firstDirectSentMs: directOrBothSentMs?.[0] ?? null
     };
 }
 

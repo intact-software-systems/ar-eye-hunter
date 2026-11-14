@@ -87,8 +87,8 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
     { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
 ];
 const REPORTED_RECORDS = 20;
-/** Ruling R11-6's allowance for the gap between the replacement instant and its `formation.changed` event. */
-const PROMOTION_EVENT_LAG_MS = 250;
+/** Ruling R11-6's slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
+const DIRECT_BOUND_SLACK_MS = 250;
 
 const formationOperations = createLiveRtcFormationOperations();
 const deliveryOperations = createLiveRtcDeliveryOperations({
@@ -586,7 +586,7 @@ function expectAcknowledgementPremise(run: LayoutSwitchRun): void {
 function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): void {
     const first = evidence.unauthorizedAdmissions.slice(0, REPORTED_RECORDS).map((refusal) => ({
         browser: refusal.agent,
-        message: refusal.typeId === MESSAGES_RTC.typeId ? 'frame' : 'control',
+        message: refusal.typeId === null ? 'unknown' : refusal.typeId === MESSAGES_RTC.typeId ? 'frame' : 'control',
         typeId: refusal.typeId,
         reason: refusal.detail.reason,
         msgId: refusal.detail.msgId
@@ -604,27 +604,32 @@ function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): v
  * A frame is planned at admission, which is after its send started, so a frame that started after the half cannot be
  * planned over the replaced layout; one that started just before can be admitted just after and then goes through
  * the relay, which the check allows. The send time and the promotion are both read on the origin's own page clock
- * (`startedAtEpochMs` of its stream, `atEpochMs` of its `formation.changed`); the allowance covers that event's lag
- * behind the replacement instant. A `both` frame is neither direct nor relayed here; it is counted in the message.
+ * (`startedAtEpochMs` of its stream, `atEpochMs` of its `formation.changed`). The replacement instant is recorded
+ * before the promotion event, so measuring from the event can only shorten the time; the bound holds without slack,
+ * and the 250 ms is slack for timestamp granularity. A `both` frame was acknowledged to each hop, so it counts as
+ * having used the replaced edge and as having used the relay, and the bound applies to it by its original send time.
+ * The tree window only (ruling R11-7) is checked for unacknowledged frames: the star window runs to the stream's last
+ * frame, whose acknowledgement event can race the end of the run, so there the count stays an observation.
  */
 function expectHandOver(run: LayoutSwitchRun): void {
     if (run.qos.ack === 'none') {
         return;
     }
-    const directBoundMs = Math.floor(run.servedOverlapMs / 2) + PROMOTION_EVENT_LAG_MS;
-    for (const edges of run.evidence.observations.carryingEdges) {
-        const path = `${edges.origin}'s frames to ${edges.receiver} on the ${edges.layout} ` +
+    const directBoundMs = Math.floor(run.servedOverlapMs / 2) + DIRECT_BOUND_SLACK_MS;
+    for (const edges of run.evidence.observations.carryingEdges.filter((entry) => entry.layout === 'tree')) {
+        const path = `${edges.origin}'s frames to ${edges.receiver} on the tree ` +
             `(${edges.direct} direct, ${edges.relayed} relayed, ${edges.both} both, ${edges.unobserved} unobserved)`;
-        expect.soft(edges.unobserved, `${path}: a received frame was never acknowledged to a hop`).toBe(0);
-        if (edges.layout === 'tree') {
-            expect.soft(edges.direct, `${path}: no frame used the replaced direct edge`).toBeGreaterThan(0);
-            expect.soft(edges.relayed, `${path}: no frame went through the relay`).toBeGreaterThan(0);
-            expect.soft(
-                edges.directSentMs?.[1] ?? 0,
-                `${path}: a frame sent ${edges.directSentMs?.[1]} ms after the promotion still used the replaced ` +
-                    `edge, past half the served overlap plus ${PROMOTION_EVENT_LAG_MS} ms (${directBoundMs} ms)`
-            ).toBeLessThanOrEqual(directBoundMs);
-        }
+        expect.soft(
+            edges.unobserved,
+            `${path}: a frame has no acknowledgement event: it was not delivered, or delivered and not acknowledged`
+        ).toBe(0);
+        expect.soft(edges.direct + edges.both, `${path}: no frame used the replaced direct edge`).toBeGreaterThan(0);
+        expect.soft(edges.relayed + edges.both, `${path}: no frame went through the relay`).toBeGreaterThan(0);
+        expect.soft(
+            edges.directOrBothSentMs?.[1] ?? 0,
+            `${path}: a frame sent ${edges.directOrBothSentMs?.[1]} ms after the promotion still used the replaced ` +
+                `edge, past half the served overlap plus ${DIRECT_BOUND_SLACK_MS} ms (${directBoundMs} ms)`
+        ).toBeLessThanOrEqual(directBoundMs);
     }
 }
 
