@@ -6821,8 +6821,8 @@ components:
           minLength: 1
           description: >-
             The peer id the WebSocket server answers as. A client addresses the server with a unicast to it and
-            tracks the server as its one hop by it. Every server since S3c-i serves it; a browser reads a body
-            without it as a server that predates the field and falls back (no hop receipt, app commands over REST).
+            tracks the server as its one hop by it. Every server since S3c-i serves it; a browser refuses a body
+            without it, as it refuses a body without `rtcReplacedLayoutOverlapMs`.
           example: default-qbox-server
         rtcReplacedLayoutOverlapMs:
           type: integer

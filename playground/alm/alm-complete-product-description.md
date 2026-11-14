@@ -200,7 +200,8 @@ Transport identity is authoritative at each immediate hop. RTC relays preserve
 the original `id.senderId`, so equality between that origin and the channel peer
 is not a valid relay check. A receiver authenticates the immediate peer and
 validates the declared origin, relay, recipient, and route against matching
-server-provided room authority. Diagnostics never grant authority. Browser WS
+server-provided room authority, which for the overlap the server states at
+connect also covers the layouts the accepted one replaced. Diagnostics never grant authority. Browser WS
 receives only server-validated envelopes, and server WS binds new senders to the
 authenticated connection or an explicitly authorized server/system identity.
 ACK/NACK/repair identities must agree with the envelope, target, transport peer,
@@ -524,7 +525,7 @@ and the RTC leg of `ws-then-rtc`, hold a durable send (a volatile one reads `no-
 `accepted`, states one `not-ready` attempt per claim, has no receipt row until copies are planned, and ends
 `expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps its ordinary
 admission (`deferred` while there is no room snapshot); only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
-overlay. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
+overlay and, for the first half of the overlap the server states at connect, over the layout the accepted one replaced. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
 that is explicitly foreign or inactive for the message's room, or the room authority's own refusal (an
 inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
 are correlated by `offerId` (D97), and a peer that reloads inside the overlay grace is redialled by the

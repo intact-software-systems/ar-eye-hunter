@@ -720,11 +720,6 @@ and it has no status list.
   (`plans/active/deno-to-bun-validation.md`), so a hosted measurement shares
   the API's machine with its load generator. A campaign needs the workers off
   it.
-- Make-before-break routing in the browser, where a new layout's edges open
-  before routing moves to them, is the complete fix for the RTT re-plan
-  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
-  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
-  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
 - At 50 agents the RTC delivery fails after the connect. With #813 merged,
   manifests 07 and 09 connect every agent and then fail on delivery: manifest
   07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
@@ -736,8 +731,9 @@ and it has no status list.
   to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
   refused frames from the old parent (`unauthorized`) and a switched relay
   stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
-  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
-  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  age defaults to 15 s, so a re-plan can land inside any longer stream. Make-before-break
+  routing in the browser (D645) is built for it; no hosted run has read it yet. It caps both
+  campaign rungs until one does (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
   `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`). Open: which
@@ -766,3 +762,29 @@ and it has no status list.
   the group manager they ask is built after the service: setter injection the
   code standard counts as construction debt. Building the policies before the
   service, or giving the service one required policies input, removes it.
+- Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
+  `not-yet-in-sync`. The outbound control admission accepts the NACK only from the frame's owner
+  (`validate-al-outbound-control-admission.ts`); the relay's timed retry re-plans through the originating
+  planner and finds no route; the origin's receipt keeps an unconfirmed hop and the relay records a false
+  `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing.
+- Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
+  layout's frame from an unauthorized one without a time window (study Family F). Later.
+- The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
+  rebuild, belong to the group dynamics damping plan (`plans/active/group-dynamics-damping.md`), in its own
+  pull request.
+- Relay forward observability gaps: a pending relayed forward that later ends refused is not reported; a forward
+  dropped on the inbound side (`planForwarding` returns undefined) is not reported; the `admission-outcome`
+  diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
+- `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
+  peer ids of equal length that differ only in late characters, for every message id; ids that differ early
+  flip. Pre-existing.
+- Cold ordered track during an overlap: the first frame of a stream that starts during an overlap can be lost at
+  a receiver with no state for the track. An entry rule for ordered tracks is its own slice.
+- Session volatile admission budget against a room stream: with `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000),
+  `AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS` (30 000 ms) and `AL_VOLATILE_SESSION_OWN_SHARE` (0.5), three
+  members of one room cannot each sustain 20 volatile messages a second (about 16.7 each); the browser spec of
+  the overlap runs at 10. A workload figure for the publication work, not a defect of the overlap.
+- Origin repair across a moved path: an origin's repair exhausts when the only working path moved behind a hop
+  that already reported complete.
+- Peer cap and the early dial: an accepted offer at a cap full of a replaced layout's retained edges is dropped;
+  a failing early dial can leave the edge in its dial cooldown at promotion.
