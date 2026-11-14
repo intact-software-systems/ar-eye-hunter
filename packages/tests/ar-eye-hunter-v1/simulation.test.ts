@@ -1,10 +1,10 @@
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
 import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '@ar-eye-hunter/arena-layout.ts';
 import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
-import { mulberry32 } from '@ar-eye-hunter/arena-math.ts';
 import {
     createInitialCombatState,
     createInitialPlayerState,
@@ -27,8 +27,8 @@ import {
 
 describe('AR Eye Hunter simulation', () => {
     it('gives one run of random numbers per seed', () => {
-        const first = mulberry32(7);
-        const second = mulberry32(20_260_101);
+        const first = createSeededRandom(7);
+        const second = createSeededRandom(20_260_101);
 
         expect([first(), first(), first()]).toEqual([0.011704753153026104, 0.06195825757458806, 0.97690763277933]);
         expect([second(), second(), second()]).toEqual([0.2559139896184206, 0.5929048631805927, 0.8053383126389235]);
