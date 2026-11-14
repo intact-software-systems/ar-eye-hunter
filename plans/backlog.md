@@ -371,8 +371,10 @@ and it has no status list.
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to
   edit.
-- Lane cells of the shared-room families, every family but four-role, inherit
-  what earlier cells left in the room: a granted cell declares its own start
+- Lane cells that share a room (under `RALLAR_BLACK_BOX_ALM_ROOMS=family`,
+  every cell of every family except one whose definition declares
+  `room: 'own'`, today only `subscription-ordered-reconnect`) inherit what
+  earlier cells left in the room: a granted cell declares its own start
   grants and subscription rows, and a cell that reshapes the topology runs
   after every cell that keeps it (`resolveAlmLanePlan`, in a shared room), but
   no other room state is declared per cell. A selection

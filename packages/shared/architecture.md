@@ -25,8 +25,9 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
   contracts used by browser and server packages.
 - `random/` owns the seeded generator (`createSeededRandom`) and the shuffle
   over a generator (`computeShuffledOrder`): one seed gives one sequence on
-  every machine. The ALM conformance lane's cell order and AR Eye Hunter's targets
-  draw from them.
+  every machine. The black-box runner's scenario workload, the ALM conformance
+  lane's cell order and AR Eye Hunter's targets draw from the generator; the
+  lane's cell order is the shuffle's one user.
 - `crdt/` owns shared CRDT contracts, document health/recovery helpers, sync
   envelopes, backup/restore support, and retention/erasure primitives.
 - `rallar-ai/` owns shared RallarAI contracts and deterministic helpers. Live

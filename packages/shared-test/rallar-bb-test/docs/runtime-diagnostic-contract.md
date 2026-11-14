@@ -254,8 +254,8 @@ session, whose `causalRevision` is at or past the `receiver`'s accepted read. It
 `rallar.browser.group_state.applied` event of its own page with `data.change` `held`, the cell's
 `groupRef`, and `data.groupRevision` and `data.presenceRevision` at or above the read's two
 revisions. The wait reads the page's whole history (`metadata.historyFrom: 'page'`, below), for
-30 s. In a room per cell no earlier cell left a `held` event of the room. In a room the family
-shares, a connect writes the page's presence session, but `presenceRevision` advances only when the
+30 s. In a room no earlier cell used (a room per cell, a cell's own room or a fresh shared room) no
+earlier cell left a `held` event of the room. In a room the family shares, a connect writes the page's presence session, but `presenceRevision` advances only when the
 room's presence-summary work runs, so the floor can equal the revisions of an earlier cell's last
 `held` event, which then matches even when the page's cache dropped the room since; D647 lists that
 window. A `removed` event never matches.
