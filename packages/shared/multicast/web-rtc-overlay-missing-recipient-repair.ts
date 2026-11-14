@@ -6,7 +6,7 @@ import {
 import type { ALAckAlgo } from '../al-contracts/al-policy.ts';
 import {
     resolveALChildPeerIdsTowardRecipients,
-    type ALAcceptedOverlayAdjacency
+    type ALOverlayAdjacency
 } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import { isALLogicalReceiptMode } from '../al-contracts/validate-al-ack-support.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
@@ -33,7 +33,7 @@ export interface ComputeMissingRecipientRepairInput {
     readonly confirmed: readonly string[];
     readonly tree: OverlayTree;
     /** Absent when the origin holds no accepted layout to route by. */
-    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
+    readonly adjacency: ALOverlayAdjacency | undefined;
 }
 
 export interface PlanRtcFailedPeerRepairInput {
@@ -41,7 +41,7 @@ export interface PlanRtcFailedPeerRepairInput {
     readonly request: ALOutboundRepairRequest;
     readonly selfPeerId: string;
     /** Absent when the origin holds no accepted layout to route by. */
-    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
+    readonly adjacency: ALOverlayAdjacency | undefined;
     readonly planOutgoingMessage: (msg: ALMessage) => ALOutboundDispatchPlan<ALOutboundTransportMessage>;
     /** Whether a missing recipient may still get a copy: a recipient refused here is skipped, never replaced. */
     readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
@@ -59,7 +59,7 @@ interface RtcMissingRecipientRepairInput {
     readonly ackTracking: ALOutboundAckTrackingPlan;
     readonly request: ALOutboundRepairRequest;
     readonly frozen: ALFrozenMulticastAudience;
-    readonly adjacency: ALAcceptedOverlayAdjacency | undefined;
+    readonly adjacency: ALOverlayAdjacency | undefined;
     readonly isRepairTargetAdmitted: RtcGrantedPublicationCarrier.RepairTargetAdmission;
 }
 

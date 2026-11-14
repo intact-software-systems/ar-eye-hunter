@@ -15,7 +15,7 @@ import {
     shouldAwaitALRoute,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
-import { toALAcceptedOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
+import { toALOverlayAdjacency } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -422,7 +422,15 @@ export class WebRtcOverlayMulticastManager {
         const availability = !this.disposed && isRtcCarrierGapHandedOver(msg, carrierGap)
             ? this.readCarrierAvailability(msg)
             : undefined;
-        if (availability?.kind === 'available' && this.hasUnavailableOriginRoute(msg, availability)) {
+        if (
+            availability?.kind === 'available' &&
+            isRtcOriginRouteUnavailable({
+                message: msg,
+                availability,
+                selfPeerId: this.connectionService.input.sessionId,
+                readyPeerIds: this.connectionService.readyPeerIdsForLane()
+            })
+        ) {
             const plan = this.planOutgoingMessage(msg, 'hand-over');
             if (plan.dropReasonCode === 'no-route') {
                 return WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
@@ -711,15 +719,6 @@ export class WebRtcOverlayMulticastManager {
         });
     }
 
-    private hasUnavailableOriginRoute(msg: ALMessage, availability: RtcOutboundCarrierAvailability): boolean {
-        return isRtcOriginRouteUnavailable({
-            message: msg,
-            availability,
-            selfPeerId: this.connectionService.input.sessionId,
-            readyPeerIds: this.connectionService.readyPeerIdsForLane()
-        });
-    }
-
     private readGroupSnapshotByRef(ref: GroupRef): GroupSnapshot | undefined {
         return readRtcGroupSnapshotByRef(this.groupCache, ref);
     }
@@ -895,7 +894,12 @@ export class WebRtcOverlayMulticastManager {
         const plan = multicaster.createOriginatingPlan(msg, context, qos);
         if (
             stage === 'hand-over' && !plan.handlingPlan.dropReason &&
-            this.hasUnavailableOriginRoute(msg, this.readCarrierAvailability(msg))
+            isRtcOriginRouteUnavailable({
+                message: msg,
+                availability: this.readCarrierAvailability(msg),
+                selfPeerId: this.connectionService.input.sessionId,
+                readyPeerIds: this.connectionService.readyPeerIdsForLane()
+            })
         ) {
             return this.toNoRouteDispatchPlan(msg, 'without a ready accepted RTC edge');
         }
@@ -1245,7 +1249,7 @@ export class WebRtcOverlayMulticastManager {
                 msg,
                 request,
                 selfPeerId,
-                adjacency: toALAcceptedOverlayAdjacency(
+                adjacency: toALOverlayAdjacency(
                     selfPeerId,
                     toAcceptedOverlayContext(this.readOutboundObservation(msg))?.overlay.nextHopsBySessionId
                 ),

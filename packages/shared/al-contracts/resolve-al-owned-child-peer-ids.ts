@@ -2,8 +2,8 @@ import type { ALMessage } from './al-contract.ts';
 import { resolveALFrozenMulticastAudience } from './al-frozen-multicast-audience.ts';
 import type { ALMessagePlanningContext } from './al-policy.ts';
 
-/** The accepted layout's whole adjacency, every session's next hops, seen from this peer. */
-export interface ALAcceptedOverlayAdjacency {
+/** A layout's whole adjacency, every session's next hops, seen from this peer. */
+export interface ALOverlayAdjacency {
     readonly selfPeerId: string;
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
 }
@@ -19,7 +19,7 @@ export interface ALPreviousOverlayLayout {
  * unicast it does not address itself, or the overlay neighbours of a group message that are neither this
  * peer nor its sender, not already visited or excepted, in the room and in a broadcast's fixed list, and within
  * the forwarding hint when one is given. A multicast frozen to its recipients keeps only the neighbours that lead to one
- * of them over the accepted layout; a peer that is its only recipient, or holds an audience frozen to nobody, keeps
+ * of them over their layout's adjacency; a peer that is its only recipient, or holds an audience frozen to nobody, keeps
  * none. A peer that is no recipient and whose layout leads none of its neighbours to one holds a layout that disagrees
  * with its sender's, so it keeps every neighbour. That fallback cascades: once one peer keeps every neighbour (no adjacency, an unplaced recipient, or a
  * path child its room, hint or visited set removes), each relay below it with a consistent layout sees every recipient
@@ -53,7 +53,7 @@ export function resolveALOwnedChildPeerIds(
     const ownedPeerIds = layouts.flatMap((layout) =>
         resolveALLayoutChildPeerIds(
             layout.neighborPeerIds.filter(isOwnable),
-            toALAcceptedOverlayAdjacency(context.selfPeerId, layout.nextHopsBySessionId),
+            toALOverlayAdjacency(context.selfPeerId, layout.nextHopsBySessionId),
             recipientPeerIds
         )
     );
@@ -83,7 +83,7 @@ function toALOwnableNeighborPredicate(
 /** One layout's children: every ownable neighbour, or for a frozen multicast those its adjacency leads to a recipient. */
 function resolveALLayoutChildPeerIds(
     neighborPeerIds: readonly string[],
-    adjacency: ALAcceptedOverlayAdjacency | undefined,
+    adjacency: ALOverlayAdjacency | undefined,
     recipientPeerIds: readonly string[] | undefined
 ): readonly string[] {
     if (recipientPeerIds === undefined) {
@@ -101,22 +101,22 @@ function resolveALLayoutChildPeerIds(
         : towardRecipients;
 }
 
-/** The accepted layout seen from this peer; absent when the peer holds no accepted adjacency. */
-export function toALAcceptedOverlayAdjacency(
+/** A layout's adjacency seen from this peer; absent when the layout carries none. */
+export function toALOverlayAdjacency(
     selfPeerId: string,
     nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined
-): ALAcceptedOverlayAdjacency | undefined {
+): ALOverlayAdjacency | undefined {
     return nextHopsBySessionId === undefined ? undefined : { selfPeerId, nextHopsBySessionId };
 }
 
 /**
- * The children whose subtree, rooted away from this peer over the accepted layout, holds one of the recipients;
- * none when this peer is every recipient. Without an accepted layout, or with a recipient the layout does not place,
- * every child stays: the layout cannot prove that a pruned subtree holds none of them.
+ * The children whose subtree, rooted away from this peer over the adjacency the caller passes, holds one of the
+ * recipients; none when this peer is every recipient. Without an adjacency, or with a recipient the adjacency does not
+ * place, every child stays: the layout cannot prove that a pruned subtree holds none of them.
  */
 export function resolveALChildPeerIdsTowardRecipients(
     childPeerIds: readonly string[],
-    adjacency: ALAcceptedOverlayAdjacency | undefined,
+    adjacency: ALOverlayAdjacency | undefined,
     recipientPeerIds: readonly string[]
 ): readonly string[] {
     if (adjacency === undefined) {
@@ -132,7 +132,7 @@ export function resolveALChildPeerIdsTowardRecipients(
 /** A walk that never re-enters this peer or a visited peer, so it visits each session of the layout at most once. */
 function hasRecipientInSubtree(
     childPeerId: string,
-    adjacency: ALAcceptedOverlayAdjacency,
+    adjacency: ALOverlayAdjacency,
     recipients: ReadonlySet<string>
 ): boolean {
     const visited = new Set([adjacency.selfPeerId]);

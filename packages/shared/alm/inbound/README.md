@@ -465,7 +465,14 @@ keeps every child (no adjacency, an unplaced recipient, or a path child its
 room, hint or visited set removes), each relay below it with a consistent layout
 sees every recipient behind its sender and keeps every child too, so one
 disagreement floods that whole subtree at the cost of the flood before the
-adjacency was kept, still at least once. The
+adjacency was kept, still at least once. While a
+replaced layout is in force (the session's overlap after a layout promotion,
+[`resolveRtcRoomRoutingEdges`](../../multicast/room-authority/resolve-rtc-room-routing-edges.ts)),
+a relay and an origin also own that layout's authorized neighbours, after the
+accepted layout's children and without repeats, a frozen multicast pruned over
+that layout's own adjacency. The missing-recipient retry and the failed-peer
+repair keep the accepted layout's adjacency, but a failed-peer repair's re-plan
+is an ordinary dispatch, so its copy can also reach a replaced-layout child. The
 same exclusion governs the forward of a retried copy and the relay row's
 expected set. A targeted repair copy inherits the repaired dispatch's own copy
 for its peer, so a requester never owns its siblings. Unicast copies carry no

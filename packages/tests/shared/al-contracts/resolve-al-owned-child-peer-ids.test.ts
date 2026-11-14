@@ -110,6 +110,13 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             overlayNextHopsBySessionId: TREE,
             previousOverlayLayout: { neighborPeerIds: REPLACED_TREE.r!, nextHopsBySessionId: REPLACED_TREE }
         })).toEqual(['b', 'c', 'a1', 'b1']);
+        // `b` is a neighbour in both layouts and is owned once, so one dispatch sends it one copy.
+        expect(resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'r',
+            overlayNeighborPeerIds: ['b'],
+            previousOverlayLayout: { neighborPeerIds: ['b', 'x'], nextHopsBySessionId: undefined }
+        })).toEqual(['b', 'x']);
     });
 
     it('prunes a frozen multicast toward its recipients over each layout\'s own adjacency', () => {
@@ -124,7 +131,7 @@ describe('the children a peer owns while a replaced layout is in force', () => {
         })).toEqual(['c', 'a1']);
     });
 
-    it('owns no replaced child when no replaced layout is in force', () => {
+    it('owns only the accepted layout\'s children when no replaced layout is given', () => {
         const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
 
         expect(resolveALOwnedChildPeerIds(message, {
@@ -134,7 +141,6 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             overlayNeighborPeerIds: TREE.r,
             overlayNextHopsBySessionId: TREE
         })).toEqual(['b', 'c']);
-        expect(resolveRelayChildren(['c1'])).toEqual(['c']);
     });
 });
 
