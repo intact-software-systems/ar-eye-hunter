@@ -4,7 +4,7 @@ import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-b
 
 import { toGrantRequests } from './describe-declared-start-states.ts';
 
-function toGrantCommand(commandId: string, body: unknown): RallarBlackBoxTestHttpRequestCommand {
+function toGrantCommand(commandId: string, body: Readonly<Record<string, string | number | boolean>>): RallarBlackBoxTestHttpRequestCommand {
     return {
         kind: 'http.request',
         commandId,
