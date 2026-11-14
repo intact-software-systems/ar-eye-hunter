@@ -292,6 +292,17 @@ export namespace WebRtcConnectionService {
         readonly resetAttemptBudget?: boolean;
     }
 
+    /** The service's own peer facts, passed with each connection-cap decision. The service passes itself. */
+    export interface AdmissionPeers {
+        knownPeerIds(): readonly PeerId[];
+        peerIdsWithNoReconnectableLanes(): readonly PeerId[];
+    }
+
+    /** Only the deciding calls receive this one. */
+    export interface ClosableAdmissionPeers extends AdmissionPeers {
+        disconnectPeer(peerId: PeerId, options: RemovePeerOptions): boolean;
+    }
+
     export type PeerCreationDecision =
         | boolean
         | 'allow'

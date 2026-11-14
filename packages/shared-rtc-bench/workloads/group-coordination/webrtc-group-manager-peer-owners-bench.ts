@@ -9,7 +9,11 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
-import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
+import {
+    DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
@@ -106,7 +110,10 @@ async function seedPeerOwnerGroups(
         connectionService,
         new WebRtcGroupPeerLedger({
             localSessionId: connectionService.input.sessionId,
-            repositories: { groupCache, clientCache, acceptedOverlayCache }
+            repositories: { groupCache, clientCache, acceptedOverlayCache },
+            maxPeerConnections: DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+            overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+            nowEpochMs: () => Date.now()
         }),
         { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );

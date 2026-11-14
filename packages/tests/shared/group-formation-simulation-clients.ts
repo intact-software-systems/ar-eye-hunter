@@ -74,14 +74,8 @@ export function createSimulatedClient(
             clientCache,
             plannedOverlayCache: readablePlannedOverlayCache(repositoryManager),
             acceptedOverlayCache: readableAcceptedOverlayCache(repositoryManager)
-        }),
-        {
-            maxPeerConnections: options.maxPeerConnections,
-            overlayTransitionGraceMs: options.overlayTransitionGraceMs,
-            now: options.now,
-            onOverlayAdopted: async () => {},
-            onReconcilePassEnded: () => {}
-        }
+        }, { maxPeerConnections: options.maxPeerConnections, overlayTransitionGraceMs: options.overlayTransitionGraceMs, now: options.now }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     return {

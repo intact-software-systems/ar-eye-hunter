@@ -10,7 +10,11 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
-import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
+import {
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    resolveWebRtcMaxPeerConnections,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
@@ -34,12 +38,26 @@ export interface RtcConnectionHarness {
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
 }
 
+/** A connection cap a test sets; what it leaves out takes the browser's default. */
+export interface TestGroupPeerLedgerCap {
+    readonly maxPeerConnections?: number;
+    readonly overlayTransitionGraceMs?: number;
+    readonly now?: () => number;
+}
+
 /** The group peer ledger of a manager over `rtcQBox`, reading the given caches. */
 export function createTestGroupPeerLedger(
     rtcQBox: WebRtcConnectionService,
-    repositories: WebRtcGroupPeerLedger.Repositories
+    repositories: WebRtcGroupPeerLedger.Repositories,
+    cap: TestGroupPeerLedgerCap = {}
 ): WebRtcGroupPeerLedger {
-    return new WebRtcGroupPeerLedger({ localSessionId: rtcQBox.input.sessionId, repositories });
+    return new WebRtcGroupPeerLedger({
+        localSessionId: rtcQBox.input.sessionId,
+        repositories,
+        maxPeerConnections: resolveWebRtcMaxPeerConnections(cap.maxPeerConnections),
+        overlayTransitionGraceMs: cap.overlayTransitionGraceMs ?? DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        nowEpochMs: cap.now ?? (() => Date.now())
+    });
 }
 
 export async function acceptActiveLayoutGroup(

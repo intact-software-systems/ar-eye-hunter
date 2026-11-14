@@ -11,9 +11,6 @@ export interface WebRtcGroupManagerState {
 }
 
 export interface WebRtcGroupManagerOptions {
-    readonly maxPeerConnections?: number;
-    readonly overlayTransitionGraceMs?: number;
-    readonly now?: () => number;
     readonly rttReportingDegreeLimit?: number;
     readonly onDesiredPeerIdsChanged?: (selection: WebRtcGroupPeerSelection) => void;
     /** Runs on every overlay adoption beside the reconcile it starts: what the adopted layout releases. */
@@ -78,7 +75,7 @@ export function clonePeerOwners(
     return copy;
 }
 
-export interface MutableWebRtcGroupManagerDiagnostics {
+export interface MutableWebRtcGroupReconcileDiagnostics {
     reconcileRunCount: number;
     reconcileAwaitedInFlightCount: number;
     reconcileCoalescedRerunCount: number;
@@ -87,15 +84,23 @@ export interface MutableWebRtcGroupManagerDiagnostics {
     connectFailureCount: number;
     connectDeferredBudgetCount: number;
     connectDeferredPacingCount: number;
+}
+
+/** The counters only retention and the connection cap write. */
+export interface MutableWebRtcGroupPeerLedgerDiagnostics {
     disconnectCount: number;
     retainedCreatedCount: number;
     retainedExpiredCount: number;
     retainedEvictionCount: number;
 }
 
-export type WebRtcGroupManagerDiagnostics = Readonly<MutableWebRtcGroupManagerDiagnostics>;
+export type WebRtcGroupPeerLedgerDiagnostics = Readonly<MutableWebRtcGroupPeerLedgerDiagnostics>;
 
-export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnostics {
+export type WebRtcGroupManagerDiagnostics = Readonly<
+    MutableWebRtcGroupReconcileDiagnostics & MutableWebRtcGroupPeerLedgerDiagnostics
+>;
+
+export function emptyGroupReconcileDiagnostics(): MutableWebRtcGroupReconcileDiagnostics {
     return {
         reconcileRunCount: 0,
         reconcileAwaitedInFlightCount: 0,
@@ -104,7 +109,12 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
         connectAttemptCount: 0,
         connectFailureCount: 0,
         connectDeferredBudgetCount: 0,
-        connectDeferredPacingCount: 0,
+        connectDeferredPacingCount: 0
+    };
+}
+
+export function emptyGroupPeerLedgerDiagnostics(): MutableWebRtcGroupPeerLedgerDiagnostics {
+    return {
         disconnectCount: 0,
         retainedCreatedCount: 0,
         retainedExpiredCount: 0,

@@ -82,7 +82,11 @@ import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { ConnectionCapInboundVerdict } from '@shared/services/group-dial/compute-connection-cap-spend.ts';
-import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
+import {
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    resolveWebRtcMaxPeerConnections,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
@@ -840,10 +844,12 @@ function createBrowserRtcGroupManager(
                 clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
                 plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
                 acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-            }
+            },
+            maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
+            overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+            nowEpochMs: () => Date.now()
         }),
         {
-            maxPeerConnections: input.options.maxPeerConnections,
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
             onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
                 rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds),

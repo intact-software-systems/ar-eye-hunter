@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
 import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
-import { DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS } from '@shared/services/web-rtc-group-manager.ts';
+import { DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 
 const API_URL = new URL('https://api.example.test/api/config');
 
