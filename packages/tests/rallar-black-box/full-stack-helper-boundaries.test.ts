@@ -36,6 +36,7 @@ import {
 
 import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+import { runObservedFamily } from '../../../tests/playwright/rallar-black-box/run-observed-family.ts';
 
 import { openRecordingControlRequest, type RecordingControlRequest } from './recording-control-request-fixture.ts';
 
