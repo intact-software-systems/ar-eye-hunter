@@ -64,10 +64,6 @@ export type RtcRoomSnapshotAdmission =
     }
     | RtcRoomAuthorityDenial;
 
-export interface RtcRoomSnapshotHandlingInput extends RtcRoomSnapshotAdmissionInput {
-    readonly plan: ALMessageHandlingPlan;
-}
-
 interface RtcRoomAdmissionAuthority extends RtcRoomSessionObservation {
     readonly authorizedSessions: readonly GroupPresenceSession[];
     readonly authorizedPeerIds: readonly string[];
@@ -135,10 +131,6 @@ function toRtcRoomAdmissionAuthority(
         nowMs: input.nowMs
     });
     return { ...observation, authorizedSessions, authorizedPeerIds, routingEdges };
-}
-
-export function planRtcRoomSnapshotAdmission(input: RtcRoomSnapshotHandlingInput): ALMessageHandlingPlan {
-    return toRtcRoomSnapshotHandlingPlan(input.plan, computeRtcRoomSnapshotAdmission(input), input.fromPeerId);
 }
 
 export function toRtcRoomSnapshotHandlingPlan(

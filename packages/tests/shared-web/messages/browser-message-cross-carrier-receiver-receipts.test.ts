@@ -41,7 +41,7 @@ import {
 } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RtcReceiptProofSigner } from '@shared/multicast/receipt-proof/rtc-receipt-proof-signer.ts';
-import { planRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -505,17 +505,20 @@ async function createReceiptLoopReceiver(
         carrier: 'rtc',
         planIncomingMessage: (message, source, observations) => {
             const fromPeerId = source.kind === 'trusted-server' ? undefined : source.peerId;
-            return planRtcRoomSnapshotAdmission({
-                message,
-                plan: planALMessageHandling(message, { ...observations, selfPeerId: peerId, fromPeerId }),
-                snapshot,
-                selfPeerId: peerId,
-                fromPeerId,
-                recipientPeerId: undefined,
-                layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
-                overlay: undefined,
-                nowMs: observations.nowMs
-            });
+            return toRtcRoomSnapshotHandlingPlan(
+                planALMessageHandling(message, { ...observations, selfPeerId: peerId, fromPeerId }),
+                computeRtcRoomSnapshotAdmission({
+                    message,
+                    snapshot,
+                    selfPeerId: peerId,
+                    fromPeerId,
+                    recipientPeerId: undefined,
+                    layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+                    overlay: undefined,
+                    nowMs: observations.nowMs
+                }),
+                fromPeerId
+            );
         },
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).payload.resource);
