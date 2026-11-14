@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
@@ -13,15 +16,18 @@ import {
 } from '../rtc-topology-test-fixtures.ts';
 
 /*
- * Which single change can the room owner issue that moves a relay's child to a new parent while the stream origin
- * stays fixed? Three sessions are planned the way the server plans an owner-issued topology change: a work row of kind
- * `group-revision`, planned with the `membership-delta` intent against the stored layout.
+ * Which single change can the room owner issue that changes the edges around a relay while a stream origin stays
+ * fixed? A browser reads its own neighbour set (`nextHopsBySessionId[self]`) to dial, forward and admit, so the
+ * layouts are compared as undirected edge sets, planned the way the server plans an owner-issued config change: a
+ * `group-revision` work row, planned with the `membership-delta` intent against the stored layout.
  *
- * The change the browser spec drives is the durable topology config write, issued by the room owner (or an admin):
+ * The live-RTC matrix driver forms the room with the durable config { topologyKind: 'mesh', degreeLimit: 2 }, which
+ * for three sessions is a complete graph. The owner then writes, in this order:
+ *   1. { "config": { "topologyKind": "tree" } }  the break side: the edge between the two leaves leaves the layout
+ *   2. { "config": { "topologyKind": "star" } }  the add side: that edge is added back, nothing leaves
+ * Route (apps/api-v1/src/routes/graph-topology-routes.ts, PUT `config`, owner or admin only):
  *   PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config/requests/:requestId
- *   body {"config":{"topologyKind":"star"}}   (apps/api-v1/src/routes/graph-topology-routes.ts, PUT `config`)
- * The same planner input is reached by POST .../topology/reconfigure/requests/:requestId with
- * {"options":{"topologyKind":"star"}}; that override is transient, the config write is durable.
+ * The PUT replaces the whole durable config, so the tree write drops degreeLimit 2 and plans with the server default.
  */
 
 type RoleName = 'owner' | 'second' | 'third';
@@ -30,19 +36,17 @@ type RoleAssignment = Readonly<Record<RoleName, string>>;
 
 type NextHops = Readonly<Record<string, readonly string[]>>;
 
+interface EdgeDifference {
+    readonly added: readonly string[];
+    readonly removed: readonly string[];
+}
+
 const ROLE_NAMES: readonly RoleName[] = ['owner', 'second', 'third'];
 
-/** The server defaults of `topology.planning` in apps/api-v1/resources/configuration/defaults-config.json. */
-const SERVER_DEFAULTS: RallarRtcTopologyServiceOptions = {
-    topologyKind: 'auto',
-    degreeLimit: 5,
-    treeMinSize: 5,
-    meshMinSize: 16,
-    meshParamK: 2,
-    meshExitWidth: 4,
-    treeExitWidth: 0,
-    rttReportingDegreeLimit: 5
-};
+const SERVER_DEFAULTS: RallarRtcTopologyServiceOptions = readServerPlanningDefaults();
+
+/** What the live-RTC matrix driver's owner writes before the room forms. */
+const MATRIX_ROOM_CONFIG: Partial<RallarRtcTopologyServiceOptions> = { topologyKind: 'mesh', degreeLimit: 2 };
 
 const SORTED_SESSION_IDS = ['session-a', 'session-b', 'session-c'] as const;
 
@@ -55,6 +59,25 @@ const ROLE_ASSIGNMENTS: readonly RoleAssignment[] = SORTED_SESSION_IDS.flatMap((
     }))
 );
 
+function readServerPlanningDefaults(): RallarRtcTopologyServiceOptions {
+    const path = fileURLToPath(
+        new URL('../../../../../../apps/api-v1/resources/configuration/defaults-config.json', import.meta.url)
+    );
+    const planning = (JSON.parse(readFileSync(path, 'utf8')) as {
+        readonly topology: { readonly planning: RallarRtcTopologyServiceOptions; };
+    }).topology.planning;
+    return {
+        topologyKind: planning.topologyKind,
+        degreeLimit: planning.degreeLimit,
+        treeMinSize: planning.treeMinSize,
+        meshMinSize: planning.meshMinSize,
+        meshParamK: planning.meshParamK,
+        meshExitWidth: planning.meshExitWidth,
+        treeExitWidth: planning.treeExitWidth,
+        rttReportingDegreeLimit: planning.rttReportingDegreeLimit
+    };
+}
+
 interface PlanRoomInput {
     readonly roles: RoleAssignment;
     readonly config: Partial<RallarRtcTopologyServiceOptions>;
@@ -66,7 +89,7 @@ interface PlanRoomInput {
 function planRoom(input: PlanRoomInput) {
     const effective = { ...SERVER_DEFAULTS, ...input.config };
     const planner = new RtcTopologyPlanner(effective, { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 });
-    const group = createRtcTopologyGroupSnapshot('relay-reparenting', [
+    const group = createRtcTopologyGroupSnapshot('relay-edges', [
         input.roles.owner,
         input.roles.second,
         input.roles.third
@@ -82,25 +105,24 @@ function planRoom(input: PlanRoomInput) {
     });
 }
 
-/** The neighbour a session receives the origin's frames from: the next hop on the path back to the origin. */
-function readParentSessionId(nextHops: NextHops, origin: string, sessionId: string): string | undefined {
-    const parentBySessionId = new Map<string, string>();
-    const frontier = [origin];
-    for (const current of frontier) {
-        for (const neighbour of nextHops[current] ?? []) {
-            if (neighbour !== origin && !parentBySessionId.has(neighbour)) {
-                parentBySessionId.set(neighbour, current);
-                frontier.push(neighbour);
-            }
-        }
-    }
-    return parentBySessionId.get(sessionId);
+function toEdges(nextHops: NextHops): readonly string[] {
+    return Object.entries(nextHops)
+        .flatMap(([sessionId, neighbours]) => neighbours.map((neighbour) => [sessionId, neighbour].sort().join(' - ')))
+        .filter((edge, index, edges) => edges.indexOf(edge) === index)
+        .sort();
 }
 
-function readMovedChildren(before: NextHops, after: NextHops, origin: string): readonly string[] {
-    return SORTED_SESSION_IDS.filter((sessionId) =>
-        sessionId !== origin && readParentSessionId(before, origin, sessionId) !== readParentSessionId(after, origin, sessionId)
-    );
+function toEdge(left: string, right: string): string {
+    return [left, right].sort().join(' - ');
+}
+
+function diffEdges(before: NextHops, after: NextHops): EdgeDifference {
+    const beforeEdges = toEdges(before);
+    const afterEdges = toEdges(after);
+    return {
+        added: afterEdges.filter((edge) => !beforeEdges.includes(edge)),
+        removed: beforeEdges.filter((edge) => !afterEdges.includes(edge))
+    };
 }
 
 /** In a three-node tree the relay is the one session with two neighbours. */
@@ -110,120 +132,102 @@ function readRelaySessionId(nextHops: NextHops): string {
     return relays[0]!;
 }
 
-function toRolesWhere(roles: RoleAssignment, predicate: (sessionId: string) => boolean): readonly RoleName[] {
-    return ROLE_NAMES.filter((role) => predicate(roles[role]));
+function planMatrixRoom(roles: RoleAssignment, rttMeasurements?: readonly RttMeasurementInfo[]) {
+    return planRoom({ roles, config: MATRIX_ROOM_CONFIG, rttMeasurements });
 }
 
-function planStarThenTree(roles: RoleAssignment, rttMeasurements?: readonly RttMeasurementInfo[]) {
-    const star = planRoom({ roles, config: {}, rttMeasurements });
-    const tree = planRoom({ roles, config: { topologyKind: 'tree' }, previous: star.snapshot, rttMeasurements });
-    return { star, tree };
+function planTreeConfig(
+    roles: RoleAssignment,
+    previous: RallarOverlayTopologySnapshot,
+    rttMeasurements?: readonly RttMeasurementInfo[]
+) {
+    return planRoom({ roles, config: { topologyKind: 'tree' }, previous, rttMeasurements });
 }
 
-describe('RTC topology: the owner-issued topologyKind change that moves a relay child (three sessions)', () => {
+function toRttReports(roles: RoleAssignment): readonly RttMeasurementInfo[] {
+    return [
+        createRtcTopologyRttMeasurement({ sessionIdFrom: roles.owner, sessionIdTo: roles.second, rttMs: 2, version: 1 }),
+        createRtcTopologyRttMeasurement({ sessionIdFrom: roles.owner, sessionIdTo: roles.third, rttMs: 3, version: 2 }),
+        createRtcTopologyRttMeasurement({ sessionIdFrom: roles.second, sessionIdTo: roles.third, rttMs: 40, version: 3 })
+    ];
+}
+
+describe('RTC topology: the owner-issued tree and star configs of a matrix-driver room (three sessions)', () => {
+    it('plans the relay of the no-RTT tree as session-c for the fixture ids, whatever the role assignment', () => {
+        const relays = ROLE_ASSIGNMENTS.map((roles) => readRelaySessionId(planTreeConfig(roles, planMatrixRoom(roles).snapshot).snapshot.nextHopsBySessionId));
+
+        expect(relays).toEqual(ROLE_ASSIGNMENTS.map(() => 'session-c'));
+    });
+
     describe.each(ROLE_ASSIGNMENTS)('owner $owner, second $second, third $third', (roles) => {
-        const { star, tree } = planStarThenTree(roles);
-        const relaySessionId = readRelaySessionId(tree.snapshot.nextHopsBySessionId);
-        const originRoles = toRolesWhere(roles, (sessionId) => sessionId !== relaySessionId);
+        const matrix = planMatrixRoom(roles);
 
-        it('plans a complete graph under auto and a path through one relay once the owner sets topologyKind tree', () => {
-            expect(star.snapshot.topology).toBe('star');
-            expect(star.snapshot.nextHopsBySessionId[roles.owner]).toEqual(
-                SORTED_SESSION_IDS.filter((id) => id !== roles.owner)
-            );
-            expect(tree.snapshot.topology).toBe('tree');
-            expect(relaySessionId).toBe('session-c');
+        it('plans a complete graph of three edges under the matrix driver config', () => {
+            expect(matrix.snapshot.topology).toBe('mesh');
+            expect(toEdges(matrix.snapshot.nextHopsBySessionId)).toEqual([
+                'session-a - session-b',
+                'session-a - session-c',
+                'session-b - session-c'
+            ]);
         });
 
-        it.each(originRoles)(
-            'moves the other leaf from the relay to the origin when the room owner sets topologyKind star, origin %s',
-            (originRole) => {
-                const origin = roles[originRole];
-                const child = SORTED_SESSION_IDS.find((id) => id !== origin && id !== relaySessionId)!;
+        it.each([
+            { reports: 'without RTT reports', rttMeasurements: undefined },
+            { reports: 'with RTT reports', rttMeasurements: toRttReports(roles) }
+        ])(
+            'removes exactly the edge between the two leaves and adds none when the owner writes the tree config, $reports',
+            ({ rttMeasurements }) => {
+                const complete = planMatrixRoom(roles, rttMeasurements);
 
-                const afterStar = planRoom({ roles, config: { topologyKind: 'star' }, previous: tree.snapshot });
+                const tree = planTreeConfig(roles, complete.snapshot, rttMeasurements);
 
-                expect(afterStar.changed).toBe(true);
-                expect(readParentSessionId(tree.snapshot.nextHopsBySessionId, origin, child)).toBe(relaySessionId);
-                expect(readParentSessionId(afterStar.snapshot.nextHopsBySessionId, origin, child)).toBe(origin);
-                expect(readMovedChildren(
-                    tree.snapshot.nextHopsBySessionId,
-                    afterStar.snapshot.nextHopsBySessionId,
-                    origin
-                )).toEqual([child]);
+                const relay = readRelaySessionId(tree.snapshot.nextHopsBySessionId);
+                const leaves = SORTED_SESSION_IDS.filter((sessionId) => sessionId !== relay);
+                expect(tree.snapshot.topology).toBe('tree');
+                expect(diffEdges(complete.snapshot.nextHopsBySessionId, tree.snapshot.nextHopsBySessionId)).toEqual({
+                    added: [],
+                    removed: [toEdge(leaves[0]!, leaves[1]!)]
+                });
+                if (rttMeasurements !== undefined) {
+                    expect(relay).toBe(roles.owner);
+                }
             }
         );
 
-        it('moves no child when the stream origin is itself the relay, so the origin must be chosen from the tree', () => {
-            const afterStar = planRoom({ roles, config: { topologyKind: 'star' }, previous: tree.snapshot });
+        it('adds exactly the edge between the two leaves and removes none when the owner then writes the star config', () => {
+            const tree = planTreeConfig(roles, matrix.snapshot);
+            const leaves = SORTED_SESSION_IDS.filter(
+                (sessionId) => sessionId !== readRelaySessionId(tree.snapshot.nextHopsBySessionId)
+            );
 
-            expect(readMovedChildren(
-                tree.snapshot.nextHopsBySessionId,
-                afterStar.snapshot.nextHopsBySessionId,
-                relaySessionId
-            )).toEqual([]);
+            const star = planRoom({ roles, config: { topologyKind: 'star' }, previous: tree.snapshot });
+
+            expect(star.snapshot.topology).toBe('star');
+            expect(diffEdges(tree.snapshot.nextHopsBySessionId, star.snapshot.nextHopsBySessionId)).toEqual({
+                added: [toEdge(leaves[0]!, leaves[1]!)],
+                removed: []
+            });
+        });
+
+        it('takes a leaf origin\'s direct edge to the other leaf away and leaves a relay origin both of its edges', () => {
+            const tree = planTreeConfig(roles, matrix.snapshot);
+            const relay = readRelaySessionId(tree.snapshot.nextHopsBySessionId);
+
+            for (const origin of SORTED_SESSION_IDS) {
+                const before = [...matrix.snapshot.nextHopsBySessionId[origin]!];
+                const after = [...tree.snapshot.nextHopsBySessionId[origin]!];
+                expect(before).toHaveLength(2);
+                expect(after).toEqual(origin === relay ? before : [relay]);
+            }
         });
     });
-
-    it.each(ROLE_NAMES)(
-        'moves a child in exactly four of the six role assignments when the origin is fixed to the %s browser',
-        (originRole) => {
-            const movedByAssignment = ROLE_ASSIGNMENTS.map((roles) => {
-                const { tree } = planStarThenTree(roles);
-                const afterStar = planRoom({ roles, config: { topologyKind: 'star' }, previous: tree.snapshot });
-                return {
-                    relayIsOrigin: readRelaySessionId(tree.snapshot.nextHopsBySessionId) === roles[originRole],
-                    moved: readMovedChildren(
-                        tree.snapshot.nextHopsBySessionId,
-                        afterStar.snapshot.nextHopsBySessionId,
-                        roles[originRole]
-                    )
-                };
-            });
-
-            expect(movedByAssignment.filter((entry) => entry.moved.length === 0)).toHaveLength(2);
-            expect(movedByAssignment.filter((entry) => entry.moved.length === 0).every((entry) => entry.relayIsOrigin))
-                .toBe(true);
-            expect(movedByAssignment.filter((entry) => entry.moved.length === 1)).toHaveLength(4);
-        }
-    );
-
-    it.each(ROLE_ASSIGNMENTS)(
-        'follows the two fastest reported links to the relay for owner $owner, second $second, third $third',
-        (roles) => {
-            const rttMeasurements = [
-                createRtcTopologyRttMeasurement({ sessionIdFrom: roles.owner, sessionIdTo: roles.second, rttMs: 2, version: 1 }),
-                createRtcTopologyRttMeasurement({ sessionIdFrom: roles.owner, sessionIdTo: roles.third, rttMs: 3, version: 2 }),
-                createRtcTopologyRttMeasurement({ sessionIdFrom: roles.second, sessionIdTo: roles.third, rttMs: 40, version: 3 })
-            ];
-            const { tree } = planStarThenTree(roles, rttMeasurements);
-
-            const afterStar = planRoom({
-                roles,
-                config: { topologyKind: 'star' },
-                previous: tree.snapshot,
-                rttMeasurements
-            });
-
-            expect(readRelaySessionId(tree.snapshot.nextHopsBySessionId)).toBe(roles.owner);
-            expect(readMovedChildren(
-                tree.snapshot.nextHopsBySessionId,
-                afterStar.snapshot.nextHopsBySessionId,
-                roles.second
-            )).toEqual([roles.third]);
-            expect(readParentSessionId(tree.snapshot.nextHopsBySessionId, roles.second, roles.third)).toBe(roles.owner);
-            expect(readParentSessionId(afterStar.snapshot.nextHopsBySessionId, roles.second, roles.third)).toBe(
-                roles.second
-            );
-        }
-    );
 });
 
 describe('RTC topology: owner-issued changes that keep every edge of a three-session tree', () => {
     it.each(ROLE_ASSIGNMENTS)(
         'keeps the tree when the director moves between any two sessions, owner $owner, second $second, third $third',
         (roles) => {
-            const { tree } = planStarThenTree(roles);
+            const tree = planTreeConfig(roles, planMatrixRoom(roles).snapshot);
 
             for (const from of SORTED_SESSION_IDS) {
                 for (const to of SORTED_SESSION_IDS.filter((id) => id !== from)) {
@@ -240,7 +244,10 @@ describe('RTC topology: owner-issued changes that keep every edge of a three-ses
                         directorSessionId: to
                     });
 
-                    expect(moved.snapshot.nextHopsBySessionId).toEqual(tree.snapshot.nextHopsBySessionId);
+                    expect(diffEdges(tree.snapshot.nextHopsBySessionId, moved.snapshot.nextHopsBySessionId)).toEqual({
+                        added: [],
+                        removed: []
+                    });
                 }
             }
         }
@@ -257,12 +264,10 @@ describe('RTC topology: owner-issued changes that keep every edge of a three-ses
                 previous: limited.snapshot
             });
 
-            expect(raised.snapshot.nextHopsBySessionId).toEqual(limited.snapshot.nextHopsBySessionId);
-            expect(readMovedChildren(
-                limited.snapshot.nextHopsBySessionId,
-                raised.snapshot.nextHopsBySessionId,
-                roles.owner
-            )).toEqual([]);
+            expect(diffEdges(limited.snapshot.nextHopsBySessionId, raised.snapshot.nextHopsBySessionId)).toEqual({
+                added: [],
+                removed: []
+            });
         }
     );
 });
