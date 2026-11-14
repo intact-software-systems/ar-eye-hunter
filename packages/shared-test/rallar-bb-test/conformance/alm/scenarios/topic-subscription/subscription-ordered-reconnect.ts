@@ -8,6 +8,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
+import { toSiblingLeftWait } from './to-sibling-left-wait.ts';
 import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
     PRODUCERS_START_GRANTS,
@@ -84,6 +85,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, subscribed.confirmations, outsideAudience),
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
+        toSiblingLeftWait(producer),
         ...toPublishUntilConfirmedCommands({ ...receiverAlone, name: 'probe-receiver-alone', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 3 }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 4 }),

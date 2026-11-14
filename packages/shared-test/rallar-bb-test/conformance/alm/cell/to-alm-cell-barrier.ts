@@ -19,11 +19,16 @@ export interface AlmCellBarrierInput {
     readonly participants: readonly AlmConformanceRole[] | undefined;
 }
 
+/** The command id a role's arrival at one of its cell's barriers carries. */
+export function toAlmCellBarrierCommandId(input: Pick<AlmCellBarrierInput, 'cellPrefix' | 'role' | 'phase'>): string {
+    return `${input.cellPrefix}-${input.role}-${input.phase}`;
+}
+
 /** Every role of the cell arrives at one barrier id; each role's own command id names it. */
 export function toAlmCellBarrier(input: AlmCellBarrierInput): RallarBlackBoxTestBarrierCommand {
     return {
         kind: 'barrier',
-        commandId: `${input.cellPrefix}-${input.role}-${input.phase}`,
+        commandId: toAlmCellBarrierCommandId(input),
         barrierId: `${input.cellPrefix}-${input.phase}`,
         timeoutMs: input.timeoutMs,
         ...(input.participants === undefined ? {} : { participants: input.participants })

@@ -1577,7 +1577,11 @@ describe('alm-conformance cell parts', () => {
                             expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
                             continue;
                         }
-                        expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBe(`${cellPrefix}-${role}-`);
+                        // The one wait that starts later in its own cell: the sibling's removal, read from `armed` on.
+                        const ownStart = wait.commandId === `${cellPrefix}-${role}-sibling-left`
+                            ? `${cellPrefix}-${role}-armed`
+                            : `${cellPrefix}-${role}-`;
+                        expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBe(ownStart);
                     }
                 }
                 const continuation = scenario.continuation;

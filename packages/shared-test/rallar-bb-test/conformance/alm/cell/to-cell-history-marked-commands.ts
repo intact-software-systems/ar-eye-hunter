@@ -6,10 +6,10 @@ import { toCommandId } from '../alm-conformance-step-identities.ts';
 /**
  * Starts every wait of the commands, nested ones included, at the first event of any of its own cell's commands, so no
  * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before
- * the command's result. A wait that declares `historyFrom: 'page'` in its metadata reads the page's whole history, in
- * two classes: a store's recovery that a fresh document reports during its first connect, pinned to that connect's
- * session, so no earlier cell's recovery can match it; and the settle's wait for the room's head, which matches only
- * `held` applications at or above the head's revisions: every settle role's connect in the cell wrote presence before
+ * the command's result. A wait that already names its own start, a later command of its cell, keeps it. A wait that
+ * declares `historyFrom: 'page'` in its metadata reads the page's whole history, in two classes: a store's recovery
+ * that a fresh document reports during its first connect, pinned to that connect's session, so no earlier cell's
+ * recovery can match it; and the settle's wait for the room's head, which matches only `held` applications at or above the head's revisions: every settle role's connect in the cell wrote presence before
  * the head read, so its `presenceRevision` floor is above any `held` event an earlier cell left, and `removed` events
  * are not matched. Any other wait must follow at least one of its cell's own commands.
  */
@@ -30,7 +30,13 @@ function toCellHistoryMarkedCommand(
         case 'wait':
             return command.metadata?.historyFrom === 'page'
                 ? command
-                : { ...command, match: { ...command.match, sinceCommandIdPrefix } };
+                : {
+                    ...command,
+                    match: {
+                        ...command.match,
+                        sinceCommandIdPrefix: command.match.sinceCommandIdPrefix ?? sinceCommandIdPrefix
+                    }
+                };
         case 'loop':
             return { ...command, commands: command.commands.map(toMarked) };
         case 'parallel':

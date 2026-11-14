@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import {
     describe,
     expect,
@@ -428,6 +430,32 @@ function toCounts(confirmations: number, outsideAudience: number): readonly numb
     return [confirmations + outsideAudience, confirmations, outsideAudience];
 }
 
+function findBarrieredReconnectScenario(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: 'barriered' })
+        .find(({ scenarioId }) => scenarioId === 'subscription-ordered-reconnect');
+    if (scenario === undefined) {
+        throw new Error(`${carrier} creates no barriered subscription-ordered-reconnect cell.`);
+    }
+    return scenario;
+}
+
+/** Runs one wait on a page whose history holds `events` in order; the wait gets 1 ms, the history being complete. */
+async function runWaitAfterEvents(
+    wait: RallarBlackBoxTestCommand,
+    events: readonly Parameters<ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>['recordEvent']>[0][]
+): Promise<boolean> {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    for (const event of events) {
+        runtime.recordEvent(event);
+    }
+    const recipe: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: 'session-removal-probe',
+        commands: [{ ...wait, timeoutMs: 1 }]
+    };
+    return (await runtime.execute({ kind: 'recipe.run', recipe })).ok;
+}
+
 /** Runs `commands` on a page whose history already holds `events`; each wait gets 1 ms, the history being complete. */
 async function runAfterEvents(
     commands: readonly RallarBlackBoxTestCommand[],
@@ -794,6 +822,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-ready'),
                 ...toPublishSteps(`${track}-p1`),
                 ...toPublishSteps(`${track}-p2`),
+                'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
@@ -850,6 +879,80 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'unsubscribe-sibling',
             'assert-unsubscribe-sibling-lapsed'
         ]);
+    });
+
+    it('each producer\'s alone-probe follows its own observation that the sibling\'s session left the room', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = findBarrieredReconnectScenario(carrier);
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+                const armed = `${producer.recipeId}-armed`;
+                const commandIds = producer.commands.map(({ commandId }) => commandId);
+                const left = findStep(producer, 'sibling-left');
+
+                expect(commandIds.indexOf(armed), `${carrier} ${role}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`).toBeGreaterThan(commandIds.indexOf(armed));
+                expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`)
+                    .toBeGreaterThan(commandIds.indexOf(`${producer.recipeId}-${track}-p2`));
+                expect(commandIds.indexOf(`${producer.recipeId}-probe-receiver-alone`), `${carrier} ${role}`)
+                    .toBeGreaterThan(commandIds.indexOf(left.commandId));
+                // Four roles share the room, so the sibling's removal leaves three.
+                expect(left).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadFields: {
+                            'data.change': 'held',
+                            'data.groupRef.applicationId': 'app',
+                            'data.groupRef.workspaceId': 'ws',
+                            'data.groupRef.groupId': 'room-alm',
+                            'data.activeSessionCount': 3
+                        },
+                        sinceCommandIdPrefix: armed
+                    }
+                });
+                expect(left).not.toHaveProperty('absent');
+            }
+        }
+    });
+
+    it('counts a session removal from the armed barrier onward, and no count the roles reached while connecting', async () => {
+        const producer = requireRoleRecipe(findBarrieredReconnectScenario('rtc'), 'sender');
+        const left = findStep(producer, 'sibling-left');
+        const armed = {
+            kind: 'result' as const,
+            topic: 'rallar.bb.command.result',
+            commandId: `${producer.recipeId}-armed`,
+            severity: 'info' as const,
+            payload: {}
+        };
+        const toApplied = (activeSessionCount: number) => ({
+            kind: 'diagnostic' as const,
+            topic: 'rallar.browser.group_state.applied',
+            payload: {
+                data: {
+                    groupRef: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                    groupRevision: 7,
+                    presenceRevision: 9,
+                    rosterVersion: 1,
+                    activeSessionCount,
+                    change: 'held'
+                }
+            }
+        });
+
+        expect(await runWaitAfterEvents(left, [toApplied(3), toApplied(4), armed])).toBe(false);
+        expect(await runWaitAfterEvents(left, [toApplied(3), armed, toApplied(4)])).toBe(false);
+        expect(await runWaitAfterEvents(left, [toApplied(4), armed, toApplied(3)])).toBe(true);
+    });
+
+    it('four-role cells always run in a room of their own', () => {
+        const spec = readFileSync('tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts', 'utf8');
+
+        expect(spec).toMatch(/family === 'four-role' \? toOwnRoomScenario\(run, carrier, planned\) : planned/);
+        expect(spec).toContain('groupId: `${run.group.groupId}-${planned.scenarioKey}`');
+        expect(spec).toMatch(/if \(family === 'four-role'\) \{\s+await closeAgentConnections\(run, scenario\.scenarioKey\);/);
     });
 
     it.each(
