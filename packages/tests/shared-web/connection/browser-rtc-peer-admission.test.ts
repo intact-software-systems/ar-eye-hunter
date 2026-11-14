@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
-    configureBrowserRtcPeerCreationPolicies
+    configureBrowserRtcPeerCreationPolicies,
+    createBrowserRtcHeldOfferReleases
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -272,6 +273,23 @@ describe('browser RTC peer admission', () => {
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
         });
 
+        it('an early peer\'s offer held at a full cap is brought due by the reconcile pass after a peer closes', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: [...early, 'b6'] });
+            expect(await runtime.connection.receive(offer('b6'))).toBe('retry');
+            expect(runtime.connection.broughtDueSenderIds).toEqual([]);
+
+            // The planned layout drops b1 and this browser closes it, so the pass frees its slot and does not redial it.
+            runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                ...acceptedOverlay(runtime.group),
+                overlayVersion: 3,
+                nextHopSessionIds: ['b2', 'b3', 'b4', 'b5', 'b6']
+            });
+            runtime.connection.service.removePeerIfPresent('b1');
+            await runtime.manager.notifyOverlayTopologyChanged();
+
+            expect(runtime.connection.broughtDueSenderIds).toEqual(['b6']);
+        });
+
         it('an offer from a peer of a layout this browser has not adopted yet is held, not dropped, while an early peer could make room', async () => {
             const runtime = await createFullCapRuntime({ accepted, planned: early });
 
@@ -377,7 +395,7 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
         clientCache: new LatestRepository<string, ClientInfo>(),
         plannedOverlayCache: plannedOverlays,
         acceptedOverlayCache: acceptedOverlays
-    }, { onOverlayAdopted: async () => {} });
+    }, createBrowserRtcHeldOfferReleases(connection.service));
     configureBrowserRtcPeerCreationPolicies(connection.service, manager);
     await connection.service.connectSignaler();
     await manager.acceptGroupUpdate(group);

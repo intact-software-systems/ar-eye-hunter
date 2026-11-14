@@ -86,6 +86,7 @@ import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { ConnectionCapInboundVerdict } from '@shared/services/webrtc-group-dial-policy.ts';
+import type { WebRtcGroupManagerOptions } from '@shared/services/webrtc-group-manager-contracts.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -297,6 +298,16 @@ function toPeerCapDecision(
     return webRtcGroupManager.hasClosableEarlyPeer()
         ? { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
         : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON };
+}
+
+export function createBrowserRtcHeldOfferReleases(
+    webRtcConnectionService: WebRtcConnectionService
+): Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'> {
+    return {
+        onReconcilePassEnded: () => releaseEarlyDialCapacityHolds(webRtcConnectionService),
+        onOverlayAdopted: () =>
+            webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
+    };
 }
 
 function releaseEarlyDialCapacityHolds(webRtcConnectionService: WebRtcConnectionService): void {
@@ -811,9 +822,7 @@ function createBrowserRtcGroupManager(
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
             onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
                 rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds),
-            onReconcilePassEnded: () => releaseEarlyDialCapacityHolds(webRtcConnectionService),
-            onOverlayAdopted: () =>
-                webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
+            ...createBrowserRtcHeldOfferReleases(webRtcConnectionService)
         }
     );
     webRtcGroupManager.startReconcileWakes();
