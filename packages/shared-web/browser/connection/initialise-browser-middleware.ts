@@ -209,6 +209,11 @@ interface BrowserRtcTransport {
 }
 
 /** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
+interface BrowserTransports {
+    readonly webSocketTransport: BrowserWebSocketTransport;
+    readonly rtcTransport: BrowserRtcTransport;
+}
+
 interface BrowserRtcAcquisitions {
     readonly webRtcConnectionService: WebRtcConnectionService;
     webRtcOverlayMulticastManager?: WebRtcOverlayMulticastManager;
@@ -334,8 +339,7 @@ export async function initialiseMiddleware(
     options: BrowserConnectOptions
 ): Promise<BrowserConnectedMiddleware> {
     const runtimeStorage = new ALRuntimeStorage();
-    let webSocketTransport: BrowserWebSocketTransport | undefined;
-    let rtcTransport: BrowserRtcTransport | undefined;
+    let transports: BrowserTransports | undefined;
     try {
         const storageAvailability = initialiseBrowserRuntimeStores(
             session.sessionId,
@@ -346,17 +350,9 @@ export async function initialiseMiddleware(
             publicationCrypto: await options.publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
-        const apiConfig = await runMiddlewareCommand(
-            (signal) => readApiConfig({ signal }),
-            options
-        );
-        webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput, apiConfig);
-        rtcTransport = await initialiseBrowserRtcTransport({
-            ...transportInput,
-            rtcSignalingTopicId,
-            webSocketTransport,
-            replacedLayoutOverlapMs: apiConfig.rtcReplacedLayoutOverlapMs
-        });
+        const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }), options);
+        transports = await initialiseBrowserTransports(transportInput, rtcSignalingTopicId, apiConfig);
+        const { webSocketTransport, rtcTransport } = transports;
         const bootstrapDegree = resolveBootstrapDegree({
             bootstrapDegree: options.bootstrapDegree,
             maxPeerConnections: options.maxPeerConnections
@@ -373,7 +369,6 @@ export async function initialiseMiddleware(
             webSocketTransport.webSocketQueueBox
         );
         const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
-
         const { checkpointStores } = transportInput;
         return {
             rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
@@ -389,7 +384,33 @@ export async function initialiseMiddleware(
         };
     }
     catch (caught) {
-        await closeBrowserTransportResources({ ...webSocketTransport, ...rtcTransport, runtimeStorage })
+        await closeBrowserTransportResources({
+            ...transports?.webSocketTransport,
+            ...transports?.rtcTransport,
+            runtimeStorage
+        })
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        throw caught;
+    }
+}
+
+async function initialiseBrowserTransports(
+    transportInput: InitialiseBrowserTransportInput,
+    rtcSignalingTopicId: string,
+    apiConfig: ApiConfigResponse
+): Promise<BrowserTransports> {
+    const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput, apiConfig);
+    try {
+        const rtcTransport = await initialiseBrowserRtcTransport({
+            ...transportInput,
+            rtcSignalingTopicId,
+            webSocketTransport,
+            replacedLayoutOverlapMs: apiConfig.rtcReplacedLayoutOverlapMs
+        });
+        return { webSocketTransport, rtcTransport };
+    }
+    catch (caught) {
+        await closeBrowserTransportResources(webSocketTransport)
             .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
         throw caught;
     }
