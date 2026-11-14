@@ -60,7 +60,8 @@ import {
     readableGroupStateSnapshotCache,
     setGroupStateSnapshot
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import { configureOverlayRepositories, toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
@@ -80,6 +81,7 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -975,7 +977,7 @@ function assembleLeaseObservation(snapshot: GroupSnapshot, lastHeartbeatAtEpochM
 async function refreshNormalRoom(): Promise<void> {
     const clients = configureClientStateSnapshotRepository({ ttlMs: 60_000 });
     onTestFinished(() => clients.dispose());
-    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     const context = createDefaultApiMiddlewareTestDouble({
         session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: 300_000 },
         middleware: {
@@ -1075,7 +1077,7 @@ class NativeAuthorityEndpoint {
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
             },
             input.nativeRuntime,
-            input.faultPort
+            { faultPort: input.faultPort, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => this.connection.dispose());
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
@@ -1087,6 +1089,9 @@ class NativeAuthorityEndpoint {
             connectionService: this.connection.service,
             groupCache: input.groups,
             overlayCache: this.overlays,
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection.service),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
             outboundDiagnostics: (event) => this.outboundDiagnostics.push(event),

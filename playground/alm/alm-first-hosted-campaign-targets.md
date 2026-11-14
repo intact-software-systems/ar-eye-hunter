@@ -127,7 +127,7 @@ Each of these is recorded with every run. None can fail a run until a level is s
 ## 4. First rung and stretch rung
 
 **What caps both rungs.** The 50-agent RTC delivery loss is a layout re-plan landing inside a running stream, in a browser
-that does not yet build make-before-break routing. This was found by an analysis of the recorded events of runs
+without make-before-break routing, which is what those runs measured (built since: D645). This was found by an analysis of the recorded events of runs
 43382453664 (manifest 07) and 43383760956 (manifest 09); the repository itself cannot show it.
 
 - The server published a new tree layout around or inside the stream (layout 635 in run 07, 653 in run 09). Each browser
@@ -143,16 +143,18 @@ that does not yet build make-before-break routing. This was found by an analysis
   `apps/api-v1/src/configuration/read-api-v1-configuration-environment.ts`), and #810's churn gate was in the build. The
   layouts replaced in the two runs were 32 s and 37 s old. A re-plan can therefore land inside any stream longer than 15 s,
   at any room size, including the first rung's 5-minute window.
-- Make-before-break routing, where a new layout's edges open before routing moves to them, is built as the next slice after
-  lane determinism (D644). It is a prerequisite of the first rung and of the stretch rung.
-- Reproduced in unit tests of the routing code, for an at-least-once and a best-effort frame: a browser routes only over
-  the layout it currently holds as accepted and keeps no copy of the previous one, and in an active or reconfiguring group
-  the new layout's edges are dialled only after the switch, so all three signatures appear while the previous edges are
+- Make-before-break routing, where a new layout's edges open before routing moves to them, is built (D644, D645). D643's condition on it is met when this slice is merged. The maintainer approved two guidance
+  runs after the merge (hosted manifests 07 and 09, once each); no hosted run has read it yet.
+- Reproduced in unit tests of the routing code before D645, for an at-least-once and a best-effort frame: a browser routed only over
+  the layout it held as accepted and kept no copy of the previous one, and in an active or reconfiguring group
+  the new layout's edges were dialled only after the switch, so all three signatures appear while the previous edges are
   still open (dropped links stay open for 15 s). With the layout switch removed from the same fixtures, every frame is
   delivered.
-- The `unauthorized` refusal is confirmed from the code: a hop that is not a neighbour in the accepted layout is refused
-  with "RTC relay edge is not permitted by current server room topology", and no NACK is sent
-  (`resolveRtcRoomEdgeDenial` in `packages/shared/multicast/rtc-room-snapshot-admission.ts`).
+- The `unauthorized` refusal was confirmed from the code before D645: a hop that was not a neighbour in the accepted layout was
+  refused with "RTC relay edge is not permitted by current server room topology", and no NACK was sent. Today the rule owner
+  (`resolveRtcRoomRoutingEdges`, with `resolveRtcRoomEdgeDenial`) admits a hop that is a neighbour of a replaced layout inside its
+  open window, holds a hop that is a neighbour of a planned layout as `pending` and answers it not yet in sync, and refuses any
+  other hop as `unauthorized` with no NACK.
 - Still open: which server path produced the two hosted re-plans, with neither run recording the server's planning
   decision. Two paths can switch to a high-churn layout with no membership change and both skip #810's churn gate: the
   rebuild used as it is when a tree's leader-rooting or an update failure asks for a full rebuild, and the mesh rebuild,
@@ -168,14 +170,14 @@ that does not yet build make-before-break routing. This was found by an analysis
 - Formation at 15 passed hosted (D435).
 - Manifest 21 passed at 50 agents on this fleet at about 13 deliveries per second.
 - Browsers run on GitHub-hosted runners, off the api host.
-- It waits for make-before-break routing: a 5-minute window is long enough for a re-plan to land inside it.
+- It waits for make-before-break routing (D643, D644): a 5-minute window is long enough for a re-plan to land inside it.
 - Not established: that any 15-agent delivery manifest has a recorded hosted pass. The first action is to find or make
   one.
 
 **Stretch rung.** 50 agents as five rooms of ten, one publisher per room at 2 messages a second, 90 deliveries per
 second. Five publishers per room would be 450 per second, about half of manifest 07's failing load, and waits.
 
-It is not attempted until make-before-break routing is built. Other known limits:
+It is not attempted until make-before-break routing is built (D643); that condition is met when this slice is merged. Other known limits:
 
 - A re-plan in the middle of a window can fail a run for a reason that is not the platform's service level until then
   (`plans/active/deno-to-bun-validation.md`).
@@ -188,8 +190,8 @@ It is not attempted until make-before-break routing is built. Other known limits
 From D642 and the addendum's "After Slice 9":
 
 1. **Lane determinism.** Every lane cell starts from a declared, settled room.
-2. **Make-before-break routing in the browser** (D644). A re-plan landing in a stream drops
-   sends and refuses frames without it (section 4), at any room size, so no rung can be read before it is built.
+2. **Make-before-break routing in the browser** (D644, built in D645). A re-plan landing in a stream drops
+   sends and refuses frames without it (section 4), at any room size; the build has no hosted read yet.
 3. **Publication figures.** Selection age, missed windows, drain usage, congestion duration in the stage, and one
    bounded histogram with a nearest-rank percentile in `packages/shared/measurement`. Without them the reported figures
    in section 2.4 have no numbers to read.

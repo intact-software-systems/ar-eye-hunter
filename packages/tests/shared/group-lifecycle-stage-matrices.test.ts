@@ -14,7 +14,7 @@ describe('resolveDialLayoutRoles', () => {
         { lifecycleState: 'forming' as const, roles: 'none' },
         { lifecycleState: 'planned' as const, roles: 'none' },
         { lifecycleState: 'connecting' as const, roles: 'planned' },
-        { lifecycleState: 'active' as const, roles: 'accepted' },
+        { lifecycleState: 'active' as const, roles: 'accepted-and-planned' },
         { lifecycleState: 'reconfiguring' as const, roles: 'accepted' },
         { lifecycleState: 'reconnecting' as const, roles: 'accepted-and-planned' }
     ])('$lifecycleState dials $roles', (row) => {

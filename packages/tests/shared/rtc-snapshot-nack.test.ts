@@ -20,7 +20,7 @@ import type {
 } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -196,16 +196,20 @@ function createSnapshotAdmissionFixture(
         stores,
         planIncomingMessage: (incoming, ingress, observations) => {
             const fromPeerId = ingress.kind === 'trusted-server' ? undefined : ingress.peerId;
-            return planRtcRoomSnapshotAdmission({
-                message: incoming,
-                plan: planALMessageHandling(incoming, { selfPeerId: 'receiver', fromPeerId, ...observations }),
-                snapshot: observed.snapshot,
-                fromPeerId,
-                selfPeerId: 'receiver',
-                overlay: undefined,
-                recipientPeerId: undefined,
-                nowMs: observations.nowMs
-            });
+            return toRtcRoomSnapshotHandlingPlan(
+                planALMessageHandling(incoming, { selfPeerId: 'receiver', fromPeerId, ...observations }),
+                computeRtcRoomSnapshotAdmission({
+                    message: incoming,
+                    snapshot: observed.snapshot,
+                    fromPeerId,
+                    selfPeerId: 'receiver',
+                    overlay: undefined,
+                    recipientPeerId: undefined,
+                    layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+                    nowMs: observations.nowMs
+                }),
+                fromPeerId
+            );
         },
         toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'test-inbox', Temporal.Now.instant()),
         dispatchInboxEntry: async (entry) => {

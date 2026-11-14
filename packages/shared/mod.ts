@@ -80,6 +80,7 @@ export * from './alm/outbound/al-outbound-message-runtime.ts';
 export * from './alm/outbound/create-default-al-outbound-message-runtime.ts';
 export * from './alm/storage/al-browser-locks.ts';
 export * from './alm/work/al-durable-work-ownership.ts';
+export * from './services/group-dial/web-rtc-group-peer-ledger.ts';
 export * from './services/inbox-outbox-engine.ts';
 export * from './services/inbox-queue-reader.ts';
 export * from './services/outbox-queue-reader.ts';

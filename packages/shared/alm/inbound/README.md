@@ -465,7 +465,24 @@ keeps every child (no adjacency, an unplaced recipient, or a path child its
 room, hint or visited set removes), each relay below it with a consistent layout
 sees every recipient behind its sender and keeps every child too, so one
 disagreement floods that whole subtree at the cost of the flood before the
-adjacency was kept, still at least once. The
+adjacency was kept, still at least once. A receiver admits a replaced layout's
+authorized neighbours for the session's whole overlap after a layout promotion,
+but a sender forwards over that layout only for the first half of it, rounded
+down to a whole millisecond, so an overlap of 1 ms forwards never
+([`resolveRtcRoomRoutingEdges`](../../multicast/room-authority/resolve-rtc-room-routing-edges.ts)).
+A copy is then not refused when two browsers applied the promotion up to that
+half apart. In that first half a relay and an origin also own that layout's
+authorized neighbours, after the accepted layout's children and without
+repeats, a frozen multicast pruned over that layout's own adjacency. The fallback is narrower in that
+half: when every recipient has a neighbour that leads to it and only the visited set removes (a path child the
+other layout may have addressed), a relay keeps only the neighbours whose subtree holds a recipient over the
+edges of both layouts, not every neighbour. A recipient behind the sender in every layout in force, a layout
+with no adjacency and an unplaced recipient still keep every child, as does a path child the room, hint or
+broadcast list removes, and the relays below a flooding peer flood too. A layout whose own adjacency finds
+no route keeps only the neighbours that the union of both layouts' edges leads to a recipient; a layout whose
+adjacency finds one prunes over its own. The missing-recipient retry and the failed-peer
+repair keep the accepted layout's adjacency, but a failed-peer repair's re-plan
+is an ordinary dispatch, so its copy can also reach a replaced-layout child. The
 same exclusion governs the forward of a retried copy and the relay row's
 expected set. A targeted repair copy inherits the repaired dispatch's own copy
 for its peer, so a requester never owns its siblings. Unicast copies carry no
@@ -721,8 +738,8 @@ holds after each pass to `reportDeliveredMarkers`; the browser states it on the 
 
 **Room authority and the membership fence.** An RTC receiver judges a room send against the room
 snapshot it holds before planning it
-([`rtc-room-snapshot-admission.ts`](../../multicast/rtc-room-snapshot-admission.ts); the sender and peer
-verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/resolve-rtc-room-peer-denial.ts)). Behind the
+([`rtc-room-snapshot-admission.ts`](../../multicast/room-authority/rtc-room-snapshot-admission.ts); the sender and peer
+verdicts in [`resolve-rtc-room-peer-denial.ts`](../../multicast/room-authority/resolve-rtc-room-peer-denial.ts)). Behind the
 send's `minSnapshotVersion` or its `rosterVersion` the verdict is `pending`: the message is dropped
 `not-yet-in-sync`, its hop is NACKed with that reason, and the receiver refreshes the room once and
 re-admits the message once. At or beyond both, a sender whose member is absent or not `active` is

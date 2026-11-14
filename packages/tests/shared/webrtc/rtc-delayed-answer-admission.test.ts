@@ -20,6 +20,7 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import { setNextInboundCommitConflicted } from '../alm/inbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../websocket/test-web-socket.ts';
 import { DeterministicRtcOfferIds } from './deterministic-rtc-offer-ids.ts';
 
@@ -62,7 +63,8 @@ it('settles an answer delayed by admission conflict without applying it to a rep
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     const blockerStarted = Promise.withResolvers<void>();
     const releaseBlocker = Promise.withResolvers<void>();

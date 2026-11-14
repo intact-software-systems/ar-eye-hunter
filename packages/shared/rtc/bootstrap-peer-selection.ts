@@ -1,4 +1,4 @@
-import { DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS } from '../services/web-rtc-group-manager.ts';
+import { DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS } from '../services/group-dial/web-rtc-group-peer-ledger.ts';
 import { rendezvousScore } from './rendezvous-score.ts';
 
 export const DEFAULT_BOOTSTRAP_DEGREE = 5;

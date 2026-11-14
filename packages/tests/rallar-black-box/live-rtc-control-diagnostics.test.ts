@@ -2,6 +2,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultLiveRtcControlHttpFixture, LiveRtcControlHttpFixture } from './live-rtc-control-http-fixture.ts';
+import { createRecordedRtcMessageEvent } from './recorded-rtc-message-event-fixture.ts';
 
 describe('live RTC control client', () => {
     let httpFixture: LiveRtcControlHttpFixture;
@@ -436,16 +437,11 @@ describe('live RTC control client', () => {
     });
 
     it('observes a canonical control message receipt and its runtime topic through HTTP', async () => {
-        httpFixture.state.events.push({
-            kind: 'event',
+        httpFixture.state.events.push(createRecordedRtcMessageEvent({
+            runId: 'canonical-receipt',
             agentId: 'agent-b',
-            payload: {
-                kind: 'message',
-                topic: 'rallar.browser.messages.rtc.message',
-                transport: 'messages.rtc',
-                payload: { data: { matrixId: 'canonical-receipt', deliveryMode: 'direct' } }
-            }
-        });
+            payload: { matrixId: 'canonical-receipt', deliveryMode: 'direct' }
+        }));
         await expect(httpFixture.control.waitForMessage({
             runId: 'canonical-receipt',
             senderAgentId: 'agent-a',

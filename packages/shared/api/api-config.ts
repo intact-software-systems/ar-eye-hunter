@@ -1,12 +1,16 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { ApiJsonObject } from './api-json-value.ts';
 
+/** The browser keeps a dropped edge open for its 15 s overlay transition grace, so a longer overlap could never take effect. */
+export const MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
+
 export interface ApiConfig {
     readonly apiBaseUrl: string;
     readonly wsBaseUrl: string;
     readonly endpoints: {
         readonly createWs: string;
     };
+    readonly rtcReplacedLayoutOverlapMs: number;
 }
 
 /** What `/api/config` serves: the configuration and the peer id a client addresses the WS server by (D57 as applied). */

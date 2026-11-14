@@ -11,7 +11,6 @@ export const RTC_SERVICE_SIGNAL_DISPOSITIONS = [
     'reuse-selected',
     'missing-peer-answer',
     'peer-cap',
-    'allow-without-policy',
     'policy-allow',
     'policy-deny',
     'policy-retry',

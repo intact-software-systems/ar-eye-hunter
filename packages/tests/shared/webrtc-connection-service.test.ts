@@ -23,6 +23,7 @@ import {
     NativeRtcConnectionFixture,
     NativeRtcRuntime
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 let runtime: NativeRtcRuntime;
@@ -49,8 +50,14 @@ function createInput(): WebRtcConnectionService.InputDto {
     };
 }
 
-function createFixture(input = createInput()): NativeRtcConnectionFixture {
-    const fixture = createNativeRtcConnectionFixture(input, runtime, createPassThroughTransportFaultPort());
+function createFixture(
+    input = createInput(),
+    peerAdmission: WebRtcConnectionService.PeerAdmission = UNGATED_TEST_PEER_ADMISSION
+): NativeRtcConnectionFixture {
+    const fixture = createNativeRtcConnectionFixture(input, runtime, {
+        faultPort: createPassThroughTransportFaultPort(),
+        peerAdmission
+    });
     fixtures.push(fixture);
     return fixture;
 }
@@ -207,8 +214,7 @@ describe('WebRtcConnectionService signaling and creation', () => {
     it.each([false, 'deny', { decision: 'deny', reason: 'not-desired' }] satisfies WebRtcConnectionService.PeerCreationDecision[])(
         'denies inbound creation without attempts for policy %j',
         async (decision) => {
-            const fixture = createFixture(budgetInput());
-            fixture.service.setInboundPeerCreationPolicy(() => decision);
+            const fixture = createFixture(budgetInput(), { ...UNGATED_TEST_PEER_ADMISSION, decideInbound: () => decision });
             await fixture.service.connectSignaler();
             await fixture.receive(offer());
             expect(runtime.createdConnections).toHaveLength(0);
@@ -217,11 +223,13 @@ describe('WebRtcConnectionService signaling and creation', () => {
     );
 
     it('requests durable retry while inbound peer admission is transient', async () => {
-        const fixture = createFixture(budgetInput());
-        fixture.service.setInboundPeerCreationPolicy(() => ({
-            decision: 'retry',
-            reason: 'stage-layout-mismatch'
-        }));
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => ({
+                decision: 'retry',
+                reason: 'stage-layout-mismatch'
+            })
+        });
         await fixture.service.connectSignaler();
 
         const result = await fixture.receive(offer());
@@ -232,8 +240,10 @@ describe('WebRtcConnectionService signaling and creation', () => {
     });
 
     it('applies outbound denial to every public creation entry and inbound offers', async () => {
-        const fixture = createFixture(budgetInput());
-        fixture.service.setOutboundDialPolicy(() => ({ decision: 'deny', reason: 'not-desired' }));
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideOutbound: () => ({ decision: 'deny', reason: 'not-desired' })
+        });
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'not-desired' });
         expect(await fixture.service.ensurePeerLaneOpen('z-peer')).toMatchObject({ status: 'connect-failed' });
         expect((await fixture.service.acceptPeerIfAbsent('z-peer', offer())).left).toMatchObject({ kind: 'dial-denied' });
@@ -244,25 +254,39 @@ describe('WebRtcConnectionService signaling and creation', () => {
     });
 
     it('fails closed when an admission policy throws', async () => {
-        const fixture = createFixture(budgetInput());
-        fixture.service.setOutboundDialPolicy(() => {
-            throw 'policy failure';
+        let policiesThrow: 'outbound' | 'inbound' = 'outbound';
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => {
+                if (policiesThrow === 'inbound') {
+                    throw 'policy failure';
+                }
+                return 'allow';
+            },
+            decideOutbound: () => {
+                if (policiesThrow === 'outbound') {
+                    throw 'policy failure';
+                }
+                return 'allow';
+            }
         });
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'policy-error' });
-        fixture.service.setOutboundDialPolicy();
-        fixture.service.setInboundPeerCreationPolicy(() => {
-            throw 'policy failure';
-        });
+        policiesThrow = 'inbound';
         await fixture.service.connectSignaler();
         await fixture.receive(offer());
         expect(runtime.createdConnections).toHaveLength(0);
     });
 
     it('retains an existing peer and handles its real signaling after policies deny new peers', async () => {
-        const fixture = createFixture();
+        let creationAllowed = true;
+        const fixture = createFixture(createInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => creationAllowed,
+            decideOutbound: () => creationAllowed
+        });
         const first = fixture.service.ensurePeerConnectionStarted('z-peer').right?.peer;
         fixture.nativePeer('z-peer').setConnected();
-        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        creationAllowed = false;
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.peer).toBe(first);
         await fixture.service.connectSignaler();
         await fixture.receive(offer());
@@ -272,10 +296,14 @@ describe('WebRtcConnectionService signaling and creation', () => {
     });
 
     it.each(['failed', 'reset'] as const)('denies replacement of a %s native peer without consuming another attempt', async (state) => {
-        const fixture = createFixture(budgetInput());
+        let dialsAllowed = true;
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideOutbound: () => dialsAllowed ? 'allow' : { decision: 'deny', reason: 'stage-layout-mismatch' }
+        });
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
         makeNativePeerUnusable(fixture, state);
-        fixture.service.setOutboundDialPolicy(() => ({ decision: 'deny', reason: 'stage-layout-mismatch' }));
+        dialsAllowed = false;
 
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'dial-denied', reason: 'stage-layout-mismatch' });
         expect(await fixture.service.ensurePeerLaneOpen('z-peer')).toMatchObject({ status: 'connect-failed' });
@@ -295,16 +323,16 @@ describe('WebRtcConnectionService signaling and creation', () => {
             ['reset', 'outbound']
         ] as const
     )('applies current %s-native %s admission to incoming offers', async (state, policy) => {
-        const fixture = createFixture(budgetInput());
+        let deniedPolicy: typeof policy | 'none' = 'none';
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => deniedPolicy !== 'inbound',
+            decideOutbound: () => deniedPolicy !== 'outbound'
+        });
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
         const native = fixture.nativePeer('z-peer');
         makeNativePeerUnusable(fixture, state);
-        if (policy === 'inbound') {
-            fixture.service.setInboundPeerCreationPolicy(() => false);
-        }
-        else {
-            fixture.service.setOutboundDialPolicy(() => false);
-        }
+        deniedPolicy = policy;
         await fixture.service.connectSignaler();
 
         await fixture.receive(offer());
@@ -348,11 +376,16 @@ describe('WebRtcConnectionService signaling and creation', () => {
     });
 
     it.each(['new', 'connecting'] as const)('reuses a %s native peer after new creation is denied', async (state) => {
-        const fixture = createFixture(budgetInput());
+        let creationAllowed = true;
+        const fixture = createFixture(budgetInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => creationAllowed,
+            decideOutbound: () => creationAllowed
+        });
         const original = fixture.service.ensurePeerConnectionStarted('z-peer', true).right?.peer;
         const native = fixture.nativePeer('z-peer');
         native.connectionState = state;
-        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        creationAllowed = false;
         await fixture.service.connectSignaler();
 
         expect(fixture.service.ensurePeerConnectionStarted('z-peer').right?.peer).toBe(original);
@@ -372,11 +405,35 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(runtime.createdConnections).toHaveLength(1);
         expect(fixture.nativePeer('z-peer').receivedDescriptions).toHaveLength(2);
     });
+
+    it('never lets the peer-cap policy close a peer for an offer the attempt budget will refuse', async () => {
+        const fixture = createFixture({ ...budgetInput(), maxPeerConnections: 1 }, {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInboundAtCap: (_signal, peers) => {
+                peers.disconnectPeer('y-peer', {});
+                return 'allow';
+            },
+            wouldAdmitInboundAtCap: () => true
+        });
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'connect-exhausted' });
+        fixture.service.ensurePeerConnectionStarted('y-peer', true);
+        await fixture.service.connectSignaler();
+
+        await fixture.receive(offer());
+
+        expect(fixture.service.readPeer('y-peer')).toBeDefined();
+        expect(fixture.service.readPeer('z-peer')).toBeUndefined();
+    });
 });
 
 describe('WebRtcConnectionService peer and lane lifecycle', () => {
     it.each([false, true])('reuses the native peer when creation observers ensure it again (deny later dials: %s)', async (denyLaterDials) => {
-        const fixture = createFixture(budgetInput());
+        let dialsAllowed = true;
+        const fixture = createFixture(budgetInput(), { ...UNGATED_TEST_PEER_ADMISSION, decideOutbound: () => dialsAllowed });
         const created: WebRtcConnectionService.Peer[] = [];
         const reentered: (WebRtcConnectionService.Peer | undefined)[] = [];
         const allocationsBeforeCallbacks: number[] = [];
@@ -388,7 +445,7 @@ describe('WebRtcConnectionService peer and lane lifecycle', () => {
                 peer.channel.onRtcCallbacksDo('creation-observer', { onOpen: opened });
                 if (created.length === 1) {
                     if (denyLaterDials) {
-                        fixture.service.setOutboundDialPolicy(() => false);
+                        dialsAllowed = false;
                     }
                     reentered.push(fixture.service.ensurePeerConnectionStarted(peer.peerId, true).right?.peer);
                 }
@@ -411,12 +468,13 @@ describe('WebRtcConnectionService peer and lane lifecycle', () => {
     });
 
     it('does not allocate a replacement after a creation observer resets the peer and closes admission', () => {
-        const fixture = createFixture(budgetInput());
+        let dialsAllowed = true;
+        const fixture = createFixture(budgetInput(), { ...UNGATED_TEST_PEER_ADMISSION, decideOutbound: () => dialsAllowed });
         const denials: string[] = [];
         fixture.service.onRtcPeerLifecycleDo('reset', {
             onCreated: (peer) => {
                 peer.connection.reset();
-                fixture.service.setOutboundDialPolicy(() => false);
+                dialsAllowed = false;
                 const result = fixture.service.ensurePeerConnectionStarted(peer.peerId, true);
                 if (result.left) {
                     denials.push(result.left.kind);
@@ -543,14 +601,19 @@ describe('WebRtcConnectionService peer and lane lifecycle', () => {
     });
 
     it('reconnects only a stale channel on the existing native peer', async () => {
-        const fixture = createFixture();
+        let creationAllowed = true;
+        const fixture = createFixture(createInput(), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => creationAllowed,
+            decideOutbound: () => creationAllowed
+        });
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
         const native = fixture.nativePeer('z-peer');
         native.setConnected();
         const channel = native.channels[0];
         channel.open();
         channel.close();
-        fixture.service.setOutboundDialPolicy(() => false).setInboundPeerCreationPolicy(() => false);
+        creationAllowed = false;
         expect(fixture.service.peerIdsWithNoReconnectableLanes()).toEqual([]);
         fixture.service.ensurePeerConnectionStarted('z-peer', true);
         expect(runtime.createdConnections).toHaveLength(1);
@@ -1018,7 +1081,8 @@ async function withClockService(
         nowEpochMs,
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     };
     const service = new WebRtcConnectionService(signaler, input, dependencies);
     try {

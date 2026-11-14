@@ -87,6 +87,131 @@ describe('the children a peer owns for a multicast frozen to its recipients', ()
     });
 });
 
+describe('the children a peer owns while a replaced layout is in force', () => {
+    /** The layout `TREE` replaced: `r` led to `a1` and `b1`, and `c` hung below `a1` through `c1`. */
+    const REPLACED_TREE: Readonly<Record<string, readonly string[]>> = {
+        r: ['a1', 'b1'],
+        a1: ['r', 'c1'],
+        c1: ['a1', 'c'],
+        c: ['c1'],
+        b1: ['r', 'b', 'a'],
+        b: ['b1'],
+        a: ['b1']
+    };
+
+    it('owns the replaced layout\'s children beside the accepted layout\'s', () => {
+        const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
+
+        expect(resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'r',
+            fromPeerId: 'a',
+            overlayNeighborPeerIds: TREE.r,
+            overlayNextHopsBySessionId: TREE,
+            previousOverlayLayout: { neighborPeerIds: REPLACED_TREE.r!, nextHopsBySessionId: REPLACED_TREE }
+        })).toEqual(['b', 'c', 'a1', 'b1']);
+        // `b` is a neighbour in both layouts and is owned once, so one dispatch sends it one copy.
+        expect(resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'r',
+            overlayNeighborPeerIds: ['b'],
+            previousOverlayLayout: { neighborPeerIds: ['b', 'x'], nextHopsBySessionId: undefined }
+        })).toEqual(['b', 'x']);
+    });
+
+    it('prunes a frozen multicast toward its recipients over each layout\'s own adjacency', () => {
+        // Over the accepted tree only `c` leads to `c`; over the replaced tree only `a1` does. Pruning the replaced
+        // layout's children over the accepted adjacency would find no path and keep both `a1` and `b1`.
+        expect(resolveALOwnedChildPeerIds(createFrozenMulticast(['c']), {
+            nowMs: 0,
+            selfPeerId: 'r',
+            overlayNeighborPeerIds: TREE.r,
+            overlayNextHopsBySessionId: TREE,
+            previousOverlayLayout: { neighborPeerIds: REPLACED_TREE.r!, nextHopsBySessionId: REPLACED_TREE }
+        })).toEqual(['c', 'a1']);
+    });
+
+    describe('when the path child toward the recipient is already visited', () => {
+        /** `a` sent `c` a copy over the accepted edge and `b` one over the replaced edge; `e`, `f` hold no recipient. */
+        const ACCEPTED = { a: ['c'], b: ['c', 'e'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'] };
+        const REPLACED = { a: ['b'], b: ['a', 'c', 'e'], c: ['b'], e: ['b', 'f'], f: ['e'] };
+        const COPY_TO_B = { ...createFrozenMulticast(['c']), diagnostics: { visitedPeerIds: ['a', 'c', 'b'] } };
+
+        it('owns nothing over either layout while the replaced one is in force', () => {
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: ACCEPTED.b,
+                overlayNextHopsBySessionId: ACCEPTED,
+                previousOverlayLayout: { neighborPeerIds: REPLACED.b, nextHopsBySessionId: REPLACED }
+            })).toEqual([]);
+        });
+
+        it('owns nothing when one layout has the recipient visited and the other puts it behind the sender', () => {
+            // The promotion kept `a-b` and moved `c` from under `b` to under `a`.
+            const accepted = { a: ['b', 'c'], b: ['a', 'e'], c: ['a'], e: ['b', 'f'], f: ['e'] };
+
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: accepted.b,
+                overlayNextHopsBySessionId: accepted,
+                previousOverlayLayout: { neighborPeerIds: REPLACED.b, nextHopsBySessionId: REPLACED }
+            })).toEqual([]);
+        });
+
+        it('keeps every neighbour with one layout in force, as before the overlap', () => {
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: ACCEPTED.b,
+                overlayNextHopsBySessionId: ACCEPTED
+            })).toEqual(['e']);
+        });
+
+        it('keeps a neighbour that reaches the recipient only over the other layout\'s edges', () => {
+            // `b` failed and is named visited; `d` is a neighbour over the replaced layout only, and reaches `c`
+            // through `g` over the accepted one.
+            const accepted = { a: ['b'], b: ['a', 'g'], c: ['g'], d: ['g'], g: ['b', 'c', 'd'] };
+            const replaced = { a: ['b', 'd'], b: ['a', 'c'], c: ['b'], d: ['a', 'g'], g: ['d'] };
+
+            expect(resolveALOwnedChildPeerIds({ ...createFrozenMulticast(['c']), diagnostics: { visitedPeerIds: ['b'] } }, {
+                nowMs: 0,
+                selfPeerId: 'a',
+                overlayNeighborPeerIds: accepted.a,
+                overlayNextHopsBySessionId: accepted,
+                previousOverlayLayout: { neighborPeerIds: replaced.a, nextHopsBySessionId: replaced }
+            })).toEqual(['d']);
+        });
+
+        it('keeps every neighbour while the replaced one is in force when the recipient is behind its sender', () => {
+            expect(resolveALOwnedChildPeerIds(createFrozenMulticast(['a1']), {
+                nowMs: 0,
+                selfPeerId: 'r',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: TREE.r,
+                overlayNextHopsBySessionId: TREE,
+                previousOverlayLayout: { neighborPeerIds: ['b'], nextHopsBySessionId: TREE }
+            })).toEqual(['b', 'c']);
+        });
+    });
+
+    it('owns only the accepted layout\'s children when no replaced layout is given', () => {
+        const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
+
+        expect(resolveALOwnedChildPeerIds(message, {
+            nowMs: 0,
+            selfPeerId: 'r',
+            fromPeerId: 'a',
+            overlayNeighborPeerIds: TREE.r,
+            overlayNextHopsBySessionId: TREE
+        })).toEqual(['b', 'c']);
+    });
+});
+
 describe('the child a peer owns for a unicast', () => {
     it('keeps the unicast\'s immediate peer, whatever the frozen audience rule', () => {
         const unicast = newALUnicastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, 'b', 'chat.v1', {});

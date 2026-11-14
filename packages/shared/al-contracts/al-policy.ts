@@ -6,7 +6,7 @@ import type { ALOrderingObservation, ALSeqRange, ALSupersedenceObservation } fro
 import { toALSeqRangesText } from './al-seq-range.ts';
 
 import { normalizeALQosPolicy, toDefaultALSemanticKey } from './normalize-al-qos-policy.ts';
-import { resolveALOwnedChildPeerIds } from './resolve-al-owned-child-peer-ids.ts';
+import { resolveALOwnedChildPeerIds, type ALOverlayLayout } from './resolve-al-owned-child-peer-ids.ts';
 
 export {
     AL_DURABILITY_ALGOS,
@@ -233,6 +233,11 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly overlayNeighborPeerIds?: readonly string[];
     /** The accepted layout's whole adjacency; absent when the carrier holds no accepted layout. */
     readonly overlayNextHopsBySessionId?: Readonly<Record<string, readonly string[]>>;
+    /**
+     * The layout the accepted one replaced, only for the first half of the overlap its receivers admit; absent
+     * otherwise, and always on the WS carrier.
+     */
+    readonly previousOverlayLayout?: ALOverlayLayout;
     readonly overloaded?: boolean;
     /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
     readonly backpressured?: boolean;
@@ -743,27 +748,41 @@ function resolveNextHopPeerIds(
     );
     return msg.targets?.mode === 'unicast'
         ? reachablePeerIds
-        : applyFanoutSelection(reachablePeerIds, effective, msg.id.msgId);
+        : applyFanoutSelection(
+            {
+                msgId: msg.id.msgId,
+                peerIds: reachablePeerIds,
+                acceptedPeerIds: new Set(context.overlayNeighborPeerIds)
+            },
+            effective
+        );
 }
 
-function applyFanoutSelection(
-    candidates: readonly string[],
-    effective: ALQosEffectivePolicy,
-    msgId: string
-): readonly string[] {
+/**
+ * The ready children one copy may go to: the accepted layout's first, then a replaced layout's during the first half
+ * of the overlap.
+ */
+interface ALFanoutCandidates {
+    readonly msgId: string;
+    readonly peerIds: readonly string[];
+    readonly acceptedPeerIds: ReadonlySet<string>;
+}
+
+function applyFanoutSelection(candidates: ALFanoutCandidates, effective: ALQosEffectivePolicy): readonly string[] {
+    const { msgId, peerIds, acceptedPeerIds } = candidates;
+    const limit = effective.fanout.opts.limit ?? peerIds.length;
     switch (effective.fanout.algo) {
         case 'all':
-            return candidates;
-        case 'limit': {
-            const limit = effective.fanout.opts.limit ?? candidates.length;
-            return candidates.slice(0, limit);
-        }
-        case 'random-k': {
-            const limit = effective.fanout.opts.limit ?? candidates.length;
-            return [...candidates]
-                .sort((left, right) => stableRank(`${msgId}:${left}`) - stableRank(`${msgId}:${right}`))
+            return peerIds;
+        case 'limit':
+            return peerIds.slice(0, limit);
+        case 'random-k':
+            return [...peerIds]
+                .sort((left, right) =>
+                    Number(!acceptedPeerIds.has(left)) - Number(!acceptedPeerIds.has(right)) ||
+                    stableRank(`${msgId}:${left}`) - stableRank(`${msgId}:${right}`)
+                )
                 .slice(0, limit);
-        }
     }
 }
 

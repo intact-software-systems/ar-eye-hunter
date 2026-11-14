@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 
 const roomRef = {
     applicationId: 'app-1',
@@ -149,6 +150,22 @@ describe('RTC group-snapshot refresh', () => {
         await refresh.afterInboundAdmission(roomMessage(6), { kind: 'not-admitted', reason: 'unauthorized' });
 
         expect(refreshGroupSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('does not read authority for a copy that awaits the promotion of a planned layout', async () => {
+        const requestedSnapshotVersions: number[] = [];
+        const refresh = new RtcGroupSnapshotRefresh({
+            refreshGroupSnapshot: async (_roomRef, minSnapshotVersion) => {
+                requestedSnapshotVersions.push(minSnapshotVersion);
+            }
+        });
+
+        await expect(refresh.afterInboundAdmission(
+            roomMessage(6),
+            { kind: 'not-admitted', reason: `not-yet-in-sync: ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}` }
+        )).resolves.toBe(false);
+
+        expect(requestedSnapshotVersions).toEqual([]);
     });
 
     it('permits no re-entry for a membership-fenced denial although its refresh would succeed', async () => {

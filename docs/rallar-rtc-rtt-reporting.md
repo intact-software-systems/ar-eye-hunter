@@ -199,9 +199,9 @@ The resulting overlay snapshot includes:
 
 Browsers receive `AppTopics.overlayTopology` snapshots over WebSocket. The
 browser converts each snapshot into local `OverlayInfo`, including
-`degreeLimit`, for its own session. `WebRtcGroupManager` then uses
-`overlay.nextHopSessionIds` as both the steady-state desired RTC peer signal
-and the preferred RTT reporting set.
+`degreeLimit`, for its own session. The peer ledger holds
+`overlay.nextHopSessionIds` as the steady-state desired RTC peer signal, which
+`WebRtcGroupManager` reconciles and takes as the preferred RTT reporting set.
 
 Durable config and temporary override PUT/DELETE routes go through AppInbox.
 They atomically apply the optimistic state change, current idempotency receipt,
@@ -272,8 +272,8 @@ diagnostics before treating it as a production shape.
   RTT calculation.
 - `packages/shared/services/web-rtc-rx-streamer-service.ts`: per-peer heartbeat
   ownership and `RttMeasurementInfo` creation.
-- `packages/shared/services/web-rtc-group-manager.ts`: browser desired RTC peer
-  selection and capped RTT reporting peer selection.
+- `packages/shared/services/group-dial/web-rtc-group-peer-ledger.ts`: browser desired RTC peer
+  ownership; `packages/shared/services/web-rtc-group-manager.ts`: capped RTT reporting peer selection.
 - `packages/shared-web/browser/connection/initialise-browser-middleware.ts`:
   browser RTT AL message creation,
   selected-peer heartbeat reconciliation, and WS enqueue.

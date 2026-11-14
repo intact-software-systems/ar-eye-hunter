@@ -41,10 +41,11 @@ const HEALTH_CAPTURE_FAILURE: LiveRtcDiagnosticFailure = {
 
 const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
 
+/** The realtime recorder records the sent data itself; the typed-channel recorder nests it as `data.payload`. */
 export function messageData(event: LiveRtcControlClient.Event): LiveRtcJsonRecord {
     const runtimeEvent = jsonRecord(event.payload);
-    const runtimePayload = jsonRecord(runtimeEvent?.payload);
-    return jsonRecord(runtimePayload?.data) ?? {};
+    const data = jsonRecord(jsonRecord(runtimeEvent?.payload)?.data);
+    return (runtimeEvent?.transport === 'messages.rtc' ? jsonRecord(data?.payload) : data) ?? {};
 }
 
 export function summarizeLiveRtcFailureAgentHealth(

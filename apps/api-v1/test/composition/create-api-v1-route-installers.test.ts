@@ -33,6 +33,7 @@ test('route installers mount representative API and websocket behavior in order'
         apiBaseUrl: 'http://localhost:8080',
         wsBaseUrl: 'ws://localhost:8080',
         endpoints: { createWs: '/api/ws/:id' },
+        rtcReplacedLayoutOverlapMs: 7_000,
         serverPeerId: 'default-qbox-server'
     });
     assert.equal((await app.request('/api/webrtc/ice')).status, 401);
@@ -118,6 +119,7 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
             apiBaseUrl: 'http://localhost:8080',
             wsBaseUrl: 'ws://localhost:8080',
             endpoints: { createWs: '/api/ws/:id' },
+            rtcReplacedLayoutOverlapMs: 7_000,
             serverPeerId: 'default-qbox-server'
         },
         ice: {

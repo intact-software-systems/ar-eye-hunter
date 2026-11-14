@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import {
+    BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
@@ -15,6 +20,7 @@ import {
     type NativeRtcConnectionFixture,
     type NativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface AdmissionScenario {
@@ -27,8 +33,10 @@ interface AdmissionScenario {
 interface AdmissionRuntime {
     readonly group: GroupSnapshot;
     readonly manager: WebRtcGroupManager;
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
     readonly connection: NativeRtcConnectionFixture;
     readonly acceptedOverlays: LatestRepository<string, OverlayInfo>;
+    readonly plannedOverlays: LatestRepository<string, OverlayInfo>;
 }
 
 const STAGE_EXPECTATIONS = [
@@ -36,7 +44,7 @@ const STAGE_EXPECTATIONS = [
     { lifecycleState: 'forming', permitsPlanned: false, permitsAccepted: false },
     { lifecycleState: 'planned', permitsPlanned: false, permitsAccepted: false },
     { lifecycleState: 'connecting', permitsPlanned: true, permitsAccepted: false },
-    { lifecycleState: 'active', permitsPlanned: false, permitsAccepted: true },
+    { lifecycleState: 'active', permitsPlanned: true, permitsAccepted: true },
     { lifecycleState: 'reconfiguring', permitsPlanned: false, permitsAccepted: true },
     { lifecycleState: 'reconnecting', permitsPlanned: true, permitsAccepted: true }
 ] as const;
@@ -148,7 +156,7 @@ describe('browser RTC peer admission', () => {
             activeSessions: runtime.group.activeSessions.filter((session) => session.sessionId !== 'peer-accepted'),
             onlineMemberCount: 3
         };
-        await runtime.manager.getOrCreate(currentGroup.group).acceptGroupUpdate(currentGroup);
+        await runtime.groupPeerLedger.getOrCreate(currentGroup.group).acceptGroupUpdate(currentGroup);
         const otherGroup = createGroupSnapshotFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -159,7 +167,7 @@ describe('browser RTC peer admission', () => {
             ...acceptedOverlay(otherGroup),
             nextHopSessionIds: []
         });
-        await runtime.manager.getOrCreate(otherGroup.group).acceptGroupUpdate(otherGroup);
+        await runtime.groupPeerLedger.getOrCreate(otherGroup.group).acceptGroupUpdate(otherGroup);
 
         await runtime.connection.receive(offer('peer-accepted'));
         const direct = runtime.connection.service.ensurePeerConnectionStarted('peer-accepted');
@@ -173,20 +181,9 @@ describe('browser RTC peer admission', () => {
         expect(nativeRuntime.createdConnections).toEqual([]);
     });
 
-    it('rejects a lagging planned offer after activation while retaining an established peer', async () => {
+    it('admits a planned-layout peer\'s offer while the room is active and holds that planned layout', async () => {
         const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
-        expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
-        const established = runtime.connection.nativePeer('peer-planned');
-        established.setConnected();
-        for (const channel of established.channels) {
-            await channel.open();
-        }
-        const active: GroupSnapshot = {
-            ...runtime.group,
-            group: { ...runtime.group.group, snapshotVersion: 4, lifecycleState: 'active' },
-            causalRevision: { groupRevision: 4, presenceRevision: 4 }
-        };
-        await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+        const established = await activateWithEstablishedPlannedPeer(runtime);
 
         expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
         expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
@@ -194,12 +191,341 @@ describe('browser RTC peer admission', () => {
         await runtime.connection.receive(offer('peer-planned'));
         await runtime.connection.receive(offer('peer-accepted'));
 
-        expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
+        expect(runtime.connection.nativePeer('peer-planned').remoteDescription?.type).toBe('offer');
         expect(runtime.connection.nativePeer('peer-accepted').remoteDescription?.type).toBe('offer');
-        expect(nativeRuntime.createdConnections).toHaveLength(2);
-        expect(runtime.connection.service.knownPeerIds()).toEqual(['peer-accepted']);
+        expect(runtime.connection.service.knownPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-planned']);
+    });
+
+    it.each([
+        {
+            planned: 'cleared',
+            replan: (runtime: AdmissionRuntime) => runtime.plannedOverlays.delete(toScopedOverlayId(runtime.group.group))
+        },
+        {
+            planned: 'replaced by a layout that does not name the peer',
+            replan: (runtime: AdmissionRuntime) =>
+                runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                    ...acceptedOverlay(runtime.group),
+                    overlayVersion: 3,
+                    nextHopSessionIds: ['peer-shared']
+                })
+        }
+    ])(
+        'refuses that peer\'s offer once the planned layout is $planned, while retaining an established peer',
+        async (scenario) => {
+            const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
+            const established = await activateWithEstablishedPlannedPeer(runtime);
+            scenario.replan(runtime);
+            await runtime.manager.notifyOverlayTopologyChanged();
+
+            expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
+            expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
+            expect(established.connectionState).toBe('connected');
+            runtime.connection.service.removePeerIfPresent('peer-planned');
+
+            // The policy holds the offer for a retry because no layout this room dials names the peer.
+            expect(runtime.groupPeerLedger.isPeerDialAllowedByAnyGroup('peer-planned')).toBe(false);
+            expect(await runtime.connection.receive(offer('peer-planned'))).toBe('retry');
+            expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
+            expect(runtime.connection.service.knownPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-shared']);
+        }
+    );
+
+    describe('at a full connection cap', () => {
+        const accepted = ['a1', 'a2', 'a3', 'a4', 'a5'];
+        const early = ['b1', 'b2', 'b3', 'b4', 'b5'];
+
+        it('an accepted peer\'s offer at a full cap closes an early peer and is admitted at once', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.nativePeer('c1').remoteDescription?.type).toBe('offer');
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
+        });
+
+        it('an accepted peer\'s offer that closes a desired early peer counts a disconnect, and that peer is dialled again when a slot frees with no room event', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ disconnectCount: 1, retainedEvictionCount: 0 });
+            // The wakes start after the close, so only the closed peer's waiting dial can wake a pass for the freed slot.
+            runtime.connection.service.removePeerIfPresent('b2');
+            runtime.manager.startReconcileWakes();
+            runtime.connection.nativePeer('c1').setConnected();
+            await runtime.manager.whenReconciled();
+            runtime.manager.stopReconcileWakes();
+
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b1', 'b3', 'b4', 'b5', 'c1']);
+        });
+
+        it('an accepted peer\'s offer that closes a retained early peer counts an eviction, not a disconnect', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                ...acceptedOverlay(runtime.group),
+                overlayVersion: 3,
+                nextHopSessionIds: ['b2', 'b3', 'b4', 'b5']
+            });
+            await runtime.manager.notifyOverlayTopologyChanged();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ retainedCreatedCount: 1, retainedEvictionCount: 0, disconnectCount: 0 });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ retainedCreatedCount: 1, retainedEvictionCount: 1, disconnectCount: 0 });
+        });
+
+        it('closing an early peer the room\'s presence no longer names wakes no pass, and the next established peer does', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            runtime.manager.startReconcileWakes();
+            await runtime.groupPeerLedger.getOrCreate(runtime.group.group).acceptGroupUpdate({
+                ...runtime.group,
+                activeSessions: runtime.group.activeSessions.filter((session) => session.sessionId !== 'b1')
+            });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+            const passesBefore = runtime.manager.readDiagnostics().reconcileRunCount;
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+            await runtime.manager.whenReconciled();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ disconnectCount: 1, reconcileRunCount: passesBefore });
+            runtime.connection.nativePeer('c1').setConnected();
+            await runtime.manager.whenReconciled();
+            runtime.manager.stopReconcileWakes();
+
+            expect(runtime.manager.readDiagnostics().reconcileRunCount).toBe(passesBefore + 1);
+        });
+
+        it('an accepted peer\'s offer at a full cap with no early peer is refused and no peer closes', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: accepted });
+            // The replaced layout's edges stay retained for their grace and fill the cap with the new layout's.
+            for (const overlays of [runtime.acceptedOverlays, runtime.plannedOverlays]) {
+                overlays.set(toScopedOverlayId(runtime.group.group), {
+                    ...acceptedOverlay(runtime.group),
+                    overlayVersion: 3,
+                    nextHopSessionIds: early
+                });
+            }
+            await runtime.manager.notifyOverlayTopologyChanged();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('c1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+        });
+
+        it('an early peer\'s offer at a full cap is held, never admitted by closing another peer', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: [...early, 'b6'] });
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+
+            expect(await runtime.connection.receive(offer('b6'))).toBe('retry');
+
+            expect(runtime.connection.service.readPeer('b6')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+        });
+
+        it('an early peer\'s offer held at a full cap is brought due by the reconcile pass after a peer closes', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: [...early, 'b6'] });
+            expect(await runtime.connection.receive(offer('b6'))).toBe('retry');
+            expect(runtime.connection.broughtDueSenderIds).toEqual([]);
+
+            // The planned layout drops b1 and this browser closes it, so the pass frees its slot and does not redial it.
+            runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                ...acceptedOverlay(runtime.group),
+                overlayVersion: 3,
+                nextHopSessionIds: ['b2', 'b3', 'b4', 'b5', 'b6']
+            });
+            runtime.connection.service.removePeerIfPresent('b1');
+            await runtime.manager.notifyOverlayTopologyChanged();
+
+            expect(runtime.connection.broughtDueSenderIds).toEqual(['b6']);
+        });
+
+        it('an offer from a peer of a layout this browser has not adopted yet is held, not dropped, while an early peer could make room', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+
+            expect(await runtime.connection.receive(offer('c1'))).toBe('retry');
+
+            expect(runtime.connection.service.readPeer('c1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+        });
+
+        it('the held offer is delivered when the layout is adopted, and one early peer closes for it', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            expect(await runtime.connection.receive(offer('c1'))).toBe('retry');
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            await runtime.connection.service.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON);
+            expect(runtime.connection.broughtDueSenderIds).toEqual(['c1']);
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+
+            // The transport delivers the released signal again.
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+            expect(runtime.connection.nativePeer('c1').remoteDescription?.type).toBe('offer');
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
+        });
+
+        it('when this browser adopts the layout, its reconcile closes an early peer for each new entry and the released offers reuse those entries', async () => {
+            const newPeers = ['c1', 'c2', 'c3', 'c4', 'c5'];
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            for (const peerId of newPeers) {
+                expect(await runtime.connection.receive(offer(peerId))).toBe('retry');
+            }
+
+            await adoptSecondRoomLayout(runtime, newPeers);
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...newPeers]);
+            const entries = newPeers.map((peerId) => runtime.connection.nativePeer(peerId));
+
+            await runtime.connection.service.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON);
+            expect(runtime.connection.broughtDueSenderIds.slice().sort()).toEqual(newPeers);
+            // The transport delivers each released signal again.
+            for (const peerId of newPeers) {
+                expect(await runtime.connection.receive(offer(peerId))).toBeUndefined();
+            }
+
+            expect(newPeers.map((peerId) => runtime.connection.nativePeer(peerId))).toEqual(entries);
+            for (const peerId of newPeers) {
+                expect(runtime.connection.nativePeer(peerId).receivedDescriptions).toContainEqual({ type: 'offer', sdp: `${peerId}-offer` });
+            }
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...newPeers]);
+        });
+
+        it('with no early peer known, such an offer at the cap is refused, not held', async () => {
+            const fullAccepted = [...accepted, ...early];
+            const runtime = await createFullCapRuntime({ accepted: fullAccepted, planned: fullAccepted });
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('c1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual(fullAccepted);
+        });
     });
 });
+
+const FULL_CAP_PRESENT_PEER_IDS = ['a1', 'a2', 'a3', 'a4', 'a5', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
+
+interface FullCapLayouts {
+    readonly accepted: readonly string[];
+    readonly planned: readonly string[];
+}
+
+async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionRuntime> {
+    const peerIds = [...new Set([...layouts.accepted, ...layouts.planned, ...FULL_CAP_PRESENT_PEER_IDS])];
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room',
+        sessionIds: ['self', ...peerIds]
+    });
+    const group: GroupSnapshot = {
+        ...snapshot,
+        group: { ...snapshot.group, lifecycleState: 'active', formationEpoch: 1 }
+    };
+    const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
+    const plannedOverlays = new LatestRepository<string, OverlayInfo>();
+    acceptedOverlays.set(toScopedOverlayId(group.group), { ...acceptedOverlay(group), nextHopSessionIds: layouts.accepted });
+    plannedOverlays.set(toScopedOverlayId(group.group), {
+        ...acceptedOverlay(group),
+        overlayVersion: 2,
+        nextHopSessionIds: layouts.planned
+    });
+    const groupPeerLedger = createTestGroupPeerLedger('self', {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
+    const connection = createNativeRtcConnectionFixture(
+        {
+            sessionId: 'self',
+            token: 'fixture-token',
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        },
+        nativeRuntime,
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger) }
+    );
+    connections.add(connection);
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        groupPeerLedger,
+        createBrowserRtcHeldOfferReleases(connection.service)
+    );
+    await connection.service.connectSignaler();
+    await manager.acceptGroupUpdate(group);
+    return { group, manager, groupPeerLedger, connection, acceptedOverlays, plannedOverlays };
+}
+
+// Hydrates the room's state without the reconcile the read-through would run, so its accepted peer's offer arrives
+// before this browser dials that peer itself.
+async function hydrateSecondRoomWithoutReconcile(runtime: AdmissionRuntime, acceptedPeerIds: readonly string[]): Promise<void> {
+    const secondRoom = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'second-room',
+        sessionIds: ['self', ...acceptedPeerIds]
+    });
+    const active: GroupSnapshot = {
+        ...secondRoom,
+        group: { ...secondRoom.group, lifecycleState: 'active', formationEpoch: 1 }
+    };
+    runtime.acceptedOverlays.set(toScopedOverlayId(active.group), {
+        ...acceptedOverlay(active),
+        nextHopSessionIds: acceptedPeerIds
+    });
+    await runtime.groupPeerLedger.getOrCreate(active.group).acceptGroupUpdate(active);
+}
+
+// Adopts the room's layout through the read-through, whose reconcile dials its accepted peers.
+async function adoptSecondRoomLayout(runtime: AdmissionRuntime, acceptedPeerIds: readonly string[]): Promise<void> {
+    const secondRoom = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'second-room',
+        sessionIds: ['self', ...acceptedPeerIds]
+    });
+    const active: GroupSnapshot = {
+        ...secondRoom,
+        group: { ...secondRoom.group, lifecycleState: 'active', formationEpoch: 1 }
+    };
+    runtime.acceptedOverlays.set(toScopedOverlayId(active.group), {
+        ...acceptedOverlay(active),
+        nextHopSessionIds: acceptedPeerIds
+    });
+    await runtime.manager.acceptGroupUpdate(active);
+}
+
+function sortedKnownPeerIds(runtime: AdmissionRuntime): string[] {
+    return runtime.connection.service.knownPeerIds().slice().sort();
+}
+
+async function activateWithEstablishedPlannedPeer(runtime: AdmissionRuntime) {
+    expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
+    const established = runtime.connection.nativePeer('peer-planned');
+    established.setConnected();
+    for (const channel of established.channels) {
+        await channel.open();
+    }
+    const active: GroupSnapshot = {
+        ...runtime.group,
+        group: { ...runtime.group.group, snapshotVersion: 4, lifecycleState: 'active' },
+        causalRevision: { groupRevision: 4, presenceRevision: 4 }
+    };
+    await runtime.groupPeerLedger.getOrCreate(active.group).acceptGroupUpdate(active);
+    return established;
+}
 
 async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<AdmissionRuntime> {
     const snapshot = createGroupSnapshotFixture({
@@ -234,6 +560,12 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
             nextHopSessionIds: ['peer-planned', 'peer-shared']
         });
     }
+    const groupPeerLedger = createTestGroupPeerLedger('self', {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
     const connection = createNativeRtcConnectionFixture(
         {
             sessionId: 'self',
@@ -244,21 +576,19 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger) }
     );
     connections.add(connection);
-    const manager = new WebRtcGroupManager(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: plannedOverlays,
-        acceptedOverlayCache: acceptedOverlays
-    }, { onOverlayAdopted: async () => {} });
-    configureBrowserRtcPeerCreationPolicies(connection.service, manager);
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        groupPeerLedger,
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+    );
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.
-    await manager.getOrCreate(group.group).acceptGroupUpdate(group);
+    await groupPeerLedger.getOrCreate(group.group).acceptGroupUpdate(group);
     await connection.service.connectSignaler();
-    return { group, manager, connection, acceptedOverlays };
+    return { group, manager, groupPeerLedger, connection, acceptedOverlays, plannedOverlays };
 }
 
 function acceptedOverlay(group: GroupSnapshot): OverlayInfo {

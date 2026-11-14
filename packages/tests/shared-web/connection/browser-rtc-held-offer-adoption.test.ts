@@ -3,8 +3,8 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
-    configureBrowserRtcPeerCreationPolicies
-} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
@@ -29,6 +29,7 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import { createInboundTestStores } from '../../shared/alm/inbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -121,6 +122,14 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
         }),
         inboundDiagnostics: (event) => diagnostics.push(event)
     }).enableDefaultCallbacks();
+    const group = createActiveGroup();
+    const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
+    const groupPeerLedger = createTestGroupPeerLedger(SELF, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
+        acceptedOverlayCache: acceptedOverlays
+    });
     const connectionService = new WebRtcConnectionService(
         new WsRtcSignalingTransportUsingWsQBox(queueBoxClient, SIGNALING_TYPE),
         {
@@ -134,20 +143,18 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
             faultPort: createPassThroughTransportFaultPort(),
             createOfferId: new DeterministicRtcOfferIds().createOfferId,
             nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: (messages) => queueBoxClient.writeRetainedInboxMessagesDueNow(messages)
+            writeRetainedSignalsDueNow: (messages) => queueBoxClient.writeRetainedInboxMessagesDueNow(messages),
+            peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger)
         }
     );
-    const group = createActiveGroup();
-    const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
-    const manager = new WebRtcGroupManager(connectionService, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
-        acceptedOverlayCache: acceptedOverlays
-    }, {
-        onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
-    });
-    configureBrowserRtcPeerCreationPolicies(connectionService, manager);
+    const manager = new WebRtcGroupManager(
+        connectionService,
+        groupPeerLedger,
+        {
+            onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON),
+            onReconcilePassEnded: () => {}
+        }
+    );
     onTestFinished(async () => {
         connectionService.removePeerIfPresent(SENDER);
         const cleanup = await Promise.allSettled([queueBoxClient.close(), queueEngine.stop()]);
@@ -157,7 +164,7 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
             throw failure.reason;
         }
     });
-    await manager.getOrCreate(group.group).acceptGroupUpdate(group);
+    await groupPeerLedger.getOrCreate(group.group).acceptGroupUpdate(group);
     queueEngine.start();
     const connecting = connectionService.connectSignaler();
     await vi.advanceTimersByTimeAsync(0);

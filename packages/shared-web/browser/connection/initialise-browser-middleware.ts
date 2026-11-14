@@ -58,6 +58,7 @@ import type { ALVolatileSessionLimits } from '@shared/alm/volatile-budget/al-vol
 import type { ALDurableWorkOwnership } from '@shared/alm/work/al-durable-work-ownership.ts';
 import type {
     ApiConfig,
+    ApiConfigResponse,
     AuthSession,
     ClientInfo,
     IceConfig,
@@ -80,6 +81,11 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
+import {
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    resolveWebRtcMaxPeerConnections,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
@@ -94,6 +100,10 @@ import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
 } from './close-browser-transport-resources.ts';
+import {
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from './create-browser-rtc-peer-admission.ts';
 import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 import {
@@ -152,7 +162,7 @@ export type BrowserWebSocketCarrier = Pick<
 
 export type BrowserRtcOverlayCarrier = Pick<
     rtcEngine.InitialiseRtcOverlayMulticastManagerInput,
-    'webRtcConnectionService' | 'qboxEngine'
+    'webRtcConnectionService' | 'qboxEngine' | 'replacedLayoutOverlapMs'
 >;
 
 export interface BrowserMiddlewareCreation {
@@ -205,6 +215,16 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
+interface BrowserTransports {
+    readonly webSocketTransport: BrowserWebSocketTransport;
+    readonly rtcTransport: BrowserRtcTransport;
+}
+
+/** The connection service with the group peer ledger its admission reads, which the group manager is built over. */
+interface BrowserRtcConnection extends rtcEngine.BrowserRtcConnectionInitialization {
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
+}
+
 /** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
 interface BrowserRtcAcquisitions {
     readonly webRtcConnectionService: WebRtcConnectionService;
@@ -216,6 +236,7 @@ interface BrowserRtcAcquisitions {
 interface InitialiseBrowserRtcTransportInput extends InitialiseBrowserTransportInput {
     readonly rtcSignalingTopicId: string;
     readonly webSocketTransport: BrowserWebSocketTransport;
+    readonly replacedLayoutOverlapMs: number;
 }
 
 interface InitialiseBrowserStateTransportInput extends InitialiseBrowserTransportInput {
@@ -250,33 +271,13 @@ export function createBrowserRttHeartbeatMessage(
     );
 }
 
-/** Why a peer is refused until this browser adopts the layout that names it; adoption releases its held offers. */
-export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
-
-export function configureBrowserRtcPeerCreationPolicies(
-    webRtcConnectionService: WebRtcConnectionService,
-    webRtcGroupManager: WebRtcGroupManager
-): void {
-    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-            ? { decision: 'allow' }
-            : { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-    );
-    webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-            ? { decision: 'allow' }
-            : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-    );
-}
-
 export async function initialiseMiddleware(
     session: AuthSession,
     rtcSignalingTopicId: string,
     options: BrowserConnectOptions
 ): Promise<BrowserConnectedMiddleware> {
     const runtimeStorage = new ALRuntimeStorage();
-    let webSocketTransport: BrowserWebSocketTransport | undefined;
-    let rtcTransport: BrowserRtcTransport | undefined;
+    let transports: BrowserTransports | undefined;
     try {
         const storageAvailability = initialiseBrowserRuntimeStores(
             session.sessionId,
@@ -287,12 +288,9 @@ export async function initialiseMiddleware(
             publicationCrypto: await options.publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
-        webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput);
-        rtcTransport = await initialiseBrowserRtcTransport({
-            ...transportInput,
-            rtcSignalingTopicId,
-            webSocketTransport
-        });
+        const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }), options);
+        transports = await initialiseBrowserTransports(transportInput, rtcSignalingTopicId, apiConfig);
+        const { webSocketTransport, rtcTransport } = transports;
         const bootstrapDegree = resolveBootstrapDegree({
             bootstrapDegree: options.bootstrapDegree,
             maxPeerConnections: options.maxPeerConnections
@@ -309,7 +307,6 @@ export async function initialiseMiddleware(
             webSocketTransport.webSocketQueueBox
         );
         const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
-
         const { checkpointStores } = transportInput;
         return {
             rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
@@ -325,7 +322,33 @@ export async function initialiseMiddleware(
         };
     }
     catch (caught) {
-        await closeBrowserTransportResources({ ...webSocketTransport, ...rtcTransport, runtimeStorage })
+        await closeBrowserTransportResources({
+            ...transports?.webSocketTransport,
+            ...transports?.rtcTransport,
+            runtimeStorage
+        })
+            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        throw caught;
+    }
+}
+
+async function initialiseBrowserTransports(
+    transportInput: InitialiseBrowserTransportInput,
+    rtcSignalingTopicId: string,
+    apiConfig: ApiConfigResponse
+): Promise<BrowserTransports> {
+    const webSocketTransport = await initialiseBrowserWebSocketTransport(transportInput, apiConfig);
+    try {
+        const rtcTransport = await initialiseBrowserRtcTransport({
+            ...transportInput,
+            rtcSignalingTopicId,
+            webSocketTransport,
+            replacedLayoutOverlapMs: apiConfig.rtcReplacedLayoutOverlapMs
+        });
+        return { webSocketTransport, rtcTransport };
+    }
+    catch (caught) {
+        await closeBrowserTransportResources(webSocketTransport)
             .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
         throw caught;
     }
@@ -510,12 +533,9 @@ function initialiseBrowserRuntimeStores(
 }
 
 async function initialiseBrowserWebSocketTransport(
-    input: InitialiseBrowserTransportInput
+    input: InitialiseBrowserTransportInput,
+    apiConfig: ApiConfigResponse
 ): Promise<BrowserWebSocketTransport> {
-    const apiConfig = await runMiddlewareCommand(
-        (signal) => readApiConfig({ signal }),
-        input.options
-    );
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
     let webSocketQueueBox: WsQueueBoxClientService;
@@ -579,16 +599,15 @@ async function initialiseBrowserRtcTransport(
         (signal) => input.options.readIceCandidates(signal),
         input.options
     );
-    const { webRtcConnectionService, rtcCaptureReceipt } = await initialiseBrowserRtcConnection(
-        input,
-        iceCandidates
-    );
+    const connection = await initialiseBrowserRtcConnection(input, iceCandidates);
+    const { webRtcConnectionService, rtcCaptureReceipt } = connection;
     const acquired: BrowserRtcAcquisitions = { webRtcConnectionService };
     try {
         const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
             toRtcOverlayMulticastManagerInput(input, {
                 webRtcConnectionService,
-                qboxEngine: input.webSocketTransport.qboxEngine
+                qboxEngine: input.webSocketTransport.qboxEngine,
+                replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
             })
         );
         acquired.webRtcOverlayMulticastManager = webRtcOverlayMulticastManager;
@@ -611,7 +630,7 @@ async function initialiseBrowserRtcTransport(
         registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
         const webRtcGroupManager = createBrowserRtcGroupManager(
             input,
-            webRtcConnectionService,
+            connection,
             rtcRxStreamer
         );
         acquired.webRtcGroupManager = webRtcGroupManager;
@@ -707,11 +726,12 @@ async function rereadBrowserRtcGroups(
     return groups;
 }
 
-function initialiseBrowserRtcConnection(
+async function initialiseBrowserRtcConnection(
     input: InitialiseBrowserRtcTransportInput,
     iceCandidates: IceConfig
-): Promise<rtcEngine.BrowserRtcConnectionInitialization> {
-    return rtcEngine.initialiseRtcConnectionService({
+): Promise<BrowserRtcConnection> {
+    const groupPeerLedger = createBrowserGroupPeerLedger(input);
+    const initialization = await rtcEngine.initialiseRtcConnectionService({
         rtcCaptureConfiguration: input.options.rtcCaptureConfiguration,
         connectionId: input.connectionId,
         webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,
@@ -724,7 +744,24 @@ function initialiseBrowserRtcConnection(
             [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
         maxPeerConnections: input.options.maxPeerConnections,
         faultPort: input.options.diagnosticsPorts.transportFaultPort,
-        signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics
+        signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics,
+        peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger)
+    });
+    return { ...initialization, groupPeerLedger };
+}
+
+function createBrowserGroupPeerLedger(input: InitialiseBrowserRtcTransportInput): WebRtcGroupPeerLedger {
+    return new WebRtcGroupPeerLedger({
+        localSessionId: input.clientData.sessionId,
+        repositories: {
+            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+        },
+        maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
+        overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        nowEpochMs: () => Date.now()
     });
 }
 
@@ -744,33 +781,23 @@ function registerBrowserRtcPeerStreaming(
 
 function createBrowserRtcGroupManager(
     input: InitialiseBrowserRtcTransportInput,
-    webRtcConnectionService: WebRtcConnectionService,
+    connection: BrowserRtcConnection,
     rtcRxStreamer: WebRtcRxStreamerService
 ): WebRtcGroupManager {
+    const { webRtcConnectionService, groupPeerLedger } = connection;
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
+        groupPeerLedger,
         {
-            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-        },
-        {
-            maxPeerConnections: input.options.maxPeerConnections,
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
             onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
                 rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds),
-            onOverlayAdopted: () =>
-                webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
+            ...createBrowserRtcHeldOfferReleases(webRtcConnectionService)
         }
     );
     webRtcGroupManager.startReconcileWakes();
     rtcRxStreamer.setRttReportingPeerIds(
         webRtcGroupManager.rttReportingPeerIds({ degreeLimit: input.options.rttReportingDegreeLimit })
-    );
-    configureBrowserRtcPeerCreationPolicies(
-        webRtcConnectionService,
-        webRtcGroupManager
     );
     return webRtcGroupManager;
 }

@@ -54,6 +54,7 @@ import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixt
 import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface CapturedRtcChannel extends QRtcDataChannel {
@@ -81,6 +82,9 @@ describe('WebRtc overlay services', () => {
                 connectionService,
                 groupCache: new LatestRepository(),
                 overlayCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
                 qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
                 outboundDiagnostics: undefined,
@@ -155,6 +159,9 @@ describe('WebRtc overlay services', () => {
             connectionService: connection,
             groupCache: groups,
             overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
@@ -263,6 +270,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -324,6 +334,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -378,6 +391,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -429,6 +445,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -483,6 +502,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({ 'group-1': context.room }),
                 overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -563,6 +585,9 @@ describe('WebRtc overlay services', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(workspaceB.room.group)]: workspaceB.overlay
                 }),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -646,6 +671,9 @@ describe('WebRtc overlay services', () => {
                         groupRef: workspaceA.room.group
                     }
                 }),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -702,6 +730,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -759,6 +790,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -820,6 +854,9 @@ describe('WebRtc overlay services', () => {
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -864,6 +901,9 @@ describe('WebRtc overlay services', () => {
             connectionService,
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,
@@ -908,6 +948,9 @@ describe('WebRtc overlay services', () => {
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -967,6 +1010,9 @@ describe('WebRtc overlay services', () => {
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -1031,6 +1077,9 @@ describe('WebRtc overlay services', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({ 'group-1': context.room }),
                 overlayCache: createReadableCache({ [toScopedOverlayId(context.room.group)]: context.overlay }),
+                layoutTransitionsCache: new LatestRepository(),
+                plannedOverlayCache: new LatestRepository(),
+                replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
                     new WebRtcOverlayMulticastService(
                         overlayId,
@@ -1090,6 +1139,9 @@ describe('WebRtc overlay services', () => {
             connectionService: connectionService,
             groupCache: createReadableCache({}),
             overlayCache: createReadableCache({}),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (overlayId) =>
                 new WebRtcOverlayMulticastService(
                     overlayId,
@@ -1200,7 +1252,8 @@ function createConnectionService(
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     vi.spyOn(connectionService, 'readyPeerIdsForLane').mockReturnValue(connectedPeerIds);
     vi.spyOn(connectionService, 'readPeer').mockImplementation((peerId) => {
@@ -1303,7 +1356,8 @@ function createOverlayContext(
             group: { ...room.group, acceptedLayoutIdentity: { ...room.causalRevision, version: 1, state: 'active' } },
             activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
         },
-        overlay
+        overlay,
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 
@@ -1357,6 +1411,9 @@ describe('RTC overlay owned outbound completion', () => {
             connectionService: connection,
             groupCache: new LatestRepository(),
             overlayCache: new LatestRepository(),
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, connection),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,

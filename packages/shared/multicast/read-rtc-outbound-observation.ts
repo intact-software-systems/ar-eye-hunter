@@ -3,11 +3,14 @@ import type { OverlayId, OverlayInfo, PeerId } from '../api/api-config.ts';
 import { isSameGroupRef, toScopedOverlayId } from '../api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
+import type { OverlayLayoutTransition } from '../repository/overlay-layout-transition.ts';
+import type { RtcRoomLayoutChanges } from './room-authority/resolve-rtc-room-routing-edges.ts';
 
 export interface RtcOutboundObservation {
     readonly overlayId: OverlayId | undefined;
     readonly room: GroupSnapshot | undefined;
     readonly overlay: OverlayInfo | undefined;
+    readonly layoutChanges: RtcRoomLayoutChanges;
     readonly connectedPeerIds: readonly PeerId[];
     readonly nowMs: number;
 }
@@ -16,6 +19,9 @@ export interface ReadRtcOutboundObservationInput {
     readonly message: ALMessage;
     readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+    readonly layoutTransitionsCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
+    readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
+    readonly replacedLayoutOverlapMs: number;
     readonly connectedPeerIds: readonly PeerId[];
     readonly nowMs: number;
 }
@@ -29,6 +35,15 @@ export function readRtcOutboundObservation(
     return {
         overlayId: selected.overlayId,
         overlay: selected.overlay,
+        layoutChanges: {
+            transitions: selected.overlayId === undefined
+                ? []
+                : input.layoutTransitionsCache.read(selected.overlayId) ?? [],
+            replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
+            planned: selected.overlayId === undefined
+                ? null
+                : input.plannedOverlayCache.read(selected.overlayId) ?? null
+        },
         room: groupRef
             ? readRtcGroupSnapshotByRef(groupCache, groupRef)
             : selected.overlayId

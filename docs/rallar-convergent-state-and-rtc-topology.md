@@ -526,10 +526,13 @@ permission. Existing connected or in-progress native connections remain usable
 while later presence or admission observations change; the gate controls new
 allocation. A failed or reset peer record does not grant replacement permission.
 
-Browser startup installs initializing policies (outbound dial `deny`, inbound
-peer creation `retry`) before connecting the signaling inbox.
-After group ownership is constructed, automatic reconciliation, direct lane
-requests, and incoming offers use the same cached group permission. Signaling
+The browser builds the group peer ledger and the admission over it before the
+connection service, and the service takes that admission at construction; it has
+no startup phase. Before a room names a peer the admission answers an inbound
+offer with `retry` (`deny` at a full cap with no early peer to close) and an
+outbound dial with `deny`, both under the reason `stage-layout-mismatch`, and a
+layout adoption releases the held offers it now admits. Automatic reconciliation, direct lane requests, and incoming offers
+use the same cached group permission. Signaling
 is decoded before retry-budget consumption or native allocation. Reusable live
 peers can process subsequent signaling even when new-peer admission is denied.
 Replacement first tears down the unusable owner, then applies current admission
@@ -716,15 +719,15 @@ deployment boundary described by this architecture.
 
 ### Browser transport ownership
 
-| Start here                                                                                                                                                                                   | Responsibility and exit                                                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [Browser RTC initialization](../packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts)                                                                                           | Construct transport owners; install startup denial before signaling registration.             |
-| [Browser middleware initialization](../packages/shared-web/browser/connection/initialise-browser-middleware.ts)                                                                              | Connect group ownership to both public creation policies.                                     |
-| [Group manager](../packages/shared/services/web-rtc-group-manager.ts) and [dial selection](../packages/shared/services/webrtc-group-dial-policy.ts)                                          | Select lifecycle layouts, intersect same-group presence, cache permission, reconcile peers.   |
-| [Connection service](../packages/shared/services/web-rtc-connection-service.ts) and [signaling decoder](../packages/shared/webrtc/decode-rtc-signaling-message.ts)                           | Decode ingress, reuse an existing peer or apply admission and retry budget before allocation. |
-| [Native peer](../packages/shared/webrtc/qrtc-peer-connection.ts), [data lane](../packages/shared/webrtc/qrtc-data-channel.ts), [media lane](../packages/shared/webrtc/qrtc-media-channel.ts) | Own native callbacks, negotiation, queue pressure, and terminal cleanup.                      |
-| [WebSocket queue client](../packages/shared/services/ws-queue-box-client-service.ts) and [queue reader](../packages/shared/services/queue-message-reader.ts)                                 | Decode network/persisted AL envelopes before dispatch; own retry and callback lifetimes.      |
-| [Black-box runtime composition](../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts)                                               | Construct the same browser owners for commands, observations, and lifecycle validation.       |
+| Start here                                                                                                                                                                                                                                             | Responsibility and exit                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Browser RTC initialization](../packages/shared-web/browser/rtc/initialise-browser-rtc-runtime.ts)                                                                                                                                                     | Construct transport owners over the ledger's admission.                                                                                                           |
+| [Browser middleware initialization](../packages/shared-web/browser/connection/initialise-browser-middleware.ts)                                                                                                                                        | Build the ledger, its admission, the service, then the group manager.                                                                                             |
+| [Group manager](../packages/shared/services/web-rtc-group-manager.ts) and [peer ledger](../packages/shared/services/group-dial/web-rtc-group-peer-ledger.ts) with [dial selection](../packages/shared/services/group-dial/webrtc-group-dial-policy.ts) | The ledger selects lifecycle layouts, intersects same-group presence, caches permission and keeps retained connections and the cap; the manager reconciles peers. |
+| [Connection service](../packages/shared/services/web-rtc-connection-service.ts) and [signaling decoder](../packages/shared/webrtc/decode-rtc-signaling-message.ts)                                                                                     | Decode ingress, reuse an existing peer or apply admission and retry budget before allocation.                                                                     |
+| [Native peer](../packages/shared/webrtc/qrtc-peer-connection.ts), [data lane](../packages/shared/webrtc/qrtc-data-channel.ts), [media lane](../packages/shared/webrtc/qrtc-media-channel.ts)                                                           | Own native callbacks, negotiation, queue pressure, and terminal cleanup.                                                                                          |
+| [WebSocket queue client](../packages/shared/services/ws-queue-box-client-service.ts) and [queue reader](../packages/shared/services/queue-message-reader.ts)                                                                                           | Decode network/persisted AL envelopes before dispatch; own retry and callback lifetimes.                                                                          |
+| [Black-box runtime composition](../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts)                                                                                                         | Construct the same browser owners for commands, observations, and lifecycle validation.                                                                           |
 
 ## Verification
 

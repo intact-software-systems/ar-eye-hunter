@@ -35,7 +35,11 @@
       },
       "expect": {
         "status": 200,
-        "body": { "serverPeerId": "string", "endpoints": { "createWs": "string" } }
+        "body": {
+          "serverPeerId": "string",
+          "endpoints": { "createWs": "string" },
+          "rtcReplacedLayoutOverlapMs": 15000
+        }
       }
     },
     {

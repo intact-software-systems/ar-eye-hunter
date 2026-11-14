@@ -72,6 +72,8 @@ import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
     readonly creationNow?: QueueBoxUtilities.CreationClock;
+    /** The server's bound on how long a replaced room layout stays routable, read once at connect. */
+    readonly replacedLayoutOverlapMs: number;
     readonly qosProvider: ALQosInputProvider;
     readonly volatileBudget: ALVolatileSessionBudget;
     /** The connect's checkpoint pair of the RTC overlay, which its `local-checkpoint` admissions go to. */
@@ -105,6 +107,9 @@ export function initialiseRtcOverlayMulticastManager(
         connectionService: webRtcConnectionService,
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         overlayCache: overlaysRepository.readableAcceptedOverlayCache(),
+        layoutTransitionsCache: overlaysRepository.readableLayoutTransitionsCache(),
+        plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
@@ -185,6 +190,7 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
+    readonly peerAdmission: WebRtcConnectionService.PeerAdmission;
 }
 
 export interface BrowserRtcConnectionInitialization {
@@ -212,7 +218,8 @@ export async function initialiseRtcConnectionService(
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs,
         signalingDiagnostics: capture.diagnostics,
-        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes)
+        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes),
+        peerAdmission: input.peerAdmission
     };
     try {
         const connectionService = new WebRtcConnectionService(
@@ -220,15 +227,6 @@ export async function initialiseRtcConnectionService(
             toBrowserRtcConnectionServiceInput(input),
             dependencies
         );
-
-        connectionService.setInboundPeerCreationPolicy(() => ({
-            decision: 'retry',
-            reason: 'browser-runtime-initializing'
-        }));
-        connectionService.setOutboundDialPolicy(() => ({
-            decision: 'deny',
-            reason: 'browser-runtime-initializing'
-        }));
         await connectionService.connectSignaler();
 
         return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };

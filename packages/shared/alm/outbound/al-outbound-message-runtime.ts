@@ -328,6 +328,20 @@ export interface ALOutboundRtcHandoffRefusal {
     readonly messageCount: number;
 }
 
+/** A copy a relay forwarded, or retried, that the outbound runtime did not enqueue and does not already hold. */
+export interface ALOutboundRelayForwardDiagnostic extends ALMessageTrace {
+    readonly kind: 'relay-forward-not-enqueued';
+    /** The forwarded copy's own id. */
+    readonly msgId: string;
+    readonly typeId: string;
+    /** The enqueue verdict's kind; a forward that was enqueued or is already held states no event. */
+    readonly outcome: Exclude<ALDeliveryAdmissionVerdict['kind'], 'admitted' | 'duplicate' | 'pending'>;
+    /** The verdict's reason code, or `none` for a verdict that names none. */
+    readonly reason: string;
+    /** The limit a capacity refusal passed; present exactly when the verdict names one. */
+    readonly limit?: ALVolatileSessionLimit | ALPublicationStageLimit;
+}
+
 /** A new high of the bytes an RTC data channel of the session held queued when a submission read it. */
 export interface ALOutboundRtcQueuedBytesHighWater {
     readonly kind: 'rtc-queued-bytes-high-water';
@@ -416,6 +430,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace
     )
+    | ALOutboundRelayForwardDiagnostic
     | Readonly<{
         kind: 'effect-drain';
         lane: ALStoreDurability;

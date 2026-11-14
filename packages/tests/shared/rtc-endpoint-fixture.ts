@@ -44,6 +44,7 @@ import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixt
 import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from './signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 export const room: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -95,7 +96,8 @@ export class RtcEndpointFixture {
             faultPort: createPassThroughTransportFaultPort(),
             createOfferId: new DeterministicRtcOfferIds().createOfferId,
             nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: async () => []
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         });
         this.createPeers(peerIds);
         this.peer = [...this.peers.values()][0];
@@ -107,6 +109,9 @@ export class RtcEndpointFixture {
             connectionService: service,
             groupCache: this.groups,
             overlayCache: this.overlays,
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, service),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,

@@ -3,7 +3,7 @@ import { resolvePublicationKey } from '../../api/group-presence/resolve-publicat
 import { resolveGroupPublicationPermissions } from '../../api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import { Either } from '../../resilience/Either.ts';
-import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts';
+import { resolveRoomObservationDenial } from '../room-authority/rtc-room-snapshot-admission.ts';
 
 export interface RtcPublicationAdmissionInput {
     readonly message: ALMessage;

@@ -287,6 +287,9 @@ function createDefaultSnapshotAdmissionManager(
         },
         groupCache,
         overlayCache,
+        layoutTransitionsCache: new LatestRepository(),
+        plannedOverlayCache: new LatestRepository(),
+        replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
             throw new Error('Admission does not construct an outbound multicaster');
         },

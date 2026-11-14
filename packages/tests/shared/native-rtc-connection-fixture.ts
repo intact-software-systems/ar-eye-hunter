@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type {
@@ -40,6 +40,8 @@ export interface NativeRtcConnectionFixture {
     readonly service: WebRtcConnectionService;
     readonly signaler: QRtcSignalingTransport;
     readonly sentSignals: readonly QRtcSignalingMessage[];
+    /** Senders of the signals a hold release asked the transport to bring due; none is redelivered, so each stays held. */
+    readonly broughtDueSenderIds: readonly string[];
     receive(message: QRtcSignalingMessage): Promise<void | 'retry'>;
     receiveResource(resource: string, senderId?: string): Promise<void | 'retry'>;
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
@@ -90,17 +92,28 @@ class NativeRtcSignalingTransport implements QRtcSignalingTransport {
     readonly receive = (message: QRtcSignalingMessage): Promise<void | 'retry'> => this.receiveResource(JSON.stringify(message), message.fromId);
 }
 
+/** What the fixture's service is built with besides its input. */
+export interface NativeRtcConnectionPorts {
+    readonly faultPort: TransportFaultPort;
+    readonly peerAdmission: WebRtcConnectionService.PeerAdmission;
+}
+
 export function createNativeRtcConnectionFixture(
     input: WebRtcConnectionService.InputDto,
     runtime: NativeRtcRuntime,
-    faultPort: TransportFaultPort
+    ports: NativeRtcConnectionPorts
 ): NativeRtcConnectionFixture {
     const signaler = new NativeRtcSignalingTransport(input);
+    const broughtDueSenderIds: string[] = [];
     const dependencies = {
-        faultPort,
+        faultPort: ports.faultPort,
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async (envelopes: readonly ALMessage[]) => {
+            broughtDueSenderIds.push(...envelopes.map((envelope) => envelope.id.senderId));
+            return [];
+        },
+        peerAdmission: ports.peerAdmission
     };
     const allocatedPeers: WebRtcConnectionService.Peer[] = [];
     const service = new WebRtcConnectionService(signaler, input, dependencies);
@@ -114,6 +127,7 @@ export function createNativeRtcConnectionFixture(
         service,
         signaler,
         sentSignals: signaler.sentSignals,
+        broughtDueSenderIds,
         receiveResource: signaler.receiveResource,
         receive: signaler.receive,
         createdPeerIds: () =>

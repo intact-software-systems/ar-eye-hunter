@@ -1,14 +1,13 @@
-import type { ApiConfigResponse } from '@shared/api/api-config.ts';
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS, type ApiConfigResponse } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { validateWebSocketHost } from '@shared/websocket/validate-web-socket-host.ts';
 
-/** Decodes the current `/api/config` wire contract, including its required WS server identity. */
 export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<string, ApiConfigResponse> {
     if (!isRecord(value) || !isRecord(value.endpoints)) {
         return Either.ofLeft('The /api/config response is not an object with endpoints.');
     }
-    const { apiBaseUrl, wsBaseUrl, serverPeerId } = value;
+    const { apiBaseUrl, wsBaseUrl, serverPeerId, rtcReplacedLayoutOverlapMs } = value;
     const createWs = value.endpoints.createWs;
     if (
         typeof apiBaseUrl !== 'string' || typeof wsBaseUrl !== 'string' ||
@@ -23,6 +22,11 @@ export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<str
             'The /api/config response names an empty or non-string WS server peer id.'
         );
     }
+    if (!isRtcReplacedLayoutOverlapMs(rtcReplacedLayoutOverlapMs)) {
+        return Either.ofLeft(
+            `The /api/config response states no rtcReplacedLayoutOverlapMs that is an integer from 0 to ${MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS}.`
+        );
+    }
     const webSocketUrl = URL.parse(createWs, wsBaseUrl);
     if (
         webSocketUrl === null || (webSocketUrl.protocol !== 'ws:' && webSocketUrl.protocol !== 'wss:') ||
@@ -34,7 +38,12 @@ export function decodeApiConfigResponse(value: unknown, apiUrl: URL): Either<str
     if (hostMismatch !== null) {
         return Either.ofLeft(hostMismatch);
     }
-    return Either.ofRight({ apiBaseUrl, wsBaseUrl, endpoints: { createWs }, serverPeerId });
+    return Either.ofRight({ apiBaseUrl, wsBaseUrl, endpoints: { createWs }, serverPeerId, rtcReplacedLayoutOverlapMs });
+}
+
+function isRtcReplacedLayoutOverlapMs(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 &&
+        value <= MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS;
 }
 
 function isRecord(value: unknown): value is ApiJsonObject {

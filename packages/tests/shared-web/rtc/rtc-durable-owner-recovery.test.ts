@@ -32,7 +32,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -51,6 +51,7 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import {
     createKeyedRoomSend,
@@ -338,7 +339,13 @@ class RtcRecoveryOwner {
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'alm',
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now(), writeRetainedSignalsDueNow: async () => [] });
+        }, {
+            faultPort: this.faults,
+            createOfferId: crypto.randomUUID.bind(crypto),
+            nowEpochMs: () => Date.now(),
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
+        });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
             quotaNow: Date.now,
@@ -346,6 +353,9 @@ class RtcRecoveryOwner {
             connectionService: this.connection,
             groupCache: this.groups,
             overlayCache: this.overlays,
+            layoutTransitionsCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
+            replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),
             outboundDiagnostics: undefined,

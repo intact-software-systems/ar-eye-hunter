@@ -10,6 +10,7 @@ import type {
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 interface HeldSignalFixture {
@@ -116,6 +117,9 @@ async function createHeldSignalFixture(maxPeerConnections?: number): Promise<Hel
         send: async () => {}
     };
     const broughtDue: (readonly ALMessage[])[] = [];
+    const admittedPeerIds = new Set<string>();
+    const deniedPeerIds = new Set<string>();
+    const refusalReasons = new Map<string, string>();
     const service = new WebRtcConnectionService(signaler, {
         sessionId: SELF,
         token: 'test-token',
@@ -130,20 +134,20 @@ async function createHeldSignalFixture(maxPeerConnections?: number): Promise<Hel
         writeRetainedSignalsDueNow: async (envelopes) => {
             broughtDue.push(envelopes);
             return envelopes;
+        },
+        peerAdmission: {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: ({ peerId }) => {
+                if (admittedPeerIds.has(peerId)) {
+                    return 'allow';
+                }
+                return deniedPeerIds.has(peerId)
+                    ? 'deny'
+                    : { decision: 'retry', reason: refusalReasons.get(peerId) ?? LAYOUT_REASON };
+            },
+            decideOutbound: ({ peerId }) => admittedPeerIds.has(peerId)
         }
     });
-    const admittedPeerIds = new Set<string>();
-    const deniedPeerIds = new Set<string>();
-    const refusalReasons = new Map<string, string>();
-    service.setInboundPeerCreationPolicy(({ peerId }) => {
-        if (admittedPeerIds.has(peerId)) {
-            return 'allow';
-        }
-        return deniedPeerIds.has(peerId)
-            ? 'deny'
-            : { decision: 'retry', reason: refusalReasons.get(peerId) ?? LAYOUT_REASON };
-    });
-    service.setOutboundDialPolicy(({ peerId }) => admittedPeerIds.has(peerId));
     await service.connectSignaler();
     return {
         service,

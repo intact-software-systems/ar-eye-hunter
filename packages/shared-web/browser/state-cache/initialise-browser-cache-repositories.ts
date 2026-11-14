@@ -13,7 +13,8 @@ export const BROWSER_STATE_CACHE_TTL_MS = MINUTE_MS;
 export function initialiseBrowserCacheRepositories(): void {
     configureOverlayRepositories({
         plannedOverlays: { ttlMs: MINUTE_MS },
-        acceptedOverlays: { ttlMs: undefined }
+        acceptedOverlays: { ttlMs: undefined },
+        nowEpochMs: Date.now
     });
     rebindOverlaySlotSubscriptions();
     configureRttRepository({ ttlMs: 30_000 });

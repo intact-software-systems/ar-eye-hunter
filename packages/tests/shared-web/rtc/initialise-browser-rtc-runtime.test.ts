@@ -12,12 +12,16 @@ import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import {
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     initialiseRtcConnectionService,
-    initialiseRtcOverlayMulticastManager
+    initialiseRtcOverlayMulticastManager,
+    type BrowserRtcConnectionInitialization
 } from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import {
     newALMulticastMessage,
@@ -32,12 +36,15 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
+import type { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcGroupManagerOptions } from '@shared/services/webrtc-group-manager-contracts.ts';
 import {
     createDefaultWsQueueBoxClientService,
     WsQueueBoxClientService
@@ -55,9 +62,12 @@ import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publica
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import {
     createNativeRtcConnectionFixture,
-    installNativeRtcRuntime
+    installNativeRtcRuntime,
+    type NativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
@@ -71,112 +81,85 @@ describe('browser RTC runtime composition', () => {
     });
 
     it.each(['off', 'signaling', 'native'] as const)('keeps inbound admission and native application with %s capture', async (mode) => {
-        const nativeRuntime = installNativeRtcRuntime();
-        const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
-        const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
-        const configuredDiagnostics = toRallarDiagnosticsPorts({
-            signalingDiagnostics: (event) => signalingEvents.push(event)
+        const startup = await startRtcRuntimeWithStartupOffer(mode);
+        expect(startup.initialized.rtcCaptureReceipt).toMatchObject({
+            configuration: { mode, origin: 'step' },
+            application: { status: 'applied', mode },
+            connectionId: { status: 'observed', value: 'connection-inbound' }
         });
-        const networkConnectStarted = Promise.withResolvers<void>();
-        const networkConnect = Promise.withResolvers<void>();
-        const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
-        vi.spyOn(socket, 'connect').mockImplementation(() => {
-            networkConnectStarted.resolve();
-            return networkConnect.promise;
-        });
-        const queueBox = createDefaultWsQueueBoxClientService({
-            qosProvider: {},
-            outbox: new InMemoryQueueBox(),
-            socket,
-            sessionId: 'self',
-            serverPeerId: 'server',
-            inboundDiagnostics: (event) => consumerEvents.push(event)
-        });
-        const connectionInput = {
-            webSocketQueueBox: queueBox,
-            qboxEngine: new InboxOutboxEngine(),
-            clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
-            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
-            dataChannelName: 'test',
-            rtcSignalingTopicId: 'rtc',
-            faultPort: diagnosticsPorts.transportFaultPort,
-            signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
-            rtcCaptureConfiguration: { mode, origin: 'step' } as const,
-            connectionId: { status: 'observed', value: 'connection-inbound' } as const
-        };
-        const initializing = initialiseRtcConnectionService(connectionInput);
+        const service = startup.initialized.webRtcConnectionService;
 
-        try {
-            await networkConnectStarted.promise;
-            await receiveOffer(queueBox, 'startup-peer');
-            networkConnect.resolve();
-            const initialized = await initializing;
-            expect(initialized.rtcCaptureReceipt).toMatchObject({
-                configuration: { mode, origin: 'step' },
-                application: { status: 'applied', mode },
-                connectionId: { status: 'observed', value: 'connection-inbound' }
-            });
-            const service = initialized.webRtcConnectionService;
-
-            expect(service.knownPeerIds()).toEqual([]);
-            expect(nativeRuntime.createdConnections).toHaveLength(0);
-            expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
-            await vi.waitFor(() =>
-                expect(consumerEvents).toContainEqual(expect.objectContaining({
-                    kind: 'consumer-invocation',
-                    outcome: 'retry'
-                }))
-            );
-            if (mode !== 'off') {
-                expect(signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
-            }
-            else {
-                expect(signalingEvents).toEqual([]);
-            }
-            expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
-                kind: 'dial-denied',
-                reason: 'browser-runtime-initializing'
-            });
-            expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
-
-            const group = createAcceptedGroupSnapshotFixture(['self', 'startup-peer']);
-            groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-            overlaysRepository.setAcceptedOverlayById(
-                toScopedOverlayId(group.group),
-                createAcceptedOverlayFixture(group, 1, ['startup-peer'])
-            );
-            const manager = new WebRtcGroupManager(service, {
-                groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-                clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-                plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-                acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-            }, { onOverlayAdopted: async () => {} });
-            await manager.getOrCreate(group.group).acceptGroupUpdate(group);
-            configureBrowserRtcPeerCreationPolicies(service, manager);
-
-            await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
-            expect(nativeRuntime.createdConnections).toHaveLength(1);
-            expect(nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
-                { type: 'offer', sdp: 'startup-peer-offer' }
-            ]);
+        expect(service.knownPeerIds()).toEqual([]);
+        expect(startup.nativeRuntime.createdConnections).toHaveLength(0);
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+        await vi.waitFor(() =>
+            expect(startup.consumerEvents).toContainEqual(expect.objectContaining({
+                kind: 'consumer-invocation',
+                outcome: 'retry'
+            }))
+        );
+        if (mode !== 'off') {
+            expect(startup.signalingEvents).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
         }
-        finally {
-            networkConnect.resolve();
-            try {
-                const { webRtcConnectionService: service } = await initializing;
-                for (const peerId of service.knownPeerIds()) {
-                    service.disconnectPeer(peerId);
-                }
-            }
-            finally {
-                try {
-                    await queueBox.close();
-                }
-                finally {
-                    nativeRuntime.dispose();
-                }
-            }
+        else {
+            expect(startup.signalingEvents).toEqual([]);
         }
+        expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
+            kind: 'dial-denied',
+            reason: 'stage-layout-mismatch'
+        });
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+
+        await nameStartupPeerInRoom(startup);
+
+        await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
+        expect(startup.nativeRuntime.createdConnections).toHaveLength(1);
+        expect(startup.nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
+            { type: 'offer', sdp: 'startup-peer-offer' }
+        ]);
+    });
+
+    it('answers an offer that arrives during startup with a retry that creates no peer and spends no attempt, and admits it once a room names its sender', async () => {
+        const startup = await startRtcRuntimeWithStartupOffer('off');
+        const service = startup.initialized.webRtcConnectionService;
+
+        expect(service.knownPeerIds()).toEqual([]);
+        expect(startup.nativeRuntime.createdConnections).toHaveLength(0);
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
+        await vi.waitFor(() =>
+            expect(startup.consumerEvents).toContainEqual(expect.objectContaining({
+                kind: 'consumer-invocation',
+                outcome: 'retry'
+            }))
+        );
+
+        await nameStartupPeerInRoom(startup);
+
+        await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
+        expect(startup.nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
+            { type: 'offer', sdp: 'startup-peer-offer' }
+        ]);
+    });
+
+    it('brings an offer held during startup due at the first adoption of a layout that names its sender', async () => {
+        const startup = await startRtcRuntimeWithStartupOffer('off');
+        const service = startup.initialized.webRtcConnectionService;
+        await vi.waitFor(() =>
+            expect(startup.consumerEvents).toContainEqual(expect.objectContaining({
+                kind: 'consumer-invocation',
+                outcome: 'retry'
+            }))
+        );
+        const manager = await joinStartupRoom(startup, createBrowserRtcHeldOfferReleases(service));
+        const writeDueNow = vi.spyOn(startup.queueBox, 'writeRetainedInboxMessagesDueNow');
+
+        publishStartupPeerLayout(startup);
+        await manager.notifyOverlayTopologyChanged();
+
+        expect(writeDueNow).toHaveBeenCalledWith([
+            expect.objectContaining({ id: expect.objectContaining({ msgId: startup.offerMsgId }) })
+        ]);
+        await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
     });
 
     it('disposes only diagnostic scope when the original signaling connection rejects', async () => {
@@ -202,7 +185,8 @@ describe('browser RTC runtime composition', () => {
             faultPort: diagnosticsPorts.transportFaultPort,
             signalingDiagnostics: (event) => events.push(event),
             rtcCaptureConfiguration: { mode: 'native', origin: 'step' },
-            connectionId: { status: 'observed', value: 'connection-failure' }
+            connectionId: { status: 'observed', value: 'connection-failure' },
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         })).rejects.toBe(failure);
         expect(events).toContainEqual(
             expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed', capture: expect.objectContaining({ scope: 'disposed' }) })
@@ -236,7 +220,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            faults
+            { faultPort: faults, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             fixture.dispose();
@@ -253,6 +237,7 @@ describe('browser RTC runtime composition', () => {
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -314,7 +299,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            createPassThroughTransportFaultPort()
+            { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             try {
@@ -338,6 +323,7 @@ describe('browser RTC runtime composition', () => {
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: createDefaultVolatileSessionBudget(),
@@ -403,7 +389,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            createPassThroughTransportFaultPort()
+            { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             try {
@@ -422,6 +408,7 @@ describe('browser RTC runtime composition', () => {
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: budget,
@@ -464,6 +451,7 @@ describe('browser RTC runtime composition', () => {
         const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
         const manager = initialiseRtcOverlayMulticastManager({
             faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             volatileBudget: budget,
@@ -496,6 +484,132 @@ describe('browser RTC runtime composition', () => {
     });
 });
 
+const IGNORED_HELD_OFFER_RELEASES: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'> = {
+    onOverlayAdopted: async () => {},
+    onReconcilePassEnded: () => {}
+};
+
+interface StartupRtcRuntime {
+    readonly queueBox: WsQueueBoxClientService;
+    readonly offerMsgId: string;
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
+    /** A room whose members are this browser and `startup-peer`, not yet published. */
+    readonly room: GroupSnapshot;
+    readonly nativeRuntime: NativeRtcRuntime;
+    readonly initialized: BrowserRtcConnectionInitialization;
+    readonly signalingEvents: readonly RtcSignalingDiagnostics.Event[];
+    readonly consumerEvents: readonly ALInboundRuntimeDiagnosticsEvent[];
+}
+
+/** Starts the browser RTC runtime with an offer from `startup-peer` delivered while its signaling still connects. */
+async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.CaptureMode): Promise<StartupRtcRuntime> {
+    const nativeRuntime = installNativeRtcRuntime();
+    const signalingEvents: RtcSignalingDiagnostics.Event[] = [];
+    const consumerEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const configuredDiagnostics = toRallarDiagnosticsPorts({
+        signalingDiagnostics: (event) => signalingEvents.push(event)
+    });
+    const networkConnectStarted = Promise.withResolvers<void>();
+    const networkConnect = Promise.withResolvers<void>();
+    const socket = new JsonWebSocketClient('ws://rtc-fixture.invalid', createPassThroughTransportFaultPort());
+    vi.spyOn(socket, 'connect').mockImplementation(() => {
+        networkConnectStarted.resolve();
+        return networkConnect.promise;
+    });
+    const queueBox = createDefaultWsQueueBoxClientService({
+        qosProvider: {},
+        outbox: new InMemoryQueueBox(),
+        socket,
+        sessionId: 'self',
+        serverPeerId: 'server',
+        inboundDiagnostics: (event) => consumerEvents.push(event)
+    });
+    const groupPeerLedger = createStartupGroupPeerLedger();
+    const initializing = initialiseRtcConnectionService({
+        webSocketQueueBox: queueBox,
+        qboxEngine: new InboxOutboxEngine(),
+        clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+        iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+        dataChannelName: 'test',
+        rtcSignalingTopicId: 'rtc',
+        faultPort: diagnosticsPorts.transportFaultPort,
+        signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
+        rtcCaptureConfiguration: { mode, origin: 'step' },
+        connectionId: { status: 'observed', value: 'connection-inbound' },
+        peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger)
+    });
+    onTestFinished(async () => {
+        networkConnect.resolve();
+        try {
+            const { webRtcConnectionService: service } = await initializing;
+            for (const peerId of service.knownPeerIds()) {
+                service.disconnectPeer(peerId);
+            }
+        }
+        finally {
+            try {
+                await queueBox.close();
+            }
+            finally {
+                nativeRuntime.dispose();
+            }
+        }
+    });
+
+    await networkConnectStarted.promise;
+    const offerMsgId = await receiveOffer(queueBox, 'startup-peer');
+    networkConnect.resolve();
+    return {
+        queueBox,
+        offerMsgId,
+        groupPeerLedger,
+        room: createAcceptedGroupSnapshotFixture(['self', 'startup-peer']),
+        nativeRuntime,
+        initialized: await initializing,
+        signalingEvents,
+        consumerEvents
+    };
+}
+
+/** The browser's group peer ledger over the browser's caches, before any room is known. */
+function createStartupGroupPeerLedger(): WebRtcGroupPeerLedger {
+    return createTestGroupPeerLedger('self', {
+        groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+        plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+        acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+    });
+}
+
+/** Caches the accepted layout of the startup room, which names `startup-peer`. */
+function publishStartupPeerLayout(startup: StartupRtcRuntime): void {
+    overlaysRepository.setAcceptedOverlayById(
+        toScopedOverlayId(startup.room.group),
+        createAcceptedOverlayFixture(startup.room, 1, ['startup-peer'])
+    );
+}
+
+/** Publishes the startup room and gives it to a group manager over the startup's ledger. */
+async function joinStartupRoom(
+    startup: StartupRtcRuntime,
+    heldOfferReleases: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'>
+): Promise<WebRtcGroupManager> {
+    groupStateSnapshotsRepository.setGroupStateSnapshot(startup.room);
+    const manager = new WebRtcGroupManager(
+        startup.initialized.webRtcConnectionService,
+        startup.groupPeerLedger,
+        heldOfferReleases
+    );
+    await startup.groupPeerLedger.getOrCreate(startup.room.group).acceptGroupUpdate(startup.room);
+    return manager;
+}
+
+/** Publishes a room whose accepted layout names `startup-peer` to the startup's group peer ledger. */
+async function nameStartupPeerInRoom(startup: StartupRtcRuntime): Promise<void> {
+    publishStartupPeerLayout(startup);
+    await joinStartupRoom(startup, IGNORED_HELD_OFFER_RELEASES);
+}
+
 /** A native peer connection to `peerId` whose channels are open, torn down with the test. */
 function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcConnectionFixture> {
     const nativeRuntime = installNativeRtcRuntime();
@@ -508,7 +622,7 @@ function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcCon
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     onTestFinished(() => {
         try {
@@ -527,7 +641,8 @@ function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcCon
     return fixture;
 }
 
-async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
+/** Answers the offer's message id. */
+async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<string> {
     const signal: QRtcSignalingMessage = {
         channel: 'RtcSignal',
         type: 'Signal',
@@ -548,4 +663,5 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
     );
     const accepted = await queueBox.acceptIncomingMessage(message);
     expect(accepted.right).toEqual({ kind: 'admitted' });
+    return message.id.msgId;
 }

@@ -7,6 +7,7 @@ import {
     installNativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 
 export interface NativeRealtimeLaneFixture {
     readonly peer: WebRtcConnectionService.Peer;
@@ -37,7 +38,7 @@ export async function createNativeRealtimeLaneFixture(
             rtcSignalingTopicId: 'rtc'
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     onTestFinished(() => {
         fixture.dispose();

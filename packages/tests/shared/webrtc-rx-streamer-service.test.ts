@@ -125,6 +125,9 @@ function createMediaFixture(input: MediaFixtureInput = {}): MediaFixture {
         },
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
+        layoutTransitionsCache: new LatestRepository(),
+        plannedOverlayCache: new LatestRepository(),
+        replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
             throw new Error('Media control must not construct multicast messages');
         },

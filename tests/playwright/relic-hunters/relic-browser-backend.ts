@@ -331,7 +331,8 @@ class RelicBrowserBackend {
                     apiBaseUrl: 'http://127.0.0.1:5175',
                     wsBaseUrl: 'ws://127.0.0.1:5175',
                     endpoints: { createWs: '/api/ws/:id' },
-                    serverPeerId: 'default-qbox-server'
+                    serverPeerId: 'default-qbox-server',
+                    rtcReplacedLayoutOverlapMs: 15_000
                 }
             });
         }

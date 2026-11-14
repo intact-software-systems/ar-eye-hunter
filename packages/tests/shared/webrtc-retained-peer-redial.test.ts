@@ -28,9 +28,11 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcPeerConnection
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import {
     acceptActiveLayoutGroup,
-    createGroupSnapshot
+    createGroupSnapshot,
+    createTestGroupPeerLedger
 } from './web-rtc-group-manager-test-fixture.ts';
 
 const ESTABLISHMENT_TIMEOUT_MS = DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY.timeoutMs;
@@ -83,7 +85,7 @@ async function createConnection(sessionId: string): Promise<NativeRtcConnectionF
             }
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     connections.push(connection);
     await connection.service.connectSignaler();
@@ -93,11 +95,15 @@ async function createConnection(sessionId: string): Promise<NativeRtcConnectionF
 async function createManagedSide(sessionId: string, remoteSessionId: string): Promise<ManagedSide> {
     const connection = await createConnection(sessionId);
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-    const manager = new WebRtcGroupManager(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        acceptedOverlayCache
-    }, { onOverlayAdopted: async () => {} });
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        createTestGroupPeerLedger(connection.service.input.sessionId, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>(),
+            acceptedOverlayCache
+        }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+    );
     managers.push(manager);
     manager.startReconcileWakes();
     const snapshot = createGroupSnapshot({

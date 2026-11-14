@@ -1,10 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    isSameGroupLayoutIdentity,
-    resolveGroupLayoutRole,
-    type GroupLayoutIdentity
-} from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -12,6 +8,7 @@ import {
     readObservableLatestRepositoryValue,
     requireObservableLatestRepository
 } from '@shared/cache/configure-latest-repository.ts';
+import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import {
     type ObservableLatestRepository,
     type ObservableLatestRepositoryOptions
@@ -22,9 +19,21 @@ import {
     type ReadableKeyedValues
 } from '@shared/cache/RepositoryInterfaces.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
+import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 
+import {
+    computeAcceptedLayoutTransitions,
+    type AcceptedLayoutChange,
+    type AcceptedLayoutTaker
+} from './compute-accepted-layout-transitions.ts';
+import { isRoomLayoutOverlay } from './is-accepted-room-layout-overlay.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
+import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
+import {
+    compareOverlayLayoutIdentity,
+    isOverlayIdentity,
+    toOverlayLayoutIdentity
+} from './to-overlay-layout-identity.ts';
 
 export interface OverlayRepositoryOptions
     extends Omit<ObservableLatestRepositoryOptions<string, OverlayInfo>, 'ttlMs' | 'equals'> {
@@ -34,6 +43,7 @@ export interface OverlayRepositoryOptions
 export interface OverlayRepositoryCacheConfiguration {
     readonly plannedOverlays: OverlayRepositoryOptions;
     readonly acceptedOverlays: OverlayRepositoryOptions;
+    readonly nowEpochMs: () => number;
 }
 
 export interface OverlayRepositoryChange {
@@ -59,6 +69,7 @@ interface SetOverlayInput {
 
 interface ReconcileAcceptedOverlayIdentityInput {
     readonly overlayId: string;
+    readonly roomRef: GroupRef;
     readonly acceptedIdentity: GroupLayoutIdentity | undefined;
     readonly manager?: RepositoryManager;
 }
@@ -90,6 +101,18 @@ const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string
     'Accepted overlay repository is not configured'
 );
 
+const layoutTransitionsRepositoryToken = newObservableLatestRepositoryToken<string, readonly OverlayLayoutTransition[]>(
+    'shared.repository.layout-transitions',
+    'Layout transition repository is not configured'
+);
+
+const overlayRepositoryClockToken = new RepositoryToken<() => number>(
+    'shared.repository.overlay-clock',
+    () => {
+        throw new Error('Overlay repository clock is not configured');
+    }
+);
+
 export function configureOverlayRepositories(
     config: OverlayRepositoryCacheConfiguration,
     manager?: RepositoryManager
@@ -104,6 +127,16 @@ export function configureOverlayRepositories(
         config.acceptedOverlays,
         manager
     );
+    configureObservableLatestRepository(
+        layoutTransitionsRepositoryToken,
+        {
+            ttlMs: config.acceptedOverlays.ttlMs,
+            maxEntries: config.acceptedOverlays.maxEntries,
+            deleteExpiredIntervalMs: config.acceptedOverlays.deleteExpiredIntervalMs
+        },
+        manager
+    );
+    (manager ?? defaultRepositoryManager).set(overlayRepositoryClockToken, config.nowEpochMs);
 }
 
 export function onPlannedOverlayChange(
@@ -142,6 +175,12 @@ export function readableAcceptedOverlayCache(
     manager?: RepositoryManager
 ): ReadableKeyedValues<string, OverlayInfo> {
     return requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).readable();
+}
+
+export function readableLayoutTransitionsCache(
+    manager?: RepositoryManager
+): ReadableKeyedValues<string, readonly OverlayLayoutTransition[]> {
+    return requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).readable();
 }
 
 export function hasPlannedServerOverlayRecordByGroupRef(
@@ -257,7 +296,9 @@ export function removeAcceptedOverlayById(
     overlayId: string,
     manager?: RepositoryManager
 ): boolean {
-    return requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
+    const removed = requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
+    clearLayoutTransitions(overlayId, manager);
+    return removed;
 }
 
 export function removePlannedOverlayByIdIfUnchanged(
@@ -278,12 +319,16 @@ export function removeAcceptedOverlayByIdIfUnchanged(
     observedOverlay: OverlayInfo | undefined,
     manager?: RepositoryManager
 ): boolean {
-    return removeRoleOverlayByIdIfUnchanged({
+    const removed = removeRoleOverlayByIdIfUnchanged({
         token: acceptedOverlayRepositoryToken,
         overlayId,
         observedOverlay,
         manager
     });
+    if (removed) {
+        clearLayoutTransitions(overlayId, manager);
+    }
+    return removed;
 }
 
 export function removePlannedOverlayByIdIfIdentity(
@@ -300,7 +345,7 @@ export function removePlannedOverlayByIdIfIdentity(
 export function reconcileAcceptedOverlayIdentity(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
-    let changed = removeMismatchedAcceptedOverlay(input);
+    let changed = removeMismatchedAcceptedOverlayAndRecordTransition(input);
     if (input.acceptedIdentity === undefined) {
         return changed;
     }
@@ -317,11 +362,7 @@ export function reconcileAcceptedOverlayIdentity(
         return changed;
     }
 
-    const outcome = setCurrentAcceptedServerOverlayById(
-        input.overlayId,
-        planned,
-        input.manager
-    );
+    const outcome = setCurrentAcceptedServerOverlayById(input.overlayId, planned, input.manager);
     changed = didOverlayAdoptionChange(outcome) || changed;
     changed = removePlannedOverlayById(input.overlayId, input.manager) || changed;
     return changed;
@@ -337,17 +378,7 @@ function compareOverlayInfoIdentity(
     left: OverlayInfo,
     right: OverlayInfo
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
-    const role = resolveGroupLayoutRole({
-        publication: toOverlayLayoutIdentity(left),
-        accepted: toOverlayLayoutIdentity(right)
-    });
-    return role === 'accepted'
-        ? 'equal'
-        : role === 'planned'
-        ? 'dominates'
-        : role === 'superseded'
-        ? 'dominated'
-        : 'incomparable';
+    return compareOverlayLayoutIdentity(toOverlayLayoutIdentity(left), toOverlayLayoutIdentity(right));
 }
 
 function configureRoleOverlayRepository(
@@ -455,9 +486,51 @@ function adoptOverlay(
     repository: ObservableLatestRepository<string, OverlayInfo>,
     outcome: OverlayAdoptionOutcome
 ): OverlayAdoptionOutcome {
+    const acceptedChange: AcceptedLayoutChange | undefined = input.token === acceptedOverlayRepositoryToken
+        ? {
+            overlayId: input.overlayId,
+            held: repository.read(input.overlayId),
+            recorded: readRecordedLayoutTransitions(input.overlayId, input.manager),
+            taker: isRoomLayoutOverlay(input.overlay, input.overlay.groupRef)
+                ? { roomRef: input.overlay.groupRef, identity: toOverlayLayoutIdentity(input.overlay) }
+                : null,
+            nowEpochMs: readOverlayRepositoryNow(input.manager),
+            manager: input.manager
+        }
+        : undefined;
     emitOverlayAdoption(input.overlayId, outcome);
     repository.set(input.overlayId, input.overlay);
+    if (acceptedChange !== undefined) {
+        setLayoutTransitionsForAcceptedChange(acceptedChange);
+    }
     return outcome;
+}
+
+function setLayoutTransitionsForAcceptedChange(change: AcceptedLayoutChange): void {
+    const transitions = computeAcceptedLayoutTransitions(change);
+    if (transitions === null) {
+        clearLayoutTransitions(change.overlayId, change.manager);
+        return;
+    }
+    requireObservableLatestRepository(layoutTransitionsRepositoryToken, change.manager).set(
+        change.overlayId,
+        transitions
+    );
+}
+
+function readRecordedLayoutTransitions(
+    overlayId: string,
+    manager?: RepositoryManager
+): readonly OverlayLayoutTransition[] {
+    return requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).read(overlayId) ?? [];
+}
+
+function clearLayoutTransitions(overlayId: string, manager?: RepositoryManager): void {
+    requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).delete(overlayId);
+}
+
+function readOverlayRepositoryNow(manager?: RepositoryManager): number {
+    return (manager ?? defaultRepositoryManager).require(overlayRepositoryClockToken)();
 }
 
 function reportOverlayDrop(
@@ -468,41 +541,32 @@ function reportOverlayDrop(
     return outcome;
 }
 
-function removeMismatchedAcceptedOverlay(
+function removeMismatchedAcceptedOverlayAndRecordTransition(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
-    const accepted = readObservableLatestRepositoryValue(
-        acceptedOverlayRepositoryToken,
-        input.overlayId,
-        input.manager
-    );
-    if (
-        accepted === undefined ||
-        (input.acceptedIdentity !== undefined && isOverlayIdentity(accepted, input.acceptedIdentity))
-    ) {
+    const repository = requireObservableLatestRepository(acceptedOverlayRepositoryToken, input.manager);
+    const held = repository.read(input.overlayId);
+    if (held !== undefined && input.acceptedIdentity !== undefined && isOverlayIdentity(held, input.acceptedIdentity)) {
         return false;
     }
-
-    return removeAcceptedOverlayById(input.overlayId, input.manager);
-}
-
-export function isOverlayIdentity(
-    overlay: OverlayInfo,
-    identity: GroupLayoutIdentity
-): boolean {
-    return isSameGroupLayoutIdentity(
-        toOverlayLayoutIdentity(overlay),
-        identity
-    );
-}
-
-export function toOverlayLayoutIdentity(overlay: OverlayInfo): GroupLayoutIdentity {
-    return {
-        groupRevision: overlay.sourceGroupStateCausalRevision.groupRevision,
-        presenceRevision: overlay.sourceGroupStateCausalRevision.presenceRevision,
-        version: overlay.overlayVersion,
-        state: overlay.state
+    const recorded = readRecordedLayoutTransitions(input.overlayId, input.manager);
+    const removal: AcceptedLayoutChange = {
+        overlayId: input.overlayId,
+        held,
+        recorded,
+        taker: resolveSnapshotAcceptedLayoutTaker(input),
+        nowEpochMs: readOverlayRepositoryNow(input.manager),
+        manager: input.manager
     };
+    const removed = held !== undefined && repository.delete(input.overlayId);
+    setLayoutTransitionsForAcceptedChange(removal);
+    return removed;
+}
+
+function resolveSnapshotAcceptedLayoutTaker(input: ReconcileAcceptedOverlayIdentityInput): AcceptedLayoutTaker | null {
+    return input.acceptedIdentity?.state === 'active'
+        ? { roomRef: input.roomRef, identity: input.acceptedIdentity }
+        : null;
 }
 
 function toOverlayRepositoryChange(
