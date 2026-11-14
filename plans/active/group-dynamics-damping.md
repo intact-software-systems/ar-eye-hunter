@@ -3,7 +3,8 @@
 A room whose members keep joining and leaving is re-planned again and again, and each new layout
 costs every browser more than the layout it replaces was worth. This plan damps that: the server
 holds back the reshaping of a room's distribution graph while the room is restless, lets the
-cheap, necessary changes through at once, and bounds how long anyone waits.
+cheap, necessary changes through at once, and bounds how long anyone waits. In the maintainer's
+words it is back pressure on the joiners, and its strength must follow what the room is doing.
 
 Nothing in it is built. The maintainer decided its shape on 2026-11-14 (see "Decisions"); what is
 still open is listed after them.
@@ -32,6 +33,16 @@ The overlap and the early dial are in pull request #823 (make-before-break), not
 | Replanning policy | `auto` and `debounced` plan; `commanded` holds automatic work until the application asks                      | the same function; the lifecycle policy's `topology.replanning`                                     |
 | RTT-only re-plans | Held until the layout is 15 s old; refinement at most every 30 s; a tree is kept unless 25 % and 10 ms better | `rttReplanMinimumLayoutAgeMs`, `rttRefinement.minIntervalMs`, `resolve-rtt-refinement-next-hops.ts` |
 | Promotion         | An active room's plan is promoted at once; there is no cooldown                                               | `topology-promotion-request.ts`                                                                     |
+
+**A burst is not only the first fill.** The expected-members rule covers one burst: the first,
+up to the room's capacity or its admission limit. The same burst of arrivals can come at any
+point of a room's life, and then nothing but the window and the max wait stands between it and
+a re-plan per few seconds.
+
+**Join admission is limited already, by fixed numbers.** A room admits at most 600 join requests
+a minute across all principals and 60 per principal
+(`RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`, `..._PRINCIPAL_RATE_LIMIT`), answering `429`
+with `Retry-After: 60` past them. Those limits protect the server; they do not follow the room.
 
 **The gap.** Every bound above is a clock. None of them looks at how restless the room is. Under
 steady coming and going the max wait forces a re-plan and a promotion about every 4.5 to 5 s, so each
@@ -82,6 +93,11 @@ because it would not pay for itself, and resumes on evidence that it will. The c
 are back-off and route-flap damping.
 
 ## Mechanism
+
+The maintainer has since said two things that this section does not yet meet: the same rule must
+cover a burst whenever it comes, and the pressure must be dynamic. The bucket of one stands; the
+fixed doubling from 15 s to 60 s is a starting proposal under revision ("Still open", points 4
+and 5).
 
 **A rate limiter on reshapes, with a bucket of one.** The gate is a token bucket that holds a
 single token and refills it once per ceiling. A reshape spends the token; a reshape that finds no
@@ -192,14 +208,16 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 
 Decided by the maintainer on 2026-11-14.
 
-| # | Question                                           | Decision                                                                                                                        |
-| - | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1 | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                          |
-| 2 | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.             |
-| 3 | How long a restless room may run without a reshape | A ceiling of 15 s that doubles while the room stays restless, up to 60 s, and returns to 15 s when a layout survives.           |
-| 4 | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them. |
-| 5 | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.            |
-| 6 | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                    |
+| # | Question                                           | Decision                                                                                                                                     |
+| - | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                                       |
+| 2 | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.                          |
+| 3 | How long a restless room may run without a reshape | A ceiling of 15 s that doubles while the room stays restless, up to 60 s, and returns to 15 s when a layout survives.                        |
+| 4 | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them.              |
+| 5 | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.                         |
+| 6 | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                                 |
+| 7 | The first fill against later bursts                | One phenomenon. The first fill is a challenge, and the same burst can come sporadically at any point of a room's life; one rule covers both. |
+| 8 | What the damping is                                | Back pressure on the joiners. Its strength is dynamic: it follows the room, it is not a fixed pair of numbers.                               |
 
 ## Still open
 
@@ -216,3 +234,14 @@ Decided by the maintainer on 2026-11-14.
    until something else asks. Does the server ask for a reshape on its own after enough attaches
    and repairs, or when a path grows past a bound? The measuring slice should show how far a
    graph drifts.
+4. **Where a joiner feels the pressure.** Decision 2 says a joiner is attached at once; decision 8
+   says the damping is back pressure on joiners. They meet in one of two ways. Either a joiner is
+   in the room on WS at once and its RTC attach is what waits its turn, in batches the room can
+   absorb; or the room's door itself slows, and a joiner is admitted later when many arrive
+   together. The first keeps everyone in the room and costs path quality for a while; the second
+   keeps the room calm and costs a joiner its first seconds.
+5. **What "dynamic" follows.** Candidates, to be chosen from what the measuring slice shows: how
+   long the room's last new edges took to come up; whether its recent layouts survived their
+   ceiling; the rate of arrivals over a sliding window; how many members are near their connection
+   cap. The ceiling, the batch size of attaches, or the admission rate would then move with it,
+   speeding up while the room absorbs arrivals cleanly and slowing when requests pile up.
