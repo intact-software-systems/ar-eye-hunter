@@ -71,6 +71,7 @@ import {
     type NativeRtcConnectionFixture
 } from '../native-rtc-connection-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import { createOriginOverlay, SERVED_REPLACED_LAYOUT_OVERLAP_MS, writeAcceptedServerOverlay } from './rtc-origin-overlay-fixture.ts';
@@ -345,7 +346,7 @@ export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput)
             rtcSignalingTopicId: 'rtc-signaling'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     onTestFinished(() => connection.dispose());
     const publicationCrypto = input.publicationCrypto ?? ROOM_PUBLICATION_CRYPTO;

@@ -81,6 +81,7 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO, ROOM_PUBLICATION_KEY } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -1076,7 +1077,7 @@ class NativeAuthorityEndpoint {
                 iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
             },
             input.nativeRuntime,
-            input.faultPort
+            { faultPort: input.faultPort, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => this.connection.dispose());
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);

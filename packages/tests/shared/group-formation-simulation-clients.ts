@@ -69,7 +69,7 @@ export function createSimulatedClient(
 
     const manager = new WebRtcGroupManager(
         service,
-        createTestGroupPeerLedger(service, {
+        createTestGroupPeerLedger(service.input.sessionId, {
             groupCache,
             clientCache,
             plannedOverlayCache: readablePlannedOverlayCache(repositoryManager),

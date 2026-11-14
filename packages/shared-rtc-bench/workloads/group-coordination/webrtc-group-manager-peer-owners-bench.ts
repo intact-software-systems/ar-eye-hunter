@@ -29,6 +29,7 @@ import {
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { UNGATED_RTC_BENCHMARK_PEER_ADMISSION } from '../native-rtc/ungated-rtc-benchmark-peer-admission.ts';
 import { createRtcGroupCoordinationSnapshot } from './create-rtc-group-coordination-snapshot.ts';
 
 export interface WebRtcGroupManagerPeerOwnersInput {
@@ -233,7 +234,8 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_RTC_BENCHMARK_PEER_ADMISSION
     });
     return {
         service,

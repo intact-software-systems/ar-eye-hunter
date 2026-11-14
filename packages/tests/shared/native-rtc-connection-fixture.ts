@@ -92,21 +92,28 @@ class NativeRtcSignalingTransport implements QRtcSignalingTransport {
     readonly receive = (message: QRtcSignalingMessage): Promise<void | 'retry'> => this.receiveResource(JSON.stringify(message), message.fromId);
 }
 
+/** What the fixture's service is built with besides its input. */
+export interface NativeRtcConnectionPorts {
+    readonly faultPort: TransportFaultPort;
+    readonly peerAdmission: WebRtcConnectionService.PeerAdmission;
+}
+
 export function createNativeRtcConnectionFixture(
     input: WebRtcConnectionService.InputDto,
     runtime: NativeRtcRuntime,
-    faultPort: TransportFaultPort
+    ports: NativeRtcConnectionPorts
 ): NativeRtcConnectionFixture {
     const signaler = new NativeRtcSignalingTransport(input);
     const broughtDueSenderIds: string[] = [];
     const dependencies = {
-        faultPort,
+        faultPort: ports.faultPort,
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
         writeRetainedSignalsDueNow: async (envelopes: readonly ALMessage[]) => {
             broughtDueSenderIds.push(...envelopes.map((envelope) => envelope.id.senderId));
             return [];
-        }
+        },
+        peerAdmission: ports.peerAdmission
     };
     const allocatedPeers: WebRtcConnectionService.Peer[] = [];
     const service = new WebRtcConnectionService(signaler, input, dependencies);

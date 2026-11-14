@@ -220,6 +220,11 @@ interface BrowserTransports {
     readonly rtcTransport: BrowserRtcTransport;
 }
 
+/** The connection service with the group peer ledger its admission reads, which the group manager is built over. */
+interface BrowserRtcConnection extends rtcEngine.BrowserRtcConnectionInitialization {
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
+}
+
 /** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
 interface BrowserRtcAcquisitions {
     readonly webRtcConnectionService: WebRtcConnectionService;
@@ -264,20 +269,6 @@ export function createBrowserRttHeartbeatMessage(
             ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS
         }
     );
-}
-
-export function configureBrowserRtcPeerCreationPolicies(
-    webRtcConnectionService: WebRtcConnectionService,
-    peerAdmission: WebRtcConnectionService.PeerAdmission
-): void {
-    webRtcConnectionService.setInboundPeerCreationPolicy((signal) =>
-        peerAdmission.decideInbound(signal, webRtcConnectionService)
-    );
-    webRtcConnectionService.setInboundPeerCapPolicy({
-        decide: (signal) => peerAdmission.decideInboundAtCap(signal, webRtcConnectionService),
-        wouldAdmit: (signal) => peerAdmission.wouldAdmitInboundAtCap(signal, webRtcConnectionService)
-    });
-    webRtcConnectionService.setOutboundDialPolicy((dial) => peerAdmission.decideOutbound(dial));
 }
 
 export async function initialiseMiddleware(
@@ -608,10 +599,8 @@ async function initialiseBrowserRtcTransport(
         (signal) => input.options.readIceCandidates(signal),
         input.options
     );
-    const { webRtcConnectionService, rtcCaptureReceipt } = await initialiseBrowserRtcConnection(
-        input,
-        iceCandidates
-    );
+    const connection = await initialiseBrowserRtcConnection(input, iceCandidates);
+    const { webRtcConnectionService, rtcCaptureReceipt } = connection;
     const acquired: BrowserRtcAcquisitions = { webRtcConnectionService };
     try {
         const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
@@ -641,7 +630,7 @@ async function initialiseBrowserRtcTransport(
         registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
         const webRtcGroupManager = createBrowserRtcGroupManager(
             input,
-            webRtcConnectionService,
+            connection,
             rtcRxStreamer
         );
         acquired.webRtcGroupManager = webRtcGroupManager;
@@ -737,11 +726,12 @@ async function rereadBrowserRtcGroups(
     return groups;
 }
 
-function initialiseBrowserRtcConnection(
+async function initialiseBrowserRtcConnection(
     input: InitialiseBrowserRtcTransportInput,
     iceCandidates: IceConfig
-): Promise<rtcEngine.BrowserRtcConnectionInitialization> {
-    return rtcEngine.initialiseRtcConnectionService({
+): Promise<BrowserRtcConnection> {
+    const groupPeerLedger = createBrowserGroupPeerLedger(input);
+    const initialization = await rtcEngine.initialiseRtcConnectionService({
         rtcCaptureConfiguration: input.options.rtcCaptureConfiguration,
         connectionId: input.connectionId,
         webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,
@@ -754,7 +744,24 @@ function initialiseBrowserRtcConnection(
             [DEFAULT_REALTIME_DATA_CHANNEL_LANE],
         maxPeerConnections: input.options.maxPeerConnections,
         faultPort: input.options.diagnosticsPorts.transportFaultPort,
-        signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics
+        signalingDiagnostics: input.options.diagnosticsPorts.signalingDiagnostics,
+        peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger)
+    });
+    return { ...initialization, groupPeerLedger };
+}
+
+function createBrowserGroupPeerLedger(input: InitialiseBrowserRtcTransportInput): WebRtcGroupPeerLedger {
+    return new WebRtcGroupPeerLedger({
+        localSessionId: input.clientData.sessionId,
+        repositories: {
+            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+        },
+        maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
+        overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        nowEpochMs: () => Date.now()
     });
 }
 
@@ -774,21 +781,10 @@ function registerBrowserRtcPeerStreaming(
 
 function createBrowserRtcGroupManager(
     input: InitialiseBrowserRtcTransportInput,
-    webRtcConnectionService: WebRtcConnectionService,
+    connection: BrowserRtcConnection,
     rtcRxStreamer: WebRtcRxStreamerService
 ): WebRtcGroupManager {
-    const groupPeerLedger = new WebRtcGroupPeerLedger({
-        localSessionId: webRtcConnectionService.input.sessionId,
-        repositories: {
-            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-        },
-        maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
-        overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
-        nowEpochMs: () => Date.now()
-    });
+    const { webRtcConnectionService, groupPeerLedger } = connection;
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
         groupPeerLedger,
@@ -802,10 +798,6 @@ function createBrowserRtcGroupManager(
     webRtcGroupManager.startReconcileWakes();
     rtcRxStreamer.setRttReportingPeerIds(
         webRtcGroupManager.rttReportingPeerIds({ degreeLimit: input.options.rttReportingDegreeLimit })
-    );
-    configureBrowserRtcPeerCreationPolicies(
-        webRtcConnectionService,
-        createBrowserRtcPeerAdmission(groupPeerLedger)
     );
     return webRtcGroupManager;
 }

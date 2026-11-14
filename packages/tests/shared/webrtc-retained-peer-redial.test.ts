@@ -28,6 +28,7 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcPeerConnection
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import {
     acceptActiveLayoutGroup,
     createGroupSnapshot,
@@ -84,7 +85,7 @@ async function createConnection(sessionId: string): Promise<NativeRtcConnectionF
             }
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     connections.push(connection);
     await connection.service.connectSignaler();
@@ -96,7 +97,7 @@ async function createManagedSide(sessionId: string, remoteSessionId: string): Pr
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         connection.service,
-        createTestGroupPeerLedger(connection.service, {
+        createTestGroupPeerLedger(connection.service.input.sessionId, {
             groupCache: new LatestRepository<string, GroupSnapshot>(),
             clientCache: new LatestRepository<string, ClientInfo>(),
             acceptedOverlayCache

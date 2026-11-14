@@ -65,6 +65,7 @@ import {
     createAvailablePublicationCryptoFixture,
     UNAVAILABLE_PUBLICATION_CRYPTO
 } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
@@ -131,7 +132,8 @@ describe('native observation handoff cleanup', () => {
             createOfferId: () => 'offer',
             faultPort: createPassThroughTransportFaultPort(),
             signalingDiagnostics: capture.diagnostics,
-            writeRetainedSignalsDueNow: async () => []
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         });
         onTestFinished(() => service.disposeNativeObservations());
         const middleware = createDefaultApiMiddlewareTestDouble({
@@ -188,7 +190,8 @@ describe('the inbound stores a connect hands its two carriers', () => {
             nowEpochMs: () => 1,
             createOfferId: () => 'offer',
             faultPort: createPassThroughTransportFaultPort(),
-            writeRetainedSignalsDueNow: async () => []
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         });
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
@@ -545,7 +548,8 @@ function createConnectionService(): WebRtcConnectionService {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
 }
 

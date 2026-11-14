@@ -38,6 +38,7 @@ import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO, UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 import { toTestALAckPayload, verifyTestALReceiptControl } from '../al-control-test-payloads.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 
 const roomRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' };
 
@@ -633,7 +634,7 @@ class RtcReceiveFixture {
                 rtcSignalingTopicId: 'rtc-signaling'
             },
             this.nativeRuntime,
-            createPassThroughTransportFaultPort()
+            { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => this.connection.dispose());
         this.observeRoomAuthority();

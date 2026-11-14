@@ -55,6 +55,7 @@ import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-f
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const overlayId = toScopedOverlayId(roomRef);
@@ -897,7 +898,8 @@ async function createFixture(qosProvider?: ALQosInputProvider): Promise<OverlayF
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     onTestFinished(() => {
         for (const peerId of connection.knownPeerIds()) {

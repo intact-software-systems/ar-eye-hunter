@@ -31,6 +31,7 @@ import { NO_RTC_GRANTED_TOPICS } from './multicast/rtc-granted-topic-reader-fixt
 import { KEYLESS_PUBLICATION_VERIFIER } from './multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 interface StreamingEndpoint {
@@ -244,7 +245,8 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     const multicast = new WebRtcOverlayMulticastManager({
         quotaNow: Date.now,

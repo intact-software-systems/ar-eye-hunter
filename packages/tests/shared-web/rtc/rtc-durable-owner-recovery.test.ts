@@ -51,6 +51,7 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import {
     createKeyedRoomSend,
@@ -338,7 +339,13 @@ class RtcRecoveryOwner {
             iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
             dataChannelName: 'alm',
             rtcSignalingTopicId: 'rtc'
-        }, { faultPort: this.faults, createOfferId: crypto.randomUUID.bind(crypto), nowEpochMs: () => Date.now(), writeRetainedSignalsDueNow: async () => [] });
+        }, {
+            faultPort: this.faults,
+            createOfferId: crypto.randomUUID.bind(crypto),
+            nowEpochMs: () => Date.now(),
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
+        });
         this.observe(['receiver']);
         this.manager = new WebRtcOverlayMulticastManager({
             quotaNow: Date.now,

@@ -20,7 +20,7 @@ describe('WebRtcGroupManager overlay roles', () => {
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
             rtc,
-            createTestGroupPeerLedger(rtc, {
+            createTestGroupPeerLedger(rtc.input.sessionId, {
                 groupCache,
                 clientCache,
                 plannedOverlayCache,

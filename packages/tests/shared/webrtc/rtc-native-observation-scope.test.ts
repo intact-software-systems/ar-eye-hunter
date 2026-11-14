@@ -7,6 +7,7 @@ import { createPassThroughTransportFaultPort } from '@shared/transport-faults/tr
 import { RtcNativeObservationScope } from '@shared/webrtc/rtc-native-observation-scope.ts';
 import { recordRtcNativeObservation, type RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { installNativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -457,7 +458,8 @@ function createObservedService(diagnostics: RtcSignalingDiagnostics, timeoutEnab
         nowEpochMs: () => 1,
         faultPort: createPassThroughTransportFaultPort(),
         signalingDiagnostics: diagnostics,
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     onTestFinished(() => {
         for (const peerId of service.knownPeerIds()) {

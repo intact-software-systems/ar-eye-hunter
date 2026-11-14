@@ -45,14 +45,14 @@ export interface TestGroupPeerLedgerCap {
     readonly now?: () => number;
 }
 
-/** The group peer ledger of a manager over `rtcQBox`, reading the given caches. */
+/** The group peer ledger of the session `localSessionId`, reading the given caches. */
 export function createTestGroupPeerLedger(
-    rtcQBox: WebRtcConnectionService,
+    localSessionId: string,
     repositories: WebRtcGroupPeerLedger.Repositories,
     cap: TestGroupPeerLedgerCap = {}
 ): WebRtcGroupPeerLedger {
     return new WebRtcGroupPeerLedger({
-        localSessionId: rtcQBox.input.sessionId,
+        localSessionId,
         repositories,
         maxPeerConnections: resolveWebRtcMaxPeerConnections(cap.maxPeerConnections),
         overlayTransitionGraceMs: cap.overlayTransitionGraceMs ?? DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,

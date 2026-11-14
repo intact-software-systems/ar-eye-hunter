@@ -135,6 +135,7 @@ export namespace WebRtcConnectionService {
         readonly nowEpochMs: () => number;
         /** Brings the transport's retained delivery of each held signal due now; answers the envelopes it brought due. */
         readonly writeRetainedSignalsDueNow: (envelopes: readonly ALMessage[]) => Promise<readonly ALMessage[]>;
+        readonly peerAdmission: PeerAdmission;
     }
 
     export interface InputDto {
@@ -416,6 +417,13 @@ export class WebRtcConnectionService {
         this.signaler = signaler;
         this.input = input;
         this.dependencies = dependencies;
+        const { peerAdmission } = dependencies;
+        this.inboundPeerCreationPolicy = (signal) => peerAdmission.decideInbound(signal, this);
+        this.inboundPeerCapPolicy = {
+            decide: (signal) => peerAdmission.decideInboundAtCap(signal, this),
+            wouldAdmit: (signal) => peerAdmission.wouldAdmitInboundAtCap(signal, this)
+        };
+        this.outboundDialPolicy = (dial) => peerAdmission.decideOutbound(dial);
         this.peerEstablishmentWatchdog = new AsyncCommand<PeerId, WebRtcConnectionService.Peer>();
         this.heldInboundSignals = new HeldInboundRtcSignals({
             nowEpochMs: dependencies.nowEpochMs,

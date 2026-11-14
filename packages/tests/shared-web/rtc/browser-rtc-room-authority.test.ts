@@ -19,6 +19,7 @@ import {
     type SimulatedNativeRtcDataChannel,
     type SimulatedNativeRtcPeerConnection
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import {
     createAcceptedOverlay,
@@ -439,7 +440,7 @@ async function createNativeRoomFixture(snapshots: readonly GroupSnapshot[]): Pro
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     mocks.initialiseApiMiddleware.mockResolvedValue({
         ...mocks.ctx,

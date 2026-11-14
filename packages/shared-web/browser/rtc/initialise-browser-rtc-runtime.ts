@@ -190,6 +190,7 @@ export interface InitialiseRtcConnectionServiceInput {
     readonly signalingDiagnostics?: RtcSignalingDiagnostics['record'];
     readonly dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     readonly maxPeerConnections?: number;
+    readonly peerAdmission: WebRtcConnectionService.PeerAdmission;
 }
 
 export interface BrowserRtcConnectionInitialization {
@@ -217,7 +218,8 @@ export async function initialiseRtcConnectionService(
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs,
         signalingDiagnostics: capture.diagnostics,
-        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes)
+        writeRetainedSignalsDueNow: (envelopes) => input.webSocketQueueBox.writeRetainedInboxMessagesDueNow(envelopes),
+        peerAdmission: input.peerAdmission
     };
     try {
         const connectionService = new WebRtcConnectionService(
@@ -225,15 +227,6 @@ export async function initialiseRtcConnectionService(
             toBrowserRtcConnectionServiceInput(input),
             dependencies
         );
-
-        connectionService.setInboundPeerCreationPolicy(() => ({
-            decision: 'retry',
-            reason: 'stage-layout-mismatch'
-        }));
-        connectionService.setOutboundDialPolicy(() => ({
-            decision: 'deny',
-            reason: 'stage-layout-mismatch'
-        }));
         await connectionService.connectSignaler();
 
         return { webRtcConnectionService: connectionService, rtcCaptureReceipt: capture.receipt };

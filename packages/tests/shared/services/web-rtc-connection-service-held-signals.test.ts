@@ -10,6 +10,7 @@ import type {
 } from '@shared/webrtc/qrtc-signaling-contracts.ts';
 
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 
 interface HeldSignalFixture {
@@ -130,7 +131,8 @@ async function createHeldSignalFixture(maxPeerConnections?: number): Promise<Hel
         writeRetainedSignalsDueNow: async (envelopes) => {
             broughtDue.push(envelopes);
             return envelopes;
-        }
+        },
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     const admittedPeerIds = new Set<string>();
     const deniedPeerIds = new Set<string>();

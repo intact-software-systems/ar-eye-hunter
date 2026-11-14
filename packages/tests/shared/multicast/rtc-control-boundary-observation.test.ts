@@ -44,6 +44,7 @@ import {
     type SimulatedNativeRtcDataChannel
 } from '../native-rtc-connection-fixture.ts';
 import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
 import {
     createOriginOverlay,
@@ -179,7 +180,7 @@ describe('exact RTC ACK boundary observations', () => {
                             rtcSignalingTopicId: 'rtc'
                         },
                         nativeRuntime,
-                        faultPort
+                        { faultPort: faultPort, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
                     );
                     connections.set(sessionId, connection);
                     const groupCache = new LatestRepository<string, GroupSnapshot>();

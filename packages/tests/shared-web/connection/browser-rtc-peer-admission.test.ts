@@ -5,7 +5,6 @@ import {
     createBrowserRtcHeldOfferReleases,
     createBrowserRtcPeerAdmission
 } from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -439,6 +438,12 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
         overlayVersion: 2,
         nextHopSessionIds: layouts.planned
     });
+    const groupPeerLedger = createTestGroupPeerLedger('self', {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
     const connection = createNativeRtcConnectionFixture(
         {
             sessionId: 'self',
@@ -448,21 +453,14 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger) }
     );
     connections.add(connection);
-    const groupPeerLedger = createTestGroupPeerLedger(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: plannedOverlays,
-        acceptedOverlayCache: acceptedOverlays
-    });
     const manager = new WebRtcGroupManager(
         connection.service,
         groupPeerLedger,
         createBrowserRtcHeldOfferReleases(connection.service)
     );
-    configureBrowserRtcPeerCreationPolicies(connection.service, createBrowserRtcPeerAdmission(groupPeerLedger));
     await connection.service.connectSignaler();
     await manager.acceptGroupUpdate(group);
     return { group, manager, connection, acceptedOverlays, plannedOverlays };
@@ -560,6 +558,12 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
             nextHopSessionIds: ['peer-planned', 'peer-shared']
         });
     }
+    const groupPeerLedger = createTestGroupPeerLedger('self', {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
     const connection = createNativeRtcConnectionFixture(
         {
             sessionId: 'self',
@@ -570,21 +574,14 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger) }
     );
     connections.add(connection);
-    const groupPeerLedger = createTestGroupPeerLedger(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: plannedOverlays,
-        acceptedOverlayCache: acceptedOverlays
-    });
     const manager = new WebRtcGroupManager(
         connection.service,
         groupPeerLedger,
         { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
-    configureBrowserRtcPeerCreationPolicies(connection.service, createBrowserRtcPeerAdmission(groupPeerLedger));
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);

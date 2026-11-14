@@ -22,6 +22,7 @@ import {
     SimulatedNativeRtcPeerConnection,
     type NativeRtcRuntime
 } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './deterministic-rtc-offer-ids.ts';
 
 afterEach(() => vi.restoreAllMocks());
@@ -419,7 +420,8 @@ function createObservedService(record: RtcSignalingDiagnostics['record']): Obser
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs,
         signalingDiagnostics: { nowEpochMs, record },
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     };
     const service = new WebRtcConnectionService({
         connect: async (input) => {

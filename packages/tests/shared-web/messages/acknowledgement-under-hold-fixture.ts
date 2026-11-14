@@ -54,6 +54,7 @@ import { createDefaultVolatileSessionBudget } from '../default-volatile-session-
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
@@ -267,7 +268,7 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        faults
+        { faultPort: faults, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     onTestFinished(() => {
         fixture.dispose();

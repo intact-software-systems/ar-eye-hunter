@@ -32,7 +32,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -77,7 +77,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -122,7 +122,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -160,7 +160,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -199,7 +199,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -236,7 +236,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -276,7 +276,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
-            createTestGroupPeerLedger(rtcQBox.service, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
+            createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         manager.startReconcileWakes();
@@ -422,7 +422,7 @@ describe('WebRtcGroupManager reconcile wakes', () => {
             const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
             const manager = new WebRtcGroupManager(
                 rtcQBox.service,
-                createTestGroupPeerLedger(rtcQBox.service, {
+                createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
                     groupCache: new LatestRepository<string, GroupSnapshot>(),
                     clientCache: new LatestRepository<string, ClientInfo>(),
                     acceptedOverlayCache
@@ -704,7 +704,7 @@ function createCapFixture(maxPeerConnections: number) {
     const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         rtcQBox.service,
-        createTestGroupPeerLedger(rtcQBox.service, {
+        createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
             groupCache: new LatestRepository<string, GroupSnapshot>(),
             clientCache: new LatestRepository<string, ClientInfo>(),
             acceptedOverlayCache,
@@ -773,7 +773,7 @@ function createPlannedLayoutFixture() {
     const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         rtcQBox.service,
-        createTestGroupPeerLedger(rtcQBox.service, {
+        createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
             groupCache: new LatestRepository<string, GroupSnapshot>(),
             clientCache: new LatestRepository<string, ClientInfo>(),
             acceptedOverlayCache,
@@ -805,7 +805,7 @@ async function retireLayoutOverPeers(
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         rtcQBox.service,
-        createTestGroupPeerLedger(rtcQBox.service, {
+        createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
             groupCache: new LatestRepository<string, GroupSnapshot>(),
             clientCache: new LatestRepository<string, ClientInfo>(),
             acceptedOverlayCache

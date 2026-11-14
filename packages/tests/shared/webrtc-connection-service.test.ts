@@ -23,6 +23,7 @@ import {
     NativeRtcConnectionFixture,
     NativeRtcRuntime
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from './webrtc/deterministic-rtc-offer-ids.ts';
 
 let runtime: NativeRtcRuntime;
@@ -50,7 +51,10 @@ function createInput(): WebRtcConnectionService.InputDto {
 }
 
 function createFixture(input = createInput()): NativeRtcConnectionFixture {
-    const fixture = createNativeRtcConnectionFixture(input, runtime, createPassThroughTransportFaultPort());
+    const fixture = createNativeRtcConnectionFixture(input, runtime, {
+        faultPort: createPassThroughTransportFaultPort(),
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
+    });
     fixtures.push(fixture);
     return fixture;
 }
@@ -1041,7 +1045,8 @@ async function withClockService(
         nowEpochMs,
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     };
     const service = new WebRtcConnectionService(signaler, input, dependencies);
     try {

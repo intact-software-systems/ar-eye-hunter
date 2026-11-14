@@ -16,7 +16,6 @@ import {
     createBrowserRtcHeldOfferReleases,
     createBrowserRtcPeerAdmission
 } from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
@@ -37,12 +36,13 @@ import {
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-ownership.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
+import type { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
-import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcGroupManagerOptions } from '@shared/services/webrtc-group-manager-contracts.ts';
 import {
@@ -66,6 +66,7 @@ import {
     type NativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
@@ -109,7 +110,7 @@ describe('browser RTC runtime composition', () => {
         });
         expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
 
-        await nameStartupPeerInRoom(service, IGNORED_HELD_OFFER_RELEASES);
+        await nameStartupPeerInRoom(startup);
 
         await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
         expect(startup.nativeRuntime.createdConnections).toHaveLength(1);
@@ -132,7 +133,7 @@ describe('browser RTC runtime composition', () => {
             }))
         );
 
-        await nameStartupPeerInRoom(service, IGNORED_HELD_OFFER_RELEASES);
+        await nameStartupPeerInRoom(startup);
 
         await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
         expect(startup.nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
@@ -149,9 +150,10 @@ describe('browser RTC runtime composition', () => {
                 outcome: 'retry'
             }))
         );
-        const manager = await nameStartupPeerInRoom(service, createBrowserRtcHeldOfferReleases(service));
+        const manager = await joinStartupRoom(startup, createBrowserRtcHeldOfferReleases(service));
         const writeDueNow = vi.spyOn(startup.queueBox, 'writeRetainedInboxMessagesDueNow');
 
+        publishStartupPeerLayout(startup);
         await manager.notifyOverlayTopologyChanged();
 
         expect(writeDueNow.mock.calls.map(([envelopes]) => envelopes.map((envelope) => envelope.id.msgId))).toEqual([
@@ -183,7 +185,8 @@ describe('browser RTC runtime composition', () => {
             faultPort: diagnosticsPorts.transportFaultPort,
             signalingDiagnostics: (event) => events.push(event),
             rtcCaptureConfiguration: { mode: 'native', origin: 'step' },
-            connectionId: { status: 'observed', value: 'connection-failure' }
+            connectionId: { status: 'observed', value: 'connection-failure' },
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         })).rejects.toBe(failure);
         expect(events).toContainEqual(
             expect.objectContaining({ kind: 'native-observation-status', stage: 'disposed', capture: expect.objectContaining({ scope: 'disposed' }) })
@@ -217,7 +220,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            faults
+            { faultPort: faults, peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             fixture.dispose();
@@ -296,7 +299,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            createPassThroughTransportFaultPort()
+            { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             try {
@@ -386,7 +389,7 @@ describe('browser RTC runtime composition', () => {
                 rtcSignalingTopicId: 'rtc'
             },
             nativeRuntime,
-            createPassThroughTransportFaultPort()
+            { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
         );
         onTestFinished(() => {
             try {
@@ -489,6 +492,9 @@ const IGNORED_HELD_OFFER_RELEASES: Pick<WebRtcGroupManagerOptions, 'onOverlayAdo
 interface StartupRtcRuntime {
     readonly queueBox: WsQueueBoxClientService;
     readonly offerMsgId: string;
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
+    /** A room whose members are this browser and `startup-peer`, not yet published. */
+    readonly room: GroupSnapshot;
     readonly nativeRuntime: NativeRtcRuntime;
     readonly initialized: BrowserRtcConnectionInitialization;
     readonly signalingEvents: readonly RtcSignalingDiagnostics.Event[];
@@ -518,6 +524,7 @@ async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.Cap
         serverPeerId: 'server',
         inboundDiagnostics: (event) => consumerEvents.push(event)
     });
+    const groupPeerLedger = createStartupGroupPeerLedger();
     const initializing = initialiseRtcConnectionService({
         webSocketQueueBox: queueBox,
         qboxEngine: new InboxOutboxEngine(),
@@ -528,7 +535,8 @@ async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.Cap
         faultPort: diagnosticsPorts.transportFaultPort,
         signalingDiagnostics: configuredDiagnostics.signalingDiagnostics,
         rtcCaptureConfiguration: { mode, origin: 'step' },
-        connectionId: { status: 'observed', value: 'connection-inbound' }
+        connectionId: { status: 'observed', value: 'connection-inbound' },
+        peerAdmission: createBrowserRtcPeerAdmission(groupPeerLedger)
     });
     onTestFinished(async () => {
         networkConnect.resolve();
@@ -551,34 +559,55 @@ async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.Cap
     await networkConnectStarted.promise;
     const offerMsgId = await receiveOffer(queueBox, 'startup-peer');
     networkConnect.resolve();
-    return { queueBox, offerMsgId, nativeRuntime, initialized: await initializing, signalingEvents, consumerEvents };
+    return {
+        queueBox,
+        offerMsgId,
+        groupPeerLedger,
+        room: createAcceptedGroupSnapshotFixture(['self', 'startup-peer']),
+        nativeRuntime,
+        initialized: await initializing,
+        signalingEvents,
+        consumerEvents
+    };
 }
 
-/** Publishes a room whose accepted layout names `startup-peer`, and gives the service the browser's peer policies. */
-async function nameStartupPeerInRoom(
-    service: WebRtcConnectionService,
-    heldOfferReleases: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'>
-): Promise<WebRtcGroupManager> {
-    const group = createAcceptedGroupSnapshotFixture(['self', 'startup-peer']);
-    groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-    overlaysRepository.setAcceptedOverlayById(
-        toScopedOverlayId(group.group),
-        createAcceptedOverlayFixture(group, 1, ['startup-peer'])
-    );
-    const groupPeerLedger = createTestGroupPeerLedger(service, {
+/** The browser's group peer ledger over the browser's caches, before any room is known. */
+function createStartupGroupPeerLedger(): WebRtcGroupPeerLedger {
+    return createTestGroupPeerLedger('self', {
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
         plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
         acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
     });
+}
+
+/** Caches the accepted layout of the startup room, which names `startup-peer`. */
+function publishStartupPeerLayout(startup: StartupRtcRuntime): void {
+    overlaysRepository.setAcceptedOverlayById(
+        toScopedOverlayId(startup.room.group),
+        createAcceptedOverlayFixture(startup.room, 1, ['startup-peer'])
+    );
+}
+
+/** Publishes the startup room and gives it to a group manager over the startup's ledger. */
+async function joinStartupRoom(
+    startup: StartupRtcRuntime,
+    heldOfferReleases: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'>
+): Promise<WebRtcGroupManager> {
+    groupStateSnapshotsRepository.setGroupStateSnapshot(startup.room);
     const manager = new WebRtcGroupManager(
-        service,
-        groupPeerLedger,
+        startup.initialized.webRtcConnectionService,
+        startup.groupPeerLedger,
         heldOfferReleases
     );
-    await manager.getOrCreate(group.group).acceptGroupUpdate(group);
-    configureBrowserRtcPeerCreationPolicies(service, createBrowserRtcPeerAdmission(groupPeerLedger));
+    await manager.getOrCreate(startup.room.group).acceptGroupUpdate(startup.room);
     return manager;
+}
+
+/** Publishes a room whose accepted layout names `startup-peer` to the startup's group peer ledger. */
+async function nameStartupPeerInRoom(startup: StartupRtcRuntime): Promise<void> {
+    publishStartupPeerLayout(startup);
+    await joinStartupRoom(startup, IGNORED_HELD_OFFER_RELEASES);
 }
 
 /** A native peer connection to `peerId` whose channels are open, torn down with the test. */
@@ -593,7 +622,7 @@ function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcCon
             rtcSignalingTopicId: 'rtc'
         },
         nativeRuntime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     onTestFinished(() => {
         try {
