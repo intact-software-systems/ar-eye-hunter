@@ -562,7 +562,7 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...toPublishSteps('probe-ready'),
                     ...toPublishSteps(`${track}-p1`),
                     ...toPublishSteps(`${track}-p2`),
-                    'cue-entered-applied-received',
+                    'cue-entered-applied-by-receiver-received',
                     ...toPublishSteps(`${track}-p3`),
                     'no-repair-dispatch',
                     'no-gap-nack'
@@ -598,8 +598,8 @@ describe('ALM ordered subscription entry conformance', () => {
                 'cue-entered-received',
                 'entered-head-read',
                 'entered-head-applied',
-                'cue-entered-applied',
-                'cue-entered-applied-sent',
+                'cue-entered-applied-by-receiver',
+                'cue-entered-applied-by-receiver-sent',
                 ...toPublicationSteps('received', 'a', [3]),
                 ...toPublicationSteps('received', 'c', [3]),
                 ...toConfirmedCueSteps(3),
@@ -646,7 +646,7 @@ describe('ALM ordered subscription entry conformance', () => {
                 'revoke-head-applied',
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-resubscribed-applied-received',
+                'cue-resubscribed-applied-by-receiver-received',
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
                 'no-gap-nack'
@@ -674,8 +674,8 @@ describe('ALM ordered subscription entry conformance', () => {
             'cue-resubscribed-received',
             'resubscribed-head-read',
             'resubscribed-head-applied',
-            'cue-resubscribed-applied',
-            'cue-resubscribed-applied-sent',
+            'cue-resubscribed-applied-by-receiver',
+            'cue-resubscribed-applied-by-receiver-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -781,8 +781,8 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...settled,
                     `${elected}-head-read`,
                     `${elected}-head-applied`,
-                    `cue-${elected}-applied`,
-                    `cue-${elected}-applied-sent`
+                    `cue-${elected}-applied-by-receiver`,
+                    `cue-${elected}-applied-by-receiver-sent`
                 ]);
                 if (reasserted) {
                     // The settle's own formation poll, under the cue's name, outside the settle.
@@ -809,9 +809,12 @@ describe('ALM ordered subscription entry conformance', () => {
                     const producerNames = toStepNames(requireRoleRecipe(scenario, role));
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
                     const before = producerNames.indexOf(toPublishSteps(first)[0]!);
-                    const applied = reasserted ? [`${elected}-head-read`, `${elected}-head-applied`] : [];
+                    // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
+                    const applied = reasserted
+                        ? [`cue-${elected}-applied-by-sibling-received`, `${elected}-head-read`, `${elected}-head-applied`]
+                        : [];
                     expect(producerNames.slice(before - 1 - applied.length, before), `${carrier} ${scenarioId} ${role}`)
-                        .toEqual([`cue-${elected}-applied-received`, ...applied]);
+                        .toEqual([`cue-${elected}-applied-by-receiver-received`, ...applied]);
                     expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);
                 }
                 const siblingNames = scenarioId === 'subscription-ordered-reconnect'
@@ -999,7 +1002,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-reentered-applied-received',
+                'cue-reentered-applied-by-receiver-received',
+                'cue-reentered-applied-by-sibling-received',
                 'reentered-head-read',
                 'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
@@ -1023,8 +1027,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'reentered-formation-poll',
             'reentered-head-read',
             'reentered-head-applied',
-            'cue-reentered-applied',
-            'cue-reentered-applied-sent',
+            'cue-reentered-applied-by-receiver',
+            'cue-reentered-applied-by-receiver-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -1049,6 +1053,11 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'presence-reasserted',
             'cue-reentered',
             'cue-reentered-sent',
+            'cue-reentered-applied-by-receiver-received',
+            'reentered-head-read',
+            'reentered-head-applied',
+            'cue-reentered-applied-by-sibling',
+            'cue-reentered-applied-by-sibling-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             'omitted-a-p5',

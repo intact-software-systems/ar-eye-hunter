@@ -129,7 +129,9 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
 
 /**
  * The reopened socket's election names its generation in the session's row, and its room presence names it too, so
- * the sibling sends its cue again, which the receiver applies before it lets the producers publish.
+ * the sibling sends its cue again, which the receiver applies before it lets the producers publish. Its re-asserted
+ * presence re-plans the room's layout, so the sibling, too, applies the head the receiver's cue follows and tells the
+ * producers before they publish.
  */
 function toReenteredSubscriberCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -149,6 +151,7 @@ function toReenteredSubscriberCommands(sibling: AlmConformanceStepInput): readon
         }),
         toPresenceGenerationPollCommand({ step: sibling, name: 'presence-reasserted', tokens: 'tokens-reconnected' }),
         ...toCueSendCommands(sibling, REENTERED),
+        ...toElectionAppliedCueCommands(sibling, REENTERED, 'reasserted'),
         ...toOrderedArrivalWaits(sibling, [5]),
         ...toOrderedPositionWaits({
             step: sibling,

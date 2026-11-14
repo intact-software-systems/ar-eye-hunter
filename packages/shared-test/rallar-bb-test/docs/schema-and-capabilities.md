@@ -613,12 +613,16 @@ the result events of `messages.subscriptions` and of the subscription rows read,
 - In these three cells the receiver, which a copy must find current, writes nothing after the sibling's
   election, so the sibling's cue that it elected (`entered`, `resubscribed`, `reentered`) is its ordering
   point: the receiver reads the room's head after that cue, waits until it applied that head, then cues
-  `<cue>-applied`, and the producers wait for that cue before they publish after the election. In
+  `<cue>-applied-by-receiver`, and the producers wait for that cue before they publish after the election. In
   `subscription-ordered-reconnect` the reopened socket also re-asserts the sibling's room presence, which re-plans
-  the room's layout, and a producer page that has not accepted the new layout has no route to the sibling, so its
-  copy is retried as a repair: there the receiver first runs the settle's formation poll again
-  (`reentered-formation-poll`) before its head read, and each producer, once it heard the cue, reads the room's head
-  and waits until its own page applied it. No cell waits a fixed margin for the election's delta.
+  the room's layout, and a page that has not accepted the new layout has no route to or from the sibling, so a copy
+  is retried as a repair: there the receiver first runs the settle's formation poll again
+  (`reentered-formation-poll`) before its head read; the re-entered sibling, once it heard the receiver's cue, reads
+  the room's head, waits until it applied it and cues `reentered-applied-by-sibling`; and each producer, once it
+  heard both cues, reads the room's head and waits until its own page applied it. In `subscription-ordered-entry`
+  and `-omission` the sibling keeps its socket and its presence, so the layout does not change, and its page holds
+  its own election from the response its subscribe asserts `active` before it cues. No cell waits a fixed margin for
+  the election's delta.
 - `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
   producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
   socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
