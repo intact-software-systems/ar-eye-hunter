@@ -749,16 +749,6 @@ and it has no status list.
   with the room's unexpired inbox rows of every topic, since only
   `fk_ext_bank_id` is indexed (`resource_inbox_unique_k`); it waits on a
   measurement at fleet scale before an index.
-- The flow builder's conversion to the legacy runner's step
-  (`apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts`)
-  copies an assert's `source`, `operator` and `expected` only, so it drops
-  `comparisonSource` silently, for `equals` and for `sameUniqueStringSet`. It
-  should refuse the form or carry it. The TypeScript union of
-  `RallarBlackBoxTestAssertCommand` forbids an `equals` with both `expected`
-  and `comparisonSource` but admits one with neither; control validation
-  refuses both forms
-  (`packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts`),
-  so only the flow builder's conversion is left to close.
 - `server-ordered-entry`'s last-write wait names the write by `contains` of its
   request id's sender part (`toLastWriteArrivalWait`,
   `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/server-ordered-entry.ts`),
