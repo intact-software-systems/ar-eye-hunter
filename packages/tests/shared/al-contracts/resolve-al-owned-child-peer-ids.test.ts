@@ -131,6 +131,63 @@ describe('the children a peer owns while a replaced layout is in force', () => {
         })).toEqual(['c', 'a1']);
     });
 
+    describe('when the path child toward the recipient is already visited', () => {
+        /** `a` sent `c` a copy over the accepted edge and `b` one over the replaced edge; `e`, `f` hold no recipient. */
+        const ACCEPTED = { a: ['c'], b: ['c', 'e'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'] };
+        const REPLACED = { a: ['b'], b: ['a', 'c', 'e'], c: ['b'], e: ['b', 'f'], f: ['e'] };
+        const COPY_TO_B = { ...createFrozenMulticast(['c']), diagnostics: { visitedPeerIds: ['a', 'c', 'b'] } };
+
+        it('owns nothing over either layout while the replaced one is in force', () => {
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: ACCEPTED.b,
+                overlayNextHopsBySessionId: ACCEPTED,
+                previousOverlayLayout: { neighborPeerIds: REPLACED.b, nextHopsBySessionId: REPLACED }
+            })).toEqual([]);
+        });
+
+        // Green on first run.
+        it('keeps every neighbour with one layout in force, as before the overlap', () => {
+            expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
+                nowMs: 0,
+                selfPeerId: 'b',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: ACCEPTED.b,
+                overlayNextHopsBySessionId: ACCEPTED
+            })).toEqual(['e']);
+        });
+
+        // Green on first run.
+        it('keeps a neighbour that reaches the recipient only over the other layout\'s edges', () => {
+            // `b` failed and is named visited; `d` is a neighbour over the replaced layout only, and reaches `c`
+            // through `g` over the accepted one.
+            const accepted = { a: ['b'], b: ['a', 'g'], c: ['g'], d: ['g'], g: ['b', 'c', 'd'] };
+            const replaced = { a: ['b', 'd'], b: ['a', 'c'], c: ['b'], d: ['a', 'g'], g: ['d'] };
+
+            expect(resolveALOwnedChildPeerIds({ ...createFrozenMulticast(['c']), diagnostics: { visitedPeerIds: ['b'] } }, {
+                nowMs: 0,
+                selfPeerId: 'a',
+                overlayNeighborPeerIds: accepted.a,
+                overlayNextHopsBySessionId: accepted,
+                previousOverlayLayout: { neighborPeerIds: replaced.a, nextHopsBySessionId: replaced }
+            })).toEqual(['d']);
+        });
+
+        // Green on first run.
+        it('keeps every neighbour while the replaced one is in force when the recipient is behind its sender', () => {
+            expect(resolveALOwnedChildPeerIds(createFrozenMulticast(['a1']), {
+                nowMs: 0,
+                selfPeerId: 'r',
+                fromPeerId: 'a',
+                overlayNeighborPeerIds: TREE.r,
+                overlayNextHopsBySessionId: TREE,
+                previousOverlayLayout: { neighborPeerIds: ['b'], nextHopsBySessionId: TREE }
+            })).toEqual(['b', 'c']);
+        });
+    });
+
     it('owns only the accepted layout\'s children when no replaced layout is given', () => {
         const message = newALMulticastMessage('origin', { topicId: 'chat', resourceId: 'shot', contextId: 'room' }, ROOM, 'chat.v1', {});
 

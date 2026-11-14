@@ -21,6 +21,7 @@ import {
     enqueueAndDrain,
     ORIGIN_ROOM,
     SERVED_REPLACED_LAYOUT_OVERLAP_MS,
+    toOriginFrozenTargets,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -90,6 +91,15 @@ interface ChainTail {
     readonly child: RtcRelayOverlayFixture;
     readonly relay: RtcRelayOverlayFixture;
     promoteRelay(): void;
+}
+
+interface FrozenOverlapShape extends OverlapMeshInput {
+    readonly shape: string;
+    readonly recipientPeerIds: readonly string[];
+    /** Absent, the frame requests no QoS. */
+    readonly qos?: ALQosPolicyRequest;
+    /** Every edge the frame crosses, sorted. */
+    readonly edges: readonly string[];
 }
 
 /** What the transport does to each copy it carries: the copy that arrives, and how long it travels. */
@@ -731,6 +741,133 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
         const waiting = await tail.relay.readPendingAck({ msgId: frame.id.msgId, fromPeerId: 'c' });
         expect(waiting).toBeDefined();
         expect(waiting!.ackedFromPeerIds).not.toContain('c');
+    });
+});
+
+describe('a multicast frozen to few recipients during the forwarding half', () => {
+    useFakeClock();
+
+    /** A receipted frame whose receipt counts next hops and their subtrees, not recipients. */
+    function createOriginSubtreeMulticast(resourceId: string): ALMessage {
+        return newALMulticastMessage(
+            'a',
+            { topicId: 'chat', resourceId, contextId: 'room' },
+            ORIGIN_ROOM,
+            'chat.message.v1',
+            { text: resourceId },
+            { reliability: 'at-least-once', ttlMs: 30_000, qos: { ack: { algo: 'subtree' } } }
+        );
+    }
+
+    /** A position frame frozen to `recipientPeerIds` at the mesh snapshot's version. */
+    function createFrozenFrame(recipientPeerIds: readonly string[], qos: ALQosPolicyRequest | undefined): ALMessage {
+        return { ...createPositionFrame({ resourceId: 'frozen', qos }), targets: toOriginFrozenTargets(recipientPeerIds, 4) };
+    }
+
+    const REVIEW_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c', 'e'], c: ['b'], e: ['b', 'f'], f: ['e'] };
+    const REVIEW_PROMOTED: SessionNextHops = { a: ['c'], b: ['c', 'e'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'] };
+
+    // The review's example with a chain `e`, `f` below `b`: `a` reaches `c` over the accepted edge and `b` over the
+    // replaced one, and names both visited, so no neighbour of `b` toward `c` is left for `b` to own over either layout.
+    it.each(
+        [
+            {
+                shape: 'the recipient visited through the other layout',
+                sessionIds: ['a', 'b', 'c', 'e', 'f'],
+                previousTree: REVIEW_PREVIOUS,
+                promotedTree: REVIEW_PROMOTED,
+                recipientPeerIds: ['c'],
+                edges: ['a>b', 'a>c']
+            },
+            // Green on first run: random-k is clamped to the accepted neighbour count and keeps the accepted child first, so
+            // the origin addresses no replaced-layout neighbour that could fall back.
+            {
+                shape: 'the recipient visited through the other layout under random-k with a limit of 2',
+                sessionIds: ['a', 'b', 'c', 'e', 'f'],
+                previousTree: REVIEW_PREVIOUS,
+                promotedTree: REVIEW_PROMOTED,
+                recipientPeerIds: ['c'],
+                qos: { fanout: { algo: 'random-k', opts: { limit: 2 } } },
+                edges: ['a>c']
+            },
+            {
+                shape: 'the recipient-side neighbour visited through the other layout at depth two',
+                sessionIds: ['a', 'b', 'c', 'd', 'e', 'f'],
+                previousTree: { a: ['b'], b: ['a', 'd', 'e'], c: ['d'], d: ['b', 'c'], e: ['b', 'f'], f: ['e'] },
+                promotedTree: { a: ['d'], b: ['d', 'e'], c: ['d'], d: ['a', 'b', 'c'], e: ['b', 'f'], f: ['e'] },
+                recipientPeerIds: ['c'],
+                edges: ['a>b', 'a>d', 'd>c']
+            },
+            {
+                shape: 'two recipients in different subtrees, both visited through the other layout',
+                sessionIds: ['a', 'b', 'c', 'd', 'e', 'f'],
+                previousTree: { a: ['b'], b: ['a', 'c', 'd', 'e'], c: ['b'], d: ['b'], e: ['b', 'f'], f: ['e'] },
+                promotedTree: { a: ['c', 'd'], b: ['c', 'e'], c: ['a', 'b'], d: ['a'], e: ['b', 'f'], f: ['e'] },
+                recipientPeerIds: ['c', 'd'],
+                edges: ['a>b', 'a>c', 'a>d']
+            },
+            // Green on first run: `b` owns `e` toward `f`, so no fallback is decided and `g` gets no copy.
+            {
+                shape: 'two recipients in different subtrees, one of them behind an unvisited neighbour',
+                sessionIds: ['a', 'b', 'c', 'e', 'f', 'g'],
+                previousTree: { a: ['b'], b: ['a', 'c', 'e', 'g'], c: ['b'], e: ['b', 'f'], f: ['e'], g: ['b'] },
+                promotedTree: { a: ['c'], b: ['c', 'e', 'g'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'], g: ['b'] },
+                recipientPeerIds: ['c', 'f'],
+                edges: ['a>b', 'a>c', 'b>e', 'e>f']
+            }
+        ] as readonly FrozenOverlapShape[]
+    )('$shape: every recipient delivers once and no copy reaches a peer off the path to one', async (input) => {
+        const mesh = createOverlapMesh(input);
+        const frame = createFrozenFrame(input.recipientPeerIds, input.qos);
+        await enqueueAndDrain(mesh.origin.manager, frame);
+
+        const carried = await exchangeUntilQuiet(mesh);
+
+        expect(readDataEdges(carried, frame).toSorted()).toEqual(input.edges);
+        for (const [peerId, peer] of mesh.peers) {
+            expect(readCopies(peer.delivered, frame), peerId).toBe(input.recipientPeerIds.includes(peerId) ? 1 : 0);
+        }
+    });
+
+    it('the origin\'s retry for a recipient whose first copy was lost reaches no peer off the path to it', async () => {
+        const mesh = createOverlapMesh({ sessionIds: ['a', 'b', 'c', 'e', 'f'], previousTree: REVIEW_PREVIOUS, promotedTree: REVIEW_PROMOTED });
+        const message = { ...createOriginReceiverMulticast('frozen-retry'), targets: toOriginFrozenTargets(['c'], 4) };
+        await enqueueAndDrain(mesh.origin.manager, message);
+        mesh.carriedCounts.set('a>c', 1);
+
+        const first = await exchangeUntilQuiet(mesh);
+        await vi.advanceTimersByTimeAsync(ACK_TIMEOUT_MS);
+        const retry = await exchangeUntilQuiet(mesh);
+
+        expect(readDataEdges(first, message).toSorted()).toEqual(['a>b']);
+        expect(readDataEdges(retry, message).toSorted()).toEqual(['a>b', 'a>c']);
+        expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
+    });
+
+    // Green on first run. `b`, the origin's only path child toward `c` in both layouts, takes no copy. The origin's
+    // retry names `b` visited and goes round it to `d` over the replaced edge; `d` reaches `c` through `g` over the
+    // accepted layout, a path neither layout alone gives the origin. Owning nothing over a layout whose path child is
+    // visited would lose this delivery.
+    it('the origin\'s retry round a failed path child still reaches the recipient through the other layout', async () => {
+        const mesh = createOverlapMesh({
+            sessionIds: ['a', 'b', 'c', 'd', 'g'],
+            previousTree: { a: ['b', 'd'], b: ['a', 'c'], c: ['b'], d: ['a', 'g'], g: ['d'] },
+            promotedTree: { a: ['b'], b: ['a', 'g'], c: ['g'], d: ['g'], g: ['b', 'c', 'd'] }
+        });
+        const failedPathChild = {
+            ...mesh,
+            edges: new Map([...mesh.edges].map(([peerId, toPeerIds]) => [peerId, toPeerIds.filter((toPeerId) => toPeerId !== 'b')]))
+        };
+        const message = { ...createOriginSubtreeMulticast('frozen-reroute'), targets: toOriginFrozenTargets(['c'], 4) };
+        await enqueueAndDrain(mesh.origin.manager, message);
+
+        const first = await exchangeUntilQuiet(failedPathChild);
+        await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
+        const retry = await exchangeUntilQuiet(failedPathChild);
+
+        expect(readDataEdges(first, message)).toEqual([]);
+        expect(readDataEdges(retry, message)).toEqual(['a>d', 'd>g', 'g>c']);
+        expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
     });
 });
 

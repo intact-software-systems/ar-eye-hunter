@@ -30,7 +30,9 @@ export interface ALPreviousOverlayLayout {
  * adjacency was kept, still at least once. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
  * already counted is the decision of the origin. In the first half of a replaced layout's overlap, its children
  * follow the accepted layout's, each layout's neighbours pruned over that layout's own adjacency, and a peer owned
- * through both appears once.
+ * through both appears once. There a path child the visited set removes may have been addressed over the other layout,
+ * so the fallback keeps only the neighbours that reach a recipient over the edges of both layouts; with one layout in
+ * force it keeps every neighbour, as before.
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,
@@ -45,7 +47,8 @@ export function resolveALOwnedChildPeerIds(
             ? []
             : [immediatePeerId];
     }
-    const isOwnable = toALOwnableNeighborPredicate(msg, context);
+    const isOwnable = toALOwnableNeighborPredicate(msg, context, msg.diagnostics?.visitedPeerIds ?? []);
+    const isOwnableUnlessVisited = toALOwnableNeighborPredicate(msg, context, []);
     const recipientPeerIds = resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds;
     const layouts = [
         {
@@ -53,25 +56,34 @@ export function resolveALOwnedChildPeerIds(
             nextHopsBySessionId: context.overlayNextHopsBySessionId
         },
         ...(context.previousOverlayLayout === undefined ? [] : [context.previousOverlayLayout])
-    ];
+    ].map((layout): ALLayoutChildCandidates => ({
+        ownablePeerIds: layout.neighborPeerIds.filter(isOwnable),
+        ownableUnlessVisitedPeerIds: layout.neighborPeerIds.filter(isOwnableUnlessVisited),
+        adjacency: toALOverlayAdjacency(context.selfPeerId, layout.nextHopsBySessionId)
+    }));
+    const layoutAdjacencies = layouts.map((layout) => layout.adjacency);
     const ownedPeerIds = layouts.flatMap((layout) =>
-        resolveALLayoutChildPeerIds(
-            layout.neighborPeerIds.filter(isOwnable),
-            toALOverlayAdjacency(context.selfPeerId, layout.nextHopsBySessionId),
-            recipientPeerIds
-        )
+        resolveALLayoutChildPeerIds(layout, recipientPeerIds, layoutAdjacencies)
     );
     return [...new Set(ownedPeerIds)];
 }
 
+/** One layout's neighbours this copy may own, those it could own were none of them visited, and its adjacency. */
+interface ALLayoutChildCandidates {
+    readonly ownablePeerIds: readonly string[];
+    readonly ownableUnlessVisitedPeerIds: readonly string[];
+    readonly adjacency: ALOverlayAdjacency | undefined;
+}
+
 function toALOwnableNeighborPredicate(
     msg: ALMessage,
-    context: ALMessagePlanningContext
+    context: ALMessagePlanningContext,
+    visitedPeerIds: readonly string[]
 ): (peerId: string) => boolean {
     const excludedPeerIds = new Set([
         context.selfPeerId,
         ...(context.fromPeerId === undefined ? [] : [context.fromPeerId]),
-        ...msg.diagnostics?.visitedPeerIds ?? [],
+        ...visitedPeerIds,
         ...(msg.targets?.mode === 'broadcast' ? msg.targets.exceptPeerIds ?? [] : [])
     ]);
     const groupMemberPeerIds = new Set(context.groupMemberPeerIds ?? []);
@@ -84,25 +96,76 @@ function toALOwnableNeighborPredicate(
         (hintedNextHops.size === 0 || hintedNextHops.has(peerId));
 }
 
-/** One layout's children: every ownable neighbour, or for a frozen multicast those its adjacency leads to a recipient. */
+/** Both layouts' edges as one adjacency, while a replaced layout is in force and each layout carries its adjacency. */
+function toALOverlapAdjacency(
+    adjacencies: readonly (ALOverlayAdjacency | undefined)[]
+): ALOverlayAdjacency | undefined {
+    const [accepted, replaced] = adjacencies;
+    if (accepted === undefined || replaced === undefined) {
+        return undefined;
+    }
+    const sessionIds = new Set([
+        ...Object.keys(accepted.nextHopsBySessionId),
+        ...Object.keys(replaced.nextHopsBySessionId)
+    ]);
+    const nextHopsBySessionId = Object.fromEntries(
+        [...sessionIds].map((sessionId) => [
+            sessionId,
+            [
+                ...new Set([
+                    ...accepted.nextHopsBySessionId[sessionId] ?? [],
+                    ...replaced.nextHopsBySessionId[sessionId] ?? []
+                ])
+            ]
+        ])
+    );
+    return { selfPeerId: accepted.selfPeerId, nextHopsBySessionId };
+}
+
+/**
+ * One layout's children: every ownable neighbour, or for a frozen multicast those its adjacency leads to a recipient.
+ * When none does only because the path to each recipient starts at a neighbour already visited, and a replaced layout
+ * is in force, that neighbour may have been addressed over the other layout: then only the neighbours that reach a
+ * recipient over the edges of both layouts without passing back through this peer stay.
+ */
 function resolveALLayoutChildPeerIds(
-    neighborPeerIds: readonly string[],
-    adjacency: ALOverlayAdjacency | undefined,
-    recipientPeerIds: readonly string[] | undefined
+    layout: ALLayoutChildCandidates,
+    recipientPeerIds: readonly string[] | undefined,
+    layoutAdjacencies: readonly (ALOverlayAdjacency | undefined)[]
 ): readonly string[] {
+    const { ownablePeerIds, adjacency } = layout;
     if (recipientPeerIds === undefined) {
-        return neighborPeerIds;
+        return ownablePeerIds;
     }
     if (recipientPeerIds.length === 0) {
         return [];
     }
     if (adjacency === undefined) {
-        return neighborPeerIds;
+        return ownablePeerIds;
     }
-    const towardRecipients = resolveALChildPeerIdsTowardRecipients(neighborPeerIds, adjacency, recipientPeerIds);
-    return towardRecipients.length === 0 && !recipientPeerIds.includes(adjacency.selfPeerId)
-        ? neighborPeerIds
-        : towardRecipients;
+    const towardRecipients = resolveALChildPeerIdsTowardRecipients(ownablePeerIds, adjacency, recipientPeerIds);
+    if (towardRecipients.length > 0 || recipientPeerIds.includes(adjacency.selfPeerId)) {
+        return towardRecipients;
+    }
+    const overlapAdjacency = toALOverlapAdjacency(layoutAdjacencies);
+    return overlapAdjacency !== undefined && isEveryRecipientBehindVisitedNeighbor(layout, adjacency, recipientPeerIds)
+        ? resolveALChildPeerIdsTowardRecipients(ownablePeerIds, overlapAdjacency, recipientPeerIds)
+        : ownablePeerIds;
+}
+
+function isEveryRecipientBehindVisitedNeighbor(
+    layout: ALLayoutChildCandidates,
+    adjacency: ALOverlayAdjacency,
+    recipientPeerIds: readonly string[]
+): boolean {
+    return recipientPeerIds.every((recipientPeerId) => {
+        const pathChildPeerIds = resolveALChildPeerIdsTowardRecipients(
+            layout.ownableUnlessVisitedPeerIds,
+            adjacency,
+            [recipientPeerId]
+        );
+        return pathChildPeerIds.length > 0;
+    });
 }
 
 /** A layout's adjacency seen from this peer; absent when the layout carries none. */
