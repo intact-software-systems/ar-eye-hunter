@@ -59,7 +59,7 @@ describe('ALM server-ordered-entry cell', () => {
         });
     });
 
-    it('writes the principal three times under distinct request ids', () => {
+    it('writes the principal three times under distinct request ids, each once the sender received the one before it', () => {
         const sender = readServerOrderedEntry().sender;
         const writes = sender.commands.flatMap((command) =>
             command.kind === 'http.request' && command.request.path?.includes('/principal/') === true ? [command.request.path] : []
@@ -76,11 +76,30 @@ describe('ALM server-ordered-entry cell', () => {
                 },
                 response: { body: 'json', acceptedStatusCodes: [200, 201] }
             });
-            expect(findCommand(sender, `${PREFIX}-sender-profile-${n}-settles`)).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 1_000 });
+            expect(findCommand(sender, `${PREFIX}-sender-profile-${n}-arrived`)).toMatchObject({
+                kind: 'wait',
+                match: {
+                    kind: 'message',
+                    payloadFields: { 'data.topicId': 'client-state.event', 'data.payload.principalId': 'principal-alice' },
+                    payloadPath: 'data.payload.requestId',
+                    contains: `-ws-server-ordered-entry-sender-profile-${n}`
+                }
+            });
         }
+        const body = sender.commands.map(({ commandId }) => commandId?.replace(`${PREFIX}-sender-`, ''));
+        expect(body.slice(body.indexOf('profile-1'), body.indexOf('profile-3-arrived') + 1)).toEqual([
+            'profile-1',
+            'profile-1-arrived',
+            'profile-2',
+            'profile-2-arrived',
+            'profile-3',
+            'profile-3-arrived'
+        ]);
+        expect(sender.commands.filter((command) => command.kind === 'wait' && command.absent === true).map(({ commandId }) => commandId))
+            .toEqual([`${PREFIX}-sender-no-before-entry`]);
     });
 
-    it('waits on every page for the last write, its entry at prior 0 on the sender principal track from the page\'s history, and no before-entry; the sender above seq 1', () => {
+    it('waits on every page for the last write\'s copy, its entry at prior 0 on the sender principal track from the page\'s history, and no before-entry; the sender above seq 1', () => {
         const scenario = readServerOrderedEntry();
         const expectations = [
             ['sender', scenario.sender, { aboveFirstSeq: true }],
@@ -88,7 +107,7 @@ describe('ALM server-ordered-entry cell', () => {
             ['receiver', scenario.receiver, { aboveFirstSeq: false }]
         ] as const;
         for (const [role, recipe, entry] of expectations) {
-            const names = ['last-write-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
+            const names = ['profile-3-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
             const aboveFirst = `${PREFIX}-${role}-entered-above-first`;
             const entryCommands = recipe.commands.slice(entry.aboveFirstSeq ? -5 : -4, -1).map(({ commandId }) => commandId);
             expect(entryCommands, role).toEqual(entry.aboveFirstSeq ? [names[0], names[1], aboveFirst, names[2]] : names);
@@ -125,7 +144,7 @@ describe('ALM server-ordered-entry cell', () => {
                     }
                 },
                 timeoutMs: 27_000,
-                // The page entered the track at its first copy, in whichever cell of the family ran first.
+                // Only the session's first entry on the track carries prior 0, in whichever cell of the family first connected.
                 metadata: { historyFrom: 'page' }
             });
             if (entry.aboveFirstSeq) {

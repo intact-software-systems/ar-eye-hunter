@@ -6,7 +6,7 @@ import type {
     RallarBlackBoxTestWaitCommand
 } from '../../../rallar-black-box-test-contracts.ts';
 
-import { RESPONSE_MARGIN_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
+import { toBudgetMs } from '../alm-conformance-budgets.ts';
 import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
@@ -22,7 +22,6 @@ import {
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
 import { toAlmCellRequestId, toAlmCellRequestIdSuffix } from '../cell/to-alm-cell-request-id.ts';
 import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
-import { toPauseCommand } from '../to-pause-command.ts';
 
 const PRINCIPAL_WRITE_COUNT = 3;
 const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
@@ -69,14 +68,17 @@ interface OrderingEntryInput {
     readonly aboveFirstSeq: boolean;
 }
 
-/** Each write settles before the next, so each event leaves the server as its own copy. */
+/**
+ * The sender writes again only once its own page received the copy of the write before, so each event leaves the
+ * server as its own copy. The last write's copy is the first wait of the entry commands.
+ */
 function toPrincipalUpsertCommands(
     sender: AlmConformanceStepInput,
     count: number
 ): readonly RallarBlackBoxTestCommand[] {
     return Array.from({ length: count }, (_, offset) => offset + 1).flatMap((n) => [
         toPrincipalUpsertCommand(sender, n),
-        toPauseCommand(sender, `profile-${n}-settles`, RESPONSE_MARGIN_MS)
+        ...(n < count ? [toWriteArrivalWait(sender, n)] : [])
     ]);
 }
 
@@ -114,7 +116,7 @@ function toPrincipalWriteName(n: number): string {
  * last write's copy, which the page waits for first, so the absence window after it covers every write.
  */
 function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): readonly RallarBlackBoxTestCommand[] {
-    const arrival = toLastWriteArrivalWait(step);
+    const arrival = toWriteArrivalWait(step, PRINCIPAL_WRITE_COUNT);
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
     return [
         arrival,
@@ -148,14 +150,14 @@ function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): r
 }
 
 /**
- * The copy of the sender's last principal write, whose event names the write's request id. Every page's copy carries
+ * The copy of the sender's principal write `n`, whose event names the write's request id. Every page's copy carries
  * the writer page's runtime identity, so a page names the write by the id's sender part; the wait contract has no
  * anchored text operator, so the part is matched by `contains`.
  */
-function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
+function toWriteArrivalWait(step: AlmConformanceStepInput, n: number): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
-        commandId: toCommandId(step, 'last-write-arrived'),
+        commandId: toCommandId(step, `${toPrincipalWriteName(n)}-arrived`),
         match: {
             kind: 'message',
             topic: 'rallar.browser.ws.message',
@@ -165,7 +167,7 @@ function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTe
                 'data.payload.principalId': toPrincipalPlaceholder('sender')
             },
             payloadPath: 'data.payload.requestId',
-            contains: toAlmCellRequestIdSuffix({ ...step, role: 'sender' }, toPrincipalWriteName(PRINCIPAL_WRITE_COUNT))
+            contains: toAlmCellRequestIdSuffix({ ...step, role: 'sender' }, toPrincipalWriteName(n))
         },
         timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
     };
