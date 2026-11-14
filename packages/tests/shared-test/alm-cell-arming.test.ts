@@ -22,8 +22,7 @@ const step: AlmConformanceStepInput = {
     scenarioKey: 'granted-rtc-delivered',
     role: 'receiver',
     roles: ['sender', 'receiver'],
-    messageSelector: undefined,
-    startGrants: undefined,
+    messages: {},
     connect: undefined
 };
 

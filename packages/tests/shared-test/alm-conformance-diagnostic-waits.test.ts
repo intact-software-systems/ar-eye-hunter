@@ -15,8 +15,7 @@ function toSenderStep(): AlmConformanceMessageStepInput {
         scenarioKey: 'k',
         role: 'sender',
         roles: Object.keys(CONFORMANCE_PRINCIPAL_IDS) as AlmConformanceMessageStepInput['roles'],
-        messageSelector: undefined,
-        startGrants: undefined,
+        messages: {},
         connect: undefined,
         index: 1
     } as AlmConformanceMessageStepInput;

@@ -15,6 +15,7 @@ import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type {
     AlmConformanceContinuationDefinition,
     AlmConformanceLaneFamily,
+    AlmConformanceMessages,
     AlmConformanceRecipeGate,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
@@ -389,10 +390,15 @@ function toStepInput(
         scenarioKey: definition.scenarioKey,
         role,
         roles: definition.roles,
-        messageSelector: definition.messageSelector,
-        startGrants: definition.startGrants,
+        messages: toDefinitionMessages(definition),
         connect: definition.connect
     };
+}
+
+function toDefinitionMessages(definition: AlmConformanceScenarioDefinition): AlmConformanceMessages {
+    return definition.startGrants === undefined
+        ? { messageSelector: definition.messageSelector }
+        : { messageSelector: definition.messageSelector, startGrants: definition.startGrants };
 }
 
 interface ToScenarioGateInput {
@@ -485,11 +491,15 @@ function toRoleCell(
             recipeInput.input.principalIdsByRole
         );
     const recipe = toResolvedRecipe([...parts.prologue, ...settledBody]);
-    const resolvedParts = toResolvedRecipe([...parts.prologue, ...parts.body]).commands;
-    const prologueLength = parts.prologue.length;
+    const resolvedParts = toResolvedRecipe([...parts.prologue, ...parts.startState, ...parts.body]).commands;
+    const startStateEnd = parts.prologue.length + parts.startState.length;
     return {
         recipe,
-        parts: { prologue: resolvedParts.slice(0, prologueLength), body: resolvedParts.slice(prologueLength) }
+        parts: {
+            prologue: resolvedParts.slice(0, parts.prologue.length),
+            startState: resolvedParts.slice(parts.prologue.length, startStateEnd),
+            body: resolvedParts.slice(startStateEnd)
+        }
     };
 }
 

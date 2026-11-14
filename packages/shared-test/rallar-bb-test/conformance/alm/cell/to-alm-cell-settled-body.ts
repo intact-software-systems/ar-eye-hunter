@@ -8,6 +8,7 @@ import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellSettleCommand } from './to-alm-cell-authored-commands.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';
 import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
+import { toAlmCellPlacedBody } from './to-alm-cell-placed-body.ts';
 import { toAlmCellSettle, type AlmCellSettle } from './to-alm-cell-settle.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
@@ -29,9 +30,10 @@ export function toAlmCellSettledBody(
     step: AlmConformanceStepInput,
     partsByRole: AlmCellPartsByRole
 ): readonly RallarBlackBoxTestCommand[] {
-    const body = toRoleParts(step.role, partsByRole).body;
+    const parts = toRoleParts(step.role, partsByRole);
+    const body = parts.body;
     if (step.input.cellSettle !== 'barriered' || !isSettleRole(step.role)) {
-        return body;
+        return toAlmCellPlacedBody(parts);
     }
     const settleRoles = step.roles.filter(isSettleRole);
     const toBarrier = (phase: AlmCellBarrierPhase, toCommands: RoleCommandsSelector) =>
@@ -42,7 +44,8 @@ export function toAlmCellSettledBody(
             timeoutMs: computeBarrierTimeoutMs(settleRoles, toCommands),
             participants: settleRoles
         }));
-    const settleOf = (role: AlmConformanceRole) => toMarkedSettle({ ...step, role });
+    const settleOf = (role: AlmConformanceRole) =>
+        toMarkedSettle({ ...step, role }, toRoleParts(role, partsByRole).startState);
     const armingOf = (role: AlmConformanceRole) => toAlmCellArming(toRoleParts(role, partsByRole).body).arming;
     const { formation, head } = settleOf(step.role);
     return [
@@ -64,11 +67,14 @@ function isSettleRole(role: AlmConformanceRole): boolean {
  * Each settle command is declared one, so a role's authored commands leave it out, and its waits read its own cell's
  * history, except where a wait declares otherwise.
  */
-function toMarkedSettle(step: AlmConformanceStepInput): AlmCellSettle {
+function toMarkedSettle(
+    step: AlmConformanceStepInput,
+    startState: readonly RallarBlackBoxTestCommand[]
+): AlmCellSettle {
     const { formation, head } = toAlmCellSettle(step);
     const toMarked = (commands: readonly RallarBlackBoxTestCommand[]) =>
         toCellHistoryMarkedCommands(step, commands).map(toAlmCellSettleCommand);
-    return { formation: toMarked(formation), head: toMarked(head) };
+    return { formation: toMarked([...startState, ...formation]), head: toMarked(head) };
 }
 
 /**

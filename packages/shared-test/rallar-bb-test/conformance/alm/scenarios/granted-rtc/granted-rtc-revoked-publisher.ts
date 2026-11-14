@@ -5,7 +5,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-budgets.ts';
 import {
@@ -65,7 +65,14 @@ function toRevokingOwnerCommands(owner: AlmConformanceStepInput): readonly Ralla
         ...toGrantedRtcOwnerCommands(owner),
         toPublicationWait(owner, 'publication-1', false),
         toConfirmedCueWait(owner, 'publication-1'),
-        toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: true, subscribe: false }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'revoke',
+            grantee: 'sender',
+            publish: true,
+            subscribe: false
+        }),
         ...toCueSendCommands(owner, 'revoked'),
         toPublicationWait(owner, 'publication-2', true),
         ...toUnsubscribeCommands(owner, 'receiver')

@@ -19,8 +19,8 @@ export const ALM_CONFORMANCE_GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 
 /** A scenario whose selector is granted publishes and listens on that selector's topic. */
 export function toScenarioTopicId(step: AlmConformanceStepInput): string {
-    if (step.messageSelector?.access === 'granted') {
-        return step.messageSelector.topicId;
+    if (step.messages.messageSelector?.access === 'granted') {
+        return step.messages.messageSelector.topicId;
     }
     return step.scenarioId === 'world-routing' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
 }

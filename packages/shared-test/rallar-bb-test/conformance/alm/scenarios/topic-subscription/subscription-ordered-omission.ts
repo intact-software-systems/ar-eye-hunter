@@ -7,7 +7,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
@@ -89,12 +89,26 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
-        toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: false, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'revoke',
+            grantee: 'sender',
+            publish: false,
+            subscribe: true
+        }),
         toPauseCommand(owner, 'revoke-delta-margin', GRANT_DELTA_MARGIN_MS),
         ...toCueSendCommands(owner, 'revoked'),
         ...toOrderedArrivalWaits(owner, [3, 4]),
         ...toOrderedConfirmedCueWaits(owner, 4),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: false, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'grant',
+            grantee: 'sender',
+            publish: false,
+            subscribe: true
+        }),
         ...toCueSendCommands(owner, 'regranted'),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),

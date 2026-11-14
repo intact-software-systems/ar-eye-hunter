@@ -14,6 +14,7 @@ import {
     type AlmCellBarrierPhase
 } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-barrier.ts';
 import { toAlmCellCommandPrefix } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-command-prefix.ts';
+import { toAlmCellPlacedBody } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-placed-body.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -337,7 +338,7 @@ function toAlmConformanceCombinedCommands(
             toBarrieredScenarioCommands(
                 scenario,
                 role,
-                toRoleParts(scenario, role).body.map((command) =>
+                toAlmCellPlacedBody(toRoleParts(scenario, role)).map((command) =>
                     command.kind === 'rtc.connect' ? toConnect(command) : command
                 )
             )

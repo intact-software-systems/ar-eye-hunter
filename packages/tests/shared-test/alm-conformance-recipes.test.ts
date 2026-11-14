@@ -17,6 +17,7 @@ import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-te
 import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-session-commands.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import { toAlmCellAuthoredCommands } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
+import { toAlmCellPlacedBody } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-placed-body.ts';
 import {
     createAlmConformanceRecipes,
     createAlmDeliveryDiagnosticsRecipes,
@@ -41,6 +42,7 @@ import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-li
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { isStartStateCommand } from './describe-declared-start-states.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 
@@ -516,8 +518,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role,
                 roles,
-                messageSelector: undefined,
-                startGrants: undefined,
+                messages: {},
                 connect: undefined
             })
                 .readiness?.minReadyPeers;
@@ -536,8 +537,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role: 'sender',
                 roles: threeRoles,
-                messageSelector: undefined,
-                startGrants: undefined,
+                messages: {},
                 connect: undefined
             })
                 .readiness
@@ -553,8 +553,7 @@ describe('alm-conformance recipe family', () => {
                 scenarioKey: 'probe',
                 role,
                 roles: threeRoles,
-                messageSelector: undefined,
-                startGrants: undefined,
+                messages: {},
                 connect: { minReadyPeers: 1 }
             })
                 .readiness?.minReadyPeers;
@@ -577,8 +576,7 @@ describe('alm-conformance recipe family', () => {
                     scenarioKey: 'probe',
                     role,
                     roles: sameContext,
-                    messageSelector: undefined,
-                    startGrants: undefined,
+                    messages: {},
                     connect: undefined
                 })
                     .readiness?.minReadyPeers,
@@ -594,8 +592,7 @@ describe('alm-conformance recipe family', () => {
             scenarioKey: 'probe',
             role: 'successor',
             roles: ['sender', 'receiver', 'successor'],
-            messageSelector: undefined,
-            startGrants: undefined,
+            messages: {},
             connect: undefined
         });
 
@@ -1729,7 +1726,7 @@ describe('alm-conformance cell parts', () => {
                     }
                     const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
 
-                    expect(recipe.commands).toEqual([...parts.prologue, ...parts.body]);
+                    expect(recipe.commands).toEqual([...parts.prologue, ...toAlmCellPlacedBody(parts)]);
                     expect(parts.prologue.map((command) => command.commandId!.slice(prefix.length))).toEqual([
                         'ensure-group',
                         'ensure-member',
@@ -2013,7 +2010,7 @@ describe('alm-conformance cell parts', () => {
         }
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each request of a start state is a
-        // 90 000 ms poll and one 5 000 ms command, four of them for the cells below. The first arrival waits through
+        // 90 000 ms poll and one 5 000 ms command, four of them for the first cell below and six for the second. The first arrival waits through
         // every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
@@ -2022,7 +2019,7 @@ describe('alm-conformance cell parts', () => {
         expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([425_000, 55_000]);
         expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([45_000, 100_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([425_000, 135_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([615_000, 135_000]);
     });
 
     it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {
@@ -2097,11 +2094,6 @@ const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied'] as 
 
 function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
     return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`) || isSettledStartState(command);
-}
-
-/** The receiver's start state, which a barriered cell writes in its settle and a cell without one in its body. */
-function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean {
-    return command.metadata?.cellStartState === 'declared-grants';
 }
 
 function isSettledStartState(command: RallarBlackBoxTestCommand): boolean {

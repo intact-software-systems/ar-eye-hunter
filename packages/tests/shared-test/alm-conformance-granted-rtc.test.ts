@@ -24,13 +24,16 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import {
     describeDeclaredStartStates,
     PERMISSIONS,
+    toGrantRequests,
+    toRecipeCommands,
+    toStateAfter,
     type DeclaredState,
     type StartStateTable
-} from './alm-conformance-start-state.ts';
-import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+} from './describe-declared-start-states.ts';
 
 const { NONE, SUBSCRIBE, PUBLISH, BOTH } = PERMISSIONS;
 
@@ -415,6 +418,19 @@ describe('the granted rtc cells', () => {
             .not.toHaveProperty('rallar.messageSelector');
     });
 
+    it('makes the publish-refused receiver subscribe-only and rowless whatever an earlier cell left, by the start state\'s own sequence', () => {
+        const receiver = toGrantedRtcScenario('granted-rtc-publish-refused').receiver;
+        const requests = toGrantRequests(toRecipeCommands({ ...toGrantedRtcScenario('granted-rtc-publish-refused') }, 'receiver'));
+        const earlier = [NONE, SUBSCRIBE, PUBLISH, BOTH].flatMap((state) =>
+            state.subscribe ? [{ ...state, row: false }, { ...state, row: true }] : [{ ...state, row: false }]
+        );
+
+        expect(receiver).toBeDefined();
+        for (const state of earlier) {
+            expect(toStateAfter(state, requests), JSON.stringify(state)).toEqual({ ...SUBSCRIBE, row: false });
+        }
+    });
+
     it('confirms a receipted granted publication over rtc to the one subscribed receiver, nobody outside it', () => {
         const { sender, receiver } = toGrantedRtcScenario('granted-rtc-receipted-delivered');
 
@@ -470,7 +486,7 @@ describe('the granted rtc cells', () => {
             ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
             ['DELETE', undefined]
         ]);
-        expect(toStepIndex(receiver, '-grant-receiver-s-request')).toBeLessThan(toStepIndex(receiver, '-topology-tree'));
+        expect(toStepIndex(receiver, '-start-grant-receiver-s-request')).toBeLessThan(toStepIndex(receiver, '-topology-tree'));
         // A cue reaches only a role that already listens, so the owner cues the path once the sender said it listens.
         expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-tree-received'));
         expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
@@ -623,8 +639,7 @@ describe('topic-subscription-publications', () => {
         scenarioKey: 'granted-rtc-delivered',
         role: 'sender',
         roles: ['sender', 'receiver'],
-        messageSelector: undefined,
-        startGrants: undefined,
+        messages: {},
         connect: undefined
     };
     const toLoopSend = (commands: readonly RallarBlackBoxTestCommand[]) =>

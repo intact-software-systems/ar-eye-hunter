@@ -25,8 +25,8 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { describeDeclaredStartStates, PERMISSIONS, type DeclaredState, type StartStateTable } from './alm-conformance-start-state.ts';
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { describeDeclaredStartStates, PERMISSIONS, type DeclaredState, type StartStateTable } from './describe-declared-start-states.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const FOUR_ROLE_IDS = [
@@ -169,23 +169,18 @@ describe('ALM topic subscription conformance', () => {
             throw new Error('The ws carrier creates the subscription-delivery cell.');
         }
 
+        const grantee = (principalId: string | undefined, operation: string, body: { publish: boolean; subscribe: boolean; }) => ({
+            path: expect.stringContaining(`/publication-grants/${principalId}/${operation}/requests/`),
+            body: { topicId: GRANTED_TOPIC_ID, ...body }
+        });
+        // Per principal: a revoke of its rows and of what it does not hold, then a grant of what it holds.
         expect(toGrantRequests(delivery.receiver)).toEqual([
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.receiver}/revoke/requests/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
-            },
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.receiver}/grant/requests/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
-            },
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS['publisher-b']}/grant/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: true }
-            },
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.sender}/grant/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: true }
-            }
+            grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'revoke', { publish: true, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'grant', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS['publisher-b'], 'revoke', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS['publisher-b'], 'grant', { publish: true, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.sender, 'revoke', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.sender, 'grant', { publish: true, subscribe: true })
         ]);
         expect(JSON.stringify(delivery.receiver)).not.toContain('{principal:');
     });
@@ -353,8 +348,15 @@ describe('ALM topic subscription conformance', () => {
     });
 });
 
-/** The receiver's start state of the producers' cells: the receiver's `publish` revoked, then each principal granted. */
-const START_STATE_STEPS = ['revoke-receiver-p', 'grant-receiver-s', 'grant-publisher-b-ps', 'grant-sender-ps'] as const;
+/** The receiver's start state of the producers' cells: each principal's rows and unheld permissions revoked, then granted. */
+const START_STATE_STEPS = [
+    'start-revoke-receiver-ps',
+    'start-grant-receiver-s',
+    'start-revoke-publisher-b-s',
+    'start-grant-publisher-b-ps',
+    'start-revoke-sender-s',
+    'start-grant-sender-ps'
+] as const;
 
 type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission' | 'subscription-ordered-reconnect';
 type ProducerRole = 'sender' | 'publisher-b';
@@ -612,7 +614,7 @@ describe('ALM ordered subscription entry conformance', () => {
             'assert-unsubscribe-sibling-regranted-lapsed'
         ]);
         // D492: the revoke takes the sender principal's `subscribe` alone, and the re-grant gives exactly it back.
-        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(4)).toEqual([
+        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(6)).toEqual([
             { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
             { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
         ]);

@@ -191,7 +191,9 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
             almDiagnostics: true,
             typeId,
             topicId: toScenarioTopicId(step),
-            ...(step.messageSelector === undefined ? {} : { messageSelector: { ...step.messageSelector } }),
+            ...(step.messages.messageSelector === undefined
+                ? {}
+                : { messageSelector: { ...step.messages.messageSelector } }),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
             ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
         },

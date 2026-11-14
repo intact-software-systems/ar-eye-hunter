@@ -188,10 +188,8 @@ export interface AlmConformanceStepInput {
     readonly role: AlmConformanceRole;
     /** Every role the scenario declares, which decides how many ready peers each connect waits for. */
     readonly roles: readonly AlmConformanceRole[];
-    /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
-    readonly messageSelector: AlmConformanceMessageSelector | undefined;
-    /** The definition's start grants, which the receiver writes; undefined for a cell whose topic is not granted. */
-    readonly startGrants: readonly AlmConformanceStartGrant[] | undefined;
+    /** The definition's messages: the selector every connect carries, and a granted topic's start grants. */
+    readonly messages: AlmConformanceMessages;
     /** The definition's connect readiness; undefined waits for every other peer. */
     readonly connect: AlmConformanceConnect | undefined;
 }

@@ -9,6 +9,7 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import { ALM_CELL_START_STATE_METADATA } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-start-state.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -26,7 +27,7 @@ export interface Permissions {
     readonly subscribe: boolean;
 }
 
-interface GrantRequest {
+export interface GrantRequest {
     readonly operation: 'grant' | 'revoke';
     readonly principalId: string;
     readonly permissions: Permissions;
@@ -48,17 +49,30 @@ export const PERMISSIONS = { NONE, SUBSCRIBE, PUBLISH, BOTH } as const;
 
 const GRANTEE_ROLES: readonly GranteeRole[] = ['receiver', 'sender', 'recipient-b', 'publisher-b'];
 
-const STATES: readonly Permissions[] = [NONE, SUBSCRIBE, PUBLISH, BOTH];
+/** What the server holds of one principal: its permissions and whether a subscription row of a live generation exists. */
+interface Held extends Permissions {
+    readonly row: boolean;
+}
+
+/** Every state an earlier cell can leave: a row exists only while `subscribe` is held, and a red cell leaves it behind. */
+const STATES: readonly Held[] = [
+    { ...NONE, row: false },
+    { ...SUBSCRIBE, row: false },
+    { ...SUBSCRIBE, row: true },
+    { ...PUBLISH, row: false },
+    { ...BOTH, row: false },
+    { ...BOTH, row: true }
+];
 
 function toFlatCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
     return commands.flatMap((command) => command.kind === 'loop' ? [command, ...toFlatCommands(command.commands)] : [command]);
 }
 
-function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean {
-    return command.metadata?.cellStartState === 'declared-grants';
+export function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean {
+    return command.metadata?.cellStartState === ALM_CELL_START_STATE_METADATA.cellStartState;
 }
 
-function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readonly GrantRequest[] {
+export function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readonly GrantRequest[] {
     return toFlatCommands(commands).flatMap((command): readonly GrantRequest[] => {
         const request = command.kind === 'http.request' ? (command as RallarBlackBoxTestHttpRequestCommand).request : undefined;
         const match = request?.path?.match(/\/publication-grants\/([^/]+)\/(grant|revoke)\/requests\//);
@@ -73,15 +87,21 @@ function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readon
     });
 }
 
-/** D492: a grant adds the named permissions and a revoke removes them. */
-function toPermissionsAfter(initial: Permissions, requests: readonly GrantRequest[]): Permissions {
-    return requests.reduce<Permissions>((held, { operation, permissions }) =>
-        operation === 'grant'
+/**
+ * D492 and the writer: a grant adds and a revoke removes the named permissions, an unchanged result writes nothing, and a
+ * write that does not keep `subscribe` held across it deletes the principal's rows.
+ */
+export function toStateAfter(initial: Held, requests: readonly GrantRequest[]): Held {
+    return requests.reduce<Held>((held, { operation, permissions }) => {
+        const next = operation === 'grant'
             ? { publish: held.publish || permissions.publish, subscribe: held.subscribe || permissions.subscribe }
-            : { publish: held.publish && !permissions.publish, subscribe: held.subscribe && !permissions.subscribe }, initial);
+            : { publish: held.publish && !permissions.publish, subscribe: held.subscribe && !permissions.subscribe };
+        const unchanged = next.publish === held.publish && next.subscribe === held.subscribe;
+        return unchanged ? held : { ...next, row: held.row && held.subscribe && next.subscribe };
+    }, initial);
 }
 
-function toRecipeCommands(scenario: AlmConformanceScenario, role: AlmConformanceRole): readonly RallarBlackBoxTestCommand[] {
+export function toRecipeCommands(scenario: AlmConformanceScenario, role: AlmConformanceRole): readonly RallarBlackBoxTestCommand[] {
     return toAlmConformanceRoleRecipe(scenario, role)?.commands ?? [];
 }
 
@@ -129,9 +149,9 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
                         .toEqual(toCellPrincipalIds(scenario));
                     for (const principalId of toCellPrincipalIds(scenario)) {
                         expect(
-                            toPermissionsAfter(NONE, requests.filter((request) => request.principalId === principalId)),
+                            toStateAfter({ ...NONE, row: false }, requests.filter((request) => request.principalId === principalId)),
                             `${carrier} ${scenario.scenarioKey} ${principalId}`
-                        ).toEqual(toDeclaredPermissions(declared!, principalId));
+                        ).toEqual({ ...toDeclaredPermissions(declared!, principalId), row: false });
                     }
                 }
             }
@@ -158,9 +178,9 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
                     for (const principalId of toCellPrincipalIds(scenario)) {
                         for (const initial of STATES) {
                             expect(
-                                toPermissionsAfter(initial, requests.filter((request) => request.principalId === principalId)),
+                                toStateAfter(initial, requests.filter((request) => request.principalId === principalId)),
                                 `${label} ${principalId} from ${JSON.stringify(initial)}`
-                            ).toEqual(toDeclaredPermissions(table[scenario.scenarioKey]!, principalId));
+                            ).toEqual({ ...toDeclaredPermissions(table[scenario.scenarioKey]!, principalId), row: false });
                         }
                     }
                 }
@@ -170,13 +190,47 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
         it('a cell without a settle writes it at the head of its receiver\'s body, after its cue subscription', () => {
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                 for (const scenario of toPlannedGrantedCells(prefix, carrier, undefined)) {
-                    const { body } = scenario.partsByRole.receiver!;
+                    const { prologue } = scenario.partsByRole.receiver!;
+                    const body = toRecipeCommands(scenario, 'receiver').slice(prologue.length);
                     const written = body.flatMap((command, index) => isStartStateCommand(command) ? [index] : []);
                     const leading = body.findIndex((command) => command.metadata?.cellArming !== 'cue-subscription' && command.kind !== 'fault.inject');
 
                     expect(written.length, `${carrier} ${scenario.scenarioKey}`).toBeGreaterThan(0);
                     expect(written, `${carrier} ${scenario.scenarioKey}`)
                         .toEqual(Array.from({ length: written.length }, (_, offset) => leading + offset));
+                }
+            }
+        });
+
+        it('every start state revokes subscribe before it grants it', () => {
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                for (const scenario of toPlannedGrantedCells(prefix, carrier, undefined)) {
+                    const requests = toStartRequests(scenario, 'receiver');
+                    for (const principalId of toCellPrincipalIds(scenario)) {
+                        const own = requests.filter((request) => request.principalId === principalId);
+                        const label = `${carrier} ${scenario.scenarioKey} ${principalId}`;
+                        const revoke = own.findIndex(({ operation, permissions }) => operation === 'revoke' && permissions.subscribe);
+                        const grant = own.findIndex(({ operation }) => operation === 'grant');
+
+                        expect(revoke, label).toBeGreaterThanOrEqual(0);
+                        expect(grant < 0 || revoke < grant, label).toBe(true);
+                    }
+                }
+            }
+        });
+
+        it('a barriered and a plain cell write the same start state', () => {
+            for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+                const barriered = toPlannedGrantedCells(prefix, carrier, 'barriered');
+                for (const [index, scenario] of toPlannedGrantedCells(prefix, carrier, undefined).entries()) {
+                    const toWritten = (commands: readonly RallarBlackBoxTestCommand[]) =>
+                        commands.filter(isStartStateCommand).map(({ metadata, ...command }) => {
+                            const { cellSettle: _settle, ...rest } = metadata ?? {};
+                            return { ...command, metadata: rest };
+                        });
+
+                    expect(toWritten(toRecipeCommands(barriered[index]!, 'receiver')), `${carrier} ${scenario.scenarioKey}`)
+                        .toEqual(toWritten(toRecipeCommands(scenario, 'receiver')));
                 }
             }
         });

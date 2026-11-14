@@ -15,8 +15,11 @@ import {
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
-import { toTopicRequestId } from '../../grant/to-topic-grant-command.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toTopicRequestId } from '../../granted-topic/to-topic-grant-command.ts';
 import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 
 /**

@@ -18,7 +18,10 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
 import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';

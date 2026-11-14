@@ -9,7 +9,7 @@ import {
     toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../grant/subscription-phase-budgets.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../granted-topic/subscription-phase-budgets.ts';
 
 interface GrantedSendInput {
     readonly step: AlmConformanceStepInput;

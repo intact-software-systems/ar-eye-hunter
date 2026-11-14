@@ -11,10 +11,12 @@ import { toPollCommand } from '../poll/alm-conformance-poll-commands.ts';
 import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
 import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './subscription-phase-budgets.ts';
 
-export type TopicGrantOperation = 'grant' | 'revoke';
+type TopicGrantOperation = 'grant' | 'revoke';
 
-export interface TopicGrantInput {
+interface TopicGrantInput {
     readonly step: AlmConformanceStepInput;
+    /** The cell's start state, or a grant change that is a step of the cell itself, which command ids tell apart. */
+    readonly scope: 'start-state' | 'cell';
     readonly operation: TopicGrantOperation;
     /** The role whose principal the grant names; the sender and the sibling share one. */
     readonly grantee: AlmConformanceRole;
@@ -27,8 +29,8 @@ export interface TopicGrantInput {
  * yet is refused `member-not-active`, so each attempt is a request of its own until one answers 200.
  */
 export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestCommand {
-    const { step, operation, grantee } = grant;
-    const name = `${operation}-${grantee}-${toPermissionName(grant)}`;
+    const { step, scope, operation, grantee } = grant;
+    const name = `${scope === 'start-state' ? 'start-' : ''}${operation}-${grantee}-${toPermissionName(grant)}`;
     const request: RallarBlackBoxTestHttpRequestCommand = {
         kind: 'http.request',
         commandId: toCommandId(step, `${name}-request`),

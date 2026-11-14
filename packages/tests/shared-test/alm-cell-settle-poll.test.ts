@@ -28,8 +28,7 @@ const receiver: AlmConformanceStepInput = {
     scenarioKey: 'delivery-baseline',
     role: 'receiver',
     roles: ['sender', 'receiver'],
-    messageSelector: undefined,
-    startGrants: undefined,
+    messages: {},
     connect: undefined
 };
 

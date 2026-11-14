@@ -10,7 +10,7 @@ import {
 } from '../alm-conformance-session-commands.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
 import { toOwnerLeaseLapseWait } from '../to-pause-command.ts';
-import { isAlmCellCueSubscription, toAlmCellArming } from './to-alm-cell-arming.ts';
+import { isAlmCellCueSubscription } from './to-alm-cell-arming.ts';
 import { toAlmCellStartState } from './to-alm-cell-start-state.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
@@ -23,6 +23,8 @@ import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.t
  */
 export interface AlmConformanceCellParts {
     readonly prologue: readonly RallarBlackBoxTestCommand[];
+    /** What the room owner writes once every role is a member; empty for every role but a granted cell's receiver. */
+    readonly startState: readonly RallarBlackBoxTestCommand[];
     readonly body: readonly RallarBlackBoxTestCommand[];
 }
 
@@ -51,27 +53,13 @@ export function toAlmConformanceCellParts(input: AlmConformanceCellPartsInput): 
             { ...connect, rallar: { ...connect.rallar, almDiagnostics: input.almDiagnostics } },
             ...(input.deliveryDiagnostics ? [toAppliedDiagnosticsWait(input)] : [])
         ],
+        startState: toAlmCellStartState(input),
         body: toCellHistoryMarkedCommands(input, [
-            ...toStartedCommands(input, toBaselinedCommands(input)),
+            ...toBaselinedCommands(input),
             toStatsCommand(input, 'stats'),
             ...(input.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(input) : [])
         ])
     };
-}
-
-/**
- * The receiver's start state leads its commands after their cue subscription in a cell without a settle: the barriered
- * cell writes it in its settle instead, before the formation poll, so a body never holds it twice.
- */
-function toStartedCommands(
-    input: AlmConformanceCellPartsInput,
-    commands: readonly RallarBlackBoxTestCommand[]
-): readonly RallarBlackBoxTestCommand[] {
-    if (input.input.cellSettle === 'barriered') {
-        return commands;
-    }
-    const { arming, rest } = toAlmCellArming(commands);
-    return [...arming, ...toAlmCellStartState(input), ...rest];
 }
 
 /**

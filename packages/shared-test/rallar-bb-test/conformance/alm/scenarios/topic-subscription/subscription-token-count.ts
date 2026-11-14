@@ -6,8 +6,11 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
-import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
+import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
@@ -73,7 +76,14 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             })
         ),
         ...toRowCountCommands(owner, 'rows-one-token', 1),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'grant',
+            grantee: 'sender',
+            publish: true,
+            subscribe: true
+        }),
         toPublicationWait(owner, 'publication-1', false),
         ...toUnsubscribeCommands(owner, 't2'),
         toReadPollCommand({

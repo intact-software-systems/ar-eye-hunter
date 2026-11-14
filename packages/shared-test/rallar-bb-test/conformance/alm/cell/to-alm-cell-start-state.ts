@@ -1,43 +1,50 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { toAlmConformancePrincipalRole } from '../alm-conformance-roles.ts';
-import type {
-    AlmConformanceStartGrant,
-    AlmConformanceStepInput
-} from '../alm-conformance-scenario-definition.ts';
-import { toTopicGrantCommand } from '../grant/to-topic-grant-command.ts';
+import type { AlmConformanceStartGrant, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
+import { toTopicGrantCommand } from '../granted-topic/to-topic-grant-command.ts';
 
 /** Set on each command of a cell's start state, which a recipe's reader tells from the cell's own grant changes by it. */
 export const ALM_CELL_START_STATE_METADATA = { cellStartState: 'declared-grants' } as const;
 
 /**
  * The permissions the room owner writes for a cell whose topic is granted, so the cell starts from its declared state
- * whatever an earlier cell granted: for each principal, a revoke of every permission it does not hold, then a grant of
- * every one it holds. A grant only adds and a revoke only removes (D492), and either is a no-op where the principal
- * already is in the state, so the sequence reaches the declared state from any state in at most two revisions per
- * principal. A grant that leaves `subscribe` held keeps the principal's rows, whose connection generations an earlier
- * cell's pages no longer hold, and admission honours only a row of a live generation. Only the receiver owns the room,
- * so every other role, and a cell without a granted topic, writes nothing.
+ * whatever an earlier cell left. Only the receiver owns the room, so every other role, and a cell without a granted
+ * topic, writes nothing.
  */
 export function toAlmCellStartState(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    if (step.role !== 'receiver' || step.startGrants === undefined) {
+    const { startGrants } = step.messages;
+    if (step.role !== 'receiver' || startGrants === undefined) {
         return [];
     }
-    assertStartGrantsNameEveryPrincipal(step, step.startGrants);
-    return step.startGrants.flatMap((grant) => toPrincipalStartCommands(step, grant)).map(toStartStateCommand);
+    assertStartGrantsNameEveryPrincipal(step, startGrants);
+    return startGrants.flatMap((grant) => toAlmCellPrincipalStartCommands(step, grant)).map(toStartStateCommand);
 }
 
-function toPrincipalStartCommands(
+/**
+ * One principal's way to its declared state from any state, rows included: a revoke of `subscribe` with every
+ * permission it must not hold, then a grant of what it holds. A grant adds and a revoke removes (D492), and the writer
+ * deletes every subscription row of the principal on a revoke of `subscribe` while it is held, so afterwards the
+ * principal holds its declared permissions and no row, even one an earlier cell's election left on a page's live
+ * connection generation, which admission would still honour; an election is then always a step of the cell's own body.
+ * An unchanged write is a no-op, so a principal already in the state costs no revision.
+ */
+export function toAlmCellPrincipalStartCommands(
     step: AlmConformanceStepInput,
     grant: AlmConformanceStartGrant
 ): readonly RallarBlackBoxTestCommand[] {
     const { grantee, publish, subscribe } = grant;
     return [
-        ...(publish && subscribe
-            ? []
-            : [toTopicGrantCommand({ step, operation: 'revoke', grantee, publish: !publish, subscribe: !subscribe })]),
+        toTopicGrantCommand({
+            step,
+            scope: 'start-state',
+            operation: 'revoke',
+            grantee,
+            publish: !publish,
+            subscribe: true
+        }),
         ...(publish || subscribe
-            ? [toTopicGrantCommand({ step, operation: 'grant', grantee, publish, subscribe })]
+            ? [toTopicGrantCommand({ step, scope: 'start-state', operation: 'grant', grantee, publish, subscribe })]
             : [])
     ];
 }
