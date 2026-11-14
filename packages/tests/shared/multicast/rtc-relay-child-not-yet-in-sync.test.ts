@@ -41,16 +41,22 @@ const NOT_OWNER = 'AL control is addressed to another outbound message owner';
 async function forwardThroughRelay(answer: ChildAnswer): Promise<RelayChain> {
     const snapshot = createOriginSnapshot(['a', 'c', 'd'], 4);
     const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['c'], nextHopsBySessionId: CHAIN });
-    const relay = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['a', 'd'] });
-    relay.acceptOverlay(createOriginOverlay(CHAIN.c!, CHAIN));
-    const child = createRtcRelayOverlayFixture({ selfPeerId: 'd', snapshot, neighbourPeerIds: ['c'] });
-    if (answer === 'awaits-layout-promotion') {
-        // The child still holds a layout without `c` accepted, and the one that names it planned.
-        child.acceptOverlay(createOriginOverlay([], CHAIN));
+    const relay = createRtcRelayOverlayFixture({
+        selfPeerId: 'c',
+        snapshot,
+        neighbourPeerIds: ['a', 'd'],
+        initialOverlay: createOriginOverlay(CHAIN.c!, CHAIN)
+    });
+    // Awaiting the promotion, the child still holds a layout without `c` accepted, and the one that names it planned.
+    const awaitsPromotion = answer === 'awaits-layout-promotion';
+    const child = createRtcRelayOverlayFixture({
+        selfPeerId: 'd',
+        snapshot,
+        neighbourPeerIds: ['c'],
+        initialOverlay: createOriginOverlay(awaitsPromotion ? [] : ['c'], CHAIN)
+    });
+    if (awaitsPromotion) {
         child.acceptPlannedOverlay({ ...createOriginOverlay(['c'], CHAIN), overlayVersion: 2 } satisfies OverlayInfo);
-    }
-    else {
-        child.acceptOverlay(createOriginOverlay(['c'], CHAIN));
     }
     const frame = createOriginReceiverMulticast(`relay-${answer}`);
     await enqueueAndDrain(origin.manager, frame);

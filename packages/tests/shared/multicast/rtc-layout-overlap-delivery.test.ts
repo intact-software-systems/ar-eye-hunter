@@ -159,8 +159,8 @@ function createOverlapMesh(input: OverlapMeshInput): OverlapMesh {
     const peers = new Map<string, RtcRelayOverlayFixture>();
     for (const sessionId of input.sessionIds.filter((peerId) => peerId !== 'a')) {
         const neighbourPeerIds = toOpenEdgePeerIds(input, sessionId);
-        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds });
-        peer.acceptOverlay(createOriginOverlay(input.previousTree[sessionId] ?? [], input.previousTree));
+        const initialOverlay = createOriginOverlay(input.previousTree[sessionId] ?? [], input.previousTree);
+        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds, initialOverlay });
         peer.acceptSnapshot(toPromotedSnapshot(snapshot));
         peer.acceptOverlay(toPromotedOverlay(input.promotedTree, sessionId));
         peers.set(sessionId, peer);
@@ -615,10 +615,18 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
     function createChainTail(): ChainTail {
         const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
         const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: CHAIN_PREVIOUS });
-        const child = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['a', 'b', 'd'] });
-        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
-        child.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.c!, CHAIN_PREVIOUS));
-        relay.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS));
+        const child = createRtcRelayOverlayFixture({
+            selfPeerId: 'c',
+            snapshot,
+            neighbourPeerIds: ['a', 'b', 'd'],
+            initialOverlay: createOriginOverlay(CHAIN_PREVIOUS.c!, CHAIN_PREVIOUS)
+        });
+        const relay = createRtcRelayOverlayFixture({
+            selfPeerId: 'b',
+            snapshot,
+            neighbourPeerIds: ['a', 'c', 'd'],
+            initialOverlay: createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS)
+        });
         child.acceptSnapshot(toPromotedSnapshot(snapshot));
         child.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'c'));
         return {

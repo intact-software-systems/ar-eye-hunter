@@ -37,6 +37,7 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
 import {
+    didOverlayAdoptionChange,
     readableLayoutTransitionCache,
     readablePlannedOverlayCache,
     setCurrentAcceptedServerOverlayById
@@ -188,7 +189,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     });
     onTestFinished(() => manager.dispose());
     const acceptOverlay = (overlay: OverlayInfo): void => {
-        setCurrentAcceptedServerOverlayById('room', overlay, repositories);
+        writeAcceptedServerOverlay('room', overlay, repositories);
         overlays.accept('room', overlay);
     };
     return {
@@ -203,6 +204,19 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         settlements,
         diagnostics
     };
+}
+
+/**
+ * Writes a fixture's accepted layout to the overlay repository, failing the test when the repository drops it: the
+ * fixture's own overlay cache would keep the layout while the repository's transition named another as replaced.
+ */
+export function writeAcceptedServerOverlay(overlayId: string, overlay: OverlayInfo, repositories: RepositoryManager): void {
+    const outcome = setCurrentAcceptedServerOverlayById(overlayId, overlay, repositories);
+    if (!didOverlayAdoptionChange(outcome) && outcome !== 'equal') {
+        throw new Error(
+            `The overlay repository dropped the accepted layout version ${overlay.overlayVersion} of ${overlayId} (${outcome}).`
+        );
+    }
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {

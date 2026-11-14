@@ -448,8 +448,12 @@ describe('a relay across a layout promotion, for the session\'s replaced-layout 
         const promotedTree = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
         const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
         const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: previousTree });
-        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
-        relay.acceptOverlay(createOriginOverlay(previousTree.b, previousTree));
+        const relay = createRtcRelayOverlayFixture({
+            selfPeerId: 'b',
+            snapshot,
+            neighbourPeerIds: ['a', 'c', 'd'],
+            initialOverlay: createOriginOverlay(previousTree.b, previousTree)
+        });
         const promoted = toPromotedLayout(snapshot, promotedTree.b, promotedTree);
         relay.acceptSnapshot(promoted.snapshot);
         relay.acceptOverlay(promoted.overlay);
@@ -475,8 +479,12 @@ describe('a relay across a layout promotion, for the session\'s replaced-layout 
         const promotedTree = { a: ['b', 'd'], b: ['a'], d: ['a'] };
         const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
         const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: previousTree });
-        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
-        relay.acceptOverlay(createOriginOverlay(previousTree.b, previousTree));
+        const relay = createRtcRelayOverlayFixture({
+            selfPeerId: 'b',
+            snapshot,
+            neighbourPeerIds: ['a', 'c', 'd'],
+            initialOverlay: createOriginOverlay(previousTree.b, previousTree)
+        });
         const promoted = toPromotedLayout(createOriginSnapshot(['a', 'b', 'd'], 5), promotedTree.b, promotedTree);
         relay.acceptSnapshot(promoted.snapshot);
         relay.acceptOverlay(promoted.overlay);

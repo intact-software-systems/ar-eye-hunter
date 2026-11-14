@@ -88,8 +88,8 @@ function createLeadingEdgeMesh(plannedHeld: boolean, relayOrder: readonly string
     const peers = new Map<string, RtcRelayOverlayFixture>();
     for (const sessionId of relayOrder) {
         const neighbourPeerIds = toOpenEdgePeerIds(sessionId);
-        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds });
-        peer.acceptOverlay(createOriginOverlay(DIAMOND_PREVIOUS[sessionId] ?? [], DIAMOND_PREVIOUS));
+        const initialOverlay = createOriginOverlay(DIAMOND_PREVIOUS[sessionId] ?? [], DIAMOND_PREVIOUS);
+        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds, initialOverlay });
         if (sessionId !== 'd') {
             peer.acceptSnapshot(toPromotedSnapshot(snapshot));
             peer.acceptOverlay(toPromotedOverlay(sessionId));

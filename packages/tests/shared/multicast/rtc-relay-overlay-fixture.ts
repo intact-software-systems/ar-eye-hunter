@@ -71,7 +71,7 @@ import {
 import { ROOM_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { waitForOwnedQueueWork } from '../wait-for-owned-queue-work.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
-import { createOriginOverlay, SERVED_REPLACED_LAYOUT_OVERLAP_MS } from './rtc-origin-overlay-fixture.ts';
+import { createOriginOverlay, SERVED_REPLACED_LAYOUT_OVERLAP_MS, writeAcceptedServerOverlay } from './rtc-origin-overlay-fixture.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 export interface RtcRelayOverlayFixtureInput {
@@ -79,6 +79,11 @@ export interface RtcRelayOverlayFixtureInput {
     readonly snapshot: GroupSnapshot;
     /** The overlay neighbours of the relay: its parent and its children, each with an open channel. */
     readonly neighbourPeerIds: readonly string[];
+    /**
+     * The layout the session holds accepted from the start, with no layout replaced; absent, every neighbour as a
+     * next hop. A test's "previous" layout belongs here: an accept of it would record the starting layout as replaced.
+     */
+    readonly initialOverlay?: OverlayInfo;
     /** The session's memory pair a volatile message is admitted to; absent, every admission uses one in-memory pair. */
     readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
     /** The provider the composition hands the manager; absent, the capabilities of the carrier alone. */
@@ -224,7 +229,7 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
 
     acceptOverlay(overlay: OverlayInfo): void {
         for (const overlayId of this.dependencies.overlayIds) {
-            setCurrentAcceptedServerOverlayById(overlayId, overlay, this.dependencies.overlayRepositories);
+            writeAcceptedServerOverlay(overlayId, overlay, this.dependencies.overlayRepositories);
             this.dependencies.overlays.accept(overlayId, overlay);
         }
     }
@@ -352,7 +357,7 @@ function createDefaultRelayOverlayResources(
     const overlayRepositories = new RepositoryManager();
     configureTestCacheRepositories(overlayRepositories, () => Date.now());
     for (const overlayId of overlayIds) {
-        const initialOverlay = createOriginOverlay(input.neighbourPeerIds);
+        const initialOverlay = input.initialOverlay ?? createOriginOverlay(input.neighbourPeerIds);
         overlays.accept(overlayId, initialOverlay);
         setCurrentAcceptedServerOverlayById(overlayId, initialOverlay, overlayRepositories);
     }

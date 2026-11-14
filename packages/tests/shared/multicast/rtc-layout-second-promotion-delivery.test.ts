@@ -22,7 +22,6 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
-    SERVED_REPLACED_LAYOUT_OVERLAP_MS,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -41,14 +40,21 @@ interface RoomLayout {
     readonly version: number;
 }
 
-/** What one relay session applied after L1: the layouts it accepted, in order, and the layout it holds planned. */
+/** A layout a session accepts, `atMs` after the room's first promotion. */
+interface TimedPromotion {
+    readonly layout: RoomLayout;
+    readonly atMs: number;
+}
+
+/** What one session applies after L1: the layouts it accepts, when, and the layout it holds planned. */
 interface SessionLayouts {
-    readonly promotions: readonly RoomLayout[];
+    readonly promotions: readonly TimedPromotion[];
     /** Absent, no planned layout is held. */
     readonly planned?: RoomLayout;
 }
 
 interface PromotionMeshInput {
+    /** The origin `a` and every relay session. */
     readonly sessions: Readonly<Record<string, SessionLayouts>>;
     /** Edges, as `x>y`, whose channel is not open yet at either end. */
     readonly closedEdges: readonly string[];
@@ -65,18 +71,20 @@ interface TransportCopy {
     readonly fromPeerId: string;
     readonly toPeerId: string;
     readonly message: ALMessage;
+    /** When the copy was carried, measured from the send. */
+    readonly atMs: number;
 }
 
 /** What happened to one frame at the receiver `d`, at its sender `b`, and at the origin. */
 interface ReceiverObservation {
     /** The edges the frame's copies crossed into `d` on their first carriage, in carrying order. */
     readonly copiesIntoReceiver: readonly string[];
-    /** `d`'s room verdict on each first copy, as `peer kind cause`, judged when it arrived. */
+    /** `d`'s room verdict on each first copy, as `peer kind cause`, judged after the first exchange, before time moves. */
     readonly verdicts: readonly string[];
+    /** Every copy of the frame carried into `d`, as `edge@ms` from the send, retries and repairs included. */
+    readonly copiesIntoReceiverOverTime: readonly string[];
     readonly admissionReasons: readonly string[];
     readonly deliveredCopies: number;
-    /** Every copy of the frame `b` put on its edge to `d`, repairs included. */
-    readonly copiesFromSenderB: number;
     /** Every ACK and NACK `d` sent back, as `peer type`. */
     readonly receiverAnswers: readonly string[];
     readonly roomRefreshReasons: readonly string[];
@@ -87,19 +95,23 @@ interface ReceiverObservation {
 const SESSION_IDS = ['a', 'b', 'c', 'd', 'g'];
 
 /**
- * The origin `a` parents `b`, `c` and `g` in every layout, so its own fanout never changes. The receiver `d` changes
- * parent at each promotion: `b` in L1, `c` in L2, `g` in L3. `b`'s copy to `d` is a relay's copy (its sender is the
- * origin), so `d` judges the edge it crossed; an origin's own copy is never edge-checked. Versions start above the
- * fixture's bootstrap overlay, whose identity is version 1, so accepting L1 is a real promotion.
+ * The origin `a` parents `b`, `c` and `g` in L1, L2 and L3, so its own fanout does not change, but the subtree that
+ * holds the receiver `d` does: `d`'s parent is `b` in L1, `c` in L2, `g` in L3. `b`'s copy to `d` is a relay's copy
+ * (its sender is the origin), so `d` judges the edge it crossed; an origin's own copy is never edge-checked.
  */
-const L1: RoomLayout = { version: 2, tree: { a: ['b', 'c', 'g'], b: ['a', 'd'], c: ['a'], g: ['a'], d: ['b'] } };
-const L2: RoomLayout = { version: 3, tree: { a: ['b', 'c', 'g'], b: ['a'], c: ['a', 'd'], g: ['a'], d: ['c'] } };
-const L3: RoomLayout = { version: 4, tree: { a: ['b', 'c', 'g'], b: ['a'], c: ['a'], g: ['a', 'd'], d: ['g'] } };
+const L1: RoomLayout = { version: 1, tree: { a: ['b', 'c', 'g'], b: ['a', 'd'], c: ['a'], g: ['a'], d: ['b'] } };
+const L2: RoomLayout = { version: 2, tree: { a: ['b', 'c', 'g'], b: ['a'], c: ['a', 'd'], g: ['a'], d: ['c'] } };
+const L3: RoomLayout = { version: 3, tree: { a: ['b', 'c', 'g'], b: ['a'], c: ['a'], g: ['a', 'd'], d: ['g'] } };
 /** A second promotion back to L1's edges, under a new version. */
-const L1_AGAIN: RoomLayout = { version: 4, tree: L1.tree };
+const L1_AGAIN: RoomLayout = { version: 3, tree: L1.tree };
+/** A second promotion that leaves `d` below `c` and moves `g` below `b`. */
+const L3_KEEPS_D: RoomLayout = { version: 3, tree: { a: ['b', 'c'], b: ['a', 'g'], c: ['a', 'd'], g: ['b'], d: ['c'] } };
 
-/** How long after the room's first promotion a session applies its second: inside every window. */
-const SECOND_PROMOTION_AFTER_MS = 1_000;
+/** When the second promotion lands, and the origin sends: one second after the first promotion. */
+const SEND_AT_MS = 1_000;
+
+/** When the L3 parent `g` applies L3 in the cases where it lags `d`: two seconds after `d` did. */
+const LATE_L3_PARENT_AT_MS = 3_000;
 
 /** Long enough for every receipt timeout, repair and the frame's 30 s lifetime to run out. */
 const SETTLE_MS = 45_000;
@@ -119,6 +131,11 @@ const COMPLETE_WITH_B_UNCONFIRMED = {
 /** The origin's receipt runs out of retries with `d` unconfirmed: what the origin reports upward for a lost frame. */
 const EXHAUSTED_WITH_D_UNCONFIRMED = { kind: 'receipt-exhausted', cause: 'budget', unconfirmedPeerIds: ['d'] };
 
+/** Each layout one second after the previous, from the room's first promotion. */
+function toSteppedPromotions(...layouts: readonly RoomLayout[]): readonly TimedPromotion[] {
+    return layouts.map((layout, index) => ({ layout, atMs: index * SEND_AT_MS }));
+}
+
 function toLayoutSnapshot(snapshot: GroupSnapshot, layout: RoomLayout): GroupSnapshot {
     return {
         ...snapshot,
@@ -133,67 +150,80 @@ function toLayoutOverlay(layout: RoomLayout, sessionId: string): OverlayInfo {
     return { ...createOriginOverlay(layout.tree[sessionId] ?? [], layout.tree), overlayVersion: layout.version };
 }
 
+/** Every edge of every layout the session knows is open (early dial), unless the case closes it. */
 function toOpenEdgePeerIds(sessionId: string, layouts: SessionLayouts, closedEdges: readonly string[]): readonly string[] {
-    const known = [L1, ...layouts.promotions, ...(layouts.planned === undefined ? [] : [layouts.planned])];
+    const known = [L1, ...layouts.promotions.map((promotion) => promotion.layout), ...(layouts.planned === undefined ? [] : [layouts.planned])];
     return [...new Set(known.flatMap((layout) => layout.tree[sessionId] ?? []))]
         .filter((peerId) => !closedEdges.includes(`${sessionId}>${peerId}`) && !closedEdges.includes(`${peerId}>${sessionId}`));
 }
 
-/** `b` is the sender: on L2 inside the first half of its overlap (`[L2]`), or still on L1 (`[]`). */
-function toSenderBehindCase(
-    senderPromotions: readonly RoomLayout[],
-    receiverPromotions: readonly RoomLayout[],
-    openL2Edge: boolean
-): PromotionMeshInput {
+interface SenderBehindCase {
+    /** What the origin `a` applies; it promotes with the room unless a case says it lags. */
+    readonly origin: readonly TimedPromotion[];
+    /** What the sender `b` applies: L2 now, inside the first half of its overlap, or nothing (still on L1). */
+    readonly sender: readonly TimedPromotion[];
+    /** What the L3 parent `g` applies. */
+    readonly l3Parent: readonly TimedPromotion[];
+    readonly receiver: readonly TimedPromotion[];
+    /** Whether `d`'s L2 parent `c` has its edge to `d` open. */
+    readonly openL2Edge: boolean;
+}
+
+function toSenderBehindCase(input: SenderBehindCase): PromotionMeshInput {
     return {
         sessions: {
-            b: { promotions: senderPromotions },
-            c: { promotions: [L2] },
-            g: { promotions: [L2] },
-            d: { promotions: receiverPromotions }
+            a: { promotions: input.origin },
+            b: { promotions: input.sender },
+            c: { promotions: toSteppedPromotions(L2) },
+            g: { promotions: input.l3Parent },
+            d: { promotions: input.receiver }
         },
-        closedEdges: openL2Edge ? [] : ['c>d']
+        closedEdges: input.openL2Edge ? [] : ['c>d']
     };
 }
 
+function applyPromotion(mesh: PromotionMesh, sessionId: string, layout: RoomLayout): void {
+    const snapshot = toLayoutSnapshot(createOriginSnapshot(SESSION_IDS, 4), layout);
+    if (sessionId === 'a') {
+        mesh.origin.groups.accept('room', snapshot);
+        mesh.origin.acceptOverlay(toLayoutOverlay(layout, 'a'));
+        return;
+    }
+    mesh.peers.get(sessionId)!.acceptSnapshot(snapshot);
+    mesh.peers.get(sessionId)!.acceptOverlay(toLayoutOverlay(layout, sessionId));
+}
+
 /**
- * Every relay session holds L1 for a whole overlap, then applies its first promotion now and its second
- * `SECOND_PROMOTION_AFTER_MS` later, on the one clock the repository stamps transitions with. The origin `a` stays
- * on L1: its edges are the same in every layout.
+ * Every session starts on L1 with no layout replaced. Each promotion is applied on the one clock the repository stamps
+ * transitions with, `atMs` after the room's first promotion; the mesh is returned at `SEND_AT_MS`, and a promotion
+ * due later is applied when its time comes.
  */
 async function createPromotionMesh(input: PromotionMeshInput): Promise<PromotionMesh> {
     const snapshot = createOriginSnapshot(SESSION_IDS, 4);
     const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: L1.tree.a!, nextHopsBySessionId: L1.tree });
-    const edges = new Map<string, readonly string[]>([['a', L1.tree.a!]]);
+    origin.ready.peerIds = toOpenEdgePeerIds('a', input.sessions.a!, input.closedEdges);
+    const edges = new Map<string, readonly string[]>([['a', origin.ready.peerIds]]);
     const peers = new Map<string, RtcRelayOverlayFixture>();
-    for (const [sessionId, layouts] of Object.entries(input.sessions)) {
+    for (const [sessionId, layouts] of Object.entries(input.sessions).filter(([sessionId]) => sessionId !== 'a')) {
         const neighbourPeerIds = toOpenEdgePeerIds(sessionId, layouts, input.closedEdges);
-        const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds });
-        peer.acceptSnapshot(toLayoutSnapshot(snapshot, L1));
-        peer.acceptOverlay(toLayoutOverlay(L1, sessionId));
-        peers.set(sessionId, peer);
+        const initialOverlay = toLayoutOverlay(L1, sessionId);
+        peers.set(sessionId, createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds, initialOverlay }));
         edges.set(sessionId, neighbourPeerIds);
-    }
-    await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS);
-    for (const step of [0, 1]) {
-        await vi.advanceTimersByTimeAsync(step * SECOND_PROMOTION_AFTER_MS);
-        for (const [sessionId, layouts] of Object.entries(input.sessions)) {
-            const layout = layouts.promotions[step];
-            if (layout !== undefined) {
-                peers.get(sessionId)!.acceptSnapshot(toLayoutSnapshot(snapshot, layout));
-                peers.get(sessionId)!.acceptOverlay(toLayoutOverlay(layout, sessionId));
-            }
-        }
-    }
-    for (const [sessionId, layouts] of Object.entries(input.sessions)) {
         if (layouts.planned !== undefined) {
             peers.get(sessionId)!.acceptPlannedOverlay(toLayoutOverlay(layouts.planned, sessionId));
         }
     }
-    return { origin, peers, edges, carriedCounts: new Map() };
+    const mesh = { origin, peers, edges, carriedCounts: new Map() };
+    for (const [sessionId, layouts] of Object.entries(input.sessions)) {
+        for (const { layout, atMs } of layouts.promotions) {
+            setTimeout(() => applyPromotion(mesh, sessionId, layout), atMs);
+        }
+    }
+    await vi.advanceTimersByTimeAsync(SEND_AT_MS);
+    return mesh;
 }
 
-async function exchangeUntilQuiet(mesh: PromotionMesh): Promise<readonly TransportCopy[]> {
+async function exchangeUntilQuiet(mesh: PromotionMesh, sentAtMs: number): Promise<readonly TransportCopy[]> {
     const carried: TransportCopy[] = [];
     for (let moved = true; moved;) {
         moved = false;
@@ -206,9 +236,10 @@ async function exchangeUntilQuiet(mesh: PromotionMesh): Promise<readonly Transpo
                 const fresh = sent.slice(mesh.carriedCounts.get(key) ?? 0);
                 mesh.carriedCounts.set(key, sent.length);
                 for (const message of fresh) {
-                    carried.push({ fromPeerId, toPeerId, message });
+                    const copy = { fromPeerId, toPeerId, message, atMs: Date.now() - sentAtMs };
+                    carried.push(copy);
                     expect(carried.length, 'the exchange stops within its copy budget').toBeLessThanOrEqual(EXCHANGE_COPY_BUDGET);
-                    await carry(mesh, { fromPeerId, toPeerId, message });
+                    await carry(mesh, copy);
                     moved = true;
                 }
             }
@@ -227,11 +258,11 @@ async function carry(mesh: PromotionMesh, copy: TransportCopy): Promise<void> {
     }
 }
 
-async function exchangeOver(mesh: PromotionMesh, totalMs: number): Promise<readonly TransportCopy[]> {
-    const carried = [...await exchangeUntilQuiet(mesh)];
+async function exchangeOver(mesh: PromotionMesh, totalMs: number, sentAtMs: number): Promise<readonly TransportCopy[]> {
+    const carried = [...await exchangeUntilQuiet(mesh, sentAtMs)];
     for (let elapsedMs = 0; elapsedMs < totalMs; elapsedMs += 500) {
         await vi.advanceTimersByTimeAsync(500);
-        carried.push(...await exchangeUntilQuiet(mesh));
+        carried.push(...await exchangeUntilQuiet(mesh, sentAtMs));
     }
     return carried;
 }
@@ -258,24 +289,42 @@ async function observeFrame(input: PromotionMeshInput, reliability: Reliability)
     const mesh = await createPromotionMesh(input);
     const receiver = mesh.peers.get('d')!;
     const frame = createFrame(reliability, 'second-promotion');
+    const sentAtMs = Date.now();
     await enqueueAndDrain(mesh.origin.manager, frame);
-    const first = (await exchangeUntilQuiet(mesh)).filter((copy) => isFrameCopyInto(copy, frame, 'd'));
-    const verdicts = first.map((copy) => {
+    const first = await exchangeUntilQuiet(mesh, sentAtMs);
+    const firstIntoReceiver = first.filter((copy) => isFrameCopyInto(copy, frame, 'd'));
+    const verdicts = firstIntoReceiver.map((copy) => {
         const verdict = receiver.readRoomAdmission(copy.message, copy.fromPeerId);
         return `${copy.fromPeerId} ${verdict.kind} ${'cause' in verdict ? verdict.cause : '-'}`;
     });
-    const later = await exchangeOver(mesh, SETTLE_MS);
+    const later = await exchangeOver(mesh, SETTLE_MS, sentAtMs);
     const admissionReasons = readAdmissionReasons(receiver, frame);
     return {
-        copiesIntoReceiver: first.map((copy) => `${copy.fromPeerId}>d`),
+        copiesIntoReceiver: firstIntoReceiver.map((copy) => `${copy.fromPeerId}>d`),
         verdicts,
+        copiesIntoReceiverOverTime: [...first, ...later]
+            .filter((copy) => isFrameCopyInto(copy, frame, 'd'))
+            .map((copy) => `${copy.fromPeerId}>d@${copy.atMs}`),
         admissionReasons,
         deliveredCopies: receiver.delivered.filter((message) => message.id.msgId === frame.id.msgId).length,
-        copiesFromSenderB: [...first, ...later].filter((copy) => copy.fromPeerId === 'b' && isFrameCopyInto(copy, frame, 'd')).length,
         receiverAnswers: await readReceiverAnswers(mesh),
         roomRefreshReasons: admissionReasons.filter(isRtcRoomSnapshotRefreshReason),
         originOutcome: mesh.origin.settlements.filter((settlement) => !settlement.kind.startsWith('attempt')).at(-1)
     };
+}
+
+function toEdges(copiesOverTime: readonly string[]): readonly string[] {
+    return copiesOverTime.map((copy) => copy.split('@')[0]!);
+}
+
+/** An at-least-once frame's receipt runs out naming `d`; a best-effort frame keeps no receipt, so nothing is reported. */
+function expectLostOutcome(observed: ReceiverObservation, reliability: Reliability): void {
+    if (reliability === 'at-least-once') {
+        expect(observed.originOutcome).toMatchObject(EXHAUSTED_WITH_D_UNCONFIRMED);
+    }
+    else {
+        expect(observed.originOutcome).toBeUndefined();
+    }
 }
 
 function createFrame(reliability: Reliability, resourceId: string): ALMessage {
@@ -304,49 +353,127 @@ function useFakeClock(): void {
 }
 
 describe.each([
-    { sender: 'inside the first half of its overlap for the first promotion (case A)', senderPromotions: [L2] },
+    { sender: 'inside the first half of its overlap for the first promotion (case A)', senderPromotions: toSteppedPromotions(L2) },
     { sender: 'two promotions behind (case B)', senderPromotions: [] }
 ])('a sender $sender, and a receiver that applied both promotions', ({ senderPromotions }) => {
     useFakeClock();
 
+    const ROOM_ON_L3 = toSteppedPromotions(L2, L3);
+
     it.each(['at-least-once', 'best-effort'] as const)(
         'refuses the %s copy over the edge two layouts old as unauthorized, and the message arrives once over the replaced layout\'s path',
         async (reliability) => {
-            const observed = await observeFrame(toSenderBehindCase(senderPromotions, [L2, L3], true), reliability);
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: ROOM_ON_L3,
+                    sender: senderPromotions,
+                    l3Parent: toSteppedPromotions(L2),
+                    receiver: ROOM_ON_L3,
+                    openL2Edge: true
+                }),
+                reliability
+            );
 
             expect(observed.copiesIntoReceiver).toEqual(['b>d', 'c>d']);
             expect(observed.verdicts).toEqual(['b unauthorized edge-unavailable', 'c authorized -']);
             expect(observed.admissionReasons).toEqual(['unauthorized', 'admitted']);
             expect(observed.deliveredCopies).toBe(1);
-            expect(observed.copiesFromSenderB).toBe(1);
             expect(observed.receiverAnswers).toEqual(reliability === 'at-least-once' ? ['c ack'] : []);
             expect(observed.roomRefreshReasons).toEqual([]);
-            expect(observed.originOutcome).toMatchObject(reliability === 'at-least-once' ? COMPLETE_WITH_B_UNCONFIRMED : {});
+            if (reliability === 'at-least-once') {
+                expect(observed.originOutcome).toMatchObject(COMPLETE_WITH_B_UNCONFIRMED);
+            }
+            else {
+                expect(observed.originOutcome).toBeUndefined();
+            }
         }
     );
 
     // Documents a known gap (Task 9d): the receiver's one replaced-layout slot holds L2 only, so the copy over the L1
-    // edge is refused, with no NACK and no room refresh. With the L2 parent's edge to the receiver not open yet and
-    // the L3 parent not yet promoted, no other copy reaches it. An at-least-once frame's repairs go out through `b`
-    // again inside its first half, and each is refused the same way until the origin's receipt runs out.
-    it.each(
-        [
-            { reliability: 'at-least-once', copiesFromSenderB: 4 },
-            { reliability: 'best-effort', copiesFromSenderB: 1 }
-        ] as const
-    )(
-        'refuses every $reliability copy over the edge two layouts old as unauthorized, and with the replaced layout\'s edge not open the message is lost',
-        async ({ reliability, copiesFromSenderB }) => {
-            const observed = await observeFrame(toSenderBehindCase(senderPromotions, [L2, L3], false), reliability);
+    // edge is refused, with no NACK and no room refresh. The L2 parent's edge to the receiver is not open yet and the
+    // L3 parent applies L3 two seconds after the receiver, so no other copy reaches it. The origin, on L3, repairs
+    // once toward the L2 parent on its hint, then counts its receipt's attempts out with every hop confirmed.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'refuses the %s copy over the edge two layouts old as unauthorized, and with the replaced layout\'s edge not open the message is lost, though the origin promotes with the room',
+        async (reliability) => {
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: ROOM_ON_L3,
+                    sender: senderPromotions,
+                    l3Parent: [{ layout: L2, atMs: 0 }, { layout: L3, atMs: LATE_L3_PARENT_AT_MS }],
+                    receiver: ROOM_ON_L3,
+                    openL2Edge: false
+                }),
+                reliability
+            );
 
             expect(observed.copiesIntoReceiver).toEqual(['b>d']);
             expect(observed.verdicts).toEqual(['b unauthorized edge-unavailable']);
-            expect(observed.admissionReasons).toEqual(Array.from({ length: copiesFromSenderB }, () => 'unauthorized'));
+            expect(toEdges(observed.copiesIntoReceiverOverTime)).toEqual(['b>d']);
+            expect(observed.admissionReasons).toEqual(['unauthorized']);
             expect(observed.deliveredCopies).toBe(0);
-            expect(observed.copiesFromSenderB).toBe(copiesFromSenderB);
             expect(observed.receiverAnswers).toEqual([]);
             expect(observed.roomRefreshReasons).toEqual([]);
-            expect(observed.originOutcome).toMatchObject(reliability === 'at-least-once' ? EXHAUSTED_WITH_D_UNCONFIRMED : {});
+            expectLostOutcome(observed, reliability);
+        }
+    );
+
+    // Documents a known gap (Task 9d): with the origin still on L1, `d` hangs below `b` in its adjacency, so each of
+    // its timed repairs goes out through `b` again, inside `b`'s first half, and each is refused the same way.
+    it.each(
+        [
+            { reliability: 'at-least-once', copiesOverL1Edge: 4 },
+            { reliability: 'best-effort', copiesOverL1Edge: 1 }
+        ] as const
+    )(
+        'refuses every $reliability copy over the edge two layouts old, and with the origin still on L1 its repairs through the sender are refused too',
+        async ({ reliability, copiesOverL1Edge }) => {
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: [],
+                    sender: senderPromotions,
+                    l3Parent: toSteppedPromotions(L2),
+                    receiver: ROOM_ON_L3,
+                    openL2Edge: false
+                }),
+                reliability
+            );
+
+            expect(toEdges(observed.copiesIntoReceiverOverTime)).toEqual(Array.from({ length: copiesOverL1Edge }, () => 'b>d'));
+            expect(observed.admissionReasons).toEqual(Array.from({ length: copiesOverL1Edge }, () => 'unauthorized'));
+            expect(observed.deliveredCopies).toBe(0);
+            expect(observed.receiverAnswers).toEqual([]);
+            expectLostOutcome(observed, reliability);
+        }
+    );
+});
+
+describe('a second promotion that leaves the receiver\'s parent unchanged', () => {
+    useFakeClock();
+
+    // Documents a known gap (Task 9d): L3_KEEPS_D moves `g`, not `d`, yet it overwrites `d`'s replaced-layout slot all
+    // the same, so the sender's copy over the L1 edge is refused; with `d`'s L2 parent's edge not open, it is lost.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'refuses the %s copy over the edge two layouts old as unauthorized, and with the replaced layout\'s edge not open the message is lost',
+        async (reliability) => {
+            const keepsD = toSteppedPromotions(L2, L3_KEEPS_D);
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: keepsD,
+                    sender: toSteppedPromotions(L2),
+                    l3Parent: toSteppedPromotions(L2),
+                    receiver: keepsD,
+                    openL2Edge: false
+                }),
+                reliability
+            );
+
+            expect(observed.copiesIntoReceiver).toEqual(['b>d']);
+            expect(observed.verdicts).toEqual(['b unauthorized edge-unavailable']);
+            expect(observed.admissionReasons).toEqual(['unauthorized']);
+            expect(observed.deliveredCopies).toBe(0);
+            expect(observed.receiverAnswers).toEqual([]);
+            expectLostOutcome(observed, reliability);
         }
     );
 });
@@ -356,15 +483,24 @@ describe('the same copy one promotion apart (the control)', () => {
 
     it.each(
         [
-            { reliability: 'at-least-once', sender: 'inside its first half', senderPromotions: [L2] },
+            { reliability: 'at-least-once', sender: 'inside its first half', senderPromotions: toSteppedPromotions(L2) },
             { reliability: 'at-least-once', sender: 'one promotion behind', senderPromotions: [] },
-            { reliability: 'best-effort', sender: 'inside its first half', senderPromotions: [L2] },
+            { reliability: 'best-effort', sender: 'inside its first half', senderPromotions: toSteppedPromotions(L2) },
             { reliability: 'best-effort', sender: 'one promotion behind', senderPromotions: [] }
         ] as const
     )(
         'a receiver that applied one promotion admits the $reliability copy over its replaced layout\'s edge from a sender $sender, and the message arrives once over it',
         async ({ reliability, senderPromotions }) => {
-            const observed = await observeFrame(toSenderBehindCase(senderPromotions, [L2], false), reliability);
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: toSteppedPromotions(L2),
+                    sender: senderPromotions,
+                    l3Parent: toSteppedPromotions(L2),
+                    receiver: toSteppedPromotions(L2),
+                    openL2Edge: false
+                }),
+                reliability
+            );
 
             expect(observed.copiesIntoReceiver).toEqual(['b>d']);
             expect(observed.verdicts).toEqual(['b authorized -']);
@@ -381,12 +517,14 @@ describe('a sender that applied both promotions, and a receiver that applied onl
     it.each(['at-least-once', 'best-effort'] as const)(
         'answers the %s copy over the edge one layout ahead as not yet in sync, and the message arrives once over the accepted layout\'s edge',
         async (reliability) => {
+            const roomOnL3 = toSteppedPromotions(L2, L3);
             const observed = await observeFrame({
                 sessions: {
-                    b: { promotions: [L2, L3] },
-                    c: { promotions: [L2, L3] },
-                    g: { promotions: [L2, L3] },
-                    d: { promotions: [L2], planned: L3 }
+                    a: { promotions: roomOnL3 },
+                    b: { promotions: roomOnL3 },
+                    c: { promotions: roomOnL3 },
+                    g: { promotions: roomOnL3 },
+                    d: { promotions: toSteppedPromotions(L2), planned: L3 }
                 },
                 closedEdges: []
             }, reliability);
@@ -407,7 +545,17 @@ describe('a second promotion that returns to the first layout\'s edges (case D)'
     it.each(['at-least-once', 'best-effort'] as const)(
         'admits the %s copy over the edge the accepted layout names again, and the message arrives once with nothing refused',
         async (reliability) => {
-            const observed = await observeFrame(toSenderBehindCase([L2], [L2, L1_AGAIN], true), reliability);
+            const backToL1 = toSteppedPromotions(L2, L1_AGAIN);
+            const observed = await observeFrame(
+                toSenderBehindCase({
+                    origin: backToL1,
+                    sender: toSteppedPromotions(L2),
+                    l3Parent: toSteppedPromotions(L2),
+                    receiver: backToL1,
+                    openL2Edge: true
+                }),
+                reliability
+            );
 
             expect(observed.copiesIntoReceiver).toEqual(['b>d', 'c>d']);
             expect(observed.verdicts).toEqual(['b authorized -', 'c authorized -']);
