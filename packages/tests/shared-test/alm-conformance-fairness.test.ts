@@ -372,14 +372,27 @@ describe('churn-bounded-tracks', () => {
         expect(toCommandNames(scenario.receiver)).toEqual([
             ...RECEIVER_PROLOGUE,
             'received-1',
-            'snapshots-settle',
+            'ordering-tracks-cap-stated',
             'stats-ordering-tracks',
             'assert-ordering-tracks-within-the-cap',
             'assert-ordering-tracks-at-the-cap',
             'stats'
         ]);
         expect(findCommand(scenario.receiver, 'received-1')).toMatchObject({ count: 280, absent: false, windowMs: 57_000 });
-        expect(findCommand(scenario.receiver, 'snapshots-settle')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 1_000 });
+        // The memory store states its count at the end of a newly opened track's eviction pass, not at its delivery.
+        expect(findCommand(scenario.receiver, 'ordering-tracks-cap-stated')).toEqual({
+            kind: 'wait',
+            commandId: `${scenario.receiver.recipeId}-ordering-tracks-cap-stated`,
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.storage',
+                payloadPath: 'data',
+                contains: '/volatile"',
+                payloadFields: { 'data.kind': 'ordering-tracks', 'data.tracks': 256 },
+                sinceCommandIdPrefix: `${scenario.receiver.recipeId}-`
+            },
+            timeoutMs: 27_000
+        });
         expect(await readLedgerTail(scenario.receiver, 'stats-ordering-tracks', atTheCap)).toBe(true);
         const results: boolean[] = [];
         for (const orderingTracks of [257, 255, 0]) {

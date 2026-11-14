@@ -911,7 +911,9 @@ not settle `repair-exhausted` and the release delivers it.
 sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
 in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
 256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
-receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
+receives the 280, waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction
+pass a newly opened track runs after its admission commit states it, not the delivery the arrivals count), and its
+`stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
 the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
 memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
