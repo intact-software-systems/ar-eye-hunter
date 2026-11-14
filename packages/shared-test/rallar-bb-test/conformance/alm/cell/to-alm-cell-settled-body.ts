@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../../../barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
-import type { AlmConformanceCellParts } from '../alm-conformance-cell-parts.ts';
+import { requireAlmCellParts, type AlmCellPartsByRole } from '../alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
@@ -11,8 +11,6 @@ import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
 import { toAlmCellPlacedBody } from './to-alm-cell-placed-body.ts';
 import { toAlmCellSettle, type AlmCellSettle } from './to-alm-cell-settle.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
-
-type AlmCellPartsByRole = ReadonlyMap<AlmConformanceRole, AlmConformanceCellParts>;
 
 /** The commands of one role that a barrier waits out. */
 type RoleCommandsSelector = (role: AlmConformanceRole) => readonly RallarBlackBoxTestCommand[];
@@ -30,7 +28,7 @@ export function toAlmCellSettledBody(
     step: AlmConformanceStepInput,
     partsByRole: AlmCellPartsByRole
 ): readonly RallarBlackBoxTestCommand[] {
-    const parts = toRoleParts(step.role, partsByRole);
+    const parts = requireAlmCellParts(partsByRole, step.role);
     const body = parts.body;
     if (step.input.cellSettle !== 'barriered' || !isSettleRole(step.role)) {
         return toAlmCellPlacedBody(parts);
@@ -45,11 +43,11 @@ export function toAlmCellSettledBody(
             participants: settleRoles
         }));
     const settleOf = (role: AlmConformanceRole) =>
-        toMarkedSettle({ ...step, role }, toRoleParts(role, partsByRole).startState);
-    const armingOf = (role: AlmConformanceRole) => toAlmCellArming(toRoleParts(role, partsByRole).body).arming;
+        toMarkedSettle({ ...step, role }, requireAlmCellParts(partsByRole, role).startState);
+    const armingOf = (role: AlmConformanceRole) => toAlmCellArming(requireAlmCellParts(partsByRole, role).body).arming;
     const { formation, head } = settleOf(step.role);
     return [
-        toBarrier('connected', (role) => toRoleParts(role, partsByRole).prologue),
+        toBarrier('connected', (role) => requireAlmCellParts(partsByRole, role).prologue),
         ...formation,
         toBarrier('formation-settled', (role) => settleOf(role).formation),
         ...head,
@@ -107,12 +105,4 @@ function computeCommandsMs(role: AlmConformanceRole, commands: readonly RallarBl
         }
         return sum + command.timeoutMs;
     }, 0);
-}
-
-function toRoleParts(role: AlmConformanceRole, partsByRole: AlmCellPartsByRole): AlmConformanceCellParts {
-    const parts = partsByRole.get(role);
-    if (parts === undefined) {
-        throw new Error(`The cell declares ${role} without its parts.`);
-    }
-    return parts;
 }

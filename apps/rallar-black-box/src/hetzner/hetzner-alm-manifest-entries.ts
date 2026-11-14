@@ -4,7 +4,7 @@ import {
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
+import { requireAlmCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
@@ -294,14 +294,6 @@ function toCombinedReceiptRolesMetadata(
     return entries.length === 0 ? {} : { almReceiptRoles: entries.map((entry) => ({ ...entry })) };
 }
 
-function toRoleParts(scenario: AlmConformanceScenario, role: AlmConformanceRole): AlmConformanceCellParts {
-    const parts = scenario.partsByRole[role];
-    if (parts === undefined) {
-        throw new Error(`Generated ALM scenario ${scenario.scenarioKey} declares no ${role} parts.`);
-    }
-    return parts;
-}
-
 function toRoleRecipe(scenario: AlmConformanceScenario, role: AlmConformanceRole): RallarBlackBoxTestRecipe {
     const recipe = toAlmConformanceRoleRecipe(scenario, role);
     if (recipe === undefined) {
@@ -322,7 +314,7 @@ function toAlmConformanceCombinedCommands(
     if (rtcScenario === undefined) {
         throw new Error('Combined ALM recipes require an RTC scenario.');
     }
-    const rtcPrologue = toRoleParts(rtcScenario, role).prologue;
+    const rtcPrologue = requireAlmCellParts(rtcScenario.partsByRole, role).prologue;
     const rtcConnect = rtcPrologue.find((command) => command.kind === 'rtc.connect');
     if (rtcConnect === undefined) {
         throw new Error(`Generated ALM scenario ${rtcScenario.scenarioKey} has no ${role} rtc.connect prologue.`);
@@ -338,7 +330,7 @@ function toAlmConformanceCombinedCommands(
             toBarrieredScenarioCommands(
                 scenario,
                 role,
-                toAlmCellPlacedBody(toRoleParts(scenario, role)).map((command) =>
+                toAlmCellPlacedBody(requireAlmCellParts(scenario.partsByRole, role)).map((command) =>
                     command.kind === 'rtc.connect' ? toConnect(command) : command
                 )
             )

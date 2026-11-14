@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
 import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
+import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
     toConnectCommand,
@@ -33,6 +34,20 @@ export interface AlmConformanceCellPartsInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
     readonly almDiagnostics: boolean;
     readonly deliveryDiagnostics: boolean;
+}
+
+/** A cell's parts by role; a role the cell does not declare has none. */
+export type AlmCellPartsByRole = Readonly<Partial<Record<AlmConformanceRole, AlmConformanceCellParts>>>;
+
+export function requireAlmCellParts(
+    partsByRole: AlmCellPartsByRole,
+    role: AlmConformanceRole
+): AlmConformanceCellParts {
+    const parts = partsByRole[role];
+    if (parts === undefined) {
+        throw new Error(`The cell declares ${role} without its parts.`);
+    }
+    return parts;
 }
 
 const ALM_DIAGNOSTIC_TOPICS = [

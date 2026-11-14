@@ -11,6 +11,7 @@ import {
 } from './alm-conformance-budgets.ts';
 import {
     toAlmConformanceCellParts,
+    type AlmCellPartsByRole,
     type AlmConformanceCellParts,
     type AlmConformanceCellPartsInput
 } from './alm-conformance-cell-parts.ts';
@@ -143,7 +144,7 @@ export interface AlmConformanceScenario {
      * Each declared role's recipe in its parts, so a combined recipe shares one prologue and runs each body. A role
      * recipe of a `barriered` cell also holds its cell's barriers: one after its prologue, one after its arming run.
      */
-    readonly partsByRole: Readonly<Partial<Record<AlmConformanceRole, AlmConformanceCellParts>>>;
+    readonly partsByRole: AlmCellPartsByRole;
     readonly tags: readonly AlmConformanceTag[];
     /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
     readonly successorGate: AlmConformanceScenarioGate | undefined;
@@ -482,7 +483,7 @@ function toRoleCells(
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });
-    const partsByRole = new Map(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts]));
+    const partsByRole = Object.fromEntries(recipeInputs.map(({ recipeInput, parts }) => [recipeInput.role, parts]));
     return new Map(recipeInputs.map(({ recipeInput, parts }) => [
         recipeInput.role,
         toRoleCell(recipeInput, parts, toAlmCellSettledBody(recipeInput, partsByRole))
