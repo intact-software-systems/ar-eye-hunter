@@ -796,9 +796,8 @@ and it has no status list.
 - Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
   the cap closes early peers only for it. What a full cap does to the overlap is stated in D646; admission still
   lists a replaced layout's neighbours for their window whether or not their edges are open.
-- A frozen multicast's double fault during the forwarding half: a layout whose own adjacency finds no route
-  to a recipient keeps only the neighbours the union of both layouts' edges leads to one, so a frame can be lost when a
-  peer that lags across a second promotion forwards over a layout outside that union and the copy to the path child
+- A frozen multicast's double fault during the forwarding half: a relay prunes as the inbound README
+  states under "Which children a relay owns", so a frame can be lost when a peer that lags across a second promotion forwards over a layout outside that union and the copy to the path child
   is also lost, on a frame that carries no receipt. This follows from the code; no test pins the loss.
 - A stale planned layout counts for up to 60 s: the rule owner (`resolveRtcRoomRoutingEdges`) and the dial policy
   (`selectGroupEarlyDialPeerIds`) take whatever the planned slot holds, and a planned layout that the accepted one has
@@ -813,8 +812,8 @@ and it has no status list.
   forms the room with `{mesh, degreeLimit 2}`, which leaves a fourth session without an edge), the shape read from
   the layouts at run time, and a bounded search for an owner request that re-parents a browser onto an edge that is
   not open: `{mesh, degreeLimit 2, meshParamK 1}` then `{tree}` adds an edge the first layout lacks and drops
-  another for one set of four session ids, moves no edge for another, and moves a different session when RTT reports
-  exist (`packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-owner-tree-star-config-edges.test.ts`,
+  another for one set of four session ids, moves no edge for another, and with RTT reports moves session-d from
+  session-b onto session-a for the fixture ids (`packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-owner-tree-star-config-edges.test.ts`,
   the describe block "a mesh write then a tree write for four sessions").
 - The browser spec of the overlap (`npm run test:rallar:full-stack:memory:live-rtc-3:layout-switch`) runs in no required
   gate lane. It would catch a regression of the hand-over over the served overlap, which only a browser run shows.
