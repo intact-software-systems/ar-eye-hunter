@@ -20,8 +20,7 @@ import {
     CHAIN_PROMOTED,
     readCopies,
     toAcceptedLayout,
-    toPromotedLayout,
-    useFakeClock
+    toPromotedLayout
 } from './rtc-layout-mesh-fixture.ts';
 import {
     createOriginOverlay,
@@ -31,6 +30,7 @@ import {
     enqueueAndDrain,
     ORIGIN_ROOM,
     SERVED_REPLACED_LAYOUT_OVERLAP_MS,
+    useFakeClock,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';

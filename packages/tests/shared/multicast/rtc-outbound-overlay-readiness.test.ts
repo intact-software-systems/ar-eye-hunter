@@ -41,8 +41,8 @@ import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-co
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../signature/publication-crypto-fixtures.ts';
 import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.ts';
 import { NO_RTC_GRANTED_TOPICS } from './rtc-granted-topic-reader-fixtures.ts';
+import { CHAIN_PREVIOUS, CHAIN_PROMOTED, toAcceptedLayout, toPromotedLayout } from './rtc-layout-mesh-fixture.ts';
 import {
-    createOriginOverlay,
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
@@ -713,18 +713,16 @@ describe.each(['at-least-once', 'best-effort'] as const)(
  * `b` that the promotion drops is still open, and its edge to `c` that the promotion adds is not open yet.
  */
 function createPromotedOrigin(replacedLayoutOverlapMs: number): RtcOriginOverlayFixture {
-    const previousTree = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
-    const promotedTree = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
-    const promotedIdentity = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
     const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
     const origin = createRtcOriginOverlayFixture({
         snapshot,
-        nextHopPeerIds: previousTree.a,
-        nextHopsBySessionId: previousTree,
+        nextHopPeerIds: CHAIN_PREVIOUS.a!,
+        nextHopsBySessionId: CHAIN_PREVIOUS,
         replacedLayoutOverlapMs
     });
-    origin.groups.accept('room', { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: promotedIdentity } });
-    origin.acceptOverlay({ ...createOriginOverlay(promotedTree.a, promotedTree), overlayVersion: promotedIdentity.version });
+    const promoted = toAcceptedLayout(snapshot, toPromotedLayout(CHAIN_PROMOTED), 'a');
+    origin.groups.accept('room', promoted.snapshot);
+    origin.acceptOverlay(promoted.overlay);
     origin.ready.peerIds = ['b'];
     return origin;
 }

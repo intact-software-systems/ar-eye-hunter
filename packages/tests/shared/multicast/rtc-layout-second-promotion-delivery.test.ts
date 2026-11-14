@@ -8,20 +8,23 @@ import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room
 import {
     acceptMeshLayout,
     createLayoutMesh,
-    createOriginFrame,
     exchangeOver,
     exchangeUntilQuiet,
     readAdmissionReasons,
     readCopies,
     toAcceptedLayout,
     toOpenEdgePeerIds,
-    useFakeClock,
-    type FrameReliability,
     type LayoutMesh,
     type RoomLayout,
     type TransportCopy
 } from './rtc-layout-mesh-fixture.ts';
-import { createOriginSnapshot, enqueueAndDrain } from './rtc-origin-overlay-fixture.ts';
+import {
+    createOriginFrame,
+    createOriginSnapshot,
+    enqueueAndDrain,
+    useFakeClock,
+    type FrameReliability
+} from './rtc-origin-overlay-fixture.ts';
 
 /**
  * A room's layout promoted twice or more inside one overlap, L1 then L2 then L3. A sender still forwarding over an L1

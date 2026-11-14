@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, onTestFinished, vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
@@ -228,6 +228,35 @@ export function createOriginReceiverMulticast(resourceId: string): ALMessage {
         { text: resourceId },
         { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
     );
+}
+
+export type FrameReliability = 'at-least-once' | 'best-effort';
+
+/** A frame from the origin `a`: a receipted multicast, or a position frame with no receipt. */
+export function createOriginFrame(reliability: FrameReliability, resourceId: string): ALMessage {
+    return reliability === 'at-least-once'
+        ? createOriginReceiverMulticast(resourceId)
+        : newALMulticastMessage(
+            'a',
+            { topicId: 'position', resourceId, contextId: 'room' },
+            ORIGIN_ROOM,
+            'position.frame.v1',
+            { resourceId },
+            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+        );
+}
+
+/** Fake timers from 2026-01-01T00:00:00Z for every test of the calling `describe`, restored after each. */
+export function useFakeClock(): void {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
 }
 
 export function toOriginFrozenTargets(recipientPeerIds: readonly string[], snapshotVersion: number): ALTargets {

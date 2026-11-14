@@ -9,7 +9,6 @@ import {
     CHAIN_PREVIOUS,
     CHAIN_PROMOTED,
     createLayoutMesh,
-    createOriginFrame,
     DIAMOND_PREVIOUS,
     DIAMOND_PROMOTED,
     DIAMOND_SESSION_IDS,
@@ -19,7 +18,6 @@ import {
     toAcceptedLayout,
     toOpenEdgePeerIds,
     toPromotedLayout,
-    useFakeClock,
     type LayoutMesh,
     type SessionNextHops,
     type TransportCopy
@@ -33,6 +31,8 @@ import {
     ORIGIN_ROOM,
     SERVED_REPLACED_LAYOUT_OVERLAP_MS,
     toOriginFrozenTargets,
+    useFakeClock,
+    type FrameReliability,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -105,8 +105,10 @@ const ACK_TIMEOUT_MS = 2_000;
 const MOVED_SUBTREE_PREVIOUS: SessionNextHops = { a: ['b', 'c'], b: ['a', 'd', 'e'], c: ['a'], d: ['b'], e: ['b'] };
 const MOVED_SUBTREE_PROMOTED: SessionNextHops = { a: ['b', 'c'], b: ['a'], c: ['a', 'd', 'e'], d: ['c'], e: ['c'] };
 
-/** The union of the two layouts holds the cycle `b`, `c`, `d`: `b`-`c` is replaced, `b`-`d` is promoted. */
-const CYCLE_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
+/**
+ * Promoted over the plain chain `CHAIN_PREVIOUS`, this layout makes the union hold the cycle `b`, `c`, `d`: `b`-`c` is
+ * replaced, `b`-`d` is promoted.
+ */
 const CYCLE_PROMOTED: SessionNextHops = { a: ['b'], b: ['a', 'd'], c: ['d'], d: ['b', 'c'] };
 
 /** The chain `a,b,c,d,e` re-planned to `a,b,e,d,c`: the union holds the square `b`, `c`, `d`, `e`. */
@@ -338,7 +340,7 @@ describe('a loop through the union of two layouts', () => {
     it('a loop through a triangle of the union is never entered', async () => {
         const mesh = createOverlapMesh({
             sessionIds: ['a', 'b', 'c', 'd'],
-            previousTree: CYCLE_PREVIOUS,
+            previousTree: CHAIN_PREVIOUS,
             promotedTree: CYCLE_PROMOTED
         });
         const frame = createPositionFrame({ resourceId: 'cycle' });
@@ -372,9 +374,10 @@ describe('a loop through the union of two layouts', () => {
         }
     });
 
-    // Past the visited cap every relay owns every other neighbour, so a copy goes each way round the cycle; each peer stops it at its first repeat, which it neither delivers nor forwards. A dedupe window of 0
-    // does not open the loop: identity dedupe is held to the frame's deadline, and a semantic-key repeat that is
-    // admitted again is neither delivered nor forwarded again.
+    // Past the visited cap every relay owns every other neighbour, so a copy goes each way round the cycle; each peer
+    // stops it at its first repeat, which it neither delivers nor forwards. A dedupe window of 0 does not open the
+    // loop: identity dedupe is held to the frame's deadline, and a semantic-key repeat that is admitted again is
+    // neither delivered nor forwarded again.
     it.each(
         [
             { policy: 'the default dedupe', qos: undefined, reasons: ['admitted', 'duplicate'] },
@@ -392,7 +395,7 @@ describe('a loop through the union of two layouts', () => {
     )('a copy whose visited list is past its cap stops in a cycle of the union under $policy', async ({ qos, reasons }) => {
         const mesh = createOverlapMesh({
             sessionIds: ['a', 'b', 'c', 'd'],
-            previousTree: CYCLE_PREVIOUS,
+            previousTree: CHAIN_PREVIOUS,
             promotedTree: CYCLE_PROMOTED
         });
         const frame = createPositionFrame({ resourceId: 'past-cap', qos });
@@ -419,7 +422,7 @@ describe('a loop through the union of two layouts', () => {
     it('a frame without a deadline and with a dedupe window of 0 still stops at the first repeat in a union with a cycle', async () => {
         const mesh = createOverlapMesh({
             sessionIds: ['a', 'b', 'c', 'd'],
-            previousTree: CYCLE_PREVIOUS,
+            previousTree: CHAIN_PREVIOUS,
             promotedTree: CYCLE_PROMOTED
         });
         const frame = createPositionFrame({ resourceId: 'no-deadline', qos: { dedup: { algo: 'msg-id', opts: { windowMs: 0 } } } });
@@ -532,6 +535,10 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
         };
     }
 
+    function createTailFrame(reliability: FrameReliability, resourceId: string): ALMessage {
+        return reliability === 'at-least-once' ? createOriginReceiverMulticast(resourceId) : createPositionFrame({ resourceId });
+    }
+
     /** The origin sends one frame to `b`; every copy `b` relays to `c` is carried to `c`. */
     async function relayToChild(tail: ChainTail, frame: ALMessage): Promise<readonly ALMessage[]> {
         await enqueueAndDrain(tail.origin.manager, frame);
@@ -560,7 +567,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
                 if (sendAtMs === FORWARDING_HALF_MS) {
                     tail.promoteRelay();
                 }
-                const frame = createOriginFrame(reliability, `tail-${sendAtMs}`);
+                const frame = createTailFrame(reliability, `tail-${sendAtMs}`);
                 const sentFromMs = Date.now() - startMs;
                 const copies = await relayToChild(tail, frame);
                 sends.push({ sentFromMs, sentUntilMs: Date.now() - startMs, copies: copies.length });
@@ -590,7 +597,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             await vi.advanceTimersByTimeAsync(relayLagMs);
             tail.promoteRelay();
             await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS - relayLagMs);
-            const frame = createOriginFrame(reliability, 'tail');
+            const frame = createTailFrame(reliability, 'tail');
             const copies = await relayToChild(tail, frame);
             expect(copies).toHaveLength(1);
             expect(tail.child.readRoomAdmission(copies[0]!, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
@@ -612,7 +619,7 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
         await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS + 1);
         tail.promoteRelay();
         await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS - 1);
-        const frame = createOriginFrame('at-least-once', 'tail');
+        const frame = createTailFrame('at-least-once', 'tail');
         await relayToChild(tail, frame);
         await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
 
@@ -733,10 +740,10 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
         expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
     });
 
-    // `b`, the origin's only path child toward `c` in both layouts, takes no copy. The origin's
-    // retry names `b` visited and goes round it to `d` over the replaced edge; `d` reaches `c` through `g` over the
-    // accepted layout, a path neither layout alone gives the origin. Owning nothing over a layout whose path child is
-    // visited would lose this delivery.
+    // `b`, the origin's only path child toward `c` in both layouts, takes no copy. The origin's retry names `b` visited
+    // and goes round it to `d` over the replaced edge; `d` reaches `c` through `g` over the accepted layout, a path
+    // neither layout alone gives the origin. Owning nothing over a layout whose path child is visited would lose this
+    // delivery.
     it('the origin\'s retry round a failed path child still reaches the recipient through the other layout', async () => {
         const mesh = createOverlapMesh({
             sessionIds: ['a', 'b', 'c', 'd', 'g'],

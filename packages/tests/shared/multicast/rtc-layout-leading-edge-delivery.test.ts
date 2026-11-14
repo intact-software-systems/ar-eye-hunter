@@ -6,7 +6,6 @@ import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room
 import {
     acceptMeshLayout,
     createLayoutMesh,
-    createOriginFrame,
     DIAMOND_PREVIOUS,
     DIAMOND_PROMOTED,
     DIAMOND_SESSION_IDS,
@@ -17,11 +16,10 @@ import {
     toAcceptedLayout,
     toOpenEdgePeerIds,
     toPromotedLayout,
-    useFakeClock,
     type LayoutMesh,
     type TransportCopy
 } from './rtc-layout-mesh-fixture.ts';
-import { createOriginSnapshot, enqueueAndDrain } from './rtc-origin-overlay-fixture.ts';
+import { createOriginFrame, createOriginSnapshot, enqueueAndDrain, useFakeClock } from './rtc-origin-overlay-fixture.ts';
 
 /**
  * At the leading edge of a promotion a sender that promoted first may send over a new edge that is already open

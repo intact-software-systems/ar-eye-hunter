@@ -162,7 +162,6 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             })).toEqual([]);
         });
 
-        // Green on first run.
         it('keeps every neighbour with one layout in force, as before the overlap', () => {
             expect(resolveALOwnedChildPeerIds(COPY_TO_B, {
                 nowMs: 0,
@@ -173,7 +172,6 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             })).toEqual(['e']);
         });
 
-        // Green on first run.
         it('keeps a neighbour that reaches the recipient only over the other layout\'s edges', () => {
             // `b` failed and is named visited; `d` is a neighbour over the replaced layout only, and reaches `c`
             // through `g` over the accepted one.
@@ -189,7 +187,6 @@ describe('the children a peer owns while a replaced layout is in force', () => {
             })).toEqual(['d']);
         });
 
-        // Green on first run.
         it('keeps every neighbour while the replaced one is in force when the recipient is behind its sender', () => {
             expect(resolveALOwnedChildPeerIds(createFrozenMulticast(['a1']), {
                 nowMs: 0,

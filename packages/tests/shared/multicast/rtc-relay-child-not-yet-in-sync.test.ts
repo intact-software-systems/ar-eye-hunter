@@ -9,8 +9,8 @@ import {
 
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
 
+import { toAcceptedLayout, toPromotedLayout, type SessionNextHops } from './rtc-layout-mesh-fixture.ts';
 import {
     createOriginOverlay,
     createOriginReceiverMulticast,
@@ -34,7 +34,7 @@ interface RelayChain {
     readonly frame: ALMessage;
 }
 
-const CHAIN: Readonly<Record<string, readonly string[]>> = { a: ['c'], c: ['a', 'd'], d: ['c'] };
+const CHAIN: SessionNextHops = { a: ['c'], c: ['a', 'd'], d: ['c'] };
 const NOT_OWNER = 'AL control is addressed to another outbound message owner';
 
 /** The origin `a` sends one at-least-once frame through the relay `c` to its child `d`. */
@@ -56,7 +56,7 @@ async function forwardThroughRelay(answer: ChildAnswer): Promise<RelayChain> {
         initialOverlay: createOriginOverlay(awaitsPromotion ? [] : ['c'], CHAIN)
     });
     if (awaitsPromotion) {
-        child.acceptPlannedOverlay({ ...createOriginOverlay(['c'], CHAIN), overlayVersion: 2 } satisfies OverlayInfo);
+        child.acceptPlannedOverlay(toAcceptedLayout(snapshot, toPromotedLayout(CHAIN), 'd').overlay);
     }
     const frame = createOriginReceiverMulticast(`relay-${answer}`);
     await enqueueAndDrain(origin.manager, frame);

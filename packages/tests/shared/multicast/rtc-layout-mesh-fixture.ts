@@ -1,17 +1,11 @@
-import { afterEach, beforeEach, expect, vi } from 'vitest';
+import { expect, vi } from 'vitest';
 
-import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
-import {
-    createOriginOverlay,
-    createOriginReceiverMulticast,
-    createRtcOriginOverlayFixture,
-    ORIGIN_ROOM,
-    type RtcOriginOverlayFixture
-} from './rtc-origin-overlay-fixture.ts';
+import { createOriginOverlay, createRtcOriginOverlayFixture, type RtcOriginOverlayFixture } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 /**
@@ -20,8 +14,6 @@ import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc
  */
 
 export type SessionNextHops = Readonly<Record<string, readonly string[]>>;
-
-export type FrameReliability = 'at-least-once' | 'best-effort';
 
 export interface RoomLayout {
     readonly tree: SessionNextHops;
@@ -198,30 +190,4 @@ export function readCopies(messages: readonly ALMessage[], message: ALMessage): 
 
 export function readAdmissionReasons(peer: RtcRelayOverlayFixture, message: ALMessage): readonly string[] {
     return peer.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.msgId === message.id.msgId ? [event.reason] : []);
-}
-
-/** A frame from the origin `a`: a receipted multicast, or a position frame with no receipt. */
-export function createOriginFrame(reliability: FrameReliability, resourceId: string): ALMessage {
-    return reliability === 'at-least-once'
-        ? createOriginReceiverMulticast(resourceId)
-        : newALMulticastMessage(
-            'a',
-            { topicId: 'position', resourceId, contextId: 'room' },
-            ORIGIN_ROOM,
-            'position.frame.v1',
-            { resourceId },
-            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
-        );
-}
-
-export function useFakeClock(): void {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
 }
