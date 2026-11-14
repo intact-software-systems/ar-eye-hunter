@@ -6,6 +6,8 @@ import {
     type RallarAiValidationIssue,
     type RallarAiValidationResult
 } from '@shared/rallar-ai/mod.ts';
+import { computeShuffledOrder } from '@shared/random/compute-shuffled-order.ts';
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RelicDefinition, RelicExpeditionSetupSource, RelicRoom, RelicRoomKind } from './model.ts';
 
@@ -273,7 +275,7 @@ function toVisualFitIssues(candidate: ApiJsonObject): readonly RallarAiValidatio
 export function createProceduralRelicExpeditionBlueprint(
     options: CreateProceduralRelicExpeditionBlueprintOptions
 ): RelicExpeditionBlueprint {
-    const random = createSeededRandom(options.seed);
+    const random = createSeededRandom(computeSeedHash(options.seed));
     const mirror = random() >= 0.5 ? -1 : 1;
     const verticalOffset = Math.floor(random() * 3) - 1;
     const includeGallery = random() >= 0.35;
@@ -500,7 +502,7 @@ function proceduralRelics(
     rooms: readonly RelicExpeditionBlueprintRoom[]
 ): readonly RelicExpeditionBlueprintRelic[] {
     const candidateRooms = rooms;
-    const names = shuffle([
+    const names = computeShuffledOrder([
         'Crimson Fan of Quarterly Losses',
         'Jade Oni Severance Seal',
         'Silver Bell of Mandatory Cheer',
@@ -609,7 +611,7 @@ function room(
 }
 
 function proceduralTheme(random: () => number): string {
-    return shuffle(RELIC_EXPEDITION_VISUAL_THEMES, random)[0] ?? 'Morning Garden Keep';
+    return computeShuffledOrder(RELIC_EXPEDITION_VISUAL_THEMES, random)[0] ?? 'Morning Garden Keep';
 }
 
 function themedName(theme: string, roomName: string): string {
@@ -642,28 +644,13 @@ function reachableRoomIds(
     return reachable;
 }
 
-function createSeededRandom(seed: string): () => number {
-    let state = 2166136261;
+function computeSeedHash(seed: string): number {
+    let hash = 2166136261;
     for (const char of seed) {
-        state ^= char.charCodeAt(0);
-        state = Math.imul(state, 16777619) >>> 0;
+        hash ^= char.charCodeAt(0);
+        hash = Math.imul(hash, 16777619) >>> 0;
     }
-    return () => {
-        state += 0x6D2B79F5;
-        let value = state;
-        value = Math.imul(value ^ value >>> 15, value | 1);
-        value ^= value + Math.imul(value ^ value >>> 7, value | 61);
-        return ((value ^ value >>> 14) >>> 0) / 4294967296;
-    };
-}
-
-function shuffle<T>(values: readonly T[], random: () => number): readonly T[] {
-    const next = [...values];
-    for (let index = next.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(random() * (index + 1));
-        [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-    }
-    return next;
+    return hash;
 }
 
 function toStableId(value: string): string {
