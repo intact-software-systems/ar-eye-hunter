@@ -39,8 +39,8 @@ function readNextHops(tree: SessionNextHops, sessionId: string): readonly string
 }
 
 /**
- * One frame of a position stream, sent many times a second with no receipt. An `at-least-once` frame is the one whose
- * failed send states the hosted runs' `planner-drop`; a `best-effort` one fails the same way as `no-route`.
+ * One frame of a position stream, sent many times a second with no receipt. An `at-least-once` frame's failed send is
+ * a `planner-drop`; a `best-effort` one fails the same way as `no-route`.
  */
 function createPositionFrame(seq: number, reliability: FrameReliability): ALMessage {
     return newALMulticastMessage(

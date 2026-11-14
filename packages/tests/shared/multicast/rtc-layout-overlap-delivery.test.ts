@@ -218,7 +218,6 @@ function planOriginFanout(qos: ALQosPolicyRequest, msgId: string, layouts: Origi
 describe('a frame carried by both layouts during the replaced-layout overlap', () => {
     useFakeClock();
 
-    // Green on first run.
     it.each([
         { first: 'the previous parent b', sessionIds: ['a', 'b', 'c', 'd', 'e'] },
         { first: 'the new parent c', sessionIds: ['a', 'c', 'b', 'd', 'e'] }
@@ -237,8 +236,8 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         expect(readCopies(mesh.peers.get('e')!.delivered, message)).toBe(1);
     });
 
-    // Green on first run: the copy that loses the race earns its sender this peer's terminal ACK at once (the sibling
-    // answer), so neither parent waits, retries or asks the origin for a repair.
+    // The copy that loses the race earns its sender this peer's terminal ACK at once (the sibling answer), so neither
+    // parent waits, retries or asks the origin for a repair.
     it.each([
         { first: 'the previous parent b', sessionIds: ['a', 'b', 'c', 'd', 'e'], answer: 'd>c ack d subtree-complete' },
         { first: 'the new parent c', sessionIds: ['a', 'c', 'b', 'd', 'e'], answer: 'd>b ack d subtree-complete' }
@@ -260,7 +259,6 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
             .toMatchObject({ complete: true, unconfirmedRecipientPeerIds: [], unconfirmedHopPeerIds: [] });
     });
 
-    // Green on first run.
     it('an ordered frame that arrives by the new path before its predecessor arrives by the old one is delivered in order', async () => {
         const mesh = createOverlapMesh({
             sessionIds: DIAMOND_SESSION_IDS,
@@ -291,8 +289,8 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         expect(e.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
-    // Green on first run. Not one of T's decision rules, reported as a concern: a receiver with no state for a track
-    // enters it at the first frame it meets, so an older frame that arrives later by the other layout is stale.
+    // A receiver with no state for a track enters it at the first frame it meets, so an older frame that arrives later
+    // by the other layout is stale.
     it('a receiver that first meets an ordered track by the new path enters it there, and its predecessor by the old path is not delivered', async () => {
         const mesh = createOverlapMesh({
             sessionIds: DIAMOND_SESSION_IDS,
@@ -310,7 +308,6 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         expect(readAdmissionReasons(d, frames[0]!)).toEqual(['Ordering runtime rejected message as stale']);
     });
 
-    // Green on first run.
     it('a supersedence frame older than one already delivered by the other path is not delivered', async () => {
         const mesh = createOverlapMesh({
             sessionIds: DIAMOND_SESSION_IDS,
@@ -375,8 +372,7 @@ describe('a loop through the union of two layouts', () => {
         }
     });
 
-    // Green on first run: past the visited cap every relay owns every other neighbour, so a copy goes each way round
-    // the cycle; each peer stops it at its first repeat, which it neither delivers nor forwards. A dedupe window of 0
+    // Past the visited cap every relay owns every other neighbour, so a copy goes each way round the cycle; each peer stops it at its first repeat, which it neither delivers nor forwards. A dedupe window of 0
     // does not open the loop: identity dedupe is held to the frame's deadline, and a semantic-key repeat that is
     // admitted again is neither delivered nor forwarded again.
     it.each(
@@ -450,7 +446,6 @@ describe('a loop through the union of two layouts', () => {
 describe('the transport copies one broadcast produces', () => {
     useFakeClock();
 
-    // Green on first run.
     it.each([
         {
             shape: 'the chain re-plan',
@@ -647,18 +642,19 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
         return { ...createPositionFrame({ resourceId: 'frozen', qos }), targets: toOriginFrozenTargets(recipientPeerIds, 4) };
     }
 
-    const REVIEW_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c', 'e'], c: ['b'], e: ['b', 'f'], f: ['e'] };
-    const REVIEW_PROMOTED: SessionNextHops = { a: ['c'], b: ['c', 'e'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'] };
+    /** `b` and `c` swap places below `a`, and the chain `e`, `f` stays below `b`. */
+    const SWAPPED_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c', 'e'], c: ['b'], e: ['b', 'f'], f: ['e'] };
+    const SWAPPED_PROMOTED: SessionNextHops = { a: ['c'], b: ['c', 'e'], c: ['a', 'b'], e: ['b', 'f'], f: ['e'] };
 
-    // The review's example with a chain `e`, `f` below `b`: `a` reaches `c` over the accepted edge and `b` over the
-    // replaced one, and names both visited, so no neighbour of `b` toward `c` is left for `b` to own over either layout.
+    // `a` reaches `c` over the accepted edge and `b` over the replaced one, and names both visited, so no neighbour of
+    // `b` toward `c` is left for `b` to own over either layout.
     it.each(
         [
             {
                 shape: 'the recipient visited through the other layout',
                 sessionIds: ['a', 'b', 'c', 'e', 'f'],
-                previousTree: REVIEW_PREVIOUS,
-                promotedTree: REVIEW_PROMOTED,
+                previousTree: SWAPPED_PREVIOUS,
+                promotedTree: SWAPPED_PROMOTED,
                 recipientPeerIds: ['c'],
                 edges: ['a>b', 'a>c']
             },
@@ -667,18 +663,18 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
             {
                 shape: 'the recipient moved to the sender\'s side of a kept edge',
                 sessionIds: ['a', 'b', 'c', 'e', 'f'],
-                previousTree: REVIEW_PREVIOUS,
+                previousTree: SWAPPED_PREVIOUS,
                 promotedTree: { a: ['b', 'c'], b: ['a', 'e'], c: ['a'], e: ['b', 'f'], f: ['e'] },
                 recipientPeerIds: ['c'],
                 edges: ['a>b', 'a>c']
             },
-            // Green on first run: random-k is clamped to the accepted neighbour count and keeps the accepted child first, so
-            // the origin addresses no replaced-layout neighbour that could fall back.
+            // Random-k is clamped to the accepted neighbour count and keeps the accepted child first, so the origin
+            // addresses no replaced-layout neighbour that could fall back.
             {
                 shape: 'the recipient visited through the other layout under random-k with a limit of 2',
                 sessionIds: ['a', 'b', 'c', 'e', 'f'],
-                previousTree: REVIEW_PREVIOUS,
-                promotedTree: REVIEW_PROMOTED,
+                previousTree: SWAPPED_PREVIOUS,
+                promotedTree: SWAPPED_PROMOTED,
                 recipientPeerIds: ['c'],
                 qos: { fanout: { algo: 'random-k', opts: { limit: 2 } } },
                 edges: ['a>c']
@@ -699,7 +695,7 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
                 recipientPeerIds: ['c', 'd'],
                 edges: ['a>b', 'a>c', 'a>d']
             },
-            // Green on first run: `b` owns `e` toward `f`, so no fallback is decided and `g` gets no copy.
+            // `b` owns `e` toward `f`, so no fallback is decided and `g` gets no copy.
             {
                 shape: 'two recipients in different subtrees, one of them behind an unvisited neighbour',
                 sessionIds: ['a', 'b', 'c', 'e', 'f', 'g'],
@@ -723,7 +719,7 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
     });
 
     it('the origin\'s retry for a recipient whose first copy was lost reaches no peer off the path to it', async () => {
-        const mesh = createOverlapMesh({ sessionIds: ['a', 'b', 'c', 'e', 'f'], previousTree: REVIEW_PREVIOUS, promotedTree: REVIEW_PROMOTED });
+        const mesh = createOverlapMesh({ sessionIds: ['a', 'b', 'c', 'e', 'f'], previousTree: SWAPPED_PREVIOUS, promotedTree: SWAPPED_PROMOTED });
         const message = { ...createOriginReceiverMulticast('frozen-retry'), targets: toOriginFrozenTargets(['c'], 4) };
         await enqueueAndDrain(mesh.origin.manager, message);
         mesh.carriedCounts.set('a>c', 1);
@@ -737,7 +733,7 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
         expect(readCopies(mesh.peers.get('c')!.delivered, message)).toBe(1);
     });
 
-    // Green on first run. `b`, the origin's only path child toward `c` in both layouts, takes no copy. The origin's
+    // `b`, the origin's only path child toward `c` in both layouts, takes no copy. The origin's
     // retry names `b` visited and goes round it to `d` over the replaced edge; `d` reaches `c` through `g` over the
     // accepted layout, a path neither layout alone gives the origin. Owning nothing over a layout whose path child is
     // visited would lose this delivery.
@@ -767,8 +763,8 @@ describe('a multicast frozen to few recipients during the forwarding half', () =
 describe('fanout selection over the union of two layouts', () => {
     const MSG_IDS = Array.from({ length: 8 }, (_, index) => `frame-${index}`);
 
-    // Green on first run: a limited fanout is clamped to the accepted layout's neighbour count, and `limit` keeps the
-    // accepted children first, so the replaced layout adds no copy.
+    // A limited fanout is clamped to the accepted layout's neighbour count, and `limit` keeps the accepted children
+    // first, so the replaced layout adds no copy.
     it('under limit fanout the accepted child is kept and the replaced child gets no copy', () => {
         for (const msgId of MSG_IDS) {
             expect(planOriginNextHops({ fanout: { algo: 'limit' } }, msgId)).toEqual(['c']);
@@ -802,7 +798,7 @@ describe('fanout selection over the union of two layouts', () => {
 
     // Peer ids of different lengths: the rank of `${msgId}:${peerId}` then orders them differently from one id to the
     // next (with ids of one length that differ in one character the order hardly ever changes).
-    it('with no replaced layout in force random-k selects as before', () => {
+    it('with no replaced layout in force random-k selects by rank among the accepted neighbours alone', () => {
         const layouts = { acceptedPeerIds: ['birch', 'cedar', 'dogwood'], replacedPeerIds: undefined, readyPeerIds: ['birch', 'cedar', 'dogwood'] };
         const selections = ['frame-0', 'frame-1', 'frame-2', 'frame-5'].map((msgId) =>
             planOriginFanout({ fanout: { algo: 'random-k', opts: { limit: 2 } } }, msgId, layouts)

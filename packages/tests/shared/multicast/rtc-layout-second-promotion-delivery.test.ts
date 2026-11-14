@@ -250,8 +250,8 @@ function expectDeliveredOutcome(observed: ReceiverObservation, reliability: Fram
 }
 
 describe.each([
-    { sender: 'inside the first half of its overlap for the first promotion (case A)', senderPromotions: toSteppedPromotions(L2) },
-    { sender: 'two promotions behind (case B)', senderPromotions: [] }
+    { sender: 'inside the first half of its overlap for the first promotion', senderPromotions: toSteppedPromotions(L2) },
+    { sender: 'two promotions behind', senderPromotions: [] }
 ])('a sender $sender, and a receiver that applied both promotions', ({ senderPromotions }) => {
     useFakeClock();
 
@@ -481,7 +481,7 @@ describe('the same copy one promotion apart (the control)', () => {
     );
 });
 
-describe('a sender that applied both promotions, and a receiver that applied only the first (case C)', () => {
+describe('a sender that applied both promotions, and a receiver that applied only the first', () => {
     useFakeClock();
 
     it.each(['at-least-once', 'best-effort'] as const)(
@@ -510,7 +510,7 @@ describe('a sender that applied both promotions, and a receiver that applied onl
     );
 });
 
-describe('a second promotion that returns to the first layout\'s edges (case D)', () => {
+describe('a second promotion that returns to the first layout\'s edges', () => {
     useFakeClock();
 
     it.each(['at-least-once', 'best-effort'] as const)(

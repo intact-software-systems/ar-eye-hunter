@@ -116,9 +116,9 @@ describe('a sender that promoted before its receiver, over an edge early dial op
         }
     );
 
-    // A known gap, the same as on the task base, where the copy ended unauthorized with no NACK: the relay's outbound
-    // runtime refuses the child's NACK as addressed to another owner (the row's owner is the origin), and its receipt's
-    // ack-timeout re-plans find no route, so nothing is re-sent. A relay-side re-send would turn this red.
+    // A known gap: the relay's outbound runtime refuses the child's NACK as addressed to another owner (the row's owner
+    // is the origin), and its receipt's ack-timeout re-plans find no route, so nothing is re-sent. A relay-side re-send
+    // would turn this red.
     it('a relay re-sends nothing on its receiver\'s not-yet-in-sync NACK, and the origin reports that hop unconfirmed', async () => {
         const mesh = createLeadingEdgeMesh(true);
         const frame = createOriginFrame('at-least-once', 'leading-edge-row');
@@ -137,7 +137,7 @@ describe('a sender that promoted before its receiver, over an edge early dial op
             .toMatchObject({ complete: true, unconfirmedRecipientPeerIds: [], unconfirmedHopPeerIds: ['c'] });
     });
 
-    it('a receiver whose planned layout is replaced before promotion refuses the former planned neighbour\'s copy as today', async () => {
+    it('a receiver whose planned layout is replaced before promotion refuses the former planned neighbour\'s copy as unauthorized', async () => {
         const mesh = createLeadingEdgeMesh(true);
         const d = mesh.peers.get('d')!;
         d.acceptPlannedOverlay({ ...toAcceptedLayout(mesh.snapshot, PROMOTED, 'd').overlay, overlayVersion: 3, nextHopSessionIds: ['b', 'e'] });
@@ -172,7 +172,7 @@ describe('a sender that promoted before its receiver, over an edge early dial op
         }
     );
 
-    it('with no planned layout held the receiver behaves exactly as before', async () => {
+    it('with no planned layout held the receiver refuses the new edge\'s copy as unauthorized and answers it with nothing', async () => {
         const mesh = createLeadingEdgeMesh(false);
         const d = mesh.peers.get('d')!;
         const frame = createOriginFrame('at-least-once', 'unplanned');
