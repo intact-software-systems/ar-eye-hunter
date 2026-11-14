@@ -275,7 +275,6 @@ async function runLayoutSwitches(
                 { identity: switched.layouts[2].identity, requestedAtEpochMs: switched.requestedAtEpochMs[1] }
             ],
             leafSessionIds: switched.tree.leafSessionIds,
-            relaySessionId: switched.tree.relaySessionId,
             events
         })
     };
@@ -533,6 +532,7 @@ function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
             JSON.stringify(evidence.senderPlannerDrops.slice(0, REPORTED_RECORDS))
         }`
     ).toHaveLength(0);
+    expectNoRelayForwardRefused(evidence);
     expectPromotionsInsideStreams(run);
     expectLeafCrossing(evidence);
 }
@@ -551,6 +551,39 @@ function expectSendReadings(evidence: LiveRtcLayoutSwitchEvidence): void {
                 `${readings.plannedFrames} planned frames: the planner-drop reading would be empty otherwise`
         ).toBeGreaterThanOrEqual(Math.max(1, readings.plannedFrames));
     }
+}
+
+/**
+ * A relay's forward that ends as anything but admitted, duplicate or pending is reported as
+ * `relay-forward-not-enqueued`; `storage-unavailable` throws into a claim that retries, so it is only observed. The
+ * zero is a reading only when the browser's outbound diagnostics were retained: every dispatch admission writes one
+ * `commit-phases`, so its frame-type commits are at least its own planned frames.
+ */
+function expectNoRelayForwardRefused(evidence: LiveRtcLayoutSwitchEvidence): void {
+    for (const [prefix, readings] of Object.entries(evidence.outboundReadings)) {
+        expect.soft(
+            readings.frameCommitPhases,
+            `Browser ${prefix} published ${readings.frameCommitPhases} frame commit-phases outbound diagnostics for ` +
+                `${readings.plannedFrames} planned frames: the relay-forward reading would be empty otherwise`
+        ).toBeGreaterThanOrEqual(Math.max(1, readings.plannedFrames));
+    }
+    const byOutcome: Record<string, number> = {};
+    for (const refusal of evidence.relayForwardRefusals) {
+        const key = `${String(refusal.detail.outcome)} / ${String(refusal.detail.reason)}`;
+        byOutcome[key] = (byOutcome[key] ?? 0) + 1;
+    }
+    const first = evidence.relayForwardRefusals.slice(0, REPORTED_RECORDS).map((refusal) => ({
+        browser: refusal.agent,
+        outcome: refusal.detail.outcome,
+        reason: refusal.detail.reason,
+        msgId: refusal.detail.msgId
+    }));
+    expect.soft(
+        evidence.relayForwardRefusals.length,
+        `Relay forwards refused, by outcome / reason: ${JSON.stringify(byOutcome)}; first ${REPORTED_RECORDS}: ${
+            JSON.stringify(first)
+        }`
+    ).toBe(0);
 }
 
 function expectEveryFrameDelivered(evidence: LiveRtcLayoutSwitchEvidence): void {

@@ -6,7 +6,6 @@ import {
 import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
-import { computeLiveRtcCarryingEdges, type LiveRtcCarryingEdges } from './compute-live-rtc-carrying-edges.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 import {
@@ -25,6 +24,7 @@ const RTC_SEND_COMPLETED_TOPIC = 'rallar.browser.messages.rtc.send_completed';
 const STREAM_STARTED_TOPIC = 'rallar.bb.rtc.stream_started';
 const PLANNED_LAYOUT_NOT_YET_IN_SYNC = `not-yet-in-sync: ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}`;
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
+const RELAY_FORWARD_NOT_ENQUEUED = 'relay-forward-not-enqueued';
 
 /** One browser's stream as its own `rtc.stream` result reported it. */
 export interface LiveRtcLayoutSwitchStream {
@@ -47,7 +47,6 @@ export interface LiveRtcLayoutSwitchEvidenceInput {
     readonly streams: readonly LiveRtcLayoutSwitchStream[];
     readonly switches: readonly [LiveRtcLayoutSwitch, LiveRtcLayoutSwitch];
     readonly leafSessionIds: readonly [string, string];
-    readonly relaySessionId: string;
     readonly events: readonly LiveRtcControlClient.Event[];
 }
 
@@ -55,8 +54,6 @@ export interface LiveRtcLayoutSwitchEvidenceInput {
 export interface LiveRtcFrameCopy {
     readonly msgId: string | null;
     readonly transport: string | null;
-    /** The message's trace, which the receiver's ACK of this copy names too. */
-    readonly traceId: string | null;
 }
 
 /**
@@ -67,6 +64,17 @@ export interface LiveRtcSendReadings {
     readonly plannedFrames: number;
     readonly observedFrames: number;
     readonly sendCompletedEvents: number;
+}
+
+/**
+ * The count that shows the relay-forward zero is a reading: every dispatch admission writes one `commit-phases`
+ * outbound diagnostic (`ALOutboundDispatchAdmission.commit`), so a browser's commits of the frame type are at least
+ * its own planned frames whether or not it relays. `byKind` counts every outbound diagnostic it published.
+ */
+export interface LiveRtcOutboundReadings {
+    readonly plannedFrames: number;
+    readonly frameCommitPhases: number;
+    readonly byKind: Readonly<Record<string, number>>;
 }
 
 export interface LiveRtcStreamDelivery {
@@ -135,7 +143,8 @@ export interface LiveRtcLayoutSwitchObservations {
     readonly promotionLatencyMs: Readonly<Record<AgentPrefix, readonly [number | null, number | null]>>;
     readonly notYetInSyncAdmissions: Readonly<Record<AgentPrefix, { total: number; plannedLayout: number; }>>;
     readonly wireDuplicates: Readonly<Record<AgentPrefix, number>>;
-    readonly carryingEdges: readonly LiveRtcCarryingEdges[];
+    /** A relay's forward refused for unavailable storage: it throws into a claim that retries, so it is not a loss. */
+    readonly relayForwardStorageUnavailable: readonly LiveRtcRefusalRecord[];
     readonly receiptExhausted: readonly { agent: AgentPrefix; topic: string; kind: string | null; }[];
 }
 
@@ -144,12 +153,15 @@ export interface LiveRtcLayoutSwitchEvidence {
     readonly runRetained: boolean;
     readonly admissionCompleteness: Readonly<Record<AgentPrefix, LiveRtcAdmissionCompleteness>>;
     readonly sendReadings: Readonly<Record<AgentPrefix, LiveRtcSendReadings>>;
+    readonly outboundReadings: Readonly<Record<AgentPrefix, LiveRtcOutboundReadings>>;
     readonly deliveries: readonly LiveRtcStreamDelivery[];
     readonly unsentFrames: readonly LiveRtcUnsentFrame[];
     /** Unsent frames by `state / failure kind / reason / limit`. */
     readonly unsentByReason: Readonly<Record<string, number>>;
     readonly unauthorizedAdmissions: readonly LiveRtcRefusalRecord[];
     readonly senderPlannerDrops: readonly LiveRtcRefusalRecord[];
+    /** A relay's forward that ended as anything but admitted, duplicate, pending or storage-unavailable. */
+    readonly relayForwardRefusals: readonly LiveRtcRefusalRecord[];
     readonly promotions: readonly LiveRtcStreamPromotion[];
     readonly leafCrossings: readonly LiveRtcLeafCrossing[];
     readonly observations: LiveRtcLayoutSwitchObservations;
@@ -171,11 +183,6 @@ interface StreamFrame {
     readonly ok: boolean;
     readonly status: string | null;
     readonly errorCode: string | null;
-}
-
-interface ObservationSources {
-    readonly framesByPrefix: ReadonlyMap<AgentPrefix, readonly StreamFrame[]>;
-    readonly received: ReceivedFrames;
 }
 
 /** Receiver agent ID, then origin prefix, then every application delivery of each sequence number. */
@@ -201,14 +208,20 @@ export function computeLiveRtcLayoutSwitchEvidence(
         ),
         admissionCompleteness: computeAdmissionCompleteness(input, runEvents, received),
         sendReadings: computeSendReadings(input.streams, framesByPrefix, runEvents),
+        outboundReadings: computeOutboundReadings(input, runEvents),
         deliveries: computeDeliveries(input.streams, received),
         unsentFrames,
         unsentByReason: countUnsentByReason(unsentFrames),
         unauthorizedAdmissions: toRefusalRecords(input.streams, runEvents, isUnauthorizedAdmission),
         senderPlannerDrops: toRefusalRecords(input.streams, runEvents, isSenderPlannerDrop),
+        relayForwardRefusals: toRefusalRecords(
+            input.streams,
+            runEvents,
+            (event) => isRelayForwardNotEnqueued(event) && event.data.outcome !== 'storage-unavailable'
+        ),
         promotions,
         leafCrossings: computeLeafCrossings(input, framesByPrefix, promotions, received),
-        observations: computeObservations(input, runEvents, promotions, { framesByPrefix, received })
+        observations: computeObservations(input, runEvents, promotions)
     };
 }
 
@@ -264,7 +277,6 @@ function computeReceivedFrames(
 function toFrameCopy(event: LiveRtcRunEvent): LiveRtcFrameCopy {
     return {
         msgId: stringValue(event.data.msgId) ?? null,
-        traceId: stringValue(event.data.traceId) ?? null,
         transport: stringValue(event.data.transport) ?? stringValue(jsonRecord(event.raw)?.transport) ?? null
     };
 }
@@ -493,8 +505,7 @@ function computeLeafCrossings(
 function computeObservations(
     input: LiveRtcLayoutSwitchEvidenceInput,
     runEvents: readonly LiveRtcRunEvent[],
-    promotions: readonly LiveRtcStreamPromotion[],
-    sources: ObservationSources
+    promotions: readonly LiveRtcStreamPromotion[]
 ): LiveRtcLayoutSwitchObservations {
     return {
         promotionLatencyMs: mapByPrefix(input.streams, (stream) => {
@@ -512,7 +523,11 @@ function computeObservations(
             (event) =>
                 isAdmissionOutcome(event) && event.data.outcome === 'not-handled' && event.data.reason === 'duplicate'
         ),
-        carryingEdges: computeLeafCarryingEdges(input, runEvents, promotions, sources),
+        relayForwardStorageUnavailable: toRefusalRecords(
+            input.streams,
+            runEvents,
+            (event) => isRelayForwardNotEnqueued(event) && event.data.outcome === 'storage-unavailable'
+        ),
         receiptExhausted: readReceiptExhausted(input.streams, runEvents)
     };
 }
@@ -531,72 +546,31 @@ function countNotYetInSync(
     };
 }
 
-/** For each leaf origin and the other leaf: the tree's window and the star's, each from the origin's own promotion. */
-function computeLeafCarryingEdges(
+function computeOutboundReadings(
     input: LiveRtcLayoutSwitchEvidenceInput,
-    runEvents: readonly LiveRtcRunEvent[],
-    promotions: readonly LiveRtcStreamPromotion[],
-    sources: ObservationSources
-): readonly LiveRtcCarryingEdges[] {
-    const leaves = input.streams.filter((stream) => input.leafSessionIds.includes(stream.sessionId));
-    return leaves.flatMap((origin) => {
-        const receiver = leaves.find((leaf) => leaf.agentId !== origin.agentId);
-        const promotedAt = promotions.find((promotion) => promotion.prefix === origin.prefix)?.promotedAtEpochMs;
-        if (receiver === undefined || promotedAt === undefined || promotedAt[0] === null || promotedAt[1] === null) {
-            return [];
-        }
-        const windows = [
-            { layout: 'tree', from: promotedAt[0], until: promotedAt[1] },
-            { layout: 'star', from: promotedAt[1], until: Infinity }
-        ] as const;
-        const traceIdBySeq = readTraceIdBySeq(sources.received, receiver.agentId, origin.prefix);
-        const hopsByTraceId = readAckHopsByTraceId(runEvents, receiver.agentId);
-        return windows.map((window) =>
-            computeLiveRtcCarryingEdges({
-                origin,
-                receiver: receiver.prefix,
-                relaySessionId: input.relaySessionId,
-                layout: window.layout,
-                promotedAtEpochMs: window.from,
-                frames: (sources.framesByPrefix.get(origin.prefix) ?? []).filter((frame) =>
-                    frame.startedAtEpochMs >= window.from && frame.startedAtEpochMs < window.until
-                ),
-                traceIdBySeq,
-                hopsByTraceId
-            })
+    runEvents: readonly LiveRtcRunEvent[]
+): Readonly<Record<AgentPrefix, LiveRtcOutboundReadings>> {
+    return mapByPrefix(input.streams, (stream) => {
+        const outbound = runEvents.filter((event) =>
+            event.agentId === stream.agentId && event.topic === OUTBOUND_DIAGNOSTICS_TOPIC
         );
+        const byKind: Record<string, number> = {};
+        for (const event of outbound) {
+            const kind = stringValue(event.data.kind) ?? 'unknown';
+            byKind[kind] = (byKind[kind] ?? 0) + 1;
+        }
+        return {
+            plannedFrames: numberValue(stream.result.plannedFrames) ?? 0,
+            frameCommitPhases: outbound.filter((event) =>
+                event.data.kind === 'commit-phases' && event.data.typeId === input.frameTypeId
+            ).length,
+            byKind
+        };
     });
 }
 
-function readTraceIdBySeq(
-    received: ReceivedFrames,
-    receiverAgentId: string,
-    origin: AgentPrefix
-): ReadonlyMap<number, string> {
-    const copies = received.get(receiverAgentId)?.get(origin) ?? new Map<number, readonly LiveRtcFrameCopy[]>();
-    return new Map([...copies].flatMap(([seq, seen]) => {
-        const traceId = seen.flatMap((copy) => copy.traceId ?? [])[0];
-        return traceId === undefined ? [] : [[seq, traceId] as const];
-    }));
-}
-
-/** The hop each ACK this receiver submitted went to, by the trace of the message it acknowledges. */
-function readAckHopsByTraceId(
-    runEvents: readonly LiveRtcRunEvent[],
-    receiverAgentId: string
-): ReadonlyMap<string, ReadonlySet<string>> {
-    const hops = new Map<string, Set<string>>();
-    for (const event of runEvents) {
-        const traceId = stringValue(event.data.traceId);
-        const toPeerId = stringValue(event.data.toPeerId);
-        if (
-            event.agentId === receiverAgentId && event.topic === OUTBOUND_DIAGNOSTICS_TOPIC &&
-            event.data.kind === 'rtc-ack-submission' && traceId !== undefined && toPeerId !== undefined
-        ) {
-            hops.set(traceId, new Set([...(hops.get(traceId) ?? []), toPeerId]));
-        }
-    }
-    return hops;
+function isRelayForwardNotEnqueued(event: LiveRtcRunEvent): boolean {
+    return event.topic === OUTBOUND_DIAGNOSTICS_TOPIC && event.data.kind === RELAY_FORWARD_NOT_ENQUEUED;
 }
 
 function readReceiptExhausted(
