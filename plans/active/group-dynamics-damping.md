@@ -6,8 +6,8 @@ holds back the reshaping of a room's distribution graph while the room is restle
 cheap, necessary changes through at once, and bounds how long anyone waits. In the maintainer's
 words it is back pressure on the joiners, and its strength must follow what the room is doing.
 
-Nothing in it is built. The maintainer decided its shape on 2026-11-14 (see "Decisions"); what is
-still open is listed after them.
+Nothing in it is built. The maintainer decided its shape on 2026-11-14 (see "Decisions"). What the
+measuring slice still has to establish is listed after them.
 
 ## Why
 
@@ -81,11 +81,22 @@ longer than it costs. The room is _restless_ when it asks for a reshape sooner t
 could pay for itself, and _calm_ when a layout has survived its ceiling without such a request.
 Restless holds reshaping back; calm releases it. "Mechanism" below says how this is counted.
 
-**The wait has a ceiling, and what happens at the ceiling is cheap.** A room that never calms, a
-lobby for example, must not run on a stale graph for ever. At the ceiling the server reshapes
-once. The first ceiling is one overlap (15 s), so a reshape never lands inside the overlap of the
-one before it; it doubles while the room stays restless, up to 60 s, and returns to 15 s when a
-layout survives. A restless room is reshaped rarely and a calm one promptly. This replaces "at least
+**The wait has bounds, and inside them it follows the room.** A room that never calms, a lobby
+for example, must not run on a stale graph for ever. A reshape is never closer to the one before
+it than one overlap (15 s), so it never lands inside that overlap, and never further than 60 s
+while one is wanted. Between those bounds the gap lengthens when the room absorbed its last
+change badly and shortens when it absorbed it cleanly.
+
+**The pressure falls on the joiner's RTC attach, not on the door.** Everyone who arrives is
+admitted and is in the room over WS at once. The room takes joiners onto RTC in batches it can
+afford, so in a burst the tenth joiner gets its edges a little after the first. That is the back
+pressure. The door's fixed limits stay what they are: protection for the server.
+
+**A patched graph is reshaped when a fresh plan would be clearly better.** A room that only
+attaches and repairs never asks for a reshape, and its graph drifts. The server compares the
+current graph with what a fresh plan would give, on measures it already has, and asks for a
+reshape only when the gain passes a bound, as tree refinement does today (25 % and 10 ms). The
+request then goes through the same gate as any other. This replaces "at least
 every max wait" for reshaping only; attach and repair never wait.
 
 **Circuit breaker is the wrong name.** A breaker refuses work after failures. This holds work back
@@ -94,35 +105,36 @@ are back-off and route-flap damping.
 
 ## Mechanism
 
-The maintainer has since said two things that this section does not yet meet: the same rule must
-cover a burst whenever it comes, and the pressure must be dynamic. The bucket of one stands; the
-fixed doubling from 15 s to 60 s is a starting proposal under revision ("Still open", points 4
-and 5).
+**One gate shape, used twice.** The gate is a token bucket that holds a single token. Spending the
+token lets one piece of work through; work that finds no token is held until the refill, and held
+requests merge into one, as re-plans coalesce today. The bucket holds exactly one token: a second
+would allow two changes back to back, which is the case this plan exists to remove.
 
-**A rate limiter on reshapes, with a bucket of one.** The gate is a token bucket that holds a
-single token and refills it once per ceiling. A reshape spends the token; a reshape that finds no
-token is held until the refill, and held requests coalesce into one, as re-plans coalesce today.
-The bucket must hold exactly one token: a second token would allow two reshapes back to back,
-which is the case this plan exists to remove.
+| Gate    | What spends the token                            | Refill interval                                                          |
+| ------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| Attach  | One batch of joiners taken onto RTC, and repairs | Adapts; never longer than the max wait, which is the promise to a joiner |
+| Reshape | One reshape of the room's graph                  | Adapts between one overlap (15 s) and 60 s                               |
 
-**The limiter is also the signal.** A reshape request that the limiter had to hold is the evidence
-that the room is restless: it asked again before the last layout was one ceiling old. So:
+**The interval follows how the room absorbed the last change.** After a batch or a reshape the
+server looks at what happened: did the edges it asked for come up, how long did they take, did
+the layout survive until the next request. A clean result shortens the next interval towards its
+lower bound; a slow or broken one, or a request that had to be held, lengthens it towards its
+upper bound. There is no arrival-rate threshold to tune: a room that copes with fast arrivals is
+not slowed, and a room that struggles with slow ones is.
 
-- a held request since the last reshape doubles the next ceiling, up to the maximum;
-- a whole ceiling without a held request returns it to the first ceiling.
-
-No second measure is needed to decide. A sliding window over membership changes is what the
-measuring slice uses to report how restless rooms are; it is a meter, not the gate.
+**A sliding window is the meter, not the gate.** The measuring slice counts joins, leaves,
+re-plans and promotions over a sliding window to report how restless rooms are and what each
+change cost. It decides nothing.
 
 **Not a leaky bucket.** A leaky bucket that queues work and lets it out at a steady rate would
 reshape a restless room at that rate for ever, and would queue reshapes of which only the last
-matters. Reshape work is coalesced, never queued.
+matters. The work here is coalesced, never queued.
 
 **Stored, not held in memory.** Any server of the cluster may run a room's planning work, so the
-limiter cannot be an object in one process. Its state is two stored values beside the room's
-coalesced re-plan work, where `replanNotBeforeEpochMs` already carries the layout-age floor: the
-instant before which no reshape is due, and the ceiling in force. One pure function computes the
-next pair from the previous pair, the request and the clock, in the style of
+gate cannot be an object in one process. Its state is stored beside the room's coalesced re-plan
+work, where `replanNotBeforeEpochMs` already carries the layout-age floor: per gate, the instant
+before which nothing is due and the interval in force. One pure function computes the next state
+from the previous state, the request, the last result and the clock, in the style of
 `computeTopologyReplanDueAt`.
 
 **Shared primitives.** `packages/shared/resilience` already owns a token bucket
@@ -191,8 +203,9 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 
 ### Later, decided after slice 2
 
-- The reshape limiter of "Mechanism": one pure function over stored state, with the lifecycle
-  policy's `topology` section carrying its two bounds (first ceiling and maximum).
+- The two gates of "Mechanism": one pure function over stored state, with the lifecycle policy's
+  `topology` section carrying the reshape gate's two bounds.
+- The quality bound that asks for a reshape of a patched graph.
 - Folding in the two server paths that re-plan without the tree-keeping gate (leader rooting
   after a failed update, the mesh rebuild), which #823 leaves for a follow-up.
 
@@ -208,40 +221,33 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 
 Decided by the maintainer on 2026-11-14.
 
-| # | Question                                           | Decision                                                                                                                                     |
-| - | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                                       |
-| 2 | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.                          |
-| 3 | How long a restless room may run without a reshape | A ceiling of 15 s that doubles while the room stays restless, up to 60 s, and returns to 15 s when a layout survives.                        |
-| 4 | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them.              |
-| 5 | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.                         |
-| 6 | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                                 |
-| 7 | The first fill against later bursts                | One phenomenon. The first fill is a challenge, and the same burst can come sporadically at any point of a room's life; one rule covers both. |
-| 8 | What the damping is                                | Back pressure on the joiners. Its strength is dynamic: it follows the room, it is not a fixed pair of numbers.                               |
+| #  | Question                                           | Decision                                                                                                                                                                                              |
+| -- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                                                                                                |
+| 2  | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.                                                                                   |
+| 3  | How long a restless room may run without a reshape | Never less than 15 s between two reshapes and never more than 60 s while one is wanted. First decided as a doubling from 15 s to 60 s; decision 10 made the gap between those bounds follow the room. |
+| 4  | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them.                                                                       |
+| 5  | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.                                                                                  |
+| 6  | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                                                                                          |
+| 7  | The first fill against later bursts                | One phenomenon. The first fill is a challenge, and the same burst can come sporadically at any point of a room's life; one rule covers both.                                                          |
+| 8  | What the damping is                                | Back pressure on the joiners. Its strength is dynamic: it follows the room, it is not a fixed pair of numbers.                                                                                        |
+| 9  | Where a joiner feels the pressure                  | On its RTC attach. Everyone is admitted and in the room over WS at once; the room takes joiners onto RTC in batches it can afford. The door does not slow.                                            |
+| 10 | What the dynamic strength follows                  | How the room absorbed the last change: how long the new edges took to come up, and whether the layout survived. Not the arrival rate.                                                                 |
+| 11 | What reshapes a patched graph                      | A quality bound: the server asks for a reshape only when a fresh plan would be better by more than a bound, as tree refinement does today.                                                            |
+| 12 | The gate's shape                                   | A token bucket of one, with an interval that adapts. Not a sliding-window limit, not a leaky bucket.                                                                                                  |
+| 13 | Order against the other work                       | After make-before-break (#823) merges. This plan absorbs that pull request's follow-up for the two re-plan paths without the tree-keeping gate.                                                       |
 
-## Still open
+## For the measuring slice to establish
 
-1. **Order against the other work.** The plan's proposal: start slice 1 after make-before-break
-   (#823) merges, and absorb that pull request's follow-up for the two re-plan paths without the
-   tree-keeping gate. The maintainer's reply to this question began with "1." and went on to the
-   mechanism; whether "1." chose this proposal is not confirmed.
-2. **The mechanism.** The maintainer asked whether a rate limiter fits, as a sliding window or a
-   leaky bucket. "Mechanism" above is the plan's answer: a token bucket of one with a ceiling that
-   backs off, stored with the room; a sliding window as the meter; no leaky bucket. Not yet
-   confirmed.
-3. **What counts as restless when no reshape was requested.** Under "Mechanism" a room that only
-   attaches and repairs never asks for a reshape, so it is never restless and its graph drifts
-   until something else asks. Does the server ask for a reshape on its own after enough attaches
-   and repairs, or when a path grows past a bound? The measuring slice should show how far a
-   graph drifts.
-4. **Where a joiner feels the pressure.** Decision 2 says a joiner is attached at once; decision 8
-   says the damping is back pressure on joiners. They meet in one of two ways. Either a joiner is
-   in the room on WS at once and its RTC attach is what waits its turn, in batches the room can
-   absorb; or the room's door itself slows, and a joiner is admitted later when many arrive
-   together. The first keeps everyone in the room and costs path quality for a while; the second
-   keeps the room calm and costs a joiner its first seconds.
-5. **What "dynamic" follows.** Candidates, to be chosen from what the measuring slice shows: how
-   long the room's last new edges took to come up; whether its recent layouts survived their
-   ceiling; the rate of arrivals over a sliding window; how many members are near their connection
-   cap. The ceiling, the batch size of attaches, or the admission rate would then move with it,
-   speeding up while the room absorbs arrivals cleanly and slowing when requests pile up.
+Nothing here waits on the maintainer. These are facts the plan needs and does not have.
+
+1. **What the server can see of "absorbed".** Decision 10 names how long new edges took and
+   whether the layout survived. The server knows when a layout was accepted and replaced. Whether
+   it learns that the edges of a layout came up, and when, is not established: candidates are the
+   activation status's readiness coverage, presence, and the RTT reports members send once an edge
+   is measured. Slice 1 names the signal or says what would have to be reported.
+2. **How far a patched graph drifts.** Decision 11 needs the measures a fresh plan is compared on
+   (longest path, slowest path by RTT) and a bound. Slice 1 reports the drift after runs of
+   attaches and repairs, so the bound is chosen from it.
+3. **What an attach batch is worth.** How many joiners one batch may carry, and what a batch costs
+   the members that accept the new edges, against their connection cap.
