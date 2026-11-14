@@ -81,7 +81,7 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import type { ConnectionCapInboundVerdict } from '@shared/services/compute-connection-cap-spend.ts';
+import type { ConnectionCapInboundVerdict } from '@shared/services/group-dial/compute-connection-cap-spend.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';

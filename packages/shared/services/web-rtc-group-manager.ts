@@ -21,15 +21,15 @@ import {
     computeConnectionCapSpend,
     type ConnectionCapInboundVerdict,
     type ConnectionCapSpend
-} from './compute-connection-cap-spend.ts';
-import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
-import { WebRtcGroupService } from './web-rtc-group-service.ts';
+} from './group-dial/compute-connection-cap-spend.ts';
 import {
     selectEarlyOnlyDialPeerIds,
     selectGroupDialPeerIds,
     selectRetentionsEndedByDesire,
     type SelectGroupDialPeerIdsInput
-} from './webrtc-group-dial-policy.ts';
+} from './group-dial/webrtc-group-dial-policy.ts';
+import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import {
     clonePeerOwners,
     emptyGroupManagerDiagnostics,

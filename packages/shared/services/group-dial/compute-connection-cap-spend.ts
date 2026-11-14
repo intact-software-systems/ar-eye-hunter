@@ -1,4 +1,4 @@
-import type { PeerId } from '../api/api-config.ts';
+import type { PeerId } from '../../api/api-config.ts';
 import type { CapRetainedPeer } from './webrtc-group-dial-policy.ts';
 
 export interface ConnectionCapSpendInput {

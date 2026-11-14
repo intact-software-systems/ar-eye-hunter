@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeConnectionCapSpend, type ConnectionCapSpendInput } from '@shared/services/compute-connection-cap-spend.ts';
+import { computeConnectionCapSpend, type ConnectionCapSpendInput } from '@shared/services/group-dial/compute-connection-cap-spend.ts';
 
 function capInput(input: Partial<ConnectionCapSpendInput> & Pick<ConnectionCapSpendInput, 'maxPeerConnections'>): ConnectionCapSpendInput {
     return {

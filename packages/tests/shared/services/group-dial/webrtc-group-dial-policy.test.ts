@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { selectGroupDialPeerIds } from '@shared/services/webrtc-group-dial-policy.ts';
+import { selectGroupDialPeerIds } from '@shared/services/group-dial/webrtc-group-dial-policy.ts';
 
 const groupRef: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'lobby' };
 const localSessionId = 'session-local';

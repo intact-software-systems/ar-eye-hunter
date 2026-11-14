@@ -1,6 +1,6 @@
-import type { OverlayInfo, PeerId } from '../api/api-config.ts';
-import type { GroupLifecycleState } from '../api/group-lifecycle/group-lifecycle-policy.ts';
-import { resolveDialLayoutRoles } from '../api/group-lifecycle/resolve-dial-layout-roles.ts';
+import type { OverlayInfo, PeerId } from '../../api/api-config.ts';
+import type { GroupLifecycleState } from '../../api/group-lifecycle/group-lifecycle-policy.ts';
+import { resolveDialLayoutRoles } from '../../api/group-lifecycle/resolve-dial-layout-roles.ts';
 
 export interface SelectGroupDialPeerIdsInput {
     readonly lifecycleState: GroupLifecycleState;

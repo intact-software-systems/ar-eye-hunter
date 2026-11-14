@@ -1,5 +1,5 @@
 import type { PeerId } from '../api/api-config.ts';
-import { computeConnectionCapSpend } from './compute-connection-cap-spend.ts';
+import { computeConnectionCapSpend } from './group-dial/compute-connection-cap-spend.ts';
 
 export type OutboundDialPlanInput = Readonly<{
     maxPeerConnections: number;
