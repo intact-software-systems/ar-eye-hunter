@@ -1,5 +1,12 @@
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LoanedValue', () => {
     afterEach(() => {
@@ -10,8 +17,8 @@ describe('LoanedValue', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
-        const firstRefresh = createDeferred<number>();
-        const secondRefresh = createDeferred<number>();
+        const firstRefresh = Promise.withResolvers<number>();
+        const secondRefresh = Promise.withResolvers<number>();
         const refreshes = [firstRefresh, secondRefresh];
         let calls = 0;
         const seenCurrent: Array<number | undefined> = [];
@@ -62,7 +69,7 @@ describe('LoanedValue', () => {
         expect(loan.peek()).toBe(11);
 
         await expect(
-            loan.refreshWith(async () => undefined as never)
+            Reflect.apply(loan.refreshWith, loan, [async () => undefined])
         ).rejects.toThrow('Refresher returned null or undefined');
         expect(loan.peek()).toBe(11);
     });
@@ -78,20 +85,13 @@ describe('LoanedValue', () => {
         expect(loan.takeIfExpired()).toBe(-1);
         expect(loan.hasValue()).toBe(false);
     });
-});
 
-function createDeferred<T>() {
-    let resolve!: (value: T) => void;
-    let reject!: (error?: unknown) => void;
+    it('treats a value accepted at epoch zero as present and unexpired', () => {
+        const loan = new LoanedValue<number>(async () => 0);
 
-    const promise = new Promise<T>((innerResolve, innerReject) => {
-        resolve = innerResolve;
-        reject = innerReject;
+        loan.acceptAt(9, 0);
+
+        expect(loan.readAt(0)).toBe(9);
+        expect(loan.expiredAt(0)).toBe(false);
     });
-
-    return {
-        promise,
-        resolve,
-        reject
-    };
-}
+});
