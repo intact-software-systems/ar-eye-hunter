@@ -45,9 +45,7 @@ import {
     decodeCurrentCoalescedGroupRevisionWork,
     decodeGroupRevisionWorkOverlayId,
     type CoalescedMessageIdentity,
-    type CurrentCoalescedGroupRevisionPredecessor,
-    type PreviousCoalescedGroupRevisionWork,
-    type UnsupportedCoalescedGroupRevisionPredecessor
+    type PreviousCoalescedGroupRevisionWork
 } from './coalesced-group-revision-predecessor.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
 
@@ -150,12 +148,9 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
             successorEntry
         );
     }
-    const predecessor = decodeCoalescedGroupRevisionPredecessor(input.previousEntry);
     return computeCoalescedAppOutboxWork(
         input.previousEntry,
-        predecessor.kind === 'unsupported'
-            ? toReplacedUnsupportedGroupRevisionEntry(input, predecessor, incoming)
-            : toMergedCoalescedGroupRevisionEntry(input, predecessor, incoming),
+        toMergedCoalescedGroupRevisionEntry(input, input.previousEntry, incoming),
         successorEntry
     );
 }
@@ -191,10 +186,10 @@ function toFreshCoalescedGroupRevisionData(
 
 function toMergedCoalescedGroupRevisionEntry(
     input: RtcTopologyCoalescedGroupRevisionInput,
-    predecessor: CurrentCoalescedGroupRevisionPredecessor,
+    previousEntry: ResourceEntry,
     incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>
 ): ResourceEntry {
-    const { entry: previousEntry, work: previous } = predecessor;
+    const previous = decodeCoalescedGroupRevisionPredecessor(previousEntry);
     if (previous.envelope.data.overlayId !== incoming.overlayId) {
         throw new TypeError('Coalesced group-revision predecessor belongs to another room');
     }
@@ -216,49 +211,12 @@ function toMergedCoalescedGroupRevisionEntry(
         input,
         resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
         data: nextData,
-        dequeueAudit: toCarriedDequeueAudit(previousEntry),
+        dequeueAudit: carriesPreviousLifecycle
+            ? { attempts: previousEntry.dequeueAudit.attempts, nextTs: previousEntry.dequeueAudit.nextTs }
+            : { attempts: 0, nextTs: undefined },
         entryAudit: { ...previousEntry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAtEpochMs) },
         messageIdentity: { ...previous.messageIdentity, expiresAtEpochMs }
     });
-}
-
-/**
- * A head stamped with an unsupported envelope version is replaced by this request's fresh work: only its row columns
- * and its coalescing generation, which the compare-and-set guards, are read. The row's created-audit columns are never
- * rewritten, so the new message takes its identity from them.
- */
-function toReplacedUnsupportedGroupRevisionEntry(
-    input: RtcTopologyCoalescedGroupRevisionInput,
-    predecessor: UnsupportedCoalescedGroupRevisionPredecessor,
-    incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>
-): ResourceEntry {
-    const previousEntry = predecessor.entry;
-    const expiresAtEpochMs = Math.max(previousEntry.audit.expiryTs.epochMilliseconds, input.expireAtEpochMs);
-    return toCoalescedGroupRevisionEntry({
-        input,
-        resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(incoming.overlayId),
-        data: {
-            ...incoming,
-            [COALESCED_APP_OUTBOX_WORK_FIELD]: {
-                ...incoming[COALESCED_APP_OUTBOX_WORK_FIELD],
-                generation: predecessor.generation + 1
-            }
-        },
-        dequeueAudit: toCarriedDequeueAudit(previousEntry),
-        entryAudit: { ...previousEntry.audit, expiryTs: Temporal.Instant.fromEpochMilliseconds(expiresAtEpochMs) },
-        messageIdentity: {
-            senderId: previousEntry.audit.createdBy,
-            tsEpochMs: previousEntry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds,
-            expiresAtEpochMs
-        }
-    });
-}
-
-/** A pending head keeps the attempts and retry time the compare-and-set guards; a settled or reserved one starts over. */
-function toCarriedDequeueAudit(previousEntry: ResourceEntry): ToCoalescedGroupRevisionEntryInput['dequeueAudit'] {
-    return isMutableCoalescedStatus(previousEntry.status)
-        ? { attempts: previousEntry.dequeueAudit.attempts, nextTs: previousEntry.dequeueAudit.nextTs }
-        : { attempts: 0, nextTs: undefined };
 }
 
 export interface PendingTopologyReplanReader {

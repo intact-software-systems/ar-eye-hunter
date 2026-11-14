@@ -28,7 +28,7 @@ import type {
     RuntimeStateReadBatchSelector
 } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
@@ -288,33 +288,30 @@ describe('group presence summary coalescing', () => {
         expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(1);
     });
 
-    // #782: a head persisted under an older AL envelope version must not block its room's summaries.
-    // A current topology dequeuer leaves such a head NON_RETRYABLE; an exhausted older attempt budget leaves it FAILED.
     it.each([
-        { head: 'non-retryable', settledAs: EntityStatus.NON_RETRYABLE },
         { head: 'failed', settledAs: EntityStatus.FAILED },
         { head: 'pending', settledAs: null }
-    ])('commits on the first attempt over a $head head stamped with an unsupported envelope version', async ({ head: headState, settledAs }) => {
-        const fixture = await createCoalescingFixture();
-        const seeded = await fixture.seedConnectedGroup(`unsupported-head-room-${headState}`, 2);
-        await fixture.processAlone(seeded.entries[0]!);
-        const [head] = await fixture.readTopologyRows(seeded.ref);
-        await fixture.replaceStoredResource(head!.key, toEarlierALEnvelopeVersionResource(head!.resource, 3));
-        if (settledAs !== null) {
-            await fixture.failStoredRow(head!.key, settledAs);
+    ])(
+        'fails a summary closed, writing nothing, over a $head head stamped with an envelope version this build does not support',
+        async ({ head: headState, settledAs }) => {
+            const fixture = await createCoalescingFixture();
+            const seeded = await fixture.seedConnectedGroup(`unsupported-head-room-${headState}`, 2);
+            await fixture.processAlone(seeded.entries[0]!);
+            const [head] = await fixture.readTopologyRows(seeded.ref);
+            const unsupported = toEarlierALEnvelopeVersionResource(head!.resource, 3);
+            await fixture.replaceStoredResource(head!.key, unsupported);
+            if (settledAs !== null) {
+                await fixture.failStoredRow(head!.key, settledAs);
+            }
+            const [second] = await fixture.enqueue([seeded.entries[1]!]);
+
+            await expect(fixture.process(second!)).rejects.toThrow(/not coalesced topology work/);
+
+            const topology = await fixture.readTopologyRows(seeded.ref);
+            expect(topology.map((row) => row.resource)).toEqual([unsupported]);
+            expect(await fixture.readCommittedDeltas(seeded.ref)).toHaveLength(1);
         }
-        const [second] = await fixture.enqueue([seeded.entries[1]!]);
-
-        await expect(fixture.process(second!)).resolves.toBeUndefined();
-
-        const stored = await fixture.resources.entries.findByKey(second!.key);
-        expect(stored?.status).toBe(EntityStatus.COMPLETED);
-        expect(stored?.dequeueAudit.attempts).toBe(1);
-        const topology = await fixture.readTopologyRows(seeded.ref);
-        expect(topology.map((row) => row.key.resourceId)).toEqual([head!.key.resourceId]);
-        expect(decodePersistedALMessage(topology[0]!.resource).id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
-        expect(readStoredCoalescedGeneration(topology[0]!.resource)).toBe(2);
-    });
+    );
 
     it('coalesces the due siblings a failed page released together with the next row it claims', async () => {
         const topologyRead: { mode: TopologyReadMode; } = { mode: 'blind' };
@@ -747,10 +744,4 @@ function toOtherRevisionSuccessorResource(resource: string): string {
             })
         }
     });
-}
-
-function readStoredCoalescedGeneration(resource: string): number {
-    const message = JSON.parse(resource) as ALMessage;
-    return (JSON.parse(message.payload.resource) as { data: { __rallarCoalescedWork: { generation: number; }; }; })
-        .data.__rallarCoalescedWork.generation;
 }
