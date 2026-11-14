@@ -478,8 +478,9 @@ half: when every recipient has a neighbour that leads to it and only the visited
 other layout may have addressed), a relay keeps only the neighbours whose subtree holds a recipient over the
 edges of both layouts, not every neighbour. A recipient behind the sender in every layout in force, a layout
 with no adjacency and an unplaced recipient still keep every child, as does a path child the room, hint or
-broadcast list removes, and the relays below a flooding peer flood too. A relay then drops a neighbour only
-when the two layouts give it no route to a recipient that avoids the relay. The missing-recipient retry and the failed-peer
+broadcast list removes, and the relays below a flooding peer flood too. A layout whose own adjacency finds
+no route keeps only the neighbours that the union of both layouts' edges leads to a recipient; a layout whose
+adjacency finds one prunes over its own. The missing-recipient retry and the failed-peer
 repair keep the accepted layout's adjacency, but a failed-peer repair's re-plan
 is an ordinary dispatch, so its copy can also reach a replaced-layout child. The
 same exclusion governs the forward of a retried copy and the relay row's

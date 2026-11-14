@@ -794,15 +794,15 @@ and it has no status list.
   16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
   publication work, not a defect of the overlap.
 - Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
-  the cap closes early peers only for it. At a full cap there is no overlap: no early dial starts, and the promotion's
-  own pass closes the replaced edges for the new accepted dials, while admission still lists them for their window.
-- A frozen multicast's double fault during the forwarding half: a relay drops a neighbour only when the union of its own
-  two layouts gives it no route to a recipient, so a frame is lost when a peer that lags across a second promotion
-  forwards over a layout outside that union and the copy to the path child is also lost, on a frame that carries no
-  receipt.
+  the cap closes early peers only for it. What a full cap does to the overlap is stated in D646; admission still
+  lists a replaced layout's neighbours for their window whether or not their edges are open.
+- A frozen multicast's double fault during the forwarding half: a layout whose own adjacency finds no route
+  to a recipient keeps only the neighbours the union of both layouts' edges leads to one, so a frame can be lost when a
+  peer that lags across a second promotion forwards over a layout outside that union and the copy to the path child
+  is also lost, on a frame that carries no receipt. This follows from the code; no test pins the loss.
 - A stale planned layout counts for up to 60 s: the rule owner (`resolveRtcRoomRoutingEdges`) and the dial policy
   (`selectGroupEarlyDialPeerIds`) take whatever the planned slot holds, and a planned layout that the accepted one has
-  moved past stays until its 60 s cache entry expires or a newer plan replaces it. It costs early dials in the cap's
+  moved past stays until the planned slot is replaced or removed, at most 60 s. It costs early dials in the cap's
   lowest class and not-yet-in-sync answers to its neighbours. First, the connection-cap test
   `a promotion does not close the replaced layout's edges while early peers are still wanted`
   (`packages/tests/shared/web-rtc-group-manager-reconcile-wakes.test.ts`), whose early peers come from a planned layout
@@ -813,8 +813,9 @@ and it has no status list.
   forms the room with `{mesh, degreeLimit 2}`, which leaves a fourth session without an edge), the shape read from
   the layouts at run time, and a bounded search for an owner request that re-parents a browser onto an edge that is
   not open: `{mesh, degreeLimit 2, meshParamK 1}` then `{tree}` adds an edge the first layout lacks and drops
-  another in about 80 % of 300 random-id planner runs with four sessions and 98 to 100 % with five, and which session moves
-  depends on the session ids and the RTT reports.
+  another for one set of four session ids, moves no edge for another, and moves a different session when RTT reports
+  exist (`packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-owner-tree-star-config-edges.test.ts`,
+  the describe block "a mesh write then a tree write for four sessions").
 - The browser spec of the overlap (`npm run test:rallar:full-stack:memory:live-rtc-3:layout-switch`) runs in no required
   gate lane. It would catch a regression of the hand-over over the served overlap, which only a browser run shows.
   It is not added because it is a 65 s live-RTC stream with timing assertions, not measured on hosted runners.
