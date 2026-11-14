@@ -7,6 +7,7 @@ import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { ALM_CONFORMANCE_GRANTED_TOPIC_ID, toCommandId, toRoomRef } from '../alm-conformance-step-identities.ts';
 import { toAlmCellGroupPath } from '../cell/to-alm-cell-group-read.ts';
+import { toAlmCellRequestIdSuffix } from '../cell/to-alm-cell-request-id.ts';
 import { toPollCommand } from '../poll/alm-conformance-poll-commands.ts';
 import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
 import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './subscription-phase-budgets.ts';
@@ -58,7 +59,7 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
 
 /** A mutation request id: the page's runtime identity keeps a rerun from replaying an earlier run's answer. */
 export function toTopicRequestId(step: AlmConformanceStepInput, name: string): string {
-    return `alm-tsub-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}-${step.role}-${name}`;
+    return `alm-tsub-{runtimeIdentity}${toAlmCellRequestIdSuffix(step, name)}`;
 }
 
 /** `p`, `s` or `ps`: a request id names the permissions short, so it stays within 128 characters. */

@@ -5,12 +5,12 @@ import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/a
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
-import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
 import {
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
     type ALMObservationRegime
-} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import type {
     RallarBlackBoxTestAlmUsage,
     RallarBlackBoxTestRecord

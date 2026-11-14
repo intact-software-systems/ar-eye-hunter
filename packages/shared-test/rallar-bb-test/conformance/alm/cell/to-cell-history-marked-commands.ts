@@ -22,16 +22,17 @@ export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,
     commands: readonly RallarBlackBoxTestCommand[]
 ): readonly RallarBlackBoxTestCommand[] {
+    const cellPrefix = toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey);
     const own = {
+        cellPrefix,
         sinceCommandIdPrefix: toCommandId(step, ''),
-        ownRolePrefixes: step.roles.map((role) =>
-            `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${role}-`
-        )
+        ownRolePrefixes: step.roles.map((role) => `${cellPrefix}-${role}-`)
     };
     return commands.map((command) => toCellHistoryMarkedCommand(command, own));
 }
 
 interface OwnCellStart {
+    readonly cellPrefix: string;
     readonly sinceCommandIdPrefix: string;
     readonly ownRolePrefixes: readonly string[];
 }
@@ -55,18 +56,19 @@ function toCellHistoryMarkedCommand(command: RallarBlackBoxTestCommand, own: Own
 
 function toMarkedWait(wait: RallarBlackBoxTestWaitCommand, own: OwnCellStart): RallarBlackBoxTestWaitCommand {
     const named = wait.match.sinceCommandIdPrefix;
-    assertStartInOwnCell(wait, named, own.ownRolePrefixes);
+    assertStartInOwnCell(wait, named, own);
     return { ...wait, match: { ...wait.match, sinceCommandIdPrefix: named ?? own.sinceCommandIdPrefix } };
 }
 
 function assertStartInOwnCell(
     wait: RallarBlackBoxTestWaitCommand,
     named: string | undefined,
-    ownRolePrefixes: readonly string[]
+    own: OwnCellStart
 ): void {
-    if (named !== undefined && !ownRolePrefixes.some((prefix) => named.startsWith(prefix))) {
+    if (named !== undefined && !own.ownRolePrefixes.some((prefix) => named.startsWith(prefix))) {
         throw new Error(
-            `Wait ${wait.commandId} starts its history at ${named}, which is not a command of its own cell.`
+            `Wait ${wait.commandId} of cell ${own.cellPrefix} starts its history at ${named}, ` +
+                'which is not a command of its own cell.'
         );
     }
 }

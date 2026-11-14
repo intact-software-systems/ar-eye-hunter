@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
-import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
 import {
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
     type ALMObservationRegime
-} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';

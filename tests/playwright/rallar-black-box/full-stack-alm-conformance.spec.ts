@@ -24,19 +24,7 @@ import type {
     AlmConformanceLaneFamily,
     CreateAlmConformanceRecipesInput
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
-import {
-    decodeALMObservationPageDiagnosticsFile,
-    type ALMObservationPageDiagnosticsFile
-} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
-import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import { toAlmReloadCheckpoints } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import {
-    computeALMObservationRegime,
-    createUnreadableALMObservationRegime,
-    toALMObservationRegimeSummary,
-    type ALMObservationCellOutcome,
-    type ALMObservationRegime
-} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -47,6 +35,18 @@ import {
     hasAlmIdentityEvidence,
     type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import {
+    decodeALMObservationPageDiagnosticsFile,
+    type ALMObservationPageDiagnosticsFile
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-page-diagnostics.ts';
+import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
+import {
+    computeALMObservationRegime,
+    createUnreadableALMObservationRegime,
+    toALMObservationRegimeSummary,
+    type ALMObservationCellOutcome,
+    type ALMObservationRegime
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import { assessSubscriptionRevokeDisconnected } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';

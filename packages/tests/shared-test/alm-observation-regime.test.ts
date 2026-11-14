@@ -3,12 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
-import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-page-diagnostics.ts';
+import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
 import {
     ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT,
     ALM_OBSERVATION_PAGE_WINDOW_END_MS
-} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-page-regime.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-page-regime.ts';
 import {
     ALM_OBSERVATION_CONTROL_SERVER_RETAINED_EVENTS,
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
@@ -18,7 +18,7 @@ import {
     toALMObservationRegimeSummary,
     type ALMObservationCellOutcome,
     type ALMObservationRegime
-} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));

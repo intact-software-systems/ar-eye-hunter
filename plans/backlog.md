@@ -440,11 +440,6 @@ and it has no status list.
   (S9-ii, D637): the control protocol exports no body contract or decoder both
   could use; its owner is
   `packages/shared-test/rallar-bb-test/control-protocol.ts`.
-- `toSettledStateCommands` lives in
-  `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`
-  though five of its nine callers are not ordering cells (S9-ii). Its owner is
-  `alm-conformance-message-commands.ts`, whose 11 runtime exports make the
-  move a split review.
 - Two catalog tests keep a loop-only recipe flattener of their own
   (`toFlatCommands` in
   `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts` and

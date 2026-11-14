@@ -7,7 +7,6 @@ import type {
 } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RESPONSE_MARGIN_MS, toBudgetMs } from '../alm-conformance-budgets.ts';
-import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import {
     ALM_INBOUND_DIAGNOSTICS_TOPIC,
     toDiagnosticWait,
@@ -21,6 +20,7 @@ import {
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
+import { toAlmCellRequestId, toAlmCellRequestIdSuffix } from '../cell/to-alm-cell-request-id.ts';
 import { toPrincipalPlaceholder } from '../resolve-alm-conformance-principals.ts';
 import { toPauseCommand } from '../to-pause-command.ts';
 
@@ -77,7 +77,6 @@ function toPrincipalUpsertCommands(
 
 function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): RallarBlackBoxTestHttpRequestCommand {
     const { applicationId, workspaceId } = sender.input.group;
-    const requestSuffix = toPrincipalWriteRequestSuffix(sender.input.carrier, sender.scenarioKey, n);
     return {
         kind: 'http.request',
         commandId: toCommandId(sender, `profile-${n}`),
@@ -88,7 +87,7 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
         request: {
             method: 'PUT',
             path: `/api/state/apps/${applicationId}/workspaces/${workspaceId}/clients/{auth.clientId}/principal` +
-                `/requests/alm-conformance-{runtimeIdentity}-${requestSuffix}`,
+                `/requests/${toAlmCellRequestId(sender, toPrincipalWriteName(n))}`,
             body: {
                 username: '{auth.username}',
                 displayName: `server-ordered-entry ${n}`,
@@ -100,9 +99,8 @@ function toPrincipalUpsertCommand(sender: AlmConformanceStepInput, n: number): R
     };
 }
 
-/** What every page's copy of a write's event carries of its request id: the runtime identity is the writer page's own. */
-function toPrincipalWriteRequestSuffix(carrier: AlmConformanceCarrier, scenarioKey: string, n: number): string {
-    return `${carrier}-${scenarioKey}-sender-profile-${n}`;
+function toPrincipalWriteName(n: number): string {
+    return `profile-${n}`;
 }
 
 /**
@@ -145,7 +143,11 @@ function toOrderingEntryCommands(
     ];
 }
 
-/** The copy of the sender's last principal write, whose event names the write's request id. */
+/**
+ * The copy of the sender's last principal write, whose event names the write's request id. Every page's copy carries
+ * the writer page's runtime identity, so a page names the write by the id's sender part; the wait contract has no
+ * anchored text operator, so the part is matched by `contains`.
+ */
 function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -159,7 +161,7 @@ function toLastWriteArrivalWait(step: AlmConformanceStepInput): RallarBlackBoxTe
                 'data.payload.principalId': toPrincipalPlaceholder('sender')
             },
             payloadPath: 'data.payload.requestId',
-            contains: `-${toPrincipalWriteRequestSuffix(step.input.carrier, step.scenarioKey, PRINCIPAL_WRITE_COUNT)}`
+            contains: toAlmCellRequestIdSuffix({ ...step, role: 'sender' }, toPrincipalWriteName(PRINCIPAL_WRITE_COUNT))
         },
         timeoutMs: toVerdictTimeoutMs(step.input.deadlineMs)
     };

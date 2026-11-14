@@ -25,6 +25,7 @@ import {
     toScenarioTopicId,
     toScenarioTypeId
 } from './alm-conformance-step-identities.ts';
+import { toAlmCellRequestId } from './cell/to-alm-cell-request-id.ts';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
@@ -94,7 +95,7 @@ export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlack
         },
         request: {
             method: 'POST',
-            path: `${toStatePrefix(group)}/groups/requests/${toEnsureRequestId(step, 'group')}`,
+            path: `${toStatePrefix(group)}/groups/requests/${toAlmCellRequestId(step, 'group')}`,
             body: {
                 groupId: group.groupId,
                 displayName: group.groupId,
@@ -161,7 +162,7 @@ function toSelfMembershipWriteCommand(
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, write.requestName)}`,
+                `/requests/${toAlmCellRequestId(step, write.requestName)}`,
             ...(headers === undefined ? {} : { headers }),
             body: {
                 status
@@ -307,14 +308,6 @@ export function toStoreRecoveryWait(
         timeoutMs: store.timeoutMs,
         ...(store.historyFrom === 'page' ? { metadata: { historyFrom: 'page' } } : {})
     };
-}
-
-function toEnsureRequestId(
-    step: AlmConformanceStepInput,
-    operation: AlmConformanceEnsureRequest
-): string {
-    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
-        `-${step.role}-${operation}`;
 }
 
 function toStatePrefix(group: RallarBlackBoxDistributedGroupRef): string {

@@ -12,9 +12,9 @@ import type {
 import { createStableRtcLayoutWait } from '../../../../fixtures/create-stable-rtc-layout-wait.ts';
 import { CONNECT_READINESS_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
+import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 
 /**
  * Every paced cell's cadence. The ALM observation job of main run 40875760473 (86800bff2, `ws` smoke) measured the lead

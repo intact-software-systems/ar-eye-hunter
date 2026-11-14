@@ -14,13 +14,13 @@ import {
     toRetainedEvidenceCommands,
     toSendCommand
 } from '../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toPayloadWait } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
 export const deliveryLifecycle: AlmConformanceScenarioDefinition = {
     scenarioId: 'delivery-lifecycle',

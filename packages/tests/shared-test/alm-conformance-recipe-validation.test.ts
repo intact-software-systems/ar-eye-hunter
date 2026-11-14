@@ -320,30 +320,32 @@ describe('ALM conformance recipe validation', () => {
         }
     });
 
+    // A mutation request is every `http.request` whose method is not GET; its path ends in `/requests/<requestId>`.
+    // Every cell mutates at least once: its prologue ensures the run's group.
     it('every mutation request id of every cell carries {runtimeIdentity}', () => {
-        const withoutIdentity: string[] = [];
-        let mutations = 0;
+        const findings: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const cellSettle of [undefined, 'barriered'] as const) {
                 const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
                 for (const scenario of createAlmConformanceRecipes(input)) {
-                    for (const recipe of toPageRecipes(scenario)) {
-                        for (const command of toNestedCommands(recipe.commands)) {
-                            if (command.kind !== 'http.request' || command.request.method === 'GET') {
-                                continue;
-                            }
-                            mutations += 1;
-                            if (!command.request.path!.split('/').at(-1)!.includes('{runtimeIdentity}')) {
-                                withoutIdentity.push(command.commandId!);
-                            }
+                    const cell = `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`;
+                    const mutations = toPageRecipes(scenario)
+                        .flatMap((recipe) => toNestedCommands(recipe.commands))
+                        .flatMap((command) => command.kind === 'http.request' && command.request.method !== 'GET' ? [command] : []);
+                    if (mutations.length === 0) {
+                        findings.push(`${cell}: no mutation request`);
+                    }
+                    for (const mutation of mutations) {
+                        const [requests, requestId] = mutation.request.path!.split('/').slice(-2);
+                        if (requests !== 'requests' || !requestId!.includes('{runtimeIdentity}')) {
+                            findings.push(`${cell}: ${mutation.commandId} ${mutation.request.path}`);
                         }
                     }
                 }
             }
         }
 
-        expect(mutations).toBeGreaterThan(0);
-        expect(withoutIdentity).toEqual([]);
+        expect(findings).toEqual([]);
     });
 
     it('accepts every command over the control protocol', () => {

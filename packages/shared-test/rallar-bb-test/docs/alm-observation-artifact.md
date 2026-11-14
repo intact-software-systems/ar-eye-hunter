@@ -79,7 +79,7 @@ window is derived from them in
 ## The regime file
 
 `ALMObservationRegime`
-([`conformance/alm/compute-alm-observation-regime.ts`](../conformance/alm/compute-alm-observation-regime.ts))
+([`conformance/alm/observation/compute-alm-observation-regime.ts`](../conformance/alm/observation/compute-alm-observation-regime.ts))
 records what the runner was doing while the cell ran:
 
 - `regime` — `normal`, `slow`, or `unclassified`: `perOperation`'s class when it is measured,

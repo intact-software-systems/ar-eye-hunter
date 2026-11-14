@@ -1619,8 +1619,10 @@ describe('alm-conformance cell parts', () => {
         });
 
         for (const lookAlike of ['alm-rtc-capacity-age-sender-armed', 'alm-rtc-capacity-tracks-receiver-', 'alm-rtc-capacity-age-']) {
-            expect(() => toCellHistoryMarkedCommands(step, [toWaitFrom(lookAlike)]), lookAlike)
-                .toThrow('alm-rtc-capacity-sender-late');
+            expect(() => toCellHistoryMarkedCommands(step, [toWaitFrom(lookAlike)]), lookAlike).toThrow(
+                `Wait alm-rtc-capacity-sender-late of cell alm-rtc-capacity starts its history at ${lookAlike}, ` +
+                    'which is not a command of its own cell.'
+            );
         }
         for (const own of ['alm-rtc-capacity-sender-', 'alm-rtc-capacity-receiver-armed']) {
             expect(toCellHistoryMarkedCommands(step, [toWaitFrom(own)]), own).toEqual([toWaitFrom(own)]);
