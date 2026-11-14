@@ -243,6 +243,65 @@ describe('browser RTC peer admission', () => {
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
         });
 
+        it('an accepted peer\'s offer that closes a desired early peer counts a disconnect, and that peer is dialled again when a slot frees with no room event', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ disconnectCount: 1, retainedEvictionCount: 0 });
+            // The wakes start after the close, so only the closed peer's waiting dial can wake a pass for the freed slot.
+            runtime.connection.service.removePeerIfPresent('b2');
+            runtime.manager.startReconcileWakes();
+            runtime.connection.nativePeer('c1').setConnected();
+            await runtime.manager.whenReconciled();
+            runtime.manager.stopReconcileWakes();
+
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b1', 'b3', 'b4', 'b5', 'c1']);
+        });
+
+        it('an accepted peer\'s offer that closes a retained early peer counts an eviction, not a disconnect', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            runtime.plannedOverlays.set(toScopedOverlayId(runtime.group.group), {
+                ...acceptedOverlay(runtime.group),
+                overlayVersion: 3,
+                nextHopSessionIds: ['b2', 'b3', 'b4', 'b5']
+            });
+            await runtime.manager.notifyOverlayTopologyChanged();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ retainedCreatedCount: 1, retainedEvictionCount: 0, disconnectCount: 0 });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ retainedCreatedCount: 1, retainedEvictionCount: 1, disconnectCount: 0 });
+        });
+
+        it('closing an early peer the room\'s presence no longer names wakes no pass, and the next established peer does', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            runtime.manager.startReconcileWakes();
+            await runtime.manager.getOrCreate(runtime.group.group).acceptGroupUpdate({
+                ...runtime.group,
+                activeSessions: runtime.group.activeSessions.filter((session) => session.sessionId !== 'b1')
+            });
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+            const passesBefore = runtime.manager.readDiagnostics().reconcileRunCount;
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+            await runtime.manager.whenReconciled();
+
+            expect(runtime.connection.service.readPeer('b1')).toBeUndefined();
+            expect(runtime.manager.readDiagnostics()).toMatchObject({ disconnectCount: 1, reconcileRunCount: passesBefore });
+            runtime.connection.nativePeer('c1').setConnected();
+            await runtime.manager.whenReconciled();
+            runtime.manager.stopReconcileWakes();
+
+            expect(runtime.manager.readDiagnostics().reconcileRunCount).toBe(passesBefore + 1);
+        });
+
         it('an accepted peer\'s offer at a full cap with no early peer is refused and no peer closes', async () => {
             const runtime = await createFullCapRuntime({ accepted, planned: accepted });
             // The replaced layout's edges stay retained for their grace and fill the cap with the new layout's.
