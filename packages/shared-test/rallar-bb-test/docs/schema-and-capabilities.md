@@ -340,7 +340,11 @@ receipt confirms, leaves unconfirmed and records outside the audience
 (`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
 together. The identity assessment joins each list to the sessions of those roles
 after the run, reading the receipt the handle ended in: the sender's last read of
-that handle, after any mid-window read.
+that handle, after any mid-window read. In every conformance cell, a receipt read
+whose recipient lists a role asserts follows, after its send, an event that
+settles those lists: a terminal observe of the handle, the role's own `committed`
+`control-admission` of a control answering the send, or an absence window. A
+refusal of another control proves no such commit.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
@@ -383,7 +387,12 @@ that handle, after any mid-window read.
   it, the receiver submits a raw `al.control.ack.v3` whose
   `logicalRecipientPeerId` names that session, with `proof: null`. The sender waits
   for the origin's `rejected` `control-admission` of it with `proofRefusal`
-  `missing-proof`, reads its receipt mid-window and asserts it is not yet
+  `missing-proof`. That refusal runs before any await, while the receiver's
+  genuine ACK commits only after its signature check, so the refusal can
+  overtake it: the sender also waits, in its cell's history, for its own
+  `committed` `control-admission` of an `al.control.ack.v3` answering the send,
+  which before the release can only be the receiver's. Only then does it read
+  its receipt mid-window and assert it is not yet
   `acknowledged` (at least one recipient unconfirmed, at most one confirmed), then
   cues `recipient-b` to release; the receipt ends `acknowledged` with both
   recipients confirmed. Its cues travel on a type of their own
