@@ -1,4 +1,5 @@
 import { computeShuffledOrder } from '@shared/random/compute-shuffled-order.ts';
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
 
 import type { AlmLaneOrder } from './decode-alm-lane-parameters.ts';
 
@@ -31,5 +32,5 @@ export function resolveAlmLaneCellOrder<T extends Readonly<{ scenarioKey: string
         return { scenarios: kept, seed: null };
     }
     const seed = input.seed ?? input.mintSeed();
-    return { scenarios: computeShuffledOrder(kept, seed), seed };
+    return { scenarios: computeShuffledOrder(kept, createSeededRandom(seed)), seed };
 }
