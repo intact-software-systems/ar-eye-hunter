@@ -12,7 +12,10 @@ import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import {
+    configureBrowserRtcPeerCreationPolicies,
+    createBrowserRtcHeldOfferReleases
+} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
@@ -40,6 +43,7 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+import type { WebRtcGroupManagerOptions } from '@shared/services/webrtc-group-manager-contracts.ts';
 import {
     createDefaultWsQueueBoxClientService,
     WsQueueBoxClientService
@@ -100,11 +104,11 @@ describe('browser RTC runtime composition', () => {
         }
         expect(service.ensurePeerConnectionStarted('direct-startup-peer').left).toMatchObject({
             kind: 'dial-denied',
-            reason: 'browser-runtime-initializing'
+            reason: 'stage-layout-mismatch'
         });
         expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
 
-        await nameStartupPeerInRoom(service);
+        await nameStartupPeerInRoom(service, IGNORED_HELD_OFFER_RELEASES);
 
         await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
         expect(startup.nativeRuntime.createdConnections).toHaveLength(1);
@@ -127,12 +131,32 @@ describe('browser RTC runtime composition', () => {
             }))
         );
 
-        await nameStartupPeerInRoom(service);
+        await nameStartupPeerInRoom(service, IGNORED_HELD_OFFER_RELEASES);
 
         await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
         expect(startup.nativeRuntime.createdConnections[0].receivedDescriptions).toEqual([
             { type: 'offer', sdp: 'startup-peer-offer' }
         ]);
+    });
+
+    it('brings an offer held during startup due at the first adoption of a layout that names its sender', async () => {
+        const startup = await startRtcRuntimeWithStartupOffer('off');
+        const service = startup.initialized.webRtcConnectionService;
+        await vi.waitFor(() =>
+            expect(startup.consumerEvents).toContainEqual(expect.objectContaining({
+                kind: 'consumer-invocation',
+                outcome: 'retry'
+            }))
+        );
+        const manager = await nameStartupPeerInRoom(service, createBrowserRtcHeldOfferReleases(service));
+        const writeDueNow = vi.spyOn(startup.queueBox, 'writeRetainedInboxMessagesDueNow');
+
+        await manager.notifyOverlayTopologyChanged();
+
+        expect(writeDueNow.mock.calls.map(([envelopes]) => envelopes.map((envelope) => envelope.id.msgId))).toEqual([
+            [startup.offerMsgId]
+        ]);
+        await vi.waitFor(() => expect(service.knownPeerIds()).toEqual(['startup-peer']));
     });
 
     it('disposes only diagnostic scope when the original signaling connection rejects', async () => {
@@ -456,7 +480,14 @@ describe('browser RTC runtime composition', () => {
     });
 });
 
+const IGNORED_HELD_OFFER_RELEASES: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'> = {
+    onOverlayAdopted: async () => {},
+    onReconcilePassEnded: () => {}
+};
+
 interface StartupRtcRuntime {
+    readonly queueBox: WsQueueBoxClientService;
+    readonly offerMsgId: string;
     readonly nativeRuntime: NativeRtcRuntime;
     readonly initialized: BrowserRtcConnectionInitialization;
     readonly signalingEvents: readonly RtcSignalingDiagnostics.Event[];
@@ -517,13 +548,16 @@ async function startRtcRuntimeWithStartupOffer(mode: RtcSignalingDiagnostics.Cap
     });
 
     await networkConnectStarted.promise;
-    await receiveOffer(queueBox, 'startup-peer');
+    const offerMsgId = await receiveOffer(queueBox, 'startup-peer');
     networkConnect.resolve();
-    return { nativeRuntime, initialized: await initializing, signalingEvents, consumerEvents };
+    return { queueBox, offerMsgId, nativeRuntime, initialized: await initializing, signalingEvents, consumerEvents };
 }
 
 /** Publishes a room whose accepted layout names `startup-peer`, and gives the service the browser's peer policies. */
-async function nameStartupPeerInRoom(service: WebRtcConnectionService): Promise<void> {
+async function nameStartupPeerInRoom(
+    service: WebRtcConnectionService,
+    heldOfferReleases: Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'>
+): Promise<WebRtcGroupManager> {
     const group = createAcceptedGroupSnapshotFixture(['self', 'startup-peer']);
     groupStateSnapshotsRepository.setGroupStateSnapshot(group);
     overlaysRepository.setAcceptedOverlayById(
@@ -538,10 +572,11 @@ async function nameStartupPeerInRoom(service: WebRtcConnectionService): Promise<
             plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
             acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
         }),
-        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+        heldOfferReleases
     );
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     configureBrowserRtcPeerCreationPolicies(service, manager);
+    return manager;
 }
 
 /** A native peer connection to `peerId` whose channels are open, torn down with the test. */
@@ -575,7 +610,8 @@ function openConnectedPeer(peerId: string): ReturnType<typeof createNativeRtcCon
     return fixture;
 }
 
-async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<void> {
+/** Answers the offer's message id. */
+async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): Promise<string> {
     const signal: QRtcSignalingMessage = {
         channel: 'RtcSignal',
         type: 'Signal',
@@ -596,4 +632,5 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
     );
     const accepted = await queueBox.acceptIncomingMessage(message);
     expect(accepted.right).toEqual({ kind: 'admitted' });
+    return message.id.msgId;
 }

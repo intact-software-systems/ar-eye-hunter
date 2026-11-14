@@ -228,11 +228,11 @@ export async function initialiseRtcConnectionService(
 
         connectionService.setInboundPeerCreationPolicy(() => ({
             decision: 'retry',
-            reason: 'browser-runtime-initializing'
+            reason: 'stage-layout-mismatch'
         }));
         connectionService.setOutboundDialPolicy(() => ({
             decision: 'deny',
-            reason: 'browser-runtime-initializing'
+            reason: 'stage-layout-mismatch'
         }));
         await connectionService.connectSignaler();
 
