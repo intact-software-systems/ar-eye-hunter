@@ -8,6 +8,7 @@ import {
 import { writeFile } from 'node:fs/promises';
 
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
+import { AL_CHANNEL_SEND_DEFAULTS } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import {
     isSameGroupLayoutIdentity,
     type GroupLayoutIdentity
@@ -37,7 +38,7 @@ import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
-import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamReliability } from './live-rtc-layout-switch-operations.ts';
+import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamQos } from './live-rtc-layout-switch-operations.ts';
 import {
     resolveLiveRtcLayoutShape,
     toLiveRtcAcceptedLayout,
@@ -60,7 +61,9 @@ const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const
  * admission is held until its deadline, the send's 30 s TTL; an arrival for at most 30 s. At 10 Hz each session holds
  * at most 300 own admissions and 600 arrivals (two other streams), so no own send can pass either bound. At 20 Hz
  * the own pool reached 500 after 25 s and frames 501 on were refused. A relay's forward reuses the arrival's msgId,
- * which the budget already holds, so forwarding adds nothing.
+ * which the budget already holds, so forwarding adds nothing. Acknowledgements add nothing either: an outbound
+ * control is never admitted to the budget, an inbound one is not an admitted data message, and an acknowledged send
+ * still holds its admission until its deadline, as an unacknowledged one does.
  */
 const STREAM_RATE_HZ = 10;
 const STREAM_LEAD_MS = 3_000;
@@ -71,7 +74,18 @@ const PROMOTION_POLL_TIMEOUT_MS = 15_000;
 const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWITCH_HOLD_MS);
 /** Ruling 2: the overlap the managed API serves by default. */
 const SERVED_OVERLAP_MS = 15_000;
-const RELIABILITIES: readonly LiveRtcStreamReliability[] = ['at-least-once', 'best-effort'];
+/**
+ * Ruling 3: both kinds of frame get the overlap. An at-least-once room message is acknowledged in the mode the
+ * product's room notification channel sends it with (`AL_CHANNEL_SEND_DEFAULTS.notification`); the stream's send names
+ * it, because a send with no channel defaults to `none`. A best-effort frame is not acknowledged.
+ */
+const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos; }>[] = [
+    {
+        label: 'acknowledged at-least-once',
+        qos: { reliability: 'at-least-once', ack: AL_CHANNEL_SEND_DEFAULTS.notification.ack }
+    },
+    { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
+];
 const REPORTED_RECORDS = 20;
 
 const formationOperations = createLiveRtcFormationOperations();
@@ -142,9 +156,9 @@ interface LayoutSwitchRun {
 test.describe('live RTC layout switch stream', () => {
     test.skip(!hasThreeAgentConfig, LIVE_RTC_SKIP_MESSAGE);
 
-    for (const reliability of RELIABILITIES) {
+    for (const variant of STREAM_VARIANTS) {
         test(
-            `three ${reliability} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
+            `three ${variant.label} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
                 'every receiver takes 20 messages a second',
             async ({ browser, request }, testInfo) => {
                 test.setTimeout(360_000);
@@ -152,7 +166,7 @@ test.describe('live RTC layout switch stream', () => {
                 const scenario = await openScenario(browser, request);
                 let failure: Error | undefined;
                 try {
-                    const run = await runLayoutSwitches(scenario, reliability);
+                    const run = await runLayoutSwitches(scenario, variant.qos);
                     await writeEvidenceFile(testInfo, 'layout-switch-evidence.json', {
                         progress: scenario.progress,
                         run
@@ -253,12 +267,12 @@ async function readFormedLayout(
 
 async function runLayoutSwitches(
     scenario: LayoutSwitchScenario,
-    reliability: LiveRtcStreamReliability
+    qos: LiveRtcStreamQos
 ): Promise<LayoutSwitchRun> {
     const sessions = await formRoom(scenario);
     const sessionIds: SessionIds = [sessions.A, sessions.B, sessions.C];
     const formed = await readFormedLayout(scenario, sessionIds);
-    const streams = startStreams(scenario, reliability);
+    const streams = startStreams(scenario, qos);
     await holdFor(scenario, STREAM_LEAD_MS);
     const switched = await runSwitches(scenario, { sessions, sessionIds, formed });
     const settledStreams = requireStreams(scenario, sessions, await streams);
@@ -275,6 +289,7 @@ async function runLayoutSwitches(
                 { identity: switched.layouts[2].identity, requestedAtEpochMs: switched.requestedAtEpochMs[1] }
             ],
             leafSessionIds: switched.tree.leafSessionIds,
+            relaySessionId: switched.tree.relaySessionId,
             events
         })
     };
@@ -326,12 +341,12 @@ async function requestSwitch(
 /** Settled, never rejected: a failure later in the scenario must not leave a stream's rejection unhandled. */
 function startStreams(
     scenario: LayoutSwitchScenario,
-    reliability: LiveRtcStreamReliability
+    qos: LiveRtcStreamQos
 ): Promise<PromiseSettledResult<LiveRtcControlClient.Result>[]> {
     return Promise.allSettled(scenario.agents.map(async (agent) =>
         await scenario.operations.runStream({
             agent,
-            reliability,
+            qos,
             rateHz: STREAM_RATE_HZ,
             durationMs: STREAM_DURATION_MS
         })

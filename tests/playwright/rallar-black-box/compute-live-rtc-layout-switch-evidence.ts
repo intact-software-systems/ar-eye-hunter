@@ -6,6 +6,7 @@ import {
 import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
+import { computeLiveRtcCarryingEdges, type LiveRtcCarryingEdges } from './compute-live-rtc-carrying-edges.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import type { AgentPrefix } from './live-rtc-delivery-operations.ts';
 import {
@@ -25,6 +26,7 @@ const STREAM_STARTED_TOPIC = 'rallar.bb.rtc.stream_started';
 const PLANNED_LAYOUT_NOT_YET_IN_SYNC = `not-yet-in-sync: ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}`;
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const RELAY_FORWARD_NOT_ENQUEUED = 'relay-forward-not-enqueued';
+const RTC_ACK_SUBMISSION = 'rtc-ack-submission';
 
 /** One browser's stream as its own `rtc.stream` result reported it. */
 export interface LiveRtcLayoutSwitchStream {
@@ -47,6 +49,7 @@ export interface LiveRtcLayoutSwitchEvidenceInput {
     readonly streams: readonly LiveRtcLayoutSwitchStream[];
     readonly switches: readonly [LiveRtcLayoutSwitch, LiveRtcLayoutSwitch];
     readonly leafSessionIds: readonly [string, string];
+    readonly relaySessionId: string;
     readonly events: readonly LiveRtcControlClient.Event[];
 }
 
@@ -54,6 +57,8 @@ export interface LiveRtcLayoutSwitchEvidenceInput {
 export interface LiveRtcFrameCopy {
     readonly msgId: string | null;
     readonly transport: string | null;
+    /** The message's trace, which the receiver's acknowledgement of this copy names too. */
+    readonly traceId: string | null;
 }
 
 /**
@@ -145,6 +150,16 @@ export interface LiveRtcLayoutSwitchObservations {
     readonly wireDuplicates: Readonly<Record<AgentPrefix, number>>;
     /** A relay's forward refused for unavailable storage: it throws into a claim that retries, so it is not a loss. */
     readonly relayForwardStorageUnavailable: readonly LiveRtcRefusalRecord[];
+    /** Each browser's `rtc-ack-submission` events: zero means the carrying edges read `unobserved` for want of them. */
+    readonly ackSubmissions: Readonly<Record<AgentPrefix, number>>;
+    readonly carryingEdges: readonly LiveRtcCarryingEdges[];
+    /**
+     * The origin's frames whose send listed an unconfirmed next hop. Only the state at admission is emitted
+     * (`send_completed`); the final settlement per frame reaches no event, so this is the admission-time reading.
+     */
+    readonly nextHopsUnconfirmedAtAdmission: Readonly<
+        Record<AgentPrefix, { frames: number; peerIds: readonly string[]; }>
+    >;
     readonly receiptExhausted: readonly { agent: AgentPrefix; topic: string; kind: string | null; }[];
 }
 
@@ -185,6 +200,11 @@ interface StreamFrame {
     readonly errorCode: string | null;
 }
 
+interface ObservationSources {
+    readonly framesByPrefix: ReadonlyMap<AgentPrefix, readonly StreamFrame[]>;
+    readonly received: ReceivedFrames;
+}
+
 /** Receiver agent ID, then origin prefix, then every application delivery of each sequence number. */
 type ReceivedFrames = ReadonlyMap<string, ReadonlyMap<AgentPrefix, ReadonlyMap<number, readonly LiveRtcFrameCopy[]>>>;
 
@@ -221,7 +241,7 @@ export function computeLiveRtcLayoutSwitchEvidence(
         ),
         promotions,
         leafCrossings: computeLeafCrossings(input, framesByPrefix, promotions, received),
-        observations: computeObservations(input, runEvents, promotions)
+        observations: computeObservations(input, runEvents, promotions, { framesByPrefix, received })
     };
 }
 
@@ -277,6 +297,7 @@ function computeReceivedFrames(
 function toFrameCopy(event: LiveRtcRunEvent): LiveRtcFrameCopy {
     return {
         msgId: stringValue(event.data.msgId) ?? null,
+        traceId: stringValue(event.data.traceId) ?? null,
         transport: stringValue(event.data.transport) ?? stringValue(jsonRecord(event.raw)?.transport) ?? null
     };
 }
@@ -505,7 +526,8 @@ function computeLeafCrossings(
 function computeObservations(
     input: LiveRtcLayoutSwitchEvidenceInput,
     runEvents: readonly LiveRtcRunEvent[],
-    promotions: readonly LiveRtcStreamPromotion[]
+    promotions: readonly LiveRtcStreamPromotion[],
+    sources: ObservationSources
 ): LiveRtcLayoutSwitchObservations {
     return {
         promotionLatencyMs: mapByPrefix(input.streams, (stream) => {
@@ -528,8 +550,97 @@ function computeObservations(
             runEvents,
             (event) => isRelayForwardNotEnqueued(event) && event.data.outcome === 'storage-unavailable'
         ),
+        ackSubmissions: countByPrefix(
+            input.streams,
+            runEvents,
+            (event) => event.topic === OUTBOUND_DIAGNOSTICS_TOPIC && event.data.kind === RTC_ACK_SUBMISSION
+        ),
+        carryingEdges: computeLeafCarryingEdges(input, runEvents, promotions, sources),
+        nextHopsUnconfirmedAtAdmission: mapByPrefix(
+            input.streams,
+            (stream) => readNextHopsUnconfirmedAtAdmission(stream, runEvents)
+        ),
         receiptExhausted: readReceiptExhausted(input.streams, runEvents)
     };
+}
+
+/** For each leaf origin and the other leaf: the tree's window and the star's, each from the origin's own promotion. */
+function computeLeafCarryingEdges(
+    input: LiveRtcLayoutSwitchEvidenceInput,
+    runEvents: readonly LiveRtcRunEvent[],
+    promotions: readonly LiveRtcStreamPromotion[],
+    sources: ObservationSources
+): readonly LiveRtcCarryingEdges[] {
+    const leaves = input.streams.filter((stream) => input.leafSessionIds.includes(stream.sessionId));
+    return leaves.flatMap((origin) => {
+        const receiver = leaves.find((leaf) => leaf.agentId !== origin.agentId);
+        const promotedAt = promotions.find((promotion) => promotion.prefix === origin.prefix)?.promotedAtEpochMs;
+        if (receiver === undefined || promotedAt === undefined || promotedAt[0] === null || promotedAt[1] === null) {
+            return [];
+        }
+        const windows = [
+            { layout: 'tree', from: promotedAt[0], until: promotedAt[1] },
+            { layout: 'star', from: promotedAt[1], until: Infinity }
+        ] as const;
+        const traceIdBySeq = readTraceIdBySeq(sources.received, receiver.agentId, origin.prefix);
+        const hopsByTraceId = readAckHopsByTraceId(runEvents, receiver.agentId);
+        return windows.map((window) =>
+            computeLiveRtcCarryingEdges({
+                origin,
+                receiver: receiver.prefix,
+                relaySessionId: input.relaySessionId,
+                layout: window.layout,
+                promotedAtEpochMs: window.from,
+                frames: (sources.framesByPrefix.get(origin.prefix) ?? []).filter((frame) =>
+                    frame.startedAtEpochMs >= window.from && frame.startedAtEpochMs < window.until
+                ),
+                traceIdBySeq,
+                hopsByTraceId
+            })
+        );
+    });
+}
+
+function readTraceIdBySeq(
+    received: ReceivedFrames,
+    receiverAgentId: string,
+    origin: AgentPrefix
+): ReadonlyMap<number, string> {
+    const copies = received.get(receiverAgentId)?.get(origin) ?? new Map<number, readonly LiveRtcFrameCopy[]>();
+    return new Map([...copies].flatMap(([seq, seen]) => {
+        const traceId = seen.flatMap((copy) => copy.traceId ?? [])[0];
+        return traceId === undefined ? [] : [[seq, traceId] as const];
+    }));
+}
+
+/** The hop each acknowledgement this receiver submitted went to, by the trace of the message it acknowledges. */
+function readAckHopsByTraceId(
+    runEvents: readonly LiveRtcRunEvent[],
+    receiverAgentId: string
+): ReadonlyMap<string, ReadonlySet<string>> {
+    const hops = new Map<string, Set<string>>();
+    for (const event of runEvents) {
+        const traceId = stringValue(event.data.traceId);
+        const toPeerId = stringValue(event.data.toPeerId);
+        if (
+            event.agentId === receiverAgentId && event.topic === OUTBOUND_DIAGNOSTICS_TOPIC &&
+            event.data.kind === RTC_ACK_SUBMISSION && traceId !== undefined && toPeerId !== undefined
+        ) {
+            hops.set(traceId, new Set([...(hops.get(traceId) ?? []), toPeerId]));
+        }
+    }
+    return hops;
+}
+
+function readNextHopsUnconfirmedAtAdmission(
+    stream: LiveRtcLayoutSwitchStream,
+    runEvents: readonly LiveRtcRunEvent[]
+): { frames: number; peerIds: readonly string[]; } {
+    const unconfirmed = runEvents.filter((event) => event.agentId === stream.agentId)
+        .flatMap((event) => event.topic === RTC_SEND_COMPLETED_TOPIC ? [jsonRecord(event.data.message)] : [])
+        .map((message) => stringArrayValue(message?.unconfirmedHopPeerIds))
+        .filter((peerIds) => peerIds.length > 0);
+    return { frames: unconfirmed.length, peerIds: [...new Set(unconfirmed.flat())].sort() };
 }
 
 function countNotYetInSync(

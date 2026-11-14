@@ -1,4 +1,5 @@
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
+import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { LIVE_RTC_LAYOUT_SWITCH_FRAME_TOPIC } from './compute-live-rtc-layout-switch-evidence.ts';
@@ -6,7 +7,11 @@ import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, numberValue } from './live-rtc-evidence-json.ts';
 import type { FormationHealth, LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
 
-export type LiveRtcStreamReliability = 'at-least-once' | 'best-effort';
+/** The delivery each frame is sent with; `ack` is named, since a send with no channel defaults to `none`. */
+export interface LiveRtcStreamQos {
+    readonly reliability: 'at-least-once' | 'best-effort';
+    readonly ack: ALAckMode;
+}
 
 export namespace LiveRtcLayoutSwitchOperations {
     export interface Input {
@@ -22,7 +27,7 @@ export namespace LiveRtcLayoutSwitchOperations {
 
     export interface StreamInput {
         readonly agent: LiveRtcControlClient.Agent;
-        readonly reliability: LiveRtcStreamReliability;
+        readonly qos: LiveRtcStreamQos;
         readonly rateHz: number;
         readonly durationMs: number;
     }
@@ -87,7 +92,7 @@ export class LiveRtcLayoutSwitchOperations {
     /** The stream reports once its last frame settled, so the wait covers its duration and its own drain. */
     async runStream(input: LiveRtcLayoutSwitchOperations.StreamInput): Promise<LiveRtcControlClient.Result> {
         const { control, runId, roomRef, messagesRtc } = this.#input;
-        const { agent, reliability } = input;
+        const { agent, qos } = input;
         return await control.executeResult({
             runId,
             agentId: agent.agentId,
@@ -108,7 +113,8 @@ export class LiveRtcLayoutSwitchOperations {
                     roomId: roomRef.groupId,
                     typeId: messagesRtc.typeId,
                     topicId: messagesRtc.topicId,
-                    reliability,
+                    reliability: qos.reliability,
+                    ack: qos.ack,
                     payload: {
                         topic: LIVE_RTC_LAYOUT_SWITCH_FRAME_TOPIC,
                         runId,
