@@ -6,7 +6,7 @@ import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-
 import {
     configureOverlayRepositories,
     findAcceptedOverlayById,
-    readableLayoutTransitionCache,
+    readableLayoutTransitionsCache,
     reconcileAcceptedOverlayIdentity,
     removeAcceptedOverlayByGroupRef,
     removeAcceptedOverlayById,
@@ -30,7 +30,7 @@ const OVERLAY_ID = toScopedOverlayId(ROOM);
 
 let nowEpochMs: number;
 
-describe('overlay repository layout transition', () => {
+describe('overlay repository layout transitions', () => {
     beforeEach(() => {
         nowEpochMs = 1_000;
         configureOverlayRepositories({
@@ -49,7 +49,7 @@ describe('overlay repository layout transition', () => {
 
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
-        const transition = readTransition();
+        const transition = readNewestTransition();
         expect(transition).toEqual({
             replaced: held,
             replacedBy: toOverlayLayoutIdentity(planned),
@@ -71,7 +71,7 @@ describe('overlay repository layout transition', () => {
         });
 
         expect(acceptedLayout()).toEqual(incomparable);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a published accepted layout that dominates the held one keeps the held one', () => {
@@ -82,12 +82,12 @@ describe('overlay repository layout transition', () => {
 
         expect(setAcceptedOverlayById(OVERLAY_ID, published)).toBe('adopted');
 
-        expect(readTransition()).toEqual({
+        expect(readNewestTransition()).toEqual({
             replaced: held,
             replacedBy: toOverlayLayoutIdentity(published),
             replacedAtEpochMs: 7_000
         });
-        expect(isOverlayIdentity(acceptedLayout(), readTransition()!.replacedBy)).toBe(true);
+        expect(isOverlayIdentity(acceptedLayout(), readNewestTransition()!.replacedBy)).toBe(true);
     });
 
     it('a bootstrap layout replaced by a server layout leaves no transition', () => {
@@ -96,7 +96,7 @@ describe('overlay repository layout transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, bootstrap);
 
         expect(setAcceptedOverlayById(OVERLAY_ID, published)).toBe('server-superseded-bootstrap');
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
 
         removeAcceptedOverlayById(OVERLAY_ID);
         const planned = overlay({ version: 3 });
@@ -105,7 +105,7 @@ describe('overlay repository layout transition', () => {
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
         expect(acceptedLayout()).toEqual(planned);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a layout of another room held in the slot leaves no transition', () => {
@@ -114,14 +114,14 @@ describe('overlay repository layout transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, otherRoom);
 
         expect(setAcceptedOverlayById(OVERLAY_ID, published)).toBe('adopted');
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
 
         const planned = overlay({ version: 3, groupRef: OTHER_ROOM });
         setPlannedOverlayById(OVERLAY_ID, planned);
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(planned) });
 
         expect(acceptedLayout()).toEqual(planned);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('an equal, dominated or incomparable layout records nothing', () => {
@@ -133,12 +133,12 @@ describe('overlay repository layout transition', () => {
             .toBe('dominated-dropped');
         expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ groupRevision: 5, presenceRevision: 5, version: 8 })))
             .toBe('incomparable-conflict');
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
 
         const current = overlay({ groupRevision: 5, presenceRevision: 5, version: 8, nextHopSessionIds: ['peer'] });
         expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, current)).toBe('adopted');
         expect(acceptedLayout()).toEqual(current);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a removal that no promotion follows records nothing', () => {
@@ -147,7 +147,7 @@ describe('overlay repository layout transition', () => {
         removeAcceptedOverlayById(OVERLAY_ID);
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: undefined });
 
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('keeps the transitions of two promotions a second apart, newest first', () => {
@@ -162,7 +162,7 @@ describe('overlay repository layout transition', () => {
 
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, roomRef: ROOM, acceptedIdentity: toOverlayLayoutIdentity(third) });
 
-        expect(readableLayoutTransitionCache().readAllValues()).toEqual([[
+        expect(readableLayoutTransitionsCache().readAllValues()).toEqual([[
             { replaced: second, replacedBy: toOverlayLayoutIdentity(third), replacedAtEpochMs: 3_000 },
             { replaced: first, replacedBy: toOverlayLayoutIdentity(second), replacedAtEpochMs: 2_000 }
         ]]);
@@ -193,7 +193,7 @@ describe('overlay repository layout transition', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
         nowEpochMs += 100;
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
-        const oldest = readTransition()!;
+        const oldest = readNewestTransition()!;
         for (let version = 3; version <= 18; version += 1) {
             nowEpochMs += 100;
             setAcceptedOverlayById(OVERLAY_ID, overlay({ version }));
@@ -241,11 +241,11 @@ describe('overlay repository layout transition', () => {
         promote(replaced, promoted);
 
         expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, repair)).toBe('adopted');
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
 
         expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, promoted)).toBe('adopted');
         expect(acceptedLayout()).toEqual(promoted);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a transition does not survive the removal and re-adoption of the layout that made it', () => {
@@ -257,7 +257,7 @@ describe('overlay repository layout transition', () => {
         expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('initial-set');
 
         expect(acceptedLayout()).toEqual(promoted);
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it.each([
@@ -278,14 +278,14 @@ describe('overlay repository layout transition', () => {
         expect(remove(promoted)).toBe(true);
 
         expect(findAcceptedOverlayById(OVERLAY_ID)).toBeUndefined();
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('an accepted write that changes nothing keeps the transition', () => {
         const replaced = overlay({ groupRevision: 3, presenceRevision: 5, version: 6 });
         const promoted = overlay({ groupRevision: 4, presenceRevision: 6, version: 7 });
         promote(replaced, promoted);
-        const recorded = readTransition();
+        const recorded = readNewestTransition();
 
         expect(setAcceptedOverlayById(OVERLAY_ID, { ...promoted })).toBe('equal');
         expect(setAcceptedOverlayById(OVERLAY_ID, replaced)).toBe('dominated-dropped');
@@ -293,7 +293,7 @@ describe('overlay repository layout transition', () => {
             .toBe('incomparable-conflict');
 
         expect(acceptedLayout()).toEqual(promoted);
-        expect(readTransition()).toEqual(recorded);
+        expect(readNewestTransition()).toEqual(recorded);
         expect(recorded?.replaced).toEqual(replaced);
     });
 
@@ -304,7 +304,7 @@ describe('overlay repository layout transition', () => {
 
         expect(setAcceptedOverlayById(OVERLAY_ID, retired)).toBe('adopted');
 
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a replaced layout that is not active is never recorded', () => {
@@ -315,7 +315,7 @@ describe('overlay repository layout transition', () => {
 
         expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }))).toBe('adopted');
 
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 
     it('a planned layout that dominates the planned layout it replaces leaves no transition', () => {
@@ -323,11 +323,11 @@ describe('overlay repository layout transition', () => {
 
         expect(setPlannedOverlayById(OVERLAY_ID, overlay({ version: 2 }))).toBe('adopted');
 
-        expect(readTransition()).toBeUndefined();
+        expect(readNewestTransition()).toBeUndefined();
     });
 });
 
-describe('overlay repository layout transition when the group snapshot names the promoted layout before it arrives', () => {
+describe('overlay repository layout transitions when the group snapshot names the promoted layout before it arrives', () => {
     beforeEach(() => {
         nowEpochMs = 1_000;
         configureOverlayRepositories({
@@ -461,23 +461,23 @@ describe('overlay repository layout transition when the group snapshot names the
         nowEpochMs = 4_000;
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
 
-        expect(readTransition()?.replacedAtEpochMs).toBe(5_000);
+        expect(readNewestTransition()?.replacedAtEpochMs).toBe(5_000);
     });
 });
 
 function promote(replaced: OverlayInfo, promoted: OverlayInfo): void {
     setAcceptedOverlayById(OVERLAY_ID, replaced);
     expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('adopted');
-    expect(readTransition()?.replaced).toEqual(replaced);
+    expect(readNewestTransition()?.replaced).toEqual(replaced);
 }
 
 /** The most recent transition. */
-function readTransition(): OverlayLayoutTransition | undefined {
+function readNewestTransition(): OverlayLayoutTransition | undefined {
     return readTransitions()?.[0];
 }
 
 function readTransitions(): readonly OverlayLayoutTransition[] | undefined {
-    return readableLayoutTransitionCache().read(OVERLAY_ID);
+    return readableLayoutTransitionsCache().read(OVERLAY_ID);
 }
 
 /** Accepts each version in turn, the second at `firstPromotionAtEpochMs` and each next one a second later. */

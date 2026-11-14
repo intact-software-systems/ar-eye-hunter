@@ -89,7 +89,7 @@ describe('multicast QoS integration', () => {
                 connectionService,
                 groupCache: groups,
                 overlayCache: overlays,
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
@@ -174,7 +174,7 @@ describe('multicast QoS integration', () => {
             connectionService,
             groupCache: groups,
             overlayCache: overlays,
-            layoutTransitionCache: new LatestRepository(),
+            layoutTransitionsCache: new LatestRepository(),
             plannedOverlayCache: new LatestRepository(),
             replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
@@ -350,7 +350,7 @@ describe('multicast QoS integration', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
                 }),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -423,7 +423,7 @@ describe('multicast QoS integration', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
                 }),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -493,7 +493,7 @@ describe('multicast QoS integration', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1'])
                 }),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -560,7 +560,7 @@ describe('multicast QoS integration', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1', 'peer-2'])
                 }),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -661,7 +661,7 @@ describe('multicast QoS integration', () => {
                 overlayCache: createReadableCache({
                     [toScopedOverlayId(groupRef('group-1'))]: createOverlayInfo(['peer-1', 'peer-2'])
                 }),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -753,7 +753,7 @@ describe('multicast QoS integration', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -817,7 +817,7 @@ describe('multicast QoS integration', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -878,7 +878,7 @@ describe('multicast QoS integration', () => {
                 connectionService: connectionService,
                 groupCache: createReadableCache({}),
                 overlayCache: createReadableCache({}),
-                layoutTransitionCache: new LatestRepository(),
+                layoutTransitionsCache: new LatestRepository(),
                 plannedOverlayCache: new LatestRepository(),
                 replacedLayoutOverlapMs: 15_000,
                 multicasterFactory: (overlayId) =>
@@ -1019,7 +1019,7 @@ function createOverlayContext(
         overlayId: 'group-1',
         room: createGroupSnapshot(memberSessionIds),
         overlay: createOverlayInfo(nextHopSessionIds),
-        layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 

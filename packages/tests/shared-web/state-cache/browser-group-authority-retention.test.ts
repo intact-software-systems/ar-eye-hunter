@@ -105,7 +105,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 
@@ -139,7 +139,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 
@@ -444,7 +444,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 

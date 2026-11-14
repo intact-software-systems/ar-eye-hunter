@@ -27,7 +27,7 @@ import {
 } from './resolve-rtc-room-peer-denial.ts';
 import {
     resolveRtcRoomRoutingEdges,
-    type RtcRoomLayoutHistory,
+    type RtcRoomLayoutChanges,
     type RtcRoomRoutingEdges
 } from './resolve-rtc-room-routing-edges.ts';
 
@@ -35,7 +35,7 @@ export interface RtcRoomSnapshotAdmissionInput {
     readonly message: ALMessage;
     readonly snapshot: GroupSnapshot | undefined;
     readonly overlay: OverlayInfo | undefined;
-    readonly layoutHistory: RtcRoomLayoutHistory;
+    readonly layoutChanges: RtcRoomLayoutChanges;
     readonly selfPeerId: string;
     readonly fromPeerId: string | undefined;
     readonly recipientPeerId: string | undefined;
@@ -126,7 +126,7 @@ function toRtcRoomAdmissionAuthority(
     const routingEdges = input.overlay === undefined ? NO_RTC_ROOM_ROUTING_EDGES : resolveRtcRoomRoutingEdges({
         roomRef,
         accepted: input.overlay,
-        history: input.layoutHistory,
+        layoutChanges: input.layoutChanges,
         authorizedPeerIds,
         nowMs: input.nowMs
     });

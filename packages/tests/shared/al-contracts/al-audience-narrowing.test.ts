@@ -99,7 +99,7 @@ function computeRtcFrozenRecipients(message: ALMessage, snapshot: GroupSnapshot)
         selfPeerId: 'a',
         fromPeerId: undefined,
         recipientPeerId: undefined,
-        layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
         nowMs: Date.now()
     });
     if (admission.kind !== 'authorized') {

@@ -57,7 +57,7 @@ export function computeRtcOutboundCarrierAvailability(
         message,
         snapshot: observation.room,
         overlay,
-        layoutHistory: observation.layoutHistory,
+        layoutChanges: observation.layoutChanges,
         selfPeerId: input.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,
@@ -79,9 +79,9 @@ export function computeRtcOutboundCarrierAvailability(
 export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
-    const { overlayId, room, overlay, layoutHistory, nowMs } = observation;
+    const { overlayId, room, overlay, layoutChanges, nowMs } = observation;
     return overlayId && room && isAcceptedRoomLayoutOverlay(overlay, room.group)
-        ? { overlayId, room, overlay, layoutHistory, nowMs }
+        ? { overlayId, room, overlay, layoutChanges, nowMs }
         : undefined;
 }
 

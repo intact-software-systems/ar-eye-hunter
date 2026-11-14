@@ -192,7 +192,7 @@ export namespace WebRtcOverlayMulticastManager {
         readonly connectionService: Connection;
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
-        readonly layoutTransitionCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
+        readonly layoutTransitionsCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
         readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
         readonly replacedLayoutOverlapMs: number;
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
@@ -232,7 +232,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly connectionService: WebRtcOverlayMulticastManager.Connection;
     public readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
-    private readonly layoutTransitionCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
+    private readonly layoutTransitionsCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
     private readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
     public readonly replacedLayoutOverlapMs: number;
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
@@ -253,7 +253,7 @@ export class WebRtcOverlayMulticastManager {
         this.connectionService = dependencies.connectionService;
         this.groupCache = dependencies.groupCache;
         this.overlayCache = dependencies.overlayCache;
-        this.layoutTransitionCache = dependencies.layoutTransitionCache;
+        this.layoutTransitionsCache = dependencies.layoutTransitionsCache;
         this.plannedOverlayCache = dependencies.plannedOverlayCache;
         this.replacedLayoutOverlapMs = dependencies.replacedLayoutOverlapMs;
         this.multicasterFactory = dependencies.multicasterFactory;
@@ -653,13 +653,13 @@ export class WebRtcOverlayMulticastManager {
         const fromPeerId = source && source.kind !== 'trusted-server' ? source.peerId : undefined;
         const groupRef = readALTargetGroupRef(msg);
         const snapshot = groupRef ? this.readGroupSnapshotByRef(groupRef) : undefined;
-        const { overlayId, layoutHistory } = this.readOutboundObservation(msg);
+        const { overlayId, layoutChanges } = this.readOutboundObservation(msg);
         const overlay = overlayId ? this.overlayCache.read(overlayId) : undefined;
         const admission = computeRtcRoomSnapshotAdmission({
             message: msg,
             snapshot,
             overlay,
-            layoutHistory,
+            layoutChanges,
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
             recipientPeerId: undefined,
@@ -708,7 +708,7 @@ export class WebRtcOverlayMulticastManager {
             message: msg,
             groupCache: this.groupCache,
             overlayCache: this.overlayCache,
-            layoutTransitionCache: this.layoutTransitionCache,
+            layoutTransitionsCache: this.layoutTransitionsCache,
             plannedOverlayCache: this.plannedOverlayCache,
             replacedLayoutOverlapMs: this.replacedLayoutOverlapMs,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
@@ -1166,7 +1166,7 @@ export class WebRtcOverlayMulticastManager {
             message,
             snapshot: readALTargetGroupRef(message) ? observed.room : undefined,
             overlay: observed.overlay,
-            layoutHistory: observed.layoutHistory,
+            layoutChanges: observed.layoutChanges,
             selfPeerId,
             nowMs: observed.nowMs
         };
@@ -1270,12 +1270,12 @@ export class WebRtcOverlayMulticastManager {
         }
 
         const roomRef = readALTargetGroupRef(msg);
-        const { overlayId, layoutHistory } = this.readOutboundObservation(msg);
+        const { overlayId, layoutChanges } = this.readOutboundObservation(msg);
         const admission = computeRtcRoomSnapshotAdmission({
             message: msg,
             snapshot: roomRef ? this.readGroupSnapshotByRef(roomRef) : undefined,
             overlay: overlayId ? this.overlayCache.read(overlayId) : undefined,
-            layoutHistory,
+            layoutChanges,
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId: undefined,
             recipientPeerId: peerId,

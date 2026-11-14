@@ -6,13 +6,13 @@ import type {
     PeerId
 } from '../api/api-config.ts';
 import type { GroupSnapshot } from '../api/group-types.ts';
-import type { RtcRoomLayoutHistory } from './room-authority/resolve-rtc-room-routing-edges.ts';
+import type { RtcRoomLayoutChanges } from './room-authority/resolve-rtc-room-routing-edges.ts';
 
 export interface OverlayMulticasterContext {
     readonly overlayId: OverlayId;
     readonly room: GroupSnapshot;
     readonly overlay: OverlayInfo;
-    readonly layoutHistory: RtcRoomLayoutHistory;
+    readonly layoutChanges: RtcRoomLayoutChanges;
     readonly nowMs: number;
 }
 

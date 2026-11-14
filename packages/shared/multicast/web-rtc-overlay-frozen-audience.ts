@@ -105,7 +105,7 @@ export function toRtcOriginFrozenMessage(
         message,
         snapshot: context.room,
         overlay: context.overlay,
-        layoutHistory: context.layoutHistory,
+        layoutChanges: context.layoutChanges,
         selfPeerId: origin.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,

@@ -9,7 +9,7 @@ import {
 } from '../../repository/overlay-layout-transition.ts';
 import { toOverlayLayoutIdentity } from '../../repository/to-overlay-layout-identity.ts';
 
-export interface RtcRoomLayoutHistory {
+export interface RtcRoomLayoutChanges {
     /** Every layout this session replaced for the room that is still recorded, newest first; empty when none. */
     readonly transitions: readonly OverlayLayoutTransition[];
     readonly replacedLayoutOverlapMs: number;
@@ -20,7 +20,7 @@ export interface RtcRoomLayoutHistory {
 export interface ResolveRtcRoomRoutingEdgesInput {
     readonly roomRef: GroupRef;
     readonly accepted: OverlayInfo;
-    readonly history: RtcRoomLayoutHistory;
+    readonly layoutChanges: RtcRoomLayoutChanges;
     readonly authorizedPeerIds: readonly string[];
     readonly nowMs: number;
 }
@@ -67,7 +67,7 @@ function resolvePlannedLayoutNeighbors(
     input: ResolveRtcRoomRoutingEdgesInput,
     authorizedPeerIdSet: ReadonlySet<string>
 ): readonly string[] {
-    const planned = input.history.planned ?? undefined;
+    const planned = input.layoutChanges.planned ?? undefined;
     return isRoomLayoutOverlay(planned, input.roomRef)
         ? toALOverlayLayout(planned, authorizedPeerIdSet).neighborPeerIds
         : [];
@@ -87,7 +87,7 @@ function resolveReplacedLayoutEdges(
     if (newest === undefined) {
         return NO_REPLACED_LAYOUT_EDGES;
     }
-    const overlapMs = input.history.replacedLayoutOverlapMs;
+    const overlapMs = input.layoutChanges.replacedLayoutOverlapMs;
     const forwards = isLayoutTransitionInsideWindow(newest, input.nowMs, computeReplacedLayoutForwardingMs(overlapMs));
     const admittedPeerIds = chain
         .filter((transition) => isLayoutTransitionInsideWindow(transition, input.nowMs, overlapMs))
@@ -117,7 +117,7 @@ function resolveReplacingTransitionChain(input: ResolveRtcRoomRoutingEdgesInput)
     }
     const chain: OverlayLayoutTransition[] = [];
     let replacer: OverlayInfo = input.accepted;
-    for (const transition of input.history.transitions) {
+    for (const transition of input.layoutChanges.transitions) {
         if (!isLayoutTransitionReplacedBy(transition, input.roomRef, toOverlayLayoutIdentity(replacer))) {
             break;
         }

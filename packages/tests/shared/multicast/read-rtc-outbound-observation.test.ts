@@ -72,7 +72,7 @@ describe('readRtcOutboundObservation', () => {
 
         const observation = readFor(overlays, {}, transitions);
 
-        expect(observation.layoutHistory).toEqual({ transitions: [transition], replacedLayoutOverlapMs: SESSION_OVERLAP_MS, planned: null });
+        expect(observation.layoutChanges).toEqual({ transitions: [transition], replacedLayoutOverlapMs: SESSION_OVERLAP_MS, planned: null });
     });
 
     it('carries no transition for an overlay with none, as an empty list', () => {
@@ -80,12 +80,12 @@ describe('readRtcOutboundObservation', () => {
         overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
         const transitions = new LatestRepository<string, readonly OverlayLayoutTransition[]>();
 
-        expect(readFor(overlays, {}, transitions).layoutHistory).toEqual({
+        expect(readFor(overlays, {}, transitions).layoutChanges).toEqual({
             transitions: [],
             replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
             planned: null
         });
-        expect(readFor(new LatestRepository<string, OverlayInfo>(), {}, transitions).layoutHistory).toEqual({
+        expect(readFor(new LatestRepository<string, OverlayInfo>(), {}, transitions).layoutChanges).toEqual({
             transitions: [],
             replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
             planned: null
@@ -99,10 +99,10 @@ describe('readRtcOutboundObservation', () => {
         const plannedOverlays = new LatestRepository<string, OverlayInfo>();
         plannedOverlays.accept(SCOPED_ID, planned);
 
-        expect(readFor(overlays, {}, new LatestRepository(), plannedOverlays).layoutHistory.planned).toEqual(planned);
+        expect(readFor(overlays, {}, new LatestRepository(), plannedOverlays).layoutChanges.planned).toEqual(planned);
         const elsewhere = new LatestRepository<string, OverlayInfo>();
         elsewhere.accept('another-overlay', planned);
-        expect(readFor(overlays, {}, new LatestRepository(), elsewhere).layoutHistory.planned).toBeNull();
+        expect(readFor(overlays, {}, new LatestRepository(), elsewhere).layoutChanges.planned).toBeNull();
     });
 });
 
@@ -128,7 +128,7 @@ function readFor(
         message,
         groupCache: groups,
         overlayCache: overlays,
-        layoutTransitionCache: transitions,
+        layoutTransitionsCache: transitions,
         plannedOverlayCache: plannedOverlays,
         replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
         connectedPeerIds: ['b'],

@@ -931,7 +931,7 @@ function createManager(fixture: Omit<OverlayFixture, 'manager'>): WebRtcOverlayM
         connectionService: fixture.connection,
         groupCache: fixture.groups,
         overlayCache: fixture.overlays,
-        layoutTransitionCache: new LatestRepository(),
+        layoutTransitionsCache: new LatestRepository(),
         plannedOverlayCache: new LatestRepository(),
         replacedLayoutOverlapMs: 15_000,
         multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, fixture.connection),

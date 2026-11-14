@@ -408,7 +408,7 @@ function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterCon
             updatedAtEpochMs: 1,
             nextHopsBySessionId: undefined
         },
-        layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 

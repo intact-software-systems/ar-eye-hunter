@@ -16,7 +16,7 @@ import type {
 } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
 import { isRtcRoomSnapshotRefreshReason } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
 import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
-import type { RtcRoomLayoutHistory } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
+import type { RtcRoomLayoutChanges } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 import {
     computeRtcRoomSnapshotAdmission,
     toRtcPublicationHandlingPlan,
@@ -32,7 +32,7 @@ import { createGroupSnapshotFixture } from '../../../shared-web/authoritative-gr
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});
 const nowMs = 100;
-const noLayoutHistory: RtcRoomLayoutHistory = { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null };
+const noLayoutChanges: RtcRoomLayoutChanges = { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null };
 
 function snapshot(): GroupSnapshot {
     return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['origin', 'relay', 'receiver', 'downstream'] });
@@ -61,7 +61,7 @@ describe('RTC room authority', () => {
     it('requires evidence for no-floor messages, then permits an active direct room recipient without topology', () => {
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
@@ -75,7 +75,7 @@ describe('RTC room authority', () => {
     it('authorizes a different immediate relay only from a matching active server topology', () => {
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: 'relay',
             recipientPeerId: undefined,
@@ -94,7 +94,7 @@ describe('RTC room authority', () => {
         const versioned = { ...message, targets: { mode: 'multicast' as const, groupRef: roomRef, minSnapshotVersion: current.group.snapshotVersion + 1 } };
         const input = {
             message: versioned,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
@@ -114,7 +114,7 @@ describe('RTC room authority', () => {
         const current = snapshot();
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
@@ -145,7 +145,7 @@ describe('RTC room authority', () => {
         const current = snapshot();
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'origin',
             fromPeerId: undefined,
             recipientPeerId: 'receiver',
@@ -181,7 +181,7 @@ describe('RTC room authority', () => {
         const current = snapshot();
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: 'relay',
             recipientPeerId: undefined,
@@ -204,7 +204,7 @@ describe('RTC room authority', () => {
         };
         const input = {
             message: frozen,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'relay',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
@@ -238,7 +238,7 @@ describe('RTC room authority', () => {
     it('requires recipient membership and a permitted outgoing edge independent of diagnostics', () => {
         const input = {
             message,
-            layoutHistory: noLayoutHistory,
+            layoutChanges: noLayoutChanges,
             selfPeerId: 'receiver',
             fromPeerId: undefined,
             recipientPeerId: 'downstream',
@@ -281,7 +281,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         });
     }
 
-    function promotionHistory(overrides: Partial<OverlayLayoutTransition> = {}, replacedLayoutOverlapMs = overlapMs): RtcRoomLayoutHistory {
+    function promotionLayoutChanges(overrides: Partial<OverlayLayoutTransition> = {}, replacedLayoutOverlapMs = overlapMs): RtcRoomLayoutChanges {
         return {
             transitions: [{ replaced, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs, ...overrides }],
             replacedLayoutOverlapMs,
@@ -294,7 +294,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
             message,
             snapshot: promotionSnapshot(),
             overlay: promoted,
-            layoutHistory: promotionHistory(),
+            layoutChanges: promotionLayoutChanges(),
             selfPeerId: 'receiver',
             fromPeerId: 'previous',
             recipientPeerId: undefined,
@@ -345,10 +345,10 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
 
     // 'stranger' is a live member that neighbours this receiver only in the layout it holds planned.
     const planned: OverlayInfo = { ...promoted, overlayVersion: 3, nextHopSessionIds: ['stranger', 'relay'] };
-    const withPlanned = { ...promotionHistory(), planned };
+    const withPlanned = { ...promotionLayoutChanges(), planned };
 
     it('answers a frame relayed by a planned-layout neighbour as pending, with its own reason, instead of unauthorized', () => {
-        const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned });
+        const input = relayedInput({ fromPeerId: 'stranger', layoutChanges: withPlanned });
 
         expect(computeRtcRoomSnapshotAdmission(input)).toEqual({
             kind: 'pending',
@@ -382,7 +382,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
                 { snapshot: withMember(current, 'stranger', 'removed'), cause: 'authority-rejected' }
             ]
         ) {
-            const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned, snapshot });
+            const input = relayedInput({ fromPeerId: 'stranger', layoutChanges: withPlanned, snapshot });
             expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause });
             expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', localDelivery: { enabled: false }, nack: { enabled: false } });
         }
@@ -392,7 +392,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     // is now only a planned-layout neighbour is one the inbound runtime retries, as any not-yet-in-sync plan is, where
     // a plan against an unauthorized parent is not retried.
     it('a relayed plan against an awaited parent is one the inbound runtime retries, and one against an unauthorized parent is not', () => {
-        expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned }))))
+        expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger', layoutChanges: withPlanned }))))
             .toBe(true);
         expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger' })))).toBe(false);
     });
@@ -402,9 +402,9 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
             ...message,
             targets: { ...message.targets!, minSnapshotVersion: promotionSnapshot().group.snapshotVersion + 1 }
         } as typeof message;
-        const input = relayedInput({ message: floored, fromPeerId: 'stranger', layoutHistory: withPlanned });
+        const input = relayedInput({ message: floored, fromPeerId: 'stranger', layoutChanges: withPlanned });
 
-        expect(computeRtcRoomSnapshotAdmission({ ...input, layoutHistory: promotionHistory(), fromPeerId: 'relay' }))
+        expect(computeRtcRoomSnapshotAdmission({ ...input, layoutChanges: promotionLayoutChanges(), fromPeerId: 'relay' }))
             .toMatchObject({ kind: 'pending', reason: 'Awaiting the required room snapshot version' });
         expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'pending', reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON });
         expect(isRtcRoomSnapshotRefreshReason(planRelayed(input).dropReason!)).toBe(false);
@@ -468,8 +468,8 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     });
 
     it('refuses it at once when the session\'s overlap is zero', () => {
-        const layoutHistory = promotionHistory({}, 0);
-        expect(computeRtcRoomSnapshotAdmission(relayedInput({ layoutHistory, nowMs: replacedAtEpochMs })))
+        const layoutChanges = promotionLayoutChanges({}, 0);
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ layoutChanges, nowMs: replacedAtEpochMs })))
             .toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
     });
 
@@ -481,7 +481,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
 
     it('refuses a previous neighbour of another room\'s replaced layout', () => {
         const foreign = { ...replaced, groupRef: { ...roomRef, groupId: 'other-room' } };
-        expect(computeRtcRoomSnapshotAdmission(relayedInput({ layoutHistory: promotionHistory({ replaced: foreign }) })))
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ layoutChanges: promotionLayoutChanges({ replaced: foreign }) })))
             .toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
     });
 
@@ -510,24 +510,24 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     const older: OverlayInfo = { ...overlay(), overlayVersion: 0, nextHopSessionIds: ['older', 'downstream'] };
     const olderReplacedAtEpochMs = replacedAtEpochMs - 1_000;
 
-    function twoPromotionHistory(): RtcRoomLayoutHistory {
-        const newest = promotionHistory().transitions[0]!;
+    function twoPromotionLayoutChanges(): RtcRoomLayoutChanges {
+        const newest = promotionLayoutChanges().transitions[0]!;
         const olderTransition = { replaced: older, replacedBy: toOverlayLayoutIdentity(replaced), replacedAtEpochMs: olderReplacedAtEpochMs };
-        return { ...promotionHistory(), transitions: [newest, olderTransition] };
+        return { ...promotionLayoutChanges(), transitions: [newest, olderTransition] };
     }
 
     it('admits a relay that is a neighbour only in a layout two promotions old, inside that layout\'s own window', () => {
         for (const nowMs of [replacedAtEpochMs, olderReplacedAtEpochMs + overlapMs - 1]) {
-            const input = relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), nowMs });
+            const input = relayedInput({ fromPeerId: 'older', layoutChanges: twoPromotionLayoutChanges(), nowMs });
             expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'authorized', deliversLocally: true });
         }
     });
 
     it('refuses it after that layout\'s window, while the more recent replaced layout is still admitted', () => {
         const nowMs = olderReplacedAtEpochMs + overlapMs;
-        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), nowMs })))
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'older', layoutChanges: twoPromotionLayoutChanges(), nowMs })))
             .toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
-        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'previous', layoutHistory: twoPromotionHistory(), nowMs })))
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'previous', layoutChanges: twoPromotionLayoutChanges(), nowMs })))
             .toMatchObject({ kind: 'authorized' });
     });
 
@@ -544,7 +544,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
                 { snapshot: withMember(current, 'older', 'removed'), cause: 'authority-rejected' }
             ]
         ) {
-            const input = relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), snapshot: roomNow, nowMs: replacedAtEpochMs });
+            const input = relayedInput({ fromPeerId: 'older', layoutChanges: twoPromotionLayoutChanges(), snapshot: roomNow, nowMs: replacedAtEpochMs });
             expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause });
         }
     });
@@ -562,7 +562,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
 
 describe('the room roster fence at RTC ingress', () => {
     const receiverInput = {
-        layoutHistory: noLayoutHistory,
+        layoutChanges: noLayoutChanges,
         selfPeerId: 'receiver',
         fromPeerId: 'origin',
         recipientPeerId: undefined,
@@ -658,7 +658,7 @@ describe('the room roster fence at RTC ingress', () => {
     });
 
     it('keeps the origin verdicts: no roster floor and an inactive own member is unauthorized', () => {
-        const origin = { layoutHistory: noLayoutHistory, selfPeerId: 'origin', fromPeerId: undefined, recipientPeerId: undefined, overlay: undefined, nowMs };
+        const origin = { layoutChanges: noLayoutChanges, selfPeerId: 'origin', fromPeerId: undefined, recipientPeerId: undefined, overlay: undefined, nowMs };
         expect(computeRtcRoomSnapshotAdmission({ ...origin, message: stampedMessage(1, 2), snapshot: rosterSnapshot(1) }).kind)
             .toBe('authorized');
         expect(computeRtcRoomSnapshotAdmission({

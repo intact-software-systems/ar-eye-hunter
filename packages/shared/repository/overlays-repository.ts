@@ -111,7 +111,7 @@ const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string
     'Accepted overlay repository is not configured'
 );
 
-const layoutTransitionRepositoryToken = newObservableLatestRepositoryToken<string, readonly OverlayLayoutTransition[]>(
+const layoutTransitionsRepositoryToken = newObservableLatestRepositoryToken<string, readonly OverlayLayoutTransition[]>(
     'shared.repository.layout-transitions',
     'Layout transition repository is not configured'
 );
@@ -138,7 +138,7 @@ export function configureOverlayRepositories(
         manager
     );
     configureObservableLatestRepository(
-        layoutTransitionRepositoryToken,
+        layoutTransitionsRepositoryToken,
         {
             ttlMs: config.acceptedOverlays.ttlMs,
             maxEntries: config.acceptedOverlays.maxEntries,
@@ -187,10 +187,10 @@ export function readableAcceptedOverlayCache(
     return requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).readable();
 }
 
-export function readableLayoutTransitionCache(
+export function readableLayoutTransitionsCache(
     manager?: RepositoryManager
 ): ReadableKeyedValues<string, readonly OverlayLayoutTransition[]> {
-    return requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).readable();
+    return requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).readable();
 }
 
 export function hasPlannedServerOverlayRecordByGroupRef(
@@ -307,7 +307,7 @@ export function removeAcceptedOverlayById(
     manager?: RepositoryManager
 ): boolean {
     const removed = requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
-    clearLayoutTransition(overlayId, manager);
+    clearLayoutTransitions(overlayId, manager);
     return removed;
 }
 
@@ -336,7 +336,7 @@ export function removeAcceptedOverlayByIdIfUnchanged(
         manager
     });
     if (removed) {
-        clearLayoutTransition(overlayId, manager);
+        clearLayoutTransitions(overlayId, manager);
     }
     return removed;
 }
@@ -525,18 +525,18 @@ function adoptOverlay(
     emitOverlayAdoption(input.overlayId, outcome);
     repository.set(input.overlayId, input.overlay);
     if (acceptedChange !== undefined) {
-        setLayoutTransitionForAcceptedChange(acceptedChange);
+        setLayoutTransitionsForAcceptedChange(acceptedChange);
     }
     return outcome;
 }
 
-function setLayoutTransitionForAcceptedChange(change: AcceptedLayoutChange): void {
+function setLayoutTransitionsForAcceptedChange(change: AcceptedLayoutChange): void {
     const transitions = computeAcceptedLayoutTransitions(change);
     if (transitions === null) {
-        clearLayoutTransition(change.overlayId, change.manager);
+        clearLayoutTransitions(change.overlayId, change.manager);
         return;
     }
-    requireObservableLatestRepository(layoutTransitionRepositoryToken, change.manager).set(
+    requireObservableLatestRepository(layoutTransitionsRepositoryToken, change.manager).set(
         change.overlayId,
         transitions
     );
@@ -575,11 +575,11 @@ function readRecordedLayoutTransitions(
     overlayId: string,
     manager?: RepositoryManager
 ): readonly OverlayLayoutTransition[] {
-    return requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).read(overlayId) ?? [];
+    return requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).read(overlayId) ?? [];
 }
 
-function clearLayoutTransition(overlayId: string, manager?: RepositoryManager): void {
-    requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).delete(overlayId);
+function clearLayoutTransitions(overlayId: string, manager?: RepositoryManager): void {
+    requireObservableLatestRepository(layoutTransitionsRepositoryToken, manager).delete(overlayId);
 }
 
 function readOverlayRepositoryNow(manager?: RepositoryManager): number {
@@ -612,7 +612,7 @@ function removeMismatchedAcceptedOverlayAndRecordTransition(
         manager: input.manager
     };
     const removed = held !== undefined && repository.delete(input.overlayId);
-    setLayoutTransitionForAcceptedChange(removal);
+    setLayoutTransitionsForAcceptedChange(removal);
     return removed;
 }
 

@@ -404,7 +404,7 @@ function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALI
             fromPeerId,
             selfPeerId: 'receiver',
             recipientPeerId: undefined,
-            layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             overlay: {
                 overlayId: 'room',
                 groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },

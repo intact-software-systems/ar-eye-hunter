@@ -38,7 +38,7 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
 import {
     didOverlayAdoptionChange,
-    readableLayoutTransitionCache,
+    readableLayoutTransitionsCache,
     readablePlannedOverlayCache,
     setCurrentAcceptedServerOverlayById
 } from '@shared/repository/overlays-repository.ts';
@@ -152,7 +152,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     const repositories = new RepositoryManager();
     configureTestCacheRepositories(repositories, () => Date.now());
     setCurrentAcceptedServerOverlayById('room', initialOverlay, repositories);
-    const layoutTransitions = readableLayoutTransitionCache(repositories);
+    const layoutTransitions = readableLayoutTransitionsCache(repositories);
     const resources = createDefaultALOutboundRuntimeResources({
         decodePrepared: decodeALOutboundTransportMessage,
         stores: input.stores,
@@ -166,7 +166,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
-        layoutTransitionCache: layoutTransitions,
+        layoutTransitionsCache: layoutTransitions,
         plannedOverlayCache: readablePlannedOverlayCache(repositories),
         replacedLayoutOverlapMs: input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),

@@ -4,13 +4,13 @@ import { isSameGroupRef, toScopedOverlayId } from '../api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import type { OverlayLayoutTransition } from '../repository/overlay-layout-transition.ts';
-import type { RtcRoomLayoutHistory } from './room-authority/resolve-rtc-room-routing-edges.ts';
+import type { RtcRoomLayoutChanges } from './room-authority/resolve-rtc-room-routing-edges.ts';
 
 export interface RtcOutboundObservation {
     readonly overlayId: OverlayId | undefined;
     readonly room: GroupSnapshot | undefined;
     readonly overlay: OverlayInfo | undefined;
-    readonly layoutHistory: RtcRoomLayoutHistory;
+    readonly layoutChanges: RtcRoomLayoutChanges;
     readonly connectedPeerIds: readonly PeerId[];
     readonly nowMs: number;
 }
@@ -19,7 +19,7 @@ export interface ReadRtcOutboundObservationInput {
     readonly message: ALMessage;
     readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
-    readonly layoutTransitionCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
+    readonly layoutTransitionsCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
     readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
     readonly replacedLayoutOverlapMs: number;
     readonly connectedPeerIds: readonly PeerId[];
@@ -35,10 +35,10 @@ export function readRtcOutboundObservation(
     return {
         overlayId: selected.overlayId,
         overlay: selected.overlay,
-        layoutHistory: {
+        layoutChanges: {
             transitions: selected.overlayId === undefined
                 ? []
-                : input.layoutTransitionCache.read(selected.overlayId) ?? [],
+                : input.layoutTransitionsCache.read(selected.overlayId) ?? [],
             replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
             planned: selected.overlayId === undefined
                 ? null

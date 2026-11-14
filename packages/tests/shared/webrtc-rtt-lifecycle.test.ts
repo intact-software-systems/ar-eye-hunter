@@ -252,7 +252,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         connectionService: connectionService,
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
-        layoutTransitionCache: new LatestRepository(),
+        layoutTransitionsCache: new LatestRepository(),
         plannedOverlayCache: new LatestRepository(),
         replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
