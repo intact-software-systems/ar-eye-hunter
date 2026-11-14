@@ -53,6 +53,9 @@ export interface DecodeAlmLaneParametersInput {
 
 type AlmLaneSelection = Pick<AlmLaneParameters, 'scope' | 'carriers'>;
 
+/** An unset scope runs smoke and unset carriers run every carrier; a disabled lane names its skipped tests by it. */
+export const ALM_LANE_DEFAULT_SELECTION: AlmLaneSelection = { scope: 'smoke', carriers: ALM_CONFORMANCE_CARRIERS };
+
 const MAX_SEED = 0xFFFF_FFFF;
 
 /**
@@ -92,7 +95,7 @@ export function decodeAlmLaneParameters(
 }
 
 function decodeSelection(values: AlmLaneParameterValues): Either<readonly string[], AlmLaneSelection> {
-    const scope = toPresent(values.scope) ?? 'smoke';
+    const scope = toPresent(values.scope) ?? ALM_LANE_DEFAULT_SELECTION.scope;
     const requested = toListEntries(values.carriers);
     const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
     const issues = [
@@ -108,7 +111,7 @@ function decodeSelection(values: AlmLaneParameterValues): Either<readonly string
         return Either.ofLeft(issues);
     }
     const carriers = requested.length === 0
-        ? ALM_CONFORMANCE_CARRIERS
+        ? ALM_LANE_DEFAULT_SELECTION.carriers
         : ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
     return Either.ofRight({ scope, carriers });
 }

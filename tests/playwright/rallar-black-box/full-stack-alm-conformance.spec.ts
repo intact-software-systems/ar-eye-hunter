@@ -38,6 +38,7 @@ import {
     type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import {
+    ALM_LANE_DEFAULT_SELECTION,
     decodeAlmLaneParameters,
     type AlmLaneParameters
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
@@ -161,12 +162,8 @@ const config = readFullStackConfig();
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
 const laneParameters = config.enabled ? readLaneParameters() : undefined;
-/** A disabled lane decodes nothing: every test skips, so its titles name every carrier in the smoke scope. */
-const DISABLED_LANE_SELECTION: Pick<AlmLaneParameters, 'scope' | 'carriers'> = {
-    scope: 'smoke',
-    carriers: ALM_CONFORMANCE_CARRIERS
-};
-const { scope, carriers } = laneParameters ?? DISABLED_LANE_SELECTION;
+/** A disabled lane decodes nothing: every test skips, so its titles name the lane's default selection. */
+const { scope, carriers } = laneParameters ?? ALM_LANE_DEFAULT_SELECTION;
 // Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
 // scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
 // its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
