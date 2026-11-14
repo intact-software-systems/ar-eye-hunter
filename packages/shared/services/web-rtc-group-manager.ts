@@ -281,6 +281,7 @@ export class WebRtcGroupManager {
         const owners = new Map<PeerId, GroupId[]>();
         const groupKeysByPeerId = new Map<PeerId, string[]>();
         const dialAllowedPeerIds = new Set<PeerId>();
+        const earlyDialPeerIds = new Set<PeerId>();
         const maxConcurrentEdgeSetupsByGroupKey = new Map<string, number>();
 
         for (const group of this.groupsByKey.values()) {
@@ -290,6 +291,8 @@ export class WebRtcGroupManager {
             }
             maxConcurrentEdgeSetupsByGroupKey.set(group.groupKey, snapshot.group.memberPolicy.maxConcurrentEdgeSetups);
             const groupPresentPeerIds = new Set(group.targetPeerIds());
+            selectGroupEarlyDialPeerIds(this.toDialSelectionInput(snapshot, group.groupRef))
+                .forEach((peerId) => earlyDialPeerIds.add(peerId));
             for (const peerId of this.dialPeerIdsForSnapshot(snapshot, group.groupRef)) {
                 owners.set(peerId, [...(owners.get(peerId) ?? []), group.groupRef.groupId]);
                 groupKeysByPeerId.set(peerId, [...(groupKeysByPeerId.get(peerId) ?? []), group.groupKey]);
@@ -299,7 +302,13 @@ export class WebRtcGroupManager {
             }
         }
 
-        return { groupsByPeerId: owners, dialAllowedPeerIds, groupKeysByPeerId, maxConcurrentEdgeSetupsByGroupKey };
+        return {
+            groupsByPeerId: owners,
+            dialAllowedPeerIds,
+            earlyDialPeerIds,
+            groupKeysByPeerId,
+            maxConcurrentEdgeSetupsByGroupKey
+        };
     }
 
     ownerGroupsOfPeer(peerId: PeerId): readonly GroupId[] {
@@ -465,7 +474,7 @@ export class WebRtcGroupManager {
             knownPeerIds: new Set(this.rtcQBox.knownPeerIds()),
             livePeerIds: new Set(this.rtcQBox.activePeerIds()),
             desiredPeerIds,
-            earlyDialPeerIds: this.earlyDialPeerIds(),
+            earlyDialPeerIds: ownership.earlyDialPeerIds,
             connectablePeerIds: Array.from(desiredPeerIds).filter(
                 (peerId) => ownership.dialAllowedPeerIds.has(peerId) && !peerIdsWithNoReconnectableLanes.has(peerId)
             ),
@@ -645,18 +654,6 @@ export class WebRtcGroupManager {
 
     private dialPeerIdsForSnapshot(snapshot: AnyGroupPresence, groupRef: GroupRef): readonly PeerId[] {
         return selectGroupDialPeerIds(this.toDialSelectionInput(snapshot, groupRef));
-    }
-
-    private earlyDialPeerIds(): ReadonlySet<PeerId> {
-        const peerIds = new Set<PeerId>();
-        for (const group of this.groupsByKey.values()) {
-            const snapshot = group.readGroup();
-            if (snapshot) {
-                selectGroupEarlyDialPeerIds(this.toDialSelectionInput(snapshot, group.groupRef))
-                    .forEach((peerId) => peerIds.add(peerId));
-            }
-        }
-        return peerIds;
     }
 
     private toDialSelectionInput(snapshot: AnyGroupPresence, groupRef: GroupRef): SelectGroupDialPeerIdsInput {

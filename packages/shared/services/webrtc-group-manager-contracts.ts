@@ -43,6 +43,8 @@ export interface WebRtcRttReportingPeerOptions {
 export interface WebRtcPeerOwnership {
     readonly groupsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
     readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
+    /** Peers an active room wants only through its published planned layout. */
+    readonly earlyDialPeerIds: ReadonlySet<PeerId>;
     /** The same ownership by the scoped group key, which the bound is keyed on. */
     readonly groupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>;
     readonly maxConcurrentEdgeSetupsByGroupKey: ReadonlyMap<string, number>;
