@@ -274,3 +274,111 @@ describe('RTC topology: owner-issued changes that keep every edge of a three-ses
         }
     );
 });
+
+/*
+ * Can two owner config writes make the planner re-parent one of FOUR sessions onto an edge that the first write's
+ * layout does not have? Write 1 must leave sessions X and Y without an edge; write 2 must add X - Y and drop an edge
+ * of Y's. The edges come from hash weights of the session ids (or from RTT reports), so the same two writes
+ * re-parent a session for one id set and move nothing for another.
+ */
+
+interface PlanSessionsInput {
+    readonly sessionIds: readonly string[];
+    readonly config: Partial<RallarRtcTopologyServiceOptions>;
+    readonly previous?: RallarOverlayTopologySnapshot;
+    readonly rttMeasurements?: readonly RttMeasurementInfo[];
+}
+
+const FOUR_SESSION_WRITE_1: Partial<RallarRtcTopologyServiceOptions> = {
+    topologyKind: 'mesh',
+    degreeLimit: 2,
+    meshParamK: 1
+};
+
+/** The tree config replaces write 1 whole, so it plans with the server's default degree limit. */
+const FOUR_SESSION_WRITE_2: Partial<RallarRtcTopologyServiceOptions> = { topologyKind: 'tree' };
+
+const FIXTURE_FOUR_SESSION_IDS = ['session-a', 'session-b', 'session-c', 'session-d'] as const;
+
+const OTHER_FOUR_SESSION_IDS = ['session-a1', 'session-b1', 'session-c1', 'session-d1'] as const;
+
+function planSessions(input: PlanSessionsInput) {
+    const effective = { ...SERVER_DEFAULTS, ...input.config };
+    const planner = new RtcTopologyPlanner(effective, { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 });
+    return planner.plan({
+        group: createRtcTopologyGroupSnapshot('re-parent', input.sessionIds),
+        rttMeasurements: input.rttMeasurements ?? [],
+        previous: input.previous,
+        updateOptions: { previous: input.previous, topologyOptions: effective, planningIntent: 'membership-delta' },
+        nowEpochMs: 1_000
+    }).snapshot;
+}
+
+function planFourSessionWrites(sessionIds: readonly string[], rttMeasurements?: readonly RttMeasurementInfo[]) {
+    const complete = planSessions({ sessionIds, config: { topologyKind: 'star' }, rttMeasurements });
+    const first = planSessions({ sessionIds, config: FOUR_SESSION_WRITE_1, previous: complete, rttMeasurements });
+    const second = planSessions({ sessionIds, config: FOUR_SESSION_WRITE_2, previous: first, rttMeasurements });
+    return { first, second };
+}
+
+function toFourSessionRttReports(sessionIds: readonly string[]): readonly RttMeasurementInfo[] {
+    return sessionIds.flatMap((from, fromIndex) =>
+        sessionIds.slice(fromIndex + 1).map((to, toIndex) =>
+            createRtcTopologyRttMeasurement({
+                sessionIdFrom: from,
+                sessionIdTo: to,
+                rttMs: 5 + 7 * fromIndex + 3 * toIndex,
+                version: fromIndex * sessionIds.length + toIndex + 1
+            })
+        )
+    );
+}
+
+describe('RTC topology: owner config writes that re-parent one of four sessions', () => {
+    it('leaves the fourth session without an edge under the matrix driver config', () => {
+        const matrix = planSessions({ sessionIds: FIXTURE_FOUR_SESSION_IDS, config: MATRIX_ROOM_CONFIG });
+
+        expect(toEdges(matrix.nextHopsBySessionId)).toEqual([
+            'session-a - session-b',
+            'session-a - session-c',
+            'session-b - session-c'
+        ]);
+    });
+
+    it('adds session-c - session-d, an edge write 1 did not have, and drops session-a - session-b for the fixture ids', () => {
+        const { first, second } = planFourSessionWrites(FIXTURE_FOUR_SESSION_IDS);
+
+        expect(toEdges(first.nextHopsBySessionId)).toEqual([
+            'session-a - session-b',
+            'session-a - session-d',
+            'session-b - session-c'
+        ]);
+        expect(diffEdges(first.nextHopsBySessionId, second.nextHopsBySessionId)).toEqual({
+            added: ['session-c - session-d'],
+            removed: ['session-a - session-b']
+        });
+    });
+
+    it('moves no edge with the same two writes for another id set', () => {
+        const { first, second } = planFourSessionWrites(OTHER_FOUR_SESSION_IDS);
+
+        expect(diffEdges(first.nextHopsBySessionId, second.nextHopsBySessionId)).toEqual({ added: [], removed: [] });
+    });
+
+    it('moves session-d from session-b onto session-a instead for the fixture ids once RTT reports exist', () => {
+        const { first, second } = planFourSessionWrites(
+            FIXTURE_FOUR_SESSION_IDS,
+            toFourSessionRttReports(FIXTURE_FOUR_SESSION_IDS)
+        );
+
+        expect(toEdges(first.nextHopsBySessionId)).toEqual([
+            'session-a - session-b',
+            'session-a - session-c',
+            'session-b - session-d'
+        ]);
+        expect(diffEdges(first.nextHopsBySessionId, second.nextHopsBySessionId)).toEqual({
+            added: ['session-a - session-d'],
+            removed: ['session-b - session-d']
+        });
+    });
+});
