@@ -3,8 +3,9 @@ import { isSameGroupLayoutIdentity } from '../api/group-lifecycle/group-layout-i
 import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
 
 /**
- * A memory guard, not a timing bound: fifteen layouts a second apart inside the largest overlap, plus one. Time bounds
- * the history; this count only keeps a clock that never advances from growing it, and drops the oldest first.
+ * A memory guard, not a timing bound. Time bounds the history; this count only keeps a clock that never advances, or
+ * promotions that arrive faster than one a second, from growing it. More than sixteen promotions inside the largest
+ * overlap drop the oldest first even while its own window is still open, which is accepted.
  */
 export const MAX_RECORDED_LAYOUT_TRANSITIONS = 16;
 

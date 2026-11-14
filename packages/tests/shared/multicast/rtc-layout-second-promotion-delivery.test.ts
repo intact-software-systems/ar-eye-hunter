@@ -60,6 +60,10 @@ interface PromotionMeshInput {
     readonly closedEdges: readonly string[];
     /** When the origin sends, after the room's first promotion. */
     readonly sendAtMs: number;
+    /** Relay sessions that take each promotion from a group snapshot naming the layout accepted, as the browser does. */
+    readonly viaGroupSnapshot?: readonly string[];
+    /** How far the one clock is stepped back after the promotions, before the origin sends. */
+    readonly clockStepBackMs?: number;
 }
 
 interface PromotionMesh {
@@ -67,6 +71,7 @@ interface PromotionMesh {
     readonly peers: ReadonlyMap<string, RtcRelayOverlayFixture>;
     readonly edges: ReadonlyMap<string, readonly string[]>;
     readonly carriedCounts: Map<string, number>;
+    readonly viaGroupSnapshot: readonly string[];
 }
 
 interface TransportCopy {
@@ -191,8 +196,13 @@ function applyPromotion(mesh: PromotionMesh, sessionId: string, layout: RoomLayo
         mesh.origin.acceptOverlay(toLayoutOverlay(layout, 'a'));
         return;
     }
-    mesh.peers.get(sessionId)!.acceptSnapshot(snapshot);
-    mesh.peers.get(sessionId)!.acceptOverlay(toLayoutOverlay(layout, sessionId));
+    const peer = mesh.peers.get(sessionId)!;
+    if (mesh.viaGroupSnapshot.includes(sessionId)) {
+        peer.acceptSnapshotPromotion(snapshot, toLayoutOverlay(layout, sessionId));
+        return;
+    }
+    peer.acceptSnapshot(snapshot);
+    peer.acceptOverlay(toLayoutOverlay(layout, sessionId));
 }
 
 /**
@@ -215,13 +225,16 @@ async function createPromotionMesh(input: PromotionMeshInput): Promise<Promotion
             peers.get(sessionId)!.acceptPlannedOverlay(toLayoutOverlay(layouts.planned, sessionId));
         }
     }
-    const mesh = { origin, peers, edges, carriedCounts: new Map() };
+    const mesh = { origin, peers, edges, carriedCounts: new Map(), viaGroupSnapshot: input.viaGroupSnapshot ?? [] };
     for (const [sessionId, layouts] of Object.entries(input.sessions)) {
         for (const { layout, atMs } of layouts.promotions) {
             setTimeout(() => applyPromotion(mesh, sessionId, layout), atMs);
         }
     }
     await vi.advanceTimersByTimeAsync(input.sendAtMs);
+    if (input.clockStepBackMs !== undefined) {
+        vi.setSystemTime(Date.now() - input.clockStepBackMs);
+    }
     return mesh;
 }
 
@@ -432,6 +445,65 @@ describe.each([
             expect(observed.deliveredCopies).toBe(1);
             expect(observed.receiverAnswers).toEqual(reliability === 'at-least-once' ? ['b ack'] : []);
             expectDeliveredOutcome(observed, reliability);
+        }
+    );
+});
+
+describe('promotions that arrive as group snapshots naming the new accepted layout', () => {
+    useFakeClock();
+
+    // The ordinary browser path: each snapshot removes the mismatched accepted layout, then promotes the planned one.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'admits the %s copy over the edge two layouts old from a sender two promotions behind, and the message arrives once',
+        async (reliability) => {
+            const roomOnL3 = toSteppedPromotions(L2, L3);
+            const observed = await observeFrame({
+                sessions: {
+                    a: { promotions: roomOnL3 },
+                    b: { promotions: [] },
+                    c: { promotions: toSteppedPromotions(L2) },
+                    g: { promotions: toSteppedPromotions(L2) },
+                    d: { promotions: roomOnL3 }
+                },
+                closedEdges: ['c>d', 'g>d'],
+                sendAtMs: SEND_AT_MS,
+                viaGroupSnapshot: ['d']
+            }, reliability);
+
+            expect(observed.copiesIntoReceiver).toEqual(['b>d']);
+            expect(observed.verdicts).toEqual(['b authorized -']);
+            expect(observed.admissionReasons).toEqual(['admitted']);
+            expect(observed.deliveredCopies).toBe(1);
+            expectDeliveredOutcome(observed, reliability);
+        }
+    );
+});
+
+describe('a receiver whose clock reads before the instant its layout was replaced', () => {
+    useFakeClock();
+
+    // A replacement stamped after now is not a replacement in force: only the accepted layout's edges are admitted.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'admits the %s copy over the accepted layout\'s edge alone, and refuses the copy over the replaced layout\'s edge',
+        async (reliability) => {
+            const observed = await observeFrame({
+                sessions: {
+                    a: { promotions: toSteppedPromotions(L2) },
+                    b: { promotions: [] },
+                    c: { promotions: toSteppedPromotions(L2) },
+                    g: { promotions: toSteppedPromotions(L2) },
+                    d: { promotions: toSteppedPromotions(L2) }
+                },
+                closedEdges: [],
+                sendAtMs: SEND_AT_MS,
+                clockStepBackMs: 5_000
+            }, reliability);
+
+            expect(observed.verdicts).toEqual(['b unauthorized edge-unavailable', 'c authorized -']);
+            expect(observed.admissionReasons).toEqual(['unauthorized', 'admitted']);
+            expect(observed.deliveredCopies).toBe(1);
+            expect(observed.receiverAnswers).toEqual(reliability === 'at-least-once' ? ['c ack'] : []);
+            expect(observed.roomRefreshReasons).toEqual([]);
         }
     );
 });

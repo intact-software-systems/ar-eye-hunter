@@ -51,6 +51,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     readableLayoutTransitionCache,
     readablePlannedOverlayCache,
+    reconcileAcceptedOverlayIdentity,
     setCurrentAcceptedServerOverlayById,
     setCurrentPlannedServerOverlayById
 } from '@shared/repository/overlays-repository.ts';
@@ -122,6 +123,11 @@ export interface RtcRelayOverlayFixture {
     acceptOverlay(overlay: OverlayInfo): void;
     /** Replaces the layout this relay holds planned (the server's published plan), and records no transition. */
     acceptPlannedOverlay(overlay: OverlayInfo): void;
+    /**
+     * Promotes `overlay` as the browser does when a group snapshot names it accepted: the planned layout is held, the
+     * mismatched accepted layout is removed and the planned one promoted (`reconcileAcceptedOverlayIdentity`).
+     */
+    acceptSnapshotPromotion(snapshot: GroupSnapshot, overlay: OverlayInfo): void;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
@@ -237,6 +243,19 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     acceptPlannedOverlay(overlay: OverlayInfo): void {
         for (const overlayId of this.dependencies.overlayIds) {
             setCurrentPlannedServerOverlayById(overlayId, overlay, this.dependencies.overlayRepositories);
+        }
+    }
+
+    acceptSnapshotPromotion(snapshot: GroupSnapshot, overlay: OverlayInfo): void {
+        this.acceptSnapshot(snapshot);
+        for (const overlayId of this.dependencies.overlayIds) {
+            setCurrentPlannedServerOverlayById(overlayId, overlay, this.dependencies.overlayRepositories);
+            reconcileAcceptedOverlayIdentity({
+                overlayId,
+                acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined,
+                manager: this.dependencies.overlayRepositories
+            });
+            this.dependencies.overlays.accept(overlayId, overlay);
         }
     }
 

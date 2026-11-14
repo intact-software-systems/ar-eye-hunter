@@ -188,9 +188,12 @@ describe('overlay repository layout transition', () => {
         ]);
     });
 
-    it('keeps the 16 most recent transitions and drops the oldest', () => {
+    it('keeps the 16 most recent transitions and drops the oldest, even while the oldest one\'s window is still open', () => {
         setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
-        for (let version = 2; version <= 18; version += 1) {
+        nowEpochMs += 100;
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
+        const oldest = readTransition()!;
+        for (let version = 3; version <= 18; version += 1) {
             nowEpochMs += 100;
             setAcceptedOverlayById(OVERLAY_ID, overlay({ version }));
         }
@@ -198,6 +201,8 @@ describe('overlay repository layout transition', () => {
         const replacedVersions = readTransitions()?.map((transition) => transition.replaced.overlayVersion);
         expect(replacedVersions).toHaveLength(MAX_RECORDED_LAYOUT_TRANSITIONS);
         expect(replacedVersions).toEqual(Array.from({ length: 16 }, (_, index) => 17 - index));
+        expect(oldest.replaced.overlayVersion).toBe(1);
+        expect(nowEpochMs - oldest.replacedAtEpochMs).toBeLessThan(MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS);
     });
 
     it('clearing the layout clears its history', () => {
