@@ -205,6 +205,25 @@ describe('overlay repository layout transition', () => {
         expect(nowEpochMs - oldest.replacedAtEpochMs).toBeLessThan(MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS);
     });
 
+    it('one replacement records one transition, whichever accepted path states the replacing layout again', () => {
+        const replaced = overlay({ version: 1 });
+        const replacing = overlay({ version: 2 });
+        setAcceptedOverlayById(OVERLAY_ID, replaced);
+        nowEpochMs = 2_000;
+        setAcceptedOverlayById(OVERLAY_ID, replacing);
+        const recorded = [{ replaced, replacedBy: toOverlayLayoutIdentity(replacing), replacedAtEpochMs: 2_000 }];
+        expect(readTransitions()).toEqual(recorded);
+
+        nowEpochMs = 3_000;
+        expect(setAcceptedOverlayById(OVERLAY_ID, { ...replacing })).toBe('equal');
+        expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, { ...replacing })).toBe('equal');
+        setPlannedOverlayById(OVERLAY_ID, replacing);
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(replacing) });
+        expect(setAcceptedOverlayById(OVERLAY_ID, replaced)).toBe('dominated-dropped');
+
+        expect(readTransitions()).toEqual(recorded);
+    });
+
     it('clearing the layout clears its history', () => {
         promoteAt([1, 2, 3], 2_000);
         expect(readTransitions()).toHaveLength(2);

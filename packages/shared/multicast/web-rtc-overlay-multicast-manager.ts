@@ -48,7 +48,7 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
-import { settleALOutboundRelayForward } from '../alm/outbound/lane/settle-al-outbound-relay-forward.ts';
+import { writeALOutboundRelayForwardDiagnostic } from '../alm/outbound/lane/write-al-outbound-relay-forward-diagnostic.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -119,6 +119,7 @@ import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-drop-reason-code-from-handling-plan.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toRtcControlHandoffError } from './to-rtc-control-handoff-error.ts';
+import { toRtcNoRouteDispatchPlan } from './to-rtc-no-route-dispatch-plan.ts';
 import { toRtcOutboundMessage } from './to-rtc-outbound-message.ts';
 import { toRtcSentPositionRecordingPlan } from './to-rtc-sent-position-recording-plan.ts';
 import {
@@ -551,6 +552,7 @@ export class WebRtcOverlayMulticastManager {
         return await this.#publications.verifyPublicationProof(msg);
     }
 
+    /** A forward its store could not persist throws into the inbound claim, which retries it. */
     async forwardIfRequired(
         msg: ALMessage,
         fromPeerId?: PeerId
@@ -561,14 +563,19 @@ export class WebRtcOverlayMulticastManager {
             return [];
         }
         const result = await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding);
-        return settleALOutboundRelayForward(this.outboundDiagnostics, forwarding.msg, result);
+        writeALOutboundRelayForwardDiagnostic(this.outboundDiagnostics, forwarding.msg, result.verdict);
+        if (result.verdict.kind === 'storage-unavailable') {
+            throw new Error(result.reason ?? 'RTC forward admission returned storage-unavailable');
+        }
+        return result.entries;
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
         await this.verifyPublicationProof(copy.msg);
-        await this.outboundRuntime.retransmitAdmittedMessage(
+        const retried = await this.outboundRuntime.retransmitAdmittedMessage(
             toRtcRetriedCopyRetransmission(copy, this.planForwarding(copy.msg, copy.fromPeerId))
         );
+        writeALOutboundRelayForwardDiagnostic(this.outboundDiagnostics, copy.msg, retried.verdict);
     }
 
     /** A peer is present while it is a member of the room of the message and ready on this lane. */
@@ -871,7 +878,7 @@ export class WebRtcOverlayMulticastManager {
         }
         return context
             ? this.planOverlayDispatch(msg, context, stage)
-            : this.toNoRouteDispatchPlan(msg, 'without overlay context');
+            : toRtcNoRouteDispatchPlan(msg, 'without overlay context');
     }
 
     /** An admission whose every ready next hop is backpressured is planned again with that live state (D184). */
@@ -902,7 +909,7 @@ export class WebRtcOverlayMulticastManager {
                 readyPeerIds: this.connectionService.readyPeerIdsForLane()
             })
         ) {
-            return this.toNoRouteDispatchPlan(msg, 'without a ready accepted RTC edge');
+            return toRtcNoRouteDispatchPlan(msg, 'without a ready accepted RTC edge');
         }
         return this.planOutboundDispatch(
             msg,
@@ -955,7 +962,7 @@ export class WebRtcOverlayMulticastManager {
                 selfPeerId: this.connectionService.input.sessionId
             })
         ) {
-            return this.toNoRouteDispatchPlan(msg, `in a carrier gap: ${gap.reason}`);
+            return toRtcNoRouteDispatchPlan(msg, `in a carrier gap: ${gap.reason}`);
         }
         if (alreadyOwned) {
             throw new NotReadyException(50, gap.reason);
@@ -985,16 +992,6 @@ export class WebRtcOverlayMulticastManager {
             { ...context, nowMs: this.clock.nowMs() },
             resolveALQosNormalizationInput(msg, { ...context, direction: 'outbound' }, this.qosProvider)
         );
-    }
-
-    private toNoRouteDispatchPlan(msg: ALMessage, reason: string): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
-        return {
-            msg,
-            dropReasonCode: 'no-route',
-            lane: 'volatile',
-            preparedMessages: [],
-            dropReason: `Skipping RTC outbound message ${msg.id.msgId} ${reason}`
-        };
     }
 
     private toUnaddressedDispatchPlan(

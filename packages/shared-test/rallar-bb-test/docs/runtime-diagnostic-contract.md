@@ -426,9 +426,11 @@ every session the page opens. The event's `data` is the event itself:
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
-- `relay-forward-not-enqueued` carries `msgId`, `typeId`, `outcome` and `reason`:
-  one event for a copy a relay forwarded whose enqueue the outbound runtime
-  answered with anything but `admitted`, `duplicate` or `pending`. `outcome`
+- `relay-forward-not-enqueued` carries `msgId`, `typeId`, `outcome` and `reason`
+  (and `limit`, present exactly when a `capacity` refusal names the limit it
+  passed): one event for a copy a relay forwarded, or retried to the child hops
+  its row still waits on, whose enqueue the outbound runtime answered with
+  anything but `admitted`, `duplicate` or `pending`. `outcome`
   is the enqueue verdict's kind (`skipped`, `unroutable`, `refused`,
   `deferred`, `superseded`, `expired`, `failed` or `storage-unavailable`) and
   `reason` its code (`planner-drop`, `no-route`, `congested`, ...; the storage
@@ -437,7 +439,11 @@ every session the page opens. The event's `data` is the event itself:
   verdict is the send handle's. A browser proof counts a relay's `planner-drop`
   as events with `outcome` `skipped` and `reason` `planner-drop`. Nothing is
   retried or re-sent for it. A forward that is enqueued or already held states
-  nothing, so the event is rare, not one per relayed frame:
+  nothing, so the event is rare, not one per relayed frame. One gap: a forward
+  that was retained as `pending` and is replayed later ends in the effect
+  worker, which holds the verdict but not whether its owner is a relay (the
+  runtime knows no own peer id), so a refusal there is stated as a delivery
+  settlement and not as this event:
   `{"kind":"relay-forward-not-enqueued","msgId":"frame-1","typeId":"chat.message.v1","outcome":"skipped","reason":"planner-drop","traceId":"trace-1","corrId":"frame-1"}`
 - `receipt-confirmation` is a separate closed observation for each receipt
   admission attempt that reaches a validation decision or actual commit

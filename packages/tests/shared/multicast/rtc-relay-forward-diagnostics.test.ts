@@ -99,6 +99,42 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
         ]);
     });
 
+    it('a relay\'s retried forward that the planner drops is reported with the message, its type and the reason', async () => {
+        const relay = createRelay(CHAIN, NO_OUTBOUND_REPAIR);
+        const frame = createFrame('at-least-once', 'retried-planner-drop');
+
+        await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
+
+        expect(readForwardEvents(relay)).toEqual([
+            expect.objectContaining({
+                kind: 'relay-forward-not-enqueued',
+                msgId: frame.id.msgId,
+                typeId: frame.payload.typeId,
+                outcome: 'skipped',
+                reason: 'planner-drop'
+            })
+        ]);
+    });
+
+    it('a relay\'s retried forward that has no route is reported', async () => {
+        const relay = createRelay(LEAF);
+        const frame = createFrame('at-least-once', 'retried-no-route');
+
+        await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
+
+        expect(readForwardEvents(relay)).toEqual([expect.objectContaining({ outcome: 'unroutable', reason: 'no-route' })]);
+    });
+
+    it('a relay\'s retried forward that is admitted reports nothing', async () => {
+        const relay = createRelay(CHAIN);
+        const frame = createFrame('at-least-once', 'retried-admitted');
+
+        await relay.forwardRetriedCopy({ msg: frame, fromPeerId: 'a', toPeerIds: ['d'], attemptIdentity: 'retry-1' });
+
+        expect((await relay.readSent('d')).filter((sent) => sent.id.msgId === frame.id.msgId)).toHaveLength(1);
+        expect(readForwardEvents(relay)).toEqual([]);
+    });
+
     it.each(['at-least-once', 'best-effort'] as const)(
         'a relay whose %s forward is enqueued, or already present, reports nothing',
         async (reliability) => {
