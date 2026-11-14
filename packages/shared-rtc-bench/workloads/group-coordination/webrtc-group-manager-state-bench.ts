@@ -177,7 +177,7 @@ async function seedGroupManagerState(
     const manager = new WebRtcGroupManager(
         connectionService,
         { groupCache, clientCache, acceptedOverlayCache },
-        { onOverlayAdopted: async () => {} }
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     for (let index = 0; index < input.clients; index += 1) {

@@ -512,7 +512,7 @@ export class WebRtcGroupManager {
             desiredPeerIds: [...desiredPeerIds],
             rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
         });
-        this.options.onReconcilePassEnded?.();
+        this.options.onReconcilePassEnded();
     }
 
     private reconcileRetainedPeers(desiredPeerIds: Set<PeerId>): void {

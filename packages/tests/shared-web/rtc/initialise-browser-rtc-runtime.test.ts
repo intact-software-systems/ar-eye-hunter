@@ -150,7 +150,7 @@ describe('browser RTC runtime composition', () => {
                 clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
                 plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
                 acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-            }, { onOverlayAdopted: async () => {} });
+            }, { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} });
             await manager.getOrCreate(group.group).acceptGroupUpdate(group);
             configureBrowserRtcPeerCreationPolicies(service, manager);
 

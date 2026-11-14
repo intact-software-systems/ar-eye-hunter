@@ -25,7 +25,7 @@ describe('WebRtcGroupManager overlay roles', () => {
                 plannedOverlayCache,
                 acceptedOverlayCache
             },
-            { maxPeerConnections: 10, overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         for (const peerId of ['peer-accepted', 'peer-planned']) {
             clientCache.set(peerId, createClientInfo(peerId));

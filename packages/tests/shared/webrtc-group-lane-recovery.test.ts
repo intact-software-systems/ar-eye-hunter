@@ -61,7 +61,7 @@ async function createConnectedGroup(): Promise<ConnectedGroup> {
         groupCache: new LatestRepository<string, GroupSnapshot>(),
         clientCache: new LatestRepository<string, ClientInfo>(),
         acceptedOverlayCache
-    }, { onOverlayAdopted: async () => {} });
+    }, { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} });
     fixtures.push({ connection, manager });
     manager.startReconcileWakes();
     const snapshot = createGroupSnapshot({

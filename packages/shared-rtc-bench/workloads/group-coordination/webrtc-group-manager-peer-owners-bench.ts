@@ -104,7 +104,7 @@ async function seedPeerOwnerGroups(
     const manager = new WebRtcGroupManager(
         connectionService,
         { groupCache, clientCache, acceptedOverlayCache },
-        { onOverlayAdopted: async () => {} }
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     for (let groupIndex = 0; groupIndex < input.groups; groupIndex += 1) {

@@ -145,7 +145,8 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
         plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
         acceptedOverlayCache: acceptedOverlays
     }, {
-        onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
+        onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON),
+        onReconcilePassEnded: () => {}
     });
     configureBrowserRtcPeerCreationPolicies(connectionService, manager);
     onTestFinished(async () => {

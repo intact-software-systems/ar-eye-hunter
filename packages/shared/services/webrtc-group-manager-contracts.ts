@@ -19,7 +19,7 @@ export interface WebRtcGroupManagerOptions {
     /** Runs on every overlay adoption beside the reconcile it starts: what the adopted layout releases. */
     readonly onOverlayAdopted: () => Promise<void>;
     /** Ends every reconcile pass: a connection slot may have been freed by what the pass closed or saw closed. */
-    readonly onReconcilePassEnded?: () => void;
+    readonly onReconcilePassEnded: () => void;
 }
 
 export interface WebRtcGroupPeerSelection {
