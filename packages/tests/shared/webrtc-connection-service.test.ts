@@ -323,7 +323,7 @@ describe('WebRtcConnectionService signaling and creation', () => {
             ['reset', 'outbound']
         ] as const
     )('applies current %s-native %s admission to incoming offers', async (state, policy) => {
-        let deniedPolicy: typeof policy | undefined;
+        let deniedPolicy: typeof policy | 'none' = 'none';
         const fixture = createFixture(budgetInput(), {
             ...UNGATED_TEST_PEER_ADMISSION,
             decideInbound: () => deniedPolicy !== 'inbound',
