@@ -187,14 +187,14 @@ test.describe('ALM conformance lane', () => {
         for (const family of ['two-agent', 'addressed'] as const) {
             const title = family === 'two-agent' ? 'baseline' : family;
             test(`${title} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-                const { empty, reason } = toFamilySkip(
+                const { plan, emptyReason } = planFamily(
                     carrier,
                     family,
                     `no ${scope} ${title} ALM scenario runs over ${carrier}`
                 );
-                test.skip(empty, reason);
+                test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
-                const plan = announcePlan(carrier, family);
+                announcePlan(carrier, family, plan);
 
                 const run = await createTwoAgentRun({
                     browser,
@@ -232,16 +232,16 @@ test.describe('ALM conformance lane', () => {
 
         for (const family of ['three-agent', 'same-principal', 'four-role'] as const) {
             test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-                const { empty, reason } = toFamilySkip(
+                const { plan, emptyReason } = planFamily(
                     carrier,
                     family,
                     `no ${scope} ALM scenario over ${carrier} declares the ${
                         AGENT_FAMILY_ROLES[family].join(', ')
                     } roles`
                 );
-                test.skip(empty, reason);
+                test.skip(plan.cells.length === 0, emptyReason);
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
-                const plan = announcePlan(carrier, family);
+                announcePlan(carrier, family, plan);
 
                 const run = await createAgentRun({
                     browser,
@@ -272,14 +272,14 @@ test.describe('ALM conformance lane', () => {
         }
 
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
-            const { empty, reason } = toFamilySkip(
+            const { plan, emptyReason } = planFamily(
                 carrier,
                 'same-context',
                 `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
             );
-            test.skip(empty, reason);
+            test.skip(plan.cells.length === 0, emptyReason);
             test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
-            const plan = announcePlan(carrier, 'same-context');
+            announcePlan(carrier, 'same-context', plan);
 
             const run = await createTwoAgentRun({
                 browser,
@@ -359,49 +359,40 @@ function requireLaneParameters(): AlmLaneParameters {
     return laneParameters;
 }
 
-/** A shuffled family that names no seed mints one, which the lane prints before the family's first cell. */
-function planFamily(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily): AlmLanePlan {
-    return resolvePlan(carrier, family, createFamilyScenarios(toPlanningSelection(), carrier, family));
+interface FamilyPlan {
+    readonly plan: AlmLanePlan;
+    /** Why the family plans no cell over the carrier; read only when it plans none. */
+    readonly emptyReason: string;
 }
 
-function resolvePlan(
-    carrier: AlmConformanceCarrier,
-    family: AlmConformanceLaneFamily,
-    scenarios: readonly AlmConformanceScenario[]
-): AlmLanePlan {
-    return resolveAlmLanePlan({
-        family,
-        carrier,
-        scenarios,
-        scope,
-        parameters: requireLaneParameters(),
-        mintSeed: () => randomInt(0, 2 ** 31)
-    });
-}
-
-/** Whether the family plans no cell over the carrier, and why: both read the one catalog built here. */
-function toFamilySkip(
-    carrier: AlmConformanceCarrier,
-    family: AlmConformanceLaneFamily,
-    otherwise: string
-): { readonly empty: boolean; readonly reason: string; } {
-    const { only, skip } = requireLaneParameters();
+/**
+ * The family's one plan, which decides its skip and is announced and run: a shuffled family that names no seed mints
+ * one here, once, so the seed printed is the seed used. The plan and the reason read the one catalog built here.
+ */
+function planFamily(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily, otherwise: string): FamilyPlan {
+    const parameters = requireLaneParameters();
     const scenarios = createFamilyScenarios(toPlanningSelection(), carrier, family);
+    const { only, skip } = parameters;
     return {
-        empty: resolvePlan(carrier, family, scenarios).cells.length === 0,
-        reason: toAlmLaneEmptyPlanReason({ only, family, carrier, scope, skip, scenarios, otherwise })
+        plan: resolveAlmLanePlan({
+            family,
+            carrier,
+            scenarios,
+            scope,
+            parameters,
+            mintSeed: () => randomInt(0, 2 ** 31)
+        }),
+        emptyReason: toAlmLaneEmptyPlanReason({ only, family, carrier, scope, skip, scenarios, otherwise })
     };
 }
 
 /** Printed before the first cell, so a run that dies mid-way can be replayed with the same seed. */
-function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily): AlmLanePlan {
-    const plan = planFamily(carrier, family);
+function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily, plan: AlmLanePlan): void {
     const { mode, seed, rooms, scenarioKeys } = plan.cellOrder;
     console.info(
         `ALM lane plan ${carrier}-${scope} family=${family}: order=${mode} seed=${seed ?? 'none'} rooms=${rooms} ` +
             `cells=${scenarioKeys.join(',')}`
     );
-    return plan;
 }
 
 /**

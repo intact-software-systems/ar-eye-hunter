@@ -333,6 +333,22 @@ describe('the ALM lane parameters', () => {
 });
 
 describe('the ALM lane plan', () => {
+    // The lane resolves a family's plan once and both skips and announces from it, so the seed printed is the one used.
+    it('a shuffled family plan that names no seed mints one seed, the one its cell order records', () => {
+        const minted: number[] = [];
+        const plan = resolveAlmLanePlan({
+            ...toPlanInput('two-agent', { order: 'shuffled' }),
+            mintSeed: () => {
+                minted.push(11);
+                return 11;
+            }
+        });
+
+        expect(minted).toEqual([11]);
+        expect(plan.cellOrder.seed).toBe(11);
+        expect(plan.cells.length).toBeGreaterThan(0);
+    });
+
     it('four-role cells run in a room of their own whatever the room parameter says', () => {
         for (const rooms of ['family', 'cell'] as const) {
             const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms }));
