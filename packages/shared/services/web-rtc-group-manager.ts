@@ -196,7 +196,7 @@ export class WebRtcGroupManager {
 
         if (!service) {
             service = new WebRtcGroupService(
-                this.rtcQBox,
+                this.rtcQBox.input.sessionId,
                 group,
                 this.groupCache
             );

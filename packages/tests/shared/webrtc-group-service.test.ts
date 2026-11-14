@@ -16,7 +16,6 @@ import {
 } from 'vitest';
 import { configureTestCacheRepositories } from '../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../create-test-group.ts';
-import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
 
 interface GroupStateObservation {
     readonly source: 'push' | 'pull';
@@ -29,9 +28,8 @@ describe('WebRtcGroupService', () => {
     afterEach(() => vi.restoreAllMocks());
     it('accepts newer snapshots, filters self from targets, and ignores stale updates', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const initial = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
-        const service = new WebRtcGroupService(rtcQBox, initial.group, cache);
+        const service = new WebRtcGroupService('self', initial.group, cache);
         const events: GroupStateObservation[] = [];
 
         service.onStateDo('state', async (state, diff, source) => {
@@ -99,9 +97,8 @@ describe('WebRtcGroupService', () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         vi.spyOn(cache, 'read').mockReturnValue(undefined);
         vi.spyOn(cache, 'peek').mockReturnValue(snapshot);
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox,
+            'self',
             snapshot.group,
             cache
         );
@@ -131,9 +128,8 @@ describe('WebRtcGroupService', () => {
         const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
         groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
 
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox,
+            'self',
             snapshot.group,
             groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
@@ -167,9 +163,8 @@ describe('WebRtcGroupService', () => {
         });
         groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
 
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox,
+            'self',
             workspaceB.group,
             groupStateSnapshotsRepository.readableGroupStateSnapshotCache()
         );
@@ -207,9 +202,8 @@ describe('WebRtcGroupService', () => {
         cache.set('older', older);
         cache.set('wrong-scope', newerWrongScope);
         cache.set('latest', latest);
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const service = new WebRtcGroupService(
-            rtcQBox,
+            'self',
             latest.group,
             cache
         );
@@ -219,9 +213,8 @@ describe('WebRtcGroupService', () => {
 
     it('rejects updates for the wrong group id', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
-        const rtcQBox = createSimulatedRtcConnections('self').service;
         const snapshot = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self'] });
-        const service = new WebRtcGroupService(rtcQBox, snapshot.group, cache);
+        const service = new WebRtcGroupService('self', snapshot.group, cache);
 
         await expect(
             service.acceptGroupUpdate(createGroupSnapshot({ groupId: 'group-2', membershipVersion: 1, memberSessionIds: ['self'] }))
