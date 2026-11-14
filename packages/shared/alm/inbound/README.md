@@ -473,7 +473,13 @@ down to a whole millisecond, so an overlap of 1 ms forwards never
 A copy is then not refused when two browsers applied the promotion up to that
 half apart. In that first half a relay and an origin also own that layout's
 authorized neighbours, after the accepted layout's children and without
-repeats, a frozen multicast pruned over that layout's own adjacency. The missing-recipient retry and the failed-peer
+repeats, a frozen multicast pruned over that layout's own adjacency. The fallback is narrower in that
+half: when every recipient has a neighbour that leads to it and only the visited set removes (a path child the
+other layout may have addressed), a relay keeps only the neighbours whose subtree holds a recipient over the
+edges of both layouts, not every neighbour. A recipient behind the sender in every layout in force, a layout
+with no adjacency and an unplaced recipient still keep every child, as does a path child the room, hint or
+broadcast list removes, and the relays below a flooding peer flood too. A relay then drops a neighbour only
+when the two layouts give it no route to a recipient that avoids the relay. The missing-recipient retry and the failed-peer
 repair keep the accepted layout's adjacency, but a failed-peer repair's re-plan
 is an ordinary dispatch, so its copy can also reach a replaced-layout child. The
 same exclusion governs the forward of a retried copy and the relay row's

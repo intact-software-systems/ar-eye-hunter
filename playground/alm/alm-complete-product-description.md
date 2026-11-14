@@ -524,8 +524,10 @@ it to WS at admission (`no-route`) or, for a copy already prepared, after three 
 and the RTC leg of `ws-then-rtc`, hold a durable send (a volatile one reads `no-route`, as before): it reads
 `accepted`, states one `not-ready` attempt per claim, has no receipt row until copies are planned, and ends
 `expired` at its deadline unless the accepted overlay returns first. A peer unicast keeps its ordinary
-admission (`deferred` while there is no room snapshot); only its dispatch sees the gap, as `not-ready`. Relays forward only over the exact accepted
-overlay and, for the first half of the overlap the server states at connect, over the layout the accepted one replaced. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
+admission (`deferred` while there is no room snapshot); only its dispatch sees the gap, as `not-ready`. Relays plan a forward only over the exact accepted
+overlay and, for the first half of the overlap the server states at connect, over the layout the accepted one replaced. The send-time
+check of a prepared copy held `not-ready` and of a targeted repair reads the accepted layout and every replaced layout of the chain whose
+own overlap is open, so either can go to a replaced-layout neighbour in the second half. A re-plan that states no ACK tracking keeps the receiver set captured at admission. Only an overlay
 that is explicitly foreign or inactive for the message's room, or the room authority's own refusal (an
 inactive or expired room, session or member), is refused `unauthorized` (D96). Offer and Answer
 are correlated by `offerId` (D97), and a peer that reloads inside the overlay grace is redialled by the
