@@ -21,6 +21,7 @@ import {
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 
+import { computeRecordedLayoutTransitions } from './compute-recorded-layout-transitions.ts';
 import { isRoomLayoutOverlay } from './is-accepted-room-layout-overlay.ts';
 import { emitOverlayAdoption, type OverlayAdoptionOutcome } from './overlay-adoption-diagnostics.ts';
 import type { OverlayLayoutTransition } from './overlay-layout-transition.ts';
@@ -67,6 +68,8 @@ interface ReconcileAcceptedOverlayIdentityInput {
 interface AcceptedLayoutChange {
     readonly overlayId: string;
     readonly held: OverlayInfo | undefined;
+    /** The replaced layouts recorded while `held` was accepted, newest first. */
+    readonly recorded: readonly OverlayLayoutTransition[];
     readonly taker: OverlayInfo;
     readonly nowEpochMs: number;
     readonly manager?: RepositoryManager;
@@ -99,7 +102,7 @@ const acceptedOverlayRepositoryToken = newObservableLatestRepositoryToken<string
     'Accepted overlay repository is not configured'
 );
 
-const layoutTransitionRepositoryToken = newObservableLatestRepositoryToken<string, OverlayLayoutTransition>(
+const layoutTransitionRepositoryToken = newObservableLatestRepositoryToken<string, readonly OverlayLayoutTransition[]>(
     'shared.repository.layout-transitions',
     'Layout transition repository is not configured'
 );
@@ -177,7 +180,7 @@ export function readableAcceptedOverlayCache(
 
 export function readableLayoutTransitionCache(
     manager?: RepositoryManager
-): ReadableKeyedValues<string, OverlayLayoutTransition> {
+): ReadableKeyedValues<string, readonly OverlayLayoutTransition[]> {
     return requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).readable();
 }
 
@@ -351,6 +354,8 @@ export function reconcileAcceptedOverlayIdentity(
         input.overlayId,
         input.manager
     );
+    // Read before the mismatched layout's removal clears it: a promotion that follows extends this history.
+    const recorded = readRecordedLayoutTransitions(input.overlayId, input.manager);
     let changed = removeMismatchedAcceptedOverlay(input);
     if (input.acceptedIdentity === undefined) {
         return changed;
@@ -371,6 +376,7 @@ export function reconcileAcceptedOverlayIdentity(
     const promotion: AcceptedLayoutChange = {
         overlayId: input.overlayId,
         held,
+        recorded,
         taker: planned,
         nowEpochMs,
         manager: input.manager
@@ -521,6 +527,7 @@ function adoptOverlay(
         ? {
             overlayId: input.overlayId,
             held: repository.read(input.overlayId),
+            recorded: readRecordedLayoutTransitions(input.overlayId, input.manager),
             taker: input.overlay,
             nowEpochMs: readOverlayRepositoryNow(input.manager),
             manager: input.manager
@@ -545,11 +552,21 @@ function setLayoutTransitionForAcceptedChange(change: AcceptedLayoutChange): voi
         return;
     }
 
-    requireObservableLatestRepository(layoutTransitionRepositoryToken, change.manager).set(change.overlayId, {
-        replaced: held,
-        replacedBy: toOverlayLayoutIdentity(change.taker),
-        replacedAtEpochMs: change.nowEpochMs
-    });
+    requireObservableLatestRepository(layoutTransitionRepositoryToken, change.manager).set(
+        change.overlayId,
+        computeRecordedLayoutTransitions(change.recorded, {
+            replaced: held,
+            replacedBy: toOverlayLayoutIdentity(change.taker),
+            replacedAtEpochMs: change.nowEpochMs
+        })
+    );
+}
+
+function readRecordedLayoutTransitions(
+    overlayId: string,
+    manager?: RepositoryManager
+): readonly OverlayLayoutTransition[] {
+    return requireObservableLatestRepository(layoutTransitionRepositoryToken, manager).read(overlayId) ?? [];
 }
 
 function clearLayoutTransition(overlayId: string, manager?: RepositoryManager): void {

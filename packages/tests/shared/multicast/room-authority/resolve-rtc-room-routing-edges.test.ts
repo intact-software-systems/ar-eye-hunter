@@ -49,14 +49,14 @@ const replaced = layout({
     nextHopSessionIds: ['old-parent', 'both', 'expelled'],
     nextHopsBySessionId: { self: ['old-parent', 'both', 'expelled'], 'old-parent': ['self'] }
 });
-const authorizedPeerIds = ['self', 'new-parent', 'old-parent', 'both', 'bystander', 'planned-parent'];
+const authorizedPeerIds = ['self', 'new-parent', 'old-parent', 'both', 'bystander', 'planned-parent', 'oldest-parent'];
 
 function transition(overrides: Partial<OverlayLayoutTransition> = {}): OverlayLayoutTransition {
     return { replaced, replacedBy: toOverlayLayoutIdentity(accepted), replacedAtEpochMs, ...overrides };
 }
 
 function history(overrides: Partial<RtcRoomLayoutHistory> = {}): RtcRoomLayoutHistory {
-    return { transition: transition(), replacedLayoutOverlapMs: overlapMs, planned: null, ...overrides };
+    return { transitions: [transition()], replacedLayoutOverlapMs: overlapMs, planned: null, ...overrides };
 }
 
 function input(overrides: Partial<ResolveRtcRoomRoutingEdgesInput> = {}): ResolveRtcRoomRoutingEdgesInput {
@@ -72,7 +72,7 @@ const acceptedAlone = {
 
 describe('resolveRtcRoomRoutingEdges', () => {
     it('uses the accepted layout alone when no layout was replaced', () => {
-        expect(resolveRtcRoomRoutingEdges(input({ history: history({ transition: null }) }))).toEqual(acceptedAlone);
+        expect(resolveRtcRoomRoutingEdges(input({ history: history({ transitions: [] }) }))).toEqual(acceptedAlone);
     });
 
     it('adds the replaced layout\'s authorized neighbours from the replacement instant', () => {
@@ -139,14 +139,14 @@ describe('resolveRtcRoomRoutingEdges', () => {
         for (const nowMs of [replacedAtEpochMs - 10 * overlapMs, replacedAtEpochMs - 1, replacedAtEpochMs, replacedAtEpochMs + 1]) {
             expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs })).admittedEdgePeerIds).not.toContain('old-parent');
             expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs }))).toEqual(
-                resolveRtcRoomRoutingEdges(input({ history: history({ transition: null }), nowMs }))
+                resolveRtcRoomRoutingEdges(input({ history: history({ transitions: [] }), nowMs }))
             );
         }
     });
 
     it('drops the replaced layout once a newer layout is accepted', () => {
         const supersededBy = { ...toOverlayLayoutIdentity(accepted), version: accepted.overlayVersion - 1 };
-        expect(resolveRtcRoomRoutingEdges(input({ history: history({ transition: transition({ replacedBy: supersededBy }) }) }))).toEqual(
+        expect(resolveRtcRoomRoutingEdges(input({ history: history({ transitions: [transition({ replacedBy: supersededBy })] }) }))).toEqual(
             acceptedAlone
         );
     });
@@ -158,7 +158,7 @@ describe('resolveRtcRoomRoutingEdges', () => {
             { ...replaced, provenance: 'bootstrap', nextHopsBySessionId: undefined }
         ];
         for (const replacedLayout of untrusted) {
-            const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transition: transition({ replaced: replacedLayout }) }) }));
+            const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transitions: [transition({ replaced: replacedLayout })] }) }));
             expect(edges.previous).toBeNull();
             expect(edges.admittedEdgePeerIds).not.toContain('old-parent');
         }
@@ -173,7 +173,7 @@ describe('resolveRtcRoomRoutingEdges', () => {
         for (const acceptedLayout of notLive) {
             const replacedBy = toOverlayLayoutIdentity(acceptedLayout);
             const edges = resolveRtcRoomRoutingEdges(
-                input({ accepted: acceptedLayout, history: history({ transition: transition({ replacedBy }) }) })
+                input({ accepted: acceptedLayout, history: history({ transitions: [transition({ replacedBy })] }) })
             );
             expect(edges.accepted.neighbourPeerIds).toEqual([]);
             expect(edges.previous).toBeNull();
@@ -191,7 +191,7 @@ describe('resolveRtcRoomRoutingEdges', () => {
     });
 
     it('keeps the accepted edges admission reads today, authorized or not', () => {
-        for (const layoutHistory of [history(), history({ transition: null })]) {
+        for (const layoutHistory of [history(), history({ transitions: [] })]) {
             const edges = resolveRtcRoomRoutingEdges(input({ history: layoutHistory }));
             expect(edges.admittedEdgePeerIds.slice(0, accepted.nextHopSessionIds.length)).toEqual(accepted.nextHopSessionIds);
             expect(edges.accepted.neighbourPeerIds).not.toContain('stranger');
@@ -199,8 +199,82 @@ describe('resolveRtcRoomRoutingEdges', () => {
     });
 
     it('widens nothing when the replaced layout carries the accepted layout\'s own identity', () => {
-        const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transition: transition({ replaced: accepted }) }) }));
+        const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transitions: [transition({ replaced: accepted })] }) }));
         expect(edges).toEqual({ ...acceptedAlone, previous: acceptedAlone.accepted });
+    });
+});
+
+// The layout `replaced` replaced one second before `accepted` replaced it: two promotions old at the second one.
+const oldest = layout({
+    overlayVersion: 0,
+    nextHopSessionIds: ['oldest-parent', 'both'],
+    nextHopsBySessionId: { self: ['oldest-parent', 'both'], 'oldest-parent': ['self'] }
+});
+const oldestReplacedAtEpochMs = replacedAtEpochMs - 1_000;
+
+function oldestTransition(overrides: Partial<OverlayLayoutTransition> = {}): OverlayLayoutTransition {
+    return { replaced: oldest, replacedBy: toOverlayLayoutIdentity(replaced), replacedAtEpochMs: oldestReplacedAtEpochMs, ...overrides };
+}
+
+/** The history of two promotions one second apart, newest first. */
+const twoPromotions = history({ transitions: [transition(), oldestTransition()] });
+
+describe('resolveRtcRoomRoutingEdges over a history of several replaced layouts', () => {
+    it('admits the authorized neighbours of every replaced layout whose own window is open', () => {
+        for (const nowMs of [replacedAtEpochMs, oldestReplacedAtEpochMs + overlapMs - 1]) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: twoPromotions, nowMs })).admittedEdgePeerIds).toEqual([
+                'new-parent',
+                'stranger',
+                'both',
+                'old-parent',
+                'oldest-parent'
+            ]);
+        }
+    });
+
+    it('stops admitting an older layout at its own bound while a newer one is still admitted', () => {
+        const atOldestBound = resolveRtcRoomRoutingEdges(input({ history: twoPromotions, nowMs: oldestReplacedAtEpochMs + overlapMs }));
+        expect(atOldestBound.admittedEdgePeerIds).toEqual(['new-parent', 'stranger', 'both', 'old-parent']);
+        expect(resolveRtcRoomRoutingEdges(input({ history: twoPromotions, nowMs: replacedAtEpochMs + overlapMs }))).toEqual(
+            acceptedAlone
+        );
+    });
+
+    it('forwards over the most recent replaced layout only', () => {
+        for (const nowMs of [replacedAtEpochMs, replacedAtEpochMs + forwardingHalfMs - 1]) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: twoPromotions, nowMs })).previous).toEqual({
+                neighbourPeerIds: ['old-parent', 'both'],
+                nextHopsBySessionId: replaced.nextHopsBySessionId
+            });
+        }
+        expect(resolveRtcRoomRoutingEdges(input({ history: twoPromotions, nowMs: replacedAtEpochMs + forwardingHalfMs })).previous).toBeNull();
+    });
+
+    it('an entry outside the chain that ends at the accepted layout, and every entry older than it, is not in force', () => {
+        const elsewhere = { ...toOverlayLayoutIdentity(replaced), version: replaced.overlayVersion + 7 };
+        const broken = history({ transitions: [transition(), oldestTransition({ replacedBy: elsewhere }), oldestTransition()] });
+        expect(resolveRtcRoomRoutingEdges(input({ history: broken })).admittedEdgePeerIds).toEqual([
+            'new-parent',
+            'stranger',
+            'both',
+            'old-parent'
+        ]);
+        const newestOutside = history({ transitions: [transition({ replacedBy: elsewhere }), oldestTransition()] });
+        expect(resolveRtcRoomRoutingEdges(input({ history: newestOutside }))).toEqual(acceptedAlone);
+    });
+
+    it('a peer no longer authorized is admitted by no layout', () => {
+        const withoutOldestParent = authorizedPeerIds.filter((peerId) => peerId !== 'oldest-parent');
+        const edges = resolveRtcRoomRoutingEdges(input({ history: twoPromotions, authorizedPeerIds: withoutOldestParent }));
+        expect(edges.admittedEdgePeerIds).not.toContain('oldest-parent');
+        expect(edges.admittedEdgePeerIds).toContain('old-parent');
+    });
+
+    it('a bound of 0 admits the accepted layout alone for any history', () => {
+        const noOverlap = history({ transitions: twoPromotions.transitions, replacedLayoutOverlapMs: 0 });
+        for (const nowMs of [oldestReplacedAtEpochMs, replacedAtEpochMs, replacedAtEpochMs + 1]) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs }))).toEqual(acceptedAlone);
+        }
     });
 });
 
@@ -244,7 +318,7 @@ describe('resolveRtcRoomRoutingEdges with a planned layout held', () => {
     });
 
     it('right after a promotion the planned slot equals the accepted layout, so nobody is awaited', () => {
-        for (const layoutHistory of [history({ planned: accepted }), history({ planned: accepted, transition: null })]) {
+        for (const layoutHistory of [history({ planned: accepted }), history({ planned: accepted, transitions: [] })]) {
             expect(resolveRtcRoomRoutingEdges(input({ history: layoutHistory })).awaitedEdgePeerIds).toEqual([]);
         }
     });

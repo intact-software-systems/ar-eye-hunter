@@ -1355,7 +1355,7 @@ function createOverlayContext(
             activeSessions: room.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
         },
         overlay,
-        layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null }
+        layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 

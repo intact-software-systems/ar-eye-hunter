@@ -57,7 +57,7 @@ describe('readRtcOutboundObservation', () => {
         });
     });
 
-    it('an observation carries the transition held for the overlay it selected, and the session\'s overlap', () => {
+    it('an observation carries the transitions held for the overlay it selected, and the session\'s overlap', () => {
         const overlays = new LatestRepository<string, OverlayInfo>();
         overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
         const replaced = { ...createOriginOverlay(['c']), overlayId: SCOPED_ID };
@@ -66,27 +66,27 @@ describe('readRtcOutboundObservation', () => {
             replacedBy: toOverlayLayoutIdentity({ ...replaced, overlayVersion: 2 }),
             replacedAtEpochMs: 500
         };
-        const transitions = new LatestRepository<string, OverlayLayoutTransition>();
-        transitions.accept(SCOPED_ID, transition);
-        transitions.accept('another-overlay', { ...transition, replacedAtEpochMs: 1 });
+        const transitions = new LatestRepository<string, readonly OverlayLayoutTransition[]>();
+        transitions.accept(SCOPED_ID, [transition]);
+        transitions.accept('another-overlay', [{ ...transition, replacedAtEpochMs: 1 }]);
 
         const observation = readFor(overlays, {}, transitions);
 
-        expect(observation.layoutHistory).toEqual({ transition, replacedLayoutOverlapMs: SESSION_OVERLAP_MS, planned: null });
+        expect(observation.layoutHistory).toEqual({ transitions: [transition], replacedLayoutOverlapMs: SESSION_OVERLAP_MS, planned: null });
     });
 
-    it('carries no transition for an overlay with none', () => {
+    it('carries no transition for an overlay with none, as an empty list', () => {
         const overlays = new LatestRepository<string, OverlayInfo>();
         overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
-        const transitions = new LatestRepository<string, OverlayLayoutTransition>();
+        const transitions = new LatestRepository<string, readonly OverlayLayoutTransition[]>();
 
         expect(readFor(overlays, {}, transitions).layoutHistory).toEqual({
-            transition: null,
+            transitions: [],
             replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
             planned: null
         });
         expect(readFor(new LatestRepository<string, OverlayInfo>(), {}, transitions).layoutHistory).toEqual({
-            transition: null,
+            transitions: [],
             replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
             planned: null
         });
@@ -109,7 +109,7 @@ describe('readRtcOutboundObservation', () => {
 function readFor(
     overlays: LatestRepository<string, OverlayInfo>,
     extra: Partial<ALMessage>,
-    transitions: LatestRepository<string, OverlayLayoutTransition> = new LatestRepository(),
+    transitions: LatestRepository<string, readonly OverlayLayoutTransition[]> = new LatestRepository(),
     plannedOverlays: LatestRepository<string, OverlayInfo> = new LatestRepository()
 ) {
     const groups = new LatestRepository<string, GroupSnapshot>();

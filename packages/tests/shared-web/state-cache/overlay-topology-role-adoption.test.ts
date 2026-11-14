@@ -269,11 +269,11 @@ describe('browser overlay topology role adoption', () => {
         });
 
         expect(publication).toMatchObject({ role: 'accepted', outcome: 'adopted', changed: true });
-        expect(readableLayoutTransitionCache().read(topology.overlayId)).toEqual({
+        expect(readableLayoutTransitionCache().read(topology.overlayId)).toEqual([{
             replaced: held,
             replacedBy: toGroupLayoutIdentity(topology),
             replacedAtEpochMs: ADOPTION_EPOCH_MS
-        });
+        }]);
     });
 
     it('notifies RTC ownership before publishing an accepted overlay change to browser observers', async () => {

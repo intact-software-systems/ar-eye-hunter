@@ -512,7 +512,7 @@ async function createReceiptLoopReceiver(
                 selfPeerId: peerId,
                 fromPeerId,
                 recipientPeerId: undefined,
-                layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
+                layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
                 overlay: undefined,
                 nowMs: observations.nowMs
             });

@@ -1019,7 +1019,7 @@ function createOverlayContext(
         overlayId: 'group-1',
         room: createGroupSnapshot(memberSessionIds),
         overlay: createOverlayInfo(nextHopSessionIds),
-        layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null }
+        layoutHistory: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 

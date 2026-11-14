@@ -80,7 +80,7 @@ export interface RtcOriginOverlayFixture {
     readonly groups: LatestRepository<string, GroupSnapshot>;
     /** The overlay cache the manager reads; a write here records no layout transition, `acceptOverlay` does. */
     readonly overlays: LatestRepository<string, OverlayInfo>;
-    readonly layoutTransitions: ReadableKeyedValues<string, OverlayLayoutTransition>;
+    readonly layoutTransitions: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
     /** Accepts a layout as the overlay repository does, which records the transition it replaces. */
     acceptOverlay(overlay: OverlayInfo): void;
     readonly channels: Readonly<Record<string, CapturedChannel>>;

@@ -1,6 +1,7 @@
-import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS, type OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { MAX_RECORDED_LAYOUT_TRANSITIONS } from '@shared/repository/compute-recorded-layout-transitions.ts';
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
 import {
     configureOverlayRepositories,
@@ -27,9 +28,9 @@ const ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', gro
 const OTHER_ROOM: GroupRef = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-2' };
 const OVERLAY_ID = toScopedOverlayId(ROOM);
 
-describe('overlay repository layout transition', () => {
-    let nowEpochMs: number;
+let nowEpochMs: number;
 
+describe('overlay repository layout transition', () => {
     beforeEach(() => {
         nowEpochMs = 1_000;
         configureOverlayRepositories({
@@ -148,7 +149,7 @@ describe('overlay repository layout transition', () => {
         expect(readTransition()).toBeUndefined();
     });
 
-    it('a second promotion replaces the transition with the layout it replaced', () => {
+    it('keeps the transitions of two promotions a second apart, newest first', () => {
         const first = overlay({ version: 1 });
         const second = overlay({ version: 2 });
         const third = overlay({ version: 3 });
@@ -160,11 +161,52 @@ describe('overlay repository layout transition', () => {
 
         reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(third) });
 
-        expect(readableLayoutTransitionCache().readAllValues()).toEqual([{
-            replaced: second,
-            replacedBy: toOverlayLayoutIdentity(third),
-            replacedAtEpochMs: 3_000
-        }]);
+        expect(readableLayoutTransitionCache().readAllValues()).toEqual([[
+            { replaced: second, replacedBy: toOverlayLayoutIdentity(third), replacedAtEpochMs: 3_000 },
+            { replaced: first, replacedBy: toOverlayLayoutIdentity(second), replacedAtEpochMs: 2_000 }
+        ]]);
+    });
+
+    it('drops a transition once its own largest window has passed', () => {
+        promoteAt([1, 2], 2_000);
+        nowEpochMs = 2_000 + MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS - 1;
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 3 }));
+        expect(readTransitions()?.map((transition) => transition.replaced.overlayVersion)).toEqual([2, 1]);
+
+        nowEpochMs = 2_000 + MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS;
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 4 }));
+        expect(readTransitions()?.map((transition) => transition.replaced.overlayVersion)).toEqual([3, 2]);
+    });
+
+    it('drops a transition stamped after now', () => {
+        promoteAt([1, 2], 20_000);
+        nowEpochMs = 10_000;
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 3 }));
+
+        expect(readTransitions()).toEqual([
+            { replaced: overlay({ version: 2 }), replacedBy: toOverlayLayoutIdentity(overlay({ version: 3 })), replacedAtEpochMs: 10_000 }
+        ]);
+    });
+
+    it('keeps the 16 most recent transitions and drops the oldest', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        for (let version = 2; version <= 18; version += 1) {
+            nowEpochMs += 100;
+            setAcceptedOverlayById(OVERLAY_ID, overlay({ version }));
+        }
+
+        const replacedVersions = readTransitions()?.map((transition) => transition.replaced.overlayVersion);
+        expect(replacedVersions).toHaveLength(MAX_RECORDED_LAYOUT_TRANSITIONS);
+        expect(replacedVersions).toEqual(Array.from({ length: 16 }, (_, index) => 17 - index));
+    });
+
+    it('clearing the layout clears its history', () => {
+        promoteAt([1, 2, 3], 2_000);
+        expect(readTransitions()).toHaveLength(2);
+
+        removeAcceptedOverlayById(OVERLAY_ID);
+
+        expect(readTransitions()).toBeUndefined();
     });
 
     it('a transition does not survive two repairs that return the accepted slot to the layout that made it', () => {
@@ -266,8 +308,22 @@ function promote(replaced: OverlayInfo, promoted: OverlayInfo): void {
     expect(readTransition()?.replaced).toEqual(replaced);
 }
 
+/** The most recent transition. */
 function readTransition(): OverlayLayoutTransition | undefined {
+    return readTransitions()?.[0];
+}
+
+function readTransitions(): readonly OverlayLayoutTransition[] | undefined {
     return readableLayoutTransitionCache().read(OVERLAY_ID);
+}
+
+/** Accepts each version in turn, the second at `firstPromotionAtEpochMs` and each next one a second later. */
+function promoteAt(versions: readonly number[], firstPromotionAtEpochMs: number): void {
+    setAcceptedOverlayById(OVERLAY_ID, overlay({ version: versions[0]! }));
+    versions.slice(1).forEach((version, index) => {
+        nowEpochMs = firstPromotionAtEpochMs + index * 1_000;
+        expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ version }))).toBe('adopted');
+    });
 }
 
 function acceptedLayout(): OverlayInfo {

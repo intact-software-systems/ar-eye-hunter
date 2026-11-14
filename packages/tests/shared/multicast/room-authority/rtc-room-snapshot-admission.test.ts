@@ -32,7 +32,7 @@ import { createGroupSnapshotFixture } from '../../../shared-web/authoritative-gr
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});
 const nowMs = 100;
-const noLayoutHistory: RtcRoomLayoutHistory = { transition: null, replacedLayoutOverlapMs: 15_000, planned: null };
+const noLayoutHistory: RtcRoomLayoutHistory = { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null };
 
 function snapshot(): GroupSnapshot {
     return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['origin', 'relay', 'receiver', 'downstream'] });
@@ -275,12 +275,15 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     const replaced: OverlayInfo = { ...overlay(), nextHopSessionIds: ['previous', 'downstream'] };
 
     function promotionSnapshot(): GroupSnapshot {
-        return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['origin', 'relay', 'receiver', 'downstream', 'previous', 'stranger'] });
+        return createGroupSnapshotFixture({
+            ...roomRef,
+            sessionIds: ['origin', 'relay', 'receiver', 'downstream', 'previous', 'stranger', 'older']
+        });
     }
 
     function promotionHistory(overrides: Partial<OverlayLayoutTransition> = {}, replacedLayoutOverlapMs = overlapMs): RtcRoomLayoutHistory {
         return {
-            transition: { replaced, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs, ...overrides },
+            transitions: [{ replaced, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs, ...overrides }],
             replacedLayoutOverlapMs,
             planned: null
         };
@@ -502,6 +505,49 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         expect(computeRtcRoomSnapshotAdmission(toPrevious).kind).toBe('authorized');
         expect(computeRtcRoomSnapshotAdmission({ ...toPrevious, nowMs: replacedAtEpochMs + overlapMs }))
             .toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+    });
+
+    // 'older' neighboured this receiver only in the layout `replaced` replaced one second before `promoted` replaced it.
+    const older: OverlayInfo = { ...overlay(), overlayVersion: 0, nextHopSessionIds: ['older', 'downstream'] };
+    const olderReplacedAtEpochMs = replacedAtEpochMs - 1_000;
+
+    function twoPromotionHistory(): RtcRoomLayoutHistory {
+        const newest = promotionHistory().transitions[0]!;
+        const olderTransition = { replaced: older, replacedBy: toOverlayLayoutIdentity(replaced), replacedAtEpochMs: olderReplacedAtEpochMs };
+        return { ...promotionHistory(), transitions: [newest, olderTransition] };
+    }
+
+    it('admits a relay that is a neighbour only in a layout two promotions old, inside that layout\'s own window', () => {
+        for (const nowMs of [replacedAtEpochMs, olderReplacedAtEpochMs + overlapMs - 1]) {
+            const input = relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), nowMs });
+            expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'authorized', deliversLocally: true });
+        }
+    });
+
+    it('refuses it after that layout\'s window, while the more recent replaced layout is still admitted', () => {
+        const nowMs = olderReplacedAtEpochMs + overlapMs;
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), nowMs })))
+            .toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        expect(computeRtcRoomSnapshotAdmission(relayedInput({ fromPeerId: 'previous', layoutHistory: twoPromotionHistory(), nowMs })))
+            .toMatchObject({ kind: 'authorized' });
+    });
+
+    it('refuses at once a removed and an expelled member that an older layout names', () => {
+        const current = promotionSnapshot();
+        const removed = {
+            ...current,
+            activeSessions: current.activeSessions.filter((session) => session.sessionId !== 'older'),
+            members: current.members.filter((member) => member.principalId !== 'older')
+        };
+        for (
+            const { snapshot: roomNow, cause } of [
+                { snapshot: removed, cause: 'edge-unavailable' },
+                { snapshot: withMember(current, 'older', 'removed'), cause: 'authority-rejected' }
+            ]
+        ) {
+            const input = relayedInput({ fromPeerId: 'older', layoutHistory: twoPromotionHistory(), snapshot: roomNow, nowMs: replacedAtEpochMs });
+            expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause });
+        }
     });
 
     it('keeps the sender\'s roster fence unchanged inside the overlap', () => {

@@ -190,7 +190,7 @@ export namespace WebRtcOverlayMulticastManager {
         readonly connectionService: Connection;
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
-        readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+        readonly layoutTransitionCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
         readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
         readonly replacedLayoutOverlapMs: number;
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
@@ -230,7 +230,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly connectionService: WebRtcOverlayMulticastManager.Connection;
     public readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
-    private readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+    private readonly layoutTransitionCache: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
     private readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
     public readonly replacedLayoutOverlapMs: number;
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;

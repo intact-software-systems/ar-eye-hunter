@@ -5,7 +5,8 @@ import type { OverlayLayoutTransition } from '../../repository/overlay-layout-tr
 import { isOverlayIdentity } from '../../repository/to-overlay-layout-identity.ts';
 
 export interface RtcRoomLayoutHistory {
-    readonly transition: OverlayLayoutTransition | null;
+    /** Every layout this session replaced for the room that is still recorded, newest first; empty when none. */
+    readonly transitions: readonly OverlayLayoutTransition[];
     readonly replacedLayoutOverlapMs: number;
     /** The layout this session holds planned for the room, which the server has not promoted here yet; else `null`. */
     readonly planned: OverlayInfo | null;
@@ -27,11 +28,14 @@ export interface RtcRoomLayoutEdges {
 export interface RtcRoomRoutingEdges {
     readonly accepted: RtcRoomLayoutEdges;
     /**
-     * The replaced layout's edges a sender or relay may still forward over: only for the first half of the overlap,
-     * rounded down to a whole millisecond; else `null`.
+     * The most recent replaced layout's edges a sender or relay may still forward over: only for the first half of the
+     * overlap, rounded down to a whole millisecond; else `null`.
      */
     readonly previous: RtcRoomLayoutEdges | null;
-    /** The accepted layout's next hops, and the replaced layout's authorized neighbours for the whole overlap. */
+    /**
+     * The accepted layout's next hops, and the authorized neighbours of every replaced layout in the chain that ends at
+     * the accepted layout, each for its own whole overlap.
+     */
     readonly admittedEdgePeerIds: readonly string[];
     /**
      * The planned layout's authorized neighbours that are not admitted: a receiver awaits its own promotion of that
@@ -70,21 +74,36 @@ function resolvePlannedLayoutNeighbours(
         : [];
 }
 
-/** With no transition of this room for the accepted layout, there is no replaced layout to admit or forward over. */
+/**
+ * A receiver admits the authorized neighbours of every replaced layout in the chain that ends at the accepted layout
+ * whose own overlap is open; a sender or relay forwards over the most recent one only, for the first half of its
+ * overlap.
+ */
 function resolveReplacedLayoutEdges(
     input: ResolveRtcRoomRoutingEdgesInput,
     authorizedPeerIdSet: ReadonlySet<string>
 ): RtcReplacedLayoutEdges {
-    const transition = resolveReplacingTransition(input);
-    if (transition === null) {
+    const chain = resolveReplacingTransitionChain(input);
+    const newest = chain[0];
+    if (newest === undefined) {
         return NO_REPLACED_LAYOUT_EDGES;
     }
-    const edges = toRtcRoomLayoutEdges(transition.replaced, authorizedPeerIdSet);
-    const elapsedMs = input.nowMs - transition.replacedAtEpochMs;
     const overlapMs = input.history.replacedLayoutOverlapMs;
-    const admits = elapsedMs >= 0 && elapsedMs < overlapMs;
-    const forwards = elapsedMs >= 0 && elapsedMs < computeReplacedLayoutForwardingMs(overlapMs);
-    return { previous: forwards ? edges : null, admittedPeerIds: admits ? edges.neighbourPeerIds : [] };
+    const forwards = isInsideWindow(
+        input.nowMs - newest.replacedAtEpochMs,
+        computeReplacedLayoutForwardingMs(overlapMs)
+    );
+    const admittedPeerIds = chain
+        .filter((transition) => isInsideWindow(input.nowMs - transition.replacedAtEpochMs, overlapMs))
+        .flatMap((transition) => toRtcRoomLayoutEdges(transition.replaced, authorizedPeerIdSet).neighbourPeerIds);
+    return {
+        previous: forwards ? toRtcRoomLayoutEdges(newest.replaced, authorizedPeerIdSet) : null,
+        admittedPeerIds
+    };
+}
+
+function isInsideWindow(elapsedMs: number, windowMs: number): boolean {
+    return elapsedMs >= 0 && elapsedMs < windowMs;
 }
 
 /**
@@ -95,17 +114,28 @@ function computeReplacedLayoutForwardingMs(replacedLayoutOverlapMs: number): num
     return Math.floor(replacedLayoutOverlapMs / 2);
 }
 
-function resolveReplacingTransition(input: ResolveRtcRoomRoutingEdgesInput): OverlayLayoutTransition | null {
-    const transition = input.history.transition;
-    if (
-        transition === null ||
-        !isRoomLayoutOverlay(input.accepted, input.roomRef) ||
-        !isRoomLayoutOverlay(transition.replaced, input.roomRef) ||
-        !isOverlayIdentity(input.accepted, transition.replacedBy)
-    ) {
-        return null;
+/**
+ * The recorded transitions that lead, unbroken, to the accepted layout: the newest one's replacer is the accepted
+ * layout, and each older one's replacer is the layout the next newer one replaced. A break, or a replaced layout that
+ * is not a live server layout of this room, ends the chain there.
+ */
+function resolveReplacingTransitionChain(input: ResolveRtcRoomRoutingEdgesInput): readonly OverlayLayoutTransition[] {
+    if (!isRoomLayoutOverlay(input.accepted, input.roomRef)) {
+        return [];
     }
-    return transition;
+    const chain: OverlayLayoutTransition[] = [];
+    let replacer: OverlayInfo = input.accepted;
+    for (const transition of input.history.transitions) {
+        if (
+            !isRoomLayoutOverlay(transition.replaced, input.roomRef) ||
+            !isOverlayIdentity(replacer, transition.replacedBy)
+        ) {
+            break;
+        }
+        chain.push(transition);
+        replacer = transition.replaced;
+    }
+    return chain;
 }
 
 function toRtcRoomLayoutEdges(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): RtcRoomLayoutEdges {
