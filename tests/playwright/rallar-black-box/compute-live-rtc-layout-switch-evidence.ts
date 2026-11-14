@@ -116,7 +116,16 @@ export interface LiveRtcUnsentFrame {
 export interface LiveRtcRefusalRecord {
     readonly agent: AgentPrefix;
     readonly atEpochMs: number;
+    /** The refused message's type: the frame type, or a control's (an acknowledgement, a NACK). */
+    readonly typeId: string | null;
     readonly detail: LiveRtcJsonRecord;
+}
+
+/** Not-yet-in-sync admissions on one browser, with a count per full reason text. */
+export interface LiveRtcNotYetInSyncAdmissions {
+    readonly total: number;
+    readonly plannedLayout: number;
+    readonly byReason: Readonly<Record<string, number>>;
 }
 
 /**
@@ -146,7 +155,7 @@ export interface LiveRtcLeafCrossing {
 
 export interface LiveRtcLayoutSwitchObservations {
     readonly promotionLatencyMs: Readonly<Record<AgentPrefix, readonly [number | null, number | null]>>;
-    readonly notYetInSyncAdmissions: Readonly<Record<AgentPrefix, { total: number; plannedLayout: number; }>>;
+    readonly notYetInSyncAdmissions: Readonly<Record<AgentPrefix, LiveRtcNotYetInSyncAdmissions>>;
     readonly wireDuplicates: Readonly<Record<AgentPrefix, number>>;
     /** A relay's forward refused for unavailable storage: it throws into a claim that retries, so it is not a loss. */
     readonly relayForwardStorageUnavailable: readonly LiveRtcRefusalRecord[];
@@ -646,14 +655,20 @@ function readNextHopsUnconfirmedAtAdmission(
 function countNotYetInSync(
     stream: LiveRtcLayoutSwitchStream,
     runEvents: readonly LiveRtcRunEvent[]
-): { total: number; plannedLayout: number; } {
+): LiveRtcNotYetInSyncAdmissions {
     const admissions = runEvents.filter((event) =>
         event.agentId === stream.agentId && isAdmissionOutcome(event) &&
         stringValue(event.data.reason)?.startsWith('not-yet-in-sync') === true
     );
+    const byReason: Record<string, number> = {};
+    for (const event of admissions) {
+        const reason = stringValue(event.data.reason) ?? 'unknown';
+        byReason[reason] = (byReason[reason] ?? 0) + 1;
+    }
     return {
         total: admissions.length,
-        plannedLayout: admissions.filter((event) => event.data.reason === PLANNED_LAYOUT_NOT_YET_IN_SYNC).length
+        plannedLayout: admissions.filter((event) => event.data.reason === PLANNED_LAYOUT_NOT_YET_IN_SYNC).length,
+        byReason
     };
 }
 
@@ -684,11 +699,15 @@ function isRelayForwardNotEnqueued(event: LiveRtcRunEvent): boolean {
     return event.topic === OUTBOUND_DIAGNOSTICS_TOPIC && event.data.kind === RELAY_FORWARD_NOT_ENQUEUED;
 }
 
+/** Only the topics a delivery outcome is published on are searched, so the bulk of the run is not serialized. */
 function readReceiptExhausted(
     streams: readonly LiveRtcLayoutSwitchStream[],
     runEvents: readonly LiveRtcRunEvent[]
 ): LiveRtcLayoutSwitchObservations['receiptExhausted'] {
-    return runEvents.filter((event) => JSON.stringify(event.raw).includes('receipt-exhausted')).flatMap((event) => {
+    const topics = [OUTBOUND_DIAGNOSTICS_TOPIC, INBOUND_DIAGNOSTICS_TOPIC, RTC_SEND_COMPLETED_TOPIC];
+    return runEvents.filter((event) =>
+        topics.includes(event.topic ?? '') && JSON.stringify(event.raw).includes('receipt-exhausted')
+    ).flatMap((event) => {
         const agent = streams.find((stream) => stream.agentId === event.agentId)?.prefix;
         return agent === undefined
             ? []
@@ -722,7 +741,14 @@ function toRefusalRecords(
 ): readonly LiveRtcRefusalRecord[] {
     return events.filter(matches).flatMap((event) => {
         const agent = streams.find((stream) => stream.agentId === event.agentId)?.prefix;
-        return agent === undefined ? [] : [{ agent, atEpochMs: event.atEpochMs, detail: event.data }];
+        return agent === undefined
+            ? []
+            : [{
+                agent,
+                atEpochMs: event.atEpochMs,
+                typeId: stringValue(event.data.typeId) ?? null,
+                detail: event.data
+            }];
     });
 }
 

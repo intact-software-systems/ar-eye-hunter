@@ -75,8 +75,8 @@ const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWI
 /** Ruling 2: the overlap the managed API serves by default. */
 const SERVED_OVERLAP_MS = 15_000;
 /**
- * Ruling 3: both kinds of frame get the overlap. An at-least-once room message is acknowledged in the mode the
- * product's room notification channel sends it with (`AL_CHANNEL_SEND_DEFAULTS.notification`); the stream's send names
+ * Ruling 3: both kinds of frame get the overlap. An at-least-once room message is acknowledged in the mode a
+ * notification channel sends it with (`AL_CHANNEL_SEND_DEFAULTS.notification`); the stream's send names
  * it, because a send with no channel defaults to `none`. A best-effort frame is not acknowledged.
  */
 const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos; }>[] = [
@@ -87,6 +87,8 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
     { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
 ];
 const REPORTED_RECORDS = 20;
+/** Ruling R11-6's allowance for the gap between the replacement instant and its `formation.changed` event. */
+const PROMOTION_EVENT_LAG_MS = 250;
 
 const formationOperations = createLiveRtcFormationOperations();
 const deliveryOperations = createLiveRtcDeliveryOperations({
@@ -144,6 +146,9 @@ interface ObservedPromotion {
 }
 
 interface LayoutSwitchRun {
+    readonly qos: LiveRtcStreamQos;
+    /** The overlap this run's `/api/config` served. */
+    readonly servedOverlapMs: number;
     readonly sessions: Readonly<Record<AgentPrefix, string>>;
     readonly tree: Extract<LiveRtcLayoutShape, { kind: 'tree'; }>;
     /** Formed, after switch 1, after switch 2. */
@@ -279,6 +284,8 @@ async function runLayoutSwitches(
     const events = await drainReceivers(scenario, settledStreams);
     return {
         ...switched,
+        qos,
+        servedOverlapMs: scenario.progress.servedOverlapMs ?? Number.NaN,
         sessions,
         evidence: computeLiveRtcLayoutSwitchEvidence({
             runId: scenario.runId,
@@ -299,7 +306,7 @@ async function runLayoutSwitches(
 async function runSwitches(
     scenario: LayoutSwitchScenario,
     room: SwitchRoom
-): Promise<Omit<LayoutSwitchRun, 'sessions' | 'evidence'>> {
+): Promise<Omit<LayoutSwitchRun, 'qos' | 'servedOverlapMs' | 'sessions' | 'evidence'>> {
     const { sessionIds } = room;
     const treeRequestedAt = await requestSwitch(scenario, 'switch 1', 'tree');
     const tree = await waitForPromotion(scenario, {
@@ -534,22 +541,91 @@ function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
         ).toBeGreaterThanOrEqual(Math.max(1, completeness.receivedFrames));
     }
     expectSendReadings(evidence);
+    expectAcknowledgementPremise(run);
     expectEveryFrameDelivered(evidence);
-    expect.soft(
-        evidence.unauthorizedAdmissions,
-        `Unauthorized admissions during the run (first ${REPORTED_RECORDS}): ${
-            JSON.stringify(evidence.unauthorizedAdmissions.slice(0, REPORTED_RECORDS))
-        }`
-    ).toHaveLength(0);
+    expectNoUnauthorizedAdmission(evidence);
     expect.soft(
         evidence.senderPlannerDrops,
         `Planner drops at a sender (first ${REPORTED_RECORDS}): ${
             JSON.stringify(evidence.senderPlannerDrops.slice(0, REPORTED_RECORDS))
         }`
     ).toHaveLength(0);
-    expectNoRelayForwardRefused(evidence);
+    expectNoRelayForwardRefused(run);
     expectPromotionsInsideStreams(run);
     expectLeafCrossing(evidence);
+    expectHandOver(run);
+}
+
+/**
+ * The test's name is its QoS: every acknowledged frame a browser receives is acknowledged to its hop, a relay's too,
+ * so its `rtc-ack-submission` count is at least its distinct received frames; a best-effort run acknowledges none.
+ */
+function expectAcknowledgementPremise(run: LayoutSwitchRun): void {
+    const { evidence } = run;
+    for (const [prefix, completeness] of Object.entries(evidence.admissionCompleteness)) {
+        const submissions = evidence.observations.ackSubmissions[prefix as AgentPrefix] ?? 0;
+        if (run.qos.ack === 'none') {
+            expect.soft(
+                submissions,
+                `Browser ${prefix} submitted ${submissions} acknowledgements in the best-effort test: its frames were ` +
+                    'acknowledged, so the test is not running the QoS its name says'
+            ).toBe(0);
+        }
+        else {
+            expect.soft(
+                submissions,
+                `Browser ${prefix} submitted ${submissions} acknowledgements for ${completeness.receivedFrames} received ` +
+                    `frames in the ${run.qos.ack}-acknowledged test: its frames were not acknowledged, so the test is not ` +
+                    'running the QoS its name says'
+            ).toBeGreaterThanOrEqual(Math.max(1, completeness.receivedFrames));
+        }
+    }
+}
+
+/** M2: every refused admission gates, a control's as well as a frame's; the message tells them apart. */
+function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): void {
+    const first = evidence.unauthorizedAdmissions.slice(0, REPORTED_RECORDS).map((refusal) => ({
+        browser: refusal.agent,
+        message: refusal.typeId === MESSAGES_RTC.typeId ? 'frame' : 'control',
+        typeId: refusal.typeId,
+        reason: refusal.detail.reason,
+        msgId: refusal.detail.msgId
+    }));
+    expect.soft(
+        evidence.unauthorizedAdmissions,
+        `Unauthorized admissions during the run (first ${REPORTED_RECORDS}): ${JSON.stringify(first)}`
+    ).toHaveLength(0);
+}
+
+/**
+ * Ruling R11-6, acknowledged variant only: a best-effort frame is not acknowledged, so its edge is unobservable.
+ * On the tree a leaf sends over its replaced direct edge to the other leaf only while the replaced layout's
+ * forwarding half lasts, `floor(servedOverlapMs / 2)` after its replacement instant, and through the relay after.
+ * A frame is planned at admission, which is after its send started, so a frame that started after the half cannot be
+ * planned over the replaced layout; one that started just before can be admitted just after and then goes through
+ * the relay, which the check allows. The send time and the promotion are both read on the origin's own page clock
+ * (`startedAtEpochMs` of its stream, `atEpochMs` of its `formation.changed`); the allowance covers that event's lag
+ * behind the replacement instant. A `both` frame is neither direct nor relayed here; it is counted in the message.
+ */
+function expectHandOver(run: LayoutSwitchRun): void {
+    if (run.qos.ack === 'none') {
+        return;
+    }
+    const directBoundMs = Math.floor(run.servedOverlapMs / 2) + PROMOTION_EVENT_LAG_MS;
+    for (const edges of run.evidence.observations.carryingEdges) {
+        const path = `${edges.origin}'s frames to ${edges.receiver} on the ${edges.layout} ` +
+            `(${edges.direct} direct, ${edges.relayed} relayed, ${edges.both} both, ${edges.unobserved} unobserved)`;
+        expect.soft(edges.unobserved, `${path}: a received frame was never acknowledged to a hop`).toBe(0);
+        if (edges.layout === 'tree') {
+            expect.soft(edges.direct, `${path}: no frame used the replaced direct edge`).toBeGreaterThan(0);
+            expect.soft(edges.relayed, `${path}: no frame went through the relay`).toBeGreaterThan(0);
+            expect.soft(
+                edges.directSentMs?.[1] ?? 0,
+                `${path}: a frame sent ${edges.directSentMs?.[1]} ms after the promotion still used the replaced ` +
+                    `edge, past half the served overlap plus ${PROMOTION_EVENT_LAG_MS} ms (${directBoundMs} ms)`
+            ).toBeLessThanOrEqual(directBoundMs);
+        }
+    }
 }
 
 /** The unsent-frame and sender planner-drop zeros are readings only when the streams they come from are present. */
@@ -572,15 +648,25 @@ function expectSendReadings(evidence: LiveRtcLayoutSwitchEvidence): void {
  * A relay's forward that ends as anything but admitted, duplicate or pending is reported as
  * `relay-forward-not-enqueued`; `storage-unavailable` throws into a claim that retries, so it is only observed. The
  * zero is a reading only when the browser's outbound diagnostics were retained: every dispatch admission writes one
- * `commit-phases`, so its frame-type commits are at least its own planned frames.
+ * `commit-phases`, so its frame-type commits are at least its own planned frames. The tree's relay also commits its
+ * forwards, so its count must exceed its own planned frames: then its forwards were observed, not only its sends.
  */
-function expectNoRelayForwardRefused(evidence: LiveRtcLayoutSwitchEvidence): void {
+function expectNoRelayForwardRefused(run: LayoutSwitchRun): void {
+    const { evidence } = run;
+    const relay = Object.entries(run.sessions).find(([, sessionId]) => sessionId === run.tree.relaySessionId)?.[0];
     for (const [prefix, readings] of Object.entries(evidence.outboundReadings)) {
-        expect.soft(
-            readings.frameCommitPhases,
-            `Browser ${prefix} published ${readings.frameCommitPhases} frame commit-phases outbound diagnostics for ` +
-                `${readings.plannedFrames} planned frames: the relay-forward reading would be empty otherwise`
-        ).toBeGreaterThanOrEqual(Math.max(1, readings.plannedFrames));
+        const reading = `Browser ${prefix} published ${readings.frameCommitPhases} frame commit-phases outbound ` +
+            `diagnostics for ${readings.plannedFrames} planned frames`;
+        if (prefix === relay) {
+            expect.soft(
+                readings.frameCommitPhases,
+                `${reading} as the tree's relay: its forwards were not observed, so the relay-forward reading is empty`
+            ).toBeGreaterThan(readings.plannedFrames);
+        }
+        else {
+            expect.soft(readings.frameCommitPhases, `${reading}: the relay-forward reading would be empty otherwise`)
+                .toBeGreaterThanOrEqual(Math.max(1, readings.plannedFrames));
+        }
     }
     const byOutcome: Record<string, number> = {};
     for (const refusal of evidence.relayForwardRefusals) {

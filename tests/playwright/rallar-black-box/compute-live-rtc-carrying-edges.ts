@@ -13,10 +13,16 @@ export interface LiveRtcCarryingEdges {
     readonly frames: number;
     readonly direct: number;
     readonly relayed: number;
-    /** A frame acknowledged to both: two copies arrived, one over each edge. */
+    /**
+     * A frame acknowledged to both hops: two copies arrived, one over each edge, or a retry was routed over the other
+     * hop and acknowledged again under the same trace.
+     */
     readonly both: number;
     readonly unobserved: number;
-    /** First and last send time of the frames that arrived directly, in ms after the origin promoted the layout. */
+    /**
+     * First and last send time of the frames that arrived only directly, in ms after the origin promoted the layout,
+     * on the origin's own page clock; `relayedSentMs` likewise for those that arrived only through the relay.
+     */
     readonly directSentMs: readonly [number, number] | null;
     readonly relayedSentMs: readonly [number, number] | null;
 }
@@ -52,10 +58,8 @@ export function computeLiveRtcCarryingEdges(input: LiveRtcCarryingEdgesInput): L
         relayed: count('relayed'),
         both: count('both'),
         unobserved: count('unobserved'),
-        directSentMs: toSentRange(
-            classified.filter((frame) => frame.edge !== 'relayed' && frame.edge !== 'unobserved')
-        ),
-        relayedSentMs: toSentRange(classified.filter((frame) => frame.edge !== 'direct' && frame.edge !== 'unobserved'))
+        directSentMs: toSentRange(classified.filter((frame) => frame.edge === 'direct')),
+        relayedSentMs: toSentRange(classified.filter((frame) => frame.edge === 'relayed'))
     };
 }
 
