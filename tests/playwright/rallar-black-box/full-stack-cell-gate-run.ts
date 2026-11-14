@@ -76,7 +76,7 @@ export function toCellGateRunManifest(input: CellGateRunInput): RallarBlackBoxDi
 }
 
 /** Registers and starts the gate run, and returns once every start root answered ok. */
-export async function startCellGateRun(input: StartCellGateRunInput): Promise<ControlDistributedRunSnapshot> {
+export async function startCellGateRun(input: StartCellGateRunInput): Promise<void> {
     const manifest = toCellGateRunManifest(input);
     const created = await input.run.request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
         data: { manifest }
@@ -97,7 +97,6 @@ export async function startCellGateRun(input: StartCellGateRunInput): Promise<Co
         `cell gate run ${manifest.distributedRunId} started: state=${started.state} ` +
             starts.map((link) => `${link.role}=${link.agentId}`).join(' ')
     );
-    return started;
 }
 
 async function waitForStartRoots(
