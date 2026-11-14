@@ -296,12 +296,9 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         };
     }
 
-    /**
-     * The replaced layout's neighbours a copy relayed by the accepted neighbour `relay` would also be forwarded to,
-     * read inside the first half of the overlap.
-     */
-    function readPreviousForwardingPeerIds(input: RtcRoomSnapshotAdmissionInput): readonly string[] | undefined {
-        const admission = computeRtcRoomSnapshotAdmission({ ...input, fromPeerId: 'relay', nowMs: forwardingInsideMs });
+    /** The replaced layout's neighbours a copy relayed at `nowMs` by the accepted neighbour `relay` would also be forwarded to. */
+    function readPreviousForwardingPeerIds(input: RtcRoomSnapshotAdmissionInput, nowMs: number): readonly string[] | undefined {
+        const admission = computeRtcRoomSnapshotAdmission({ ...input, fromPeerId: 'relay', nowMs });
         expect(admission.kind).toBe('authorized');
         return admission.kind === 'authorized' ? admission.previousForwarding?.neighbourPeerIds : undefined;
     }
@@ -336,7 +333,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
             nack: { enabled: false }
         });
         // Nor does this receiver forward to it: the replaced layout's forwarding set holds only authorized neighbours.
-        expect(readPreviousForwardingPeerIds(input)).toEqual(['downstream']);
+        expect(readPreviousForwardingPeerIds(input, forwardingInsideMs)).toEqual(['downstream']);
     });
 
     it('refuses an expelled member that was a neighbour of the replaced layout, inside the overlap', () => {
@@ -345,7 +342,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
 
         expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause: 'authority-rejected' });
         expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', localDelivery: { enabled: false }, nack: { enabled: false } });
-        expect(readPreviousForwardingPeerIds(input)).toEqual(['downstream']);
+        expect(readPreviousForwardingPeerIds(input, forwardingInsideMs)).toEqual(['downstream']);
     });
 
     it('refuses a previous neighbour whose session is present but whose membership is inactive now', () => {
@@ -376,7 +373,14 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
             expect(admission).toMatchObject({ kind: 'authorized', deliversLocally: true });
         }
         expect(planRelayed(relayedInput())).toMatchObject({ dropReasonCode: undefined, localDelivery: { enabled: true } });
-        expect(readPreviousForwardingPeerIds(relayedInput())).toEqual(['previous', 'downstream']);
+        expect(readPreviousForwardingPeerIds(relayedInput(), forwardingInsideMs)).toEqual(['previous', 'downstream']);
+    });
+
+    it('authorizes a previous neighbour\'s frame in the second half of the overlap and forwards over no replaced edge', () => {
+        for (const nowMs of [replacedAtEpochMs + overlapMs / 2, insideMs]) {
+            const admission = computeRtcRoomSnapshotAdmission(relayedInput({ nowMs }));
+            expect(admission).toMatchObject({ kind: 'authorized', deliversLocally: true, previousForwarding: null });
+        }
     });
 
     it('refuses that member\'s relay once the session\'s overlap has ended', () => {

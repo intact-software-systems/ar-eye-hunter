@@ -233,7 +233,10 @@ export interface ALMessagePlanningContext extends ALMessagePlanningObservations 
     readonly overlayNeighborPeerIds?: readonly string[];
     /** The accepted layout's whole adjacency; absent when the carrier holds no accepted layout. */
     readonly overlayNextHopsBySessionId?: Readonly<Record<string, readonly string[]>>;
-    /** The layout the accepted one replaced, while it is in force; absent when none is, and always on the WS carrier. */
+    /**
+     * The layout the accepted one replaced, only for the first half of the overlap its receivers admit; absent
+     * otherwise, and always on the WS carrier.
+     */
     readonly previousOverlayLayout?: ALPreviousOverlayLayout;
     readonly overloaded?: boolean;
     /** The carrier's channel cannot take the send now (D184); absent when the carrier read no channel. */
@@ -755,7 +758,10 @@ function resolveNextHopPeerIds(
         );
 }
 
-/** The ready children one copy may go to: the accepted layout's first, then a replaced layout's while one is in force. */
+/**
+ * The ready children one copy may go to: the accepted layout's first, then a replaced layout's during the first half
+ * of the overlap.
+ */
 interface ALFanoutCandidates {
     readonly msgId: string;
     readonly peerIds: readonly string[];

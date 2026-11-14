@@ -41,11 +41,11 @@ public addresses belong in the two configuration settings, independently of the 
 
 `publicApi.rtcReplacedLayoutOverlapMs` (default 15 000, range 0 to 15 000) is how long an RTC browser
 keeps admitting copies over the layout a promotion replaced. It forwards over that layout only for the
-first half of the bound, so two browsers that applied the promotion up to half the bound apart refuse
-no copy of each other's. It is one value per server, not per group, and it
-has no environment override: set it in a profile source. The ceiling is the browser's 15 s connection
-grace, because the overlap ends when the old connection closes. `0` keeps routing on the accepted
-layout alone.
+first half of the bound, rounded down to a whole millisecond (so `1` forwards never), and two browsers
+that applied the promotion up to that half apart refuse no copy of each other's. It is one value per
+server, not per group, and it has no environment override: set it in a profile source. The ceiling is
+the browser's 15 s connection grace, because the overlap ends when the old connection closes. `0` keeps
+routing on the accepted layout alone.
 
 ## Environment allowlist
 

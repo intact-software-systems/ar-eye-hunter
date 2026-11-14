@@ -6830,9 +6830,11 @@ components:
           maximum: 15000
           description: >-
             How long, in milliseconds, an RTC browser keeps admitting copies over the edges of a server layout after a
-            newer server layout replaces it; it forwards over those edges only for the first half of this bound, so a
-            copy is not refused when two browsers applied the promotion up to half the bound apart. The overlap ends at
-            this bound or when the replaced layout's connection closes, whichever comes first; 0 disables it. A browser reads it once per connect and refuses a body without it.
+            newer server layout replaces it. It forwards over those edges only for the first half of this bound,
+            rounded down to a whole millisecond (so a bound of 1 forwards never), and a copy is not refused when two
+            browsers applied the promotion up to that half apart. The overlap ends at this bound or when the replaced
+            layout's connection closes, whichever comes first; 0 disables it. A browser reads it once per connect and
+            refuses a body without it.
           example: 15000
       additionalProperties: true
 

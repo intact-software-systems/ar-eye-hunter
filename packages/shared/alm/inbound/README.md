@@ -465,16 +465,15 @@ keeps every child (no adjacency, an unplaced recipient, or a path child its
 room, hint or visited set removes), each relay below it with a consistent layout
 sees every recipient behind its sender and keeps every child too, so one
 disagreement floods that whole subtree at the cost of the flood before the
-adjacency was kept, still at least once. A receiver
-admits a replaced layout's authorized neighbours for the session's whole overlap
-after a layout promotion, but a sender forwards over that layout only for the
-first half of it
-([`resolveRtcRoomRoutingEdges`](../../multicast/room-authority/resolve-rtc-room-routing-edges.ts)),
-so a copy is not refused when two browsers applied the promotion up to half the
-overlap apart. In that first half
-a relay and an origin also own that layout's authorized neighbours, after the
-accepted layout's children and without repeats, a frozen multicast pruned over
-that layout's own adjacency. The missing-recipient retry and the failed-peer
+adjacency was kept, still at least once. A receiver admits a replaced layout's
+authorized neighbours for the session's whole overlap after a layout promotion,
+but a sender forwards over that layout only for the first half of it, rounded
+down to a whole millisecond, so an overlap of 1 ms forwards never
+([`resolveRtcRoomRoutingEdges`](../../multicast/room-authority/resolve-rtc-room-routing-edges.ts)).
+A copy is then not refused when two browsers applied the promotion up to that
+half apart. In that first half a relay and an origin also own that layout's
+authorized neighbours, after the accepted layout's children and without
+repeats, a frozen multicast pruned over that layout's own adjacency. The missing-recipient retry and the failed-peer
 repair keep the accepted layout's adjacency, but a failed-peer repair's re-plan
 is an ordinary dispatch, so its copy can also reach a replaced-layout child. The
 same exclusion governs the forward of a retried copy and the relay row's

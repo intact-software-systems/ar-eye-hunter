@@ -50,7 +50,10 @@ export type RtcRoomSnapshotAdmission =
         /** The same sessions with their principals, from which an origin narrows a principal audience. */
         readonly memberSessions: readonly GroupPresenceSession[];
         readonly forwardingPeerIds: readonly string[];
-        /** The replaced layout's edges while it is in force, over which a sender and a relay also forward; else `null`. */
+        /**
+         * The replaced layout's edges a sender and a relay also forward over, only in the first half of the overlap
+         * this receiver admits; else `null`.
+         */
         readonly previousForwarding: RtcRoomLayoutEdges | null;
         readonly snapshotVersion: number;
         /** The room's leader the snapshot appoints and holds present, to which a `group-leader` send narrows. */

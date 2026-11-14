@@ -24,9 +24,21 @@ export interface RtcRoomLayoutEdges {
 
 export interface RtcRoomRoutingEdges {
     readonly accepted: RtcRoomLayoutEdges;
+    /**
+     * The replaced layout's edges a sender or relay may still forward over: only for the first half of the overlap,
+     * rounded down to a whole millisecond; else `null`.
+     */
     readonly previous: RtcRoomLayoutEdges | null;
+    /** The accepted layout's next hops, and the replaced layout's authorized neighbours for the whole overlap. */
     readonly admittedEdgePeerIds: readonly string[];
 }
+
+interface RtcReplacedLayoutEdges {
+    readonly previous: RtcRoomLayoutEdges | null;
+    readonly admittedPeerIds: readonly string[];
+}
+
+const NO_REPLACED_LAYOUT_EDGES: RtcReplacedLayoutEdges = { previous: null, admittedPeerIds: [] };
 
 export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInput): RtcRoomRoutingEdges {
     const authorizedPeerIdSet = new Set(input.authorizedPeerIds);
@@ -34,17 +46,26 @@ export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInpu
         ? authorizedPeerIdSet
         : new Set<string>();
     const accepted = toRtcRoomLayoutEdges(input.accepted, acceptedNeighbourPeerIdSet);
-    const replaced = resolveReplacedLayout(input);
-    const admittedReplaced = replaced === null ? null : toRtcRoomLayoutEdges(replaced, authorizedPeerIdSet);
-    const elapsedMs = input.nowMs - (input.history.transition?.replacedAtEpochMs ?? input.nowMs);
-    const admits = elapsedMs >= 0 && elapsedMs < input.history.replacedLayoutOverlapMs;
-    const forwards = elapsedMs >= 0 &&
-        elapsedMs < computeReplacedLayoutForwardingMs(input.history.replacedLayoutOverlapMs);
-    const previous = forwards ? admittedReplaced : null;
-    const admittedEdgePeerIds = [
-        ...new Set([...input.accepted.nextHopSessionIds, ...(admits ? admittedReplaced?.neighbourPeerIds ?? [] : [])])
-    ];
-    return { accepted, previous, admittedEdgePeerIds };
+    const replaced = resolveReplacedLayoutEdges(input, authorizedPeerIdSet);
+    const admittedEdgePeerIds = [...new Set([...input.accepted.nextHopSessionIds, ...replaced.admittedPeerIds])];
+    return { accepted, previous: replaced.previous, admittedEdgePeerIds };
+}
+
+/** With no transition of this room for the accepted layout, there is no replaced layout to admit or forward over. */
+function resolveReplacedLayoutEdges(
+    input: ResolveRtcRoomRoutingEdgesInput,
+    authorizedPeerIdSet: ReadonlySet<string>
+): RtcReplacedLayoutEdges {
+    const transition = resolveReplacingTransition(input);
+    if (transition === null) {
+        return NO_REPLACED_LAYOUT_EDGES;
+    }
+    const edges = toRtcRoomLayoutEdges(transition.replaced, authorizedPeerIdSet);
+    const elapsedMs = input.nowMs - transition.replacedAtEpochMs;
+    const overlapMs = input.history.replacedLayoutOverlapMs;
+    const admits = elapsedMs >= 0 && elapsedMs < overlapMs;
+    const forwards = elapsedMs >= 0 && elapsedMs < computeReplacedLayoutForwardingMs(overlapMs);
+    return { previous: forwards ? edges : null, admittedPeerIds: admits ? edges.neighbourPeerIds : [] };
 }
 
 /**
@@ -55,7 +76,7 @@ function computeReplacedLayoutForwardingMs(replacedLayoutOverlapMs: number): num
     return Math.floor(replacedLayoutOverlapMs / 2);
 }
 
-function resolveReplacedLayout(input: ResolveRtcRoomRoutingEdgesInput): OverlayInfo | null {
+function resolveReplacingTransition(input: ResolveRtcRoomRoutingEdgesInput): OverlayLayoutTransition | null {
     const transition = input.history.transition;
     if (
         transition === null ||
@@ -65,7 +86,7 @@ function resolveReplacedLayout(input: ResolveRtcRoomRoutingEdgesInput): OverlayI
     ) {
         return null;
     }
-    return transition.replaced;
+    return transition;
 }
 
 function toRtcRoomLayoutEdges(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): RtcRoomLayoutEdges {

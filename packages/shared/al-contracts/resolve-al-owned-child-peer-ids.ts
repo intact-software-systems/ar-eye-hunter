@@ -8,7 +8,10 @@ export interface ALOverlayAdjacency {
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
 }
 
-/** The layout an accepted layout replaced, while it is in force: this peer's neighbours in it and its whole adjacency. */
+/**
+ * The layout an accepted layout replaced, for the first half of the overlap its receivers admit: this peer's neighbours
+ * in it and its whole adjacency.
+ */
 export interface ALPreviousOverlayLayout {
     readonly neighborPeerIds: readonly string[];
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
@@ -25,8 +28,9 @@ export interface ALPreviousOverlayLayout {
  * path child its room, hint or visited set removes), each relay below it with a consistent layout sees every recipient
  * behind its sender and keeps every neighbour too, so one disagreement floods that whole subtree as before the
  * adjacency was kept, still at least once. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
- * already counted is the decision of the origin. While a replaced layout is in force, its children follow the accepted
- * layout's, each layout's neighbours pruned over that layout's own adjacency, and a peer owned through both appears once.
+ * already counted is the decision of the origin. In the first half of a replaced layout's overlap, its children
+ * follow the accepted layout's, each layout's neighbours pruned over that layout's own adjacency, and a peer owned
+ * through both appears once.
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,

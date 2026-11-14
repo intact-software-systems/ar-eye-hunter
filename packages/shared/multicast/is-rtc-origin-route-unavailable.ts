@@ -12,8 +12,8 @@ export interface IsRtcOriginRouteUnavailableInput {
 }
 
 /**
- * This session's own send owns children, over the accepted layout and any replaced layout in force, and none of them
- * is ready.
+ * This session's own send owns children, over the accepted layout and, in the first half of its overlap, a replaced
+ * layout, and none of them is ready.
  */
 export function isRtcOriginRouteUnavailable(input: IsRtcOriginRouteUnavailableInput): boolean {
     const { message, availability, selfPeerId } = input;
