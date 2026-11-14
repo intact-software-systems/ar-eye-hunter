@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 import type { ArenaEvent, ArenaLayoutProp, ShotIntent, Vec3Tuple } from '@ar-eye-hunter/arena-contracts.ts';
 import { blocksShot, FALLBACK_ARENA_LAYOUT, validateArenaLayoutSpec } from '@ar-eye-hunter/arena-layout.ts';
 import { finishArenaMatchIfDue, startArenaMatch } from '@ar-eye-hunter/arena-match.ts';
+import { mulberry32 } from '@ar-eye-hunter/arena-math.ts';
 import {
     createInitialCombatState,
     createInitialPlayerState,
     createInitialVitalsState,
     stepLocalPlayer
 } from '@ar-eye-hunter/arena-player-state.ts';
-import { resolveShot } from '@ar-eye-hunter/arena-targets.ts';
+import { createTarget, resolveShot } from '@ar-eye-hunter/arena-targets.ts';
 import { createInitialLoadoutState } from '@ar-eye-hunter/arena-weapons.ts';
 import {
     applyArenaEvent,
@@ -25,6 +26,51 @@ import {
 } from '@ar-eye-hunter/simulation.ts';
 
 describe('AR Eye Hunter simulation', () => {
+    it('gives one run of random numbers per seed', () => {
+        const first = mulberry32(7);
+        const second = mulberry32(20_260_101);
+
+        expect([first(), first(), first()]).toEqual([0.011704753153026104, 0.06195825757458806, 0.97690763277933]);
+        expect([second(), second(), second()]).toEqual([0.2559139896184206, 0.5929048631805927, 0.8053383126389235]);
+    });
+
+    it('places one target per seed and index', () => {
+        expect(createTarget({ id: 't', index: 0, seed: 7, nowEpochMs: 1_000_000 })).toEqual({
+            id: 't',
+            position: [14.279, 4.717, 0.047],
+            velocity: [0.003, 0.514, -0.773],
+            radius: 0.86,
+            health: 3,
+            maxHealth: 3,
+            rarity: 'rift',
+            phase: 1.5074944029756816,
+            color: '#ff3df2',
+            threat: {
+                kind: 'beam-sentry',
+                damage: 3.6,
+                range: 68,
+                coneRadians: 0.085,
+                windupMs: 1015,
+                cooldownMs: 4070,
+                nextAttackAtEpochMs: 1_000_900
+            },
+            bountyUntilEpochMs: undefined
+        });
+        expect(createTarget({ id: 't', index: 5, seed: 20_260_101, nowEpochMs: 1_000_000 })).toEqual({
+            id: 't',
+            position: [-21.585, 5.229, 16.036],
+            velocity: [0.698, 0.892, 0.841],
+            radius: 0.62,
+            health: 1,
+            maxHealth: 1,
+            rarity: 'common',
+            phase: 0.8061496870731326,
+            color: '#00c2a8',
+            threat: undefined,
+            bountyUntilEpochMs: undefined
+        });
+    });
+
     it('accelerates fast FPS movement and applies dash cooldowns', () => {
         const now = 1_000;
         const player = createInitialPlayerState(now);

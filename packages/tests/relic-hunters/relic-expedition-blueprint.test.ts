@@ -20,6 +20,38 @@ import {
 import { requireRelicCommandApplied } from './require-relic-command-applied.ts';
 
 describe('Relic expedition blueprints', () => {
+    it('gives one theme and one relic set per string seed', () => {
+        const blueprint = createProceduralRelicExpeditionBlueprint({ seed: 'room-1:reset:1' });
+
+        expect(blueprint.theme).toBe('Breeze Watchtower');
+        expect(blueprint.rooms.map((room) => `${room.id}@${room.x},${room.z}`)).toEqual([
+            'entrance@0,-5',
+            'hallway@0,-2',
+            'storage@-4,-2',
+            'shrine@4,-2',
+            'trap@0,1',
+            'treasure@4,1',
+            'monster@0,4',
+            'exit@0,7',
+            'gallery@2,0'
+        ]);
+        expect(blueprint.relics.map((relic) => `${relic.name}:${relic.value}:${relic.roomId}`)).toEqual([
+            'Bronze Mirror That Blames You:5:entrance',
+            'Lotus Crown of Unpaid Overtime:10:hallway',
+            'Golden Koi Exit Voucher:6:storage',
+            'Neon Shrine Receipt:2:shrine',
+            'Moon Comb for Executive Hair:11:trap',
+            'Predator Wellness Coupon:4:treasure',
+            'Storm Pearl Helpdesk Ticket:5:monster',
+            'Ivory Netsuke of Mild Panic:2:exit',
+            'Silver Bell of Mandatory Cheer:2:gallery',
+            'Jade Oni Severance Seal:4:entrance',
+            'Gift Shop Escape Stub:4:hallway',
+            'Ashen Tanto Return Form:2:storage',
+            'Crimson Fan of Quarterly Losses:6:shrine'
+        ]);
+    });
+
     it('accepts procedural blueprints and rejects invalid domain shapes', () => {
         const valid = createProceduralRelicExpeditionBlueprint({
             seed: 'room-1:reset:1'
