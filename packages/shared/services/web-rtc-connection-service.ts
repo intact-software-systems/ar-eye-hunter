@@ -739,6 +739,9 @@ export class WebRtcConnectionService {
         const answer = this.attemptBudget.wouldRefuse(message.fromId)
             ? undefined
             : this.readInboundPeerCreationAdmission(this.inboundPeerCapPolicy?.decide, message);
+        if (answer?.kind === 'threw') {
+            console.error(`Inbound RTC peer cap policy failed for ${message.fromId}`, answer.error);
+        }
         const admission = answer?.kind === 'answered' ? answer.admission : undefined;
         if (admission?.retryInboundSignal) {
             this.observeSignalRoute('policy-retry', message, undefined);
