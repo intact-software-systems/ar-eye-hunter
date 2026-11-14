@@ -8,7 +8,6 @@ export interface ALOverlayAdjacency {
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
 }
 
-/** A layout seen from this peer: its neighbours in it and, when the layout carries one, its whole adjacency. */
 export interface ALOverlayLayout {
     readonly neighborPeerIds: readonly string[];
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;

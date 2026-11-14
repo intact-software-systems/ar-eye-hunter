@@ -54,7 +54,7 @@ const NO_REPLACED_LAYOUT_EDGES: RtcReplacedLayoutEdges = { previous: null, admit
 export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInput): RtcRoomRoutingEdges {
     const authorizedPeerIdSet = new Set(input.authorizedPeerIds);
     const acceptedNeighborPeerIds = isRoomLayoutOverlay(input.accepted, input.roomRef)
-        ? toALOverlayLayout(input.accepted, authorizedPeerIdSet).neighborPeerIds
+        ? toAuthorizedNeighborPeerIds(input.accepted, authorizedPeerIdSet)
         : [];
     const replaced = resolveReplacedLayoutEdges(input, authorizedPeerIdSet);
     const admittedEdgePeerIds = [...new Set([...input.accepted.nextHopSessionIds, ...replaced.admittedPeerIds])];
@@ -69,7 +69,7 @@ function resolvePlannedLayoutNeighbors(
 ): readonly string[] {
     const planned = input.layoutChanges.planned ?? undefined;
     return isRoomLayoutOverlay(planned, input.roomRef)
-        ? toALOverlayLayout(planned, authorizedPeerIdSet).neighborPeerIds
+        ? toAuthorizedNeighborPeerIds(planned, authorizedPeerIdSet)
         : [];
 }
 
@@ -91,7 +91,7 @@ function resolveReplacedLayoutEdges(
     const forwards = isLayoutTransitionInsideWindow(newest, input.nowMs, computeReplacedLayoutForwardingMs(overlapMs));
     const admittedPeerIds = chain
         .filter((transition) => isLayoutTransitionInsideWindow(transition, input.nowMs, overlapMs))
-        .flatMap((transition) => toALOverlayLayout(transition.replaced, authorizedPeerIdSet).neighborPeerIds);
+        .flatMap((transition) => toAuthorizedNeighborPeerIds(transition.replaced, authorizedPeerIdSet));
     return {
         previous: forwards ? toALOverlayLayout(newest.replaced, authorizedPeerIdSet) : null,
         admittedPeerIds
@@ -129,7 +129,11 @@ function resolveReplacingTransitionChain(input: ResolveRtcRoomRoutingEdgesInput)
 
 function toALOverlayLayout(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): ALOverlayLayout {
     return {
-        neighborPeerIds: layout.nextHopSessionIds.filter((peerId) => authorizedPeerIdSet.has(peerId)),
+        neighborPeerIds: toAuthorizedNeighborPeerIds(layout, authorizedPeerIdSet),
         nextHopsBySessionId: layout.nextHopsBySessionId
     };
+}
+
+function toAuthorizedNeighborPeerIds(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): readonly string[] {
+    return layout.nextHopSessionIds.filter((peerId) => authorizedPeerIdSet.has(peerId));
 }
