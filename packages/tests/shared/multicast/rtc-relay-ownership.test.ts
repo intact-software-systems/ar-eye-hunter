@@ -1,6 +1,4 @@
 import {
-    afterEach,
-    beforeEach,
     describe,
     expect,
     it,
@@ -15,9 +13,16 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import {
+    CHAIN_PREVIOUS,
+    CHAIN_PROMOTED,
+    readCopies,
+    toAcceptedLayout,
+    toPromotedLayout,
+    useFakeClock
+} from './rtc-layout-mesh-fixture.ts';
 import {
     createOriginOverlay,
     createOriginReceiverMulticast,
@@ -35,15 +40,7 @@ import { toTestALNackPayload } from '../../al-control-test-payloads.ts';
 const ACK_TIMEOUT_MS = 2_000;
 
 describe('the child hops an RTC relay owns', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('restores native RTC ownership when relay peer setup throws', () => {
         const previousPeerConnection = globalThis.RTCPeerConnection;
@@ -175,15 +172,7 @@ describe('the child hops an RTC relay owns', () => {
 });
 
 describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('re-parents to the origin whose retry reaches it, so the leaf behind it is retried and confirmed', async () => {
         const message = createOriginReceiverMulticast('parent-left');
@@ -273,15 +262,7 @@ describe('an RTC relay whose recorded parent left (R-S2c-ii-12)', () => {
 });
 
 describe('the RTC subtree retry keeps every unfinished hop expected (R-S2c-ii-14)', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('never completes through a new hop that relays to a subtree it does not own (P4)', async () => {
         const snapshot = createOriginSnapshot(['a', 'r', 'b', 'c', 'd'], 4);
@@ -354,15 +335,7 @@ describe('the RTC subtree retry keeps every unfinished hop expected (R-S2c-ii-14
 });
 
 describe('the RTC subtree targeted repair keeps every unfinished hop expected (R-S2c-ii-14)', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('adds the requester to the hops a subtree receipt expects, never replacing the others with it', async () => {
         const origin = createRtcOriginOverlayFixture({ snapshot: createOriginSnapshot(['a', 'b', 'c'], 4), nextHopPeerIds: ['b', 'c'] });
@@ -390,15 +363,7 @@ describe('the RTC subtree targeted repair keeps every unfinished hop expected (R
 });
 
 describe('a relay re-parented away from a live parent (R-S2c-ii-14)', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('lets the former parent, no longer a hop of the origin, still confirm itself under receiver', async () => {
         const snapshot = createOriginSnapshot(['a', 'r', 'c', 'd'], 4);
@@ -432,29 +397,19 @@ describe('a relay re-parented away from a live parent (R-S2c-ii-14)', () => {
 });
 
 describe('a relay across a layout promotion, for the session\'s replaced-layout overlap', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('a relay forwards to its previous child over the open edge inside the overlap, and not after it', async () => {
         // The chain `a`, `b`, `c`, `d` is re-planned to `a`, `c`, `d`, `b`: `b` becomes a leaf below `d`.
-        const previousTree = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
-        const promotedTree = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
         const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
-        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: previousTree });
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: CHAIN_PREVIOUS });
         const relay = createRtcRelayOverlayFixture({
             selfPeerId: 'b',
             snapshot,
             neighbourPeerIds: ['a', 'c', 'd'],
-            initialOverlay: createOriginOverlay(previousTree.b, previousTree)
+            initialOverlay: createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS)
         });
-        const promoted = toPromotedLayout(snapshot, promotedTree.b, promotedTree);
+        const promoted = toAcceptedLayout(snapshot, toPromotedLayout(CHAIN_PROMOTED), 'b');
         relay.acceptSnapshot(promoted.snapshot);
         relay.acceptOverlay(promoted.overlay);
         const inside = createPromotionFrame(1);
@@ -485,7 +440,7 @@ describe('a relay across a layout promotion, for the session\'s replaced-layout 
             neighbourPeerIds: ['a', 'c', 'd'],
             initialOverlay: createOriginOverlay(previousTree.b, previousTree)
         });
-        const promoted = toPromotedLayout(createOriginSnapshot(['a', 'b', 'd'], 5), promotedTree.b, promotedTree);
+        const promoted = toAcceptedLayout(createOriginSnapshot(['a', 'b', 'd'], 5), toPromotedLayout(promotedTree), 'b');
         relay.acceptSnapshot(promoted.snapshot);
         relay.acceptOverlay(promoted.overlay);
         const frame = createPromotionFrame(1);
@@ -497,24 +452,6 @@ describe('a relay across a layout promotion, for the session\'s replaced-layout 
         expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
     });
 });
-
-/** The re-plan keeps the causal revision the fixture's layout was planned from: only the layout version moves. */
-const PROMOTED_LAYOUT_IDENTITY = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
-
-/** The snapshot naming the re-planned layout accepted, and that layout as one session holds it. */
-function toPromotedLayout(
-    snapshot: GroupSnapshot,
-    nextHopSessionIds: readonly string[],
-    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>
-): { readonly snapshot: GroupSnapshot; readonly overlay: OverlayInfo; } {
-    return {
-        snapshot: { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: PROMOTED_LAYOUT_IDENTITY } },
-        overlay: {
-            ...createOriginOverlay(nextHopSessionIds, nextHopsBySessionId),
-            overlayVersion: PROMOTED_LAYOUT_IDENTITY.version
-        }
-    };
-}
 
 /** One frame of a position stream: best effort, no receipt, so no retry runs while the clock moves. */
 function createPromotionFrame(seq: number): ALMessage {
@@ -631,10 +568,6 @@ async function exchangeBetweenPeers(peers: ReadonlyMap<string, RtcRelayOverlayFi
 
 function toVisited(message: ALMessage, visitedPeerIds: readonly string[]): ALMessage {
     return { ...message, diagnostics: { ...message.diagnostics, visitedPeerIds } };
-}
-
-function readCopies(messages: readonly ALMessage[], message: ALMessage): number {
-    return messages.filter((sent) => sent.id.msgId === message.id.msgId).length;
 }
 
 function readAckTuples(messages: readonly ALMessage[]): readonly (readonly [string, string])[] {

@@ -1,16 +1,19 @@
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
+import {
+    CHAIN_PREVIOUS,
+    CHAIN_PROMOTED,
+    readCopies,
+    toAcceptedLayout,
+    toPromotedLayout,
+    useFakeClock,
+    type AcceptedLayout,
+    type FrameReliability,
+    type SessionNextHops
+} from './rtc-layout-mesh-fixture.ts';
 import {
     createOriginOverlay,
     createOriginSnapshot,
@@ -27,36 +30,9 @@ import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc
  * it drops are still open. These tests state what a viewer of the stream wants across that switch.
  */
 
-type PositionFrameReliability = 'at-least-once' | 'best-effort';
-
-interface PromotedLayout {
-    readonly snapshot: GroupSnapshot;
-    readonly overlay: OverlayInfo;
-}
-
-type SessionNextHops = Readonly<Record<string, readonly string[]>>;
-
 const STREAM_SESSION_IDS = ['a', 'b', 'c', 'd'];
 
-/** The chain `a`, `b`, `c`, `d` before the re-plan: the origin `a` reaches `c` only through `b`. */
-const PREVIOUS_TREE: SessionNextHops = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
-
-/** The re-planned chain `a`, `c`, `d`, `b`: every edge but `c`-`d` is new, and `a`-`b`, `b`-`c` are dropped. */
-const PROMOTED_TREE: SessionNextHops = { a: ['c'], b: ['d'], c: ['a', 'd'], d: ['b', 'c'] };
-
-/** The re-plan keeps the causal revision the fixture's layout was planned from: only the layout version moves. */
-const PROMOTED_LAYOUT_IDENTITY = { groupRevision: 1, presenceRevision: 1, version: 2, state: 'active' } as const;
-
-/** The snapshot naming the re-planned layout accepted, and that layout as `selfPeerId` holds it. */
-function toPromotedLayout(snapshot: GroupSnapshot, selfPeerId: string): PromotedLayout {
-    return {
-        snapshot: { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: PROMOTED_LAYOUT_IDENTITY } },
-        overlay: {
-            ...createOriginOverlay(readNextHops(PROMOTED_TREE, selfPeerId), PROMOTED_TREE),
-            overlayVersion: PROMOTED_LAYOUT_IDENTITY.version
-        }
-    };
-}
+const PROMOTED_LAYOUT = toPromotedLayout(CHAIN_PROMOTED);
 
 function readNextHops(tree: SessionNextHops, sessionId: string): readonly string[] {
     return tree[sessionId] ?? [];
@@ -66,7 +42,7 @@ function readNextHops(tree: SessionNextHops, sessionId: string): readonly string
  * One frame of a position stream, sent many times a second with no receipt. An `at-least-once` frame is the one whose
  * failed send states the hosted runs' `planner-drop`; a `best-effort` one fails the same way as `no-route`.
  */
-function createPositionFrame(seq: number, reliability: PositionFrameReliability): ALMessage {
+function createPositionFrame(seq: number, reliability: FrameReliability): ALMessage {
     return newALMulticastMessage(
         'a',
         { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
@@ -77,31 +53,19 @@ function createPositionFrame(seq: number, reliability: PositionFrameReliability)
     );
 }
 
-function readCopies(sent: readonly ALMessage[], message: ALMessage): number {
-    return sent.filter((copy) => copy.id.msgId === message.id.msgId).length;
-}
-
 describe.each(['at-least-once', 'best-effort'] as const)(
     'routing a %s frame across a layout promotion while the promoted layout\'s new edges are still opening',
     (reliability) => {
-        beforeEach(() => {
-            vi.useFakeTimers();
-            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-        });
-
-        afterEach(() => {
-            vi.restoreAllMocks();
-            vi.useRealTimers();
-        });
+        useFakeClock();
 
         it('a sender keeps delivering over its previous downstream edge until the new layout\'s edge is open', async () => {
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,
-                nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-                nextHopsBySessionId: PREVIOUS_TREE
+                nextHopPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+                nextHopsBySessionId: CHAIN_PREVIOUS
             });
-            const promoted = toPromotedLayout(snapshot, 'a');
+            const promoted = toAcceptedLayout(snapshot, PROMOTED_LAYOUT, 'a');
             origin.groups.accept('room', promoted.snapshot);
             origin.acceptOverlay(promoted.overlay);
             // The edge to `b` the promoted layout drops is still open; the edge to `c` it adds is not open yet.
@@ -117,17 +81,17 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,
-                nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-                nextHopsBySessionId: PREVIOUS_TREE
+                nextHopPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+                nextHopsBySessionId: CHAIN_PREVIOUS
             });
             const previousParent = createRtcRelayOverlayFixture({
                 selfPeerId: 'b',
                 snapshot,
-                neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'b')
+                neighbourPeerIds: readNextHops(CHAIN_PREVIOUS, 'b')
             });
             // `c` still holds its edge to its previous parent `b` open, and has promoted the layout that parents it on `a`.
             const receiver = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['b', 'd'] });
-            const promoted = toPromotedLayout(snapshot, 'c');
+            const promoted = toAcceptedLayout(snapshot, PROMOTED_LAYOUT, 'c');
             receiver.acceptSnapshot(promoted.snapshot);
             receiver.acceptOverlay(promoted.overlay);
             const frame = createPositionFrame(95, reliability);
@@ -145,13 +109,13 @@ describe.each(['at-least-once', 'best-effort'] as const)(
             const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
             const origin = createRtcOriginOverlayFixture({
                 snapshot,
-                nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-                nextHopsBySessionId: PREVIOUS_TREE
+                nextHopPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+                nextHopsBySessionId: CHAIN_PREVIOUS
             });
             // `b` still holds its edges to its previous parent `a` and child `c` open, and has promoted the layout that
             // makes it a leaf below `d`; `c`'s new parent edge to `a` is not open yet, so `c` still waits on `b`.
-            const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'b') });
-            const promoted = toPromotedLayout(snapshot, 'b');
+            const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: readNextHops(CHAIN_PREVIOUS, 'b') });
+            const promoted = toAcceptedLayout(snapshot, PROMOTED_LAYOUT, 'b');
             relay.acceptSnapshot(promoted.snapshot);
             relay.acceptOverlay(promoted.overlay);
             const frame = createPositionFrame(95, reliability);
@@ -167,7 +131,7 @@ describe.each(['at-least-once', 'best-effort'] as const)(
 /** What the session of `selfPeerId` holds once the snapshot naming the promoted layout reached it before that layout. */
 interface SnapshotFirstPromotion {
     readonly session: RtcRelayOverlayFixture;
-    readonly promoted: PromotedLayout;
+    readonly promoted: AcceptedLayout;
 }
 
 function promoteSnapshotFirst(
@@ -178,11 +142,11 @@ function promoteSnapshotFirst(
     const session = createRtcRelayOverlayFixture({
         selfPeerId,
         snapshot,
-        neighbourPeerIds: readNextHops(PREVIOUS_TREE, selfPeerId),
-        initialOverlay: createOriginOverlay(readNextHops(PREVIOUS_TREE, selfPeerId), PREVIOUS_TREE),
+        neighbourPeerIds: readNextHops(CHAIN_PREVIOUS, selfPeerId),
+        initialOverlay: createOriginOverlay(readNextHops(CHAIN_PREVIOUS, selfPeerId), CHAIN_PREVIOUS),
         replacedLayoutOverlapMs
     });
-    const promoted = toPromotedLayout(snapshot, selfPeerId);
+    const promoted = toAcceptedLayout(snapshot, PROMOTED_LAYOUT, selfPeerId);
     session.acceptSnapshotBeforeLayout(promoted.snapshot);
     return { session, promoted };
 }
@@ -191,10 +155,10 @@ function promoteSnapshotFirst(
 async function relayOverPreviousLayout(frame: ALMessage, snapshot: GroupSnapshot): Promise<ALMessage> {
     const origin = createRtcOriginOverlayFixture({
         snapshot,
-        nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-        nextHopsBySessionId: PREVIOUS_TREE
+        nextHopPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+        nextHopsBySessionId: CHAIN_PREVIOUS
     });
-    const previousParent = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'b') });
+    const previousParent = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: readNextHops(CHAIN_PREVIOUS, 'b') });
     await enqueueAndDrain(origin.manager, frame);
     await previousParent.receive(origin.channels.b!.sent[0]!, 'a');
     const relayed = (await previousParent.readSent('c')).find((copy) => copy.id.msgId === frame.id.msgId);
@@ -206,23 +170,15 @@ async function relayOverPreviousLayout(frame: ALMessage, snapshot: GroupSnapshot
 async function sendOverPreviousLayout(frame: ALMessage, snapshot: GroupSnapshot): Promise<ALMessage> {
     const origin = createRtcOriginOverlayFixture({
         snapshot,
-        nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-        nextHopsBySessionId: PREVIOUS_TREE
+        nextHopPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+        nextHopsBySessionId: CHAIN_PREVIOUS
     });
     await enqueueAndDrain(origin.manager, frame);
     return origin.channels.b!.sent[0]!;
 }
 
 describe('a promotion a browser learns of snapshot first, before the promoted layout reaches it', () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
-    });
-
-    afterEach(() => {
-        vi.restoreAllMocks();
-        vi.useRealTimers();
-    });
+    useFakeClock();
 
     it('a receiver accepts a frame its previous parent relays once the promoted layout arrives', async () => {
         const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
@@ -287,8 +243,8 @@ describe('a promotion a browser learns of snapshot first, before the promoted la
         const uncached = createRtcRelayOverlayFixture({
             selfPeerId: 'a',
             snapshot,
-            neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
-            initialOverlay: createOriginOverlay(readNextHops(PREVIOUS_TREE, 'a'), PREVIOUS_TREE)
+            neighbourPeerIds: readNextHops(CHAIN_PREVIOUS, 'a'),
+            initialOverlay: createOriginOverlay(readNextHops(CHAIN_PREVIOUS, 'a'), CHAIN_PREVIOUS)
         });
         uncached.acceptSnapshot(promoted.snapshot);
 
