@@ -104,15 +104,15 @@ export function decodeCurrentCoalescedGroupRevisionWork(
 export function decodeGroupRevisionWorkOverlayId(entry: ResourceEntry): string | null {
     try {
         const decoded = decodeRtcTopologyWorkEntry(entry);
+        if (decoded.right !== undefined) {
+            const work = readRtcTopologyWorkEnvelope(decoded.right, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
+            return work.kind === 'group-revision' ? work.overlayId : null;
+        }
         if (decoded.left?.code === 'unsupported') {
             const data = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry)?.data;
             return data?.kind === 'group-revision' && typeof data.overlayId === 'string' ? data.overlayId : null;
         }
-        if (decoded.left) {
-            return null;
-        }
-        const work = readRtcTopologyWorkEnvelope(decoded.right!, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
-        return work.kind === 'group-revision' ? work.overlayId : null;
+        return null;
     }
     catch {
         return null;
