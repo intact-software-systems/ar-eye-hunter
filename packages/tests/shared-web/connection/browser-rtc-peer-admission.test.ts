@@ -296,6 +296,31 @@ describe('browser RTC peer admission', () => {
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
         });
 
+        it('when this browser adopts the layout, its reconcile closes an early peer for each new entry and the released offers reuse those entries', async () => {
+            const newPeers = ['c1', 'c2', 'c3', 'c4', 'c5'];
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            for (const peerId of newPeers) {
+                expect(await runtime.connection.receive(offer(peerId))).toBe('retry');
+            }
+
+            await adoptSecondRoomLayout(runtime, newPeers);
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...newPeers]);
+            const entries = newPeers.map((peerId) => runtime.connection.nativePeer(peerId));
+
+            await runtime.connection.service.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON);
+            expect(runtime.connection.broughtDueSenderIds.slice().sort()).toEqual(newPeers);
+            // The transport delivers each released signal again.
+            for (const peerId of newPeers) {
+                expect(await runtime.connection.receive(offer(peerId))).toBeUndefined();
+            }
+
+            expect(newPeers.map((peerId) => runtime.connection.nativePeer(peerId))).toEqual(entries);
+            for (const peerId of newPeers) {
+                expect(runtime.connection.nativePeer(peerId).receivedDescriptions).toContainEqual({ type: 'offer', sdp: `${peerId}-offer` });
+            }
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...newPeers]);
+        });
+
         it('with no early peer known, such an offer at the cap is denied as before', async () => {
             const fullAccepted = [...accepted, ...early];
             const runtime = await createFullCapRuntime({ accepted: fullAccepted, planned: fullAccepted });
@@ -377,6 +402,25 @@ async function hydrateSecondRoomWithoutReconcile(runtime: AdmissionRuntime, acce
         nextHopSessionIds: acceptedPeerIds
     });
     await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+}
+
+// Adopts the room's layout through the read-through, whose reconcile dials its accepted peers.
+async function adoptSecondRoomLayout(runtime: AdmissionRuntime, acceptedPeerIds: readonly string[]): Promise<void> {
+    const secondRoom = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'second-room',
+        sessionIds: ['self', ...acceptedPeerIds]
+    });
+    const active: GroupSnapshot = {
+        ...secondRoom,
+        group: { ...secondRoom.group, lifecycleState: 'active', formationEpoch: 1 }
+    };
+    runtime.acceptedOverlays.set(toScopedOverlayId(active.group), {
+        ...acceptedOverlay(active),
+        nextHopSessionIds: acceptedPeerIds
+    });
+    await runtime.manager.acceptGroupUpdate(active);
 }
 
 function sortedKnownPeerIds(runtime: AdmissionRuntime): string[] {

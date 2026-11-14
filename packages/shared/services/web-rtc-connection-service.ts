@@ -728,7 +728,8 @@ export class WebRtcConnectionService {
         try {
             return this.inboundPeerCapPolicy?.wouldAdmit(toInboundPeerCreationPolicyInput(signal)) ?? false;
         }
-        catch {
+        catch (caught) {
+            console.error(`Inbound RTC peer cap policy failed for ${signal.fromId}`, toError(caught));
             return false;
         }
     }
