@@ -890,12 +890,16 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 const commandIds = producer.commands.map(({ commandId }) => commandId);
                 const left = findStep(producer, 'sibling-left');
 
+                const lastPublication = `${producer.recipeId}-${track}-p2`;
+                const alone = `${producer.recipeId}-probe-receiver-alone`;
+
                 expect(commandIds.indexOf(armed), `${carrier} ${role}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(lastPublication), `${carrier} ${role} ${lastPublication}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(alone), `${carrier} ${role} ${alone}`).toBeGreaterThan(-1);
                 expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`).toBeGreaterThan(commandIds.indexOf(armed));
                 expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`)
-                    .toBeGreaterThan(commandIds.indexOf(`${producer.recipeId}-${track}-p2`));
-                expect(commandIds.indexOf(`${producer.recipeId}-probe-receiver-alone`), `${carrier} ${role}`)
-                    .toBeGreaterThan(commandIds.indexOf(left.commandId));
+                    .toBeGreaterThan(commandIds.indexOf(lastPublication));
+                expect(commandIds.indexOf(alone), `${carrier} ${role}`).toBeGreaterThan(commandIds.indexOf(left.commandId));
                 // Four roles share the room, so the sibling's removal leaves three.
                 expect(left).toMatchObject({
                     kind: 'wait',

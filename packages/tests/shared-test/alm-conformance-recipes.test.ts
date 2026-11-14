@@ -18,6 +18,7 @@ import { toConnectCommand } from '@shared-test/rallar-bb-test/conformance/alm/al
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import { toAlmCellAuthoredCommands } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import { toAlmCellPlacedBody } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-placed-body.ts';
+import { toCellHistoryMarkedCommands } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-cell-history-marked-commands.ts';
 import {
     createAlmConformanceRecipes,
     createAlmDeliveryDiagnosticsRecipes,
@@ -1563,6 +1564,39 @@ function expectFreshDocumentRecovery(
 }
 
 describe('alm-conformance cell parts', () => {
+    it('a body wait cannot start its history at another cell\'s command', () => {
+        const step = {
+            input: toConformanceInput('rtc'),
+            scenarioId: 'delivery-baseline',
+            scenarioKey: 'probe',
+            role: 'sender',
+            roles: ['sender', 'receiver'],
+            messages: {},
+            connect: undefined
+        } as const;
+        const toWaitFrom = (sinceCommandIdPrefix: string): RallarBlackBoxTestWaitCommand => ({
+            kind: 'wait',
+            commandId: 'alm-rtc-probe-sender-late',
+            match: { kind: 'diagnostic', topic: 'rallar.browser.group_state.applied', sinceCommandIdPrefix },
+            timeoutMs: 1_000
+        });
+
+        for (const own of ['alm-rtc-probe-sender-', 'alm-rtc-probe-receiver-armed']) {
+            expect(toCellHistoryMarkedCommands(step, [toWaitFrom(own)]), own).toEqual([toWaitFrom(own)]);
+        }
+        for (const foreign of ['alm-rtc-other-sender-', 'alm-rtc-probe2-sender-', 'alm-ws-probe-sender-', 'sender-']) {
+            expect(() => toCellHistoryMarkedCommands(step, [toWaitFrom(foreign)]), foreign)
+                .toThrow('alm-rtc-probe-sender-late');
+            expect(
+                () =>
+                    toCellHistoryMarkedCommands(step, [
+                        { kind: 'loop', commandId: 'alm-rtc-probe-sender-loop', commands: [toWaitFrom(foreign)] } as RallarBlackBoxTestCommand
+                    ]),
+                `${foreign} nested`
+            ).toThrow('alm-rtc-probe-sender-late');
+        }
+    });
+
     it('every wait of every role\'s body and continuation, on every carrier, reads from its own cell\'s command prefix', () => {
         const pageHistoryWaits: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

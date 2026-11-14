@@ -9,7 +9,9 @@ import { SUBSCRIPTION_PHASE_MS } from '../../granted-topic/subscription-phase-bu
 /**
  * The page applied a room snapshot with one session fewer than the cell's roles: the sibling's session left the room.
  * The count is read from the cell's `armed` barrier onward, when every role connected, so the one way to reach it is a
- * removal; the cell's room is its own, so no session of an earlier cell is left in it.
+ * removal; the cell's room is its own, so no session of an earlier cell is left in it. It only works in a cell created
+ * with `cellSettle: 'barriered'`: without an `armed` command the page falls back to the next event and the wait times
+ * out, so a hosted manifest for this cell must carry an `armed` barrier.
  */
 export function toSiblingLeftWait(step: AlmConformanceStepInput): RallarBlackBoxTestWaitCommand {
     const group = step.input.group;
