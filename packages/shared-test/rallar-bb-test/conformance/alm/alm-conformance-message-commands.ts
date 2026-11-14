@@ -227,25 +227,19 @@ export function toVerdictCommands(
     state: ALDeliveryState,
     facts: readonly AlmConformanceVerdictFact[]
 ): readonly RallarBlackBoxTestCommand[] {
-    return [toObserveCommand({ ...sender, index: 1, state }), ...toVerdictAssertions(sender, state, facts)];
-}
-
-/** Each fact holds on the observation of the first send's handle at `state`, which an earlier command made. */
-export function toVerdictAssertions(
-    sender: AlmConformanceStepInput,
-    state: ALDeliveryState,
-    facts: readonly AlmConformanceVerdictFact[]
-): readonly RallarBlackBoxTestCommand[] {
-    return facts.map(([name, field, operator, expected]) =>
-        toResultAssertion({
-            step: sender,
-            name: `assert-${name}-1`,
-            resultName: `observe-${state}-1`,
-            field,
-            operator,
-            expected
-        })
-    );
+    return [
+        toObserveCommand({ ...sender, index: 1, state }),
+        ...facts.map(([name, field, operator, expected]) =>
+            toResultAssertion({
+                step: sender,
+                name: `assert-${name}-1`,
+                resultName: `observe-${state}-1`,
+                field,
+                operator,
+                expected
+            })
+        )
+    ];
 }
 
 /**
