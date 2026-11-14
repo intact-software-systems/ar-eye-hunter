@@ -416,6 +416,19 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         /** The control's own trace and correlation; a receipt and an ACK carry the trace of the message they answer. */
         & ALMessageTrace
     )
+    | (
+        & Readonly<{
+            kind: 'relay-forward-not-enqueued';
+            /** The forwarded copy's own id. */
+            msgId: string;
+            typeId: string;
+            /** The enqueue verdict's kind; a forward that was enqueued or is already held states no event. */
+            outcome: Exclude<ALDeliveryAdmissionVerdict['kind'], 'admitted' | 'duplicate' | 'pending'>;
+            /** The verdict's reason code, or `none` for a verdict that names none. */
+            reason: string;
+        }>
+        & ALMessageTrace
+    )
     | Readonly<{
         kind: 'effect-drain';
         lane: ALStoreDurability;

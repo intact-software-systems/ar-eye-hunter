@@ -232,7 +232,7 @@ every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
   `commit-phases`, `effect-drain`, `readiness-probe`, `control-admission`,
-  `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
+  `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, `rtc-ack-submission`,
   `rtc-handoff-refusal`, `rtc-queued-bytes-high-water`, `track-index-end`,
   `publication-staging` or `publication-opportunity` (the last two are described under
   **Publication stage diagnostics** below). `track-index-end` is the WS server's: the
@@ -241,7 +241,7 @@ every session the page opens. The event's `data` is the event itself:
   `conflict` (reported once, not retried) or `failed` (the end threw) — and no payload;
   the row keeps the outcome it had
 - `durationMs`: how long that phase took, on every kind but `commit-phases`,
-  `control-admission`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds, `track-index-end` and the two
+  `control-admission`, `relay-forward-not-enqueued`, `receipt-confirmation`, `congestion`, the three `rtc-*` kinds, `track-index-end` and the two
   `publication-*` kinds, which are outcomes, not phases: `commit-phases` splits its own into the two halves
   below, and `control-admission` is a verdict, not a phase. On
   `readiness-probe` it is not a phase of a commit at all but what that owner's
@@ -252,7 +252,8 @@ every session the page opens. The event's `data` is the event itself:
   commit-scoped kinds, so a hold is charged to the work behind it rather than
   guessed at from a duration
 - `traceId` then `corrId` close every message-scoped kind: `commit-phases`,
-  `control-admission` (after a receipt's `phase` or a NACK's two fields), `receipt-confirmation`,
+  `control-admission` (after a receipt's `phase` or a NACK's two fields), `relay-forward-not-enqueued`,
+  `receipt-confirmation`,
   `congestion`, `rtc-ack-submission` and `track-index-end`. `publication-staging` is the one
   message-scoped kind without the pair: it carries the value's `traceId` before
   `atMs` and no `corrId`, and `publication-opportunity` names no message.
@@ -425,6 +426,19 @@ every session the page opens. The event's `data` is the event itself:
   `not-handled`/`control`, joined by `msgId`; a committed receipt is also
   the acknowledgement settlement on the send's handle (`messages.receipts`
   reads the logical recipients)
+- `relay-forward-not-enqueued` carries `msgId`, `typeId`, `outcome` and `reason`:
+  one event for a copy a relay forwarded whose enqueue the outbound runtime
+  answered with anything but `admitted`, `duplicate` or `pending`. `outcome`
+  is the enqueue verdict's kind (`skipped`, `unroutable`, `refused`,
+  `deferred`, `superseded`, `expired`, `failed` or `storage-unavailable`) and
+  `reason` its code (`planner-drop`, `no-route`, `congested`, ...; the storage
+  cause for `storage-unavailable`; `none` where the verdict names none). It is
+  stated by the relay's own page and never for the origin's own send, whose
+  verdict is the send handle's. A browser proof counts a relay's `planner-drop`
+  as events with `outcome` `skipped` and `reason` `planner-drop`. Nothing is
+  retried or re-sent for it. A forward that is enqueued or already held states
+  nothing, so the event is rare, not one per relayed frame:
+  `{"kind":"relay-forward-not-enqueued","msgId":"frame-1","typeId":"chat.message.v1","outcome":"skipped","reason":"planner-drop","traceId":"trace-1","corrId":"frame-1"}`
 - `receipt-confirmation` is a separate closed observation for each receipt
   admission attempt that reaches a validation decision or actual commit
   return, including rejected, conflicted and expired attempts. Read/commit

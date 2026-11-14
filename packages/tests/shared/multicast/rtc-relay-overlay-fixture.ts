@@ -128,6 +128,8 @@ export interface RtcRelayOverlayFixture {
      * mismatched accepted layout is removed and the planned one promoted (`reconcileAcceptedOverlayIdentity`).
      */
     acceptSnapshotPromotion(snapshot: GroupSnapshot, overlay: OverlayInfo): void;
+    /** Forwards `message`, received from `fromPeerId`, as the receive pipeline's relay row does, and waits for the work it queued. */
+    forward(message: ALMessage, fromPeerId: string): Promise<void>;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
@@ -257,6 +259,12 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
             });
             this.dependencies.overlays.accept(overlayId, overlay);
         }
+    }
+
+    async forward(message: ALMessage, fromPeerId: string): Promise<void> {
+        await this.ready;
+        await this.dependencies.multicast.forwardIfRequired(message, fromPeerId);
+        await waitForOwnedQueueWork(this.dependencies.outboundResources.workQueue);
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {

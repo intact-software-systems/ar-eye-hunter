@@ -469,6 +469,43 @@ it('records an AL outbound admission diagnostics event into the agent event log'
     ]));
 });
 
+it('records a relay\'s refused forward into the agent event log with the message, its type, the outcome and the reason', async () => {
+    const runtime = await loadRuntime();
+    onTestFinished(async () => {
+        await runtime.close();
+    });
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
+
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics?.({
+        kind: 'relay-forward-not-enqueued',
+        msgId: 'frame-1',
+        typeId: 'chat.message.v1',
+        outcome: 'skipped',
+        reason: 'planner-drop',
+        traceId: 'trace-1',
+        corrId: 'frame-1'
+    });
+
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics')).toEqual([
+        expect.objectContaining({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            data: {
+                kind: 'relay-forward-not-enqueued',
+                msgId: 'frame-1',
+                typeId: 'chat.message.v1',
+                outcome: 'skipped',
+                reason: 'planner-drop',
+                traceId: 'trace-1',
+                corrId: 'frame-1'
+            }
+        })
+    ]);
+});
+
 it.each([
     { confirmed: ['b'], unconfirmed: ['c'], complete: false },
     { confirmed: ['b', 'c'], unconfirmed: [], complete: true }

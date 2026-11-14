@@ -48,6 +48,7 @@ import {
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
 import type { ALOutboundControlAdmissionResult } from '../alm/outbound/control/al-outbound-control-admission.ts';
+import { settleALOutboundRelayForward } from '../alm/outbound/lane/settle-al-outbound-relay-forward.ts';
 import {
     EnqueuedType,
     OverlayId,
@@ -550,7 +551,6 @@ export class WebRtcOverlayMulticastManager {
         return await this.#publications.verifyPublicationProof(msg);
     }
 
-    /** A forward its store could not persist throws into the inbound claim, which retries it. */
     async forwardIfRequired(
         msg: ALMessage,
         fromPeerId?: PeerId
@@ -561,10 +561,7 @@ export class WebRtcOverlayMulticastManager {
             return [];
         }
         const result = await this.outboundRuntime.enqueueIfAbsent(forwarding.msg, forwarding);
-        if (result.verdict.kind === 'storage-unavailable') {
-            throw new Error(result.reason ?? 'RTC forward admission returned storage-unavailable');
-        }
-        return result.entries;
+        return settleALOutboundRelayForward(this.outboundDiagnostics, forwarding.msg, result);
     }
 
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
