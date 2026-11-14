@@ -240,9 +240,10 @@ export function toCoalescedGroupRevisionKey(groupRef: GroupRef): Key {
  * head row (I14 — its `dueAtEpochMs` doubles as the read surface's "when
  * will this settle"). Queued means the queue will still attempt it: a
  * waiting row (NEW/RETRY) and an executing row (RESERVED) both report
- * queued; a terminal row is settled work. A present head whose envelope no
- * longer decodes still reports queued, with a null due time and generation,
- * rather than hiding work the queue will attempt.
+ * queued; a terminal row is settled work. A waiting or executing head whose
+ * envelope no longer decodes still reports queued, with a null due time and
+ * generation: the queue still dequeues it, and finalizes it non-retryable
+ * since it cannot decode it.
  *
  * When the head is not pending, the group's pending rows of the topology
  * topic answer instead, because group-revision work also waits elsewhere: a

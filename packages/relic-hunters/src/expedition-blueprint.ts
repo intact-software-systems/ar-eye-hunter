@@ -200,9 +200,14 @@ function decodeExpedition(
         ...validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues,
         ...(isApiJsonObject(value) ? toRuleIssues(value) : [])
     ];
-    return issues.length === 0
-        ? Either.ofRight(value as RelicExpeditionBlueprint)
+    return issues.length === 0 && isRelicExpeditionBlueprintShape(value)
+        ? Either.ofRight(value)
         : Either.ofLeft(failRallarAiValidation(issues));
+}
+
+/** The schema states every field of a blueprint, so a value it accepts is one. */
+function isRelicExpeditionBlueprintShape(value: unknown): value is RelicExpeditionBlueprint {
+    return validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues.length === 0;
 }
 
 function toBlueprintRuleIssues(candidate: ApiJsonObject): readonly RallarAiValidationIssue[] {

@@ -167,13 +167,13 @@ export type GroupTopologyManagementView = Readonly<{
 export interface PendingTopologyReplan {
     readonly reconfigureQueued: boolean;
     /**
-     * The earliest due coalesced row's due time, not a bound on when the room settles; null for a per-command or
-     * undecodable row.
+     * The earliest due coalesced row's due time, not a bound on when the room settles; null for a per-command row or a
+     * head that no longer decodes.
      */
     readonly dueAtEpochMs: number | null;
     /**
      * The reported row's own coalescing count: the head's counts every merge into it, a parked replan starts at 1, so
-     * it is not comparable across reads; null for a per-command or undecodable row.
+     * it is not comparable across reads; null for a per-command row or a head that no longer decodes.
      */
     readonly generation: number | null;
 }

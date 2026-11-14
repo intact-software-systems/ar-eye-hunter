@@ -22,8 +22,7 @@ export interface PreviousCoalescedGroupRevisionWork {
 }
 
 /**
- * The stored head as a writer may use it; anything that is not current coalesced work, a row in an envelope version
- * this build does not support among it, is corrupt and fails closed.
+ * The stored head as a writer may use it; anything that is not current coalesced work is corrupt and fails closed.
  *
  * A stored coalesced row never rewrites its created-audit columns — both the
  * pending merge and the terminal revival compare-and-set update the resource,

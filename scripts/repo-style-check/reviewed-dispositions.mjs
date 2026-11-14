@@ -437,20 +437,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'requireNullableString',
         maximumMagnitude: 1
     }),
-    // Independent boundary review: Untrusted AI proposal data is checked by blueprint and visual-fit validators; only issues leave.
-    Object.freeze({
-        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateExpeditionEvaluationBlueprint',
-        maximumMagnitude: 1
-    }),
-    // Independent boundary review: A caught unknown is immediately normalized to Error.message or String for reporting.
-    Object.freeze({
-        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toErrorMessage',
-        maximumMagnitude: 1
-    }),
     // Whole-owner retention review: canonical ingress mapping remains one closed
     // command translation; aggregate update keeps authorization, retained metadata
     // and the resulting candidate together. These exact warning-tier sums permit

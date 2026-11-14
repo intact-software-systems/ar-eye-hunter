@@ -289,6 +289,7 @@ describe('group presence summary coalescing', () => {
     });
 
     it.each([
+        { head: 'non-retryable', settledAs: EntityStatus.NON_RETRYABLE },
         { head: 'failed', settledAs: EntityStatus.FAILED },
         { head: 'pending', settledAs: null }
     ])(
