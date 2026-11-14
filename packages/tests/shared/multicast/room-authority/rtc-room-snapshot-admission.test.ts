@@ -307,7 +307,7 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     function readPreviousForwardingPeerIds(input: RtcRoomSnapshotAdmissionInput, nowMs: number): readonly string[] | undefined {
         const admission = computeRtcRoomSnapshotAdmission({ ...input, fromPeerId: 'relay', nowMs });
         expect(admission.kind).toBe('authorized');
-        return admission.kind === 'authorized' ? admission.previousForwarding?.neighbourPeerIds : undefined;
+        return admission.kind === 'authorized' ? admission.previousForwarding?.neighborPeerIds : undefined;
     }
 
     function planRelayed(input: RtcRoomSnapshotAdmissionInput) {

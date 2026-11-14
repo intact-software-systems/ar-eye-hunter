@@ -8,11 +8,8 @@ export interface ALOverlayAdjacency {
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
 }
 
-/**
- * The layout an accepted layout replaced, for the first half of the overlap its receivers admit: this peer's neighbours
- * in it and its whole adjacency.
- */
-export interface ALPreviousOverlayLayout {
+/** A layout seen from this peer: its neighbours in it and, when the layout carries one, its whole adjacency. */
+export interface ALOverlayLayout {
     readonly neighborPeerIds: readonly string[];
     readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
 }
@@ -73,7 +70,7 @@ function toALLayoutChildCandidates(
     context: ALMessagePlanningContext,
     isOwnable: (peerId: string) => boolean
 ): readonly ALLayoutChildCandidates[] {
-    const layouts = [
+    const layouts: readonly ALOverlayLayout[] = [
         {
             neighborPeerIds: context.overlayNeighborPeerIds ?? [],
             nextHopsBySessionId: context.overlayNextHopsBySessionId

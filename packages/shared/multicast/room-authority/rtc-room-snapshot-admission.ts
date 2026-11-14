@@ -5,6 +5,7 @@ import {
 } from '../../al-contracts/al-contract.ts';
 import { resolveALAdmittedRoomAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageDropReasonCode, ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
+import type { ALOverlayLayout } from '../../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type { OverlayInfo } from '../../api/api-config.ts';
 import { isSameGroupRef } from '../../api/api-type-utils.ts';
@@ -26,7 +27,6 @@ import {
 } from './resolve-rtc-room-peer-denial.ts';
 import {
     resolveRtcRoomRoutingEdges,
-    type RtcRoomLayoutEdges,
     type RtcRoomLayoutHistory,
     type RtcRoomRoutingEdges
 } from './resolve-rtc-room-routing-edges.ts';
@@ -55,7 +55,7 @@ export type RtcRoomSnapshotAdmission =
          * The replaced layout's edges a sender and a relay also forward over, only in the first half of the overlap
          * this receiver admits; else `null`.
          */
-        readonly previousForwarding: RtcRoomLayoutEdges | null;
+        readonly previousForwarding: ALOverlayLayout | null;
         readonly snapshotVersion: number;
         /** The room's leader the snapshot appoints and holds present, to which a `group-leader` send narrows. */
         readonly leaderSessionId: string | undefined;
@@ -71,7 +71,7 @@ interface RtcRoomAdmissionAuthority extends RtcRoomSessionObservation {
 }
 
 const NO_RTC_ROOM_ROUTING_EDGES: RtcRoomRoutingEdges = {
-    accepted: { neighbourPeerIds: [], nextHopsBySessionId: undefined },
+    acceptedNeighborPeerIds: [],
     previous: null,
     admittedEdgePeerIds: [],
     awaitedEdgePeerIds: []
@@ -299,7 +299,7 @@ function toAuthorizedRoomAdmission(
         kind: 'authorized',
         memberPeerIds: authorizedPeerIds,
         memberSessions: authorizedSessions,
-        forwardingPeerIds: routingEdges.accepted.neighbourPeerIds,
+        forwardingPeerIds: routingEdges.acceptedNeighborPeerIds,
         previousForwarding: routingEdges.previous,
         snapshotVersion: snapshot.group.snapshotVersion,
         leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot),

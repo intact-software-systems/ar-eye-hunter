@@ -1,3 +1,4 @@
+import type { ALOverlayLayout } from '../../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type { OverlayInfo } from '../../api/api-config.ts';
 import type { GroupRef } from '../../api/group-types.ts';
 import { isRoomLayoutOverlay } from '../../repository/is-accepted-room-layout-overlay.ts';
@@ -20,18 +21,13 @@ export interface ResolveRtcRoomRoutingEdgesInput {
     readonly nowMs: number;
 }
 
-export interface RtcRoomLayoutEdges {
-    readonly neighbourPeerIds: readonly string[];
-    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>> | undefined;
-}
-
 export interface RtcRoomRoutingEdges {
-    readonly accepted: RtcRoomLayoutEdges;
+    readonly acceptedNeighborPeerIds: readonly string[];
     /**
      * The most recent replaced layout's edges a sender or relay may still forward over: only for the first half of the
      * overlap, rounded down to a whole millisecond; else `null`.
      */
-    readonly previous: RtcRoomLayoutEdges | null;
+    readonly previous: ALOverlayLayout | null;
     /**
      * The accepted layout's next hops, and the authorized neighbours of every replaced layout in the chain that ends at
      * the accepted layout, each for its own whole overlap.
@@ -45,7 +41,7 @@ export interface RtcRoomRoutingEdges {
 }
 
 interface RtcReplacedLayoutEdges {
-    readonly previous: RtcRoomLayoutEdges | null;
+    readonly previous: ALOverlayLayout | null;
     readonly admittedPeerIds: readonly string[];
 }
 
@@ -53,24 +49,23 @@ const NO_REPLACED_LAYOUT_EDGES: RtcReplacedLayoutEdges = { previous: null, admit
 
 export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInput): RtcRoomRoutingEdges {
     const authorizedPeerIdSet = new Set(input.authorizedPeerIds);
-    const acceptedNeighbourPeerIdSet = isRoomLayoutOverlay(input.accepted, input.roomRef)
-        ? authorizedPeerIdSet
-        : new Set<string>();
-    const accepted = toRtcRoomLayoutEdges(input.accepted, acceptedNeighbourPeerIdSet);
+    const acceptedNeighborPeerIds = isRoomLayoutOverlay(input.accepted, input.roomRef)
+        ? toALOverlayLayout(input.accepted, authorizedPeerIdSet).neighborPeerIds
+        : [];
     const replaced = resolveReplacedLayoutEdges(input, authorizedPeerIdSet);
     const admittedEdgePeerIds = [...new Set([...input.accepted.nextHopSessionIds, ...replaced.admittedPeerIds])];
-    const awaitedEdgePeerIds = resolvePlannedLayoutNeighbours(input, authorizedPeerIdSet)
+    const awaitedEdgePeerIds = resolvePlannedLayoutNeighbors(input, authorizedPeerIdSet)
         .filter((peerId) => !admittedEdgePeerIds.includes(peerId));
-    return { accepted, previous: replaced.previous, admittedEdgePeerIds, awaitedEdgePeerIds };
+    return { acceptedNeighborPeerIds, previous: replaced.previous, admittedEdgePeerIds, awaitedEdgePeerIds };
 }
 
-function resolvePlannedLayoutNeighbours(
+function resolvePlannedLayoutNeighbors(
     input: ResolveRtcRoomRoutingEdgesInput,
     authorizedPeerIdSet: ReadonlySet<string>
 ): readonly string[] {
     const planned = input.history.planned ?? undefined;
     return isRoomLayoutOverlay(planned, input.roomRef)
-        ? toRtcRoomLayoutEdges(planned, authorizedPeerIdSet).neighbourPeerIds
+        ? toALOverlayLayout(planned, authorizedPeerIdSet).neighborPeerIds
         : [];
 }
 
@@ -95,9 +90,9 @@ function resolveReplacedLayoutEdges(
     );
     const admittedPeerIds = chain
         .filter((transition) => isInsideWindow(input.nowMs - transition.replacedAtEpochMs, overlapMs))
-        .flatMap((transition) => toRtcRoomLayoutEdges(transition.replaced, authorizedPeerIdSet).neighbourPeerIds);
+        .flatMap((transition) => toALOverlayLayout(transition.replaced, authorizedPeerIdSet).neighborPeerIds);
     return {
-        previous: forwards ? toRtcRoomLayoutEdges(newest.replaced, authorizedPeerIdSet) : null,
+        previous: forwards ? toALOverlayLayout(newest.replaced, authorizedPeerIdSet) : null,
         admittedPeerIds
     };
 }
@@ -138,9 +133,9 @@ function resolveReplacingTransitionChain(input: ResolveRtcRoomRoutingEdgesInput)
     return chain;
 }
 
-function toRtcRoomLayoutEdges(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): RtcRoomLayoutEdges {
+function toALOverlayLayout(layout: OverlayInfo, authorizedPeerIdSet: ReadonlySet<string>): ALOverlayLayout {
     return {
-        neighbourPeerIds: layout.nextHopSessionIds.filter((peerId) => authorizedPeerIdSet.has(peerId)),
+        neighborPeerIds: layout.nextHopSessionIds.filter((peerId) => authorizedPeerIdSet.has(peerId)),
         nextHopsBySessionId: layout.nextHopsBySessionId
     };
 }

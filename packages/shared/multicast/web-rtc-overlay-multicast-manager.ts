@@ -114,7 +114,7 @@ import {
     toRtcRoomSnapshotHandlingPlan,
     type RtcRoomSnapshotAdmission
 } from './room-authority/rtc-room-snapshot-admission.ts';
-import { toALPreviousOverlayLayout } from './room-authority/to-al-previous-overlay-layout.ts';
+import { toALLayoutPlanningContext } from './room-authority/to-al-layout-planning-context.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { toALOutboundDropReasonCodeFromHandlingPlan } from './to-al-outbound-drop-reason-code-from-handling-plan.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
@@ -683,10 +683,7 @@ export class WebRtcOverlayMulticastManager {
             selfPeerId: this.connectionService.input.sessionId,
             fromPeerId,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
-            groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
-            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
-            overlayNextHopsBySessionId: input.overlay?.nextHopsBySessionId,
-            previousOverlayLayout: toALPreviousOverlayLayout(admission)
+            ...toALLayoutPlanningContext(admission, input.overlay)
         };
         const policyMessage = fromPeerId !== undefined && msg.targets?.mode !== 'unicast'
             ? { ...msg, forwarding: { ...msg.forwarding, nextHopPeerIds: undefined } }

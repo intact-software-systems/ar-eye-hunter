@@ -1,7 +1,7 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { resolveALOwnedChildPeerIds } from '../al-contracts/resolve-al-owned-child-peer-ids.ts';
 import type { RtcOutboundCarrierAvailability } from './compute-rtc-outbound-carrier-availability.ts';
-import { toALPreviousOverlayLayout } from './room-authority/to-al-previous-overlay-layout.ts';
+import { toALLayoutPlanningContext } from './room-authority/to-al-layout-planning-context.ts';
 import { toRtcOriginFrozenMessage } from './web-rtc-overlay-frozen-audience.ts';
 
 export interface IsRtcOriginRouteUnavailableInput {
@@ -27,10 +27,7 @@ export function isRtcOriginRouteUnavailable(input: IsRtcOriginRouteUnavailableIn
     const ownedChildPeerIds = resolveALOwnedChildPeerIds(frozen, {
         nowMs: availability.context.nowMs,
         selfPeerId,
-        groupMemberPeerIds: availability.admission.memberPeerIds,
-        overlayNeighborPeerIds: availability.admission.forwardingPeerIds,
-        overlayNextHopsBySessionId: availability.context.overlay.nextHopsBySessionId,
-        previousOverlayLayout: toALPreviousOverlayLayout(availability.admission)
+        ...toALLayoutPlanningContext(availability.admission, availability.context.overlay)
     });
     return ownedChildPeerIds.length > 0 &&
         ownedChildPeerIds.every((peerId) => !input.readyPeerIds.includes(peerId));
