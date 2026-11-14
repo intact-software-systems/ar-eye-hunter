@@ -341,6 +341,14 @@ export namespace WebRtcConnectionService {
         input: InboundPeerCreationPolicyInput
     ) => InboundPeerCreationDecision;
 
+    /** Asked only for a new peer's signal at a full cap; without one that signal is refused. */
+    export interface InboundPeerCapPolicy {
+        /** An `allow` admits only once it has freed a slot; a `retry` holds the signal. */
+        readonly decide: InboundPeerCreationPolicy;
+        /** Whether `decide` would admit the signal now, with no side effect: a held signal is released only then. */
+        readonly wouldAdmit: (input: InboundPeerCreationPolicyInput) => boolean;
+    }
+
     export interface OutboundDialPolicyInput {
         readonly peerId: PeerId;
     }
@@ -365,7 +373,7 @@ export class WebRtcConnectionService {
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
 
     private inboundPeerCreationPolicy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined;
-    private inboundPeerCapPolicy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined;
+    private inboundPeerCapPolicy: WebRtcConnectionService.InboundPeerCapPolicy | undefined;
     private outboundDialPolicy: WebRtcConnectionService.OutboundDialPolicy | undefined;
 
     public readonly signaler: QRtcSignalingTransport;
@@ -400,12 +408,8 @@ export class WebRtcConnectionService {
         return this;
     }
 
-    /**
-     * Asked only for a new peer's signal at a full cap; without it that signal is refused. An `allow` admits only
-     * once the policy has freed a slot, and a `retry` holds the signal.
-     */
     setInboundPeerCapPolicy(
-        policy?: WebRtcConnectionService.InboundPeerCreationPolicy
+        policy?: WebRtcConnectionService.InboundPeerCapPolicy
     ): WebRtcConnectionService {
         this.inboundPeerCapPolicy = policy;
         return this;
@@ -663,7 +667,7 @@ export class WebRtcConnectionService {
             return true;
         }
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
-            return false;
+            return !this.attemptBudget.wouldRefuse(signal.fromId) && this.wouldPeerCapPolicyAdmit(signal);
         }
         const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCreationPolicy, signal);
         return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
@@ -720,9 +724,21 @@ export class WebRtcConnectionService {
         }
     }
 
+    private wouldPeerCapPolicyAdmit(signal: QRtcSignalingMessage): boolean {
+        try {
+            return this.inboundPeerCapPolicy?.wouldAdmit(toInboundPeerCreationPolicyInput(signal)) ?? false;
+        }
+        catch {
+            return false;
+        }
+    }
+
+    // A refusal the attempt budget will give is decided before the policy may close a peer to make room.
     private shouldCreatePeerAtPeerCap(message: QRtcSignalingMessage): PeerCreationAdmission {
-        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCapPolicy, message);
-        const admission = answer.kind === 'answered' ? answer.admission : undefined;
+        const answer = this.attemptBudget.wouldRefuse(message.fromId)
+            ? undefined
+            : this.readInboundPeerCreationAdmission(this.inboundPeerCapPolicy?.decide, message);
+        const admission = answer?.kind === 'answered' ? answer.admission : undefined;
         if (admission?.retryInboundSignal) {
             this.observeSignalRoute('policy-retry', message, undefined);
             return admission;
@@ -744,11 +760,7 @@ export class WebRtcConnectionService {
             return { kind: 'no-policy' };
         }
         try {
-            const decision = policy({
-                peerId: signal.fromId,
-                signalType: signal.signalType,
-                message: signal
-            });
+            const decision = policy(toInboundPeerCreationPolicyInput(signal));
             return { kind: 'answered', admission: this.toPeerCreationAdmission(decision) };
         }
         catch (caught) {
@@ -1510,4 +1522,10 @@ function resolveSetupOutcome(
     setup: WebRtcConnectionService.PeerSetup
 ): WebRtcConnectionService.PeerConnectionEnsureOutcome {
     return setup.phase === 'in-flight' ? 'setup-in-flight' : 'setup-established';
+}
+
+function toInboundPeerCreationPolicyInput(
+    signal: QRtcSignalingMessage
+): WebRtcConnectionService.InboundPeerCreationPolicyInput {
+    return { peerId: signal.fromId, signalType: signal.signalType, message: signal };
 }

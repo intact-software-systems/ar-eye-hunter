@@ -120,6 +120,8 @@ export interface ConnectionCapSpend {
     readonly deferredPeerIds: readonly PeerId[];
     /** What closes, in close order, to bring the known peers within the cap. */
     readonly evictPeerIds: readonly PeerId[];
+    /** The early peers an accepted peer may close for its slot, in close order. */
+    readonly closableEarlyPeerIds: readonly PeerId[];
     /** `refused` when there is no inbound offer. */
     readonly inbound: ConnectionCapInbound;
 }
@@ -178,6 +180,7 @@ export function computeConnectionCapSpend(input: ConnectionCapSpendInput): Conne
         evictPeerIds: overflow <= 0
             ? []
             : [...closingOrder.earlyPeerIds, ...closingOrder.replacedPeerIds].slice(0, overflow),
+        closableEarlyPeerIds: closingOrder.earlyPeerIds,
         inbound: computeCapInbound({ input, isAccepted, freeSlotCount, closingOrder })
     };
 }

@@ -417,6 +417,36 @@ describe('WebRtcGroupManager reconcile wakes', () => {
             expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(3);
         });
 
+        it('ends the pass that closed expired retained peers by saying a connection slot may be free', async () => {
+            const knownPeerCountsAtPassEnd: number[] = [];
+            const rtcQBox = createRtcConnectionHarness('self');
+            const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+            const manager = new WebRtcGroupManager(rtcQBox.service, {
+                groupCache: new LatestRepository<string, GroupSnapshot>(),
+                clientCache: new LatestRepository<string, ClientInfo>(),
+                acceptedOverlayCache
+            }, {
+                onOverlayAdopted: async () => {},
+                onReconcilePassEnded: () => knownPeerCountsAtPassEnd.push(rtcQBox.knownPeerIds().length)
+            });
+            manager.startReconcileWakes();
+            const active = createGroupSnapshot({ groupId: 'group-1', membershipVersion: 1, memberSessionIds: ['self', 'peer-a'] });
+            await acceptActiveLayoutGroup(manager, acceptedOverlayCache, active);
+            rtcQBox.nativePeer('peer-a').setConnected();
+            acceptedOverlayCache.take(toScopedOverlayId(active.group));
+            await manager.acceptGroupUpdate({
+                ...active,
+                causalRevision: { groupRevision: 2, presenceRevision: 2 },
+                group: { ...active.group, lifecycleState: 'dormant', snapshotVersion: 2, presenceVersion: 2 }
+            });
+            expect(knownPeerCountsAtPassEnd.at(-1)).toBe(1);
+
+            await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+
+            expect(knownPeerCountsAtPassEnd.at(-1)).toBe(0);
+            manager.stopReconcileWakes();
+        });
+
         it('a retained peer that expired and is desired again in the same pass is kept, not closed and redialled', async () => {
             const retirement = await retireLayoutOverPeers();
             const retainedPeer = retirement.rtcQBox.nativePeer('peer-a');
@@ -601,11 +631,15 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
 
         expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a').slice(1), 'c1', ...peerRange('p')]);
         expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(1);
+        const replacedEdge = fixture.rtcQBox.nativePeer('a5');
 
         await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
         await fixture.connectKnownPeers();
         expect(fixture.rtcQBox.knownPeerIds()).toContain('a5');
         expect(fixture.rtcQBox.knownPeerIds()).not.toContain('a2');
+        // The same native connection, never closed and redialled across the end of its grace.
+        expect(fixture.rtcQBox.nativePeer('a5')).toBe(replacedEdge);
+        expect(replacedEdge.connectionState).toBe('connected');
     });
 
     it('a second room\'s accepted peers are dialled although the first room\'s early peers fill the cap', async () => {

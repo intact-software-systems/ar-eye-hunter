@@ -276,22 +276,23 @@ describe('computeConnectionCapSpend', () => {
             { peerId: 'retained-2', earlyDial: false, retainedOrder: 1 },
             { peerId: 'retained-1', earlyDial: false, retainedOrder: 0 }
         ];
-        const underCap = capInput({
+        const retainedOverCap = capInput({
             maxPeerConnections: 2,
             knownPeerIds: new Set(['retained-1', 'retained-2', 'peer-a']),
             desiredPeerIds: new Set(['peer-a', 'peer-b']),
             retainedPeers: retained,
             candidatePeerIds: ['peer-b']
         });
-        expect(computeConnectionCapSpend(underCap)).toEqual({
+        expect(computeConnectionCapSpend(retainedOverCap)).toEqual({
             acceptedDialBudget: 1,
             dialPeerIds: ['peer-b'],
             deferredPeerIds: [],
             evictPeerIds: ['retained-1'],
+            closableEarlyPeerIds: [],
             inbound: { verdict: 'refused', closePeerIds: [] }
         });
-        expect(computeConnectionCapSpend({ ...underCap, inboundPeerId: 'peer-b' }).inbound.verdict).toBe('refused');
-        expect(computeConnectionCapSpend({ ...underCap, maxPeerConnections: 4, inboundPeerId: 'peer-b' }).inbound)
+        expect(computeConnectionCapSpend({ ...retainedOverCap, inboundPeerId: 'peer-b' }).inbound.verdict).toBe('refused');
+        expect(computeConnectionCapSpend({ ...retainedOverCap, maxPeerConnections: 4, inboundPeerId: 'peer-b' }).inbound)
             .toEqual({ verdict: 'admitted', closePeerIds: [] });
 
         const acceptedOverCap = computeConnectionCapSpend(capInput({
@@ -306,6 +307,7 @@ describe('computeConnectionCapSpend', () => {
             dialPeerIds: ['peer-d'],
             deferredPeerIds: [],
             evictPeerIds: ['retained-1', 'retained-2'],
+            closableEarlyPeerIds: [],
             inbound: { verdict: 'refused', closePeerIds: [] }
         });
     });

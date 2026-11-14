@@ -761,3 +761,8 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
+- `WebRtcConnectionService` takes its inbound creation policy, its inbound
+  peer-cap policy and its outbound dial policy through three setters, because
+  the group manager they ask is built after the service: setter injection the
+  code standard counts as construction debt. Building the policies before the
+  service, or giving the service one required policies input, removes it.

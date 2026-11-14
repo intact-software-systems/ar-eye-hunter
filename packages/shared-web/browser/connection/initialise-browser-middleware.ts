@@ -256,7 +256,7 @@ export function createBrowserRttHeartbeatMessage(
 /** Why a peer is refused until this browser adopts the layout that names it; adoption releases its held offers. */
 export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
 /**
- * Why an early-dial peer's offer waits: no connection slot is free for it. Every reconcile pass releases these holds,
+ * Why an early-dial peer's offer waits: no connection slot is free for it. The end of every reconcile pass releases these holds,
  * so a slot freed by a closed peer or an ended grace admits the held offer at once.
  */
 export const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
@@ -270,16 +270,38 @@ export function configureBrowserRtcPeerCreationPolicies(
             ? toInboundPeerCreationDecision(webRtcGroupManager.admitInboundPeer(peerId))
             : { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
     );
-    webRtcConnectionService.setInboundPeerCapPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-            ? toInboundPeerCreationDecision(webRtcGroupManager.admitInboundPeer(peerId))
-            : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-    );
+    webRtcConnectionService.setInboundPeerCapPolicy({
+        decide: ({ peerId }) => toPeerCapDecision(webRtcGroupManager, peerId),
+        wouldAdmit: ({ peerId }) =>
+            webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId) &&
+            webRtcGroupManager.resolveInboundPeer(peerId) === 'admitted'
+    });
     webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
         webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
             : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
     );
+}
+
+/**
+ * A peer no room dials yet is held while an early peer could make room for it, so the adoption that names it releases
+ * it; with no early peer it is refused, as the full cap always did. Nothing closes while it is held.
+ */
+function toPeerCapDecision(
+    webRtcGroupManager: WebRtcGroupManager,
+    peerId: string
+): WebRtcConnectionService.InboundPeerCreationDecision {
+    if (webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)) {
+        return toInboundPeerCreationDecision(webRtcGroupManager.admitInboundPeer(peerId));
+    }
+    return webRtcGroupManager.hasClosableEarlyPeer()
+        ? { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
+        : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON };
+}
+
+function releaseEarlyDialCapacityHolds(webRtcConnectionService: WebRtcConnectionService): void {
+    void webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON)
+        .catch((caught) => console.error('Failed to release early-dial offers held for a slot', toError(caught)));
 }
 
 function toInboundPeerCreationDecision(
@@ -787,13 +809,9 @@ function createBrowserRtcGroupManager(
         {
             maxPeerConnections: input.options.maxPeerConnections,
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
-            onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) => {
-                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds);
-                void webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON)
-                    .catch((caught) =>
-                        console.error('Failed to release early-dial offers held for a slot', toError(caught))
-                    );
-            },
+            onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
+                rtcRxStreamer.setRttReportingPeerIds(rttReportingPeerIds),
+            onReconcilePassEnded: () => releaseEarlyDialCapacityHolds(webRtcConnectionService),
             onOverlayAdopted: () =>
                 webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
         }

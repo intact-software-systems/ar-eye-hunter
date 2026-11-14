@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import type { TransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type {
@@ -40,6 +40,8 @@ export interface NativeRtcConnectionFixture {
     readonly service: WebRtcConnectionService;
     readonly signaler: QRtcSignalingTransport;
     readonly sentSignals: readonly QRtcSignalingMessage[];
+    /** Senders of the signals a hold release asked the transport to bring due; none is redelivered, so each stays held. */
+    readonly broughtDueSenderIds: readonly string[];
     receive(message: QRtcSignalingMessage): Promise<void | 'retry'>;
     receiveResource(resource: string, senderId?: string): Promise<void | 'retry'>;
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
@@ -96,11 +98,15 @@ export function createNativeRtcConnectionFixture(
     faultPort: TransportFaultPort
 ): NativeRtcConnectionFixture {
     const signaler = new NativeRtcSignalingTransport(input);
+    const broughtDueSenderIds: string[] = [];
     const dependencies = {
         faultPort,
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async (envelopes: readonly ALMessage[]) => {
+            broughtDueSenderIds.push(...envelopes.map((envelope) => envelope.id.senderId));
+            return [];
+        }
     };
     const allocatedPeers: WebRtcConnectionService.Peer[] = [];
     const service = new WebRtcConnectionService(signaler, input, dependencies);
@@ -114,6 +120,7 @@ export function createNativeRtcConnectionFixture(
         service,
         signaler,
         sentSignals: signaler.sentSignals,
+        broughtDueSenderIds,
         receiveResource: signaler.receiveResource,
         receive: signaler.receive,
         createdPeerIds: () =>

@@ -325,6 +325,16 @@ export class WebRtcGroupManager {
         return this.readPeerOwnership().dialAllowedPeerIds.has(peerId);
     }
 
+    /** How an offer from a dial-allowed peer would be answered now; it closes nothing. */
+    resolveInboundPeer(peerId: PeerId): ConnectionCapInboundVerdict {
+        return this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), peerId).inbound.verdict;
+    }
+
+    /** Whether an accepted peer arriving now could take an early peer's slot. */
+    hasClosableEarlyPeer(): boolean {
+        return this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), null).closableEarlyPeerIds.length > 0;
+    }
+
     /** Answers an offer from a dial-allowed peer; at a full cap it first closes the early peers the ranking names. */
     admitInboundPeer(peerId: PeerId): ConnectionCapInboundVerdict {
         const { verdict, closePeerIds } = this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), peerId).inbound;
@@ -502,6 +512,7 @@ export class WebRtcGroupManager {
             desiredPeerIds: [...desiredPeerIds],
             rttReportingPeerIds: this.rttReportingPeerIds({ degreeLimit: this.options.rttReportingDegreeLimit })
         });
+        this.options.onReconcilePassEnded?.();
     }
 
     private reconcileRetainedPeers(desiredPeerIds: Set<PeerId>): void {

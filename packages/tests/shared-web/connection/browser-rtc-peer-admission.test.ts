@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import {
+    BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
+    configureBrowserRtcPeerCreationPolicies
+} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -267,6 +270,40 @@ describe('browser RTC peer admission', () => {
 
             expect(runtime.connection.service.readPeer('b6')).toBeUndefined();
             expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+        });
+
+        it('an offer from a peer of a layout this browser has not adopted yet is held, not dropped, while an early peer could make room', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+
+            expect(await runtime.connection.receive(offer('c1'))).toBe('retry');
+
+            expect(runtime.connection.service.readPeer('c1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+        });
+
+        it('the held offer is delivered when the layout is adopted, and one early peer closes for it', async () => {
+            const runtime = await createFullCapRuntime({ accepted, planned: early });
+            expect(await runtime.connection.receive(offer('c1'))).toBe('retry');
+            await hydrateSecondRoomWithoutReconcile(runtime, ['c1']);
+
+            await runtime.connection.service.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON);
+            expect(runtime.connection.broughtDueSenderIds).toEqual(['c1']);
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, ...early]);
+
+            // The transport delivers the released signal again.
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+            expect(runtime.connection.nativePeer('c1').remoteDescription?.type).toBe('offer');
+            expect(sortedKnownPeerIds(runtime)).toEqual([...accepted, 'b2', 'b3', 'b4', 'b5', 'c1']);
+        });
+
+        it('with no early peer known, such an offer at the cap is denied as before', async () => {
+            const fullAccepted = [...accepted, ...early];
+            const runtime = await createFullCapRuntime({ accepted: fullAccepted, planned: fullAccepted });
+
+            expect(await runtime.connection.receive(offer('c1'))).toBeUndefined();
+
+            expect(runtime.connection.service.readPeer('c1')).toBeUndefined();
+            expect(sortedKnownPeerIds(runtime)).toEqual(fullAccepted);
         });
     });
 });

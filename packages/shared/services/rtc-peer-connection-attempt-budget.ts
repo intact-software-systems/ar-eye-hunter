@@ -54,6 +54,19 @@ export class RtcPeerConnectionAttemptBudget {
         return { ...this.attemptBudgetDiagnostics };
     }
 
+    /** Whether `consume` would refuse this peer now; it changes nothing. */
+    wouldRefuse(peerId: PeerId): boolean {
+        const policy = this.input.readPolicy();
+        const current = this.peerConnectionAttemptStateByPeerId.get(peerId);
+        if (!policy.enabled || !current) {
+            return false;
+        }
+        const now = this.input.nowEpochMs();
+        return current.retryAfterEpochMs === undefined
+            ? this.isPeerConnectionAttemptBudgetExhausted(current, policy, now)
+            : now < current.retryAfterEpochMs;
+    }
+
     consume(
         peerId: PeerId
     ): WebRtcConnectionService.PeerConnectionAttemptExhaustedEvent | undefined {

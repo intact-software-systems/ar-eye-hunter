@@ -372,6 +372,29 @@ describe('WebRtcConnectionService signaling and creation', () => {
         expect(runtime.createdConnections).toHaveLength(1);
         expect(fixture.nativePeer('z-peer').receivedDescriptions).toHaveLength(2);
     });
+
+    it('never lets the peer-cap policy close a peer for an offer the attempt budget will refuse', async () => {
+        const fixture = createFixture({ ...budgetInput(), maxPeerConnections: 1 });
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        makeNativePeerUnusable(fixture, 'failed');
+        expect(fixture.service.ensurePeerConnectionStarted('z-peer').left).toMatchObject({ kind: 'connect-exhausted' });
+        fixture.service.ensurePeerConnectionStarted('y-peer', true);
+        fixture.service.setInboundPeerCapPolicy({
+            decide: () => {
+                fixture.service.removePeerIfPresent('y-peer');
+                return 'allow';
+            },
+            wouldAdmit: () => true
+        });
+        await fixture.service.connectSignaler();
+
+        await fixture.receive(offer());
+
+        expect(fixture.service.readPeer('y-peer')).toBeDefined();
+        expect(fixture.service.readPeer('z-peer')).toBeUndefined();
+    });
 });
 
 describe('WebRtcConnectionService peer and lane lifecycle', () => {
