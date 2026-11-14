@@ -530,7 +530,7 @@ async function runAlmConformanceScenarios(
 ): Promise<void> {
     for (const { cell, scenario } of toPlannedScenarios(run, carrier, { family, plan })) {
         await runPairCell(run, scenario);
-        if (cell.closeConnectionsAfter) {
+        if (cell.room === 'cell') {
             await closeAgentConnections(toPairAgentRun(run), cell.scenarioKey);
         }
     }
@@ -612,7 +612,7 @@ async function runAgentScenarios(
                 .toBe(true);
         }
         await assertScenarioEvidence(run, scenario, evidence);
-        if (cell.closeConnectionsAfter) {
+        if (cell.room === 'cell') {
             await closeAgentConnections(run, cell.scenarioKey);
         }
     }

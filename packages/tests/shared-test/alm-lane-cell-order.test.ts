@@ -14,12 +14,15 @@ import {
     decodeAlmLaneParameters,
     type AlmLaneCatalogCell,
     type AlmLaneParameters,
+    type AlmLaneRooms,
     type DecodeAlmLaneParametersInput
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/decode-alm-lane-parameters.ts';
 import { resolveAlmLaneCellOrder } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-cell-order.ts';
 import {
     resolveAlmLanePlan,
     toAlmLaneCellGroup,
+    type AlmLanePlan,
+    type AlmLanePlannedCell,
     type ResolveAlmLanePlanInput
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 import { toAlmLaneEmptyPlanReason } from '@shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
@@ -354,7 +357,7 @@ describe('the ALM lane plan', () => {
             const plan = resolveAlmLanePlan(toPlanInput('four-role', { rooms }));
 
             expect(plan.cells.length, rooms).toBeGreaterThan(0);
-            expect(plan.cells.every((cell) => cell.room === 'cell' && cell.closeConnectionsAfter), rooms).toBe(true);
+            expect(plan.cells, rooms).toEqual(toPlannedCells(plan, 'cell'));
             expect(plan.cellOrder.rooms, rooms).toBe('cell');
         }
     });
@@ -366,22 +369,19 @@ describe('the ALM lane plan', () => {
 
         expect(toKeys(toFamilyCatalog('same-context'))).toEqual(['durable-takeover', 'flush-on-hide', 'subscription-successor']);
         expect(plan.cells.map((cell) => cell.scenarioKey)).toEqual(shuffled);
-        expect(plan.cells.every((cell) => cell.room === 'family' && !cell.closeConnectionsAfter)).toBe(true);
+        expect(plan.cells).toEqual(toPlannedCells(plan, 'family'));
         expect(plan.cellOrder).toEqual({ mode: 'shuffled', seed: 3, rooms: 'family', scenarioKeys: shuffled });
     });
 
-    it('a room per cell closes every connection before the next cell, for any agent family', () => {
+    it('a room per cell gives every cell of any agent family a room of its own', () => {
         const agentFamilies = ALM_CONFORMANCE_LANE_FAMILIES.filter((family) => family !== 'same-context');
         for (const family of agentFamilies) {
             const perCell = resolveAlmLanePlan(toPlanInput(family, { rooms: 'cell' }));
             const perFamily = resolveAlmLanePlan(toPlanInput(family, { rooms: 'family' }));
 
             expect(perCell.cells.length, family).toBeGreaterThan(0);
-            expect(perCell.cells.every((cell) => cell.room === 'cell' && cell.closeConnectionsAfter), family).toBe(true);
-            expect(
-                perFamily.cells.every((cell) => family === 'four-role' || (cell.room === 'family' && !cell.closeConnectionsAfter)),
-                family
-            ).toBe(true);
+            expect(perCell.cells, family).toEqual(toPlannedCells(perCell, 'cell'));
+            expect(perFamily.cells, family).toEqual(toPlannedCells(perFamily, family === 'four-role' ? 'cell' : 'family'));
         }
     });
 
@@ -451,9 +451,9 @@ describe('the ALM lane plan', () => {
     it('names a room of its own per cell, and the family\'s room otherwise', () => {
         const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
-        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'cell', closeConnectionsAfter: true }))
+        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'cell' }))
             .toEqual({ ...group, groupId: 'room-alm-claim' });
-        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family', closeConnectionsAfter: false }))
+        expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family' }))
             .toBe(group);
     });
 });
@@ -481,3 +481,7 @@ describe('the reason an emptied plan skips its family', () => {
         expect(toAlmLaneEmptyPlanReason(everyCellSkipped)).toBe(otherwise);
     });
 });
+
+function toPlannedCells(plan: AlmLanePlan, room: AlmLaneRooms): readonly AlmLanePlannedCell[] {
+    return plan.cells.map(({ scenarioKey }) => ({ scenarioKey, room }));
+}

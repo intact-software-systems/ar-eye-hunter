@@ -26,10 +26,11 @@ type AlmLanePlanCell = Pick<AlmConformanceScenario, 'scenarioId' | 'scenarioKey'
 
 export interface AlmLanePlannedCell {
     readonly scenarioKey: string;
-    /** `cell` runs the cell in a room of its own, named by `toAlmLaneCellGroup`. */
+    /**
+     * `cell` runs the cell in a room of its own, named by `toAlmLaneCellGroup`, and every agent closes its room
+     * connection after the cell, so the next cell's connect joins its own room.
+     */
     readonly room: AlmLaneRooms;
-    /** Every agent closes its room connection after the cell, so the next cell's connect joins its own room. */
-    readonly closeConnectionsAfter: boolean;
 }
 
 /** What the observation artifact records of the plan, so a run can be replayed in its order. */
@@ -47,7 +48,7 @@ export interface AlmLanePlan {
 }
 
 /**
- * Which cells of a family run, in which order, in which room, and whether every connection closes after each. A
+ * Which cells of a family run, in which order and in which room. A
  * four-role cell always runs in a room of its own: a connect to an unchanged room reuses the open connection without a
  * join, so a sibling whose dropped socket closed its presence would carry it into the next cell. Same-context cells
  * chain one session from page to page, so they never get a room of their own. In a room the family shares, every
@@ -72,11 +73,7 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
     const placed = rooms === 'cell' ? ordered.scenarios : toKeptTopologyFirst(ordered.scenarios);
     const scenarioKeys = placed.map((scenario) => scenario.scenarioKey);
     return {
-        cells: scenarioKeys.map((scenarioKey) => ({
-            scenarioKey,
-            room: rooms,
-            closeConnectionsAfter: rooms === 'cell'
-        })),
+        cells: scenarioKeys.map((scenarioKey) => ({ scenarioKey, room: rooms })),
         cellOrder: { mode: parameters.order, seed: ordered.seed, rooms, scenarioKeys }
     };
 }
