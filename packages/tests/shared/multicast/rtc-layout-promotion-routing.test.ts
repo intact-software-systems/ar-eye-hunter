@@ -350,4 +350,25 @@ describe('a promotion a browser learns of snapshot first, before the promoted la
 
         expect(readCopies(receiver.delivered, frame)).toBe(0);
     });
+
+    it('after the clock steps back by X, the overlap reopens when the reading returns to the removal instant, for the rest of the bound', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const relayed = await relayOverPreviousLayout(createPositionFrame(104, 'at-least-once'), snapshot);
+        const removedAtMs = Date.now();
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot);
+        receiver.acceptOverlay(promoted.overlay);
+        const steppedBackMs = 5_000;
+
+        const admissionAt = (nowMs: number) => {
+            vi.setSystemTime(nowMs);
+            return receiver.readRoomAdmission(relayed, 'b').kind;
+        };
+
+        expect(admissionAt(removedAtMs + 1_000)).toBe('authorized');
+        expect(admissionAt(removedAtMs + 1_000 - steppedBackMs)).toBe('unauthorized');
+        expect(admissionAt(removedAtMs - 1)).toBe('unauthorized');
+        expect(admissionAt(removedAtMs)).toBe('authorized');
+        expect(admissionAt(removedAtMs + SERVED_REPLACED_LAYOUT_OVERLAP_MS - 1)).toBe('authorized');
+        expect(admissionAt(removedAtMs + SERVED_REPLACED_LAYOUT_OVERLAP_MS)).toBe('unauthorized');
+    });
 });
