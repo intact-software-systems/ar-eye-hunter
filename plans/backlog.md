@@ -653,9 +653,8 @@ and it has no status list.
   that refuses any other advance, plus one retention case (retention builds its
   own result). Waits on a ruling that first tells fence rewrites, which keep the
   version, apart from event-bearing writes.
-- `packages/shared/api/graph-topology-management-types.ts` carries five pre-existing `boundary.unknown` findings:
-  graphology's serialised `attributes`/`options` (×4) and the validation issue's `details`. They want types of
-  their own or a registered disposition.
+- `packages/shared/api/graph-topology-management-types.ts` carries four pre-existing `boundary.unknown` findings:
+  graphology's serialised `attributes`/`options`. They want types of their own or a registered disposition.
 - A black-box wait with `wait.match.sinceCommandIdPrefix` under a `recent` event history fails with
   `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction, because the runner keeps no record of each
   command's first event ordinal. Such a record would make the wait exact under `recent`; nothing needs it while every

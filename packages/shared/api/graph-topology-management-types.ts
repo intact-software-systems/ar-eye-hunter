@@ -1,3 +1,4 @@
+import type { ApiJsonObject } from './api-json-value.ts';
 import type { GroupRef, GroupStateCausalRevision } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 
@@ -216,7 +217,7 @@ export type GroupTopologyValidationIssue = Readonly<{
     code: string;
     path?: readonly (string | number)[];
     message: string;
-    details?: Record<string, unknown>;
+    details?: ApiJsonObject;
 }>;
 
 export type GroupTopologyValidationErrorResponse = Readonly<{
