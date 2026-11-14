@@ -772,6 +772,14 @@ and it has no status list.
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
   refused transiently; a retry would then need its own ruling.
+- Two game copies of the seeded generator remain, beside the shared owner
+  `packages/shared/random/create-seeded-random.ts`: `mulberry32` in
+  `packages/ar-eye-hunter/arena-math.ts`, and `createSeededRandom` with its
+  `shuffle` in `packages/relic-hunters/src/expedition-blueprint.ts`, which
+  seeds from a string hash and shuffles over a generator it shares with other
+  draws, so `computeShuffledOrder` (`packages/shared/random/`) needs a form
+  that takes the generator before it can replace it. They fold under the games'
+  own gate, with the same values for the same seeds.
 - The settle (D647) does not close these windows: an older presence-summary row
   expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
   promotion (`pending` never reports it), a heartbeat that drops or restores a

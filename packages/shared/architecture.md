@@ -23,6 +23,9 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `queuebox/`, `services/`, `repository/`, `persistence/`, and `resilience/`
   provide runtime-neutral persistence, queue, retry, clock, and utility
   contracts used by browser and server packages.
+- `random/` owns the seeded generator (`createSeededRandom`) and the seeded
+  shuffle (`computeShuffledOrder`): one seed gives one sequence on every
+  machine.
 - `crdt/` owns shared CRDT contracts, document health/recovery helpers, sync
   envelopes, backup/restore support, and retention/erasure primitives.
 - `rallar-ai/` owns shared RallarAI contracts and deterministic helpers. Live

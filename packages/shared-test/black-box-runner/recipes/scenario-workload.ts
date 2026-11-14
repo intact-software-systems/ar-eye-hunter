@@ -1,5 +1,6 @@
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
+
 import utils from '../utils.ts';
-import { createSeededRandom } from './create-seeded-random.ts';
 import type { ScenarioRecipe } from './read-scenario-recipe-includes.ts';
 
 export type TrafficPlanArtifact = GeneratedTrafficPlanArtifact | ReplayedTrafficPlanArtifact;

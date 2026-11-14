@@ -1,4 +1,5 @@
-import { createSeededRandom } from '../../../../black-box-runner/recipes/create-seeded-random.ts';
+import { computeShuffledOrder } from '@shared/random/compute-shuffled-order.ts';
+
 import type { AlmLaneOrder } from './decode-alm-lane-parameters.ts';
 
 export interface ResolveAlmLaneCellOrderInput<T extends Readonly<{ scenarioKey: string; }>> {
@@ -19,7 +20,7 @@ export interface AlmLaneCellOrder<T> {
     readonly seed: number | null;
 }
 
-/** A Fisher-Yates shuffle over the seeded generator: one seed gives one order of the same cells on every machine. */
+/** A shuffled order is the seeded shuffle of the kept cells: one seed gives one order of them on every machine. */
 export function resolveAlmLaneCellOrder<T extends Readonly<{ scenarioKey: string; }>>(
     input: ResolveAlmLaneCellOrderInput<T>
 ): AlmLaneCellOrder<T> {
@@ -30,11 +31,5 @@ export function resolveAlmLaneCellOrder<T extends Readonly<{ scenarioKey: string
         return { scenarios: kept, seed: null };
     }
     const seed = input.seed ?? input.mintSeed();
-    const random = createSeededRandom(seed);
-    const shuffled = [...kept];
-    for (let index = shuffled.length - 1; index > 0; index -= 1) {
-        const swap = Math.floor(random() * (index + 1));
-        [shuffled[index], shuffled[swap]] = [shuffled[swap]!, shuffled[index]!];
-    }
-    return { scenarios: shuffled, seed };
+    return { scenarios: computeShuffledOrder(kept, seed), seed };
 }
