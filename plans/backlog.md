@@ -766,12 +766,12 @@ and it has no status list.
   `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
   that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating
   planner and finds no route; the origin's receipt keeps an unconfirmed hop and the relay records a false
-  `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing.
+  `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing (D646).
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
   rebuild: the group dynamics damping plan (draft pull request #827) takes them.
-- Relay forward observability gaps: a pending relayed forward that later ends refused is not reported; a forward
+- Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a forward
   dropped on the inbound side (`planForwarding` returns undefined) is not reported; the `admission-outcome`
   diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
 - `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
@@ -785,5 +785,5 @@ and it has no status list.
   until their deadline. At a 30 s send lifetime, three members of one room cannot each sustain more than about
   16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
   publication work, not a defect of the overlap.
-- Peer cap and the early dial: an accepted offer at a cap full of a replaced layout's retained edges is dropped;
+- Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is dropped;
   a failing early dial can leave the edge in its dial cooldown at promotion.
