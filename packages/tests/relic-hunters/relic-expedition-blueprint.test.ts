@@ -2,11 +2,11 @@ import {
     applyRelicCommand,
     createProceduralRelicExpeditionBlueprint,
     createRelicGameFromBlueprint,
+    decodeRelicExpeditionBlueprint,
+    decodeRelicExpeditionVisualFit,
     RELIC_EXPEDITION_VISUAL_THEMES,
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
-    validateRelicExpeditionBlueprint,
-    validateRelicExpeditionVisualFit,
     type RelicCommand,
     type RelicExpeditionBlueprint,
     type RelicGameState
@@ -58,26 +58,34 @@ describe('Relic expedition blueprints', () => {
             seed: 'room-1:reset:1'
         });
 
-        expect(validateRelicExpeditionBlueprint(valid)).toMatchObject({ ok: true });
-        expect(validateRelicExpeditionBlueprint({
-            ...valid,
-            rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, neighbors: [] } : room)
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionBlueprint({
-            ...valid,
-            rooms: valid.rooms.filter((room) => room.id !== 'entrance')
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionBlueprint({
-            ...valid,
-            rooms: [
-                ...valid.rooms,
-                { ...valid.rooms[0], id: 'duplicate-gate' }
-            ]
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionBlueprint({
-            ...valid,
-            relics: valid.relics.map((relic, index) => index === 0 ? { ...relic, roomId: 'missing-room' } : relic)
-        })).toMatchObject({ ok: false });
+        expect(decodeRelicExpeditionBlueprint(valid).right).toBe(valid);
+        expect(
+            decodeRelicExpeditionBlueprint({
+                ...valid,
+                rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, neighbors: [] } : room)
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionBlueprint({
+                ...valid,
+                rooms: valid.rooms.filter((room) => room.id !== 'entrance')
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionBlueprint({
+                ...valid,
+                rooms: [
+                    ...valid.rooms,
+                    { ...valid.rooms[0], id: 'duplicate-gate' }
+                ]
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionBlueprint({
+                ...valid,
+                relics: valid.relics.map((relic, index) => index === 0 ? { ...relic, roomId: 'missing-room' } : relic)
+            }).left
+        ).toMatchObject({ ok: false });
     });
 
     it('validates fresh visual-fit constraints for AI-generated castles', () => {
@@ -86,31 +94,41 @@ describe('Relic expedition blueprints', () => {
         });
 
         expect(RELIC_EXPEDITION_VISUAL_THEMES).toContain(valid.theme);
-        expect(validateRelicExpeditionVisualFit(valid)).toMatchObject({ ok: true });
-        expect(validateRelicExpeditionVisualFit({
-            ...valid,
-            theme: 'Moonlit Keep'
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionVisualFit({
-            ...valid,
-            rooms: valid.rooms.map((room) => room.id === 'entrance' ? { ...room, x: 0.5 } : room)
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionVisualFit({
-            ...valid,
-            rooms: valid.rooms.map((room) => room.id === 'storage' ? { ...room, x: -8 } : room)
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionVisualFit({
-            ...valid,
-            rooms: valid.rooms.map((room) =>
-                room.id === 'entrance'
-                    ? { ...room, name: 'A Fresh Room Name That Is Far Too Long For Compact HUD Labels' }
-                    : room
-            )
-        })).toMatchObject({ ok: false });
-        expect(validateRelicExpeditionVisualFit({
-            ...valid,
-            rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, x: 6, z: 7 } : room)
-        })).toMatchObject({ ok: false });
+        expect(decodeRelicExpeditionVisualFit(valid).right).toBe(valid);
+        expect(
+            decodeRelicExpeditionVisualFit({
+                ...valid,
+                theme: 'Moonlit Keep'
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionVisualFit({
+                ...valid,
+                rooms: valid.rooms.map((room) => room.id === 'entrance' ? { ...room, x: 0.5 } : room)
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionVisualFit({
+                ...valid,
+                rooms: valid.rooms.map((room) => room.id === 'storage' ? { ...room, x: -8 } : room)
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionVisualFit({
+                ...valid,
+                rooms: valid.rooms.map((room) =>
+                    room.id === 'entrance'
+                        ? { ...room, name: 'A Fresh Room Name That Is Far Too Long For Compact HUD Labels' }
+                        : room
+                )
+            }).left
+        ).toMatchObject({ ok: false });
+        expect(
+            decodeRelicExpeditionVisualFit({
+                ...valid,
+                rooms: valid.rooms.map((room) => room.id === 'exit' ? { ...room, x: 6, z: 7 } : room)
+            }).left
+        ).toMatchObject({ ok: false });
     });
 
     it('reports every issue of a value that is not an object, or whose rooms and relics are not lists', () => {
@@ -355,8 +373,8 @@ function validationIssues(value: object | null): {
     visualFit: readonly RallarAiValidationIssue[];
 } {
     return {
-        blueprint: validateRelicExpeditionBlueprint(value).issues,
-        visualFit: validateRelicExpeditionVisualFit(value).issues
+        blueprint: decodeRelicExpeditionBlueprint(value).fold((validation) => validation.issues, () => []),
+        visualFit: decodeRelicExpeditionVisualFit(value).fold((validation) => validation.issues, () => [])
     };
 }
 

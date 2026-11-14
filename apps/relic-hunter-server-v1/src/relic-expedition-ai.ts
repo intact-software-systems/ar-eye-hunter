@@ -1,8 +1,9 @@
 import {
-    assertRelicExpeditionBlueprint,
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
+    decodeRelicExpeditionBlueprint,
+    decodeRelicExpeditionVisualFit,
     RELIC_EXPEDITION_BLUEPRINT_LIMITS,
     RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
     RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID,
@@ -10,8 +11,6 @@ import {
     RELIC_EXPEDITION_VISUAL_LIMITS,
     RELIC_EXPEDITION_VISUAL_THEMES,
     RELIC_ROOM_KINDS,
-    validateRelicExpeditionBlueprint,
-    validateRelicExpeditionVisualFit,
     type RelicExpeditionBlueprint,
     type RelicGameState
 } from '@relic-hunters/mod.ts';
@@ -38,9 +37,11 @@ import {
     type RallarAiEvaluationSuiteResult,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
+    type RallarAiJsonResult,
     type RallarAiLiveEvaluationEnvironment,
     type RallarAiLiveEvaluationRunResult
 } from '@shared/rallar-ai/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { RelicAiExpeditionConfiguration, RelicAiExpeditionMode } from './relic-hunter-server-configuration.ts';
 
 export type RelicInitialStateReason = 'ensure' | 'reset' | 'command';
@@ -158,20 +159,27 @@ async function generateRelicExpeditionInitialState({
     const request = createRelicExpeditionAiRequest({ gameId, reason, seed, timeoutMs });
     try {
         const result = await ai.generateJson(request, { roomId: gameId });
-        assertRelicExpeditionBlueprint(result.value);
-        const visualFit = validateRelicExpeditionVisualFit(result.value);
-        if (!visualFit.ok) {
-            throw new Error(`Generated blueprint failed Relic visual fit: ${visualFit.errors.join('; ')}`);
-        }
+        const blueprint = decodeRelicExpeditionBlueprint(result.value).fold(
+            (validation) => {
+                throw new Error(`Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`);
+            },
+            (decoded) =>
+                decodeRelicExpeditionVisualFit(decoded).fold(
+                    (visualFit) => {
+                        throw new Error(`Generated blueprint failed Relic visual fit: ${visualFit.errors.join('; ')}`);
+                    },
+                    (fitting) => fitting
+                )
+        );
         return createRelicGameFromBlueprint({
             gameId,
             roomId: gameId,
-            blueprint: result.value,
+            blueprint,
             now: createdAt,
             setup: {
                 source: mode === 'mock' ? 'mock' : 'rallar-ai',
-                seed: result.value.seed,
-                theme: result.value.theme,
+                seed: blueprint.seed,
+                theme: blueprint.theme,
                 blueprintId: result.generationId
             }
         }).fold(
@@ -182,7 +190,7 @@ async function generateRelicExpeditionInitialState({
         );
     }
     catch (error) {
-        onFallback?.({ gameId, reason, mode, seed, error: toErrorMessage(error) });
+        onFallback?.({ gameId, reason, mode, seed, error: toError(error).message });
         return createRelicGameFromBlueprint({
             gameId,
             roomId: gameId,
@@ -279,7 +287,7 @@ export function createRelicExpeditionAiEvaluationCases(
                 seed: options.seed,
                 timeoutMs: options.timeoutMs
             }),
-            validateResult: (result) => validateExpeditionEvaluationBlueprint(result.value)
+            validateResult: validateExpeditionEvaluationResult
         }
     ];
 }
@@ -416,14 +424,18 @@ function isRelicInitialStateReason(
     return value === 'ensure' || value === 'reset' || value === 'command';
 }
 
-function validateExpeditionEvaluationBlueprint(
-    blueprint: unknown
-): readonly string[] {
-    const validation = validateRelicExpeditionBlueprint(blueprint);
-    const visualFit = validateRelicExpeditionVisualFit(blueprint);
+function validateExpeditionEvaluationResult(result: RallarAiJsonResult): readonly string[] {
+    const blueprintErrors = decodeRelicExpeditionBlueprint(result.value).fold(
+        (validation) => validation.errors,
+        () => []
+    );
+    const visualFitErrors = decodeRelicExpeditionVisualFit(result.value).fold(
+        (visualFit) => visualFit.errors,
+        () => []
+    );
     return [
-        ...validation.errors.map((error) => `blueprint: ${error}`),
-        ...visualFit.errors.map((error) => `visual-fit: ${error}`)
+        ...blueprintErrors.map((error) => `blueprint: ${error}`),
+        ...visualFitErrors.map((error) => `visual-fit: ${error}`)
     ];
 }
 
@@ -433,8 +445,4 @@ function createExpeditionSeed(
     now: number
 ): string {
     return `${gameId}:${reason}:${now}`;
-}
-
-function toErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }

@@ -1,8 +1,8 @@
-import { Either } from '@shared/resilience/Either.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import {
+    decodeRelicExpeditionBlueprint,
     relicsFromRelicExpeditionBlueprint,
     roomsFromRelicExpeditionBlueprint,
-    validateRelicExpeditionBlueprint,
     type RelicExpeditionBlueprint
 } from './expedition-blueprint.ts';
 import type { RelicExpeditionSetupMetadata, RelicGameState, RelicRoom, RelicRuleRefusal } from './model.ts';
@@ -94,27 +94,27 @@ export function createRelicGame(
 export function createRelicGameFromBlueprint(
     { gameId, roomId, blueprint, now, setup }: CreateRelicGameFromBlueprintInput
 ): Either<RelicRuleRefusal, RelicGameState> {
-    const validation = validateRelicExpeditionBlueprint(blueprint);
-    if (!validation.ok) {
-        return Either.ofLeft({
+    return decodeRelicExpeditionBlueprint(blueprint).mapBoth(
+        (validation): RelicRuleRefusal => ({
             code: 'invalid-expedition-blueprint',
             message: `Invalid Relic expedition blueprint: ${validation.errors.join('; ')}`
-        });
-    }
-    return Either.ofRight(createRelicGameState({
-        gameId,
-        roomId,
-        now,
-        map: roomsFromRelicExpeditionBlueprint(blueprint),
-        relics: relicsFromRelicExpeditionBlueprint(blueprint),
-        setup: {
-            schemaVersion: 1,
-            source: setup?.source ?? blueprint.source ?? 'procedural',
-            seed: setup?.seed ?? blueprint.seed,
-            theme: setup?.theme ?? blueprint.theme,
-            blueprintId: setup?.blueprintId
-        }
-    }));
+        }),
+        (decoded) =>
+            createRelicGameState({
+                gameId,
+                roomId,
+                now,
+                map: roomsFromRelicExpeditionBlueprint(decoded),
+                relics: relicsFromRelicExpeditionBlueprint(decoded),
+                setup: {
+                    schemaVersion: 1,
+                    source: setup?.source ?? decoded.source ?? 'procedural',
+                    seed: setup?.seed ?? decoded.seed,
+                    theme: setup?.theme ?? decoded.theme,
+                    blueprintId: setup?.blueprintId
+                }
+            })
+    );
 }
 
 function createRelicGameState({
