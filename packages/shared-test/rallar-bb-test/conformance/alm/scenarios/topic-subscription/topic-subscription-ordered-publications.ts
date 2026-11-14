@@ -10,7 +10,6 @@ import type { AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toFormationSettledPollCommand } from '../../cell/to-alm-cell-settle.ts';
 import { toAppliedHeadWaitCommands } from '../../cell/to-applied-head-wait-commands.ts';
-import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
 import {
     toConfirmedCueWait,
     toCueSendCommands,
@@ -107,7 +106,7 @@ export function toElectionAppliedCueCommands(
         ...(receiver && presence === 'reasserted'
             ? [toFormationSettledPollCommand(step, `${elected}-formation-poll`)]
             : []),
-        ...toGrantAppliedHeadCommands(step, `${elected}-head`),
+        ...toElectionHeadCommands(step, elected),
         ...toCueSendCommands(step, toElectionAppliedCue(elected, step.role))
     ];
 }
@@ -128,13 +127,7 @@ export function toElectionAppliedCueWaitCommands(
         ...(presence === 'reasserted'
             ? [
                 toCueWait(producer, toElectionAppliedCue(elected, 'sibling')),
-                ...toAppliedHeadWaitCommands({
-                    step: producer,
-                    name: `${elected}-head`,
-                    purpose:
-                        'Read the room head that carries the layout the sibling\'s re-asserted presence settled on.',
-                    historyFrom: 'cell'
-                })
+                ...toElectionHeadCommands(producer, elected)
             ]
             : [])
     ];
@@ -215,6 +208,19 @@ function toOrderedPublicationNames(publications: readonly number[]): readonly st
 
 function toProducerTrack(producer: AlmConformanceStepInput): OrderedTrack {
     return producer.role === 'sender' ? 'a' : 'c';
+}
+
+/**
+ * The page reads the room's head after its ordering point and waits until it applied it: the head carries the sibling's
+ * election and, after a re-asserted presence, the layout the room settled on.
+ */
+function toElectionHeadCommands(step: AlmConformanceStepInput, elected: string): readonly RallarBlackBoxTestCommand[] {
+    return toAppliedHeadWaitCommands({
+        step,
+        name: `${elected}-head`,
+        purpose: 'Read the room head that carries the sibling\'s election and any layout its presence re-planned.',
+        historyFrom: 'cell'
+    });
 }
 
 /** The cue a page sends once it applied the head that carries the sibling's election. */
