@@ -69,6 +69,21 @@ interface RelayedCopies {
     promoted(frame: ALMessage): ALMessage;
 }
 
+/** One frame the origin sent through `b`: the elapsed time around the send and the copies `b` relayed to `c`. */
+interface TailSend {
+    readonly sentFromMs: number;
+    readonly sentUntilMs: number;
+    readonly copies: number;
+}
+
+/** A chain whose child `c` has promoted; `promoteRelay` promotes its previous parent `b`. */
+interface ChainTail {
+    readonly origin: RtcOriginOverlayFixture;
+    readonly child: RtcRelayOverlayFixture;
+    readonly relay: RtcRelayOverlayFixture;
+    promoteRelay(): void;
+}
+
 /** Every copy one exchange may carry before the test fails: a loop that does not stop exceeds it. */
 const EXCHANGE_COPY_BUDGET = 60;
 
@@ -493,43 +508,107 @@ describe('the transport copies one broadcast produces', () => {
 describe('the overlap\'s tail, when a relay promoted later than its previous child', () => {
     useFakeClock();
 
-    // Green on first run, pinned as it is today. Each session stamps its own promotion instant, so `b`, which promoted
-    // 5 s after `c`, still forwards to `c` for 5 s after `c`'s overlap ended. `c` refuses the copy as unauthorized with
-    // no NACK, delivers and forwards nothing, and `b`'s row keeps waiting on `c` without a retry or a word upward.
-    it.each(['at-least-once', 'best-effort'] as const)(
-        'a relay forwards a %s frame to its previous child after the child\'s overlap ended, and the child refuses it as unauthorized',
-        async (reliability) => {
-            const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
-            const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: CHAIN_PREVIOUS });
-            const child = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['a', 'b', 'd'] });
-            const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
-            child.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.c!, CHAIN_PREVIOUS));
-            relay.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS));
-            child.acceptSnapshot(toPromotedSnapshot(snapshot));
-            child.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'c'));
-            await vi.advanceTimersByTimeAsync(5_000);
-            relay.acceptSnapshot(toPromotedSnapshot(snapshot));
-            relay.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'b'));
-            await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS - 5_000);
-            const frame = reliability === 'at-least-once'
-                ? createOriginReceiverMulticast('tail')
-                : createPositionFrame({ resourceId: 'tail' });
-            await enqueueAndDrain(origin.manager, frame);
-            await relay.receive(origin.channels.b!.sent[0]!, 'a');
-            const copy = (await relay.readSent('c')).find((sent) => sent.id.msgId === frame.id.msgId);
-            expect(copy).toBeDefined();
+    const FORWARDING_HALF_MS = SERVED_REPLACED_LAYOUT_OVERLAP_MS / 2;
+    const RELAY_OVERLAP_END_MS = FORWARDING_HALF_MS + SERVED_REPLACED_LAYOUT_OVERLAP_MS;
+    /** Every 1.5 s from `c`'s promotion until `b` stops admitting the origin's copies over its own replaced edge. */
+    const SEND_AT_MS = Array.from({ length: RELAY_OVERLAP_END_MS / 1_500 }, (_, index) => index * 1_500);
 
-            await child.receive(copy!, 'b');
+    // The chain `a,b,c,d` re-planned to `a,c,d,b`: `c` promotes now, `b` (its previous parent) promotes later by
+    // `relayLagMs`. The origin `a` stays on the previous layout, so every frame reaches `b` first.
+    function createChainTail(): ChainTail {
+        const snapshot = createOriginSnapshot(['a', 'b', 'c', 'd'], 4);
+        const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: ['b'], nextHopsBySessionId: CHAIN_PREVIOUS });
+        const child = createRtcRelayOverlayFixture({ selfPeerId: 'c', snapshot, neighbourPeerIds: ['a', 'b', 'd'] });
+        const relay = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: ['a', 'c', 'd'] });
+        child.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.c!, CHAIN_PREVIOUS));
+        relay.acceptOverlay(createOriginOverlay(CHAIN_PREVIOUS.b!, CHAIN_PREVIOUS));
+        child.acceptSnapshot(toPromotedSnapshot(snapshot));
+        child.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'c'));
+        return {
+            origin,
+            child,
+            relay,
+            promoteRelay: () => {
+                relay.acceptSnapshot(toPromotedSnapshot(snapshot));
+                relay.acceptOverlay(toPromotedOverlay(CHAIN_PROMOTED, 'b'));
+            }
+        };
+    }
+
+    /** The origin sends one frame to `b`; every copy `b` relays to `c` is carried to `c`. */
+    async function relayToChild(tail: ChainTail, frame: ALMessage): Promise<readonly ALMessage[]> {
+        await enqueueAndDrain(tail.origin.manager, frame);
+        await tail.relay.receive(tail.origin.channels.b!.sent.find((sent) => sent.id.msgId === frame.id.msgId)!, 'a');
+        const copies = (await tail.relay.readSent('c')).filter((sent) => sent.id.msgId === frame.id.msgId);
+        for (const copy of copies) {
+            await tail.child.receive(copy, 'b');
+        }
+        return copies;
+    }
+
+    function createTailFrame(reliability: 'at-least-once' | 'best-effort', resourceId: string): ALMessage {
+        return reliability === 'at-least-once' ? createOriginReceiverMulticast(resourceId) : createPositionFrame({ resourceId });
+    }
+
+    // `b` promotes exactly half the overlap after `c`, so its forwarding over the replaced edge ends at the instant
+    // `c` stops admitting that edge. The fixture's queue waits move the clock on by a few tens of milliseconds per
+    // frame, so each send records the elapsed time before and after it; the boundary to the millisecond is pinned by
+    // the rule's own tests.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'a relay that promoted up to half the overlap after its previous child sends that child no %s copy the child refuses',
+        async (reliability) => {
+            const tail = createChainTail();
+            const startMs = Date.now();
+            const sends: TailSend[] = [];
+            const refusals: string[] = [];
+            let deliveredCopies = 0;
+            for (const sendAtMs of SEND_AT_MS) {
+                await vi.advanceTimersByTimeAsync(Math.max(0, sendAtMs - (Date.now() - startMs)));
+                if (sendAtMs === FORWARDING_HALF_MS) {
+                    tail.promoteRelay();
+                }
+                const frame = createTailFrame(reliability, `tail-${sendAtMs}`);
+                const sentFromMs = Date.now() - startMs;
+                const copies = await relayToChild(tail, frame);
+                sends.push({ sentFromMs, sentUntilMs: Date.now() - startMs, copies: copies.length });
+                refusals.push(...readAdmissionReasons(tail.child, frame).filter((reason) => reason !== 'admitted'));
+                deliveredCopies += readCopies(tail.child.delivered, frame);
+            }
+
+            expect(refusals).toEqual([]);
+            const forwarded = sends.filter((send) => send.copies > 0);
+            // Inside both windows `b` forwards one copy; once `c`'s window has ended it forwards none.
+            expect(sends.filter((send) => send.sentUntilMs < SERVED_REPLACED_LAYOUT_OVERLAP_MS && send.copies !== 1)).toEqual([]);
+            expect(sends.filter((send) => send.sentFromMs >= SERVED_REPLACED_LAYOUT_OVERLAP_MS && send.copies > 0)).toEqual([]);
+            expect(forwarded.length).toBeGreaterThanOrEqual(SERVED_REPLACED_LAYOUT_OVERLAP_MS / 1_500 - 1);
+            expect(deliveredCopies).toBe(forwarded.length);
+        }
+    );
+
+    // `b` promotes one millisecond more than half the overlap after `c`: at `c`'s bound, `b` is still in the first
+    // half of its own overlap and forwards over the replaced edge. `c` refuses the copy as unauthorized (its admission
+    // denies the edge, cause `edge-unavailable`, pinned in `rtc-room-snapshot-admission.test.ts`), sends `b` no NACK,
+    // delivers and forwards nothing, and `b`'s row keeps waiting on `c` without a retry or a word upward.
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'a relay that promoted more than half the overlap after its previous child is still refused as unauthorized (%s)',
+        async (reliability) => {
+            const tail = createChainTail();
+            const relayLagMs = FORWARDING_HALF_MS + 1;
+            await vi.advanceTimersByTimeAsync(relayLagMs);
+            tail.promoteRelay();
+            await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS - relayLagMs);
+            const frame = createTailFrame(reliability, 'tail');
+            expect(await relayToChild(tail, frame)).toHaveLength(1);
             await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
 
-            expect(readAdmissionReasons(child, frame)).toEqual(['unauthorized']);
-            expect(await child.readSent('b')).toEqual([]);
-            expect(readCopies(child.delivered, frame)).toBe(0);
-            expect(readCopies(await child.readSent('d'), frame)).toBe(0);
-            expect(readCopies(await relay.readSent('c'), frame)).toBe(1);
-            expect((await relay.readSentControls('a')).map((control) => control.type))
+            expect(readAdmissionReasons(tail.child, frame)).toEqual(['unauthorized']);
+            expect(await tail.child.readSent('b')).toEqual([]);
+            expect(readCopies(tail.child.delivered, frame)).toBe(0);
+            expect(readCopies(await tail.child.readSent('d'), frame)).toBe(0);
+            expect(readCopies(await tail.relay.readSent('c'), frame)).toBe(1);
+            expect((await tail.relay.readSentControls('a')).map((control) => control.type))
                 .toEqual(reliability === 'at-least-once' ? ['ack'] : []);
-            const waiting = await relay.readPendingAck({ msgId: frame.id.msgId, fromPeerId: 'c' });
+            const waiting = await tail.relay.readPendingAck({ msgId: frame.id.msgId, fromPeerId: 'c' });
             expect(waiting?.ackedFromPeerIds.includes('c')).toBe(reliability === 'at-least-once' ? false : undefined);
         }
     );

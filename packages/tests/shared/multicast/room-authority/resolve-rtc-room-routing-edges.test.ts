@@ -16,6 +16,7 @@ import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-id
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const replacedAtEpochMs = 10_000;
 const overlapMs = 15_000;
+const forwardingHalfMs = 7_500;
 
 function layout(overrides: Partial<OverlayInfo>): OverlayInfo {
     return {
@@ -73,8 +74,8 @@ describe('resolveRtcRoomRoutingEdges', () => {
         expect(resolveRtcRoomRoutingEdges(input({ history: history({ transition: null }) }))).toEqual(acceptedAlone);
     });
 
-    it('adds the replaced layout\'s authorized neighbours until the session\'s overlap after the replacement ends', () => {
-        for (const nowMs of [replacedAtEpochMs, replacedAtEpochMs + overlapMs - 1]) {
+    it('adds the replaced layout\'s authorized neighbours from the replacement instant', () => {
+        for (const nowMs of [replacedAtEpochMs, replacedAtEpochMs + forwardingHalfMs - 1]) {
             const edges = resolveRtcRoomRoutingEdges(input({ nowMs }));
             expect(edges.accepted).toEqual(acceptedAlone.accepted);
             expect(edges.previous).toEqual({ neighbourPeerIds: ['old-parent', 'both'], nextHopsBySessionId: replaced.nextHopsBySessionId });
@@ -82,6 +83,42 @@ describe('resolveRtcRoomRoutingEdges', () => {
             expect(edges.admittedEdgePeerIds).toEqual(['new-parent', 'stranger', 'both', 'old-parent']);
             expect(edges.admittedEdgePeerIds).not.toContain('bystander');
         }
+    });
+
+    it('a peer forwards over the replaced layout only for the first half of the overlap', () => {
+        expect(resolveRtcRoomRoutingEdges(input({ nowMs: replacedAtEpochMs + forwardingHalfMs - 1 })).previous).toEqual({
+            neighbourPeerIds: ['old-parent', 'both'],
+            nextHopsBySessionId: replaced.nextHopsBySessionId
+        });
+        expect(resolveRtcRoomRoutingEdges(input({ nowMs: replacedAtEpochMs + forwardingHalfMs })).previous).toBeNull();
+    });
+
+    it('a receiver admits the replaced layout\'s neighbours for the whole overlap', () => {
+        for (const nowMs of [replacedAtEpochMs + forwardingHalfMs, replacedAtEpochMs + overlapMs - 1]) {
+            expect(resolveRtcRoomRoutingEdges(input({ nowMs })).admittedEdgePeerIds).toEqual(['new-parent', 'stranger', 'both', 'old-parent']);
+        }
+        expect(resolveRtcRoomRoutingEdges(input({ nowMs: replacedAtEpochMs + overlapMs })).admittedEdgePeerIds).toEqual(
+            acceptedAlone.admittedEdgePeerIds
+        );
+    });
+
+    it('an odd overlap rounds the forwarding half down', () => {
+        const oddOverlap = history({ replacedLayoutOverlapMs: 15_001 });
+        expect(resolveRtcRoomRoutingEdges(input({ history: oddOverlap, nowMs: replacedAtEpochMs + 7_499 })).previous).not.toBeNull();
+        const atHalf = resolveRtcRoomRoutingEdges(input({ history: oddOverlap, nowMs: replacedAtEpochMs + 7_500 }));
+        expect(atHalf.previous).toBeNull();
+        expect(atHalf.admittedEdgePeerIds).toContain('old-parent');
+        expect(resolveRtcRoomRoutingEdges(input({ history: oddOverlap, nowMs: replacedAtEpochMs + 15_000 })).admittedEdgePeerIds).toContain(
+            'old-parent'
+        );
+    });
+
+    it('with an overlap of one millisecond, forwards over the replaced layout never and admits it for that millisecond', () => {
+        const oneMillisecond = history({ replacedLayoutOverlapMs: 1 });
+        const atReplacement = resolveRtcRoomRoutingEdges(input({ history: oneMillisecond, nowMs: replacedAtEpochMs }));
+        expect(atReplacement.previous).toBeNull();
+        expect(atReplacement.admittedEdgePeerIds).toEqual(['new-parent', 'stranger', 'both', 'old-parent']);
+        expect(resolveRtcRoomRoutingEdges(input({ history: oneMillisecond, nowMs: replacedAtEpochMs + 1 }))).toEqual(acceptedAlone);
     });
 
     it('ends the overlap at its instant, not one millisecond later', () => {
@@ -99,6 +136,7 @@ describe('resolveRtcRoomRoutingEdges', () => {
     it('with an overlap of zero, routes, relays and admits exactly as over the accepted layout alone', () => {
         const noOverlap = history({ replacedLayoutOverlapMs: 0 });
         for (const nowMs of [replacedAtEpochMs - 10 * overlapMs, replacedAtEpochMs - 1, replacedAtEpochMs, replacedAtEpochMs + 1]) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs })).admittedEdgePeerIds).not.toContain('old-parent');
             expect(resolveRtcRoomRoutingEdges(input({ history: noOverlap, nowMs }))).toEqual(
                 resolveRtcRoomRoutingEdges(input({ history: history({ transition: null }), nowMs }))
             );

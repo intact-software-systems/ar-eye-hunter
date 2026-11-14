@@ -34,23 +34,34 @@ export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInpu
         ? authorizedPeerIdSet
         : new Set<string>();
     const accepted = toRtcRoomLayoutEdges(input.accepted, acceptedNeighbourPeerIdSet);
-    const replaced = resolveReplacedLayoutInForce(input);
-    const previous = replaced === null ? null : toRtcRoomLayoutEdges(replaced, authorizedPeerIdSet);
+    const replaced = resolveReplacedLayout(input);
+    const admittedReplaced = replaced === null ? null : toRtcRoomLayoutEdges(replaced, authorizedPeerIdSet);
+    const elapsedMs = input.nowMs - (input.history.transition?.replacedAtEpochMs ?? input.nowMs);
+    const admits = elapsedMs >= 0 && elapsedMs < input.history.replacedLayoutOverlapMs;
+    const forwards = elapsedMs >= 0 &&
+        elapsedMs < computeReplacedLayoutForwardingMs(input.history.replacedLayoutOverlapMs);
+    const previous = forwards ? admittedReplaced : null;
     const admittedEdgePeerIds = [
-        ...new Set([...input.accepted.nextHopSessionIds, ...(previous?.neighbourPeerIds ?? [])])
+        ...new Set([...input.accepted.nextHopSessionIds, ...(admits ? admittedReplaced?.neighbourPeerIds ?? [] : [])])
     ];
     return { accepted, previous, admittedEdgePeerIds };
 }
 
-function resolveReplacedLayoutInForce(input: ResolveRtcRoomRoutingEdgesInput): OverlayInfo | null {
+/**
+ * A sender or relay forwards over a replaced layout for the first half of the overlap its receiver admits, so the
+ * second half absorbs the difference between the instants at which two browsers applied the same promotion.
+ */
+function computeReplacedLayoutForwardingMs(replacedLayoutOverlapMs: number): number {
+    return Math.floor(replacedLayoutOverlapMs / 2);
+}
+
+function resolveReplacedLayout(input: ResolveRtcRoomRoutingEdgesInput): OverlayInfo | null {
     const transition = input.history.transition;
     if (
         transition === null ||
         !isRoomLayoutOverlay(input.accepted, input.roomRef) ||
         !isRoomLayoutOverlay(transition.replaced, input.roomRef) ||
-        !isOverlayIdentity(input.accepted, transition.replacedBy) ||
-        input.nowMs < transition.replacedAtEpochMs ||
-        input.nowMs >= transition.replacedAtEpochMs + input.history.replacedLayoutOverlapMs
+        !isOverlayIdentity(input.accepted, transition.replacedBy)
     ) {
         return null;
     }

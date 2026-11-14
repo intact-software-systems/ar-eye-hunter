@@ -266,6 +266,8 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     const overlapMs = 15_000;
     const replacedAtEpochMs = 1_000;
     const insideMs = replacedAtEpochMs + overlapMs - 1;
+    /** A receiver admits the replaced layout for the whole overlap but forwards over it only for the first half. */
+    const forwardingInsideMs = replacedAtEpochMs + overlapMs / 2 - 1;
     const promoted: OverlayInfo = { ...overlay(), overlayVersion: 2 };
     const replaced: OverlayInfo = { ...overlay(), nextHopSessionIds: ['previous', 'downstream'] };
 
@@ -294,9 +296,12 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         };
     }
 
-    /** The replaced layout's neighbours a copy relayed by the accepted neighbour `relay` would also be forwarded to. */
+    /**
+     * The replaced layout's neighbours a copy relayed by the accepted neighbour `relay` would also be forwarded to,
+     * read inside the first half of the overlap.
+     */
     function readPreviousForwardingPeerIds(input: RtcRoomSnapshotAdmissionInput): readonly string[] | undefined {
-        const admission = computeRtcRoomSnapshotAdmission({ ...input, fromPeerId: 'relay' });
+        const admission = computeRtcRoomSnapshotAdmission({ ...input, fromPeerId: 'relay', nowMs: forwardingInsideMs });
         expect(admission.kind).toBe('authorized');
         return admission.kind === 'authorized' ? admission.previousForwarding?.neighbourPeerIds : undefined;
     }
