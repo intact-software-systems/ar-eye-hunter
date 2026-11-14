@@ -771,15 +771,6 @@ and it has no status list.
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
   refused transiently; a retry would then need its own ruling.
-- Relic's `createSeededRandom(seed: string)` (an FNV-1a hash into the same
-  generator) and `shuffle(values, random)` in
-  `packages/relic-hunters/src/expedition-blueprint.ts` still duplicate
-  `packages/shared/random/`; AR Eye already uses the shared generator. Folding
-  Relic in is two call-site edits, `createSeededRandom(hash)` and
-  `computeShuffledOrder(values, random)`, with identical values, pinned by the
-  blueprint test. It waits because touching that file makes the changed-range
-  style gate enforce its nine sleeping `boundary.unknown` findings, and their
-  fix is renaming the public RallarAI validators to the decode form.
 - The settle (D647) does not close these windows: an older presence-summary row
   expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
   promotion (`pending` never reports it), a heartbeat that drops or restores a

@@ -26,8 +26,10 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `random/` owns the seeded generator (`createSeededRandom`) and the shuffle
   over a generator (`computeShuffledOrder`): one seed gives one sequence on
   every machine. The black-box runner's scenario workload, the ALM conformance
-  lane's cell order and AR Eye Hunter's targets draw from the generator; the
-  lane's cell order is the shuffle's one user.
+  lane's cell order, AR Eye Hunter's targets and Relic Hunters' procedural
+  expedition blueprints draw from the generator; the lane's cell order and the
+  blueprints' theme and relic names are the shuffle's users. Relic seeds the
+  generator with an FNV-1a hash of its string seed.
 - `crdt/` owns shared CRDT contracts, document health/recovery helpers, sync
   envelopes, backup/restore support, and retention/erasure primitives.
 - `rallar-ai/` owns shared RallarAI contracts and deterministic helpers. Live
