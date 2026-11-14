@@ -28,12 +28,6 @@ const PRINCIPAL_WRITE_COUNT = 3;
 const PRINCIPAL_WRITE_TIMEOUT_MS = 5_000;
 const ORDERING_POSITION = 'ordering-position';
 
-/** The entry a page states: on the sender principal's track or on any track, and whether its seq must exceed 1. */
-interface AlmOrderingEntry {
-    readonly onSenderTrack: boolean;
-    readonly aboveFirstSeq: boolean;
-}
-
 /**
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
@@ -43,9 +37,10 @@ interface AlmOrderingEntry {
  * track carries at least the sibling's connect event before the sender's own: the sender enters above seq 1, prior 0,
  * the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq is not the cell's: on one API the
  * track also carries every earlier lane connect of the principal.
- * The sibling, the principal's second session, enters at its first copy, its own connect event at revision 1.
+ * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
- * No page states `before-entry` in the window after the last write's copy arrived.
+ * A page enters the track once, at its first connect of the family, in whichever cell ran first, so the entry wait alone
+ * reads the page's whole history. No page states `before-entry` in the window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -58,10 +53,9 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     principalRoles: ['sender'],
     toSenderCommands: (sender) => [
         ...toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
-        ...toOrderingEntryCommands(sender, { onSenderTrack: true, aboveFirstSeq: true })
+        ...toOrderingEntryCommands(sender, true)
     ],
-    toRecipientCommands: (recipient) =>
-        toOrderingEntryCommands(recipient, { onSenderTrack: recipient.role !== 'sibling', aboveFirstSeq: false })
+    toRecipientCommands: (recipient) => toOrderingEntryCommands(recipient, false)
 };
 
 /** Each write settles before the next, so each event leaves the server as its own copy. */
@@ -110,7 +104,7 @@ function toPrincipalWriteName(n: number): string {
  */
 function toOrderingEntryCommands(
     step: AlmConformanceStepInput,
-    entry: AlmOrderingEntry
+    aboveFirstSeq: boolean
 ): readonly RallarBlackBoxTestCommand[] {
     const arrival = toLastWriteArrivalWait(step);
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
@@ -120,10 +114,11 @@ function toOrderingEntryCommands(
             step,
             name: 'entered',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            ...(entry.onSenderTrack ? { contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:` } : {}),
-            payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 }
+            contains: `"trackKey":"{${event}.contextId}:{${event}.senderId}:`,
+            payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'entered', 'data.priorSeq': 0 },
+            historyFrom: 'page'
         }),
-        ...(entry.aboveFirstSeq
+        ...(aboveFirstSeq
             ? [toResultAssertion({
                 step,
                 name: 'entered-above-first',

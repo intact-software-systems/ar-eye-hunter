@@ -33,6 +33,8 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     /** The page states no such event before the wait or within `SUBSCRIPTION_ABSENCE_MS` of its start. */
     readonly absent?: boolean;
+    /** `page` reads the page's whole history; absent, the wait reads its own cell's. */
+    readonly historyFrom?: 'page';
 }
 
 interface AlmConformanceOrderingPositionTrack {
@@ -75,7 +77,7 @@ interface AlmConformanceControlProofRefusalWaitInput {
  * the text must scope the match itself. The wait starts before the other role's sends, so it owns the verdict budget.
  */
 export function toDiagnosticWait(
-    { step, name, topic, contains, payloadFields, absent }: AlmConformanceDiagnosticWaitInput
+    { step, name, topic, contains, payloadFields, absent, historyFrom }: AlmConformanceDiagnosticWaitInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -88,7 +90,8 @@ export function toDiagnosticWait(
             ...(payloadFields === undefined ? {} : { payloadFields })
         },
         ...(absent === true ? { absent: true } : {}),
-        timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs)
+        timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs),
+        ...(historyFrom === 'page' ? { metadata: { historyFrom } } : {})
     };
 }
 

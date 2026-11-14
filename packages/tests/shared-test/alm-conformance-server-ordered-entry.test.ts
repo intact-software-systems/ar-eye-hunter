@@ -80,12 +80,12 @@ describe('ALM server-ordered-entry cell', () => {
         }
     });
 
-    it('waits on every page for the last write, its entry at prior 0 and no before-entry; the sender above seq 1 and the receiver on the sender principal track', () => {
+    it('waits on every page for the last write, its entry at prior 0 on the sender principal track from the page\'s history, and no before-entry; the sender above seq 1', () => {
         const scenario = readServerOrderedEntry();
         const expectations = [
-            ['sender', scenario.sender, { track: true, aboveFirstSeq: true }],
-            ['sibling', scenario.sibling!, { track: false, aboveFirstSeq: false }],
-            ['receiver', scenario.receiver, { track: true, aboveFirstSeq: false }]
+            ['sender', scenario.sender, { aboveFirstSeq: true }],
+            ['sibling', scenario.sibling!, { aboveFirstSeq: false }],
+            ['receiver', scenario.receiver, { aboveFirstSeq: false }]
         ] as const;
         for (const [role, recipe, entry] of expectations) {
             const names = ['last-write-arrived', 'entered', 'no-before-entry'].map((name) => `${PREFIX}-${role}-${name}`);
@@ -117,15 +117,16 @@ describe('ALM server-ordered-entry cell', () => {
                     kind: 'diagnostic',
                     topic: 'rallar.browser.alm.inbound_diagnostics',
                     payloadPath: 'data',
-                    ...(entry.track ? { contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:` } : {}),
+                    contains: `"trackKey":"{${arrival}.contextId}:{${arrival}.senderId}:`,
                     payloadFields: {
                         'data.kind': 'ordering-position',
                         'data.status': 'entered',
                         'data.priorSeq': 0
-                    },
-                    sinceCommandIdPrefix: `${PREFIX}-${role}-`
+                    }
                 },
-                timeoutMs: 27_000
+                timeoutMs: 27_000,
+                // The page entered the track at its first copy, in whichever cell of the family ran first.
+                metadata: { historyFrom: 'page' }
             });
             if (entry.aboveFirstSeq) {
                 // The principal's track carries every earlier lane connect of it on the same API, so only "above 1" is stable.

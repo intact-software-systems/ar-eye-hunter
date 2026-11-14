@@ -272,8 +272,10 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
   its own cell. The mark opens at the first event on the page whose `commandId` starts with that
   prefix; that event can come before the command's result. If no event of the prefix exists yet, it opens at the next event recorded. A wait that names its own start must name
   a command of its own cell, or recipe creation throws. A wait with
-  `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, and a store's
-  recovery that a fresh document reports during its first connect. Once the runtime evicted any
+  `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, a store's
+  recovery that a fresh document reports during its first connect, and `server-ordered-entry`'s
+  `entered` on the sender principal's track, which a page states once, at its first copy, in
+  whichever cell of the family ran first. Once the runtime evicted any
   event, a wait with a prefix ends `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`, since the first event of
   the command is no longer provable.
 - `payloadMinimums` maps payload paths to floors. A floor is a finite number or exactly one

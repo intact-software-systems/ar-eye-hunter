@@ -1523,12 +1523,21 @@ describe('alm-conformance recipe family', () => {
  * The one class of wait that reads the page's history: a store's recovery that a fresh document (a successor page, or
  * the page after `agent.reload`) reports during its first connect, before that connect's result opens the cell's mark.
  */
-const PAGE_HISTORY_WAITS = [
+const FRESH_DOCUMENT_RECOVERY_WAITS = [
     'durable-takeover-successor-recovered-original-store',
     'flush-on-hide-successor-recovered-checkpoint-store',
     'delivery-reload-sender-recovered-session-inbound',
     'delivery-reload-sender-recovered-original-store'
 ] as const;
+
+/** A page enters a principal's server-ordered track once, at its first copy, in whichever cell of the family that was. */
+const PRINCIPAL_TRACK_ENTRY_WAITS = [
+    'server-ordered-entry-sender-entered',
+    'server-ordered-entry-receiver-entered',
+    'server-ordered-entry-sibling-entered'
+] as const;
+
+const PAGE_HISTORY_WAITS = [...FRESH_DOCUMENT_RECOVERY_WAITS, ...PRINCIPAL_TRACK_ENTRY_WAITS] as const;
 
 const SESSION_PIN_PATTERN = /\{resultCache\.([^}]+)\.value\.sessionId\}/;
 
@@ -1565,6 +1574,24 @@ function expectFreshDocumentRecovery(
     expect(role === 'successor' || reloadAt >= 0, wait.commandId).toBe(true);
     expect(firstConnect?.commandId, wait.commandId).toBeDefined();
     expect(connectId, wait.commandId).toBe(firstConnect?.commandId);
+}
+
+/** The wait names the entry at prior 0 on the track of the arrival it read, so no other track's entry can match it. */
+function expectPrincipalTrackEntry(wait: RallarBlackBoxTestWaitCommand): void {
+    expect(wait.match.topic, wait.commandId).toBe('rallar.browser.alm.inbound_diagnostics');
+    expect(wait.match.payloadFields, wait.commandId).toEqual({
+        'data.kind': 'ordering-position',
+        'data.status': 'entered',
+        'data.priorSeq': 0
+    });
+    expect(wait.match.contains, wait.commandId).toMatch(/^"trackKey":"\{resultCache\.[^}]+\.contextId\}:\{resultCache\.[^}]+\.senderId\}:$/);
+}
+
+/** An `entered` wait on a track the cell does not key may only read the page's history, since the page entered it once. */
+function isFirstContactOutsideTheCell(wait: RallarBlackBoxTestWaitCommand, scenarioKey: string): boolean {
+    const fields = wait.match.payloadFields ?? {};
+    const entry = fields['data.kind'] === 'ordering-position' && fields['data.status'] === 'entered';
+    return entry && wait.match.contains?.startsWith(`"trackKey":"${scenarioKey}:`) !== true;
 }
 
 describe('alm-conformance cell parts', () => {
@@ -1637,10 +1664,16 @@ describe('alm-conformance cell parts', () => {
                 for (const role of scenario.roles) {
                     for (const wait of toWaitCommands(scenario.partsByRole[role]!.body)) {
                         if (wait.metadata?.historyFrom === 'page') {
-                            pageHistoryWaits.push(wait.commandId!.slice(`alm-${carrier}-`.length));
+                            const name = wait.commandId!.slice(`alm-${carrier}-`.length);
+                            pageHistoryWaits.push(name);
                             expect(wait.match.sinceCommandIdPrefix, wait.commandId).toBeUndefined();
                             expect(validateRallarBlackBoxTestCommand(wait), wait.commandId).toMatchObject({ ok: true });
-                            expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
+                            if ((PRINCIPAL_TRACK_ENTRY_WAITS as readonly string[]).includes(name)) {
+                                expectPrincipalTrackEntry(wait);
+                            }
+                            else {
+                                expectFreshDocumentRecovery(toAlmConformanceRoleRecipe(scenario, role)!, role, wait);
+                            }
                             continue;
                         }
                         // The one wait that starts later in its own cell: the sibling's removal, read from `armed` on.
@@ -1658,8 +1691,26 @@ describe('alm-conformance cell parts', () => {
             }
         }
 
-        // A fifth page-history wait is a red test, not a silent drift.
+        // A further page-history wait is a red test, not a silent drift.
         expect(new Set(pageHistoryWaits)).toEqual(new Set(PAGE_HISTORY_WAITS));
+    });
+
+    it('an entry wait on a track its cell does not key reads the page\'s history, whichever cell entered the track', () => {
+        const outsideTheCell: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                for (const role of scenario.roles) {
+                    const waits = toWaitCommands(scenario.partsByRole[role]!.body)
+                        .filter((wait) => isFirstContactOutsideTheCell(wait, scenario.scenarioKey));
+                    for (const wait of waits) {
+                        outsideTheCell.push(wait.commandId!.slice(`alm-${carrier}-`.length));
+                        expect(wait.metadata?.historyFrom, wait.commandId).toBe('page');
+                    }
+                }
+            }
+        }
+
+        expect(new Set(outsideTheCell)).toEqual(new Set(PRINCIPAL_TRACK_ENTRY_WAITS));
     });
 
     it('the delivery-diagnostics freshness waits read the whole page history', () => {
@@ -2063,7 +2114,7 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('a barriered role recipe reads the page\'s history only in its head-applied wait and its fresh-document recoveries', () => {
+    it('a barriered role recipe reads the page\'s history only in its head-applied wait, its principal-track entries and its fresh-document recoveries', () => {
         const pageHistoryWaits = new Set<string>();
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
@@ -2089,6 +2140,7 @@ describe('alm-conformance cell parts', () => {
         expect(pageHistoryWaits).toEqual(
             new Set([
                 'head-applied',
+                'entered',
                 'recovered-original-store',
                 'recovered-checkpoint-store',
                 'recovered-session-inbound'
