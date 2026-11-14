@@ -446,13 +446,13 @@ describe('WebRtcConnectionService signaling and creation', () => {
 class RecordingPeerAdmission implements WebRtcConnectionService.PeerAdmission {
     readonly askedPeerIds: string[] = [];
 
-    decideInbound(signal: WebRtcConnectionService.InboundPeerCreationPolicyInput): 'allow' {
+    decideInbound(signal: WebRtcConnectionService.InboundAdmissionInput): 'allow' {
         this.askedPeerIds.push(signal.peerId);
         return 'allow';
     }
 
     decideInboundAtCap(
-        signal: WebRtcConnectionService.InboundPeerCreationPolicyInput,
+        signal: WebRtcConnectionService.InboundAdmissionInput,
         peers: WebRtcConnectionService.ClosableAdmissionPeers
     ): 'allow' {
         for (const peerId of this.askedPeerIds) {
