@@ -757,14 +757,34 @@ and it has no status list.
   should refuse the form or carry it. The TypeScript union of
   `RallarBlackBoxTestAssertCommand` forbids an `equals` with both `expected`
   and `comparisonSource` but admits one with neither; control validation
-  refuses neither
-  (`packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts`).
+  refuses both forms
+  (`packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts`),
+  so only the flow builder's conversion is left to close.
+- `server-ordered-entry`'s last-write wait names the write by `contains` of its
+  request id's sender part (`toLastWriteArrivalWait`,
+  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/server-ordered-entry.ts`),
+  since the writer page's runtime identity is unknowable to the other pages. A
+  suffix-anchored text operator for waits would make that match exact again.
+- `relay-path`'s topology-config request id is built in place
+  (`-${carrier}-${scenarioKey}-${name}`, no role;
+  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/relay-path/to-path-topology-config-command.ts`)
+  beside its owner `cell/to-alm-cell-request-id.ts`. Routing it through the
+  owner changes the request ids pinned in
+  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts`; no hosted
+  manifest carries them.
+- `RecipeRun.startedRoots`
+  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) is a mutable
+  array on a readonly contract, filled by `startRecipeRoot` as a side effect
+  and shared by spread copies. An explicit owner of a run's started roots,
+  constructed with the run and passed where roots start and where they are
+  awaited, would make that visible.
 - `packages/shared-test/rallar-bb-test/conformance/alm` holds 20 direct
   production files, the layout rule's limit
   (`directTypeScriptFileCount` in `scripts/repo-style-check/layout-rules.mjs`):
   the next file needs a sub-folder decision first.
 - A settled cell writes its start-state grants once each
-  (`toTopicGrantOnceCommand`, `granted-topic/to-alm-cell-start-state.ts`), so a
+  (`toTopicGrantOnceCommand` in `granted-topic/to-topic-grant-command.ts`,
+  chosen by `granted-topic/to-alm-cell-start-state.ts`), so a
   transient failure of one write, a 5xx or a 5 s timeout, fails the cell. The
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever

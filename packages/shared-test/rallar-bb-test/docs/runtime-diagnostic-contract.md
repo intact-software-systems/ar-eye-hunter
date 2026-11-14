@@ -216,6 +216,8 @@ creates the room and owns it. A settled role runs this, in order:
 5. Every settle role: its own head read and the wait for its page to have applied that head.
 6. Its arming run: the leading run of its body that is `fault.inject` commands and cue
    subscriptions. A role arms its faults here, so no role's first send meets an unarmed recipient.
+   The `sender` is the exception for faults: its storage baseline follows its leading cue
+   subscriptions, so its leading `fault.inject` commands run after `armed`, before its first send.
 7. The `armed` barrier, then the rest of the body.
 
 The three barriers are the ordinary `barrier` command. A barrier id is
@@ -243,7 +245,7 @@ and the first attempt in which every fact holds ends the poll:
   `group.acceptedLayoutIdentity.<key>`.
 
 An equality fact passes only when both paths exist. A room with no activation status or no accepted
-layout therefore never settles, and the poll ends without success at its 30 s bound. The view's
+layout therefore never settles: the poll starts attempts for 30 s and ends without success. The view's
 `condition` is not read: it falls back to a derived band when the stored status is not current. The poll compares each identity key on its own, so key order cannot matter.
 
 **The head read and the applied-revision floor.** The barrier carries no data, so each settle role
