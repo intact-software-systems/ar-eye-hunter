@@ -1,10 +1,10 @@
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { LIVE_RTC_LAYOUT_SWITCH_FRAME_TOPIC } from './compute-live-rtc-layout-switch-evidence.ts';
 import type { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { jsonRecord, numberValue } from './live-rtc-evidence-json.ts';
 import type { FormationHealth, LiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
-import { LIVE_RTC_LAYOUT_SWITCH_FRAME_TOPIC } from './live-rtc-layout-switch-evidence.ts';
 
 export type LiveRtcStreamReliability = 'at-least-once' | 'best-effort';
 

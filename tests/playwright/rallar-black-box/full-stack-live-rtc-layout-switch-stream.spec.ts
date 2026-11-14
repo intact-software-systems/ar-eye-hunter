@@ -5,6 +5,7 @@ import {
     type Browser,
     type TestInfo
 } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 
 import { RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS } from '@shared-test/rallar-bb-test/rtc-stream.ts';
 import {
@@ -13,6 +14,12 @@ import {
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
+import {
+    computeLiveRtcLayoutSwitchEvidence,
+    countLiveRtcMissingFrames,
+    type LiveRtcLayoutSwitchEvidence,
+    type LiveRtcLayoutSwitchStream
+} from './compute-live-rtc-layout-switch-evidence.ts';
 import {
     almDiagnostics,
     apiBaseUrl,
@@ -30,12 +37,6 @@ import { closeLiveRtcBrowserAgentContexts } from './live-rtc-browser-agents.ts';
 import { LiveRtcControlClient } from './live-rtc-control-client.ts';
 import { createLiveRtcDeliveryOperations, type AgentPrefix } from './live-rtc-delivery-operations.ts';
 import { createLiveRtcFormationOperations } from './live-rtc-formation-operations.ts';
-import {
-    computeLiveRtcLayoutSwitchEvidence,
-    countLiveRtcMissingFrames,
-    type LiveRtcLayoutSwitchEvidence,
-    type LiveRtcLayoutSwitchStream
-} from './live-rtc-layout-switch-evidence.ts';
 import { LiveRtcLayoutSwitchOperations, type LiveRtcStreamReliability } from './live-rtc-layout-switch-operations.ts';
 import {
     resolveLiveRtcLayoutShape,
@@ -45,7 +46,7 @@ import {
 } from './resolve-live-rtc-layout-shape.ts';
 
 /**
- * Ruling 6 of the make-before-break plan, as the controller scoped it: three browsers each stream 20 frames a
+ * Ruling 6 of the make-before-break plan, as the controller scoped it: three browsers each stream 10 frames a
  * second to the room while the owner switches the complete graph to a tree (an edge breaks) and, outside that
  * switch's overlap, back again (the edge returns). Which browser becomes the relay is unknown until the tree
  * exists, so every browser streams and every origin-receiver pair is checked. Evidence is what the browsers
@@ -53,11 +54,19 @@ import {
  */
 
 const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const;
-const STREAM_RATE_HZ = 20;
+/**
+ * The session's volatile send budget (`packages/shared/alm/volatile-budget/al-volatile-session-budget.ts`) refuses
+ * an own send once the session holds more than 1 000 admissions AND its own sends more than their 500 share. An own
+ * admission is held until its deadline, the send's 30 s TTL; an arrival for at most 30 s. At 10 Hz each session holds
+ * at most 300 own admissions and 600 arrivals (two other streams), so no own send can pass either bound. At 20 Hz
+ * the own pool reached 500 after 25 s and frames 501 on were refused. A relay's forward reuses the arrival's msgId,
+ * which the budget already holds, so forwarding adds nothing.
+ */
+const STREAM_RATE_HZ = 10;
 const STREAM_LEAD_MS = 3_000;
 /** Outside the 15 s overlap of the previous switch, so the two promotions never share one overlap. */
 const SWITCH_HOLD_MS = 16_000;
-/** The full-stack config's expect timeout, restated: each stream is sized before it starts. */
+/** This spec's bound on each promotion poll; it also sizes the streams, which must be fixed before they start. */
 const PROMOTION_POLL_TIMEOUT_MS = 15_000;
 const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWITCH_HOLD_MS);
 /** Ruling 2: the overlap the managed API serves by default. */
@@ -76,6 +85,20 @@ const deliveryOperations = createLiveRtcDeliveryOperations({
     formation: formationOperations
 });
 
+/** What the run has read so far, written to the output directory in every outcome. */
+interface LayoutSwitchProgress {
+    sessions: Readonly<Record<AgentPrefix, string>> | null;
+    servedOverlapMs: number | null;
+    layoutReads: { label: string; readAtEpochMs: number; layouts: readonly (LiveRtcAcceptedLayout | undefined)[]; }[];
+    switches: { label: string; requestedAtEpochMs: number; detectedAtEpochMs: number | null; }[];
+    leafToLeafReadyAtSwitch2: Readonly<Record<string, boolean>> | null;
+}
+
+/** The two files every run writes: the evidence before asserting, the progress in every outcome. */
+type LayoutSwitchEvidenceFile =
+    | Readonly<{ progress: LayoutSwitchProgress; run: LayoutSwitchRun; }>
+    | Readonly<LayoutSwitchProgress & { failure: string | null; }>;
+
 interface LayoutSwitchScenario {
     readonly control: LiveRtcControlClient;
     readonly runId: string;
@@ -83,9 +106,16 @@ interface LayoutSwitchScenario {
     readonly suffix: string;
     readonly agents: LiveRtcAgentTrio;
     readonly operations: LiveRtcLayoutSwitchOperations;
+    readonly progress: LayoutSwitchProgress;
 }
 
 type SessionIds = readonly [string, string, string];
+
+interface SwitchRoom {
+    readonly sessions: Readonly<Record<AgentPrefix, string>>;
+    readonly sessionIds: SessionIds;
+    readonly formed: LiveRtcAcceptedLayout;
+}
 
 interface ExpectedPromotion {
     readonly previous: GroupLayoutIdentity;
@@ -113,37 +143,42 @@ test.describe('live RTC layout switch stream', () => {
     test.skip(!hasThreeAgentConfig, LIVE_RTC_SKIP_MESSAGE);
 
     for (const reliability of RELIABILITIES) {
-        test(`three ${reliability} 20 Hz streams cross an owner-issued tree switch and its reversal`, async ({
-            browser,
-            request
-        }, testInfo) => {
-            test.setTimeout(360_000);
-            expect(
-                process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS,
-                'The control server must keep every event: run with RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=unbounded'
-            ).toBe('unbounded');
-            expect(almDiagnostics, 'Admission outcomes are read from the ALM inbound diagnostics').toBe(true);
-            expect(routineBrowserDiagnostics, 'Formation changes and send results are routine diagnostics')
-                .toBe('enabled');
-            const scenario = await openScenario(browser, request);
-            try {
-                const run = await runLayoutSwitches(scenario, reliability);
-                await attachRun(testInfo, run);
-                expectLayoutSwitchPasses(run);
-                await scenario.control.captureDiagnostics({
-                    testInfo,
-                    runId: scenario.runId,
-                    agents: scenario.agents,
-                    label: `layout-switch-${reliability}-${scenario.suffix}`,
-                    cycle: null
-                });
+        test(
+            `three ${reliability} 10 Hz streams cross an owner-issued tree switch and its reversal; ` +
+                'every receiver takes 20 messages a second',
+            async ({ browser, request }, testInfo) => {
+                test.setTimeout(360_000);
+                expectEvidenceSources();
+                const scenario = await openScenario(browser, request);
+                let failure: Error | undefined;
+                try {
+                    const run = await runLayoutSwitches(scenario, reliability);
+                    await writeEvidenceFile(testInfo, 'layout-switch-evidence.json', {
+                        progress: scenario.progress,
+                        run
+                    });
+                    expectLayoutSwitchPasses(run);
+                }
+                catch (cause) {
+                    failure = toError(cause);
+                    throw cause;
+                }
+                finally {
+                    await finishScenario(scenario, testInfo, failure);
+                }
             }
-            finally {
-                await retire(scenario, testInfo);
-            }
-        });
+        );
     }
 });
+
+function expectEvidenceSources(): void {
+    expect(
+        process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS,
+        'The control server must keep every event: run with RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=unbounded'
+    ).toBe('unbounded');
+    expect(almDiagnostics, 'Admission outcomes are read from the ALM inbound diagnostics').toBe(true);
+    expect(routineBrowserDiagnostics, 'Formation changes and send results are routine diagnostics').toBe('enabled');
+}
 
 async function openScenario(browser: Browser, request: APIRequestContext): Promise<LayoutSwitchScenario> {
     const control = new LiveRtcControlClient({
@@ -165,7 +200,14 @@ async function openScenario(browser: Browser, request: APIRequestContext): Promi
         owner: agents[0],
         messagesRtc: MESSAGES_RTC
     });
-    return { control, runId, groupId, suffix, agents, operations };
+    const progress: LayoutSwitchProgress = {
+        sessions: null,
+        servedOverlapMs: null,
+        layoutReads: [],
+        switches: [],
+        leafToLeafReadyAtSwitch2: null
+    };
+    return { control, runId, groupId, suffix, agents, operations, progress };
 }
 
 /** The matrix driver's room: managed, owner first, planned, connected and activated, over typed RTC messages. */
@@ -189,6 +231,7 @@ async function formRoom(scenario: LayoutSwitchScenario): Promise<Readonly<Record
         suffix,
         readinessScope: 'all'
     });
+    scenario.progress.sessions = formation.sessions;
     return formation.sessions;
 }
 
@@ -197,7 +240,8 @@ async function readFormedLayout(
     scenario: LayoutSwitchScenario,
     sessionIds: SessionIds
 ): Promise<LiveRtcAcceptedLayout> {
-    expect(await scenario.operations.readServedOverlapMs(), 'The managed API serves the default overlap in /api/config')
+    scenario.progress.servedOverlapMs = await scenario.operations.readServedOverlapMs() ?? null;
+    expect(scenario.progress.servedOverlapMs, 'The managed API serves the default overlap in /api/config')
         .toBe(SERVED_OVERLAP_MS);
     const formed = await readCommonLayout(scenario, 'the formed room');
     expect(
@@ -224,6 +268,7 @@ async function runLayoutSwitches(
         sessions,
         evidence: computeLiveRtcLayoutSwitchEvidence({
             runId: scenario.runId,
+            frameTypeId: MESSAGES_RTC.typeId,
             streams: settledStreams,
             switches: [
                 { identity: switched.layouts[1].identity, requestedAtEpochMs: switched.requestedAtEpochMs[0] },
@@ -238,12 +283,10 @@ async function runLayoutSwitches(
 /** Steps 3 and 4: the break side, a hold outside its overlap, then the add side. */
 async function runSwitches(
     scenario: LayoutSwitchScenario,
-    room: Readonly<
-        { sessions: Readonly<Record<AgentPrefix, string>>; sessionIds: SessionIds; formed: LiveRtcAcceptedLayout; }
-    >
+    room: SwitchRoom
 ): Promise<Omit<LayoutSwitchRun, 'sessions' | 'evidence'>> {
     const { sessionIds } = room;
-    const treeRequestedAt = await scenario.operations.writeTopologyKind('tree');
+    const treeRequestedAt = await requestSwitch(scenario, 'switch 1', 'tree');
     const tree = await waitForPromotion(scenario, {
         previous: room.formed.identity,
         kind: 'tree',
@@ -254,7 +297,8 @@ async function runSwitches(
     await holdFor(scenario, tree.detectedAtEpochMs + SWITCH_HOLD_MS - Date.now());
     await expectTreeHeld(scenario, tree.layout);
     const leafToLeafReadyAtSwitch2 = await readLeafToLeafReadiness(scenario, room.sessions, treeShape);
-    const starRequestedAt = await scenario.operations.writeTopologyKind('star');
+    scenario.progress.leafToLeafReadyAtSwitch2 = leafToLeafReadyAtSwitch2;
+    const starRequestedAt = await requestSwitch(scenario, 'switch 2', 'star');
     const star = await waitForPromotion(scenario, {
         previous: tree.layout.identity,
         kind: 'complete',
@@ -267,6 +311,16 @@ async function runSwitches(
         requestedAtEpochMs: [treeRequestedAt, starRequestedAt],
         leafToLeafReadyAtSwitch2
     };
+}
+
+async function requestSwitch(
+    scenario: LayoutSwitchScenario,
+    label: string,
+    topologyKind: 'tree' | 'star'
+): Promise<number> {
+    const requestedAtEpochMs = await scenario.operations.writeTopologyKind(topologyKind);
+    scenario.progress.switches.push({ label, requestedAtEpochMs, detectedAtEpochMs: null });
+    return requestedAtEpochMs;
 }
 
 /** Settled, never rejected: a failure later in the scenario must not leave a stream's rejection unhandled. */
@@ -306,19 +360,23 @@ function requireStreams(
     });
 }
 
+/** Reads each browser's accepted layout and keeps the latest read under its label for the progress file. */
 async function readAcceptedLayouts(
-    scenario: LayoutSwitchScenario
+    scenario: LayoutSwitchScenario,
+    label: string
 ): Promise<readonly (LiveRtcAcceptedLayout | undefined)[]> {
     const layouts: (LiveRtcAcceptedLayout | undefined)[] = [];
     for (const agent of scenario.agents) {
         layouts.push(toLiveRtcAcceptedLayout((await scenario.operations.readHealth(agent)).formation));
     }
+    const reads = scenario.progress.layoutReads.filter((read) => read.label !== label);
+    scenario.progress.layoutReads = [...reads, { label, readAtEpochMs: Date.now(), layouts }];
     return layouts;
 }
 
 /** Every browser holds one accepted layout, the same identity with the same adjacency. */
 async function readCommonLayout(scenario: LayoutSwitchScenario, label: string): Promise<LiveRtcAcceptedLayout> {
-    const layouts = await readAcceptedLayouts(scenario);
+    const layouts = await readAcceptedLayouts(scenario, label);
     const common = toCommonLayout(layouts);
     if (common === undefined) {
         throw new Error(`The browsers do not hold one accepted layout at ${label}: ${JSON.stringify(layouts)}`);
@@ -352,7 +410,7 @@ async function waitForPromotion(
     let latest: readonly (LiveRtcAcceptedLayout | undefined)[] = [];
     try {
         await expect.poll(async () => {
-            latest = await readAcceptedLayouts(scenario);
+            latest = await readAcceptedLayouts(scenario, expected.label);
             const common = toCommonLayout(latest);
             return common !== undefined && !isSameGroupLayoutIdentity(common.identity, expected.previous) &&
                 resolveLiveRtcLayoutShape(common, expected.sessionIds).kind === expected.kind;
@@ -369,7 +427,12 @@ async function waitForPromotion(
     if (layout === undefined) {
         throw new Error(`${expected.label}: the promoted layout was not read`);
     }
-    return { layout, detectedAtEpochMs: Date.now() };
+    const detectedAtEpochMs = Date.now();
+    const requested = scenario.progress.switches.find((entry) => entry.label === expected.label);
+    if (requested !== undefined) {
+        requested.detectedAtEpochMs = detectedAtEpochMs;
+    }
+    return { layout, detectedAtEpochMs };
 }
 
 function resolveTree(
@@ -385,7 +448,7 @@ function resolveTree(
 
 /** The relay may change by an RTT re-plan; the spec reports it rather than adapting to the new tree. */
 async function expectTreeHeld(scenario: LayoutSwitchScenario, tree: LiveRtcAcceptedLayout): Promise<void> {
-    const current = await readCommonLayout(scenario, 'switch 2');
+    const current = await readCommonLayout(scenario, 'before switch 2');
     if (!isSameLayout(current, tree)) {
         throw new Error(
             'The tree read after switch 1 is no longer the accepted layout when switch 2 is due ' +
@@ -412,15 +475,25 @@ async function readLeafToLeafReadiness(
     return ready;
 }
 
-/** Waits, bounded by the agent stream's own drain, for frames still travelling when the last stream reported. */
+/**
+ * Reads the run until every receiver holds every planned frame, or until the missing count has not changed for the
+ * agent stream's own drain bound (`RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS`), so frames whose events
+ * are still being published are waited for as long as they keep arriving.
+ */
 async function drainReceivers(
     scenario: LayoutSwitchScenario,
     streams: readonly LiveRtcLayoutSwitchStream[]
 ): Promise<readonly LiveRtcControlClient.Event[]> {
-    const deadline = Date.now() + RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS;
+    let lastMissing = Infinity;
+    let lastChangedAtMs = Date.now();
     for (;;) {
         const { events } = await scenario.control.fetchRun(scenario.runId);
-        if (countLiveRtcMissingFrames({ runId: scenario.runId, streams, events }) === 0 || Date.now() >= deadline) {
+        const missing = countLiveRtcMissingFrames({ runId: scenario.runId, streams, events });
+        if (missing !== lastMissing) {
+            lastMissing = missing;
+            lastChangedAtMs = Date.now();
+        }
+        if (missing === 0 || Date.now() - lastChangedAtMs >= RALLAR_BLACK_BOX_RTC_STREAM_DEFAULT_DRAIN_TIMEOUT_MS) {
             return events;
         }
         await holdFor(scenario, 1_000);
@@ -436,11 +509,14 @@ async function holdFor(scenario: LayoutSwitchScenario, ms: number): Promise<void
 /** Every condition is soft, so one red run names every condition it broke. */
 function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
     const { evidence } = run;
-    expect(evidence.runRetained, 'The control server dropped the start of the run; the evidence is incomplete').toBe(
-        true
-    );
-    for (const [prefix, count] of Object.entries(evidence.inboundAdmissionCount)) {
-        expect(count, `Browser ${prefix} recorded no inbound admission diagnostics`).toBeGreaterThan(0);
+    expect.soft(evidence.runRetained, 'The control server dropped the start of the run; the evidence is incomplete')
+        .toBe(true);
+    for (const [prefix, completeness] of Object.entries(evidence.admissionCompleteness)) {
+        expect.soft(
+            completeness.committedFrameAdmissions,
+            `Browser ${prefix} recorded fewer committed frame admissions than frames it delivered ` +
+                `(${completeness.receivedFrames} of ${completeness.expectedFrames} expected): ALM inbound diagnostics are incomplete`
+        ).toBeGreaterThanOrEqual(Math.max(1, completeness.receivedFrames));
     }
     expectEveryFrameDelivered(evidence);
     expect.soft(
@@ -461,11 +537,11 @@ function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
 
 function expectEveryFrameDelivered(evidence: LiveRtcLayoutSwitchEvidence): void {
     expect.soft(
-        evidence.unsentFrames,
-        `Frames a sender did not send (first ${REPORTED_RECORDS}): ${
-            JSON.stringify(evidence.unsentFrames.slice(0, REPORTED_RECORDS))
-        }`
-    ).toHaveLength(0);
+        evidence.unsentFrames.length,
+        `Frames a sender did not send, by state / failure / reason / limit: ${
+            JSON.stringify(evidence.unsentByReason)
+        }; the first in full: ${JSON.stringify(evidence.unsentFrames[0] ?? null)}`
+    ).toBe(0);
     for (const delivery of evidence.deliveries) {
         const stream = `browser ${delivery.origin}'s stream (${delivery.plannedFrames} frames)`;
         expect.soft(delivery.plannedFrames, `${stream} planned no frames`).toBeGreaterThan(0);
@@ -473,7 +549,8 @@ function expectEveryFrameDelivered(evidence: LiveRtcLayoutSwitchEvidence): void 
             .toEqual([]);
         expect.soft(
             delivery.duplicatedSeqs,
-            `Browser ${delivery.receiver}'s application received these seqs of ${stream} more than once`
+            `Browser ${delivery.receiver}'s application received these seqs of ${stream} more than once ` +
+                '(the same msgId and transport twice is a double subscription in the harness)'
         ).toEqual([]);
     }
 }
@@ -517,16 +594,48 @@ function expectLeafCrossing(evidence: LiveRtcLayoutSwitchEvidence): void {
     ).toBeGreaterThan(0);
 }
 
-async function attachRun(testInfo: TestInfo, run: LayoutSwitchRun): Promise<void> {
-    const { evidence, ...scenario } = run;
-    await testInfo.attach('layout-switch-observations.json', {
-        body: JSON.stringify({ ...scenario, observations: evidence.observations }, null, 2),
-        contentType: 'application/json'
-    });
-    await testInfo.attach('layout-switch-evidence.json', {
-        body: JSON.stringify({ ...evidence, observations: undefined }, null, 2),
-        contentType: 'application/json'
-    });
+/**
+ * A file in the test's output directory, attached by its path: an attachment by body exists only in the reporter,
+ * which is why the first run left no evidence file beside its screenshots and trace.
+ */
+async function writeEvidenceFile(testInfo: TestInfo, name: string, value: LayoutSwitchEvidenceFile): Promise<void> {
+    const path = testInfo.outputPath(name);
+    await writeFile(path, JSON.stringify(value, null, 2));
+    await testInfo.attach(name, { path, contentType: 'application/json' });
+}
+
+/**
+ * Runs in every outcome, before the agents are retired. A capture that fails after the test's own error is only
+ * logged, so it never replaces that error; on a run that was otherwise green it fails the test, because a broken
+ * event-history continuity means the evidence the test passed on is incomplete.
+ */
+async function finishScenario(
+    scenario: LayoutSwitchScenario,
+    testInfo: TestInfo,
+    failure: Error | undefined
+): Promise<void> {
+    let captureFailure: Error | undefined;
+    try {
+        await writeEvidenceFile(testInfo, 'layout-switch-progress.json', {
+            failure: failure?.message ?? null,
+            ...scenario.progress
+        });
+        await scenario.control.captureDiagnostics({
+            testInfo,
+            runId: scenario.runId,
+            agents: scenario.agents,
+            label: `layout-switch-${scenario.suffix}`,
+            cycle: null
+        });
+    }
+    catch (cause) {
+        captureFailure = toError(cause);
+        console.error('Failed to capture the layout-switch evidence', captureFailure);
+    }
+    await retire(scenario, testInfo);
+    if (failure === undefined && captureFailure !== undefined) {
+        throw captureFailure;
+    }
 }
 
 async function retire(scenario: LayoutSwitchScenario, testInfo: TestInfo): Promise<void> {

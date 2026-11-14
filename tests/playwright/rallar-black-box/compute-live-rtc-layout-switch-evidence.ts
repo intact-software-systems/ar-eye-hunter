@@ -23,6 +23,8 @@ const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const RTC_SEND_COMPLETED_TOPIC = 'rallar.browser.messages.rtc.send_completed';
 const STREAM_STARTED_TOPIC = 'rallar.bb.rtc.stream_started';
 const PLANNED_LAYOUT_NOT_YET_IN_SYNC = `not-yet-in-sync: ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}`;
+/** The delivery states the agent stream counts as a failed frame (`browser-rtc-send-observation.ts`). */
+const FAILED_SEND_STATES: readonly string[] = ['rejected', 'failed', 'expired', 'cancelled', 'superseded'];
 
 /** One browser's stream as its own `rtc.stream` result reported it. */
 export interface LiveRtcLayoutSwitchStream {
@@ -40,10 +42,18 @@ export interface LiveRtcLayoutSwitch {
 
 export interface LiveRtcLayoutSwitchEvidenceInput {
     readonly runId: string;
+    /** The typed channel's type the frames travel on; its admission outcomes are the completeness guard's count. */
+    readonly frameTypeId: string;
     readonly streams: readonly LiveRtcLayoutSwitchStream[];
     readonly switches: readonly [LiveRtcLayoutSwitch, LiveRtcLayoutSwitch];
     readonly leafSessionIds: readonly [string, string];
     readonly events: readonly LiveRtcControlClient.Event[];
+}
+
+/** One application delivery of a frame: a second copy with the same `msgId` and `transport` is the harness's. */
+export interface LiveRtcFrameCopy {
+    readonly msgId: string | null;
+    readonly transport: string | null;
 }
 
 export interface LiveRtcStreamDelivery {
@@ -51,7 +61,20 @@ export interface LiveRtcStreamDelivery {
     readonly receiver: AgentPrefix;
     readonly plannedFrames: number;
     readonly missingSeqs: readonly number[];
-    readonly duplicatedSeqs: readonly number[];
+    readonly duplicatedSeqs: readonly { seq: number; copies: readonly LiveRtcFrameCopy[]; }[];
+}
+
+/** The sender's delivery lifecycle as `send_completed` stated it for one failed send. */
+export interface LiveRtcSendSettlement {
+    readonly atEpochMs: number;
+    readonly handleId: string | null;
+    readonly state: string | null;
+    /** For a capacity refusal: `{ kind: 'refused', reason: 'capacity', limit }`. */
+    readonly failure: RtcBaselineJson | null;
+    /** For a capacity refusal: the budget's text with the usage it passed. */
+    readonly reason: string | null;
+    readonly attemptOutcomes: readonly string[];
+    readonly attemptRefusalReasons: readonly string[];
 }
 
 export interface LiveRtcUnsentFrame {
@@ -59,12 +82,25 @@ export interface LiveRtcUnsentFrame {
     readonly seq: number;
     readonly status: string | null;
     readonly errorCode: string | null;
+    readonly completedAtEpochMs: number | null;
+    /** The failed send on the sender's page nearest this frame's completion; null when none was recorded. */
+    readonly send: LiveRtcSendSettlement | null;
 }
 
 export interface LiveRtcRefusalRecord {
     readonly agent: AgentPrefix;
     readonly atEpochMs: number;
     readonly detail: LiveRtcJsonRecord;
+}
+
+/**
+ * A receiver admits every frame it delivers, so its committed admissions of the frame type are at least its distinct
+ * received frames; `expectedFrames` is what a lossless run delivers: the two other streams' planned frames.
+ */
+export interface LiveRtcAdmissionCompleteness {
+    readonly committedFrameAdmissions: number;
+    readonly receivedFrames: number;
+    readonly expectedFrames: number;
 }
 
 export interface LiveRtcStreamPromotion {
@@ -86,16 +122,24 @@ export interface LiveRtcLayoutSwitchObservations {
     readonly promotionLatencyMs: Readonly<Record<AgentPrefix, readonly [number | null, number | null]>>;
     readonly notYetInSyncAdmissions: Readonly<Record<AgentPrefix, { total: number; plannedLayout: number; }>>;
     readonly wireDuplicates: Readonly<Record<AgentPrefix, number>>;
-    readonly unconfirmedHops: Readonly<Record<AgentPrefix, { frames: number; peerIds: readonly string[]; }>>;
+    /**
+     * The next hops a frame had not confirmed at the moment its send was admitted, not at its settlement: the
+     * origin's final settlement per frame is not emitted, so this lists nearly every next hop of an at-least-once frame.
+     */
+    readonly nextHopsUnconfirmedAtAdmission: Readonly<
+        Record<AgentPrefix, { frames: number; peerIds: readonly string[]; }>
+    >;
     readonly receiptExhausted: readonly { agent: AgentPrefix; topic: string; kind: string | null; }[];
 }
 
 export interface LiveRtcLayoutSwitchEvidence {
     /** The stream-start diagnostic of every browser was retained: the control server kept the whole run. */
     readonly runRetained: boolean;
-    readonly inboundAdmissionCount: Readonly<Record<AgentPrefix, number>>;
+    readonly admissionCompleteness: Readonly<Record<AgentPrefix, LiveRtcAdmissionCompleteness>>;
     readonly deliveries: readonly LiveRtcStreamDelivery[];
     readonly unsentFrames: readonly LiveRtcUnsentFrame[];
+    /** Unsent frames by `state / failure kind / reason / limit`. */
+    readonly unsentByReason: Readonly<Record<string, number>>;
     readonly unauthorizedAdmissions: readonly LiveRtcRefusalRecord[];
     readonly senderPlannerDrops: readonly LiveRtcRefusalRecord[];
     readonly promotions: readonly LiveRtcStreamPromotion[];
@@ -115,13 +159,14 @@ interface LiveRtcRunEvent {
 interface StreamFrame {
     readonly seq: number;
     readonly startedAtEpochMs: number;
+    readonly completedAtEpochMs: number | null;
     readonly ok: boolean;
     readonly status: string | null;
     readonly errorCode: string | null;
 }
 
-/** Receiver agent ID, then origin prefix, then how many times each sequence number reached the application. */
-type ReceivedFrames = ReadonlyMap<string, ReadonlyMap<AgentPrefix, ReadonlyMap<number, number>>>;
+/** Receiver agent ID, then origin prefix, then every application delivery of each sequence number. */
+type ReceivedFrames = ReadonlyMap<string, ReadonlyMap<AgentPrefix, ReadonlyMap<number, readonly LiveRtcFrameCopy[]>>>;
 
 export function computeLiveRtcLayoutSwitchEvidence(
     input: LiveRtcLayoutSwitchEvidenceInput
@@ -136,20 +181,15 @@ export function computeLiveRtcLayoutSwitchEvidence(
     const promotions = input.streams.map((stream) =>
         toStreamPromotion(stream, framesByPrefix.get(stream.prefix) ?? [], events, input.switches)
     );
+    const unsentFrames = computeUnsentFrames(input.streams, framesByPrefix, runEvents);
     return {
         runRetained: input.streams.every((stream) =>
             events.some((event) => event.agentId === stream.agentId && event.topic === STREAM_STARTED_TOPIC)
         ),
-        inboundAdmissionCount: countByPrefix(input.streams, runEvents, (event) => isAdmissionOutcome(event)),
+        admissionCompleteness: computeAdmissionCompleteness(input, runEvents, received),
         deliveries: computeDeliveries(input.streams, received),
-        unsentFrames: input.streams.flatMap((stream) =>
-            (framesByPrefix.get(stream.prefix) ?? []).filter((frame) => !frame.ok).map((frame) => ({
-                origin: stream.prefix,
-                seq: frame.seq,
-                status: frame.status,
-                errorCode: frame.errorCode
-            }))
-        ),
+        unsentFrames,
+        unsentByReason: countUnsentByReason(unsentFrames),
         unauthorizedAdmissions: toRefusalRecords(input.streams, runEvents, isUnauthorizedAdmission),
         senderPlannerDrops: toRefusalRecords(input.streams, runEvents, isSenderPlannerDrop),
         promotions,
@@ -158,7 +198,7 @@ export function computeLiveRtcLayoutSwitchEvidence(
     };
 }
 
-/** The receivers' application deliveries alone, for the drain poll that waits for late frames. */
+/** How many planned frames every receiver still lacks, for the drain that waits for late publications. */
 export function countLiveRtcMissingFrames(
     input: Pick<LiveRtcLayoutSwitchEvidenceInput, 'runId' | 'streams' | 'events'>
 ): number {
@@ -186,7 +226,7 @@ function computeReceivedFrames(
     events: readonly LiveRtcRunEvent[],
     input: Pick<LiveRtcLayoutSwitchEvidenceInput, 'runId' | 'streams'>
 ): ReceivedFrames {
-    const received = new Map<string, Map<AgentPrefix, Map<number, number>>>();
+    const received = new Map<string, Map<AgentPrefix, Map<number, LiveRtcFrameCopy[]>>>();
     const origins = new Set(input.streams.map((stream) => stream.prefix));
     for (const event of events) {
         const frame = event.kind === 'message' ? jsonRecord(event.data.payload) : null;
@@ -198,13 +238,20 @@ function computeReceivedFrames(
         ) {
             continue;
         }
-        const byOrigin = received.get(event.agentId) ?? new Map<AgentPrefix, Map<number, number>>();
-        const counts = byOrigin.get(origin) ?? new Map<number, number>();
-        counts.set(seq, (counts.get(seq) ?? 0) + 1);
-        byOrigin.set(origin, counts);
+        const byOrigin = received.get(event.agentId) ?? new Map<AgentPrefix, Map<number, LiveRtcFrameCopy[]>>();
+        const copies = byOrigin.get(origin) ?? new Map<number, LiveRtcFrameCopy[]>();
+        copies.set(seq, [...(copies.get(seq) ?? []), toFrameCopy(event)]);
+        byOrigin.set(origin, copies);
         received.set(event.agentId, byOrigin);
     }
     return received;
+}
+
+function toFrameCopy(event: LiveRtcRunEvent): LiveRtcFrameCopy {
+    return {
+        msgId: stringValue(event.data.msgId) ?? null,
+        transport: stringValue(event.data.transport) ?? stringValue(jsonRecord(event.raw)?.transport) ?? null
+    };
 }
 
 function isStreamOrigin(value: string | undefined, origins: ReadonlySet<AgentPrefix>): value is AgentPrefix {
@@ -218,17 +265,39 @@ function computeDeliveries(
     return streams.flatMap((origin) => {
         const plannedFrames = numberValue(origin.result.plannedFrames) ?? 0;
         return streams.filter((receiver) => receiver.agentId !== origin.agentId).map((receiver) => {
-            const counts = received.get(receiver.agentId)?.get(origin.prefix) ?? new Map<number, number>();
+            const copies = received.get(receiver.agentId)?.get(origin.prefix) ??
+                new Map<number, readonly LiveRtcFrameCopy[]>();
             const seqs = Array.from({ length: plannedFrames }, (_, index) => index + 1);
             return {
                 origin: origin.prefix,
                 receiver: receiver.prefix,
                 plannedFrames,
-                missingSeqs: seqs.filter((seq) => !counts.has(seq)),
-                duplicatedSeqs: seqs.filter((seq) => (counts.get(seq) ?? 0) > 1)
+                missingSeqs: seqs.filter((seq) => !copies.has(seq)),
+                duplicatedSeqs: seqs.flatMap((seq) => {
+                    const seen = copies.get(seq) ?? [];
+                    return seen.length > 1 ? [{ seq, copies: seen }] : [];
+                })
             };
         });
     });
+}
+
+function computeAdmissionCompleteness(
+    input: LiveRtcLayoutSwitchEvidenceInput,
+    runEvents: readonly LiveRtcRunEvent[],
+    received: ReceivedFrames
+): Readonly<Record<AgentPrefix, LiveRtcAdmissionCompleteness>> {
+    return mapByPrefix(input.streams, (stream) => ({
+        committedFrameAdmissions: runEvents.filter((event) =>
+            event.agentId === stream.agentId && isAdmissionOutcome(event) && event.data.outcome === 'committed' &&
+            event.data.typeId === input.frameTypeId
+        ).length,
+        receivedFrames: [...(received.get(stream.agentId)?.values() ?? [])]
+            .reduce((sum, copies) =>
+                sum + copies.size, 0),
+        expectedFrames: input.streams.filter((origin) => origin.agentId !== stream.agentId)
+            .reduce((sum, origin) => sum + (numberValue(origin.result.plannedFrames) ?? 0), 0)
+    }));
 }
 
 function toStreamFrames(result: LiveRtcJsonRecord): readonly StreamFrame[] {
@@ -243,11 +312,86 @@ function toStreamFrames(result: LiveRtcJsonRecord): readonly StreamFrame[] {
         return [{
             seq,
             startedAtEpochMs,
+            completedAtEpochMs: numberValue(observation.completedAtEpochMs) ?? null,
             ok: observation.ok === true && observation.dropped !== true,
             status: stringValue(observation.status) ?? null,
             errorCode: stringValue(observation.errorCode) ?? null
         }];
     });
+}
+
+/**
+ * The stream's frame keeps only a status; the sender's `send_completed` keeps the lifecycle but no sequence number.
+ * Each unsent frame takes the failed send recorded nearest its completion on the same page clock, each send once.
+ */
+function computeUnsentFrames(
+    streams: readonly LiveRtcLayoutSwitchStream[],
+    framesByPrefix: ReadonlyMap<AgentPrefix, readonly StreamFrame[]>,
+    runEvents: readonly LiveRtcRunEvent[]
+): readonly LiveRtcUnsentFrame[] {
+    return streams.flatMap((stream) => {
+        const unmatched = runEvents.filter((event) => event.agentId === stream.agentId)
+            .flatMap(toFailedSendSettlement);
+        return (framesByPrefix.get(stream.prefix) ?? []).filter((frame) => !frame.ok).map((frame) => ({
+            origin: stream.prefix,
+            seq: frame.seq,
+            status: frame.status,
+            errorCode: frame.errorCode,
+            completedAtEpochMs: frame.completedAtEpochMs,
+            send: takeNearestSettlement(unmatched, frame.completedAtEpochMs)
+        }));
+    });
+}
+
+function toFailedSendSettlement(event: LiveRtcRunEvent): readonly LiveRtcSendSettlement[] {
+    const message = jsonRecord(event.data.message);
+    const state = stringValue(message?.state);
+    if (event.topic !== RTC_SEND_COMPLETED_TOPIC || message === null || !FAILED_SEND_STATES.includes(state ?? '')) {
+        return [];
+    }
+    return [{
+        atEpochMs: event.atEpochMs,
+        handleId: stringValue(message.handleId) ?? null,
+        state: state ?? null,
+        failure: message.failure ?? null,
+        reason: stringValue(message.reason) ?? null,
+        attemptOutcomes: stringArrayValue(message.attemptOutcomes),
+        attemptRefusalReasons: stringArrayValue(message.attemptRefusalReasons)
+    }];
+}
+
+function takeNearestSettlement(
+    unmatched: LiveRtcSendSettlement[],
+    completedAtEpochMs: number | null
+): LiveRtcSendSettlement | null {
+    if (completedAtEpochMs === null || unmatched.length === 0) {
+        return null;
+    }
+    let nearest = 0;
+    for (const [index, settlement] of unmatched.entries()) {
+        if (
+            Math.abs(settlement.atEpochMs - completedAtEpochMs) <
+                Math.abs((unmatched[nearest]?.atEpochMs ?? Infinity) - completedAtEpochMs)
+        ) {
+            nearest = index;
+        }
+    }
+    return unmatched.splice(nearest, 1)[0] ?? null;
+}
+
+function countUnsentByReason(unsentFrames: readonly LiveRtcUnsentFrame[]): Readonly<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const frame of unsentFrames) {
+        const failure = jsonRecord(frame.send?.failure);
+        const key = [
+            frame.send?.state ?? frame.status ?? 'unknown',
+            stringValue(failure?.kind) ?? '-',
+            stringValue(failure?.reason) ?? '-',
+            stringValue(failure?.limit) ?? '-'
+        ].join(' / ');
+        counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
 }
 
 function toStreamPromotion(
@@ -301,12 +445,12 @@ function computeLeafCrossings(
         const sent = (framesByPrefix.get(origin.prefix) ?? []).filter((frame) =>
             frame.startedAtEpochMs >= onTreeFrom && frame.startedAtEpochMs < onTreeUntil
         );
-        const counts = received.get(otherLeaf.agentId)?.get(origin.prefix);
+        const copies = received.get(otherLeaf.agentId)?.get(origin.prefix);
         return [{
             origin: origin.prefix,
             otherLeaf: otherLeaf.prefix,
             framesSentOnTree: sent.length,
-            missingAtOtherLeaf: sent.map((frame) => frame.seq).filter((seq) => !counts?.has(seq))
+            missingAtOtherLeaf: sent.map((frame) => frame.seq).filter((seq) => !copies?.has(seq))
         }];
     });
 }
@@ -325,37 +469,56 @@ function computeObservations(
                 toLatencyMs(promotedAt[1], input.switches[1])
             ] as const;
         }),
-        notYetInSyncAdmissions: mapByPrefix(input.streams, (stream) => {
-            const admissions = runEvents.filter((event) =>
-                event.agentId === stream.agentId && isAdmissionOutcome(event) &&
-                stringValue(event.data.reason)?.startsWith('not-yet-in-sync') === true
-            );
-            return {
-                total: admissions.length,
-                plannedLayout: admissions.filter((event) => event.data.reason === PLANNED_LAYOUT_NOT_YET_IN_SYNC).length
-            };
-        }),
+        notYetInSyncAdmissions: mapByPrefix(input.streams, (stream) => countNotYetInSync(stream, runEvents)),
         wireDuplicates: countByPrefix(
             input.streams,
             runEvents,
             (event) =>
                 isAdmissionOutcome(event) && event.data.outcome === 'not-handled' && event.data.reason === 'duplicate'
         ),
-        unconfirmedHops: mapByPrefix(input.streams, (stream) => {
-            const unconfirmed = runEvents.filter((event) => event.agentId === stream.agentId)
-                .flatMap((event) => event.topic === RTC_SEND_COMPLETED_TOPIC ? [jsonRecord(event.data.message)] : [])
-                .map((message) => stringArrayValue(message?.unconfirmedHopPeerIds))
-                .filter((peerIds) => peerIds.length > 0);
-            return { frames: unconfirmed.length, peerIds: [...new Set(unconfirmed.flat())].sort() };
-        }),
-        receiptExhausted: runEvents.filter((event) => JSON.stringify(event.raw).includes('receipt-exhausted'))
-            .flatMap((event) => {
-                const agent = input.streams.find((stream) => stream.agentId === event.agentId)?.prefix;
-                return agent === undefined
-                    ? []
-                    : [{ agent, topic: event.topic ?? 'unknown', kind: stringValue(event.data.kind) ?? null }];
-            })
+        nextHopsUnconfirmedAtAdmission: mapByPrefix(
+            input.streams,
+            (stream) => readNextHopsUnconfirmedAtAdmission(stream, runEvents)
+        ),
+        receiptExhausted: readReceiptExhausted(input.streams, runEvents)
     };
+}
+
+function countNotYetInSync(
+    stream: LiveRtcLayoutSwitchStream,
+    runEvents: readonly LiveRtcRunEvent[]
+): { total: number; plannedLayout: number; } {
+    const admissions = runEvents.filter((event) =>
+        event.agentId === stream.agentId && isAdmissionOutcome(event) &&
+        stringValue(event.data.reason)?.startsWith('not-yet-in-sync') === true
+    );
+    return {
+        total: admissions.length,
+        plannedLayout: admissions.filter((event) => event.data.reason === PLANNED_LAYOUT_NOT_YET_IN_SYNC).length
+    };
+}
+
+function readNextHopsUnconfirmedAtAdmission(
+    stream: LiveRtcLayoutSwitchStream,
+    runEvents: readonly LiveRtcRunEvent[]
+): { frames: number; peerIds: readonly string[]; } {
+    const unconfirmed = runEvents.filter((event) => event.agentId === stream.agentId)
+        .flatMap((event) => event.topic === RTC_SEND_COMPLETED_TOPIC ? [jsonRecord(event.data.message)] : [])
+        .map((message) => stringArrayValue(message?.unconfirmedHopPeerIds))
+        .filter((peerIds) => peerIds.length > 0);
+    return { frames: unconfirmed.length, peerIds: [...new Set(unconfirmed.flat())].sort() };
+}
+
+function readReceiptExhausted(
+    streams: readonly LiveRtcLayoutSwitchStream[],
+    runEvents: readonly LiveRtcRunEvent[]
+): LiveRtcLayoutSwitchObservations['receiptExhausted'] {
+    return runEvents.filter((event) => JSON.stringify(event.raw).includes('receipt-exhausted')).flatMap((event) => {
+        const agent = streams.find((stream) => stream.agentId === event.agentId)?.prefix;
+        return agent === undefined
+            ? []
+            : [{ agent, topic: event.topic ?? 'unknown', kind: stringValue(event.data.kind) ?? null }];
+    });
 }
 
 function toLatencyMs(promotedAtEpochMs: number | null, layoutSwitch: LiveRtcLayoutSwitch): number | null {
