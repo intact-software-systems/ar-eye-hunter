@@ -18,7 +18,8 @@ import {
     toPublishUntilConfirmedCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
-import { RECIPIENT_B_SUBSCRIBES, toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
+import { toConfirmingOwnerCommands } from './to-confirming-owner-commands.ts';
 
 /**
  * The sender lists the receiver's principal alone. Recipient-b holds `subscribe` and an election, yet the list leaves
@@ -34,6 +35,7 @@ export const grantedRtcListDelivered: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [...LISTENER_AND_PUBLISHER_START_GRANTS, { grantee: 'recipient-b', publish: false, subscribe: true }],
     toSenderCommands: (sender) =>
         toPublishUntilConfirmedCommands({
             step: sender,
@@ -45,7 +47,7 @@ export const grantedRtcListDelivered: AlmConformanceScenarioDefinition = {
         }),
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'
-            ? toConfirmingOwnerCommands(recipient, [RECIPIENT_B_SUBSCRIBES])
+            ? toConfirmingOwnerCommands(recipient)
             : toUnlistedSubscriberCommands(recipient)
 };
 

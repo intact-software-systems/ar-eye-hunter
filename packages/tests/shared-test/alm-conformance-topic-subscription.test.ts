@@ -25,6 +25,7 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { describeDeclaredStartStates, PERMISSIONS, type DeclaredState, type StartStateTable } from './alm-conformance-start-state.ts';
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
@@ -38,6 +39,24 @@ const FOUR_ROLE_IDS = [
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
+
+const { NONE, SUBSCRIBE, BOTH } = PERMISSIONS;
+
+/** Both producers hold both permissions and the sibling shares the sender's; only the receiver and sibling elect. */
+const PRODUCERS_HOLD_BOTH: DeclaredState = { receiver: SUBSCRIBE, 'publisher-b': BOTH, sender: BOTH };
+
+const TOPIC_SUBSCRIPTION_START_STATES: StartStateTable = {
+    'subscription-delivery': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-entry': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-omission': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-reconnect': PRODUCERS_HOLD_BOTH,
+    // The sender's grant is the cell's subject: it follows the receiver's release of its first token.
+    'subscription-token-count': { receiver: SUBSCRIBE, 'publisher-b': NONE, sender: NONE },
+    'subscription-revoke-disconnected': { receiver: SUBSCRIBE, 'publisher-b': NONE, sender: BOTH },
+    'subscription-successor': { receiver: PERMISSIONS.PUBLISH, sender: SUBSCRIBE }
+};
+
+describeDeclaredStartStates('subscription-', TOPIC_SUBSCRIPTION_START_STATES);
 
 /** The api-v1 mutation route's own rule for a `requests/{requestId}` path segment. */
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
@@ -151,6 +170,10 @@ describe('ALM topic subscription conformance', () => {
         }
 
         expect(toGrantRequests(delivery.receiver)).toEqual([
+            {
+                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.receiver}/revoke/requests/`),
+                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
+            },
             {
                 path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.receiver}/grant/requests/`),
                 body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
@@ -330,6 +353,9 @@ describe('ALM topic subscription conformance', () => {
     });
 });
 
+/** The receiver's start state of the producers' cells: the receiver's `publish` revoked, then each principal granted. */
+const START_STATE_STEPS = ['revoke-receiver-p', 'grant-receiver-s', 'grant-publisher-b-ps', 'grant-sender-ps'] as const;
+
 type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission' | 'subscription-ordered-reconnect';
 type ProducerRole = 'sender' | 'publisher-b';
 
@@ -481,10 +507,8 @@ describe('ALM ordered subscription entry conformance', () => {
             expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
                 'cue-listen',
                 'cue-listen-sent',
-                'grant-receiver-s',
+                ...START_STATE_STEPS,
                 'subscribe-receiver',
-                'grant-publisher-b-ps',
-                'grant-sender-ps',
                 ...toPublicationSteps('received', 'a', [1, 2]),
                 ...toPublicationSteps('received', 'c', [1, 2]),
                 ...toConfirmedCueSteps(2),
@@ -543,10 +567,8 @@ describe('ALM ordered subscription entry conformance', () => {
         expect(toStepNames(receiver)).toEqual([
             'cue-listen',
             'cue-listen-sent',
-            'grant-receiver-s',
+            ...START_STATE_STEPS,
             'subscribe-receiver',
-            'grant-publisher-b-ps',
-            'grant-sender-ps',
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
@@ -590,7 +612,7 @@ describe('ALM ordered subscription entry conformance', () => {
             'assert-unsubscribe-sibling-regranted-lapsed'
         ]);
         // D492: the revoke takes the sender principal's `subscribe` alone, and the re-grant gives exactly it back.
-        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(3)).toEqual([
+        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(4)).toEqual([
             { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
             { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
         ]);
@@ -783,10 +805,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
         expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
             'cue-listen',
             'cue-listen-sent',
-            'grant-receiver-s',
+            ...START_STATE_STEPS,
             'subscribe-receiver',
-            'grant-publisher-b-ps',
-            'grant-sender-ps',
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),

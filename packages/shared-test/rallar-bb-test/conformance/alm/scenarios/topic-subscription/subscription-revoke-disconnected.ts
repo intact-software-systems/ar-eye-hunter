@@ -6,9 +6,10 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
+import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
 import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -16,7 +17,6 @@ import {
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import { toGenerationChangePollCommand } from './topic-subscription-generation-polls.ts';
@@ -50,8 +50,13 @@ export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = 
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
-    principalRoles: ['receiver', 'sender'],
+    principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: false, subscribe: true },
+        { grantee: 'publisher-b', publish: false, subscribe: false },
+        { grantee: 'sender', publish: true, subscribe: true }
+    ],
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient)
@@ -62,9 +67,7 @@ const SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS = ['publication-1', 'publica
 
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 'receiver'),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true }),
         toPublicationWait(owner, 'publication-1', false),
         toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: false, subscribe: true }),
         ...toCueSendCommands(owner, 'revoked'),

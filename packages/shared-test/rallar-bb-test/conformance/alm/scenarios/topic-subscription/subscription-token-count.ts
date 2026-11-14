@@ -6,15 +6,15 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
+import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
 import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from './topic-subscription-commands.ts';
 import {
@@ -38,20 +38,25 @@ export const subscriptionTokenCount: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
-    principalRoles: ['receiver', 'sender'],
+    principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: false, subscribe: true },
+        { grantee: 'publisher-b', publish: false, subscribe: false },
+        { grantee: 'sender', publish: false, subscribe: false }
+    ],
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toSubscriberCommands(recipient)
 };
 
 /**
- * The receiver releases `t1` before it grants the sender's principal, so the sibling's election, and with it the
- * readiness of `publication-1`, follows the release.
+ * The sender's principal holds nothing at the start: the receiver grants it `publish` and `subscribe` only after it
+ * released `t1`, so the sibling's election, and with it the readiness of `publication-1`, follows the release. That
+ * grant is the cell's subject, which no start state can stand in for.
  */
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
         toSubscribeCommand(owner, 't1'),
         toSubscribeCommand(owner, 't2'),
         ...toRowCountCommands(owner, 'rows-two-tokens', 1),

@@ -29,6 +29,7 @@ const receiver: AlmConformanceStepInput = {
     role: 'receiver',
     roles: ['sender', 'receiver'],
     messageSelector: undefined,
+    startGrants: undefined,
     connect: undefined
 };
 

@@ -2,7 +2,8 @@ import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conf
 import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
 import { toPublishUntilConfirmedCommands } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
-import { toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
+import { toConfirmingOwnerCommands } from './to-confirming-owner-commands.ts';
 
 /**
  * A granted unicast rides RTC as a multicast of one: the sender addresses the receiver and asks its receipt alone, so
@@ -17,6 +18,7 @@ export const grantedRtcUnicastDelivered: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: (sender) =>
         toPublishUntilConfirmedCommands({
             step: sender,
@@ -26,5 +28,5 @@ export const grantedRtcUnicastDelivered: AlmConformanceScenarioDefinition = {
             kind: 'publication',
             audience: { toPeer: 'receiver' }
         }),
-    toRecipientCommands: (receiver) => toConfirmingOwnerCommands(receiver, [])
+    toRecipientCommands: (receiver) => toConfirmingOwnerCommands(receiver)
 };

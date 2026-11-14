@@ -30,6 +30,13 @@ export const ALM_CONFORMANCE_FOUR_ROLE_ROLES: readonly AlmConformanceRole[] = [
     'sibling'
 ];
 
+/** The roles that hold a principal of their own: a successor and a sibling are pages of the sender's principal. */
+export type AlmConformancePrincipalRole = Exclude<AlmConformanceRole, 'successor' | 'sibling'>;
+
+export function toAlmConformancePrincipalRole(role: AlmConformanceRole): AlmConformancePrincipalRole {
+    return role === 'successor' || role === 'sibling' ? 'sender' : role;
+}
+
 export function isAlmConformanceRole(value: string): value is AlmConformanceRole {
     return (ALM_CONFORMANCE_ROLES as readonly string[]).includes(value);
 }

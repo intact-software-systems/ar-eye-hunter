@@ -517,6 +517,7 @@ describe('alm-conformance recipe family', () => {
                 role,
                 roles,
                 messageSelector: undefined,
+                startGrants: undefined,
                 connect: undefined
             })
                 .readiness?.minReadyPeers;
@@ -536,6 +537,7 @@ describe('alm-conformance recipe family', () => {
                 role: 'sender',
                 roles: threeRoles,
                 messageSelector: undefined,
+                startGrants: undefined,
                 connect: undefined
             })
                 .readiness
@@ -552,6 +554,7 @@ describe('alm-conformance recipe family', () => {
                 role,
                 roles: threeRoles,
                 messageSelector: undefined,
+                startGrants: undefined,
                 connect: { minReadyPeers: 1 }
             })
                 .readiness?.minReadyPeers;
@@ -575,6 +578,7 @@ describe('alm-conformance recipe family', () => {
                     role,
                     roles: sameContext,
                     messageSelector: undefined,
+                    startGrants: undefined,
                     connect: undefined
                 })
                     .readiness?.minReadyPeers,
@@ -591,6 +595,7 @@ describe('alm-conformance recipe family', () => {
             role: 'successor',
             roles: ['sender', 'receiver', 'successor'],
             messageSelector: undefined,
+            startGrants: undefined,
             connect: undefined
         });
 
@@ -1853,8 +1858,17 @@ describe('alm-conformance cell parts', () => {
 
                     expect([connected, formationSettled, armed].map((barrier) => barrier?.commandId))
                         .toEqual(SETTLE_BARRIER_PHASES.map((phase) => `${cellPrefix}-${role}-${phase}`));
-                    expect(settle.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
-                        .toEqual([...(role === 'receiver' ? ['loop'] : []), 'http.request', 'wait']);
+                    const formation = settle.slice(0, -2);
+                    // The receiver's start state, if its cell declares one, leads its formation poll.
+                    expect(formation.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
+                        .toEqual(formation.map(() => 'loop'));
+                    expect(formation.length > 0, `${scenario.scenarioKey} ${role}`).toBe(role === 'receiver');
+                    if (role === 'receiver') {
+                        expect(formation.slice(0, -1).every(isStartStateCommand), `${scenario.scenarioKey} ${role}`).toBe(true);
+                        expect(formation.at(-1)?.commandId, `${scenario.scenarioKey} ${role}`).toBe(`${cellPrefix}-receiver-formation-poll`);
+                    }
+                    expect(settle.slice(-2).map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
+                        .toEqual(['http.request', 'wait']);
                     const [headRead, headApplied] = settle.slice(-2);
                     expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([
                         ...prologue,
@@ -1998,16 +2012,17 @@ describe('alm-conformance cell parts', () => {
             }
         }
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
-        // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms. The first arrival waits through
+        // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each request of a start state is a
+        // 90 000 ms poll and one 5 000 ms command, four of them for the cells below. The first arrival waits through
         // every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
         expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
-        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([45_000, 55_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([425_000, 55_000]);
         expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([45_000, 100_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([45_000, 135_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([425_000, 135_000]);
     });
 
     it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {
@@ -2019,7 +2034,7 @@ describe('alm-conformance cell parts', () => {
                     const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
 
                     expect(toAlmCellAuthoredCommands(recipe.commands), `${scenario.scenarioKey} ${role}`)
-                        .toEqual(toAlmConformanceRoleRecipe(plain[index]!, role)!.commands);
+                        .toEqual(toAlmConformanceRoleRecipe(plain[index]!, role)!.commands.filter((command) => !isStartStateCommand(command)));
                     // Every command the authored view leaves out is a settle command, and every settle command is declared.
                     expect(
                         recipe.commands.filter((command) => !toAlmCellAuthoredCommands(recipe.commands).includes(command))
@@ -2081,7 +2096,16 @@ const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as con
 const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied'] as const;
 
 function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
-    return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`);
+    return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`) || isSettledStartState(command);
+}
+
+/** The receiver's start state, which a barriered cell writes in its settle and a cell without one in its body. */
+function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean {
+    return command.metadata?.cellStartState === 'declared-grants';
+}
+
+function isSettledStartState(command: RallarBlackBoxTestCommand): boolean {
+    return isStartStateCommand(command) && command.metadata?.cellSettle === 'lane';
 }
 
 /** A role recipe's settle commands, in recipe order. */

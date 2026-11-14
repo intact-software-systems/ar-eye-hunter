@@ -10,7 +10,7 @@ import {
 import { toPauseCommand } from '../../to-pause-command.ts';
 import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-budgets.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toProductSocketCommand,
@@ -58,6 +58,7 @@ export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
     laneFamily: 'four-role',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient),
@@ -96,7 +97,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toOrderedArrivalWaits(owner, [3, 4]),

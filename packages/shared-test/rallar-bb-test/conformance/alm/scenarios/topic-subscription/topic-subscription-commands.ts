@@ -4,19 +4,20 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import type { AlmConformanceRole } from '../../alm-conformance-roles.ts';
-import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceStartGrant,
+    AlmConformanceStepInput
+} from '../../alm-conformance-scenario-definition.ts';
 import {
     ALM_CONFORMANCE_GRANTED_TOPIC_ID,
     toCommandId,
     toConnectionName,
-    toRoomRef,
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
+import { toTopicRequestId } from '../../grant/to-topic-grant-command.ts';
 import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
-import { toPrincipalPlaceholder } from '../../resolve-alm-conformance-principals.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-subscription-budgets.ts';
 
 /**
  * The granted-topic proof's carriers, which a cell narrows only for a reason of its own: over ws the server's
@@ -26,70 +27,18 @@ import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from './topic-
  */
 export const TOPIC_SUBSCRIPTION_CARRIERS: readonly AlmConformanceCarrier[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 
+/**
+ * Both producers hold `publish` and `subscribe` and the receiver `subscribe`; the sibling shares the sender's
+ * principal, so it holds what the sender does.
+ */
+export const PRODUCERS_START_GRANTS: readonly AlmConformanceStartGrant[] = [
+    { grantee: 'receiver', publish: false, subscribe: true },
+    { grantee: 'publisher-b', publish: true, subscribe: true },
+    { grantee: 'sender', publish: true, subscribe: true }
+];
+
 /** Every cell's connects listen on the granted topic and open their room channel there as granted. */
 export const TOPIC_SUBSCRIPTION_SELECTOR = { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, access: 'granted' } as const;
-
-export type TopicGrantOperation = 'grant' | 'revoke';
-
-export interface TopicGrantInput {
-    readonly step: AlmConformanceStepInput;
-    readonly operation: TopicGrantOperation;
-    /** The role whose principal the grant names; the sender and the sibling share one. */
-    readonly grantee: AlmConformanceRole;
-    readonly publish: boolean;
-    readonly subscribe: boolean;
-}
-
-/**
- * The group owner's grant or revoke of `{ publish, subscribe }` on the granted topic. A grantee that has not joined
- * yet is refused `member-not-active`, so each attempt is a request of its own until one answers 200.
- */
-export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestCommand {
-    const { step, operation, grantee } = grant;
-    const name = `${operation}-${grantee}-${toPermissionName(grant)}`;
-    const request: RallarBlackBoxTestHttpRequestCommand = {
-        kind: 'http.request',
-        commandId: toCommandId(step, `${name}-request`),
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        request: {
-            method: 'POST',
-            path: `${toAlmCellGroupPath(step)}/publication-grants/${toPrincipalPlaceholder(grantee)}/${operation}` +
-                `/requests/${toTopicRequestId(step, name)}-{loop.iteration}`,
-            body: { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, publish: grant.publish, subscribe: grant.subscribe }
-        },
-        response: { body: 'json', acceptedStatusCodes: [200] },
-        metadata: {
-            purpose: `The room owner ${operation}s ${grantee} on the granted topic.`,
-            group: toRoomRef(step.input.group)
-        }
-    };
-    return toPollCommand({
-        step,
-        name,
-        phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        commands: [request]
-    });
-}
-
-/**
- * The receiver owns the room of a four-role cell: it elects itself before it grants the others, so it is subscribed
- * before they are. Both producers hold `publish` and `subscribe`; the sibling shares the sender's principal.
- */
-export function toFourRoleGrantCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
-        toSubscribeCommand(owner, 'receiver'),
-        toTopicGrantCommand({
-            step: owner,
-            operation: 'grant',
-            grantee: 'publisher-b',
-            publish: true,
-            subscribe: true
-        }),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: true, subscribe: true })
-    ];
-}
 
 /** Elects the page's session to receive the granted topic under `subscriptionId`, retrying a refusal until active. */
 export function toSubscribeCommand(step: AlmConformanceStepInput, subscriptionId: string): RallarBlackBoxTestCommand {
@@ -199,14 +148,4 @@ export function toProductSocketCommand(
         action,
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
     };
-}
-
-/** `p`, `s` or `ps`: a request id names the permissions short, so it stays within 128 characters. */
-function toPermissionName(grant: TopicGrantInput): string {
-    return `${grant.publish ? 'p' : ''}${grant.subscribe ? 's' : ''}`;
-}
-
-/** A mutation request id: the page's runtime identity keeps a rerun from replaying an earlier run's answer. */
-function toTopicRequestId(step: AlmConformanceStepInput, name: string): string {
-    return `alm-tsub-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}-${step.role}-${name}`;
 }

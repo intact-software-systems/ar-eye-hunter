@@ -5,11 +5,11 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toTopicGrantCommand } from '../../grant/to-topic-grant-command.ts';
 import { toPauseCommand } from '../../to-pause-command.ts';
 import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
 import {
@@ -22,6 +22,7 @@ import {
     toRejectedPublishCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { toGrantedRtcOwnerCommands } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The receiver revokes the sender's `publish` once `publication-1` was confirmed, and `publication-2` settles
@@ -38,6 +39,7 @@ export const grantedRtcRevokedPublisher: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: toRevokedPublisherCommands,
     toRecipientCommands: toRevokingOwnerCommands
 };
@@ -60,7 +62,7 @@ function toRevokedPublisherCommands(sender: AlmConformanceStepInput): readonly R
 
 function toRevokingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(owner, []),
+        ...toGrantedRtcOwnerCommands(owner),
         toPublicationWait(owner, 'publication-1', false),
         toConfirmedCueWait(owner, 'publication-1'),
         toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: true, subscribe: false }),

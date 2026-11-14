@@ -24,7 +24,40 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import {
+    describeDeclaredStartStates,
+    PERMISSIONS,
+    type DeclaredState,
+    type StartStateTable
+} from './alm-conformance-start-state.ts';
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+
+const { NONE, SUBSCRIBE, PUBLISH, BOTH } = PERMISSIONS;
+
+/** The receiver elects itself in its body; the sender holds `publish` alone unless its cell says otherwise. */
+const PUBLISHER_LISTENER: DeclaredState = { receiver: SUBSCRIBE, sender: PUBLISH };
+
+/** Recipient-b is the second recipient: it holds the permissions its cell's subject needs of it. */
+const toWithRecipientB = (recipientB: DeclaredState['recipient-b']): DeclaredState => ({
+    ...PUBLISHER_LISTENER,
+    'recipient-b': recipientB
+});
+
+const GRANTED_RTC_START_STATES: StartStateTable = {
+    'granted-rtc-delivered': PUBLISHER_LISTENER,
+    'granted-rtc-missing-proof': PUBLISHER_LISTENER,
+    'granted-rtc-receipted-delivered': PUBLISHER_LISTENER,
+    'granted-rtc-revoked-publisher': PUBLISHER_LISTENER,
+    'granted-rtc-unicast-delivered': PUBLISHER_LISTENER,
+    'granted-rtc-principal-delivered': { receiver: SUBSCRIBE, sender: BOTH },
+    'granted-rtc-forged-sender': toWithRecipientB(NONE),
+    'granted-rtc-not-subscribed': toWithRecipientB(SUBSCRIBE),
+    'granted-rtc-list-delivered': toWithRecipientB(SUBSCRIBE),
+    'granted-rtc-list-non-holder': toWithRecipientB(PUBLISH),
+    'granted-rtc-list-lane-roles': toWithRecipientB(SUBSCRIBE),
+    'granted-rtc-relay-only': toWithRecipientB(PUBLISH),
+    'granted-rtc-ordered-relay': toWithRecipientB(PUBLISH)
+};
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
@@ -100,16 +133,6 @@ function toStepIndex(recipe: RallarBlackBoxTestRecipe | undefined, suffix: strin
 
 function toRequests(recipe: RallarBlackBoxTestRecipe | undefined): readonly RallarBlackBoxTestHttpRequestCommand[] {
     return toFlatCommands(recipe).filter((command): command is RallarBlackBoxTestHttpRequestCommand => command.kind === 'http.request');
-}
-
-/** A path cell grants recipient-b `publish` alone and revokes the `subscribe` an earlier cell granted, before the sender's grant. */
-function expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver: RallarBlackBoxTestRecipe | undefined): void {
-    const recipientBGrants = toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'));
-    expect(recipientBGrants.map(({ request }) => [request.path?.includes('/revoke/'), request.body])).toEqual([
-        [false, { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }],
-        [true, { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }]
-    ]);
-    expect(toStepIndex(receiver, '-revoke-recipient-b-s-request')).toBeLessThan(toStepIndex(receiver, '-grant-sender-p-request'));
 }
 
 function toPublicationAbsences(recipe: RallarBlackBoxTestRecipe | undefined): readonly string[] {
@@ -206,10 +229,7 @@ describe('the granted rtc cells', () => {
             'granted-rtc-revoked-publisher',
             'granted-rtc-unicast-delivered',
             // The same-principal cell grants the sender's principal, which its sibling shares.
-            'granted-rtc-principal-delivered',
-            // The topic subscription cells that grant only the sender's principal and the receiver's.
-            'subscription-token-count',
-            'subscription-revoke-disconnected'
+            'granted-rtc-principal-delivered'
         ]);
     });
 
@@ -426,7 +446,7 @@ describe('the granted rtc cells', () => {
         'revokes the sender\'s publish after its first publication was confirmed, so the next one settles rejected no-publish-grant over %s',
         (carrier) => {
             const { sender, receiver } = toGrantedRtcScenarioOver('granted-rtc-revoked-publisher', carrier);
-            const revoke = toRequests(receiver).find(({ request }) => request.path?.includes('/publication-grants/principal-alice/revoke/'));
+            const revoke = toRequests(receiver).find(({ commandId }) => commandId?.endsWith('-revoke-sender-p-request'));
             const refusal = toFlatCommands(sender).filter((command) => command.kind === 'assert' && command.source.includes('-publication-2-observe.value.'));
 
             expect(revoke?.request.body).toEqual({ topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false });
@@ -450,12 +470,11 @@ describe('the granted rtc cells', () => {
             ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
             ['DELETE', undefined]
         ]);
-        expect(toStepIndex(receiver, '-topology-tree')).toBeLessThan(toStepIndex(receiver, '-grant-receiver-s-request'));
+        expect(toStepIndex(receiver, '-grant-receiver-s-request')).toBeLessThan(toStepIndex(receiver, '-topology-tree'));
         // A cue reaches only a role that already listens, so the owner cues the path once the sender said it listens.
         expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-tree-received'));
         expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
         expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
-        expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver);
         expect(toFlatCommands(sender).find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
         expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
@@ -468,12 +487,6 @@ describe('the granted rtc cells', () => {
             expect(toFlatCommands(recipe).filter((command) => command.kind === 'health'), recipe?.recipeId)
                 .toEqual([expect.objectContaining({ commandId: `${recipe!.recipeId}-overlay-next-hops` })]);
         }
-    });
-
-    it('revokes the subscribe an earlier cell granted recipient-b before the ordered-relay sender is granted', () => {
-        const { receiver } = toGrantedRtcScenario('granted-rtc-ordered-relay');
-
-        expectRecipientBSubscribeRevokedBeforeSenderGrant(receiver);
     });
 
     it('publishes a minted receipted track over the path and holds p2 until its repair was dispatched, then releases it', () => {
@@ -564,8 +577,9 @@ describe('the granted rtc cells', () => {
             toRequests(receiver).filter(({ request }) => request.path?.includes('/publication-grants/principal-charlie/'))
                 .map(({ request }) => request.body)
         ).toEqual([
-            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false },
-            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
+            // The start state: recipient-b's `subscribe` revoked, then its `publish` granted.
+            { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true },
+            { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: false }
         ]);
         expect(toPublicationAbsences(recipientB)).toEqual(['p1', 'p2', 'p3']);
         // The first absence's window for a late copy covers the others, which read the history alone.
@@ -600,6 +614,8 @@ describe('the granted rtc cells', () => {
     });
 });
 
+describeDeclaredStartStates('granted-rtc-', GRANTED_RTC_START_STATES);
+
 describe('topic-subscription-publications', () => {
     const step: AlmConformanceStepInput = {
         input: toConformanceInput('rtc'),
@@ -608,6 +624,7 @@ describe('topic-subscription-publications', () => {
         role: 'sender',
         roles: ['sender', 'receiver'],
         messageSelector: undefined,
+        startGrants: undefined,
         connect: undefined
     };
     const toLoopSend = (commands: readonly RallarBlackBoxTestCommand[]) =>

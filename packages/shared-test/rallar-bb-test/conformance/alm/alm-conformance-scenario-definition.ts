@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-cont
 
 import type { AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
-import type { AlmConformanceRole } from './alm-conformance-roles.ts';
+import type { AlmConformancePrincipalRole, AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
 
 export interface CreateAlmConformanceRecipesInput {
@@ -131,6 +131,32 @@ export interface AlmConformanceMessageSelector {
     readonly access?: 'granted';
 }
 
+/**
+ * What `grantee`'s principal holds on the granted topic when the cell's body starts, whatever an earlier cell left: the
+ * room owner writes it once every role is a member. A principal that no start grant names for a role of the cell
+ * makes the cell uncreatable.
+ */
+export interface AlmConformanceStartGrant {
+    readonly grantee: AlmConformancePrincipalRole;
+    readonly publish: boolean;
+    readonly subscribe: boolean;
+}
+
+/**
+ * A cell's messages. Without a `messageSelector`, each connect subscribes the scenario's own typed channel; with one,
+ * every connect subscribes its lanes to that topic instead, so its pages hear the server's own publications there.
+ * Exactly when the topic is granted, the cell also declares the permissions it starts from.
+ */
+export type AlmConformanceMessages =
+    | {
+        readonly messageSelector?: AlmConformanceMessageSelector & { readonly access?: undefined; };
+        readonly startGrants?: undefined;
+    }
+    | {
+        readonly messageSelector: AlmConformanceMessageSelector & { readonly access: 'granted'; };
+        readonly startGrants: readonly AlmConformanceStartGrant[];
+    };
+
 /** How a scenario's waiting connect judges readiness: the count of its ready RTC peers that settles the connect. */
 export interface AlmConformanceConnect {
     readonly minReadyPeers: number;
@@ -164,6 +190,8 @@ export interface AlmConformanceStepInput {
     readonly roles: readonly AlmConformanceRole[];
     /** The definition's selector, which every connect of the scenario carries; undefined subscribes its own channel. */
     readonly messageSelector: AlmConformanceMessageSelector | undefined;
+    /** The definition's start grants, which the receiver writes; undefined for a cell whose topic is not granted. */
+    readonly startGrants: readonly AlmConformanceStartGrant[] | undefined;
     /** The definition's connect readiness; undefined waits for every other peer. */
     readonly connect: AlmConformanceConnect | undefined;
 }
@@ -189,7 +217,9 @@ export const ALM_CONFORMANCE_LANE_FAMILIES = [
 
 export type AlmConformanceLaneFamily = typeof ALM_CONFORMANCE_LANE_FAMILIES[number];
 
-export interface AlmConformanceScenarioDefinition {
+export type AlmConformanceScenarioDefinition = AlmConformanceScenarioCore & AlmConformanceMessages;
+
+interface AlmConformanceScenarioCore {
     readonly scenarioId: AlmConformanceScenarioId;
     readonly scenarioKey: string;
     readonly tags: readonly AlmConformanceTag[];
@@ -206,11 +236,6 @@ export interface AlmConformanceScenarioDefinition {
      * when it declares `sibling` without `publisher-b`.
      */
     readonly laneFamily: AlmConformanceLaneFamily;
-    /**
-     * Absent, each connect subscribes the scenario's own typed channel. Otherwise every connect subscribes its lanes to
-     * this selector instead, so its pages hear the server's own publications on that topic.
-     */
-    readonly messageSelector?: AlmConformanceMessageSelector;
     /**
      * Absent, a connect that waits for ready peers waits for every other peer of the scenario. A scenario whose overlay
      * gives a connect fewer next hops, such as a path whose leaf has one, names the count instead.

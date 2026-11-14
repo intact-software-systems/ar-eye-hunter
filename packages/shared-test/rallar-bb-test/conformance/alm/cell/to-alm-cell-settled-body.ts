@@ -18,8 +18,9 @@ type RoleCommandsSelector = (role: AlmConformanceRole) => readonly RallarBlackBo
 
 /**
  * What a role runs after its prologue: its body, or in a cell created `barriered` a settle role's body after the
- * cell's settle. Every settle role meets at `connected` once every page connected; the receiver polls until the room
- * settled, and every role meets at `formation-settled`; each page then waits until it applied the room's head, runs
+ * cell's settle. Every settle role meets at `connected` once every page connected; the receiver writes the cell's
+ * start state, which every role's membership lets it write, and polls until the room settled, and every role meets at
+ * `formation-settled`; each page then waits until it applied the room's head, runs
  * its arming run, and meets at `armed`, so no role's body sends before every page holds the settled room and every
  * role armed its faults and its cue subscription. The successor connects as a step of the cell and carries no
  * barrier; the settle roles are every other role of the cell.

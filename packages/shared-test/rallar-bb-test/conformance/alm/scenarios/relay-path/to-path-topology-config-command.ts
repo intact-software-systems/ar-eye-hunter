@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import { toAlmCellGroupPath } from '../../cell/to-alm-cell-group-read.ts';
-import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../topic-subscription/topic-subscription-budgets.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS } from '../../grant/subscription-phase-budgets.ts';
 
 /** Three sessions in a tree whose degree is at most two form a path; `meshParamK` may not exceed the degree limit. */
 const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as const;

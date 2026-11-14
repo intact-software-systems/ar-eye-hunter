@@ -390,6 +390,7 @@ function toStepInput(
         role,
         roles: definition.roles,
         messageSelector: definition.messageSelector,
+        startGrants: definition.startGrants,
         connect: definition.connect
     };
 }

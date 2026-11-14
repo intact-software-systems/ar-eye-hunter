@@ -14,13 +14,10 @@ import {
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import { ALM_CELL_CUE_SUBSCRIPTION_METADATA } from '../../cell/to-alm-cell-arming.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
 import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
 import { toGrantedSend } from './to-granted-send.ts';
-import {
-    SUBSCRIPTION_ABSENCE_MS,
-    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS
-} from './topic-subscription-budgets.ts';
+import { SUBSCRIPTION_ABSENCE_MS } from './topic-subscription-budgets.ts';
 
 /** A fully subscribed audience confirms in well under this; a missing confirmation ends the attempt instead. */
 const CONFIRMATION_WAIT_MS = 3_000;

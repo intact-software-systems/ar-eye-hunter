@@ -10,6 +10,7 @@ import type { AlmConformanceStepInput } from '../alm-conformance-scenario-defini
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
+import { toAlmCellStartState } from './to-alm-cell-start-state.ts';
 
 /**
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and
@@ -17,7 +18,10 @@ import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
  * it applied that head, so no role's first send meets a page that would refuse it as not yet in sync.
  */
 export interface AlmCellSettle {
-    /** Before `formation-settled`: the receiver's formation poll, and nothing for any other role. */
+    /**
+     * Before `formation-settled`: the receiver's start state, which every role's membership lets it write, then its
+     * formation poll, which therefore covers the writes' chains; nothing for any other role.
+     */
     readonly formation: readonly RallarBlackBoxTestCommand[];
     /** After `formation-settled`: the page's head read, then its wait for the page to have applied that head. */
     readonly head: readonly RallarBlackBoxTestCommand[];
@@ -27,7 +31,7 @@ const CAUSAL_REVISION_KEYS = ['groupRevision', 'presenceRevision'] as const;
 
 export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
     return {
-        formation: step.role === 'receiver' ? [toFormationPollCommand(step)] : [],
+        formation: step.role === 'receiver' ? [...toAlmCellStartState(step), toFormationPollCommand(step)] : [],
         head: [
             toAlmCellGroupRead({
                 step,

@@ -4,6 +4,7 @@ import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscri
 import { toCueWait, toPublicationWait } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS, toPublishUntilCueCommand, toRtcArrivalWait } from './granted-rtc-commands.ts';
 import { toPathMemberCommands, toPathOwnerCommands, toPathSenderCommands } from './granted-rtc-path.ts';
+import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The owner reshapes the room into a path before the sender publishes. The receiver holds `subscribe` and an
@@ -21,6 +22,7 @@ export const grantedRtcRelayOnly: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PATH_START_GRANTS,
     connect: { minReadyPeers: 1 },
     toSenderCommands: (sender) => toPathSenderCommands(sender, [toPublishUntilCueCommand(sender, 'received')]),
     toRecipientCommands: (recipient) =>

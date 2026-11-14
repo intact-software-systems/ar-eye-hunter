@@ -23,7 +23,8 @@ import {
     toPublishUntilConfirmedCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS, toRtcArrivalWait } from './granted-rtc-commands.ts';
-import { RECIPIENT_B_SUBSCRIBES, toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
+import { toConfirmingOwnerCommands } from './to-confirming-owner-commands.ts';
 
 /**
  * The sender lists its two recipients by lane role. The receiver directs the room, so the page resolves the list
@@ -42,6 +43,7 @@ export const grantedRtcListLaneRoles: AlmConformanceScenarioDefinition = {
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [...LISTENER_AND_PUBLISHER_START_GRANTS, { grantee: 'recipient-b', publish: false, subscribe: true }],
     toSenderCommands: (sender) => [
         toLeaderActivityWait(sender, true),
         ...toPublishUntilConfirmedCommands({
@@ -59,7 +61,7 @@ export const grantedRtcListLaneRoles: AlmConformanceScenarioDefinition = {
 
 /** The owner subscribes to the cues before it appoints itself, so its cue subscription arms with every other role's. */
 function toDirectingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const { arming, rest } = toAlmCellArming(toConfirmingOwnerCommands(owner, [RECIPIENT_B_SUBSCRIBES]));
+    const { arming, rest } = toAlmCellArming(toConfirmingOwnerCommands(owner));
     return [
         ...arming,
         toDirectorAppointCommand(owner),

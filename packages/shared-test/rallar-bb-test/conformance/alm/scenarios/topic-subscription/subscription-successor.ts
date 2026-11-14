@@ -6,19 +6,14 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
+import { SUBSCRIPTION_COMMAND_TIMEOUT_MS, SUBSCRIPTION_PHASE_MS } from '../../grant/subscription-phase-budgets.ts';
 import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
-import {
-    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS,
-    toGenerationText,
-    toResultTextWait
-} from './topic-subscription-budgets.ts';
+import { toGenerationText, toResultTextWait } from './topic-subscription-budgets.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands,
     toUnsubscribeRequestCommand
 } from './topic-subscription-commands.ts';
@@ -52,20 +47,22 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: true, subscribe: false },
+        { grantee: 'sender', publish: false, subscribe: true }
+    ],
     successorGate: { role: 'sender', commandName: OWNER_GATE },
     toSenderCommands: (page) => page.role === 'sender' ? toOwnerPageCommands(page) : toSuccessorPageCommands(page),
     toRecipientCommands: toPublisherCommands
 };
 
 /**
- * The receiver owns the room: it subscribes to the cues, then grants itself `publish` and the sender's principal
- * `subscribe`.
+ * The receiver owns the room, which its start state granted itself `publish` and the sender's principal `subscribe`:
+ * it subscribes to the cues and publishes once the successor subscribed.
  */
 function toPublisherCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: true, subscribe: false }),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: false, subscribe: true }),
         toCueWait(owner, 'successor-subscribed'),
         ...toPublishCommands(owner, 'publication')
     ];
