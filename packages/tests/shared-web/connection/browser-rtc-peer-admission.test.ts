@@ -10,6 +10,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcSignalingChannel, QRtcSignalingMsgType, QRtcSignalingType, type QRtcSignalingMessage } from '@shared/webrtc/qrtc-signaling-contracts.ts';
@@ -32,6 +33,7 @@ interface AdmissionScenario {
 interface AdmissionRuntime {
     readonly group: GroupSnapshot;
     readonly manager: WebRtcGroupManager;
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
     readonly connection: NativeRtcConnectionFixture;
     readonly acceptedOverlays: LatestRepository<string, OverlayInfo>;
     readonly plannedOverlays: LatestRepository<string, OverlayInfo>;
@@ -154,7 +156,7 @@ describe('browser RTC peer admission', () => {
             activeSessions: runtime.group.activeSessions.filter((session) => session.sessionId !== 'peer-accepted'),
             onlineMemberCount: 3
         };
-        await runtime.manager.getOrCreate(currentGroup.group).acceptGroupUpdate(currentGroup);
+        await runtime.groupPeerLedger.getOrCreate(currentGroup.group).acceptGroupUpdate(currentGroup);
         const otherGroup = createGroupSnapshotFixture({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -165,7 +167,7 @@ describe('browser RTC peer admission', () => {
             ...acceptedOverlay(otherGroup),
             nextHopSessionIds: []
         });
-        await runtime.manager.getOrCreate(otherGroup.group).acceptGroupUpdate(otherGroup);
+        await runtime.groupPeerLedger.getOrCreate(otherGroup.group).acceptGroupUpdate(otherGroup);
 
         await runtime.connection.receive(offer('peer-accepted'));
         const direct = runtime.connection.service.ensurePeerConnectionStarted('peer-accepted');
@@ -222,7 +224,7 @@ describe('browser RTC peer admission', () => {
             runtime.connection.service.removePeerIfPresent('peer-planned');
 
             // The policy holds the offer for a retry because no layout this room dials names the peer.
-            expect(runtime.manager.isPeerDialAllowedByAnyGroup('peer-planned')).toBe(false);
+            expect(runtime.groupPeerLedger.isPeerDialAllowedByAnyGroup('peer-planned')).toBe(false);
             expect(await runtime.connection.receive(offer('peer-planned'))).toBe('retry');
             expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
             expect(runtime.connection.service.knownPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-shared']);
@@ -284,7 +286,7 @@ describe('browser RTC peer admission', () => {
         it('closing an early peer the room\'s presence no longer names wakes no pass, and the next established peer does', async () => {
             const runtime = await createFullCapRuntime({ accepted, planned: early });
             runtime.manager.startReconcileWakes();
-            await runtime.manager.getOrCreate(runtime.group.group).acceptGroupUpdate({
+            await runtime.groupPeerLedger.getOrCreate(runtime.group.group).acceptGroupUpdate({
                 ...runtime.group,
                 activeSessions: runtime.group.activeSessions.filter((session) => session.sessionId !== 'b1')
             });
@@ -463,7 +465,7 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
     );
     await connection.service.connectSignaler();
     await manager.acceptGroupUpdate(group);
-    return { group, manager, connection, acceptedOverlays, plannedOverlays };
+    return { group, manager, groupPeerLedger, connection, acceptedOverlays, plannedOverlays };
 }
 
 // Hydrates the room's state without the reconcile the read-through would run, so its accepted peer's offer arrives
@@ -483,7 +485,7 @@ async function hydrateSecondRoomWithoutReconcile(runtime: AdmissionRuntime, acce
         ...acceptedOverlay(active),
         nextHopSessionIds: acceptedPeerIds
     });
-    await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+    await runtime.groupPeerLedger.getOrCreate(active.group).acceptGroupUpdate(active);
 }
 
 // Adopts the room's layout through the read-through, whose reconcile dials its accepted peers.
@@ -521,7 +523,7 @@ async function activateWithEstablishedPlannedPeer(runtime: AdmissionRuntime) {
         group: { ...runtime.group.group, snapshotVersion: 4, lifecycleState: 'active' },
         causalRevision: { groupRevision: 4, presenceRevision: 4 }
     };
-    await runtime.manager.getOrCreate(active.group).acceptGroupUpdate(active);
+    await runtime.groupPeerLedger.getOrCreate(active.group).acceptGroupUpdate(active);
     return established;
 }
 
@@ -584,9 +586,9 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
     );
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.
-    await manager.getOrCreate(group.group).acceptGroupUpdate(group);
+    await groupPeerLedger.getOrCreate(group.group).acceptGroupUpdate(group);
     await connection.service.connectSignaler();
-    return { group, manager, connection, acceptedOverlays, plannedOverlays };
+    return { group, manager, groupPeerLedger, connection, acceptedOverlays, plannedOverlays };
 }
 
 function acceptedOverlay(group: GroupSnapshot): OverlayInfo {

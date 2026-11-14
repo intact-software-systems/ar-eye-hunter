@@ -757,18 +757,6 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
-- `WebRtcConnectionService` takes its inbound creation policy, its inbound
-  peer-cap policy and its outbound dial policy through three setters
-  (`setInboundPeerCreationPolicy`, `setInboundPeerCapPolicy`, `setOutboundDialPolicy`):
-  setter injection the code standard counts as construction debt. The make-before-break slice
-  added the third, the cap policy. The policies read the group manager's peer
-  ownership and retained-peer state, and the manager is built after the service and takes
-  it, so a cycle blocks one required policies input. The fix is a retained-peer and
-  cap state owner built before the service (the group, client and overlay caches, the
-  retained-connection map and its order), with the known-peer read and the
-  early-peer close either behind a port the service exposes or passed into each
-  policy call, and one required policies input in place of the three setters.
-  It moves who owns retention and cap state, so it is a redesign, not a small edit.
 - Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
   `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
   that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating

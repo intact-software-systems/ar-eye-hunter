@@ -600,7 +600,7 @@ async function joinStartupRoom(
         startup.groupPeerLedger,
         heldOfferReleases
     );
-    await manager.getOrCreate(startup.room.group).acceptGroupUpdate(startup.room);
+    await startup.groupPeerLedger.getOrCreate(startup.room.group).acceptGroupUpdate(startup.room);
     return manager;
 }
 

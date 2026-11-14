@@ -661,17 +661,17 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
         await fixture.setLayout('accepted', peerRange('a'));
         await fixture.setLayout('accepted', peerRange('p'));
         await fixture.setLayout('planned', peerRange('q'));
-        expect(fixture.manager.admitInboundPeer('q1')).toBe('held');
+        expect(fixture.groupPeerLedger.admitInboundPeer('q1', fixture.rtcQBox.service)).toBe('held');
 
         // Each check runs before the wake the removal schedules.
         fixture.rtcQBox.service.removePeerIfPresent('p1');
-        expect(fixture.manager.admitInboundPeer('q1')).toBe('held');
-        expect(fixture.manager.admitInboundPeer('p1')).toBe('admitted');
+        expect(fixture.groupPeerLedger.admitInboundPeer('q1', fixture.rtcQBox.service)).toBe('held');
+        expect(fixture.groupPeerLedger.admitInboundPeer('p1', fixture.rtcQBox.service)).toBe('admitted');
         await fixture.manager.whenReconciled();
         expect(fixture.rtcQBox.knownPeerIds()).toContain('p1');
 
         fixture.rtcQBox.service.removePeerIfPresent('a1');
-        expect(fixture.manager.admitInboundPeer('q1')).toBe('admitted');
+        expect(fixture.groupPeerLedger.admitInboundPeer('q1', fixture.rtcQBox.service)).toBe('admitted');
     });
 
     it('an early peer deferred by the cap is dialled when a retained edge closes before its grace', async () => {
@@ -702,14 +702,15 @@ function createCapFixture(maxPeerConnections: number) {
     const rtcQBox = createRtcConnectionHarness('self');
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const groupPeerLedger = createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        acceptedOverlayCache,
+        plannedOverlayCache
+    }, { maxPeerConnections });
     const manager = new WebRtcGroupManager(
         rtcQBox.service,
-        createTestGroupPeerLedger(rtcQBox.service.input.sessionId, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            acceptedOverlayCache,
-            plannedOverlayCache
-        }, { maxPeerConnections }),
+        groupPeerLedger,
         { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
     manager.startReconcileWakes();
@@ -764,7 +765,7 @@ function createCapFixture(maxPeerConnections: number) {
         await connectKnownPeers();
     }
 
-    return { manager, rtcQBox, setLayout, setLayouts, acceptSecondRoom, connectKnownPeers };
+    return { manager, groupPeerLedger, rtcQBox, setLayout, setLayouts, acceptSecondRoom, connectKnownPeers };
 }
 
 function createPlannedLayoutFixture() {

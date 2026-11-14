@@ -164,7 +164,7 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
             throw failure.reason;
         }
     });
-    await manager.getOrCreate(group.group).acceptGroupUpdate(group);
+    await groupPeerLedger.getOrCreate(group.group).acceptGroupUpdate(group);
     queueEngine.start();
     const connecting = connectionService.connectSignaler();
     await vi.advanceTimersByTimeAsync(0);

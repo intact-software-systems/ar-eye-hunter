@@ -293,8 +293,9 @@ describe('browser RTC layout adoption composition', () => {
 
         const group = createAcceptedGroupSnapshotFixture([SESSION.sessionId, 'startup-peer']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        // The room is known before its layout, so the pass this update runs dials no one.
+        await webRtcGroupManager.acceptGroupUpdate(group);
         overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), createAcceptedOverlayFixture(group, 1, ['startup-peer']));
-        await webRtcGroupManager.getOrCreate(group.group).acceptGroupUpdate(group);
         await webRtcGroupManager.notifyOverlayTopologyChanged();
 
         await vi.waitFor(

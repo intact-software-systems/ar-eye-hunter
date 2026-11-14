@@ -1,7 +1,4 @@
-import type {
-    GroupId,
-    PeerId
-} from '../api/api-config.ts';
+import type { PeerId } from '../api/api-config.ts';
 import {
     readActiveClientSessionIds,
     type AnyGroupPresence
@@ -13,7 +10,6 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
-import type { ConnectionCapInboundVerdict } from './group-dial/compute-connection-cap-spend.ts';
 import type { WebRtcGroupPeerLedger } from './group-dial/web-rtc-group-peer-ledger.ts';
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import type { WebRtcGroupService } from './web-rtc-group-service.ts';
@@ -150,14 +146,6 @@ export class WebRtcGroupManager {
         this.ledger.resetDiagnostics();
     }
 
-    getOrCreate(group: GroupRef): WebRtcGroupService {
-        return this.ledger.getOrCreate(group);
-    }
-
-    getIfPresent(group: GroupRef): WebRtcGroupService | undefined {
-        return this.ledger.getIfPresent(group);
-    }
-
     has(group: GroupRef): boolean {
         return this.ledger.has(group);
     }
@@ -177,42 +165,6 @@ export class WebRtcGroupManager {
     async clear(): Promise<void> {
         this.ledger.clear();
         await this.reconcileAllGroups();
-    }
-
-    size(): number {
-        return this.ledger.size();
-    }
-
-    groupIds(): readonly GroupId[] {
-        return this.ledger.groupIds();
-    }
-
-    groups(): readonly WebRtcGroupService[] {
-        return this.ledger.groups();
-    }
-
-    peerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
-        return this.ledger.peerOwners();
-    }
-
-    ownerGroupsOfPeer(peerId: PeerId): readonly GroupId[] {
-        return this.ledger.ownerGroupsOfPeer(peerId);
-    }
-
-    isPeerDialAllowedByAnyGroup(peerId: PeerId): boolean {
-        return this.ledger.isPeerDialAllowedByAnyGroup(peerId);
-    }
-
-    resolveInboundPeer(peerId: PeerId): ConnectionCapInboundVerdict {
-        return this.ledger.resolveInboundPeer(peerId, this.rtcQBox);
-    }
-
-    hasClosableEarlyPeer(): boolean {
-        return this.ledger.hasClosableEarlyPeer(this.rtcQBox);
-    }
-
-    admitInboundPeer(peerId: PeerId): ConnectionCapInboundVerdict {
-        return this.ledger.admitInboundPeer(peerId, this.rtcQBox);
     }
 
     state(): WebRtcGroupManagerState {
