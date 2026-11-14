@@ -11,7 +11,7 @@ import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-c
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
+import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 
 import {
     createOriginOverlay,
@@ -71,9 +71,10 @@ function toOpenEdgePeerIds(sessionId: string): readonly string[] {
 
 /**
  * Every session but `d` promoted now; `d` still holds the previous layout accepted and, when `plannedHeld`, the
- * promoted layout planned. Every edge of both layouts is open, as early dial leaves them.
+ * promoted layout planned. Every edge of both layouts is open, as early dial leaves them. The exchange carries the
+ * relays' frames in `relayOrder`.
  */
-function createLeadingEdgeMesh(plannedHeld: boolean): LeadingEdgeMesh {
+function createLeadingEdgeMesh(plannedHeld: boolean, relayOrder: readonly string[] = ['b', 'c', 'd', 'e']): LeadingEdgeMesh {
     const snapshot = createOriginSnapshot(SESSION_IDS, 4);
     const origin = createRtcOriginOverlayFixture({
         snapshot,
@@ -85,7 +86,7 @@ function createLeadingEdgeMesh(plannedHeld: boolean): LeadingEdgeMesh {
     origin.ready.peerIds = toOpenEdgePeerIds('a');
     const edges = new Map<string, readonly string[]>([['a', toOpenEdgePeerIds('a')]]);
     const peers = new Map<string, RtcRelayOverlayFixture>();
-    for (const sessionId of SESSION_IDS.filter((peerId) => peerId !== 'a')) {
+    for (const sessionId of relayOrder) {
         const neighbourPeerIds = toOpenEdgePeerIds(sessionId);
         const peer = createRtcRelayOverlayFixture({ selfPeerId: sessionId, snapshot, neighbourPeerIds });
         peer.acceptOverlay(createOriginOverlay(DIAMOND_PREVIOUS[sessionId] ?? [], DIAMOND_PREVIOUS));
@@ -233,14 +234,16 @@ describe('a sender that promoted before its receiver, over an edge early dial op
                 expect(readCopies(peer.delivered, frame)).toBe(1);
             }
             expect(readEdgeCounts(beforePromotion)).toMatchObject({ 'c>d data': 1, 'd>c nack not-yet-in-sync': 1 });
-            // A relay keeps no outbound record of a copy it forwarded, so the NACK starts no re-send.
+            // The relay re-sends nothing: its outbound runtime refuses its child's NACK as addressed to another owner
+            // (rtc-relay-child-not-yet-in-sync.test.ts).
             expect(readEdgeCounts(afterPromotion)['c>d data']).toBeUndefined();
         }
     );
 
-    // The same situation on the task base ended unauthorized with no NACK; the NACK changes nothing else: the relay's
-    // row keeps waiting on the receiver to its expiry, and the origin's receipt reports that hop unconfirmed, as before.
-    it('the relay\'s row for an at-least-once copy its receiver answered not yet in sync waits as an unauthorized one did', async () => {
+    // A known gap, the same as on the task base, where the copy ended unauthorized with no NACK: the relay's outbound
+    // runtime refuses the child's NACK as addressed to another owner (the row's owner is the origin), and its receipt's
+    // ack-timeout re-plans find no route, so nothing is re-sent. A relay-side re-send would turn this red.
+    it('a relay re-sends nothing on its receiver\'s not-yet-in-sync NACK, and the origin reports that hop unconfirmed', async () => {
         const mesh = createLeadingEdgeMesh(true);
         const frame = createFrame('at-least-once', 'leading-edge-row');
         await enqueueAndDrain(mesh.origin.manager, frame);
@@ -272,6 +275,26 @@ describe('a sender that promoted before its receiver, over an edge early dial op
         expect(readAdmissionReasons(d, frame)).toEqual(['admitted', 'unauthorized']);
         expect(readEdgeCounts(carried)['d>c nack not-yet-in-sync']).toBeUndefined();
     });
+
+    it.each(['at-least-once', 'best-effort'] as const)(
+        'a %s copy over the new edge that arrives first is answered not yet in sync, and the previous edge delivers the frame once',
+        async (reliability) => {
+            const mesh = createLeadingEdgeMesh(true, ['c', 'b', 'd', 'e']);
+            const frame = createFrame(reliability, 'new-edge-first');
+            await enqueueAndDrain(mesh.origin.manager, frame);
+
+            const carried = await exchangeUntilQuiet(mesh);
+
+            const d = mesh.peers.get('d')!;
+            const edgesIntoD = carried
+                .filter((copy) => copy.toPeerId === 'd' && copy.message.id.msgId === frame.id.msgId)
+                .map((copy) => `${copy.fromPeerId}>d`);
+            expect(edgesIntoD).toEqual(['c>d', 'b>d']);
+            expect(readAdmissionReasons(d, frame)).toEqual([AWAITED, 'admitted']);
+            expect(readCopies(d.delivered, frame)).toBe(1);
+            expect(readCopies(mesh.peers.get('e')!.delivered, frame)).toBe(1);
+        }
+    );
 
     it('with no planned layout held the receiver behaves exactly as before', async () => {
         const mesh = createLeadingEdgeMesh(false);

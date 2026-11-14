@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
-import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
+import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 
 const roomRef = {
     applicationId: 'app-1',

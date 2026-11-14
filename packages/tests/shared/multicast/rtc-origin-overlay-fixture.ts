@@ -39,8 +39,7 @@ import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-
 import {
     readableLayoutTransitionCache,
     readablePlannedOverlayCache,
-    setCurrentAcceptedServerOverlayById,
-    setCurrentPlannedServerOverlayById
+    setCurrentAcceptedServerOverlayById
 } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
@@ -83,8 +82,6 @@ export interface RtcOriginOverlayFixture {
     readonly layoutTransitions: ReadableKeyedValues<string, OverlayLayoutTransition>;
     /** Accepts a layout as the overlay repository does, which records the transition it replaces. */
     acceptOverlay(overlay: OverlayInfo): void;
-    /** Replaces the layout this origin holds planned (the server's published plan), and records no transition. */
-    acceptPlannedOverlay(overlay: OverlayInfo): void;
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
@@ -194,9 +191,6 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         setCurrentAcceptedServerOverlayById('room', overlay, repositories);
         overlays.accept('room', overlay);
     };
-    const acceptPlannedOverlay = (overlay: OverlayInfo): void => {
-        setCurrentPlannedServerOverlayById('room', overlay, repositories);
-    };
     return {
         manager,
         resources,
@@ -204,7 +198,6 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         overlays,
         layoutTransitions,
         acceptOverlay,
-        acceptPlannedOverlay,
         channels,
         ready,
         settlements,

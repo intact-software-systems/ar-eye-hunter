@@ -2,9 +2,12 @@ import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { OverlayInfo } from '../../api/api-config.ts';
 import { isSameGroupRef } from '../../api/api-type-utils.ts';
 import type { GroupRef } from '../../api/group-types.ts';
-import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from './is-rtc-room-snapshot-refresh-reason.ts';
 import type { RtcRoomAuthorityDenial } from './resolve-rtc-room-peer-denial.ts';
 import type { RtcRoomRoutingEdges } from './resolve-rtc-room-routing-edges.ts';
+
+/** Why a receiver answers a relayed copy as not yet in sync while the layout that names its relay is only planned. */
+export const RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON =
+    'Awaiting the promotion of the planned layout that names the relay';
 
 export interface RtcRoomEdgeObservation {
     readonly message: ALMessage;

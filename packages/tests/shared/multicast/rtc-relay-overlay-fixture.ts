@@ -15,6 +15,7 @@ import {
     InMemoryAdmissionBackend,
     type ALAdmissionMemoryState
 } from '@shared/alm/al-admission-backend.ts';
+import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createVolatileALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type {
@@ -24,7 +25,13 @@ import type {
 } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALInboundControlSubject } from '@shared/alm/inbound/control/al-inbound-control-rows.ts';
-import type { ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALOutboundPendingAckRef } from '@shared/alm/outbound/admission/al-outbound-admission-keys.ts';
+import type { ALStoredOutboundMessage } from '@shared/alm/outbound/admission/al-outbound-admission-validation.ts';
+import type {
+    ALOutboundEnqueueResult,
+    ALOutboundMessageRuntime,
+    ALOutboundRuntimeDiagnosticsEvent
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { decodeALOutboundTransportMessage, type ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -110,11 +117,16 @@ export interface RtcRelayOverlayFixture {
     acceptOverlay(overlay: OverlayInfo): void;
     /** Replaces the layout this relay holds planned (the server's published plan), and records no transition. */
     acceptPlannedOverlay(overlay: OverlayInfo): void;
-    readPlannedOverlay(): OverlayInfo | undefined;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+    /** Every diagnostic event the relay's own outbound runtime, which carries its forwards, emitted, in order. */
+    readonly outboundDiagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
+    /** The relay's outbound row for a message it forwarded; absent when none is kept. */
+    readOutboundMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined>;
+    /** The relay's outbound receipt row for a message it forwarded; absent when none is kept. */
+    readOutboundReceipt(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined>;
     /** The relay row a control from `subject.fromPeerId` about `subject.msgId` would read; absent when none is kept. */
     readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined>;
     /**
@@ -136,6 +148,7 @@ interface RtcRelayOverlayResources {
     readonly overlayRepositories: RepositoryManager;
     readonly overlayIds: readonly string[];
     readonly outboundResources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
+    readonly outboundDiagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
     readonly multicast: shared.WebRtcOverlayMulticastManager;
     readonly selfPeerId: string;
     readonly replacedLayoutOverlapMs: number;
@@ -155,10 +168,12 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     private readonly ready: Promise<void[]>;
     readonly delivered: ALMessage[] = [];
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+    readonly outboundDiagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[];
 
     constructor(dependencies: RtcRelayOverlaySession.Dependencies, neighbourPeerIds: readonly string[]) {
         this.dependencies = dependencies;
         this.diagnostics = dependencies.diagnostics;
+        this.outboundDiagnostics = dependencies.outboundDiagnostics;
         const { connection, service } = dependencies;
         service.setRttReportingPeerIds([]);
         service.onAllInboxMessagesDo({
@@ -220,13 +235,17 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
         }
     }
 
-    readPlannedOverlay(): OverlayInfo | undefined {
-        return readablePlannedOverlayCache(this.dependencies.overlayRepositories).read(this.dependencies.overlayIds[0]!);
-    }
-
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
         await this.dependencies.multicast.forwardRetriedCopy(copy);
         await waitForOwnedQueueWork(this.dependencies.outboundResources.workQueue);
+    }
+
+    async readOutboundMessage(msgId: string): Promise<ALStoredOutboundMessage | undefined> {
+        return await this.dependencies.outboundResources.admissionStore.readStoredMessage(msgId);
+    }
+
+    async readOutboundReceipt(receipt: ALOutboundPendingAckRef): Promise<ALOutboundPendingAckSnapshot | undefined> {
+        return await this.dependencies.outboundResources.admissionStore.readPendingAck(receipt);
     }
 
     async readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined> {
@@ -339,6 +358,7 @@ function createDefaultRelayOverlayResources(
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
     const replacedLayoutOverlapMs = input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS;
+    const outboundDiagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
     const multicast = new shared.WebRtcOverlayMulticastManager({
         quotaNow: Date.now,
         creationNow: Temporal.Now.instant,
@@ -350,7 +370,7 @@ function createDefaultRelayOverlayResources(
         replacedLayoutOverlapMs,
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connection.service),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
-        outboundDiagnostics: undefined,
+        outboundDiagnostics: (event) => outboundDiagnostics.push(event),
         outboundSettlements: undefined,
         outboundRuntime: outboundResources,
         circuitBreaker: toCircuitBreaker(),
@@ -374,6 +394,7 @@ function createDefaultRelayOverlayResources(
         overlayRepositories,
         overlayIds,
         outboundResources,
+        outboundDiagnostics,
         multicast,
         selfPeerId: input.selfPeerId,
         replacedLayoutOverlapMs

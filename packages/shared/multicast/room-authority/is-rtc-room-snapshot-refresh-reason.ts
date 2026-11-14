@@ -1,6 +1,4 @@
-/** Why a receiver answers a relayed copy as not yet in sync while the layout that names its relay is only planned. */
-export const RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON =
-    'Awaiting the promotion of the planned layout that names the relay';
+import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from './resolve-rtc-room-edge-denial.ts';
 
 /**
  * Whether a receiver's drop reason asks for a room snapshot refresh. A room-authority denial writes the code at the

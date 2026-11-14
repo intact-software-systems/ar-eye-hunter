@@ -6,6 +6,7 @@ import {
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
+import { shouldRetryALInboundDelivery } from '@shared/alm/inbound/al-inbound-effect-intent.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
@@ -13,10 +14,8 @@ import type {
     RtcPublicationRefusal,
     RtcPublicationRefusalCode
 } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
-import {
-    isRtcRoomSnapshotRefreshReason,
-    RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON
-} from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
+import { isRtcRoomSnapshotRefreshReason } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
+import { RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON } from '@shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts';
 import type { RtcRoomLayoutHistory } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 import {
     computeRtcRoomSnapshotAdmission,
@@ -373,11 +372,40 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
             activeSessions: current.activeSessions.filter((session) => session.sessionId !== 'stranger'),
             members: current.members.filter((member) => member.principalId !== 'stranger')
         };
-        for (const snapshot of [removed, withMember(current, 'stranger', 'removed')]) {
+        // Removed: no session and no member, so the rule awaits nobody and the edge is refused. Expelled: the member's
+        // own denial outranks the edge's.
+        for (
+            const { snapshot, cause } of [
+                { snapshot: removed, cause: 'edge-unavailable' },
+                { snapshot: withMember(current, 'stranger', 'removed'), cause: 'authority-rejected' }
+            ]
+        ) {
             const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned, snapshot });
-            expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized' });
+            expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause });
             expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', localDelivery: { enabled: false }, nack: { enabled: false } });
         }
+    });
+
+    // A stored forward re-planned at dispatch against a parent that is now only a planned-layout neighbour (a
+    // re-parented row's retried copy names its current parent) is held for the next eligibility read, as any
+    // not-yet-in-sync re-plan is, instead of completing unforwarded as an unauthorized re-plan does.
+    it('a stored forward re-planned against an awaited parent is held, where an unauthorized parent ends it', () => {
+        expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned }))))
+            .toBe(true);
+        expect(shouldRetryALInboundDelivery(planRelayed(relayedInput({ fromPeerId: 'stranger' })))).toBe(false);
+    });
+
+    it('a copy both awaited and behind the room floor is answered as awaiting the layout\'s promotion, so no room refresh follows', () => {
+        const floored = {
+            ...message,
+            targets: { ...message.targets!, minSnapshotVersion: promotionSnapshot().group.snapshotVersion + 1 }
+        } as typeof message;
+        const input = relayedInput({ message: floored, fromPeerId: 'stranger', layoutHistory: withPlanned });
+
+        expect(computeRtcRoomSnapshotAdmission({ ...input, layoutHistory: promotionHistory(), fromPeerId: 'relay' }))
+            .toMatchObject({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room snapshot version' });
+        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'pending', cause: 'layout-promotion-awaited' });
+        expect(isRtcRoomSnapshotRefreshReason(planRelayed(input).dropReason!)).toBe(false);
     });
 
     it('refuses an expelled member that was a neighbour of the replaced layout, inside the overlap', () => {
