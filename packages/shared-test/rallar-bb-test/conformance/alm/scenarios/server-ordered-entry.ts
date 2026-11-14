@@ -39,8 +39,10 @@ const ORDERING_POSITION = 'ordering-position';
  * track also carries every earlier lane connect of the principal.
  * The sibling, the principal's second session, enters the same track at its first copy, its own connect event.
  * The receiver, a co-member of another principal, enters the sender principal's track at its first copy on it.
- * A page enters the track once, at its first connect of the family, in whichever cell ran first, so the entry wait alone
- * reads the page's whole history. No page states `before-entry` in the window after the last write's copy arrived.
+ * In a room per family a page enters the track once, at its first connect of the family, in whichever cell ran first,
+ * so the entry wait alone reads the page's whole history; there an earlier cell's entry satisfies it, so it does not show
+ * that this cell's own connects produced one. In a room per cell every connection closes after its cell, and a page
+ * enters again in each. No page states `before-entry` in the window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     scenarioId: 'server-ordered-entry',
@@ -53,10 +55,16 @@ export const serverOrderedEntry: AlmConformanceScenarioDefinition = {
     principalRoles: ['sender'],
     toSenderCommands: (sender) => [
         ...toPrincipalUpsertCommands(sender, PRINCIPAL_WRITE_COUNT),
-        ...toOrderingEntryCommands(sender, true)
+        ...toOrderingEntryCommands({ step: sender, aboveFirstSeq: true })
     ],
-    toRecipientCommands: (recipient) => toOrderingEntryCommands(recipient, false)
+    toRecipientCommands: (recipient) => toOrderingEntryCommands({ step: recipient, aboveFirstSeq: false })
 };
+
+interface OrderingEntryInput {
+    readonly step: AlmConformanceStepInput;
+    /** The sender also asserts that it entered above seq 1, past the sibling's connect event. */
+    readonly aboveFirstSeq: boolean;
+}
 
 /** Each write settles before the next, so each event leaves the server as its own copy. */
 function toPrincipalUpsertCommands(
@@ -102,10 +110,7 @@ function toPrincipalWriteName(n: number): string {
  * track, so an entry on the sender principal's track names it: the ordering key and the server's peer id of the
  * last write's copy, which the page waits for first, so the absence window after it covers every write.
  */
-function toOrderingEntryCommands(
-    step: AlmConformanceStepInput,
-    aboveFirstSeq: boolean
-): readonly RallarBlackBoxTestCommand[] {
+function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): readonly RallarBlackBoxTestCommand[] {
     const arrival = toLastWriteArrivalWait(step);
     const event = `resultCache.${arrival.commandId}.value.event.payload`;
     return [

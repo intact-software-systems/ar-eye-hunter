@@ -23,8 +23,9 @@ import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toWaitCommands } from './to-wait-commands.ts';
 
 /**
- * The one class of wait that reads the page's history: a store's recovery that a fresh document (a successor page, or
- * the page after `agent.reload`) reports during its first connect, before that connect's result opens the cell's mark.
+ * One of the three classes of wait that read the page's history (`toCellHistoryMarkedCommands`; the settle's head wait
+ * is another): a store's recovery that a fresh document (a successor page, or the page after `agent.reload`) reports
+ * during its first connect, before that connect's result opens the cell's mark.
  */
 const FRESH_DOCUMENT_RECOVERY_WAITS = [
     'durable-takeover-successor-recovered-original-store',
@@ -33,7 +34,10 @@ const FRESH_DOCUMENT_RECOVERY_WAITS = [
     'delivery-reload-sender-recovered-original-store'
 ] as const;
 
-/** A page enters a principal's server-ordered track once, at its first copy, in whichever cell of the family that was. */
+/**
+ * Another of the three: in a room per family a page enters a principal's server-ordered track once, at its first copy,
+ * in whichever cell of the family that was.
+ */
 const PRINCIPAL_TRACK_ENTRY_WAITS = [
     'server-ordered-entry-sender-entered',
     'server-ordered-entry-receiver-entered',

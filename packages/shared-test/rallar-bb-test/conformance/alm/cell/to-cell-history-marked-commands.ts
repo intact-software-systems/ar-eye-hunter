@@ -17,9 +17,9 @@ import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
  * the room's head, which matches only `held` applications at or above the head's revisions: in a room per cell no
  * earlier cell left one, while in a room the family shares an earlier cell's last `held` event can sit at the head's
  * revisions, since a connect's presence write advances `presenceRevision` only when the room's presence-summary work
- * runs, and `removed` events are not matched; and a page's entry on a principal's server-ordered track, which the
- * page states once, at its first copy, in whichever cell of the family ran first, matched on the track of the cell's own
- * arrival. Any other wait must follow at least one of its cell's own commands.
+ * runs, and `removed` events are not matched; and a page's entry on a principal's server-ordered track, which in a
+ * room per family the page states once, at its first copy, in whichever cell of the family ran first, matched on the
+ * track of the cell's own arrival. Any other wait must follow at least one of its cell's own commands.
  */
 export function toCellHistoryMarkedCommands(
     step: AlmConformanceStepInput,

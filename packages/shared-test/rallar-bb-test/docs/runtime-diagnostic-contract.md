@@ -277,8 +277,10 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
   a command of its own cell, or recipe creation throws. A wait with
   `metadata.historyFrom: 'page'` keeps the page's whole history: the head wait above, a store's
   recovery that a fresh document reports during its first connect, and `server-ordered-entry`'s
-  `entered` on the sender principal's track, which a page states once, at its first copy, in
-  whichever cell of the family ran first. Once the runtime evicted any
+  `entered` on the sender principal's track. In a room per family a page states it once, at its
+  first copy, in whichever cell of the family ran first, so an earlier cell's entry satisfies the
+  wait and it does not show that the cell's own connects produced one; in a room per cell every
+  connection closes after its cell and a page enters again in each. Once the runtime evicted any
   event, a wait with a prefix ends `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE`, since the first event of
   the command is no longer provable.
 - `payloadMinimums` maps payload paths to floors. A floor is a finite number or exactly one
