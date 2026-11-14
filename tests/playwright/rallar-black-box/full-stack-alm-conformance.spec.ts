@@ -394,8 +394,8 @@ function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLane
 }
 
 /**
- * Each planned cell with its scenario for the run's agents. The family's room is created once for the run; a cell of
- * its own room is created in that room.
+ * Each planned cell with its scenario for the run's agents. The family's scenarios are created once per planned room,
+ * for that room's group.
  */
 function toPlannedScenarios(
     run: TwoAgentRun | AgentRun,
@@ -578,7 +578,7 @@ async function runPairWatchingReloads(run: TwoAgentRun, scenario: AlmConformance
     return outcome;
 }
 
-/** The pair's two agents by role, so a room of its own per cell closes their connections as any family's. */
+/** The pair's two agents by role, so a change of room closes their connections as any family's. */
 function toPairAgentRun(run: TwoAgentRun): AgentRecipeRun {
     return { ...run, agents: new Map([['sender', run.sender], ['receiver', run.receiver]]) };
 }

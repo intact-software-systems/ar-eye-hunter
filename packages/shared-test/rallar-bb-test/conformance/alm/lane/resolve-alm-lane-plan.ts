@@ -55,9 +55,10 @@ const ALM_LANE_FAMILY_ROOM = 'family';
 /**
  * Which cells of a family run, in which order and in which room. A cell runs in a room of its own when the room
  * parameter asks for one per cell or its definition declares one; a family whose pages chain one session from cell to
- * cell runs every cell in the family's one room, whatever the parameter asks or a definition declares. No cell rejoins a room its pages left: the shared-room
- * cells after a cell in its own room run in a fresh shared room. In a room the family shares, every cell that reshapes
- * the room's topology runs after every cell that keeps it, in any order mode: a shuffle permutes within the two groups.
+ * cell runs every cell in the family's one room, whatever the parameter asks or a definition declares. No cell rejoins
+ * a room its pages left: the shared-room cells after a cell in its own room run in a fresh shared room. In a room the
+ * family shares, every cell that reshapes the room's topology runs after every cell that keeps it, in any order mode:
+ * a shuffle permutes within the two groups.
  */
 export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan {
     const { parameters } = input;
@@ -90,7 +91,7 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
 
 /**
  * Every agent closes its room connections where the next cell runs in another room, and after the family's last cell
- * unless it ran in the family's first room, so no page stays in a room it will not use again.
+ * when it ran outside the family's first room, as a room per cell always closed after each cell.
  */
 export function isAlmLaneRoomLeftAfter(plan: AlmLanePlan, index: number): boolean {
     const room = plan.cells[index]?.room;

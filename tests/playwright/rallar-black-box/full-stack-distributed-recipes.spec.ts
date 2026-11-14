@@ -1005,7 +1005,7 @@ function retainedRealtimeRecipeEvidence(
             };
         });
     const loopStats = distributedRun.targetAgentIds.map((agentId) => {
-        const matchingStats = (run.events ?? []).flatMap((event) => {
+        const matchingStats = run.events.flatMap((event) => {
             if (event.agentId !== agentId || event.kind !== 'stats') {
                 return [];
             }

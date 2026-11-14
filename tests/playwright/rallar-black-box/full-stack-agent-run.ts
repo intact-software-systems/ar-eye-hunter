@@ -165,7 +165,7 @@ async function readRoleOutcomes(
     return new Map(settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []));
 }
 
-/** Ends every agent's room connection, so the next cell's connect may name a room of its own. */
+/** Ends every agent's room connection, so the next cell's connect may name another room. */
 export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string): Promise<void> {
     const closes = [...run.agents.values()].map(({ agentId }) => ({
         agentId,

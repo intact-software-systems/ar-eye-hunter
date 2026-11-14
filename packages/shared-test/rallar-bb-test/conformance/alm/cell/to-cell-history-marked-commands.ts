@@ -7,7 +7,7 @@ import type { AlmConformanceStepInput } from '../alm-conformance-scenario-defini
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
 
-/** Where a wait of a cell reads from: `cell`, its own cell's first event on the page; `page`, the page's whole history. */
+/** Where a wait of a cell reads from: `cell`, its own cell's first event on the page; `page`, its whole history. */
 export type AlmWaitHistory = 'cell' | 'page';
 
 /** The metadata a wait declares for its history: only `page` is declared, since every other wait reads its cell's. */
@@ -26,7 +26,7 @@ export function toWaitHistoryMetadata(
  * and must follow at least one of its cell's own commands. There are three such facts: a fresh document's first
  * recovery of a store, pinned to its first connect's session, so no earlier cell's recovery can match it; the room's
  * applied head the settle waits for, which matches only `held` applications at or above the head's revisions: in a
- * room no earlier cell used none is left, while in a room the family shares an earlier cell's last `held` event can
+ * room no earlier cell used there is none, while in a room the family shares an earlier cell's last `held` event can
  * sit at the head's revisions, since a connect's presence write advances `presenceRevision` only when the room's
  * presence-summary work runs, and `removed` events are not matched; and a page's first entry on a principal's
  * server-ordered track, which the page's session keeps across a closed connection and a change of room, so the page
