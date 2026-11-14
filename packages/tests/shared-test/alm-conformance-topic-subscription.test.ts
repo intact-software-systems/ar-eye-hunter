@@ -313,6 +313,37 @@ describe('ALM topic subscription conformance', () => {
         });
     });
 
+    // A pause only lets time pass; a receipt's lists stop changing once its handle has ended.
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'reads each revoke-disconnected receipt over %s only once its publication\'s handle has ended, after the last publication, with no pause',
+        (carrier) => {
+            const scenario = toTopicSubscriptionScenarios(carrier).find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+            const sender = scenario?.sender.commands ?? [];
+            const prefix = `alm-${carrier}-subscription-revoke-disconnected-sender-`;
+            const indexOf = (name: string) => sender.findIndex(({ commandId }) => commandId === `${prefix}${name}`);
+
+            expect(
+                sender.filter((command) =>
+                    command.kind === 'wait' && command.match.kind === 'diagnostic' && command.match.topic === 'rallar.black-box.alm.pause'
+                )
+            )
+                .toEqual([]);
+            for (const publication of ['publication-1', 'publication-2']) {
+                const observe = indexOf(`${publication}-observe`);
+                expect(sender[observe], publication).toEqual({
+                    kind: 'messages.observe',
+                    commandId: `${prefix}${publication}-observe`,
+                    connection: expect.any(String),
+                    handleId: `${prefix}${publication}-send`,
+                    state: ['acknowledged'],
+                    timeoutMs: expect.any(Number)
+                });
+                expect(observe, publication).toBeGreaterThan(indexOf('publication-2-send'));
+                expect(indexOf(`${publication}-receipts`), publication).toBe(observe + 1);
+            }
+        }
+    );
+
     it('fails a receipt that confirms the role the sender names unconfirmed, naming that role', () => {
         const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
         if (scenario?.sibling === undefined) {

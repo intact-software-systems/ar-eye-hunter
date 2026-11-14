@@ -593,7 +593,8 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   socket is down, and the receiver then revokes the principal's
   `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
   The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
-  sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
+  sibling. The sender reads each receipt once its publication's handle has ended, which no later
+  confirmation changes, not after a pause. A clean close removes the sibling's live generation at once, so no dispatch is held
   for it; the held-dispatch revocation is proven server-side by
   `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose

@@ -12,7 +12,6 @@ import {
 } from '../../granted-topic/subscription-phase-budgets.ts';
 import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import { toReadPollCommand } from '../../poll/alm-conformance-poll-commands.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
 import {
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
@@ -28,14 +27,11 @@ import {
     toCueListenCommands,
     toCueSendCommands,
     toCueWait,
+    toEndedReceiptCommands,
     toPublicationWait,
     toPublishCommands,
-    toPublishUntilConfirmedCommands,
-    toReceiptsCommand
+    toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
-
-/** Covers the window between the sender's last readiness probe and its receipt reads, so the receipts have settled. */
-const RECEIPT_SETTLE_MS = 2_000;
 
 /**
  * Revoke while disconnected: the sibling's product socket drops, and a probe publishes until the receiver alone is
@@ -66,7 +62,10 @@ export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = 
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient)
 };
 
-/** The sender reads both receipts after the run's last step; the lane joins them to the sibling's session. */
+/**
+ * The sender reads both receipts once each publication's handle has ended, so no later confirmation can change them;
+ * the lane joins them to the sibling's session.
+ */
 const SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS = ['publication-1', 'publication-2'] as const;
 
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
@@ -146,7 +145,8 @@ function toPublisherCommands(sender: AlmConformanceStepInput): readonly RallarBl
         ...toPublishCommands(sender, 'publication-1'),
         toCueWait(sender, 'revoked'),
         ...toPublishCommands(sender, 'publication-2'),
-        toPauseCommand(sender, 'receipt-settle', RECEIPT_SETTLE_MS),
-        ...SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS.map((publication) => toReceiptsCommand(sender, publication))
+        ...SUBSCRIPTION_REVOKE_DISCONNECTED_PUBLICATIONS.flatMap((publication) =>
+            toEndedReceiptCommands(sender, publication)
+        )
     ];
 }

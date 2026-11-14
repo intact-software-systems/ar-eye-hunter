@@ -1,5 +1,8 @@
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesObserveCommand,
     RallarBlackBoxTestWaitCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
@@ -170,39 +173,59 @@ export function toRejectedPublishCommands(
     reason: string
 ): readonly RallarBlackBoxTestCommand[] {
     const send = toCommandId(step, `${name}-send`);
-    const observe = toCommandId(step, `${name}-observe`);
+    const observe = toPublicationObserveCommand(step, name, 'rejected', REJECTION_WAIT_MS);
     return [
         {
             ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
             commandId: send,
             handleId: send
         },
-        {
-            kind: 'messages.observe',
-            commandId: observe,
-            connection: toConnectionName(step),
-            handleId: send,
-            state: ['rejected'],
-            timeoutMs: REJECTION_WAIT_MS
-        },
+        observe,
         toResultFact({
             timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step,
             name: `${name}-refusal-reason`,
-            source: `resultCache.${observe}.value.failure.reason`,
+            source: `resultCache.${observe.commandId}.value.failure.reason`,
             operator: 'equals',
             expected: reason
         })
     ];
 }
 
-export function toReceiptsCommand(step: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
+/**
+ * A publication's receipt, read once its handle has ended: a receipt's lists stop changing at a terminal state. The
+ * observe resolves at any terminal state, so what the receipt reads is still the read's to judge.
+ */
+export function toEndedReceiptCommands(
+    step: AlmConformanceStepInput,
+    name: string
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toPublicationObserveCommand(step, name, 'acknowledged', SUBSCRIPTION_PHASE_MS),
+        {
+            kind: 'messages.receipts',
+            commandId: toCommandId(step, `${name}-receipts`),
+            connection: toConnectionName(step),
+            handleId: toCommandId(step, `${name}-send`),
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        }
+    ];
+}
+
+/** The publication's handle reaches `state` or any terminal state. */
+function toPublicationObserveCommand(
+    step: AlmConformanceStepInput,
+    name: string,
+    state: ALDeliveryState,
+    timeoutMs: number
+): RallarBlackBoxTestMessagesObserveCommand {
     return {
-        kind: 'messages.receipts',
-        commandId: toCommandId(step, `${name}-receipts`),
+        kind: 'messages.observe',
+        commandId: toCommandId(step, `${name}-observe`),
         connection: toConnectionName(step),
         handleId: toCommandId(step, `${name}-send`),
-        timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
+        state: [state],
+        timeoutMs
     };
 }
 
