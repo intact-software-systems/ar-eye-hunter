@@ -329,10 +329,11 @@ connection closes.
 
 The `receipted-audience` conformance scenarios run on three agents: `sender`,
 `receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
-sender reads its receipt only after the scenario window, never by polling
-`acknowledged`, and pins the state the handle ended in (`acknowledged` for a receipt
-that completes, `expired` for one that ends timed out), the receipt mode and the
-length of each recipient list. Every send payload names its carrier, and the raw ACK
+sender reads its receipt only after the scenario window and, on its own page, the
+observe of its handle at the ending it expects, which resolves at any terminal
+state; it never polls `acknowledged` on another page. It pins the state the
+handle ended in (`acknowledged` for a receipt that completes, `expired` for one
+that ends timed out), the receipt mode and the length of each recipient list. Every send payload names its carrier, and the raw ACK
 of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
 runs every carrier on one page never matches an earlier carrier's event. Its
 recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
@@ -342,14 +343,16 @@ together. The identity assessment joins each list to the sessions of those roles
 after the run, reading the receipt the handle ended in: the sender's last read of
 that handle, after any mid-window read. In every conformance cell, a receipt read
 whose recipient lists a role asserts follows, after its send, an event that
-settles those lists: a terminal observe of the handle, the role's own `committed`
-`control-admission` of a control answering the send, or an absence window. A
-refusal of another control proves no such commit.
+settles those lists: a terminal observe of the handle (a non-empty list of
+`acknowledged` and `expired`), or the role's own `committed` `control-admission`
+of the control that confirms a recipient of the send (an `al.control.ack.v3` over
+an rtc leg, over `ws` the server's `complete` `al.control.receipt.v1`). A refusal
+of another control proves no such commit, and a window only lets time pass.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
-  first receipt frame, the `admitted` one, and the `acknowledged` read proves the
-  `complete` one.
+  first receipt frame, the `admitted` one, and the `acknowledged` observe and read
+  prove the `complete` one.
 - `missing-recipient-retry`: `recipient-b` holds its ACK back with a fault it keeps
   armed until it is released. A one-shot `drop` would not lose the ACK: the RTC
   channel settles a dropped frame `not-ready` and its sender resubmits it 50 ms
@@ -523,7 +526,7 @@ send: `recipient-b` sends on its own connection, and its handle id names the rol
   its admission and receiving the reclaim. `recipient-b` receives that send, holds
   3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
   exclusive send on the resource is admitted and delivered to the sender and the receiver;
-  it reads its receipt `acknowledged` after its own absence window.
+  it reads its receipt `acknowledged` after its own absence window and its observe of the handle.
 - `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
   send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
   'unsupported'` and no carrier attempt.

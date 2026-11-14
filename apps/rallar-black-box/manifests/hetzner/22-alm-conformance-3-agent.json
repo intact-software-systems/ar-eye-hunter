@@ -315,6 +315,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-aggregated-receipt-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-aggregated-receipt-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-ws-aggregated-receipt-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -449,6 +459,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-missing-recipient-retry-sender-observe-expired-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-missing-recipient-retry-send-1",
+            "state": [
+              "expired"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-ws-missing-recipient-retry-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -581,6 +601,16 @@
             "absent": true,
             "windowMs": 17000,
             "timeoutMs": 18000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-frozen-audience-membership-sender-observe-expired-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-frozen-audience-membership-send-1",
+            "state": [
+              "expired"
+            ],
+            "timeoutMs": 10000
           },
           {
             "kind": "messages.receipts",
@@ -722,6 +752,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-aggregated-receipt-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-aggregated-receipt-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-aggregated-receipt-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -859,6 +899,16 @@
             "absent": true,
             "windowMs": 17000,
             "timeoutMs": 18000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-missing-recipient-retry-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-missing-recipient-retry-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
           },
           {
             "kind": "messages.receipts",
@@ -1012,6 +1062,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-unknown-ack-version-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-unknown-ack-version-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-unknown-ack-version-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -1149,6 +1209,16 @@
             "absent": true,
             "windowMs": 17000,
             "timeoutMs": 18000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-frozen-audience-membership-sender-observe-expired-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-frozen-audience-membership-send-1",
+            "state": [
+              "expired"
+            ],
+            "timeoutMs": 10000
           },
           {
             "kind": "messages.receipts",
@@ -1290,6 +1360,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-aggregated-receipt-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-with-ws-fallback-aggregated-receipt-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -1427,6 +1507,16 @@
             "absent": true,
             "windowMs": 17000,
             "timeoutMs": 18000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-missing-recipient-retry-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-missing-recipient-retry-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
           },
           {
             "kind": "messages.receipts",
@@ -1580,6 +1670,16 @@
             "timeoutMs": 18000
           },
           {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-observe-acknowledged-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-unknown-ack-version-send-1",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
             "kind": "messages.receipts",
             "commandId": "alm-rtc-with-ws-fallback-unknown-ack-version-sender-receipts-1",
             "connection": "almConformanceSender",
@@ -1717,6 +1817,16 @@
             "absent": true,
             "windowMs": 17000,
             "timeoutMs": 18000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-frozen-audience-membership-sender-observe-expired-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-frozen-audience-membership-send-1",
+            "state": [
+              "expired"
+            ],
+            "timeoutMs": 10000
           },
           {
             "kind": "messages.receipts",

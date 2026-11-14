@@ -3,7 +3,6 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import {
     toAdmissionCommands,
-    toObserveCommand,
     toSendCommand,
     toStorageCountersCommand
 } from '../alm-conformance-message-commands.ts';
@@ -39,7 +38,6 @@ function toDeliveryBaselineSenderCommands(
             delivery: { ack: 'all-logical-recipients' }
         }),
         ...toAdmissionCommands({ ...sender, index: 1 }),
-        toObserveCommand({ ...sender, index: 1, state: 'acknowledged' }),
         ...toReceiptReadCommands(sender, {
             roles: { confirmed: ['receiver'], unconfirmed: [], outsideAudience: [] },
             ending: 'acknowledged',

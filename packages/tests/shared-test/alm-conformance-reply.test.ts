@@ -25,6 +25,7 @@ const REPLY_SCENARIO_IDS = ['reply-correlated', 'reply-timeout-late', 'reply-und
 const PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 const ADMISSION = ['send-1', 'observe-admitted-1', 'assert-admitted-1'] as const;
 const RECEIPT_READ = [
+    'observe-acknowledged-1',
     'receipts-1',
     'assert-receipt-state-1',
     'assert-receipt-receiptMode-1',

@@ -25,6 +25,7 @@ const AUDIENCE_SCENARIO_IDS = ['principal-delivery', 'fixed-list-delivery', 'wor
 const PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 const RECEIPT_WINDOW = [
     'received-self-1',
+    'observe-acknowledged-1',
     'receipts-1',
     'assert-receipt-state-1',
     'assert-receipt-receiptMode-1',

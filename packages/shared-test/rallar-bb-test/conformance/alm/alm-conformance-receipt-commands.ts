@@ -141,10 +141,9 @@ export function toServerReceiptCommands(sender: AlmConformanceStepInput): readon
 }
 
 /**
- * D28: the origin reads its receipt only after the scenario window, never by polling `acknowledged`, and spends the
- * window proving it is not its own recipient, since the frozen audience excludes it. Then it pins the state the handle
- * ended in, the receipt mode and the length of each recipient list; which session each list names is joined after the
- * run.
+ * D28: the origin reads its receipt only after the scenario window and spends the window proving it is not its own
+ * recipient, since the frozen audience excludes it. Then it pins the state the handle ended in, the receipt mode and
+ * the length of each recipient list; which session each list names is joined after the run.
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
@@ -154,8 +153,10 @@ export function toReceiptWindowCommands(
 }
 
 /**
- * The origin reads the receipt of its first send once its own window has passed: the state the handle ended in, the
- * receipt mode and the length of each recipient list.
+ * The origin reads the receipt of its first send once its own window has passed and its handle has ended: the state
+ * the handle ended in, the receipt mode and the length of each recipient list. A window only lets time pass, and an
+ * ending is what settles the lists, so the read follows the observe of the handle on the origin's own page, which
+ * resolves at any terminal state and leaves the assertions to say which.
  */
 export function toReceiptReadCommands(
     origin: AlmConformanceStepInput,
@@ -168,6 +169,7 @@ export function toReceiptReadCommands(
         ['outsideAudienceRecipientPeerIds', roles.outsideAudience.length]
     ] as const;
     return [
+        toObserveCommand({ ...origin, index: 1, state: ending }),
         toReceiptsCommand({ ...origin, index: 1 }),
         toReceiptAssertion(origin, 'state', ending),
         toReceiptAssertion(origin, 'receiptMode', mode),

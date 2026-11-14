@@ -30,6 +30,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
@@ -386,6 +387,29 @@ function toAllRoleRecipes(scenarios: readonly AlmConformanceScenario[]): readonl
         ...(scenario.sibling ? [scenario.sibling] : []),
         ...(scenario.publisherB ? [scenario.publisherB] : [])
     ]);
+}
+
+/** The handle reached a state its recipient lists no longer change in. */
+function isTerminalObserve(command: RallarBlackBoxTestCommand, handleId: string): boolean {
+    return command.kind === 'messages.observe' && command.handleId === handleId && command.state.length > 0 &&
+        command.state.every((state) => state === 'acknowledged' || state === 'expired');
+}
+
+/**
+ * The origin committed the control that confirms a recipient of the send: over ws the server's `complete` receipt,
+ * whose `admitted` receipt arrives first, and over an rtc leg a recipient's ACK.
+ */
+function isRecipientConfirmationWait(
+    command: RallarBlackBoxTestCommand,
+    sendId: string,
+    carrier: AlmConformanceCarrier
+): boolean {
+    const answered = `"targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`;
+    const confirmation = carrier === 'ws'
+        ? `"typeId":"${AL_CONTROL_RECEIPT_TYPE_ID}",${answered},"reason":"none","phase":"complete"`
+        : `"typeId":"${AL_CONTROL_ACK_TYPE_ID}",${answered}`;
+    return command.kind === 'wait' && command.absent !== true && command.match.kind === 'diagnostic' &&
+        command.match.contains?.includes(confirmation) === true;
 }
 
 describe('alm-conformance recipe family', () => {
@@ -1069,16 +1093,13 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    // A refusal or an admission says nothing of another control's commit: a receipt read is ordered by its own fact.
+    // A refusal, an admission or an elapsed window says nothing of another control's commit: a receipt read is ordered
+    // by its own fact.
     it.each(ALM_CONFORMANCE_CARRIERS)(
-        'reads a receipt whose recipient lists a role asserts only after an event that settles them over %s: a terminal observe of the handle, the committed admission of a control answering its send, or an absence window',
+        'reads a receipt whose recipient lists a role asserts only after an event that settles them over %s: a terminal observe of the handle, or the committed admission of the control that confirms recipients of its send',
         (carrier) => {
             const settles = (command: RallarBlackBoxTestCommand, handleId: string, sendId: string) =>
-                (command.kind === 'messages.observe' && command.handleId === handleId &&
-                    command.state.every((state) => state === 'acknowledged' || state === 'expired')) ||
-                (command.kind === 'wait' && command.match.kind === 'diagnostic' &&
-                    command.match.contains?.includes(`"targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`) === true) ||
-                (command.kind === 'messages.received' && command.absent === true);
+                isTerminalObserve(command, handleId) || isRecipientConfirmationWait(command, sendId, carrier);
             const recipes = toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)));
             const listReads = recipes.flatMap((recipe) => {
                 const commands = toNestedCommands(recipe.commands);
@@ -1120,7 +1141,7 @@ describe('alm-conformance recipe family', () => {
                 ? `received:${command.count}${command.absent === true ? ':absent' : ''}`
                 : command.kind;
 
-        it('reads every receipt only after the scenario window, pinning its mode and the length of each recipient list', () => {
+        it('reads every receipt only after the scenario window and the ending of its handle, pinning its mode and the length of each recipient list', () => {
             // expected = confirmed + unconfirmed + outside the audience
             const tails = {
                 'aggregated-receipt': ['acknowledged', 2, 2, 0, 0],
@@ -1130,9 +1151,10 @@ describe('alm-conformance recipe family', () => {
                 'frozen-audience-membership': ['expired', 2, 1, 1, 0]
             } as const;
             for (const [key, [ending, expected, confirmed, unconfirmed, outside]] of Object.entries(tails)) {
-                const tail = receiptedOf('rtc', key).sender.commands.slice(-9, -1);
+                const tail = receiptedOf('rtc', key).sender.commands.slice(-10, -1);
                 expect(tail.map(shapeOf), key).toEqual([
                     'received:1:absent',
+                    'messages.observe',
                     'messages.receipts',
                     'assert',
                     'assert',
@@ -1141,6 +1163,8 @@ describe('alm-conformance recipe family', () => {
                     'assert',
                     'assert'
                 ]);
+                expect(tail.flatMap((command) => command.kind === 'messages.observe' ? command.state : []), key)
+                    .toEqual([ending]);
                 expect(tail.flatMap((command) => command.kind === 'assert' ? [command.expected] : []), key)
                     .toEqual([ending, 'receiver', expected, confirmed, unconfirmed, outside]);
             }
@@ -1376,6 +1400,33 @@ describe('alm-conformance recipe family', () => {
             expect(indexOf('-sender-forged-recipient-ack-refused')).toBe(genuine - 1);
             expect(indexOf('-sender-receipts-mid-window')).toBe(genuine + 1);
             expect(send).toBeLessThan(genuine);
+        });
+
+        // A refused raw ACK says nothing of the genuine ones, and the window only lets time pass.
+        it.each(
+            [
+                ['rtc', 'unknown-ack-version', 'unknown-ack-version-refused'],
+                ['rtc', 'unsigned-ack-refused', 'unsigned-ack-refused'],
+                ['rtc-with-ws-fallback', 'unknown-ack-version', 'unknown-ack-version-refused'],
+                ['rtc-with-ws-fallback', 'unsigned-ack-refused', 'unsigned-ack-refused']
+            ] as const
+        )('reads the %s %s receipt after the refusal and the window only once its handle is acknowledged', (carrier, key, refusal) => {
+            const sender = receiptedOf(carrier, key).sender.commands;
+            const prefix = `alm-${carrier}-${key}-sender-`;
+            const indexOf = (name: string) => sender.findIndex((command) => command.commandId === `${prefix}${name}`);
+            const observe = indexOf('observe-acknowledged-1');
+            expect(sender[observe]).toEqual({
+                kind: 'messages.observe',
+                commandId: `${prefix}observe-acknowledged-1`,
+                connection: expect.any(String),
+                handleId: `alm-${carrier}-${key}-send-1`,
+                state: ['acknowledged'],
+                timeoutMs: expect.any(Number)
+            });
+            expect(indexOf(refusal)).toBeGreaterThan(-1);
+            expect(indexOf(refusal)).toBeLessThan(indexOf('received-self-1'));
+            expect(indexOf('received-self-1')).toBe(observe - 1);
+            expect(indexOf('receipts-1')).toBe(observe + 1);
         });
 
         it('reshapes the room into a path, has the sender and the owner each send a non-granted receipted multicast and read its own receipt after its window, and resets the config after both read', () => {
