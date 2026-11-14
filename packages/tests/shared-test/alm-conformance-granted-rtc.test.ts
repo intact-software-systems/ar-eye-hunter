@@ -499,7 +499,8 @@ describe('the granted rtc cells', () => {
                         payloadMinimums: {
                             'data.groupRevision': `${head}.groupRevision}`,
                             'data.presenceRevision': `${head}.presenceRevision}`
-                        }
+                        },
+                        sinceCommandIdPrefix: `${sender?.recipeId}-`
                     },
                     timeoutMs: 30_000
                 });

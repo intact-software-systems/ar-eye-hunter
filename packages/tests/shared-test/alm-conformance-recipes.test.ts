@@ -1597,6 +1597,32 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
+    it('a body wait cannot start its history at a command of a cell whose key merely begins with its own', () => {
+        const step = {
+            input: toConformanceInput('rtc'),
+            scenarioId: 'delivery-baseline',
+            scenarioKey: 'capacity',
+            role: 'sender',
+            roles: ['sender', 'receiver'],
+            messages: {},
+            connect: undefined
+        } as const;
+        const toWaitFrom = (sinceCommandIdPrefix: string): RallarBlackBoxTestWaitCommand => ({
+            kind: 'wait',
+            commandId: 'alm-rtc-capacity-sender-late',
+            match: { kind: 'diagnostic', topic: 'rallar.browser.group_state.applied', sinceCommandIdPrefix },
+            timeoutMs: 1_000
+        });
+
+        for (const lookAlike of ['alm-rtc-capacity-age-sender-armed', 'alm-rtc-capacity-tracks-receiver-', 'alm-rtc-capacity-age-']) {
+            expect(() => toCellHistoryMarkedCommands(step, [toWaitFrom(lookAlike)]), lookAlike)
+                .toThrow('alm-rtc-capacity-sender-late');
+        }
+        for (const own of ['alm-rtc-capacity-sender-', 'alm-rtc-capacity-receiver-armed']) {
+            expect(toCellHistoryMarkedCommands(step, [toWaitFrom(own)]), own).toEqual([toWaitFrom(own)]);
+        }
+    });
+
     it('every wait of every role\'s body and continuation, on every carrier, reads from its own cell\'s command prefix', () => {
         const pageHistoryWaits: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

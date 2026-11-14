@@ -771,9 +771,12 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
-- A sibling's election keeps its 2 s `GRANT_DELTA_MARGIN_MS` pause at three sites, because the receiver, which a copy
-  must find current, has no ordering point after the election committed (lane determinism, LD-13): `subscribe-delta-margin`
-  in `subscription-ordered-entry.ts` and in `subscription-ordered-omission.ts`, and `reentered-delta-margin` in
-  `subscription-ordered-reconnect.ts`. The receiver waits for none of the sibling's cues (`entered`, `resubscribed`,
-  `reentered`); each would give it a point, and then every page the election must reach would read the room's head
-  after its point (`toGrantAppliedHeadCommands`) and the pause could go.
+- A sibling's election keeps its 2 s `GRANT_DELTA_MARGIN_MS` pause at three sites, because the receiver, which a
+  copy must find current, has no ordering point after the election committed (lane determinism, LD-13):
+  `subscribe-delta-margin` in `subscription-ordered-entry.ts` and in `subscription-ordered-omission.ts`, and
+  `reentered-delta-margin` in `subscription-ordered-reconnect.ts`. The receiver waits for none of the sibling's
+  cues (`entered`, `resubscribed`, `reentered`), and waiting for one would not order the first copy: the producers
+  publish right after the same cue, so the receiver's wait would run beside the publication. A real ordering point
+  needs a cue from the receiver to the producers, sent after the receiver applied the election (its page read the
+  room's head after the election committed, `toGrantAppliedHeadCommands`); the producers wait for that cue before
+  they publish, and then the pause could go.

@@ -9,7 +9,7 @@ import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
 import { toHeldGroupAppliedMatch } from './to-held-group-applied-match.ts';
 
-const CAUSAL_REVISION_KEYS = ['groupRevision', 'presenceRevision'] as const;
+export const CAUSAL_REVISION_KEYS = ['groupRevision', 'presenceRevision'] as const;
 
 export interface AppliedHeadWaitInput {
     readonly step: AlmConformanceStepInput;

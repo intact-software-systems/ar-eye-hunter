@@ -426,6 +426,11 @@ function toConfirmedCueSteps(publication: number): readonly string[] {
     return PRODUCER_TRACKS.map(([, track]) => `cue-${track}-p${publication}-confirmed-received`);
 }
 
+/** The cues a receiver waits for: none of them is a sibling's election cue. */
+function toReceiverCueWaitNames(receiver: RallarBlackBoxTestRecipe): readonly string[] {
+    return toStepNames(receiver).filter((name) => name.startsWith('cue-') && name.endsWith('-received'));
+}
+
 function toCounts(confirmations: number, outsideAudience: number): readonly number[] {
     return [confirmations + outsideAudience, confirmations, outsideAudience];
 }
@@ -700,21 +705,30 @@ describe('ALM ordered subscription entry conformance', () => {
         'a grant change keeps its fixed pause where the receiver, which a copy must find current, has no cue or write of its own after it, over %s',
         (carrier) => {
             const kept = [
-                ['subscription-ordered-entry', 'sibling', 'subscribe-delta-margin'],
-                ['subscription-ordered-omission', 'sibling', 'subscribe-delta-margin']
+                { scenarioId: 'subscription-ordered-entry', election: 'subscribe-sibling', confirmed: [2, 3] },
+                { scenarioId: 'subscription-ordered-omission', election: 'subscribe-sibling-regranted', confirmed: [2, 4, 5] }
             ] as const;
-            for (const [scenarioId, role, pause] of kept) {
+            for (const { scenarioId, election, confirmed } of kept) {
                 const scenario = findOrderedScenario(carrier, scenarioId);
-                expect(findStep(requireRoleRecipe(scenario, role), pause), `${carrier} ${scenarioId}`)
+                const siblingNames = toStepNames(requireRoleRecipe(scenario, 'sibling'));
+
+                expect(siblingNames[siblingNames.indexOf('subscribe-delta-margin') - 1], `${carrier} ${scenarioId}`).toBe(election);
+                expect(findStep(requireRoleRecipe(scenario, 'sibling'), 'subscribe-delta-margin'), `${carrier} ${scenarioId}`)
                     .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
-                expect(
-                    toStepNames(requireRoleRecipe(scenario, 'receiver')).filter((name) => name.includes('cue-entered') || name.includes('cue-resubscribed')),
-                    `${carrier} ${scenarioId}`
-                )
-                    .toEqual([]);
+                expect(toReceiverCueWaitNames(requireRoleRecipe(scenario, 'receiver')), `${carrier} ${scenarioId}`)
+                    .toEqual(confirmed.map((publication) => toConfirmedCueSteps(publication)).flat());
             }
             const reconnect = findBarrieredReconnectScenario(carrier);
-            expect(toContinuationStepNames(reconnect)).toContain('reentered-delta-margin');
+            const continuationNames = toContinuationStepNames(reconnect);
+            const margin = continuationNames.indexOf('reentered-delta-margin');
+            expect(continuationNames.slice(margin - 1, margin + 2), carrier)
+                .toEqual(['presence-reasserted', 'reentered-delta-margin', 'cue-reentered']);
+            expect(
+                reconnect.continuation?.recipe.commands.find(({ commandId }) => commandId?.endsWith('-reentered-delta-margin')),
+                carrier
+            ).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
+            expect(toReceiverCueWaitNames(requireRoleRecipe(findOrderedScenario(carrier, 'subscription-ordered-reconnect'), 'receiver')), carrier)
+                .toEqual([2, 4, 5].flatMap((publication) => toConfirmedCueSteps(publication)));
         }
     );
 

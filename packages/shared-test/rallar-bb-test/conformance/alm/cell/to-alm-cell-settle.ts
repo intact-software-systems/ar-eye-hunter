@@ -6,7 +6,7 @@ import { CONNECT_READINESS_TIMEOUT_MS, MESSAGE_CONTROL_TIMEOUT_MS } from '../alm
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
-import { toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
+import { CAUSAL_REVISION_KEYS, toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
 
 /**
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and
@@ -19,8 +19,6 @@ export interface AlmCellSettle {
     /** After `formation-settled`: the page's head read, then its wait for the page to have applied that head. */
     readonly head: readonly RallarBlackBoxTestCommand[];
 }
-
-const CAUSAL_REVISION_KEYS = ['groupRevision', 'presenceRevision'] as const;
 
 export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
     return {
