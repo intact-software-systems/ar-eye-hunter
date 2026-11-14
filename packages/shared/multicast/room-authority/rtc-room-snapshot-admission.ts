@@ -15,6 +15,7 @@ import type {
     RtcPublicationAdmitted,
     RtcPublicationRefusal
 } from '../publication/compute-rtc-publication-admission.ts';
+import { resolveRtcRoomEdgeDenial } from './resolve-rtc-room-edge-denial.ts';
 import {
     resolveRtcRoomPeerDenial,
     resolveRtcRoomRosterPosition,
@@ -76,7 +77,8 @@ interface RtcRoomAdmissionAuthority extends RtcRoomSessionObservation {
 const NO_RTC_ROOM_ROUTING_EDGES: RtcRoomRoutingEdges = {
     accepted: { neighbourPeerIds: [], nextHopsBySessionId: undefined },
     previous: null,
-    admittedEdgePeerIds: []
+    admittedEdgePeerIds: [],
+    awaitedEdgePeerIds: []
 };
 
 interface RtcRoomRefusal {
@@ -98,7 +100,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     }
     const snapshot = input.snapshot;
     if (!snapshot) {
-        return { kind: 'pending', reason: 'Awaiting a room authority observation' };
+        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting a room authority observation' };
     }
     const authority = toRtcRoomAdmissionAuthority(input, roomRef, snapshot);
     const senderRoster = input.fromPeerId === undefined
@@ -287,10 +289,10 @@ function resolveRoomFloorDenial(
     const targets = input.message.targets;
     const floor = targets && targets.mode !== 'unicast' ? targets.minSnapshotVersion : undefined;
     if (floor !== undefined && snapshot.group.snapshotVersion < floor) {
-        return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
+        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room snapshot version' };
     }
     if (senderRoster === 'behind') {
-        return { kind: 'pending', reason: 'Awaiting the required room roster version' };
+        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room roster version' };
     }
     return undefined;
 }
@@ -337,50 +339,4 @@ export function resolveRoomObservationDenial(
         return { kind: 'unauthorized', cause: 'authority-rejected', reason: 'Room authority is inactive or expired' };
     }
     return undefined;
-}
-
-function resolveRtcRoomEdgeDenial(
-    input: RtcRoomSnapshotAdmissionInput,
-    authority: RtcRoomAdmissionAuthority
-): RtcRoomAuthorityDenial | undefined {
-    const nextHopPeerIds = input.message.forwarding?.nextHopPeerIds;
-    if (
-        input.fromPeerId !== undefined && nextHopPeerIds?.length &&
-        (nextHopPeerIds.length !== 1 || nextHopPeerIds[0] !== input.selfPeerId)
-    ) {
-        return {
-            kind: 'unauthorized',
-            cause: 'authority-rejected',
-            reason: 'RTC transport copy targets another immediate recipient'
-        };
-    }
-    const overlay = input.overlay;
-    if (overlay && (overlay.state === 'removed' || !isSameGroupRef(overlay.groupRef, authority.roomRef))) {
-        return {
-            kind: 'unauthorized',
-            cause: 'authority-rejected',
-            reason: 'RTC room topology is removed or belongs to another scope'
-        };
-    }
-    return resolveRtcRoomLayoutEdgeDenial(input, authority);
-}
-
-function resolveRtcRoomLayoutEdgeDenial(
-    input: RtcRoomSnapshotAdmissionInput,
-    authority: RtcRoomAdmissionAuthority
-): RtcRoomAuthorityDenial | undefined {
-    const edgePeerId = input.recipientPeerId ??
-        (input.fromPeerId !== input.message.id.senderId ? input.fromPeerId : undefined);
-    if (edgePeerId === undefined) {
-        return undefined;
-    }
-    const overlay = input.overlay;
-    if (!overlay || overlay.provenance !== 'server') {
-        return { kind: 'pending', reason: 'Awaiting server room relay authority' };
-    }
-    return authority.routingEdges.admittedEdgePeerIds.includes(edgePeerId) ? undefined : {
-        kind: 'unauthorized',
-        cause: 'edge-unavailable',
-        reason: 'RTC relay edge is not permitted by current server room topology'
-    };
 }

@@ -38,7 +38,9 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
 import {
     readableLayoutTransitionCache,
-    setCurrentAcceptedServerOverlayById
+    readablePlannedOverlayCache,
+    setCurrentAcceptedServerOverlayById,
+    setCurrentPlannedServerOverlayById
 } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
@@ -81,6 +83,8 @@ export interface RtcOriginOverlayFixture {
     readonly layoutTransitions: ReadableKeyedValues<string, OverlayLayoutTransition>;
     /** Accepts a layout as the overlay repository does, which records the transition it replaces. */
     acceptOverlay(overlay: OverlayInfo): void;
+    /** Replaces the layout this origin holds planned (the server's published plan), and records no transition. */
+    acceptPlannedOverlay(overlay: OverlayInfo): void;
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
@@ -165,6 +169,7 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         groupCache: groups,
         overlayCache: overlays,
         layoutTransitionCache: layoutTransitions,
+        plannedOverlayCache: readablePlannedOverlayCache(repositories),
         replacedLayoutOverlapMs: input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
@@ -189,7 +194,22 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         setCurrentAcceptedServerOverlayById('room', overlay, repositories);
         overlays.accept('room', overlay);
     };
-    return { manager, resources, groups, overlays, layoutTransitions, acceptOverlay, channels, ready, settlements, diagnostics };
+    const acceptPlannedOverlay = (overlay: OverlayInfo): void => {
+        setCurrentPlannedServerOverlayById('room', overlay, repositories);
+    };
+    return {
+        manager,
+        resources,
+        groups,
+        overlays,
+        layoutTransitions,
+        acceptOverlay,
+        acceptPlannedOverlay,
+        channels,
+        ready,
+        settlements,
+        diagnostics
+    };
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {

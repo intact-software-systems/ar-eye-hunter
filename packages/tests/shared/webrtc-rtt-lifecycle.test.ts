@@ -253,6 +253,7 @@ function createStreamingEndpoint(sessionId: string, peerSessionId: string): Stre
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
         layoutTransitionCache: new LatestRepository(),
+        plannedOverlayCache: new LatestRepository(),
         replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
             throw new Error('Heartbeat traffic must not enter multicast');

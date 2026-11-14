@@ -207,6 +207,7 @@ describe('exact RTC ACK boundary observations', () => {
                         groupCache,
                         overlayCache,
                         layoutTransitionCache: new LatestRepository(),
+                        plannedOverlayCache: new LatestRepository(),
                         replacedLayoutOverlapMs: 15_000,
                         multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, connection.service),
                         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),

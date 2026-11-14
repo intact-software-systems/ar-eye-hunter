@@ -49,14 +49,14 @@ const replaced = layout({
     nextHopSessionIds: ['old-parent', 'both', 'expelled'],
     nextHopsBySessionId: { self: ['old-parent', 'both', 'expelled'], 'old-parent': ['self'] }
 });
-const authorizedPeerIds = ['self', 'new-parent', 'old-parent', 'both', 'bystander'];
+const authorizedPeerIds = ['self', 'new-parent', 'old-parent', 'both', 'bystander', 'planned-parent'];
 
 function transition(overrides: Partial<OverlayLayoutTransition> = {}): OverlayLayoutTransition {
     return { replaced, replacedBy: toOverlayLayoutIdentity(accepted), replacedAtEpochMs, ...overrides };
 }
 
 function history(overrides: Partial<RtcRoomLayoutHistory> = {}): RtcRoomLayoutHistory {
-    return { transition: transition(), replacedLayoutOverlapMs: overlapMs, ...overrides };
+    return { transition: transition(), replacedLayoutOverlapMs: overlapMs, planned: null, ...overrides };
 }
 
 function input(overrides: Partial<ResolveRtcRoomRoutingEdgesInput> = {}): ResolveRtcRoomRoutingEdgesInput {
@@ -66,7 +66,8 @@ function input(overrides: Partial<ResolveRtcRoomRoutingEdgesInput> = {}): Resolv
 const acceptedAlone = {
     accepted: { neighbourPeerIds: ['new-parent', 'both'], nextHopsBySessionId: accepted.nextHopsBySessionId },
     previous: null,
-    admittedEdgePeerIds: ['new-parent', 'stranger', 'both']
+    admittedEdgePeerIds: ['new-parent', 'stranger', 'both'],
+    awaitedEdgePeerIds: []
 };
 
 describe('resolveRtcRoomRoutingEdges', () => {
@@ -200,5 +201,51 @@ describe('resolveRtcRoomRoutingEdges', () => {
     it('widens nothing when the replaced layout carries the accepted layout\'s own identity', () => {
         const edges = resolveRtcRoomRoutingEdges(input({ history: history({ transition: transition({ replaced: accepted }) }) }));
         expect(edges).toEqual({ ...acceptedAlone, previous: acceptedAlone.accepted });
+    });
+});
+
+// 'planned-parent' is authorized now and a neighbour only in the receiver's planned layout.
+const planned = layout({
+    overlayVersion: 3,
+    sourceGroupStateCausalRevision: { groupRevision: 3, presenceRevision: 3 },
+    nextHopSessionIds: ['planned-parent', 'both'],
+    nextHopsBySessionId: { self: ['planned-parent', 'both'], 'planned-parent': ['self'] }
+});
+
+describe('resolveRtcRoomRoutingEdges with a planned layout held', () => {
+    it('names a planned layout\'s authorized neighbours as awaited, never as admitted', () => {
+        const edges = resolveRtcRoomRoutingEdges(input({ history: history({ planned }) }));
+        expect(edges.awaitedEdgePeerIds).toEqual(['planned-parent']);
+        expect(edges.admittedEdgePeerIds).not.toContain('planned-parent');
+        expect(edges.accepted.neighbourPeerIds).not.toContain('planned-parent');
+        expect(edges.previous?.neighbourPeerIds).not.toContain('planned-parent');
+    });
+
+    it('awaits nobody when no planned layout is held, when it is not a live server layout of this room, or when the peer is not authorized now', () => {
+        const notLive: readonly OverlayInfo[] = [
+            { ...planned, groupRef: { ...roomRef, groupId: 'other' } },
+            { ...planned, state: 'removed' },
+            { ...planned, provenance: 'bootstrap', nextHopsBySessionId: undefined }
+        ];
+        expect(resolveRtcRoomRoutingEdges(input()).awaitedEdgePeerIds).toEqual([]);
+        for (const plannedLayout of notLive) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: history({ planned: plannedLayout }) })).awaitedEdgePeerIds).toEqual([]);
+        }
+        const removedFromRoom = authorizedPeerIds.filter((peerId) => peerId !== 'planned-parent');
+        expect(resolveRtcRoomRoutingEdges(input({ history: history({ planned }), authorizedPeerIds: removedFromRoom })).awaitedEdgePeerIds)
+            .toEqual([]);
+    });
+
+    it('a peer that is already admitted is not also awaited', () => {
+        const namesAdmitted = layout({ ...planned, nextHopSessionIds: ['new-parent', 'old-parent', 'both'] });
+        const edges = resolveRtcRoomRoutingEdges(input({ history: history({ planned: namesAdmitted }) }));
+        expect(edges.admittedEdgePeerIds).toEqual(['new-parent', 'stranger', 'both', 'old-parent']);
+        expect(edges.awaitedEdgePeerIds).toEqual([]);
+    });
+
+    it('right after a promotion the planned slot equals the accepted layout, so nobody is awaited', () => {
+        for (const layoutHistory of [history({ planned: accepted }), history({ planned: accepted, transition: null })]) {
+            expect(resolveRtcRoomRoutingEdges(input({ history: layoutHistory })).awaitedEdgePeerIds).toEqual([]);
+        }
     });
 });

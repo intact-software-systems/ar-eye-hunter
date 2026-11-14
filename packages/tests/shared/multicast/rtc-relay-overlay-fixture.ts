@@ -41,7 +41,12 @@ import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/r
 import { readRtcGroupSnapshotByRef, readRtcOutboundObservation } from '@shared/multicast/read-rtc-outbound-observation.ts';
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { readableLayoutTransitionCache, setCurrentAcceptedServerOverlayById } from '@shared/repository/overlays-repository.ts';
+import {
+    readableLayoutTransitionCache,
+    readablePlannedOverlayCache,
+    setCurrentAcceptedServerOverlayById,
+    setCurrentPlannedServerOverlayById
+} from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import { toPublicationVerificationCrypto, type PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -103,6 +108,9 @@ export interface RtcRelayOverlayFixture {
     acceptSnapshot(snapshot: GroupSnapshot): void;
     /** Replaces the layout this relay holds accepted, as the server's promotion of a new layout reaches it. */
     acceptOverlay(overlay: OverlayInfo): void;
+    /** Replaces the layout this relay holds planned (the server's published plan), and records no transition. */
+    acceptPlannedOverlay(overlay: OverlayInfo): void;
+    readPlannedOverlay(): OverlayInfo | undefined;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
     forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void>;
     /** Every inbound diagnostic event the relay's receive pipeline emitted, in order. */
@@ -206,6 +214,16 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
         }
     }
 
+    acceptPlannedOverlay(overlay: OverlayInfo): void {
+        for (const overlayId of this.dependencies.overlayIds) {
+            setCurrentPlannedServerOverlayById(overlayId, overlay, this.dependencies.overlayRepositories);
+        }
+    }
+
+    readPlannedOverlay(): OverlayInfo | undefined {
+        return readablePlannedOverlayCache(this.dependencies.overlayRepositories).read(this.dependencies.overlayIds[0]!);
+    }
+
     async forwardRetriedCopy(copy: ALInboundMessageRuntime.RetriedCopy): Promise<void> {
         await this.dependencies.multicast.forwardRetriedCopy(copy);
         await waitForOwnedQueueWork(this.dependencies.outboundResources.workQueue);
@@ -222,6 +240,7 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
             groupCache: groups,
             overlayCache: overlays,
             layoutTransitionCache: readableLayoutTransitionCache(overlayRepositories),
+            plannedOverlayCache: readablePlannedOverlayCache(overlayRepositories),
             replacedLayoutOverlapMs,
             connectedPeerIds: [],
             nowMs: Date.now()
@@ -327,6 +346,7 @@ function createDefaultRelayOverlayResources(
         groupCache: groups,
         overlayCache: overlays,
         layoutTransitionCache: readableLayoutTransitionCache(overlayRepositories),
+        plannedOverlayCache: readablePlannedOverlayCache(overlayRepositories),
         replacedLayoutOverlapMs,
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connection.service),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),

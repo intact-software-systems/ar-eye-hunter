@@ -105,7 +105,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
+            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 
@@ -139,7 +139,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
+            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 
@@ -444,7 +444,7 @@ describe('browser group authority retention', () => {
             selfPeerId: 'receiver',
             fromPeerId: 'origin',
             recipientPeerId: undefined,
-            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
+            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 
@@ -452,6 +452,7 @@ describe('browser group authority retention', () => {
         expect(acceptedOverlay).toEqual(overlay);
         expect(admission).toEqual({
             kind: 'pending',
+            cause: 'authority-behind',
             reason: 'Awaiting a room authority observation'
         });
     });

@@ -1089,6 +1089,7 @@ class NativeAuthorityEndpoint {
             groupCache: input.groups,
             overlayCache: this.overlays,
             layoutTransitionCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
             replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection.service),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),

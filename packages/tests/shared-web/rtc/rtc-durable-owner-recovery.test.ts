@@ -347,6 +347,7 @@ class RtcRecoveryOwner {
             groupCache: this.groups,
             overlayCache: this.overlays,
             layoutTransitionCache: new LatestRepository(),
+            plannedOverlayCache: new LatestRepository(),
             replacedLayoutOverlapMs: 15_000,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection),
             qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, undefined),

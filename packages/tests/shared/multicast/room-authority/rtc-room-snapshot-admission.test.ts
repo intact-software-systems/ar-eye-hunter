@@ -13,6 +13,10 @@ import type {
     RtcPublicationRefusal,
     RtcPublicationRefusalCode
 } from '@shared/multicast/publication/compute-rtc-publication-admission.ts';
+import {
+    isRtcRoomSnapshotRefreshReason,
+    RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON
+} from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
 import type { RtcRoomLayoutHistory } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 import {
     computeRtcRoomSnapshotAdmission,
@@ -29,7 +33,7 @@ import { createGroupSnapshotFixture } from '../../../shared-web/authoritative-gr
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const message = newALMulticastMessage('origin', { topicId: 'room.chat', contextId: 'room', resourceId: 'message' }, roomRef, 'chat.v1', {});
 const nowMs = 100;
-const noLayoutHistory: RtcRoomLayoutHistory = { transition: null, replacedLayoutOverlapMs: 15_000 };
+const noLayoutHistory: RtcRoomLayoutHistory = { transition: null, replacedLayoutOverlapMs: 15_000, planned: null };
 
 function snapshot(): GroupSnapshot {
     return createGroupSnapshotFixture({ ...roomRef, sessionIds: ['origin', 'relay', 'receiver', 'downstream'] });
@@ -278,7 +282,8 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     function promotionHistory(overrides: Partial<OverlayLayoutTransition> = {}, replacedLayoutOverlapMs = overlapMs): RtcRoomLayoutHistory {
         return {
             transition: { replaced, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs, ...overrides },
-            replacedLayoutOverlapMs
+            replacedLayoutOverlapMs,
+            planned: null
         };
     }
 
@@ -334,6 +339,45 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         });
         // Nor does this receiver forward to it: the replaced layout's forwarding set holds only authorized neighbours.
         expect(readPreviousForwardingPeerIds(input, forwardingInsideMs)).toEqual(['downstream']);
+    });
+
+    // 'stranger' is a live member that neighbours this receiver only in the layout it holds planned.
+    const planned: OverlayInfo = { ...promoted, overlayVersion: 3, nextHopSessionIds: ['stranger', 'relay'] };
+    const withPlanned = { ...promotionHistory(), planned };
+
+    it('answers a frame relayed by a planned-layout neighbour as pending, with its own cause, instead of unauthorized', () => {
+        const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned });
+
+        expect(computeRtcRoomSnapshotAdmission(input)).toEqual({
+            kind: 'pending',
+            cause: 'layout-promotion-awaited',
+            reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON
+        });
+        const plan = planRelayed(input);
+        expect(plan).toMatchObject({
+            dropReasonCode: 'not-yet-in-sync',
+            dropReason: `not-yet-in-sync: ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}`,
+            localDelivery: { enabled: false },
+            forwarding: { enabled: false, nextHopPeerIds: [] },
+            nack: { enabled: true, toPeerId: 'stranger', reason: 'not-yet-in-sync' }
+        });
+        // The receiver lacks the layout, not the room snapshot: no room refresh follows this drop.
+        expect(isRtcRoomSnapshotRefreshReason(plan.dropReason!)).toBe(false);
+        expect(isRtcRoomSnapshotRefreshReason('not-yet-in-sync: Awaiting the required room snapshot version')).toBe(true);
+    });
+
+    it('refuses at once a planned-layout neighbour that is not authorized in the room now', () => {
+        const current = promotionSnapshot();
+        const removed = {
+            ...current,
+            activeSessions: current.activeSessions.filter((session) => session.sessionId !== 'stranger'),
+            members: current.members.filter((member) => member.principalId !== 'stranger')
+        };
+        for (const snapshot of [removed, withMember(current, 'stranger', 'removed')]) {
+            const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned, snapshot });
+            expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized' });
+            expect(planRelayed(input)).toMatchObject({ dropReasonCode: 'unauthorized', localDelivery: { enabled: false }, nack: { enabled: false } });
+        }
     });
 
     it('refuses an expelled member that was a neighbour of the replaced layout, inside the overlap', () => {
@@ -457,10 +501,12 @@ describe('the room roster fence at RTC ingress', () => {
         const held = rosterSnapshot(1);
         expect(computeRtcRoomSnapshotAdmission({ ...receiverInput, message: stampedMessage(1, 2), snapshot: held })).toEqual({
             kind: 'pending',
+            cause: 'authority-behind',
             reason: 'Awaiting the required room roster version'
         });
         expect(computeRtcRoomSnapshotAdmission({ ...receiverInput, message: stampedMessage(2, 2), snapshot: held })).toEqual({
             kind: 'pending',
+            cause: 'authority-behind',
             reason: 'Awaiting the required room snapshot version'
         });
     });
@@ -470,7 +516,7 @@ describe('the room roster fence at RTC ingress', () => {
             ...receiverInput,
             message: stampedMessage(1, 2),
             snapshot: withSenderMember(rosterSnapshot(1), 'left')
-        })).toEqual({ kind: 'pending', reason: 'Awaiting the required room roster version' });
+        })).toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room roster version' });
     });
 
     it.each([
@@ -505,7 +551,7 @@ describe('the room roster fence at RTC ingress', () => {
             ...receiverInput,
             message: stampedMessage(2, 2),
             snapshot: withoutSenderSession(rosterSnapshot(2))
-        })).toEqual({ kind: 'pending', reason: 'Awaiting room session authority' });
+        })).toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' });
     });
 
     it('fences an unstamped sender with no active member and awaits one with no session', () => {
@@ -513,7 +559,7 @@ describe('the room roster fence at RTC ingress', () => {
         expect(computeRtcRoomSnapshotAdmission({ ...unstamped, snapshot: withSenderMember(snapshot(), 'absent') }))
             .toMatchObject({ kind: 'unauthorized', cause: 'membership-fenced' });
         expect(computeRtcRoomSnapshotAdmission({ ...unstamped, snapshot: withoutSenderSession(snapshot()) }))
-            .toEqual({ kind: 'pending', reason: 'Awaiting room session authority' });
+            .toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' });
     });
 
     it('ranks a fenced sender above a pending receiver session', () => {

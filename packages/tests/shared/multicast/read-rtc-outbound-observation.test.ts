@@ -72,7 +72,7 @@ describe('readRtcOutboundObservation', () => {
 
         const observation = readFor(overlays, {}, transitions);
 
-        expect(observation.layoutHistory).toEqual({ transition, replacedLayoutOverlapMs: SESSION_OVERLAP_MS });
+        expect(observation.layoutHistory).toEqual({ transition, replacedLayoutOverlapMs: SESSION_OVERLAP_MS, planned: null });
     });
 
     it('carries no transition for an overlay with none', () => {
@@ -82,19 +82,35 @@ describe('readRtcOutboundObservation', () => {
 
         expect(readFor(overlays, {}, transitions).layoutHistory).toEqual({
             transition: null,
-            replacedLayoutOverlapMs: SESSION_OVERLAP_MS
+            replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
+            planned: null
         });
         expect(readFor(new LatestRepository<string, OverlayInfo>(), {}, transitions).layoutHistory).toEqual({
             transition: null,
-            replacedLayoutOverlapMs: SESSION_OVERLAP_MS
+            replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
+            planned: null
         });
+    });
+
+    it('carries the planned layout held for the overlay it selected, and none for another overlay', () => {
+        const overlays = new LatestRepository<string, OverlayInfo>();
+        overlays.accept(SCOPED_ID, { ...createOriginOverlay(['b']), overlayId: SCOPED_ID });
+        const planned = { ...createOriginOverlay(['c']), overlayId: SCOPED_ID, overlayVersion: 2 };
+        const plannedOverlays = new LatestRepository<string, OverlayInfo>();
+        plannedOverlays.accept(SCOPED_ID, planned);
+
+        expect(readFor(overlays, {}, new LatestRepository(), plannedOverlays).layoutHistory.planned).toEqual(planned);
+        const elsewhere = new LatestRepository<string, OverlayInfo>();
+        elsewhere.accept('another-overlay', planned);
+        expect(readFor(overlays, {}, new LatestRepository(), elsewhere).layoutHistory.planned).toBeNull();
     });
 });
 
 function readFor(
     overlays: LatestRepository<string, OverlayInfo>,
     extra: Partial<ALMessage>,
-    transitions: LatestRepository<string, OverlayLayoutTransition> = new LatestRepository()
+    transitions: LatestRepository<string, OverlayLayoutTransition> = new LatestRepository(),
+    plannedOverlays: LatestRepository<string, OverlayInfo> = new LatestRepository()
 ) {
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('any-key', createOriginSnapshot(['a', 'b'], 1));
@@ -113,6 +129,7 @@ function readFor(
         groupCache: groups,
         overlayCache: overlays,
         layoutTransitionCache: transitions,
+        plannedOverlayCache: plannedOverlays,
         replacedLayoutOverlapMs: SESSION_OVERLAP_MS,
         connectedPeerIds: ['b'],
         nowMs: 1

@@ -20,6 +20,7 @@ export interface ReadRtcOutboundObservationInput {
     readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
     readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+    readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
     readonly replacedLayoutOverlapMs: number;
     readonly connectedPeerIds: readonly PeerId[];
     readonly nowMs: number;
@@ -38,7 +39,10 @@ export function readRtcOutboundObservation(
             transition: selected.overlayId === undefined
                 ? null
                 : input.layoutTransitionCache.read(selected.overlayId) ?? null,
-            replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
+            replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
+            planned: selected.overlayId === undefined
+                ? null
+                : input.plannedOverlayCache.read(selected.overlayId) ?? null
         },
         room: groupRef
             ? readRtcGroupSnapshotByRef(groupCache, groupRef)

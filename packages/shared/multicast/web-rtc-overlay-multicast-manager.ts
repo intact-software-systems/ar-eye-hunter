@@ -191,6 +191,7 @@ export namespace WebRtcOverlayMulticastManager {
         readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
         readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
         readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+        readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
         readonly replacedLayoutOverlapMs: number;
         readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
         readonly qosProvider: ALQosInputProvider;
@@ -230,6 +231,7 @@ export class WebRtcOverlayMulticastManager {
     public readonly groupCache: ReadableKeyedValues<string, GroupSnapshot>;
     public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
     private readonly layoutTransitionCache: ReadableKeyedValues<string, OverlayLayoutTransition>;
+    private readonly plannedOverlayCache: ReadableKeyedValues<string, OverlayInfo>;
     public readonly replacedLayoutOverlapMs: number;
     public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
     private readonly circuitBreaker: CircuitBreaker;
@@ -250,6 +252,7 @@ export class WebRtcOverlayMulticastManager {
         this.groupCache = dependencies.groupCache;
         this.overlayCache = dependencies.overlayCache;
         this.layoutTransitionCache = dependencies.layoutTransitionCache;
+        this.plannedOverlayCache = dependencies.plannedOverlayCache;
         this.replacedLayoutOverlapMs = dependencies.replacedLayoutOverlapMs;
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
@@ -705,6 +708,7 @@ export class WebRtcOverlayMulticastManager {
             groupCache: this.groupCache,
             overlayCache: this.overlayCache,
             layoutTransitionCache: this.layoutTransitionCache,
+            plannedOverlayCache: this.plannedOverlayCache,
             replacedLayoutOverlapMs: this.replacedLayoutOverlapMs,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
             nowMs: this.clock.nowMs()
@@ -1162,7 +1166,7 @@ export class WebRtcOverlayMulticastManager {
         const selfPeerId = this.connectionService.input.sessionId;
         const availability = computeRtcOutboundCarrierAvailability({ message, observation: observed, selfPeerId });
         if (availability.kind === 'unavailable') {
-            return { kind: 'pending', reason: availability.reason };
+            return { kind: 'pending', cause: 'authority-behind', reason: availability.reason };
         }
         if (availability.kind !== 'available') {
             return availability;

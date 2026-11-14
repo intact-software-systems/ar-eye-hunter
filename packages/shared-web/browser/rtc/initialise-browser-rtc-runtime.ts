@@ -108,6 +108,7 @@ export function initialiseRtcOverlayMulticastManager(
         groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         overlayCache: overlaysRepository.readableAcceptedOverlayCache(),
         layoutTransitionCache: overlaysRepository.readableLayoutTransitionCache(),
+        plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
         replacedLayoutOverlapMs: input.replacedLayoutOverlapMs,
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),

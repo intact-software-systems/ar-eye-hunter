@@ -7,6 +7,8 @@ import { isOverlayIdentity } from '../../repository/to-overlay-layout-identity.t
 export interface RtcRoomLayoutHistory {
     readonly transition: OverlayLayoutTransition | null;
     readonly replacedLayoutOverlapMs: number;
+    /** The layout this session holds planned for the room, which the server has not promoted here yet; else `null`. */
+    readonly planned: OverlayInfo | null;
 }
 
 export interface ResolveRtcRoomRoutingEdgesInput {
@@ -31,6 +33,11 @@ export interface RtcRoomRoutingEdges {
     readonly previous: RtcRoomLayoutEdges | null;
     /** The accepted layout's next hops, and the replaced layout's authorized neighbours for the whole overlap. */
     readonly admittedEdgePeerIds: readonly string[];
+    /**
+     * The planned layout's authorized neighbours that are not admitted: a receiver awaits its own promotion of that
+     * layout before it judges their copies. Nothing is delivered, forwarded or sent on the strength of this set.
+     */
+    readonly awaitedEdgePeerIds: readonly string[];
 }
 
 interface RtcReplacedLayoutEdges {
@@ -48,7 +55,19 @@ export function resolveRtcRoomRoutingEdges(input: ResolveRtcRoomRoutingEdgesInpu
     const accepted = toRtcRoomLayoutEdges(input.accepted, acceptedNeighbourPeerIdSet);
     const replaced = resolveReplacedLayoutEdges(input, authorizedPeerIdSet);
     const admittedEdgePeerIds = [...new Set([...input.accepted.nextHopSessionIds, ...replaced.admittedPeerIds])];
-    return { accepted, previous: replaced.previous, admittedEdgePeerIds };
+    const awaitedEdgePeerIds = resolvePlannedLayoutNeighbours(input, authorizedPeerIdSet)
+        .filter((peerId) => !admittedEdgePeerIds.includes(peerId));
+    return { accepted, previous: replaced.previous, admittedEdgePeerIds, awaitedEdgePeerIds };
+}
+
+function resolvePlannedLayoutNeighbours(
+    input: ResolveRtcRoomRoutingEdgesInput,
+    authorizedPeerIdSet: ReadonlySet<string>
+): readonly string[] {
+    const planned = input.history.planned ?? undefined;
+    return isRoomLayoutOverlay(planned, input.roomRef)
+        ? toRtcRoomLayoutEdges(planned, authorizedPeerIdSet).neighbourPeerIds
+        : [];
 }
 
 /** With no transition of this room for the accepted layout, there is no replaced layout to admit or forward over. */

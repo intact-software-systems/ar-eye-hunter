@@ -101,7 +101,7 @@ function availability() {
             overlayId,
             room: findGroupStateSnapshotByRef(roomRef),
             overlay: findAcceptedOverlayById(overlayId),
-            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
+            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
             connectedPeerIds: ['receiver'],
             nowMs: Date.now()
         }

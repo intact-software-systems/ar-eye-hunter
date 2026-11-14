@@ -403,7 +403,7 @@ function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALI
             fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
             selfPeerId: 'receiver',
             recipientPeerId: undefined,
-            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000 },
+            layoutHistory: { transition: null, replacedLayoutOverlapMs: 15_000, planned: null },
             overlay: {
                 overlayId: 'room',
                 groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
