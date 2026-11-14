@@ -9,6 +9,7 @@ import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-ser
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
@@ -103,7 +104,10 @@ async function seedPeerOwnerGroups(
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache, acceptedOverlayCache },
+        new WebRtcGroupPeerLedger({
+            localSessionId: connectionService.input.sessionId,
+            repositories: { groupCache, clientCache, acceptedOverlayCache }
+        }),
         { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 

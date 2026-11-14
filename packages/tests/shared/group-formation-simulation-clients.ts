@@ -18,6 +18,7 @@ import {
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+import { createTestGroupPeerLedger } from './web-rtc-group-manager-test-fixture.ts';
 
 export interface SimulatedClient {
     readonly sessionId: string;
@@ -68,12 +69,12 @@ export function createSimulatedClient(
 
     const manager = new WebRtcGroupManager(
         service,
-        {
+        createTestGroupPeerLedger(service, {
             groupCache,
             clientCache,
             plannedOverlayCache: readablePlannedOverlayCache(repositoryManager),
             acceptedOverlayCache: readableAcceptedOverlayCache(repositoryManager)
-        },
+        }),
         {
             maxPeerConnections: options.maxPeerConnections,
             overlayTransitionGraceMs: options.overlayTransitionGraceMs,

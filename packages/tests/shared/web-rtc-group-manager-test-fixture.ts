@@ -10,6 +10,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
@@ -31,6 +32,14 @@ export interface RtcConnectionHarness {
     peerIdsWithNoReconnectableLanes(): string[];
     markReconnectable(peerId: string): boolean;
     nativePeer(peerId: string): SimulatedNativeRtcPeerConnection;
+}
+
+/** The group peer ledger of a manager over `rtcQBox`, reading the given caches. */
+export function createTestGroupPeerLedger(
+    rtcQBox: WebRtcConnectionService,
+    repositories: WebRtcGroupPeerLedger.Repositories
+): WebRtcGroupPeerLedger {
+    return new WebRtcGroupPeerLedger({ localSessionId: rtcQBox.input.sessionId, repositories });
 }
 
 export async function acceptActiveLayoutGroup(

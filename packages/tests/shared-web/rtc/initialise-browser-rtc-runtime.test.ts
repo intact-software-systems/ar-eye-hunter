@@ -61,6 +61,7 @@ import {
     type NativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 
@@ -529,12 +530,16 @@ async function nameStartupPeerInRoom(service: WebRtcConnectionService): Promise<
         toScopedOverlayId(group.group),
         createAcceptedOverlayFixture(group, 1, ['startup-peer'])
     );
-    const manager = new WebRtcGroupManager(service, {
-        groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-        clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-        plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-        acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-    }, { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} });
+    const manager = new WebRtcGroupManager(
+        service,
+        createTestGroupPeerLedger(service, {
+            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+        }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+    );
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);
     configureBrowserRtcPeerCreationPolicies(service, manager);
 }

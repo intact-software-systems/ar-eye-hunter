@@ -7,6 +7,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+import { createTestGroupPeerLedger } from './web-rtc-group-manager-test-fixture.ts';
 
 describe('WebRtcGroupManager overlay roles', () => {
     it('uses planned topology for RTT evidence and dials both layouts while active', async () => {
@@ -19,12 +20,12 @@ describe('WebRtcGroupManager overlay roles', () => {
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
             rtc,
-            {
+            createTestGroupPeerLedger(rtc, {
                 groupCache,
                 clientCache,
                 plannedOverlayCache,
                 acceptedOverlayCache
-            },
+            }),
             { maxPeerConnections: 10, overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         for (const peerId of ['peer-accepted', 'peer-planned']) {

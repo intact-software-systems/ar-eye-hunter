@@ -82,6 +82,7 @@ import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import type { ConnectionCapInboundVerdict } from '@shared/services/group-dial/compute-connection-cap-spend.ts';
+import { WebRtcGroupPeerLedger } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
@@ -832,12 +833,15 @@ function createBrowserRtcGroupManager(
 ): WebRtcGroupManager {
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
-        {
-            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-        },
+        new WebRtcGroupPeerLedger({
+            localSessionId: webRtcConnectionService.input.sessionId,
+            repositories: {
+                groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+                clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+                plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+                acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+            }
+        }),
         {
             maxPeerConnections: input.options.maxPeerConnections,
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,

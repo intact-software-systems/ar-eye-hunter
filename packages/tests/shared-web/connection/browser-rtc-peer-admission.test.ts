@@ -19,6 +19,7 @@ import {
     type NativeRtcConnectionFixture,
     type NativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface AdmissionScenario {
@@ -449,12 +450,16 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
         createPassThroughTransportFaultPort()
     );
     connections.add(connection);
-    const manager = new WebRtcGroupManager(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: plannedOverlays,
-        acceptedOverlayCache: acceptedOverlays
-    }, createBrowserRtcHeldOfferReleases(connection.service));
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        createTestGroupPeerLedger(connection.service, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>(),
+            plannedOverlayCache: plannedOverlays,
+            acceptedOverlayCache: acceptedOverlays
+        }),
+        createBrowserRtcHeldOfferReleases(connection.service)
+    );
     configureBrowserRtcPeerCreationPolicies(connection.service, manager);
     await connection.service.connectSignaler();
     await manager.acceptGroupUpdate(group);
@@ -566,12 +571,16 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
         createPassThroughTransportFaultPort()
     );
     connections.add(connection);
-    const manager = new WebRtcGroupManager(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: plannedOverlays,
-        acceptedOverlayCache: acceptedOverlays
-    }, { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} });
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        createTestGroupPeerLedger(connection.service, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>(),
+            plannedOverlayCache: plannedOverlays,
+            acceptedOverlayCache: acceptedOverlays
+        }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+    );
     configureBrowserRtcPeerCreationPolicies(connection.service, manager);
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.

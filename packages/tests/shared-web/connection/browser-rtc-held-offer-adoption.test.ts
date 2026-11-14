@@ -29,6 +29,7 @@ import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts
 
 import { createInboundTestStores } from '../../shared/alm/inbound-runtime-test-fixture.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
+import { createTestGroupPeerLedger } from '../../shared/web-rtc-group-manager-test-fixture.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -139,15 +140,19 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
     );
     const group = createActiveGroup();
     const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
-    const manager = new WebRtcGroupManager(connectionService, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
-        acceptedOverlayCache: acceptedOverlays
-    }, {
-        onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON),
-        onReconcilePassEnded: () => {}
-    });
+    const manager = new WebRtcGroupManager(
+        connectionService,
+        createTestGroupPeerLedger(connectionService, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>(),
+            plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
+            acceptedOverlayCache: acceptedOverlays
+        }),
+        {
+            onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON),
+            onReconcilePassEnded: () => {}
+        }
+    );
     configureBrowserRtcPeerCreationPolicies(connectionService, manager);
     onTestFinished(async () => {
         connectionService.removePeerIfPresent(SENDER);
