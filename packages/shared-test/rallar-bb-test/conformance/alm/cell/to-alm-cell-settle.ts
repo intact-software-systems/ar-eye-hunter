@@ -22,7 +22,7 @@ export interface AlmCellSettle {
 
 export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
     return {
-        formation: step.role === 'receiver' ? [toFormationPollCommand(step)] : [],
+        formation: step.role === 'receiver' ? [toFormationSettledPollCommand(step, 'formation-poll')] : [],
         head: toAppliedHeadWaitCommands({
             step,
             name: 'head',
@@ -61,11 +61,14 @@ const FORMATION_SETTLED_FACTS: readonly PollFact[] = [
     }))
 ];
 
-/** The receiver reads its room's formation view, then its snapshot, until the two describe a settled room. */
-function toFormationPollCommand(owner: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+/**
+ * The room's owner reads its formation view, then its snapshot, until the two describe a settled room: before a cell's
+ * body, and after a change of the room's presence that re-plans its layout.
+ */
+export function toFormationSettledPollCommand(owner: AlmConformanceStepInput, name: string): RallarBlackBoxTestCommand {
     return toReadPollCommand({
         step: owner,
-        name: 'formation-poll',
+        name,
         phaseMs: CONNECT_READINESS_TIMEOUT_MS,
         commandTimeoutMs: MESSAGE_CONTROL_TIMEOUT_MS,
         reads: [

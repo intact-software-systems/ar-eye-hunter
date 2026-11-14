@@ -771,14 +771,29 @@ describe('ALM ordered subscription entry conformance', () => {
                 const names = toStepNames(receiver);
                 const heard = names.indexOf(`cue-${elected}-received`);
                 const head = `{resultCache.${receiver.recipeId}-${elected}-head-read.value.body.causalRevision`;
+                // A reopened socket re-asserts the sibling's presence, which re-plans the room's layout: the receiver
+                // waits until the room settled on it, and each producer applies a head read after that.
+                const reasserted = scenarioId === 'subscription-ordered-reconnect';
+                const settled = reasserted ? [`${elected}-formation-poll`] : [];
 
                 expect(heard, `${carrier} ${scenarioId}`).toBeGreaterThan(-1);
-                expect(names.slice(heard + 1, heard + 5), `${carrier} ${scenarioId}`).toEqual([
+                expect(names.slice(heard + 1, heard + 5 + settled.length), `${carrier} ${scenarioId}`).toEqual([
+                    ...settled,
                     `${elected}-head-read`,
                     `${elected}-head-applied`,
                     `cue-${elected}-applied`,
                     `cue-${elected}-applied-sent`
                 ]);
+                if (reasserted) {
+                    // The settle's own formation poll, under the cue's name, outside the settle.
+                    const { metadata: _settle, ...settlePoll } = findStep(
+                        requireRoleRecipe(findBarrieredReconnectScenario(carrier), 'receiver'),
+                        'formation-poll'
+                    );
+                    const renamed = JSON.stringify(settlePoll)
+                        .replaceAll(`${receiver.recipeId}-formation-poll`, `${receiver.recipeId}-${elected}-formation-poll`);
+                    expect(findStep(receiver, `${elected}-formation-poll`), `${carrier} ${scenarioId}`).toEqual(JSON.parse(renamed));
+                }
                 expect(findStep(receiver, `${elected}-head-applied`), `${carrier} ${scenarioId}`).toMatchObject({
                     kind: 'wait',
                     match: {
@@ -793,8 +808,10 @@ describe('ALM ordered subscription entry conformance', () => {
                 for (const [role, track] of PRODUCER_TRACKS) {
                     const producerNames = toStepNames(requireRoleRecipe(scenario, role));
                     const first = next.startsWith('probe') ? next : `${track}-${next}`;
-                    expect(producerNames[producerNames.indexOf(toPublishSteps(first)[0]!) - 1], `${carrier} ${scenarioId} ${role}`)
-                        .toBe(`cue-${elected}-applied-received`);
+                    const before = producerNames.indexOf(toPublishSteps(first)[0]!);
+                    const applied = reasserted ? [`${elected}-head-read`, `${elected}-head-applied`] : [];
+                    expect(producerNames.slice(before - 1 - applied.length, before), `${carrier} ${scenarioId} ${role}`)
+                        .toEqual([`cue-${elected}-applied-received`, ...applied]);
                     expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);
                 }
                 const siblingNames = scenarioId === 'subscription-ordered-reconnect'
@@ -983,6 +1000,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
                 'cue-reentered-applied-received',
+                'reentered-head-read',
+                'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
@@ -1001,6 +1020,7 @@ describe('ALM ordered subscription reconnect conformance', () => {
             ...toPublicationSteps('received', 'c', [3, 4]),
             ...toConfirmedCueSteps(4),
             'cue-reentered-received',
+            'reentered-formation-poll',
             'reentered-head-read',
             'reentered-head-applied',
             'cue-reentered-applied',

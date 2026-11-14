@@ -24,7 +24,7 @@ import {
 } from './topic-subscription-generation-polls.ts';
 import {
     toElectionAppliedCueCommands,
-    toElectionAppliedCueWait,
+    toElectionAppliedCueWaitCommands,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -76,8 +76,9 @@ export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
 /**
  * Over RTC the other producer, unelected, is frozen into each copy. While the sibling's socket is closed a probe
  * publishes until the receiver alone is expected: the WS server stops expecting the sibling with its socket, an RTC
- * producer once its snapshot drops the closed presence. After the reopen a probe waits until both subscribers are
- * expected again: over RTC the producer's snapshot must name the re-asserted presence and the link must be up.
+ * producer once its snapshot drops the closed presence. After the reopen the producer's page applies the head that
+ * carries the layout the re-asserted presence settled on, then a probe waits until both subscribers are expected
+ * again: over RTC the producer's snapshot must name the re-asserted presence and the link must be up.
  */
 function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const outsideAudience = computeUnelectedOutsideCount(producer, 1);
@@ -92,7 +93,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toPublishUntilConfirmedCommands({ ...receiverAlone, name: 'probe-receiver-alone', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 3 }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 4 }),
-        toElectionAppliedCueWait(producer, REENTERED),
+        ...toElectionAppliedCueWaitCommands(producer, REENTERED, 'reasserted'),
         ...toPublishUntilConfirmedCommands({ ...subscribed, name: 'probe-reentered', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
         ...toNoGapRepairWaits(producer)
@@ -107,7 +108,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toOrderedArrivalWaits(owner, [3, 4]),
         ...toOrderedConfirmedCueWaits(owner, 4),
-        ...toElectionAppliedCueCommands(owner, REENTERED),
+        ...toElectionAppliedCueCommands(owner, REENTERED, 'reasserted'),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),
         ...toUnsubscribeCommands(owner, 'receiver')

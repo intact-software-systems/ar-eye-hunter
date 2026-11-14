@@ -16,7 +16,7 @@ import {
 } from './topic-subscription-commands.ts';
 import {
     toElectionAppliedCueCommands,
-    toElectionAppliedCueWait,
+    toElectionAppliedCueWaitCommands,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -75,7 +75,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, beforeEntry.confirmations, beforeEntry.outsideAudience),
         ...toOrderedPublishCommands({ ...beforeEntry, publication: 1 }),
         ...toOrderedPublishCommands({ ...beforeEntry, publication: 2 }),
-        toElectionAppliedCueWait(producer, ENTERED),
+        ...toElectionAppliedCueWaitCommands(producer, ENTERED, 'held'),
         ...toOrderedPublishCommands({
             step: producer,
             publication: 3,
@@ -98,7 +98,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toCueSendCommands(owner, PUBLISHED_BEFORE_ENTRY),
-        ...toElectionAppliedCueCommands(owner, ENTERED),
+        ...toElectionAppliedCueCommands(owner, ENTERED, 'held'),
         ...toOrderedArrivalWaits(owner, [3]),
         ...toOrderedConfirmedCueWaits(owner, 3),
         ...toUnsubscribeCommands(owner, 'receiver')

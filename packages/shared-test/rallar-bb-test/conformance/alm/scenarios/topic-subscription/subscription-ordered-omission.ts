@@ -18,7 +18,7 @@ import {
 } from './topic-subscription-commands.ts';
 import {
     toElectionAppliedCueCommands,
-    toElectionAppliedCueWait,
+    toElectionAppliedCueWaitCommands,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -81,7 +81,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toGrantAppliedHeadCommands(producer, 'revoke-head'),
         ...toOrderedPublishCommands({ ...revoked, publication: 3 }),
         ...toOrderedPublishCommands({ ...revoked, publication: 4 }),
-        toElectionAppliedCueWait(producer, RESUBSCRIBED),
+        ...toElectionAppliedCueWaitCommands(producer, RESUBSCRIBED, 'held'),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
         ...toNoGapRepairWaits(producer)
     ];
@@ -119,7 +119,7 @@ function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBo
             subscribe: true
         }),
         ...toCueSendCommands(owner, 'regranted'),
-        ...toElectionAppliedCueCommands(owner, RESUBSCRIBED),
+        ...toElectionAppliedCueCommands(owner, RESUBSCRIBED, 'held'),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),
         ...toUnsubscribeCommands(owner, 'receiver')

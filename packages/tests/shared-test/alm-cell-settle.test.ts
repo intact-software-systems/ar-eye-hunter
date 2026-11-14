@@ -354,14 +354,19 @@ describe('alm-conformance cell parts', () => {
 
                 // Every cell has a receiver, which creates the room and owns it.
                 expect(scenario.roles, scenario.scenarioKey).toContain('receiver');
-                expect(polls.map((command) => command.commandId), scenario.scenarioKey)
-                    .toEqual([`${cellPrefix}-receiver-formation-poll`]);
-                expect(polls[0], scenario.scenarioKey).toMatchObject({
-                    kind: 'loop',
-                    until: 'first-success',
-                    intervalMs: 250,
-                    count: CONNECT_READINESS_TIMEOUT_MS / 250
-                });
+                // A re-asserted presence re-plans the layout, so the reconnect cell's receiver polls once more after it.
+                expect(polls.map((command) => command.commandId), scenario.scenarioKey).toEqual([
+                    `${cellPrefix}-receiver-formation-poll`,
+                    ...(scenario.scenarioId === 'subscription-ordered-reconnect' ? [`${cellPrefix}-receiver-reentered-formation-poll`] : [])
+                ]);
+                for (const poll of polls) {
+                    expect(poll, scenario.scenarioKey).toMatchObject({
+                        kind: 'loop',
+                        until: 'first-success',
+                        intervalMs: 250,
+                        count: CONNECT_READINESS_TIMEOUT_MS / 250
+                    });
+                }
             }
         }
     });
