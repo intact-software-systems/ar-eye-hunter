@@ -4,20 +4,20 @@ import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 
 export type SerializedWeightedGraphNode = Readonly<{
     key: string;
-    attributes?: unknown;
+    attributes?: ApiJsonObject;
 }>;
 
 export type SerializedWeightedGraphEdge = Readonly<{
     key?: string;
     source: string;
     target: string;
-    attributes?: unknown;
+    attributes?: ApiJsonObject;
     undirected?: boolean;
 }>;
 
 export type SerializedWeightedGraph = Readonly<{
-    attributes?: unknown;
-    options?: unknown;
+    attributes?: ApiJsonObject;
+    options?: ApiJsonObject;
     nodes: readonly SerializedWeightedGraphNode[];
     edges: readonly SerializedWeightedGraphEdge[];
 }>;
