@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_CONFORMANCE_LANE_FAMILIES,
-    type AlmConformanceLaneFamily
+    type AlmConformanceLaneFamily,
+    type AlmConformanceTag
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
@@ -26,8 +27,24 @@ import { toAlmLaneEmptyPlanReason } from '@shared-test/rallar-bb-test/conformanc
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
 const KEYS = ['a', 'b', 'c', 'd', 'e', 'f'].map((scenarioKey) => ({ scenarioKey }));
-const DECLARED: AlmLaneParameters = { order: 'declared', seed: null, rooms: 'family', only: [], skip: [] };
-const NO_VALUES = { order: undefined, seed: undefined, rooms: undefined, only: undefined, skip: undefined };
+const DECLARED: AlmLaneParameters = {
+    scope: 'full',
+    carriers: ALM_CONFORMANCE_CARRIERS,
+    order: 'declared',
+    seed: null,
+    rooms: 'family',
+    only: [],
+    skip: []
+};
+const NO_VALUES = {
+    scope: undefined,
+    carriers: undefined,
+    order: undefined,
+    seed: undefined,
+    rooms: undefined,
+    only: undefined,
+    skip: undefined
+};
 const TOPOLOGY_RESHAPING_KEYS = ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay'];
 const CATALOG: readonly AlmLaneCatalogCell[] = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
     createAlmConformanceRecipes(toConformanceInput(carrier)).map(({ scenarioId, scenarioKey, tags }) => ({
@@ -60,11 +77,17 @@ function toFamilyCatalog(
         .filter((scenario) => scenario.laneFamily === family);
 }
 
+/** A selection is the scope and carrier values a run states; a value given beside it wins. */
 function toDecodeInput(
     values: Partial<DecodeAlmLaneParametersInput['values']>,
-    selection: DecodeAlmLaneParametersInput['selection'] = FULL_SELECTION
+    selection: Readonly<{ scope: AlmConformanceTag; carriers: readonly AlmConformanceCarrier[]; }> = FULL_SELECTION
 ): DecodeAlmLaneParametersInput {
-    return { values: { ...NO_VALUES, ...values }, catalog: CATALOG, selection };
+    const selected = { scope: selection.scope, carriers: selection.carriers.join(',') };
+    return { values: { ...NO_VALUES, ...selected, ...values }, catalog: CATALOG };
+}
+
+function toDecoded(input: DecodeAlmLaneParametersInput): AlmLaneParameters | undefined {
+    return decodeAlmLaneParameters(input).fold(() => undefined, (decoded) => decoded);
 }
 
 function toIssues(input: DecodeAlmLaneParametersInput): readonly string[] {
@@ -147,6 +170,8 @@ describe('the ALM lane parameters', () => {
                 skip: 'volatile-default'
             })).fold(() => undefined, (decoded) => decoded)
         ).toEqual({
+            scope: 'full',
+            carriers: ALM_CONFORMANCE_CARRIERS,
             order: 'shuffled',
             seed: 42,
             rooms: 'cell',
@@ -162,6 +187,38 @@ describe('the ALM lane parameters', () => {
             'RALLAR_BLACK_BOX_ALM_ORDER=random is not accepted; accepted values: declared, shuffled.',
             'RALLAR_BLACK_BOX_ALM_SEED=-1 is not accepted; accepted values: an integer from 0 to 4294967295.',
             'RALLAR_BLACK_BOX_ALM_ROOMS=world is not accepted; accepted values: family, cell.'
+        ]);
+    });
+
+    // A repository variable that is not set reaches the workflow step as an empty string, so empty counts as unset.
+    it('an unset or empty scope runs smoke, and unset or empty carriers run every carrier', () => {
+        for (const unset of [undefined, '', ' ']) {
+            expect(toDecoded(toDecodeInput({ scope: unset, carriers: unset })), String(unset)).toEqual({
+                ...DECLARED,
+                scope: 'smoke'
+            });
+        }
+    });
+
+    it('accepts each scope and each carrier, and keeps the carriers in catalog order', () => {
+        const toSelection = (decoded: AlmLaneParameters | undefined) => [decoded?.scope, decoded?.carriers];
+
+        expect(toSelection(toDecoded(toDecodeInput({ scope: 'smoke' })))).toEqual(['smoke', ALM_CONFORMANCE_CARRIERS]);
+        expect(toSelection(toDecoded(toDecodeInput({ scope: ' full ' })))).toEqual(['full', ALM_CONFORMANCE_CARRIERS]);
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            expect(toDecoded(toDecodeInput({ carriers: carrier }))?.carriers).toEqual([carrier]);
+        }
+        expect(toDecoded(toDecodeInput({ carriers: 'rtc-with-ws-fallback, ws' }))?.carriers).toEqual([
+            'ws',
+            'rtc-with-ws-fallback'
+        ]);
+    });
+
+    it('refuses an unknown scope and an unknown carrier, and judges no named cell against them', () => {
+        expect(toIssues(toDecodeInput({ scope: 'ful', carriers: 'ws,tcp,udp', only: 'delivery-baseline' }))).toEqual([
+            'RALLAR_BLACK_BOX_ALM_SCOPE=ful is not accepted; accepted values: smoke, full.',
+            'RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: tcp, udp; accepted values: ws, rtc, ' +
+            'rtc-with-ws-fallback.'
         ]);
     });
 

@@ -1,6 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
+import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
 import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
@@ -13,8 +13,12 @@ export const ALM_LANE_ROOMS = ['family', 'cell'] as const;
 
 export type AlmLaneRooms = typeof ALM_LANE_ROOMS[number];
 
+const ALM_LANE_SCOPES: readonly AlmConformanceTag[] = ['smoke', 'full'];
+
 /** The lane's environment as read; an absent or empty value takes the parameter's default. */
 export interface AlmLaneParameterValues {
+    readonly scope: string | undefined;
+    readonly carriers: string | undefined;
     readonly order: string | undefined;
     readonly seed: string | undefined;
     readonly rooms: string | undefined;
@@ -23,6 +27,9 @@ export interface AlmLaneParameterValues {
 }
 
 export interface AlmLaneParameters {
+    readonly scope: AlmConformanceTag;
+    /** In catalog order. */
+    readonly carriers: readonly AlmConformanceCarrier[];
     readonly order: AlmLaneOrder;
     /** Null when no seed was given: a shuffled family then mints its own. A declared order takes none. */
     readonly seed: number | null;
@@ -42,9 +49,9 @@ export interface DecodeAlmLaneParametersInput {
     readonly values: AlmLaneParameterValues;
     /** Every cell of the catalog, on every carrier, in every family and scope. */
     readonly catalog: readonly AlmLaneCatalogCell[];
-    /** What this run selects besides the lane parameters: `RALLAR_BLACK_BOX_ALM_SCOPE` and `_CARRIERS`. */
-    readonly selection: Readonly<{ scope: AlmConformanceTag; carriers: readonly AlmConformanceCarrier[]; }>;
 }
+
+type AlmLaneSelection = Pick<AlmLaneParameters, 'scope' | 'carriers'>;
 
 const MAX_SEED = 0xFFFF_FFFF;
 
@@ -52,18 +59,22 @@ const MAX_SEED = 0xFFFF_FFFF;
  * Every refused value is named with the values the lane accepts, so a run fails before any browser starts. The rules
  * compose in one way: `RALLAR_BLACK_BOX_ALM_SKIP` withholds a scenario id even when `_ONLY` names its key; `_ONLY`
  * keeps cells within `_SCOPE` and `_CARRIERS`, and a key it names must run in at least one of them or the run is
- * refused with the reason; `_SEED` is accepted only with `_ORDER=shuffled`.
+ * refused with the reason, judged only once `_SCOPE` and `_CARRIERS` are accepted; `_SEED` is accepted only with
+ * `_ORDER=shuffled`.
  */
 export function decodeAlmLaneParameters(
     input: DecodeAlmLaneParametersInput
 ): Either<readonly string[], AlmLaneParameters> {
     const { values } = input;
+    const selection = decodeSelection(values);
+    const selected = selection.fold(() => undefined, (decoded) => decoded);
     const order = toPresent(values.order) ?? 'declared';
     const seed = toPresent(values.seed);
     const rooms = toPresent(values.rooms) ?? 'family';
     const only = toListEntries(values.only);
     const skip = toListEntries(values.skip);
     const issues = [
+        ...selection.fold((selectionIssues) => selectionIssues, () => []),
         ...(isAlmLaneOrder(order) ? [] : [
             `RALLAR_BLACK_BOX_ALM_ORDER=${order} is not accepted; accepted values: ${ALM_LANE_ORDERS.join(', ')}.`
         ]),
@@ -72,12 +83,34 @@ export function decodeAlmLaneParameters(
             `RALLAR_BLACK_BOX_ALM_ROOMS=${rooms} is not accepted; accepted values: ${ALM_LANE_ROOMS.join(', ')}.`
         ]),
         ...validateSkip(skip, input.catalog),
-        ...validateOnly({ only, skip, catalog: input.catalog, selection: input.selection })
+        ...(selected === undefined ? [] : validateOnly({ only, skip, catalog: input.catalog, selection: selected }))
     ];
-    if (issues.length > 0 || !isAlmLaneOrder(order) || !isAlmLaneRooms(rooms)) {
+    if (issues.length > 0 || selected === undefined || !isAlmLaneOrder(order) || !isAlmLaneRooms(rooms)) {
         return Either.ofLeft(issues);
     }
-    return Either.ofRight({ order, seed: seed === undefined ? null : Number(seed), rooms, only, skip });
+    return Either.ofRight({ ...selected, order, seed: seed === undefined ? null : Number(seed), rooms, only, skip });
+}
+
+function decodeSelection(values: AlmLaneParameterValues): Either<readonly string[], AlmLaneSelection> {
+    const scope = toPresent(values.scope) ?? 'smoke';
+    const requested = toListEntries(values.carriers);
+    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
+    const issues = [
+        ...(isAlmLaneScope(scope) ? [] : [
+            `RALLAR_BLACK_BOX_ALM_SCOPE=${scope} is not accepted; accepted values: ${ALM_LANE_SCOPES.join(', ')}.`
+        ]),
+        ...(unsupported.length === 0 ? [] : [
+            `RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}; accepted values: ` +
+            `${ALM_CONFORMANCE_CARRIERS.join(', ')}.`
+        ])
+    ];
+    if (issues.length > 0 || !isAlmLaneScope(scope)) {
+        return Either.ofLeft(issues);
+    }
+    const carriers = requested.length === 0
+        ? ALM_CONFORMANCE_CARRIERS
+        : ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
+    return Either.ofRight({ scope, carriers });
 }
 
 function validateSeed(seed: string | undefined, order: string): readonly string[] {
@@ -102,7 +135,8 @@ function validateSkip(skip: readonly string[], catalog: readonly AlmLaneCatalogC
     ];
 }
 
-interface AlmLaneOnlySelection extends Pick<DecodeAlmLaneParametersInput, 'catalog' | 'selection'> {
+interface AlmLaneOnlySelection extends Pick<DecodeAlmLaneParametersInput, 'catalog'> {
+    readonly selection: AlmLaneSelection;
     readonly only: readonly string[];
     readonly skip: readonly string[];
 }
@@ -163,6 +197,14 @@ function toListEntries(value: string | undefined): readonly string[] {
 
 function isSeed(value: string): boolean {
     return /^\d+$/.test(value) && Number(value) <= MAX_SEED;
+}
+
+function isAlmLaneScope(value: string): value is AlmConformanceTag {
+    return ALM_LANE_SCOPES.some((scope) => scope === value);
+}
+
+function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
+    return ALM_CONFORMANCE_CARRIERS.some((carrier) => carrier === value);
 }
 
 function isAlmLaneOrder(value: string): value is AlmLaneOrder {

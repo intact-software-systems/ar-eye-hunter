@@ -157,12 +157,16 @@ const AGENT_FAMILY_ROLES: Readonly<Record<AgentScenarioFamily, readonly AlmConfo
 };
 
 const config = readFullStackConfig();
-const scope = process.env.RALLAR_BLACK_BOX_ALM_SCOPE === 'full' ? 'full' : 'smoke';
-const carriers = toCarrierSelection(process.env.RALLAR_BLACK_BOX_ALM_CARRIERS);
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
 const laneParameters = config.enabled ? readLaneParameters() : undefined;
+/** A disabled lane decodes nothing: every test skips, so its titles name every carrier in the smoke scope. */
+const DISABLED_LANE_SELECTION: Pick<AlmLaneParameters, 'scope' | 'carriers'> = {
+    scope: 'smoke',
+    carriers: ALM_CONFORMANCE_CARRIERS
+};
+const { scope, carriers } = laneParameters ?? DISABLED_LANE_SELECTION;
 // Finite carrier ceiling covers the conformance recipes and connection readiness. With the fairness cells the full
 // scope's two-agent family measured ws 5.3, rtc 6.4 and rtc-with-ws-fallback 6.8 minutes. Before the agent page paced
 // its React updates, the rtc family took 15.1 minutes (about 906 s, past this ceiling): the ceiling holds only while
@@ -303,26 +307,6 @@ test.describe('ALM conformance lane', () => {
     }
 });
 
-/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
-function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
-    const requested = (value ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-    if (requested.length === 0) {
-        return ALM_CONFORMANCE_CARRIERS;
-    }
-    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
-    if (unsupported.length > 0) {
-        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
-    }
-    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
-}
-
-function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
-    return ALM_CONFORMANCE_CARRIERS.some((carrier) => carrier === value);
-}
-
 function createFamilyScenarios(
     selection: ScenarioSelectionInput,
     carrier: AlmConformanceCarrier,
@@ -351,13 +335,15 @@ function readLaneParameters(): AlmLaneParameters {
         )
     );
     const values = {
+        scope: process.env.RALLAR_BLACK_BOX_ALM_SCOPE,
+        carriers: process.env.RALLAR_BLACK_BOX_ALM_CARRIERS,
         order: process.env.RALLAR_BLACK_BOX_ALM_ORDER,
         seed: process.env.RALLAR_BLACK_BOX_ALM_SEED,
         rooms: process.env.RALLAR_BLACK_BOX_ALM_ROOMS,
         only: process.env.RALLAR_BLACK_BOX_ALM_ONLY,
         skip: process.env.RALLAR_BLACK_BOX_ALM_SKIP
     };
-    return decodeAlmLaneParameters({ values, catalog, selection: { scope, carriers } }).fold(
+    return decodeAlmLaneParameters({ values, catalog }).fold(
         (issues) => {
             throw new RangeError(`The ALM lane parameters are refused: ${issues.join(' ')}`);
         },
