@@ -48,6 +48,7 @@ import {
     type AlmLanePlan,
     type AlmLanePlannedCell
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
+import { toAlmLaneEmptyPlanReason } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
 import {
     decodeALMObservationPageDiagnosticsFile,
     type ALMObservationPageDiagnosticsFile
@@ -183,7 +184,7 @@ test.describe('ALM conformance lane', () => {
             test(`${title} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
                 test.skip(
                     planFamily(carrier, family).cells.length === 0,
-                    `no ${scope} ${title} ALM scenario runs over ${carrier}`
+                    toEmptyPlanReason(carrier, family, `no ${scope} ${title} ALM scenario runs over ${carrier}`)
                 );
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
                 const plan = announcePlan(carrier, family);
@@ -229,9 +230,13 @@ test.describe('ALM conformance lane', () => {
             test(`${family} family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
                 test.skip(
                     planFamily(carrier, family).cells.length === 0,
-                    `no ${scope} ALM scenario over ${carrier} declares the ${
-                        AGENT_FAMILY_ROLES[family].join(', ')
-                    } roles`
+                    toEmptyPlanReason(
+                        carrier,
+                        family,
+                        `no ${scope} ALM scenario over ${carrier} declares the ${
+                            AGENT_FAMILY_ROLES[family].join(', ')
+                        } roles`
+                    )
                 );
                 test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
                 const plan = announcePlan(carrier, family);
@@ -270,7 +275,11 @@ test.describe('ALM conformance lane', () => {
         test(`same-context family over ${carrier} (${scope})`, async ({ browser, request }, testInfo) => {
             test.skip(
                 planFamily(carrier, 'same-context').cells.length === 0,
-                `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
+                toEmptyPlanReason(
+                    carrier,
+                    'same-context',
+                    `no ${scope} ALM scenario over ${carrier} runs on two pages of one context`
+                )
             );
             test.setTimeout(CARRIER_TEST_TIMEOUT_MS);
             const plan = announcePlan(carrier, 'same-context');
@@ -380,11 +389,20 @@ function requireLaneParameters(): AlmLaneParameters {
 function planFamily(carrier: AlmConformanceCarrier, family: AlmConformanceLaneFamily): AlmLanePlan {
     return resolveAlmLanePlan({
         family,
+        carrier,
         scenarios: createFamilyScenarios(toPlanningSelection(), carrier, family),
         scope,
         parameters: requireLaneParameters(),
         mintSeed: () => randomInt(0, 2 ** 31)
     });
+}
+
+function toEmptyPlanReason(
+    carrier: AlmConformanceCarrier,
+    family: AlmConformanceLaneFamily,
+    otherwise: string
+): string {
+    return toAlmLaneEmptyPlanReason({ only: requireLaneParameters().only, family, carrier, otherwise });
 }
 
 /** Printed before the first cell, so a run that dies mid-way can be replayed with the same seed. */

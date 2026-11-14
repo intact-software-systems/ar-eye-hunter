@@ -3,6 +3,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import type { AlmConformanceTag } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
+import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
 
 export const ALM_LANE_ORDERS = ['declared', 'shuffled'] as const;
 
@@ -128,6 +129,9 @@ function validateOnly(input: AlmLaneOnlySelection): readonly string[] {
 
 function resolveOnlyRefusal(key: string, input: AlmLaneOnlySelection): string | undefined {
     const named = input.catalog.filter((cell) => cell.scenarioKey === key);
+    if (named.some((cell) => isRunnable(cell, input))) {
+        return undefined;
+    }
     const carried = named.filter((cell) => input.selection.carriers.includes(cell.carrier));
     const inScope = carried.filter((cell) => cell.tags.includes(input.selection.scope));
     if (named.length === 0) {
@@ -140,14 +144,11 @@ function resolveOnlyRefusal(key: string, input: AlmLaneOnlySelection): string | 
     if (inScope.length === 0) {
         return `it is not in the ${input.selection.scope} scope`;
     }
-    return inScope.some((cell) => !input.skip.includes(cell.scenarioId))
-        ? undefined
-        : 'RALLAR_BLACK_BOX_ALM_SKIP withholds it';
+    return 'RALLAR_BLACK_BOX_ALM_SKIP withholds it';
 }
 
 function isRunnable(cell: AlmLaneCatalogCell, input: AlmLaneOnlySelection): boolean {
-    return input.selection.carriers.includes(cell.carrier) && cell.tags.includes(input.selection.scope) &&
-        !input.skip.includes(cell.scenarioId);
+    return isAlmLaneCellSelected(cell, { ...input.selection, skip: input.skip });
 }
 
 function toPresent(value: string | undefined): string | undefined {

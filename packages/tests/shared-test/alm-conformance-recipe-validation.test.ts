@@ -352,12 +352,16 @@ describe('ALM conformance recipe validation', () => {
     // room's topology config and does not say so would be shuffled in among them.
     it('every cell that writes its room\'s topology config declares that it reshapes the room, and no other does', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
-                const writesTopology = toPageRecipes(scenario)
-                    .flatMap((recipe) => toNestedCommands(recipe.commands))
-                    .some((command) => command.kind === 'http.request' && command.request.path!.includes('/topology/config/'));
+            for (const cellSettle of [undefined, 'barriered'] as const) {
+                const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
+                for (const scenario of createAlmConformanceRecipes(input)) {
+                    const writesTopology = toPageRecipes(scenario)
+                        .flatMap((recipe) => toNestedCommands(recipe.commands))
+                        .some((command) => command.kind === 'http.request' && command.request.path!.includes('/topology/config/'));
 
-                expect(scenario.roomTopology, `${carrier} ${scenario.scenarioKey}`).toBe(writesTopology ? 'reshaped' : 'kept');
+                    expect(scenario.roomTopology, `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`)
+                        .toBe(writesTopology ? 'reshaped' : 'kept');
+                }
             }
         }
     });

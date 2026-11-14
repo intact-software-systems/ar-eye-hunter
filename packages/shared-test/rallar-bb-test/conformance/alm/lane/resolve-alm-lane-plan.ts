@@ -1,15 +1,18 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../../../distributed-run.ts';
 
+import type { AlmConformanceCarrier } from '../alm-conformance-carriers.ts';
 import type {
     AlmConformanceLaneFamily,
     AlmConformanceTag
 } from '../alm-conformance-scenario-definition.ts';
 import type { AlmConformanceScenario } from '../create-alm-conformance-recipes.ts';
 import type { AlmLaneOrder, AlmLaneParameters, AlmLaneRooms } from './decode-alm-lane-parameters.ts';
+import { isAlmLaneCellSelected } from './is-alm-lane-cell-selected.ts';
 import { resolveAlmLaneCellOrder } from './resolve-alm-lane-cell-order.ts';
 
 export interface ResolveAlmLanePlanInput {
     readonly family: AlmConformanceLaneFamily;
+    readonly carrier: AlmConformanceCarrier;
     /** The family's catalog cells on the run's carrier, in declared order. */
     readonly scenarios: readonly AlmLanePlanCell[];
     readonly scope: AlmConformanceTag;
@@ -55,7 +58,10 @@ export function resolveAlmLanePlan(input: ResolveAlmLanePlanInput): AlmLanePlan 
     const { parameters } = input;
     const ordered = resolveAlmLaneCellOrder({
         scenarios: input.scenarios.filter((scenario) =>
-            scenario.tags.includes(input.scope) && !parameters.skip.includes(scenario.scenarioId)
+            isAlmLaneCellSelected(
+                { ...scenario, carrier: input.carrier },
+                { scope: input.scope, carriers: [input.carrier], skip: parameters.skip }
+            )
         ),
         order: parameters.order,
         seed: parameters.seed,

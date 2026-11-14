@@ -21,6 +21,7 @@ import {
     toAlmLaneCellGroup,
     type ResolveAlmLanePlanInput
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
+import { toAlmLaneEmptyPlanReason } from '@shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 
@@ -35,6 +36,11 @@ const CATALOG: readonly AlmLaneCatalogCell[] = ALM_CONFORMANCE_CARRIERS.flatMap(
         scenarioKey,
         tags
     }))
+);
+const FAMILY_CATALOGS = new Map(
+    ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+        ALM_CONFORMANCE_LANE_FAMILIES.map((family) => [`${family}/${carrier}`, toFamilyCatalog(family, carrier)] as const)
+    )
 );
 const FULL_SELECTION = { scope: 'full', carriers: ALM_CONFORMANCE_CARRIERS } as const;
 
@@ -71,6 +77,7 @@ function toPlanInput(
 ): ResolveAlmLanePlanInput {
     return {
         family,
+        carrier: 'ws',
         scenarios: toFamilyCatalog(family),
         scope: 'full',
         parameters: { ...DECLARED, ...parameters },
@@ -195,21 +202,61 @@ describe('the ALM lane parameters', () => {
     it('a refusal lists the cells the selection can run', () => {
         const selection = { scope: 'smoke', carriers: ['ws'] } as const;
         const runnable = [
-            ...new Set(
-                CATALOG
-                    .filter((cell) => cell.carrier === 'ws' && cell.tags.includes('smoke') && cell.scenarioId !== 'volatile-default')
-                    .map((cell) => cell.scenarioKey)
-            )
+            'bounded-rejection',
+            'deadline-expiry',
+            'delivery-baseline',
+            'delivery-lifecycle',
+            'durable-opt-in',
+            'server-originated',
+            'paced-latest',
+            'paced-newest-n',
+            'paced-expiry',
+            'paced-capacity',
+            'paced-fairness',
+            'paced-cancel',
+            'paced-isolation-resources',
+            'paced-isolation-lists'
         ];
 
         const refused = toIssues(toDecodeInput({ only: 'missing-recipient-retry', skip: 'volatile-default' }, selection));
 
-        expect(runnable).toContain('delivery-baseline');
-        expect(runnable).not.toContain('volatile-default');
         expect(refused).toEqual([
             'RALLAR_BLACK_BOX_ALM_ONLY names missing-recipient-retry, which this run cannot run: it is not in the smoke scope.',
             `RALLAR_BLACK_BOX_ALM_ONLY accepts the scenario keys this selection can run: ${runnable.join(', ')}.`
         ]);
+    });
+
+    // The decoder accepts a key and the plan runs it by the one rule `isAlmLaneCellSelected`; a drift between them would
+    // let a named cell be accepted and never run.
+    it.each(
+        [
+            { scope: 'smoke', carriers: ['ws'], skip: [] },
+            { scope: 'full', carriers: ['ws'], skip: [] },
+            { scope: 'full', carriers: ['rtc'], skip: [] },
+            { scope: 'full', carriers: ['ws', 'rtc'], skip: ['volatile-default', 'delivery-baseline'] },
+            { scope: 'smoke', carriers: ['rtc'], skip: ['delivery-baseline'] }
+        ] as const
+    )('the decoder accepts a key exactly when a plan of the selection contains it: $scope $carriers skip $skip', ({ scope, carriers, skip }) => {
+        const keys = [...new Set(CATALOG.map((cell) => cell.scenarioKey))];
+        const selection = { scope, carriers };
+
+        for (const key of keys) {
+            const accepted = decodeAlmLaneParameters(
+                toDecodeInput({ only: key, skip: skip.join(',') }, selection)
+            ).fold(() => false, () => true);
+            const planned = carriers.some((carrier) =>
+                ALM_CONFORMANCE_LANE_FAMILIES.some((family) =>
+                    resolveAlmLanePlan({
+                        ...toPlanInput(family, { only: [key], skip }),
+                        carrier,
+                        scenarios: FAMILY_CATALOGS.get(`${family}/${carrier}`)!,
+                        scope
+                    }).cells.length > 0
+                )
+            );
+
+            expect(accepted, `${key} over ${carriers.join('+')} in ${scope}`).toBe(planned);
+        }
     });
 
     it('a named cell any selected carrier runs in the scope is accepted', () => {
@@ -333,5 +380,18 @@ describe('the ALM lane plan', () => {
             .toEqual({ ...group, groupId: 'room-alm-claim' });
         expect(toAlmLaneCellGroup(group, { scenarioKey: 'claim', room: 'family', closeConnectionsAfter: false }))
             .toBe(group);
+    });
+});
+
+describe('the reason an emptied plan skips its family', () => {
+    const otherwise = 'no full baseline ALM scenario runs over ws';
+
+    it('is the family\'s own reason while no cell was named', () => {
+        expect(toAlmLaneEmptyPlanReason({ only: [], family: 'two-agent', carrier: 'ws', otherwise })).toBe(otherwise);
+    });
+
+    it('names the keys and the family when RALLAR_BLACK_BOX_ALM_ONLY emptied it', () => {
+        expect(toAlmLaneEmptyPlanReason({ only: ['claim-first-wins', 'durable-opt-in'], family: 'addressed', carrier: 'rtc', otherwise }))
+            .toBe('RALLAR_BLACK_BOX_ALM_ONLY=claim-first-wins,durable-opt-in plans no cell of addressed over rtc');
     });
 });
