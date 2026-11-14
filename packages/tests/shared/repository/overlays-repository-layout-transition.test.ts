@@ -326,6 +326,144 @@ describe('overlay repository layout transition', () => {
     });
 });
 
+describe('overlay repository layout transition when the group snapshot names the promoted layout before it arrives', () => {
+    beforeEach(() => {
+        nowEpochMs = 1_000;
+        configureOverlayRepositories({
+            plannedOverlays: { ttlMs: 60_000 },
+            acceptedOverlays: { ttlMs: 60_000 },
+            nowEpochMs: () => nowEpochMs
+        });
+    });
+
+    it('records the transition at the removal, and the promoted layout\'s arrival keeps it', () => {
+        const held = overlay({ version: 1, nextHopSessionIds: ['held-peer'] });
+        const promoted = overlay({ version: 2, nextHopSessionIds: ['promoted-peer'] });
+        setAcceptedOverlayById(OVERLAY_ID, held);
+        nowEpochMs = 5_000;
+
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
+
+        const recorded = [{ replaced: held, replacedBy: toOverlayLayoutIdentity(promoted), replacedAtEpochMs: 5_000 }];
+        expect(findAcceptedOverlayById(OVERLAY_ID)).toBeUndefined();
+        expect(readTransitions()).toEqual(recorded);
+
+        nowEpochMs = 6_000;
+        expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('initial-set');
+
+        expect(readTransitions()).toEqual(recorded);
+    });
+
+    it('keeps the earlier entries of the chain, as an ordinary promotion does', () => {
+        promoteAt([1, 2], 2_000);
+        nowEpochMs = 3_000;
+
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 3 })) });
+        expect(setCurrentAcceptedServerOverlayById(OVERLAY_ID, overlay({ version: 3 }))).toBe('initial-set');
+
+        expect(readTransitions()).toEqual([
+            { replaced: overlay({ version: 2 }), replacedBy: toOverlayLayoutIdentity(overlay({ version: 3 })), replacedAtEpochMs: 3_000 },
+            { replaced: overlay({ version: 1 }), replacedBy: toOverlayLayoutIdentity(overlay({ version: 2 })), replacedAtEpochMs: 2_000 }
+        ]);
+    });
+
+    it.each([
+        { order: 'incomparable', named: overlay({ groupRevision: 5, presenceRevision: 5, version: 8 }) },
+        { order: 'dominated', named: overlay({ groupRevision: 3, presenceRevision: 5, version: 6 }) },
+        { order: 'removed', named: { ...overlay({ groupRevision: 5, presenceRevision: 7, version: 8 }), state: 'removed' as const } }
+    ])('records nothing when the snapshot names a layout that does not dominate the held one, or is not live ($order)', ({ named }) => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ groupRevision: 4, presenceRevision: 6, version: 7 }));
+
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(named) });
+        expect(readTransitions()).toBeUndefined();
+        setAcceptedOverlayById(OVERLAY_ID, named);
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it.each([
+        { held: 'a bootstrap layout', layout: overlay({ version: 1, provenance: 'bootstrap' }) },
+        { held: 'a removed layout', layout: { ...overlay({ version: 1 }), state: 'removed' as const } },
+        { held: 'a layout of another room', layout: overlay({ version: 1, groupRef: OTHER_ROOM }) }
+    ])('records nothing when the removed accepted layout is $held', ({ layout }) => {
+        setAcceptedOverlayById(OVERLAY_ID, layout);
+        const promoted = overlay({ version: 2 });
+
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(promoted) });
+        expect(readTransitions()).toBeUndefined();
+        setAcceptedOverlayById(OVERLAY_ID, promoted);
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it('a different layout that takes the empty slot clears the transition', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+
+        expect(setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 3 }))).toBe('initial-set');
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it('the promoted identity held by a layout of another room does not keep the transition', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2, groupRef: OTHER_ROOM }));
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it.each([
+        { snapshot: 'another layout', acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 3 })) },
+        { snapshot: 'no layout', acceptedIdentity: undefined }
+    ])('a later snapshot that names $snapshot before the arrival clears the transition', ({ acceptedIdentity }) => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity });
+        expect(readTransitions()).toBeUndefined();
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it('a snapshot that names the same layout again keeps the transition', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        const promotedIdentity = toOverlayLayoutIdentity(overlay({ version: 2 }));
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: promotedIdentity });
+        const recorded = readTransitions();
+
+        nowEpochMs = 2_000;
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: promotedIdentity });
+
+        expect(readTransitions()).toEqual(recorded);
+        expect(recorded).toHaveLength(1);
+    });
+
+    it('removing the room between the removal and the arrival clears the transition', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+
+        expect(removeAcceptedOverlayByGroupRef(ROOM)).toBe(false);
+        expect(readTransitions()).toBeUndefined();
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
+
+        expect(readTransitions()).toBeUndefined();
+    });
+
+    it('keeps the removal instant when the clock steps back before the arrival', () => {
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 1 }));
+        nowEpochMs = 5_000;
+        reconcileAcceptedOverlayIdentity({ overlayId: OVERLAY_ID, acceptedIdentity: toOverlayLayoutIdentity(overlay({ version: 2 })) });
+
+        nowEpochMs = 4_000;
+        setAcceptedOverlayById(OVERLAY_ID, overlay({ version: 2 }));
+
+        expect(readTransition()?.replacedAtEpochMs).toBe(5_000);
+    });
+});
+
 function promote(replaced: OverlayInfo, promoted: OverlayInfo): void {
     setAcceptedOverlayById(OVERLAY_ID, replaced);
     expect(setAcceptedOverlayById(OVERLAY_ID, promoted)).toBe('adopted');

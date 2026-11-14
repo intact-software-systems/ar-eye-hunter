@@ -49,6 +49,7 @@ import { readRtcGroupSnapshotByRef, readRtcOutboundObservation } from '@shared/m
 import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
+    findAcceptedOverlayById,
     readableLayoutTransitionCache,
     readablePlannedOverlayCache,
     reconcileAcceptedOverlayIdentity,
@@ -128,6 +129,12 @@ export interface RtcRelayOverlayFixture {
      * mismatched accepted layout is removed and the planned one promoted (`reconcileAcceptedOverlayIdentity`).
      */
     acceptSnapshotPromotion(snapshot: GroupSnapshot, overlay: OverlayInfo): void;
+    /**
+     * Accepts a group snapshot that names a new accepted layout this session does not hold planned, as when the snapshot
+     * reaches it before the layout's publication: the mismatched accepted layout is removed and the slot stays empty
+     * until `acceptOverlay` delivers the layout.
+     */
+    acceptSnapshotBeforeLayout(snapshot: GroupSnapshot): void;
     /** Forwards `message`, received from `fromPeerId`, as the receive pipeline's relay row does, and waits for the work it queued. */
     forward(message: ALMessage, fromPeerId: string): Promise<void>;
     /** Re-sends an admitted message's copy to the child hops `copy` names, as the relay's inbound retry does. */
@@ -258,6 +265,21 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
                 manager: this.dependencies.overlayRepositories
             });
             this.dependencies.overlays.accept(overlayId, overlay);
+        }
+    }
+
+    acceptSnapshotBeforeLayout(snapshot: GroupSnapshot): void {
+        this.acceptSnapshot(snapshot);
+        const { overlayIds, overlayRepositories, overlays } = this.dependencies;
+        for (const overlayId of overlayIds) {
+            reconcileAcceptedOverlayIdentity({
+                overlayId,
+                acceptedIdentity: snapshot.group.acceptedLayoutIdentity ?? undefined,
+                manager: overlayRepositories
+            });
+            if (findAcceptedOverlayById(overlayId, overlayRepositories) === undefined) {
+                overlays.delete(overlayId);
+            }
         }
     }
 

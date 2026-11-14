@@ -1,6 +1,10 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { resolveGroupLayoutRole, type GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import {
+    isSameGroupLayoutIdentity,
+    resolveGroupLayoutRole,
+    type GroupLayoutIdentity
+} from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -70,9 +74,15 @@ interface AcceptedLayoutChange {
     readonly held: OverlayInfo | undefined;
     /** The replaced layouts recorded while `held` was accepted, newest first. */
     readonly recorded: readonly OverlayLayoutTransition[];
-    readonly taker: OverlayInfo;
+    /** The live server layout that takes the accepted slot; `null` when the taker is not one. */
+    readonly taker: AcceptedLayoutTaker | null;
     readonly nowEpochMs: number;
     readonly manager?: RepositoryManager;
+}
+
+interface AcceptedLayoutTaker {
+    readonly roomRef: GroupRef;
+    readonly identity: GroupLayoutIdentity;
 }
 
 interface RemoveOverlayIfUnchangedInput {
@@ -298,9 +308,7 @@ export function removeAcceptedOverlayById(
     manager?: RepositoryManager
 ): boolean {
     const removed = requireObservableLatestRepository(acceptedOverlayRepositoryToken, manager).delete(overlayId);
-    if (removed) {
-        clearLayoutTransition(overlayId, manager);
-    }
+    clearLayoutTransition(overlayId, manager);
     return removed;
 }
 
@@ -348,14 +356,6 @@ export function removePlannedOverlayByIdIfIdentity(
 export function reconcileAcceptedOverlayIdentity(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
-    const nowEpochMs = readOverlayRepositoryNow(input.manager);
-    const held = readObservableLatestRepositoryValue(
-        acceptedOverlayRepositoryToken,
-        input.overlayId,
-        input.manager
-    );
-    // Read before the mismatched layout's removal clears it: a promotion that follows extends this history.
-    const recorded = readRecordedLayoutTransitions(input.overlayId, input.manager);
     let changed = removeMismatchedAcceptedOverlay(input);
     if (input.acceptedIdentity === undefined) {
         return changed;
@@ -373,26 +373,10 @@ export function reconcileAcceptedOverlayIdentity(
         return changed;
     }
 
-    const promotion: AcceptedLayoutChange = {
-        overlayId: input.overlayId,
-        held,
-        recorded,
-        taker: planned,
-        nowEpochMs,
-        manager: input.manager
-    };
-    changed = promotePlannedOverlay(promotion) || changed;
+    const outcome = setCurrentAcceptedServerOverlayById(input.overlayId, planned, input.manager);
+    changed = didOverlayAdoptionChange(outcome) || changed;
     changed = removePlannedOverlayById(input.overlayId, input.manager) || changed;
     return changed;
-}
-
-function promotePlannedOverlay(promotion: AcceptedLayoutChange): boolean {
-    const outcome = setCurrentAcceptedServerOverlayById(promotion.overlayId, promotion.taker, promotion.manager);
-    if (!didOverlayAdoptionChange(outcome)) {
-        return false;
-    }
-    setLayoutTransitionForAcceptedChange(promotion);
-    return true;
 }
 
 export function didOverlayAdoptionChange(outcome: OverlayAdoptionOutcome): boolean {
@@ -405,10 +389,14 @@ function compareOverlayInfoIdentity(
     left: OverlayInfo,
     right: OverlayInfo
 ): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
-    const role = resolveGroupLayoutRole({
-        publication: toOverlayLayoutIdentity(left),
-        accepted: toOverlayLayoutIdentity(right)
-    });
+    return compareOverlayLayoutIdentity(toOverlayLayoutIdentity(left), toOverlayLayoutIdentity(right));
+}
+
+function compareOverlayLayoutIdentity(
+    left: GroupLayoutIdentity,
+    right: GroupLayoutIdentity
+): 'equal' | 'dominates' | 'dominated' | 'incomparable' {
+    const role = resolveGroupLayoutRole({ publication: left, accepted: right });
     return role === 'accepted'
         ? 'equal'
         : role === 'planned'
@@ -528,7 +516,9 @@ function adoptOverlay(
             overlayId: input.overlayId,
             held: repository.read(input.overlayId),
             recorded: readRecordedLayoutTransitions(input.overlayId, input.manager),
-            taker: input.overlay,
+            taker: isRoomLayoutOverlay(input.overlay, input.overlay.groupRef)
+                ? { roomRef: input.overlay.groupRef, identity: toOverlayLayoutIdentity(input.overlay) }
+                : null,
             nowEpochMs: readOverlayRepositoryNow(input.manager),
             manager: input.manager
         }
@@ -542,24 +532,45 @@ function adoptOverlay(
 }
 
 function setLayoutTransitionForAcceptedChange(change: AcceptedLayoutChange): void {
-    const held = change.held;
-    if (
-        !isRoomLayoutOverlay(held, change.taker.groupRef) ||
-        !isRoomLayoutOverlay(change.taker, change.taker.groupRef) ||
-        compareOverlayInfoIdentity(change.taker, held) !== 'dominates'
-    ) {
+    const transitions = computeAcceptedLayoutTransitions(change);
+    if (transitions === null) {
         clearLayoutTransition(change.overlayId, change.manager);
         return;
     }
-
     requireObservableLatestRepository(layoutTransitionRepositoryToken, change.manager).set(
         change.overlayId,
-        computeRecordedLayoutTransitions(change.recorded, {
-            replaced: held,
-            replacedBy: toOverlayLayoutIdentity(change.taker),
-            replacedAtEpochMs: change.nowEpochMs
-        })
+        transitions
     );
+}
+
+/**
+ * The history after the accepted slot changes, or `null` when it clears. A live layout of the room that dominates the
+ * held one records its replacement. A taker of the empty slot keeps the history only when it is the layout the
+ * newest entry, recorded when a group snapshot removed the held layout before this one arrived, names as its replacer.
+ */
+function computeAcceptedLayoutTransitions(change: AcceptedLayoutChange): readonly OverlayLayoutTransition[] | null {
+    const { held, recorded, taker } = change;
+    if (taker === null) {
+        return null;
+    }
+    if (held === undefined) {
+        const newest = recorded[0];
+        return newest !== undefined && isRoomLayoutOverlay(newest.replaced, taker.roomRef) &&
+                isSameGroupLayoutIdentity(newest.replacedBy, taker.identity)
+            ? recorded
+            : null;
+    }
+    if (
+        !isRoomLayoutOverlay(held, taker.roomRef) ||
+        compareOverlayLayoutIdentity(taker.identity, toOverlayLayoutIdentity(held)) !== 'dominates'
+    ) {
+        return null;
+    }
+    return computeRecordedLayoutTransitions(recorded, {
+        replaced: held,
+        replacedBy: taker.identity,
+        replacedAtEpochMs: change.nowEpochMs
+    });
 }
 
 function readRecordedLayoutTransitions(
@@ -585,22 +596,41 @@ function reportOverlayDrop(
     return outcome;
 }
 
+/**
+ * Removes an accepted layout the group snapshot no longer names. When the snapshot names a live layout that dominates
+ * it, the removal records the replacement the arrival of that layout completes; otherwise it clears the history.
+ */
 function removeMismatchedAcceptedOverlay(
     input: ReconcileAcceptedOverlayIdentityInput
 ): boolean {
-    const accepted = readObservableLatestRepositoryValue(
-        acceptedOverlayRepositoryToken,
-        input.overlayId,
-        input.manager
-    );
-    if (
-        accepted === undefined ||
-        (input.acceptedIdentity !== undefined && isOverlayIdentity(accepted, input.acceptedIdentity))
-    ) {
+    const repository = requireObservableLatestRepository(acceptedOverlayRepositoryToken, input.manager);
+    const held = repository.read(input.overlayId);
+    if (held !== undefined && input.acceptedIdentity !== undefined && isOverlayIdentity(held, input.acceptedIdentity)) {
         return false;
     }
+    const recorded = readRecordedLayoutTransitions(input.overlayId, input.manager);
+    const removal: AcceptedLayoutChange = {
+        overlayId: input.overlayId,
+        held,
+        recorded,
+        taker: toSnapshotAcceptedLayoutTaker(input, held ?? recorded[0]?.replaced),
+        nowEpochMs: readOverlayRepositoryNow(input.manager),
+        manager: input.manager
+    };
+    const removed = held !== undefined && repository.delete(input.overlayId);
+    setLayoutTransitionForAcceptedChange(removal);
+    return removed;
+}
 
-    return removeAcceptedOverlayById(input.overlayId, input.manager);
+/** The layout the snapshot names accepted, as the taker of the slot `slotLayout` was, or is recorded as, replaced in. */
+function toSnapshotAcceptedLayoutTaker(
+    input: ReconcileAcceptedOverlayIdentityInput,
+    slotLayout: OverlayInfo | undefined
+): AcceptedLayoutTaker | null {
+    return slotLayout !== undefined && slotLayout.overlayId === input.overlayId &&
+            input.acceptedIdentity?.state === 'active'
+        ? { roomRef: slotLayout.groupRef, identity: input.acceptedIdentity }
+        : null;
 }
 
 function toOverlayRepositoryChange(

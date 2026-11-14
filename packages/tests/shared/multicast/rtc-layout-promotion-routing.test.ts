@@ -16,9 +16,10 @@ import {
     createOriginSnapshot,
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
-    ORIGIN_ROOM
+    ORIGIN_ROOM,
+    SERVED_REPLACED_LAYOUT_OVERLAP_MS
 } from './rtc-origin-overlay-fixture.ts';
-import { createRtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
+import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
 
 /**
  * The server promotes a re-planned layout while a stream runs, with presence unchanged. Each browser switches its
@@ -162,3 +163,191 @@ describe.each(['at-least-once', 'best-effort'] as const)(
         });
     }
 );
+
+/** What the session of `selfPeerId` holds once the snapshot naming the promoted layout reached it before that layout. */
+interface SnapshotFirstPromotion {
+    readonly session: RtcRelayOverlayFixture;
+    readonly promoted: PromotedLayout;
+}
+
+function promoteSnapshotFirst(
+    selfPeerId: string,
+    snapshot: GroupSnapshot,
+    replacedLayoutOverlapMs: number = SERVED_REPLACED_LAYOUT_OVERLAP_MS
+): SnapshotFirstPromotion {
+    const session = createRtcRelayOverlayFixture({
+        selfPeerId,
+        snapshot,
+        neighbourPeerIds: readNextHops(PREVIOUS_TREE, selfPeerId),
+        initialOverlay: createOriginOverlay(readNextHops(PREVIOUS_TREE, selfPeerId), PREVIOUS_TREE),
+        replacedLayoutOverlapMs
+    });
+    const promoted = toPromotedLayout(snapshot, selfPeerId);
+    session.acceptSnapshotBeforeLayout(promoted.snapshot);
+    return { session, promoted };
+}
+
+/** The frame `b` relays to `c` over the previous layout, as `b` forwards the origin's copy. */
+async function relayOverPreviousLayout(frame: ALMessage, snapshot: GroupSnapshot): Promise<ALMessage> {
+    const origin = createRtcOriginOverlayFixture({
+        snapshot,
+        nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
+        nextHopsBySessionId: PREVIOUS_TREE
+    });
+    const previousParent = createRtcRelayOverlayFixture({ selfPeerId: 'b', snapshot, neighbourPeerIds: readNextHops(PREVIOUS_TREE, 'b') });
+    await enqueueAndDrain(origin.manager, frame);
+    await previousParent.receive(origin.channels.b!.sent[0]!, 'a');
+    const relayed = (await previousParent.readSent('c')).find((copy) => copy.id.msgId === frame.id.msgId);
+    expect(relayed).toBeDefined();
+    return relayed!;
+}
+
+/** The origin's copy of `frame` to `b`, sent over the previous layout. */
+async function sendOverPreviousLayout(frame: ALMessage, snapshot: GroupSnapshot): Promise<ALMessage> {
+    const origin = createRtcOriginOverlayFixture({
+        snapshot,
+        nextHopPeerIds: readNextHops(PREVIOUS_TREE, 'a'),
+        nextHopsBySessionId: PREVIOUS_TREE
+    });
+    await enqueueAndDrain(origin.manager, frame);
+    return origin.channels.b!.sent[0]!;
+}
+
+describe('a promotion a browser learns of snapshot first, before the promoted layout reaches it', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it('a receiver accepts a frame its previous parent relays once the promoted layout arrives', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(96, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot);
+        receiver.acceptOverlay(promoted.overlay);
+
+        await receiver.receive(relayed, 'b');
+
+        expect(readCopies(receiver.delivered, frame), JSON.stringify(receiver.diagnostics.at(-1))).toBe(1);
+    });
+
+    it('a relay forwards to its previous child in the first half of the overlap once the promoted layout arrives', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(97, 'at-least-once');
+        const copy = await sendOverPreviousLayout(frame, snapshot);
+        const { session: relay, promoted } = promoteSnapshotFirst('b', snapshot);
+        relay.acceptOverlay(promoted.overlay);
+
+        await relay.receive(copy, 'a');
+
+        expect(readCopies(await relay.readSent('c'), frame), JSON.stringify(relay.diagnostics.at(-1))).toBe(1);
+    });
+
+    it('counts the overlap from the removal of the replaced layout, not from the promoted layout\'s arrival', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(98, 'at-least-once');
+        const copy = await sendOverPreviousLayout(frame, snapshot);
+        const { session: relay, promoted } = promoteSnapshotFirst('b', snapshot);
+        vi.setSystemTime(Date.now() + SERVED_REPLACED_LAYOUT_OVERLAP_MS / 2);
+        relay.acceptOverlay(promoted.overlay);
+
+        await relay.receive(copy, 'a');
+
+        expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
+    });
+
+    it('while no accepted layout is held, admits and forwards nothing, exactly as for a room with no accepted layout', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(99, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const copy = await sendOverPreviousLayout(frame, snapshot);
+        const { session: receiver } = promoteSnapshotFirst('c', snapshot);
+        const { session: relay } = promoteSnapshotFirst('b', snapshot);
+
+        expect(receiver.readRoomAdmission(relayed, 'b')).toEqual({
+            kind: 'pending',
+            cause: 'authority-behind',
+            reason: 'Awaiting server room relay authority'
+        });
+        await receiver.receive(relayed, 'b');
+        await relay.receive(copy, 'a');
+
+        expect(readCopies(receiver.delivered, frame)).toBe(0);
+        expect(readCopies(await relay.readSent('c'), frame)).toBe(0);
+    });
+
+    it('a promoted layout that never arrives leaves nothing in force once the overlap has passed', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(100, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot);
+        vi.setSystemTime(Date.now() + SERVED_REPLACED_LAYOUT_OVERLAP_MS);
+        receiver.acceptOverlay(promoted.overlay);
+
+        expect(receiver.readRoomAdmission(relayed, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        await receiver.receive(relayed, 'b');
+
+        expect(readCopies(receiver.delivered, frame)).toBe(0);
+    });
+
+    it('with an overlap of 0, refuses the previous parent\'s relayed frame as main does', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(101, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot, 0);
+        receiver.acceptOverlay(promoted.overlay);
+
+        expect(receiver.readRoomAdmission(relayed, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        await receiver.receive(relayed, 'b');
+
+        expect(readCopies(receiver.delivered, frame)).toBe(0);
+    });
+
+    it.each([
+        {
+            change: 'its session leaves the room',
+            without: (room: GroupSnapshot): GroupSnapshot => ({
+                ...room,
+                activeSessions: room.activeSessions.filter((session) => session.sessionId !== 'b')
+            })
+        },
+        {
+            change: 'its member is expelled',
+            without: (room: GroupSnapshot): GroupSnapshot => ({
+                ...room,
+                members: room.members.filter((member) => member.principalId !== 'b')
+            })
+        }
+    ])('refuses the previous parent\'s relayed frame when $change between the removal and the arrival', async ({ without }) => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(102, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot);
+        receiver.acceptSnapshot(without(promoted.snapshot));
+        receiver.acceptOverlay(promoted.overlay);
+
+        expect(receiver.readRoomAdmission(relayed, 'b')).toMatchObject({ kind: 'unauthorized' });
+        await receiver.receive(relayed, 'b');
+
+        expect(readCopies(receiver.delivered, frame)).toBe(0);
+    });
+
+    it('refuses the previous parent\'s relayed frame when the clock steps back between the removal and the arrival', async () => {
+        const snapshot = createOriginSnapshot(STREAM_SESSION_IDS, 4);
+        const frame = createPositionFrame(103, 'at-least-once');
+        const relayed = await relayOverPreviousLayout(frame, snapshot);
+        const { session: receiver, promoted } = promoteSnapshotFirst('c', snapshot);
+        vi.setSystemTime(Date.now() - 1_000);
+        receiver.acceptOverlay(promoted.overlay);
+
+        expect(receiver.readRoomAdmission(relayed, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        await receiver.receive(relayed, 'b');
+
+        expect(readCopies(receiver.delivered, frame)).toBe(0);
+    });
+});
