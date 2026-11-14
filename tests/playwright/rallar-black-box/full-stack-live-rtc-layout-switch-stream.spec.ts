@@ -47,11 +47,17 @@ import {
 } from './resolve-live-rtc-layout-shape.ts';
 
 /**
- * Ruling 6 of the make-before-break plan, as the controller scoped it: three browsers each stream 10 frames a
- * second to the room while the owner switches the complete graph to a tree (an edge breaks) and, outside that
- * switch's overlap, back again (the edge returns). Which browser becomes the relay is unknown until the tree
- * exists, so every browser streams and every origin-receiver pair is checked. Evidence is what the browsers
- * already emit: their message events, ALM inbound diagnostics, send results, formation changes and health.
+ * Three browsers each stream 10 frames a second to the room while the owner switches the complete graph to a tree
+ * (an edge breaks) and, outside that switch's overlap, back again (the edge returns). Which browser becomes the
+ * relay is unknown until the tree exists, so every browser streams and every origin-receiver pair is checked.
+ * Evidence is what the browsers already emit: their message events, ALM inbound diagnostics, send results,
+ * formation changes and health.
+ *
+ * The tests show the hand-over (a leaf's frames to the other leaf use the replaced direct edge for the first half of
+ * the overlap and the relay afterwards) and that no frame is lost or refused across the two switches. They do not
+ * exercise a relayed copy admitted over an edge only the replaced layout has, the not-yet-in-sync answer to a
+ * planned-layout neighbour, or an early dial that delivery needs: with three browsers every tree edge is also an
+ * edge of the complete graph, and a copy sent directly by its origin is not checked against the layout.
  */
 
 const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const;
@@ -60,7 +66,7 @@ const MESSAGES_RTC = { typeId: 'manual.type', topicId: 'manual.topic' } as const
  * an own send once the session holds more than 1 000 admissions AND its own sends more than their 500 share. An own
  * admission is held until its deadline, the send's 30 s TTL; an arrival for at most 30 s. At 10 Hz each session holds
  * at most 300 own admissions and 600 arrivals (two other streams), so no own send can pass either bound. At 20 Hz
- * the own pool reached 500 after 25 s and frames 501 on were refused. A relay's forward reuses the arrival's msgId,
+ * the own pool reaches 500 after 25 s and frames 501 on are refused. A relay's forward reuses the arrival's msgId,
  * which the budget already holds, so forwarding adds nothing. Acknowledgements add nothing either: an outbound
  * control is never admitted to the budget, an inbound one is not an admitted data message, and an acknowledged send
  * still holds its admission until its deadline, as an unacknowledged one does.
@@ -72,10 +78,10 @@ const SWITCH_HOLD_MS = 16_000;
 /** This spec's bound on each promotion poll; it also sizes the streams, which must be fixed before they start. */
 const PROMOTION_POLL_TIMEOUT_MS = 15_000;
 const STREAM_DURATION_MS = STREAM_LEAD_MS + 2 * (PROMOTION_POLL_TIMEOUT_MS + SWITCH_HOLD_MS);
-/** Ruling 2: the overlap the managed API serves by default. */
+/** The overlap the managed API serves by default. */
 const SERVED_OVERLAP_MS = 15_000;
 /**
- * Ruling 3: both kinds of frame get the overlap. An at-least-once room message is acknowledged in the mode a
+ * Both kinds of frame get the overlap. An at-least-once room message is acknowledged in the mode a
  * notification channel sends it with (`AL_CHANNEL_SEND_DEFAULTS.notification`); the stream's send names
  * it, because a send with no channel defaults to `none`. A best-effort frame is not acknowledged.
  */
@@ -87,7 +93,7 @@ const STREAM_VARIANTS: readonly Readonly<{ label: string; qos: LiveRtcStreamQos;
     { label: 'best-effort', qos: { reliability: 'best-effort', ack: 'none' } }
 ];
 const REPORTED_RECORDS = 20;
-/** Ruling R11-6's slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
+/** Slack on the direct-edge bound, for timestamp granularity; the rule itself needs none. */
 const DIRECT_BOUND_SLACK_MS = 250;
 
 const formationOperations = createLiveRtcFormationOperations();
@@ -582,7 +588,7 @@ function expectAcknowledgementPremise(run: LayoutSwitchRun): void {
     }
 }
 
-/** M2: every refused admission gates, a control's as well as a frame's; the message tells them apart. */
+/** Every refused admission gates, a control's as well as a frame's; the message tells them apart. */
 function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): void {
     const first = evidence.unauthorizedAdmissions.slice(0, REPORTED_RECORDS).map((refusal) => ({
         browser: refusal.agent,
@@ -598,7 +604,7 @@ function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): v
 }
 
 /**
- * Ruling R11-6, acknowledged variant only: a best-effort frame is not acknowledged, so its edge is unobservable.
+ * Acknowledged variant only: a best-effort frame is not acknowledged, so its edge is unobservable.
  * On the tree a leaf sends over its replaced direct edge to the other leaf only while the replaced layout's
  * forwarding half lasts, `floor(servedOverlapMs / 2)` after its replacement instant, and through the relay after.
  * A frame is planned at admission, which is after its send started, so a frame that started after the half cannot be
@@ -608,7 +614,7 @@ function expectNoUnauthorizedAdmission(evidence: LiveRtcLayoutSwitchEvidence): v
  * before the promotion event, so measuring from the event can only shorten the time; the bound holds without slack,
  * and the 250 ms is slack for timestamp granularity. A `both` frame was acknowledged to each hop, so it counts as
  * having used the replaced edge and as having used the relay, and the bound applies to it by its original send time.
- * The tree window only (ruling R11-7) is checked for unacknowledged frames: the star window runs to the stream's last
+ * The tree window only is checked for unacknowledged frames: the star window runs to the stream's last
  * frame, whose acknowledgement event can race the end of the run, so there the count stays an observation.
  */
 function expectHandOver(run: LayoutSwitchRun): void {

@@ -276,10 +276,9 @@ describe('RTC topology: owner-issued changes that keep every edge of a three-ses
 });
 
 /*
- * Can two owner config writes make the planner re-parent one of FOUR sessions onto an edge that the first write's
- * layout does not have? Write 1 must leave sessions X and Y without an edge; write 2 must add X - Y and drop an edge
- * of Y's. The edges come from hash weights of the session ids (or from RTT reports), so the same two writes
- * re-parent a session for one id set and move nothing for another.
+ * Two owner config writes re-parent one of four sessions onto an edge the first write's layout does not have only
+ * for some session ids: the planner weighs edges by hashes of the session ids, or by RTT reports when there are
+ * any, so the same two writes add an edge for one id set and move nothing for another.
  */
 
 interface PlanSessionsInput {
@@ -334,7 +333,7 @@ function toFourSessionRttReports(sessionIds: readonly string[]): readonly RttMea
     );
 }
 
-describe('RTC topology: owner config writes that re-parent one of four sessions', () => {
+describe('RTC topology: a mesh write then a tree write for four sessions', () => {
     it('leaves the fourth session without an edge under the matrix driver config', () => {
         const matrix = planSessions({ sessionIds: FIXTURE_FOUR_SESSION_IDS, config: MATRIX_ROOM_CONFIG });
 
@@ -365,7 +364,7 @@ describe('RTC topology: owner config writes that re-parent one of four sessions'
         expect(diffEdges(first.nextHopsBySessionId, second.nextHopsBySessionId)).toEqual({ added: [], removed: [] });
     });
 
-    it('moves session-d from session-b onto session-a instead for the fixture ids once RTT reports exist', () => {
+    it('moves session-d from session-b onto session-a for the fixture ids with RTT reports', () => {
         const { first, second } = planFourSessionWrites(
             FIXTURE_FOUR_SESSION_IDS,
             toFourSessionRttReports(FIXTURE_FOUR_SESSION_IDS)
