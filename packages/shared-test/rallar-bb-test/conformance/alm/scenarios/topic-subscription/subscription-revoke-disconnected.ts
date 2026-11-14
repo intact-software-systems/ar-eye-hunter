@@ -60,6 +60,7 @@ export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = 
         { grantee: 'publisher-b', publish: false, subscribe: false },
         { grantee: 'sender', publish: true, subscribe: true }
     ],
+    unconfirmedReceiptRole: 'sibling',
     toSenderCommands: (producer) => producer.role === 'sender' ? toPublisherCommands(producer) : [],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient)

@@ -123,6 +123,13 @@ export type AlmConformanceScenarioId =
 export type AlmConformanceTag = 'smoke' | 'full';
 
 /**
+ * How the lane ends a same-context owner page before its successor owns the session: closed, or through a lifecycle
+ * flush and a renderer crash, which runs no `pagehide` listener and no later timer, so the successor restores only what
+ * the page saved before the crash.
+ */
+export type AlmConformanceOwnerEnd = 'close' | 'flush-and-crash';
+
+/**
  * A connect's `RallarMessageSelector`, which this browser-loaded catalog cannot import: the topic its lanes subscribe.
  * `granted` names the room channel the page opens on that topic, which `messages.subscribe` elects; absent, members.
  */
@@ -265,6 +272,13 @@ interface AlmConformanceScenarioCore {
     readonly toReloadCheckpoint?: (step: AlmConformanceStepInput) => AlmReloadCheckpoint;
     /** Absent when the successor starts once the owner page ended; otherwise the owner's step it starts after. */
     readonly successorGate?: AlmConformanceRecipeGate;
+    /** Absent, the lane closes a same-context owner page; otherwise how it ends that page. */
+    readonly ownerEnd?: AlmConformanceOwnerEnd;
+    /**
+     * Absent when no receipt is judged against one role. Otherwise the role none of the sender's receipts may confirm,
+     * which the lane reads from the sender recipe's metadata after the run.
+     */
+    readonly unconfirmedReceiptRole?: AlmConformanceRole;
     /** Absent when every role runs one recipe; otherwise one role's later steps, which wait for another role. */
     readonly continuation?: AlmConformanceContinuationDefinition;
 }

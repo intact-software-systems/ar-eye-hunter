@@ -82,6 +82,18 @@ window is derived from them in
 ([`conformance/alm/observation/compute-alm-observation-regime.ts`](../conformance/alm/observation/compute-alm-observation-regime.ts))
 records what the runner was doing while the cell ran:
 
+- `cellOrder` — `{ mode, seed, rooms, scenarioKeys }`: how the family's cells ran, as the lane plan
+  ([`conformance/alm/lane/resolve-alm-lane-plan.ts`](../conformance/alm/lane/resolve-alm-lane-plan.ts))
+  decided it from `RALLAR_BLACK_BOX_ALM_ORDER`, `_SEED`, `_ROOMS` and `_ONLY`. `mode` is `declared`
+  (the catalog order) or `shuffled`; `seed` is the seed a shuffled family used, given or minted, and
+  `null` for `declared`; `rooms` is `family` (one room for the family) or `cell` (a room of its own
+  per cell, every connection closed after it) as the family ran it: a four-role family always reads
+  `cell` and a same-context family `family`, whatever was asked; `scenarioKeys` lists the cells in
+  the order they ran. The same seed gives the same order of the same cells on every machine, so
+  `RALLAR_BLACK_BOX_ALM_ORDER=shuffled RALLAR_BLACK_BOX_ALM_SEED=<seed>` replays a family. The lane
+  prints the plan (`ALM lane plan <carrier>-<scope> family=<family>: order=… seed=… rooms=… cells=…`)
+  before the family's first cell, and the job-log line ends in `order=… seed=… rooms=…`
+  (`seed=none` for `declared`).
 - `regime` — `normal`, `slow`, or `unclassified`: `perOperation`'s class when it is measured,
   otherwise `pageRegime.regime` (R-S3a-16).
 - `regimeSource` — `per-operation` or `page`: which of the two decided `regime`. The job-log line

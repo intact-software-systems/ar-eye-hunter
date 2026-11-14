@@ -1,6 +1,8 @@
 import { EitherCollectors } from '@shared/resilience/Either.ts';
 
+import type { RallarBlackBoxTestRecipe } from '../../../../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../../../../schema/json-schema-validation.ts';
+import { isAlmConformanceRole, type AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import { toConnectedSessionIds } from '../../identity/assess-alm-acknowledged-identity.ts';
 import {
     toRecordedAlmConformanceParticipant,
@@ -12,6 +14,12 @@ export interface SubscriptionRevokeDisconnectedEvidence {
     readonly runId: string;
     readonly sender: AlmConformanceIdentityParticipant;
     readonly sibling: AlmConformanceIdentityParticipant;
+}
+
+/** The role none of the sender's receipts may confirm, as its recipe's metadata names it; undefined when none. */
+export function readAlmUnconfirmedReceiptRole(sender: RallarBlackBoxTestRecipe): AlmConformanceRole | undefined {
+    const role = sender.metadata?.almUnconfirmedReceiptRole;
+    return typeof role === 'string' && isAlmConformanceRole(role) ? role : undefined;
 }
 
 /** Joins the sender's receipts to the sibling's sessions: no receipt of the cell may confirm the sibling. */

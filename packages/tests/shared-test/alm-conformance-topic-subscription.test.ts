@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import {
     describe,
     expect,
@@ -14,7 +12,10 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
-import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
+import {
+    assessSubscriptionRevokeDisconnected,
+    readAlmUnconfirmedReceiptRole
+} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand,
@@ -1030,12 +1031,15 @@ describe('ALM ordered subscription reconnect conformance', () => {
         expect(await runWaitAfterEvents(left, [toApplied(4), armed, toApplied(3)])).toBe(true);
     });
 
-    it('four-role cells always run in a room of their own', () => {
-        const spec = readFileSync('tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts', 'utf8');
+    // The lane selects the revoke-disconnected receipt check by this metadata, as it selects the receipt-role check.
+    it('only the revoke-disconnected sender names the role none of its receipts may confirm', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const named = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .flatMap((scenario) => readAlmUnconfirmedReceiptRole(scenario.sender) === undefined ? [] : [scenario]);
 
-        expect(spec).toMatch(/family === 'four-role' \? toOwnRoomScenario\(run, carrier, planned\) : planned/);
-        expect(spec).toContain('groupId: `${run.group.groupId}-${planned.scenarioKey}`');
-        expect(spec).toMatch(/if \(family === 'four-role'\) \{\s+await closeAgentConnections\(run, scenario\.scenarioKey\);/);
+            expect(named.map((scenario) => scenario.scenarioKey), carrier).toEqual(['subscription-revoke-disconnected']);
+            expect(readAlmUnconfirmedReceiptRole(named[0]!.sender), carrier).toBe('sibling');
+        }
     });
 
     it.each(

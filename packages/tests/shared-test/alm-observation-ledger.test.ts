@@ -16,6 +16,8 @@ import type {
     RallarBlackBoxTestRecord
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { DECLARED_CELL_ORDER } from './alm-conformance-test-input.ts';
+
 const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
 const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
 
@@ -51,7 +53,7 @@ function toRegime(events: readonly RallarBlackBoxTestRecord[]): ALMObservationRe
         (issues) => {
             throw new Error(`synthetic snapshot did not decode: ${issues.join('; ')}`);
         },
-        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'smoke', cellOutcome: 'passed' })
+        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'smoke', cellOutcome: 'passed', cellOrder: DECLARED_CELL_ORDER })
     );
 }
 
@@ -155,6 +157,7 @@ describe('the ALM observation ledger readings', () => {
             carrier: 'ws',
             scope: 'smoke',
             cellOutcome: 'failed',
+            cellOrder: DECLARED_CELL_ORDER,
             snapshotIssues: ['snapshot is not an object']
         });
 

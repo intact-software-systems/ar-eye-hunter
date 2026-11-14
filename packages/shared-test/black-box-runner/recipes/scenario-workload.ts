@@ -1,4 +1,5 @@
 import utils from '../utils.ts';
+import { createSeededRandom } from './create-seeded-random.ts';
 import type { ScenarioRecipe } from './read-scenario-recipe-includes.ts';
 
 export type TrafficPlanArtifact = GeneratedTrafficPlanArtifact | ReplayedTrafficPlanArtifact;
@@ -415,18 +416,6 @@ function toUnsignedSeed(value: unknown): number {
     return Number.isFinite(parsed)
         ? parsed >>> 0
         : 1;
-}
-
-function createSeededRandom(seed: number): () => number {
-    let state = seed >>> 0;
-
-    return () => {
-        state = (state + 0x6D2B79F5) >>> 0;
-        let value = state;
-        value = Math.imul(value ^ (value >>> 15), value | 1);
-        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-    };
 }
 
 function resolveTemplatePath(path: string, root: Record<string, unknown>): unknown {

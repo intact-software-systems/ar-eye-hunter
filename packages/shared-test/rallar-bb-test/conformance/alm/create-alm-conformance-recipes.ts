@@ -16,6 +16,7 @@ import type {
     AlmConformanceContinuationDefinition,
     AlmConformanceLaneFamily,
     AlmConformanceMessages,
+    AlmConformanceOwnerEnd,
     AlmConformanceRecipeGate,
     AlmConformanceScenarioDefinition,
     AlmConformanceScenarioId,
@@ -145,6 +146,8 @@ export interface AlmConformanceScenario {
     readonly tags: readonly AlmConformanceTag[];
     /** The owner's command after which the lane starts the successor; undefined starts it once the owner page ended. */
     readonly successorGate: AlmConformanceScenarioGate | undefined;
+    /** How the lane ends the owner page before its successor runs; undefined exactly when `roles` declares no successor. */
+    readonly ownerEnd: AlmConformanceOwnerEnd | undefined;
     /** One role's later recipe; undefined when every role runs one. */
     readonly continuation: AlmConformanceContinuation | undefined;
 }
@@ -177,6 +180,8 @@ interface AlmConformanceRecipeInput extends AlmConformanceCellPartsInput {
     readonly reloadCheckpoint: AlmReloadCheckpoint | undefined;
     /** Set only on the sender of a scenario at least one of whose origins must relay its send. */
     readonly relayedReceiptOrigins: readonly AlmConformanceRole[] | undefined;
+    /** Set only on the sender of a scenario none of whose receipts may confirm that role. */
+    readonly unconfirmedReceiptRole: AlmConformanceRole | undefined;
 }
 
 interface AlmConformanceRoleCell {
@@ -347,6 +352,7 @@ function toAlmConformanceScenario(
         publisherB: toDeclaredRecipe('publisher-b'),
         partsByRole: Object.fromEntries([...cells].map(([role, cell]) => [role, cell.parts])),
         successorGate: undefined,
+        ownerEnd: definition.roles.includes('successor') ? definition.ownerEnd ?? 'close' : undefined,
         continuation: undefined
     };
     return { ...scenario, ...toHeldBackRecipes(input, definition, scenario) };
@@ -468,7 +474,8 @@ function toRoleCells(
             commands,
             receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
-            relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined
+            relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
+            unconfirmedReceiptRole: role === 'sender' ? definition.unconfirmedReceiptRole : undefined
         };
         return { recipeInput, parts: toAlmConformanceCellParts(recipeInput) };
     });
@@ -537,7 +544,10 @@ function toAlmConformanceRecipeMetadata(recipe: AlmConformanceRecipeInput): Rall
             : { almReceiptRoles: [toReceiptRolesMetadata(recipe, recipe.receiptRoles)] }),
         ...(recipe.relayedReceiptOrigins === undefined
             ? {}
-            : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) })
+            : { almRelayedReceiptOrigins: toRelayedReceiptOriginsMetadata(recipe, recipe.relayedReceiptOrigins) }),
+        ...(recipe.unconfirmedReceiptRole === undefined
+            ? {}
+            : { almUnconfirmedReceiptRole: recipe.unconfirmedReceiptRole })
     };
 }
 

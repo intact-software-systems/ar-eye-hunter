@@ -2,6 +2,7 @@ import {
     ALM_CONFORMANCE_LANE_FAMILIES,
     type CreateAlmConformanceRecipesInput
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type { AlmLaneCellOrderRecord } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
@@ -13,6 +14,14 @@ export const CONFORMANCE_PRINCIPAL_IDS: CreateAlmConformanceRecipesInput['princi
     receiver: 'principal-bob',
     'recipient-b': 'principal-charlie',
     'publisher-b': 'principal-charlie'
+};
+
+/** The order a lane family runs in by default, as its observation regime records it. */
+export const DECLARED_CELL_ORDER: AlmLaneCellOrderRecord = {
+    mode: 'declared',
+    seed: null,
+    rooms: 'family',
+    scenarioKeys: []
 };
 
 export function toConformanceInput(

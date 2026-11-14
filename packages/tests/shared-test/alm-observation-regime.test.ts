@@ -21,6 +21,8 @@ import {
 } from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { DECLARED_CELL_ORDER } from './alm-conformance-test-input.ts';
+
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');
 
@@ -56,7 +58,7 @@ function readFixtureRegime(
         (issues) => {
             throw new Error(`${fixtureName} did not decode: ${issues.join('; ')}`);
         },
-        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'smoke', cellOutcome })
+        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'smoke', cellOutcome, cellOrder: DECLARED_CELL_ORDER })
     );
 }
 
@@ -256,6 +258,7 @@ function toSyntheticRegime(
                 carrier: 'rtc',
                 scope: 'smoke',
                 cellOutcome: 'passed',
+                cellOrder: DECLARED_CELL_ORDER,
                 pageDiagnosticsFile
             })
     );
@@ -852,7 +855,7 @@ describe('computeALMObservationRegime', () => {
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
             'ALM observation rtc-smoke: regime=slow perOperation=39.44 ms/op over 8 commits outcome=failed ' +
-                'page=unclassified (unmeasured, 0 probes)'
+                'page=unclassified (unmeasured, 0 probes) order=declared seed=none rooms=family'
         );
         expect(
             toALMObservationRegimeSummary(
@@ -860,13 +863,43 @@ describe('computeALMObservationRegime', () => {
                     carrier: 'ws',
                     scope: 'smoke',
                     cellOutcome: 'failed',
+                    cellOrder: DECLARED_CELL_ORDER,
                     snapshotIssues: ['snapshot is not an object']
                 })
             )
         ).toBe(
             'ALM observation ws-smoke: regime=unclassified (page) perOperation=unmeasured (0 commits) outcome=failed ' +
-                'page=unclassified (unmeasured, 0 probes)'
+                'page=unclassified (unmeasured, 0 probes) order=declared seed=none rooms=family'
         );
+    });
+
+    it('the regime names the order, the seed and the room mode', () => {
+        const cellOrder = {
+            mode: 'shuffled',
+            seed: 1,
+            rooms: 'cell',
+            scenarioKeys: ['claim-first-wins', 'reply-first-wins']
+        } as const;
+        const events = toPageWindowProbes(2, 10);
+        const regime = decodeALMObservationSnapshot({ runId: 'alm-ordered', results: [], events }).fold(
+            (issues) => {
+                throw new Error(issues.join('; '));
+            },
+            (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'full', cellOutcome: 'passed', cellOrder })
+        );
+        const unreadable = createUnreadableALMObservationRegime({
+            carrier: 'rtc',
+            scope: 'full',
+            cellOutcome: 'failed',
+            snapshotIssues: ['snapshot is not an object'],
+            cellOrder
+        });
+
+        expect(regime.cellOrder).toEqual(cellOrder);
+        expect(unreadable.cellOrder).toEqual(cellOrder);
+        expect(toALMObservationRegimeSummary(regime)).toMatch(/ order=shuffled seed=1 rooms=cell$/);
+        expect(toALMObservationRegimeSummary({ ...regime, cellOrder: { ...cellOrder, mode: 'declared', seed: null } }))
+            .toMatch(/ order=declared seed=none rooms=cell$/);
     });
 
     it('summarizes a measured page regime with its median and sample count', () => {
@@ -882,6 +915,7 @@ describe('createUnreadableALMObservationRegime', () => {
             carrier: 'rtc-with-ws-fallback',
             scope: 'full',
             cellOutcome: 'failed',
+            cellOrder: DECLARED_CELL_ORDER,
             snapshotIssues: ['snapshot is not an object']
         });
 
@@ -905,6 +939,7 @@ describe('page diagnostics on the regime', () => {
             carrier: 'ws',
             scope: 'smoke',
             cellOutcome: 'failed',
+            cellOrder: DECLARED_CELL_ORDER,
             snapshotIssues: ['snapshot is not an object']
         });
 
@@ -916,6 +951,7 @@ describe('page diagnostics on the regime', () => {
             carrier: 'ws',
             scope: 'smoke',
             cellOutcome: 'failed',
+            cellOrder: DECLARED_CELL_ORDER,
             snapshotIssues: ['snapshot is not an object'],
             pageDiagnosticsFile: { droppedCount: 0, records: [] }
         });

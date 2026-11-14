@@ -33,6 +33,7 @@ import {
 export const flushOnHide: AlmConformanceScenarioDefinition = {
     scenarioId: 'flush-on-hide',
     scenarioKey: 'flush-on-hide',
+    ownerEnd: 'flush-and-crash',
     tags: FULL_TAGS,
     carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver', 'successor'],
