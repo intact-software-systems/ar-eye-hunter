@@ -275,6 +275,7 @@ async function runLayoutSwitches(
                 { identity: switched.layouts[2].identity, requestedAtEpochMs: switched.requestedAtEpochMs[1] }
             ],
             leafSessionIds: switched.tree.leafSessionIds,
+            relaySessionId: switched.tree.relaySessionId,
             events
         })
     };
@@ -518,6 +519,7 @@ function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
                 `(${completeness.receivedFrames} of ${completeness.expectedFrames} expected): ALM inbound diagnostics are incomplete`
         ).toBeGreaterThanOrEqual(Math.max(1, completeness.receivedFrames));
     }
+    expectSendReadings(evidence);
     expectEveryFrameDelivered(evidence);
     expect.soft(
         evidence.unauthorizedAdmissions,
@@ -533,6 +535,22 @@ function expectLayoutSwitchPasses(run: LayoutSwitchRun): void {
     ).toHaveLength(0);
     expectPromotionsInsideStreams(run);
     expectLeafCrossing(evidence);
+}
+
+/** The unsent-frame and sender planner-drop zeros are readings only when the streams they come from are present. */
+function expectSendReadings(evidence: LiveRtcLayoutSwitchEvidence): void {
+    for (const [prefix, readings] of Object.entries(evidence.sendReadings)) {
+        expect.soft(
+            readings.observedFrames,
+            `Browser ${prefix}'s stream reported ${readings.observedFrames} frame observations for ` +
+                `${readings.plannedFrames} planned frames: the unsent-frame reading would be incomplete`
+        ).toBe(readings.plannedFrames);
+        expect.soft(
+            readings.sendCompletedEvents,
+            `Browser ${prefix} recorded ${readings.sendCompletedEvents} send_completed events for ` +
+                `${readings.plannedFrames} planned frames: the planner-drop reading would be empty otherwise`
+        ).toBeGreaterThanOrEqual(Math.max(1, readings.plannedFrames));
+    }
 }
 
 function expectEveryFrameDelivered(evidence: LiveRtcLayoutSwitchEvidence): void {
@@ -615,11 +633,20 @@ async function finishScenario(
     failure: Error | undefined
 ): Promise<void> {
     let captureFailure: Error | undefined;
+    const errors = [failure?.message, ...testInfo.errors.map((error) => error.message)].flatMap((message) =>
+        message ?? []
+    );
     try {
         await writeEvidenceFile(testInfo, 'layout-switch-progress.json', {
-            failure: failure?.message ?? null,
+            failure: errors.length === 0 ? null : errors.join('\n'),
             ...scenario.progress
         });
+    }
+    catch (cause) {
+        captureFailure = toError(cause);
+        console.error('Failed to write the layout-switch progress', captureFailure);
+    }
+    try {
         await scenario.control.captureDiagnostics({
             testInfo,
             runId: scenario.runId,
