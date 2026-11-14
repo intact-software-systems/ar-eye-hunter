@@ -38,7 +38,8 @@ import * as shared from '@shared/mod.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { RtcPublicationProofVerifier } from '@shared/multicast/publication/rtc-publication-proof-verifier.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
-import { readRtcGroupSnapshotByRef } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import { readRtcGroupSnapshotByRef, readRtcOutboundObservation } from '@shared/multicast/read-rtc-outbound-observation.ts';
+import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { readableLayoutTransitionCache, setCurrentAcceptedServerOverlayById } from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
@@ -108,6 +109,11 @@ export interface RtcRelayOverlayFixture {
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
     /** The relay row a control from `subject.fromPeerId` about `subject.msgId` would read; absent when none is kept. */
     readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined>;
+    /**
+     * The room admission's verdict now for a copy of `message` from `fromPeerId`, over this session's room, accepted
+     * layout and recorded transition: the cause a refusal's diagnostic does not carry.
+     */
+    readRoomAdmission(message: ALMessage, fromPeerId: string): RtcRoomSnapshotAdmission;
 }
 
 /** A relay session's inbound memory pair together with the admission map it writes, which a test reads back. */
@@ -123,6 +129,8 @@ interface RtcRelayOverlayResources {
     readonly overlayIds: readonly string[];
     readonly outboundResources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
     readonly multicast: shared.WebRtcOverlayMulticastManager;
+    readonly selfPeerId: string;
+    readonly replacedLayoutOverlapMs: number;
 }
 
 namespace RtcRelayOverlaySession {
@@ -206,6 +214,29 @@ class RtcRelayOverlaySession implements RtcRelayOverlayFixture {
     async readPendingAck(subject: ALInboundControlSubject): Promise<ALPendingAckSnapshot | undefined> {
         return (await this.dependencies.inboundStores.admissionStore.readControlDecisionSurface(subject))?.pendingAck;
     }
+
+    readRoomAdmission(message: ALMessage, fromPeerId: string): RtcRoomSnapshotAdmission {
+        const { groups, overlays, overlayRepositories, selfPeerId, replacedLayoutOverlapMs } = this.dependencies;
+        const observation = readRtcOutboundObservation({
+            message,
+            groupCache: groups,
+            overlayCache: overlays,
+            layoutTransitionCache: readableLayoutTransitionCache(overlayRepositories),
+            replacedLayoutOverlapMs,
+            connectedPeerIds: [],
+            nowMs: Date.now()
+        });
+        return computeRtcRoomSnapshotAdmission({
+            message,
+            snapshot: observation.room,
+            overlay: observation.overlay,
+            layoutHistory: observation.layoutHistory,
+            selfPeerId,
+            fromPeerId,
+            recipientPeerId: undefined,
+            nowMs: observation.nowMs
+        });
+    }
 }
 
 export function createRtcRelayOverlayFixture(input: RtcRelayOverlayFixtureInput): RtcRelayOverlayFixture {
@@ -288,6 +319,7 @@ function createDefaultRelayOverlayResources(
         setCurrentAcceptedServerOverlayById(overlayId, initialOverlay, overlayRepositories);
     }
     const outboundResources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+    const replacedLayoutOverlapMs = input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS;
     const multicast = new shared.WebRtcOverlayMulticastManager({
         quotaNow: Date.now,
         creationNow: Temporal.Now.instant,
@@ -295,7 +327,7 @@ function createDefaultRelayOverlayResources(
         groupCache: groups,
         overlayCache: overlays,
         layoutTransitionCache: readableLayoutTransitionCache(overlayRepositories),
-        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS,
+        replacedLayoutOverlapMs,
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connection.service),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         outboundDiagnostics: undefined,
@@ -316,5 +348,14 @@ function createDefaultRelayOverlayResources(
         selfPrincipalId: input.selfPeerId
     });
     onTestFinished(() => multicast.dispose());
-    return { groups, overlays, overlayRepositories, overlayIds, outboundResources, multicast };
+    return {
+        groups,
+        overlays,
+        overlayRepositories,
+        overlayIds,
+        outboundResources,
+        multicast,
+        selfPeerId: input.selfPeerId,
+        replacedLayoutOverlapMs
+    };
 }

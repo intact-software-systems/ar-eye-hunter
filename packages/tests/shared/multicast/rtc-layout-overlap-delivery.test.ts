@@ -9,7 +9,7 @@ import {
 
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
-import { planALMessageHandling, type ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
+import { planALMessageHandling, resolveALMessageExpireAtMs, type ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -92,6 +92,14 @@ interface ChainTail {
     promoteRelay(): void;
 }
 
+/** What the transport does to each copy it carries: the copy that arrives, and how long it travels. */
+interface ExchangeTransit {
+    toCarried(message: ALMessage): ALMessage;
+    readonly delayMs: number;
+}
+
+const DIRECT_TRANSIT: ExchangeTransit = { toCarried: (message) => message, delayMs: 0 };
+
 /** Every copy one exchange may carry before the test fails: a loop that does not stop exceeds it. */
 const EXCHANGE_COPY_BUDGET = 60;
 
@@ -116,6 +124,10 @@ const MOVED_SUBTREE_PROMOTED: SessionNextHops = { a: ['b', 'c'], b: ['a'], c: ['
 /** The union of the two layouts holds the cycle `b`, `c`, `d`: `b`-`c` is replaced, `b`-`d` is promoted. */
 const CYCLE_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c'] };
 const CYCLE_PROMOTED: SessionNextHops = { a: ['b'], b: ['a', 'd'], c: ['d'], d: ['b', 'c'] };
+
+/** The chain `a,b,c,d,e` re-planned to `a,b,e,d,c`: the union holds the square `b`, `c`, `d`, `e`. */
+const SQUARE_PREVIOUS: SessionNextHops = { a: ['b'], b: ['a', 'c'], c: ['b', 'd'], d: ['c', 'e'], e: ['d'] };
+const SQUARE_PROMOTED: SessionNextHops = { a: ['b'], b: ['a', 'e'], c: ['d'], d: ['c', 'e'], e: ['b', 'd'] };
 
 /** A visited list already at its cap of 64 with sessions that left: every id a relay appends past it falls away. */
 const VISITED_AT_CAP = Array.from({ length: 64 }, (_, index) => `left-${index}`);
@@ -161,7 +173,7 @@ function createOverlapMesh(input: OverlapMeshInput): OverlapMesh {
  * Carries every new frame over every open edge, in the order of the mesh's sessions, until no edge has one. A frame
  * that reaches the origin is a control it accepts, or a copy it only records. More than the budget fails the test.
  */
-async function exchangeUntilQuiet(mesh: OverlapMesh): Promise<readonly TransportCopy[]> {
+async function exchangeUntilQuiet(mesh: OverlapMesh, transit: ExchangeTransit = DIRECT_TRANSIT): Promise<readonly TransportCopy[]> {
     const carried: TransportCopy[] = [];
     for (let moved = true; moved;) {
         moved = false;
@@ -171,10 +183,14 @@ async function exchangeUntilQuiet(mesh: OverlapMesh): Promise<readonly Transport
                 const sent = await readEdge(mesh, fromPeerId, toPeerId);
                 const fresh = sent.slice(mesh.carriedCounts.get(key) ?? 0);
                 mesh.carriedCounts.set(key, sent.length);
-                for (const message of fresh) {
+                for (const sentMessage of fresh) {
+                    const message = transit.toCarried(sentMessage);
                     carried.push({ fromPeerId, toPeerId, message });
                     expect(carried.length, 'the exchange stops within its copy budget')
                         .toBeLessThanOrEqual(EXCHANGE_COPY_BUDGET);
+                    if (transit.delayMs > 0) {
+                        await vi.advanceTimersByTimeAsync(transit.delayMs);
+                    }
                     await carry(mesh, { fromPeerId, toPeerId, message });
                     moved = true;
                 }
@@ -227,6 +243,13 @@ function readCopies(messages: readonly ALMessage[], message: ALMessage): number 
 
 function readAdmissionReasons(peer: RtcRelayOverlayFixture, message: ALMessage): readonly string[] {
     return peer.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.msgId === message.id.msgId ? [event.reason] : []);
+}
+
+/** The copy as a sender that stamps no deadline would carry it: no expiry instant and no expiry policy. */
+function toDeadlineFreeCopy(message: ALMessage): ALMessage {
+    const { expiresAtMs: _expiresAtMs, ...constraints } = message.constraints ?? {};
+    const { expiry: _expiry, ...qos } = message.qos ?? {};
+    return { ...message, constraints, qos };
 }
 
 /** A best-effort frame of a position stream with no receipt, as a peer sends many a second. */
@@ -363,7 +386,14 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
         }
 
         expect(d.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
-        expect((await d.readSent('e')).map((message) => message.ordering?.seq)).toEqual([1, 3, 2]);
+        // A relay forwards in arrival order; the receiver below it restores the order on its own.
+        const forwardedToE = await d.readSent('e');
+        expect(forwardedToE.map((message) => message.ordering?.seq)).toEqual([1, 3, 2]);
+        const e = mesh.peers.get('e')!;
+        for (const copy of forwardedToE) {
+            await e.receive(copy, 'd');
+        }
+        expect(e.delivered.map((message) => message.ordering?.seq)).toEqual([1, 2, 3]);
     });
 
     // Green on first run. Not one of T's decision rules, reported as a concern: a receiver with no state for a track
@@ -411,9 +441,9 @@ describe('a frame carried by both layouts during the replaced-layout overlap', (
 describe('a loop through the union of two layouts', () => {
     useFakeClock();
 
-    // Green on first run: the visited list each copy carries names every sibling its sender addressed, so no relay
-    // owns a peer of the cycle another copy already reaches.
-    it('a loop through the union of two layouts stops at the first repeat', async () => {
+    // The visited list each copy carries names every sibling its sender addressed, so in the triangle no relay owns a
+    // peer of the cycle another copy already reaches, and no copy arrives twice.
+    it('a loop through a triangle of the union is never entered', async () => {
         const mesh = createOverlapMesh({
             sessionIds: ['a', 'b', 'c', 'd'],
             previousTree: CYCLE_PREVIOUS,
@@ -425,6 +455,26 @@ describe('a loop through the union of two layouts', () => {
         const carried = await exchangeUntilQuiet(mesh);
 
         expect(readDataEdges(carried, frame)).toEqual(['a>b', 'b>c', 'b>d']);
+        for (const peer of mesh.peers.values()) {
+            expect(readCopies(peer.delivered, frame)).toBe(1);
+        }
+    });
+
+    // In the square `b`, `c`, `d`, `e` the two copies `b` sends meet at `d`, which neither sender could name as
+    // visited: `d` admits the first, drops the second as a duplicate, and forwards neither back into the square.
+    it('a loop through the union of two layouts stops at the first repeat', async () => {
+        const mesh = createOverlapMesh({
+            sessionIds: ['a', 'b', 'c', 'd', 'e'],
+            previousTree: SQUARE_PREVIOUS,
+            promotedTree: SQUARE_PROMOTED
+        });
+        const frame = createPositionFrame({ resourceId: 'square' });
+        await enqueueAndDrain(mesh.origin.manager, frame);
+
+        const carried = await exchangeUntilQuiet(mesh);
+
+        expect(readDataEdges(carried, frame)).toEqual(['a>b', 'b>c', 'b>e', 'c>d', 'e>d']);
+        expect(readAdmissionReasons(mesh.peers.get('d')!, frame)).toEqual(['admitted', 'duplicate']);
         for (const peer of mesh.peers.values()) {
             expect(readCopies(peer.delivered, frame)).toBe(1);
         }
@@ -468,6 +518,38 @@ describe('a loop through the union of two layouts', () => {
         expect(readAdmissionReasons(mesh.peers.get('c')!, frame)).toEqual(reasons);
         expect(readAdmissionReasons(mesh.peers.get('d')!, frame)).toEqual(reasons);
     });
+
+    // A frame that reaches a peer with no deadline (a proof-carrying frame passed on untouched, or a foreign sender's)
+    // holds its message-id dedupe row only for the window. Every copy here arrives without a deadline and 1 s after it
+    // was sent, so each repeat meets a dedupe row that has already expired and is admitted again. The loop still stops:
+    // the local delivery effect is keyed by sender and message id, so the repeat is not delivered again (a per-arrival
+    // effect id delivers it twice), and the outbound admission of the forward finds the message id already sent and
+    // absorbs it as a duplicate (without that check the repeats are forwarded on round the cycle).
+    it('a frame without a deadline and with a dedupe window of 0 still stops at the first repeat in a union with a cycle', async () => {
+        const mesh = createOverlapMesh({
+            sessionIds: ['a', 'b', 'c', 'd'],
+            previousTree: CYCLE_PREVIOUS,
+            promotedTree: CYCLE_PROMOTED
+        });
+        const frame = createPositionFrame({ resourceId: 'no-deadline', qos: { dedup: { algo: 'msg-id', opts: { windowMs: 0 } } } });
+        await enqueueAndDrain(mesh.origin.manager, frame);
+        const first = mesh.origin.channels.b!.sent[0]!;
+        mesh.origin.channels.b!.sent[0] = { ...first, diagnostics: { ...first.diagnostics, visitedPeerIds: VISITED_AT_CAP } };
+
+        const carried = await exchangeUntilQuiet(mesh, {
+            toCarried: (message) => message.id.msgId === frame.id.msgId ? toDeadlineFreeCopy(message) : message,
+            delayMs: 1_000
+        });
+
+        expect(carried.filter((copy) => copy.message.id.msgId === frame.id.msgId).every((copy) => resolveALMessageExpireAtMs(copy.message) === undefined))
+            .toBe(true);
+        expect(readDataEdges(carried, frame)).toEqual(['a>b', 'b>c', 'b>d', 'c>d', 'd>c']);
+        for (const peer of mesh.peers.values()) {
+            expect(readCopies(peer.delivered, frame)).toBe(1);
+        }
+        expect(readAdmissionReasons(mesh.peers.get('c')!, frame)).toEqual(['admitted', 'admitted']);
+        expect(readAdmissionReasons(mesh.peers.get('d')!, frame)).toEqual(['admitted', 'admitted']);
+    });
 });
 
 describe('the transport copies one broadcast produces', () => {
@@ -499,7 +581,7 @@ describe('the transport copies one broadcast produces', () => {
             withoutOverlap: ['a>b', 'a>c', 'c>d', 'c>e'],
             withOverlap: ['a>b', 'a>c', 'b>d', 'b>e', 'c>d', 'c>e']
         }
-    ])('$shape carries each frame once per edge of the layouts in force, and every peer delivers it once', async (input) => {
+    ])('$shape carries each frame over exactly these edges, once each, and every peer delivers it once', async (input) => {
         const inside = createOverlapMesh(input);
         const after = createOverlapMesh(input);
         const insideFrame = createPositionFrame({ resourceId: 'inside' });
@@ -601,9 +683,9 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
     );
 
     // `b` promotes one millisecond more than half the overlap after `c`: at `c`'s bound, `b` is still in the first
-    // half of its own overlap and forwards over the replaced edge. `c` refuses the copy as unauthorized (its admission
-    // denies the edge, cause `edge-unavailable`, pinned in `rtc-room-snapshot-admission.test.ts`), sends `b` no NACK,
-    // delivers and forwards nothing, and `b`'s row keeps waiting on `c` without a retry or a word upward.
+    // half of its own overlap and forwards over the replaced edge. `c` refuses the copy as unauthorized because its
+    // admission no longer permits the edge (cause `edge-unavailable`, not a membership or authority refusal), sends `b`
+    // nothing back, delivers and forwards nothing, and `b` sends no retry or word upward.
     it.each(['at-least-once', 'best-effort'] as const)(
         'a relay that promoted more than half the overlap after its previous child is still refused as unauthorized (%s)',
         async (reliability) => {
@@ -613,7 +695,9 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             tail.promoteRelay();
             await vi.advanceTimersByTimeAsync(SERVED_REPLACED_LAYOUT_OVERLAP_MS - relayLagMs);
             const frame = createTailFrame(reliability, 'tail');
-            expect(await relayToChild(tail, frame)).toHaveLength(1);
+            const copies = await relayToChild(tail, frame);
+            expect(copies).toHaveLength(1);
+            expect(tail.child.readRoomAdmission(copies[0]!, 'b')).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
             await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
 
             expect(readAdmissionReasons(tail.child, frame)).toEqual(['unauthorized']);
@@ -623,10 +707,23 @@ describe('the overlap\'s tail, when a relay promoted later than its previous chi
             expect(readCopies(await tail.relay.readSent('c'), frame)).toBe(1);
             expect((await tail.relay.readSentControls('a')).map((control) => control.type))
                 .toEqual(reliability === 'at-least-once' ? ['ack'] : []);
-            const waiting = await tail.relay.readPendingAck({ msgId: frame.id.msgId, fromPeerId: 'c' });
-            expect(waiting?.ackedFromPeerIds.includes('c')).toBe(reliability === 'at-least-once' ? false : undefined);
         }
     );
+
+    // An at-least-once relay row keeps `c` among the hops it waits on; a best-effort frame keeps no row at all.
+    it('the relay\'s row for an at-least-once copy its previous child refused keeps waiting on that child', async () => {
+        const tail = createChainTail();
+        await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS + 1);
+        tail.promoteRelay();
+        await vi.advanceTimersByTimeAsync(FORWARDING_HALF_MS - 1);
+        const frame = createTailFrame('at-least-once', 'tail');
+        await relayToChild(tail, frame);
+        await vi.advanceTimersByTimeAsync(10 * ACK_TIMEOUT_MS);
+
+        const waiting = await tail.relay.readPendingAck({ msgId: frame.id.msgId, fromPeerId: 'c' });
+        expect(waiting).toBeDefined();
+        expect(waiting!.ackedFromPeerIds).not.toContain('c');
+    });
 });
 
 describe('fanout selection over the union of two layouts', () => {
@@ -640,18 +737,28 @@ describe('fanout selection over the union of two layouts', () => {
         }
     });
 
+    // Two ids of one length that differ in one character rank the same way for almost every message id, so these
+    // children's ids differ in their first characters: `frame-0` ranks `accepted-child` first and `frame-5` ranks
+    // `previous-child` first. Accepted-first selection is shown against both rank orders.
+    const RANKED_BOTH_WAYS_MSG_IDS = ['frame-0', 'frame-5'];
+
     // `random-k` ranks within each layout: the ready accepted children by rank, then the ready replaced-layout children,
     // then the accepted neighbour count cuts the list.
     it('under random-k fanout accepted children are chosen before replaced ones', () => {
-        for (const msgId of MSG_IDS) {
-            expect(planOriginNextHops({ fanout: { algo: 'random-k' } }, msgId)).toContain('c');
+        const layouts = { acceptedPeerIds: ['accepted-child'], replacedPeerIds: ['previous-child'], readyPeerIds: ['previous-child', 'accepted-child'] };
+        for (const msgId of RANKED_BOTH_WAYS_MSG_IDS) {
+            expect(planOriginFanout({ fanout: { algo: 'random-k' } }, msgId, layouts)).toEqual(['accepted-child']);
         }
     });
 
     it('under random-k fanout a replaced-layout child fills in when fewer accepted children are ready than the limit', () => {
-        const layouts = { acceptedPeerIds: ['c', 'd'], replacedPeerIds: ['b'], readyPeerIds: ['b', 'c'] };
-        for (const msgId of MSG_IDS) {
-            expect(planOriginFanout({ fanout: { algo: 'random-k' } }, msgId, layouts)).toEqual(['c', 'b']);
+        const layouts = {
+            acceptedPeerIds: ['accepted-child', 'accepted-late'],
+            replacedPeerIds: ['previous-child'],
+            readyPeerIds: ['previous-child', 'accepted-child']
+        };
+        for (const msgId of RANKED_BOTH_WAYS_MSG_IDS) {
+            expect(planOriginFanout({ fanout: { algo: 'random-k' } }, msgId, layouts)).toEqual(['accepted-child', 'previous-child']);
         }
     });
 
