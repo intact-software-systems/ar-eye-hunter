@@ -173,7 +173,7 @@ export function toRejectedPublishCommands(
     reason: string
 ): readonly RallarBlackBoxTestCommand[] {
     const send = toCommandId(step, `${name}-send`);
-    const observe = toPublicationObserveCommand(step, name, 'rejected', REJECTION_WAIT_MS);
+    const observe = toPublicationObserveCommand(step, name, 'rejected');
     return [
         {
             ...toGrantedSend({ step, payload: toPublicationPayload(step, name, 'publication') }),
@@ -201,7 +201,7 @@ export function toEndedReceiptCommands(
     name: string
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        toPublicationObserveCommand(step, name, 'acknowledged', SUBSCRIPTION_PHASE_MS),
+        toPublicationObserveCommand(step, name, 'acknowledged'),
         {
             kind: 'messages.receipts',
             commandId: toCommandId(step, `${name}-receipts`),
@@ -212,12 +212,14 @@ export function toEndedReceiptCommands(
     ];
 }
 
-/** The publication's handle reaches `state` or any terminal state. */
+/**
+ * The publication's handle reaches `state` or any terminal state: a refusal within its rejection budget, a receipt
+ * once its audience confirmed, which is one phase of the cell.
+ */
 function toPublicationObserveCommand(
     step: AlmConformanceStepInput,
     name: string,
-    state: ALDeliveryState,
-    timeoutMs: number
+    state: Extract<ALDeliveryState, 'rejected' | 'acknowledged'>
 ): RallarBlackBoxTestMessagesObserveCommand {
     return {
         kind: 'messages.observe',
@@ -225,7 +227,7 @@ function toPublicationObserveCommand(
         connection: toConnectionName(step),
         handleId: toCommandId(step, `${name}-send`),
         state: [state],
-        timeoutMs
+        timeoutMs: state === 'rejected' ? REJECTION_WAIT_MS : SUBSCRIPTION_PHASE_MS
     };
 }
 
