@@ -29,7 +29,7 @@ export function toCellHistoryMarkedCommands(
     const own = {
         cellPrefix,
         sinceCommandIdPrefix: toCommandId(step, ''),
-        ownRolePrefixes: step.roles.map((role) => `${cellPrefix}-${role}-`)
+        ownRolePrefixes: step.roles.map((role) => toCommandId({ ...step, role }, ''))
     };
     return commands.map((command) => toCellHistoryMarkedCommand(command, own));
 }
