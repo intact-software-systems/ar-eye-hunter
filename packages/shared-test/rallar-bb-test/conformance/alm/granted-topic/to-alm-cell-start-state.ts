@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { toAlmConformancePrincipalRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStartGrant, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
-import { toTopicGrantCommand } from './to-topic-grant-command.ts';
+import { toTopicGrantCommand, toTopicGrantOnceCommand } from './to-topic-grant-command.ts';
 
 /** Set on each command of a cell's start state, which a recipe's reader tells from the cell's own grant changes by it. */
 export const ALM_CELL_START_STATE_METADATA = { cellStartState: 'declared-grants' } as const;
@@ -18,8 +18,14 @@ export function toAlmCellStartState(step: AlmConformanceStepInput): readonly Ral
         return [];
     }
     assertStartGrantsNameEveryPrincipal(step, startGrants);
-    return startGrants.flatMap((grant) => toAlmCellPrincipalStartCommands(step, grant)).map(toStartStateCommand);
+    // A barriered cell writes after its `connected` barrier, which every role meets once its page is a member.
+    const attempts = step.input.cellSettle === 'barriered' ? 'once' : 'until-accepted';
+    return startGrants.flatMap((grant) => toAlmCellPrincipalStartCommands(step, grant, attempts))
+        .map(toStartStateCommand);
 }
+
+/** Whether a write asks again after a refusal: a grantee that may not have joined yet is asked until it has. */
+export type AlmCellStartWriteAttempts = 'once' | 'until-accepted';
 
 /**
  * One principal's way to its declared state from any state, rows included: a revoke of `subscribe` with every
@@ -31,11 +37,13 @@ export function toAlmCellStartState(step: AlmConformanceStepInput): readonly Ral
  */
 export function toAlmCellPrincipalStartCommands(
     step: AlmConformanceStepInput,
-    grant: AlmConformanceStartGrant
+    grant: AlmConformanceStartGrant,
+    attempts: AlmCellStartWriteAttempts
 ): readonly RallarBlackBoxTestCommand[] {
     const { grantee, publish, subscribe } = grant;
+    const toWrite = attempts === 'once' ? toTopicGrantOnceCommand : toTopicGrantCommand;
     return [
-        toTopicGrantCommand({
+        toWrite({
             step,
             scope: 'start-state',
             operation: 'revoke',
@@ -44,7 +52,7 @@ export function toAlmCellPrincipalStartCommands(
             subscribe: true
         }),
         ...(publish || subscribe
-            ? [toTopicGrantCommand({ step, scope: 'start-state', operation: 'grant', grantee, publish, subscribe })]
+            ? [toWrite({ step, scope: 'start-state', operation: 'grant', grantee, publish, subscribe })]
             : [])
     ];
 }

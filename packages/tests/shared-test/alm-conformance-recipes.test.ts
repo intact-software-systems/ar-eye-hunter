@@ -1926,9 +1926,11 @@ describe('alm-conformance cell parts', () => {
                     expect([connected, formationSettled, armed].map((barrier) => barrier?.commandId))
                         .toEqual(SETTLE_BARRIER_PHASES.map((phase) => `${cellPrefix}-${role}-${phase}`));
                     const formation = settle.slice(0, -2);
-                    // The receiver's start state, if its cell declares one, leads its formation poll.
+                    // The receiver's start state, if its cell declares one, leads its formation poll: one request per write.
                     expect(formation.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
-                        .toEqual(formation.map(() => 'loop'));
+                        .toEqual(
+                            formation.map((command, index) => index === formation.length - 1 ? 'loop' : isStartStateCommand(command) ? 'http.request' : 'loop')
+                        );
                     expect(formation.length > 0, `${scenario.scenarioKey} ${role}`).toBe(role === 'receiver');
                     if (role === 'receiver') {
                         expect(formation.slice(0, -1).every(isStartStateCommand), `${scenario.scenarioKey} ${role}`).toBe(true);
@@ -1951,6 +1953,44 @@ describe('alm-conformance cell parts', () => {
                 }
             }
         }
+    });
+
+    it('a granted cell\'s settle orders the start-state writes before the applied wait and holds no poll after it', () => {
+        let granted = 0;
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                const recipe = toAlmConformanceRoleRecipe(scenario, 'receiver')!;
+                const ids = recipe.commands.map((command) => command.commandId);
+                const startState = recipe.commands.filter(isStartStateCommand);
+                if (startState.length === 0) {
+                    continue;
+                }
+                granted += 1;
+                const writeAts = startState.map((command) => ids.indexOf(command.commandId));
+                const connectedAt = ids.indexOf(`${cellPrefix}-receiver-connected`);
+                const headAppliedAt = ids.indexOf(`${cellPrefix}-receiver-head-applied`);
+                const armedAt = ids.indexOf(`${cellPrefix}-receiver-armed`);
+
+                // Each write is one request, not a poll of requests, and runs after every role connected.
+                expect(startState.map((command) => command.kind), scenario.scenarioKey).toEqual(startState.map(() => 'http.request'));
+                expect(startState.every((command) => command.timeoutMs === 5_000), scenario.scenarioKey).toBe(true);
+                expect(Math.min(...writeAts), scenario.scenarioKey).toBeGreaterThan(connectedAt);
+                // Every write precedes the page's applied wait; after it the settle holds nothing but the arming run.
+                expect(Math.max(...writeAts), scenario.scenarioKey).toBeLessThan(headAppliedAt);
+                expect(
+                    recipe.commands.slice(headAppliedAt + 1, armedAt).filter((command) => command.metadata?.cellSettle === 'lane'),
+                    scenario.scenarioKey
+                ).toEqual([]);
+                expect(
+                    recipe.commands.slice(headAppliedAt + 1, armedAt).some((command) =>
+                        command.kind === 'loop' && toNestedCommands([command]).some(isStartStateCommand)
+                    ),
+                    scenario.scenarioKey
+                ).toBe(false);
+            }
+        }
+        expect(granted).toBeGreaterThan(0);
     });
 
     it('only the receiver polls', () => {
@@ -2079,17 +2119,17 @@ describe('alm-conformance cell parts', () => {
             }
         }
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
-        // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each request of a start state is a
-        // 90 000 ms poll and one 5 000 ms command, four of them for the first cell below and six for the second. The first arrival waits through
+        // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
+        // 5 000 ms request, four of them for the first cell below and six for the second. The first arrival waits through
         // every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
         expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
-        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([425_000, 55_000]);
+        expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
         expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([45_000, 100_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
-        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([615_000, 135_000]);
+        expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
     });
 
     it('a barriered role recipe\'s authored commands are its prologue then its body, as without a settle', () => {

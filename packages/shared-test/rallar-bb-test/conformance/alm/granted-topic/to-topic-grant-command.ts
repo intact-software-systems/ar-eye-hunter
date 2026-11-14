@@ -30,16 +30,53 @@ interface TopicGrantInput {
  * yet is refused `member-not-active`, so each attempt is a request of its own until one answers 200.
  */
 export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestCommand {
-    const { step, scope, operation, grantee } = grant;
-    const name = `${scope === 'start-state' ? 'start-' : ''}${operation}-${grantee}-${toPermissionName(grant)}`;
-    const request: RallarBlackBoxTestHttpRequestCommand = {
+    const { step } = grant;
+    const name = toTopicGrantName(grant);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commands: [toTopicGrantRequest({
+            grant,
+            commandId: toCommandId(step, `${name}-request`),
+            requestId: `${toTopicRequestId(step, name)}-{loop.iteration}`
+        })]
+    });
+}
+
+/**
+ * The same grant or revoke as one request, for a writer whose grantee is already a member: a refusal then fails the
+ * command instead of being asked again.
+ */
+export function toTopicGrantOnceCommand(grant: TopicGrantInput): RallarBlackBoxTestCommand {
+    const { step } = grant;
+    const name = toTopicGrantName(grant);
+    return toTopicGrantRequest({
+        grant,
+        commandId: toCommandId(step, name),
+        requestId: toTopicRequestId(step, name)
+    });
+}
+
+interface TopicGrantRequestInput {
+    readonly grant: TopicGrantInput;
+    readonly commandId: string;
+    readonly requestId: string;
+}
+
+function toTopicGrantRequest(
+    { grant, commandId, requestId }: TopicGrantRequestInput
+): RallarBlackBoxTestHttpRequestCommand {
+    const { step, operation, grantee } = grant;
+    return {
         kind: 'http.request',
-        commandId: toCommandId(step, `${name}-request`),
+        commandId,
         timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
         request: {
             method: 'POST',
             path: `${toAlmCellGroupPath(step)}/publication-grants/${toPrincipalPlaceholder(grantee)}/${operation}` +
-                `/requests/${toTopicRequestId(step, name)}-{loop.iteration}`,
+                `/requests/${requestId}`,
             body: { topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID, publish: grant.publish, subscribe: grant.subscribe }
         },
         response: { body: 'json', acceptedStatusCodes: [200] },
@@ -48,13 +85,12 @@ export function toTopicGrantCommand(grant: TopicGrantInput): RallarBlackBoxTestC
             group: toRoomRef(step.input.group)
         }
     };
-    return toPollCommand({
-        step,
-        name,
-        phaseMs: SUBSCRIPTION_PHASE_MS,
-        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-        commands: [request]
-    });
+}
+
+function toTopicGrantName({ scope, operation, grantee, publish, subscribe }: TopicGrantInput): string {
+    return `${scope === 'start-state' ? 'start-' : ''}${operation}-${grantee}-${
+        toPermissionName({ publish, subscribe })
+    }`;
 }
 
 /** A mutation request id: the page's runtime identity keeps a rerun from replaying an earlier run's answer. */
@@ -63,6 +99,6 @@ export function toTopicRequestId(step: AlmConformanceStepInput, name: string): s
 }
 
 /** `p`, `s` or `ps`: a request id names the permissions short, so it stays within 128 characters. */
-function toPermissionName(grant: TopicGrantInput): string {
+function toPermissionName(grant: Pick<TopicGrantInput, 'publish' | 'subscribe'>): string {
     return `${grant.publish ? 'p' : ''}${grant.subscribe ? 's' : ''}`;
 }

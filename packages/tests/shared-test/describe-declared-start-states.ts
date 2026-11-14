@@ -216,18 +216,17 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
             }
         });
 
-        it('a barriered and a plain cell write the same start state', () => {
+        it('a barriered and a plain cell write the same grants, the barriered cell as one request each', () => {
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
                 const barriered = toPlannedGrantedCells(prefix, carrier, 'barriered');
                 for (const [index, scenario] of toPlannedGrantedCells(prefix, carrier, undefined).entries()) {
-                    const toWritten = (commands: readonly RallarBlackBoxTestCommand[]) =>
-                        commands.filter(isStartStateCommand).map(({ metadata, ...command }) => {
-                            const { cellSettle: _settle, ...rest } = metadata ?? {};
-                            return { ...command, metadata: rest };
-                        });
+                    const label = `${carrier} ${scenario.scenarioKey}`;
+                    const written = toRecipeCommands(barriered[index]!, 'receiver').filter(isStartStateCommand);
 
-                    expect(toWritten(toRecipeCommands(barriered[index]!, 'receiver')), `${carrier} ${scenario.scenarioKey}`)
-                        .toEqual(toWritten(toRecipeCommands(scenario, 'receiver')));
+                    expect(toStartRequests(barriered[index]!, 'receiver'), label).toEqual(toStartRequests(scenario, 'receiver'));
+                    expect(written.map(({ kind }) => kind), label).toEqual(written.map(() => 'http.request'));
+                    expect(toRecipeCommands(scenario, 'receiver').filter(isStartStateCommand).map(({ kind }) => kind), label)
+                        .toEqual(written.map(() => 'loop'));
                 }
             }
         });

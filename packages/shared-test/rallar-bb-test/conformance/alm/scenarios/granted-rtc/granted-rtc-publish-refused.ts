@@ -30,7 +30,11 @@ export const grantedRtcPublishRefused: AlmConformanceScenarioDefinition = {
 
 function toSubscribeOnlyPublisherCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toAlmCellPrincipalStartCommands(receiver, { grantee: 'receiver', publish: false, subscribe: true }),
+        ...toAlmCellPrincipalStartCommands(
+            receiver,
+            { grantee: 'receiver', publish: false, subscribe: true },
+            'until-accepted'
+        ),
         toGrantedRefusalPollCommand({
             step: receiver,
             delivery: UNRECEIPTED_DELIVERY,
