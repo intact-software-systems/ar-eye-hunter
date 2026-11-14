@@ -312,6 +312,7 @@ Core browser/shared WebRTC:
 - `packages/shared/services/web-rtc-heartbeat-service.ts`
 - `packages/shared/services/web-rtc-group-service.ts`
 - `packages/shared/services/web-rtc-group-manager.ts`
+- `packages/shared/services/group-dial/web-rtc-group-peer-ledger.ts`
 - `packages/shared/services/ws-queue-box-client-service.ts`
 - `packages/shared/services/InboxOutboxEngine.ts`
 - `packages/shared/websocket/json-web-socket-client.ts`

@@ -272,8 +272,8 @@ diagnostics before treating it as a production shape.
   RTT calculation.
 - `packages/shared/services/web-rtc-rx-streamer-service.ts`: per-peer heartbeat
   ownership and `RttMeasurementInfo` creation.
-- `packages/shared/services/web-rtc-group-manager.ts`: browser desired RTC peer
-  selection and capped RTT reporting peer selection.
+- `packages/shared/services/group-dial/web-rtc-group-peer-ledger.ts`: browser desired RTC peer
+  ownership; `packages/shared/services/web-rtc-group-manager.ts`: capped RTT reporting peer selection.
 - `packages/shared-web/browser/connection/initialise-browser-middleware.ts`:
   browser RTT AL message creation,
   selected-peer heartbeat reconciliation, and WS enqueue.
