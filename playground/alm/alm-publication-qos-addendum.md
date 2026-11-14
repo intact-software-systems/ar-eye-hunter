@@ -1523,16 +1523,10 @@ on the Postgres API, and a per-cell flake ledger whose entries each carry a
 root cause (D639).
 
 Each lane cell starts from a declared, settled room (D647). The lane's
-parameters, each read once when the spec loads and refused with its accepted
-values before any browser starts, are `RALLAR_BLACK_BOX_ALM_ORDER`
-(`declared`, the default, or `shuffled`), `RALLAR_BLACK_BOX_ALM_SEED` (an
-integer from 0 to 4294967295, only with `shuffled`; a family that names none
-mints one; the lane prints the seed and the artifact records it as
-`cellOrder`), `RALLAR_BLACK_BOX_ALM_ROOMS` (`family`, the default, or `cell`;
-four-role families always run `cell` and same-context families `family`),
-`RALLAR_BLACK_BOX_ALM_ONLY` (scenario keys; a key that no cell of the selected
-scope and carriers runs is refused) and `RALLAR_BLACK_BOX_ALM_SKIP` (scenario
-ids, which win over `_ONLY`). A red is rerun first with the same seed.
+parameters are `RALLAR_BLACK_BOX_ALM_ORDER`, `RALLAR_BLACK_BOX_ALM_SEED`,
+`RALLAR_BLACK_BOX_ALM_ROOMS`, `RALLAR_BLACK_BOX_ALM_ONLY` and
+`RALLAR_BLACK_BOX_ALM_SKIP`; their defaults, refusals, composition and replay
+are in [`docs/environment-variables.md`](../../docs/environment-variables.md).
 
 ### After Slice 9
 
