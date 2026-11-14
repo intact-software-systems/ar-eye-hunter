@@ -13,9 +13,10 @@ import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
-    configureBrowserRtcPeerCreationPolicies,
-    createBrowserRtcHeldOfferReleases
-} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
+import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
@@ -564,18 +565,19 @@ async function nameStartupPeerInRoom(
         toScopedOverlayId(group.group),
         createAcceptedOverlayFixture(group, 1, ['startup-peer'])
     );
+    const groupPeerLedger = createTestGroupPeerLedger(service, {
+        groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+        plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+        acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+    });
     const manager = new WebRtcGroupManager(
         service,
-        createTestGroupPeerLedger(service, {
-            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-        }),
+        groupPeerLedger,
         heldOfferReleases
     );
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);
-    configureBrowserRtcPeerCreationPolicies(service, manager);
+    configureBrowserRtcPeerCreationPolicies(service, createBrowserRtcPeerAdmission(groupPeerLedger));
     return manager;
 }
 

@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
     BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
-    configureBrowserRtcPeerCreationPolicies,
-    createBrowserRtcHeldOfferReleases
-} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
+import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { ClientInfo, OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -450,17 +451,18 @@ async function createFullCapRuntime(layouts: FullCapLayouts): Promise<AdmissionR
         createPassThroughTransportFaultPort()
     );
     connections.add(connection);
+    const groupPeerLedger = createTestGroupPeerLedger(connection.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
     const manager = new WebRtcGroupManager(
         connection.service,
-        createTestGroupPeerLedger(connection.service, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            plannedOverlayCache: plannedOverlays,
-            acceptedOverlayCache: acceptedOverlays
-        }),
+        groupPeerLedger,
         createBrowserRtcHeldOfferReleases(connection.service)
     );
-    configureBrowserRtcPeerCreationPolicies(connection.service, manager);
+    configureBrowserRtcPeerCreationPolicies(connection.service, createBrowserRtcPeerAdmission(groupPeerLedger));
     await connection.service.connectSignaler();
     await manager.acceptGroupUpdate(group);
     return { group, manager, connection, acceptedOverlays, plannedOverlays };
@@ -571,17 +573,18 @@ async function createAdmissionRuntime(scenario: AdmissionScenario): Promise<Admi
         createPassThroughTransportFaultPort()
     );
     connections.add(connection);
+    const groupPeerLedger = createTestGroupPeerLedger(connection.service, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: plannedOverlays,
+        acceptedOverlayCache: acceptedOverlays
+    });
     const manager = new WebRtcGroupManager(
         connection.service,
-        createTestGroupPeerLedger(connection.service, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            plannedOverlayCache: plannedOverlays,
-            acceptedOverlayCache: acceptedOverlays
-        }),
+        groupPeerLedger,
         { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
-    configureBrowserRtcPeerCreationPolicies(connection.service, manager);
+    configureBrowserRtcPeerCreationPolicies(connection.service, createBrowserRtcPeerAdmission(groupPeerLedger));
     // Hydrate the real group owner without starting automatic reconciliation;
     // outbound and inbound tests must each attempt creation from an empty service.
     await manager.getOrCreate(group.group).acceptGroupUpdate(group);

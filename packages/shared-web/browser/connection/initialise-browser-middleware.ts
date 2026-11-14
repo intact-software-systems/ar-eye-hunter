@@ -81,7 +81,6 @@ import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import type { ConnectionCapInboundVerdict } from '@shared/services/group-dial/compute-connection-cap-spend.ts';
 import {
     DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
     resolveWebRtcMaxPeerConnections,
@@ -91,7 +90,6 @@ import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts'
 import type { RtcDataChannelLaneConfig, WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
-import type { WebRtcGroupManagerOptions } from '@shared/services/webrtc-group-manager-contracts.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import { DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS } from '@shared/services/ws-queue-box-client-service.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
@@ -102,6 +100,10 @@ import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
 } from './close-browser-transport-resources.ts';
+import {
+    createBrowserRtcHeldOfferReleases,
+    createBrowserRtcPeerAdmission
+} from './create-browser-rtc-peer-admission.ts';
 import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 import {
@@ -264,78 +266,18 @@ export function createBrowserRttHeartbeatMessage(
     );
 }
 
-/** Why a peer is refused until this browser adopts the layout that names it; adoption releases its held offers. */
-export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
-/**
- * Why an early-dial peer's offer waits: no connection slot is free for it. The end of every reconcile pass releases
- * these holds, so a slot freed by a closed peer or an ended grace admits the held offer at once.
- */
-const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
-
 export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
-    webRtcGroupManager: WebRtcGroupManager
+    peerAdmission: WebRtcConnectionService.PeerAdmission
 ): void {
-    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-            ? toInboundPeerCreationDecision(webRtcGroupManager.admitInboundPeer(peerId))
-            : { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
+    webRtcConnectionService.setInboundPeerCreationPolicy((signal) =>
+        peerAdmission.decideInbound(signal, webRtcConnectionService)
     );
     webRtcConnectionService.setInboundPeerCapPolicy({
-        decide: ({ peerId }) => toPeerCapDecision(webRtcGroupManager, peerId),
-        wouldAdmit: ({ peerId }) =>
-            webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId) &&
-            webRtcGroupManager.resolveInboundPeer(peerId) === 'admitted'
+        decide: (signal) => peerAdmission.decideInboundAtCap(signal, webRtcConnectionService),
+        wouldAdmit: (signal) => peerAdmission.wouldAdmitInboundAtCap(signal, webRtcConnectionService)
     });
-    webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
-            ? { decision: 'allow' }
-            : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-    );
-}
-
-/**
- * A peer no room dials yet is held while an early peer could make room for it, so the adoption that names it releases
- * it; with no early peer it is refused. Nothing closes while it is held.
- */
-function toPeerCapDecision(
-    webRtcGroupManager: WebRtcGroupManager,
-    peerId: string
-): WebRtcConnectionService.InboundPeerCreationDecision {
-    if (webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)) {
-        return toInboundPeerCreationDecision(webRtcGroupManager.admitInboundPeer(peerId));
-    }
-    return webRtcGroupManager.hasClosableEarlyPeer()
-        ? { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-        : { decision: 'deny', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON };
-}
-
-export function createBrowserRtcHeldOfferReleases(
-    webRtcConnectionService: WebRtcConnectionService
-): Pick<WebRtcGroupManagerOptions, 'onOverlayAdopted' | 'onReconcilePassEnded'> {
-    return {
-        onReconcilePassEnded: () => releaseEarlyDialCapacityHolds(webRtcConnectionService),
-        onOverlayAdopted: () =>
-            webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON)
-    };
-}
-
-function releaseEarlyDialCapacityHolds(webRtcConnectionService: WebRtcConnectionService): void {
-    void webRtcConnectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON)
-        .catch((caught) => console.error('Failed to release early-dial offers held for a slot', toError(caught)));
-}
-
-function toInboundPeerCreationDecision(
-    verdict: ConnectionCapInboundVerdict
-): WebRtcConnectionService.InboundPeerCreationDecision {
-    switch (verdict) {
-        case 'admitted':
-            return { decision: 'allow' };
-        case 'held':
-            return { decision: 'retry', reason: BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON };
-        case 'refused':
-            return { decision: 'deny', reason: 'max-peer-connections' };
-    }
+    webRtcConnectionService.setOutboundDialPolicy((dial) => peerAdmission.decideOutbound(dial));
 }
 
 export async function initialiseMiddleware(
@@ -835,20 +777,21 @@ function createBrowserRtcGroupManager(
     webRtcConnectionService: WebRtcConnectionService,
     rtcRxStreamer: WebRtcRxStreamerService
 ): WebRtcGroupManager {
+    const groupPeerLedger = new WebRtcGroupPeerLedger({
+        localSessionId: webRtcConnectionService.input.sessionId,
+        repositories: {
+            groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+            clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
+            plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
+            acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
+        },
+        maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
+        overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        nowEpochMs: () => Date.now()
+    });
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
-        new WebRtcGroupPeerLedger({
-            localSessionId: webRtcConnectionService.input.sessionId,
-            repositories: {
-                groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-                clientCache: clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
-                plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
-                acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
-            },
-            maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
-            overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
-            nowEpochMs: () => Date.now()
-        }),
+        groupPeerLedger,
         {
             rttReportingDegreeLimit: input.options.rttReportingDegreeLimit,
             onDesiredPeerIdsChanged: ({ rttReportingPeerIds }) =>
@@ -862,7 +805,7 @@ function createBrowserRtcGroupManager(
     );
     configureBrowserRtcPeerCreationPolicies(
         webRtcConnectionService,
-        webRtcGroupManager
+        createBrowserRtcPeerAdmission(groupPeerLedger)
     );
     return webRtcGroupManager;
 }

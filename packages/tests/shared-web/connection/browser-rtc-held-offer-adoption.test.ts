@@ -3,8 +3,9 @@ import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON,
-    configureBrowserRtcPeerCreationPolicies
-} from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+    createBrowserRtcPeerAdmission
+} from '@shared-web/browser/connection/create-browser-rtc-peer-admission.ts';
+import { configureBrowserRtcPeerCreationPolicies } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { newALEventRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
@@ -140,20 +141,21 @@ async function createHeldOfferRuntime(pair: HeldOfferPair): Promise<HeldOfferRun
     );
     const group = createActiveGroup();
     const acceptedOverlays = new LatestRepository<string, OverlayInfo>();
+    const groupPeerLedger = createTestGroupPeerLedger(connectionService, {
+        groupCache: new LatestRepository<string, GroupSnapshot>(),
+        clientCache: new LatestRepository<string, ClientInfo>(),
+        plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
+        acceptedOverlayCache: acceptedOverlays
+    });
     const manager = new WebRtcGroupManager(
         connectionService,
-        createTestGroupPeerLedger(connectionService, {
-            groupCache: new LatestRepository<string, GroupSnapshot>(),
-            clientCache: new LatestRepository<string, ClientInfo>(),
-            plannedOverlayCache: new LatestRepository<string, OverlayInfo>(),
-            acceptedOverlayCache: acceptedOverlays
-        }),
+        groupPeerLedger,
         {
             onOverlayAdopted: () => connectionService.writeHeldInboundSignalsDueNow(BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON),
             onReconcilePassEnded: () => {}
         }
     );
-    configureBrowserRtcPeerCreationPolicies(connectionService, manager);
+    configureBrowserRtcPeerCreationPolicies(connectionService, createBrowserRtcPeerAdmission(groupPeerLedger));
     onTestFinished(async () => {
         connectionService.removePeerIfPresent(SENDER);
         const cleanup = await Promise.allSettled([queueBoxClient.close(), queueEngine.stop()]);

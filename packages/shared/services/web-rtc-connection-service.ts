@@ -367,6 +367,23 @@ export namespace WebRtcConnectionService {
     export type OutboundDialPolicy = (
         input: OutboundDialPolicyInput
     ) => PeerCreationDecision;
+
+    /** Which new peers the service creates; the service passes itself as `peers` with each inbound decision. */
+    export interface PeerAdmission {
+        /** Below the cap: whether a new peer's signal creates it; a `retry` holds the signal. */
+        readonly decideInbound: (
+            signal: InboundPeerCreationPolicyInput,
+            peers: ClosableAdmissionPeers
+        ) => InboundPeerCreationDecision;
+        /** At a full cap: an `allow` admits only once it has freed a slot; a `retry` holds the signal. */
+        readonly decideInboundAtCap: (
+            signal: InboundPeerCreationPolicyInput,
+            peers: ClosableAdmissionPeers
+        ) => InboundPeerCreationDecision;
+        /** Whether `decideInboundAtCap` would admit the signal now, with no side effect. */
+        readonly wouldAdmitInboundAtCap: (signal: InboundPeerCreationPolicyInput, peers: AdmissionPeers) => boolean;
+        readonly decideOutbound: (dial: OutboundDialPolicyInput) => PeerCreationDecision;
+    }
 }
 
 export class WebRtcConnectionService {
