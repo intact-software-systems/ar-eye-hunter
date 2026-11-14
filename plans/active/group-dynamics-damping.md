@@ -5,8 +5,8 @@ costs every browser more than the layout it replaces was worth. This plan damps 
 holds back the reshaping of a room's distribution graph while the room is restless, lets the
 cheap, necessary changes through at once, and bounds how long anyone waits.
 
-It is a plan for discussion. Nothing in it is built. The open questions at the end decide its
-shape; the values in it are provisional and marked as such.
+Nothing in it is built. The maintainer decided its shape on 2026-11-14 (see "Decisions"); what is
+still open is listed after them.
 
 ## Why
 
@@ -66,21 +66,54 @@ Today the planner knows one kind of work. Attach and repair are a re-plan like a
 join can move members it has nothing to do with.
 
 **The signal is the room's own behaviour, not a clock.** A layout pays for itself when it lives
-longer than it costs. The server knows both: when each layout was accepted and replaced, and the
-overlap it serves. Provisional signal: the room is _restless_ while its recent layouts were
-replaced before they were one overlap old, or while membership changes keep arriving faster than
-a stated rate; it is _calm_ when a layout has survived an overlap. Restless holds reshaping back;
-calm releases it once.
+longer than it costs. The room is _restless_ when it asks for a reshape sooner than the last one
+could pay for itself, and _calm_ when a layout has survived its ceiling without such a request.
+Restless holds reshaping back; calm releases it. "Mechanism" below says how this is counted.
 
 **The wait has a ceiling, and what happens at the ceiling is cheap.** A room that never calms, a
 lobby for example, must not run on a stale graph for ever. At the ceiling the server reshapes
-once, and the ceiling then backs off (longer each time the room is still restless, up to a
-maximum), so a restless room is reshaped rarely and a calm one promptly. This replaces "at least
+once. The first ceiling is one overlap (15 s), so a reshape never lands inside the overlap of the
+one before it; it doubles while the room stays restless, up to 60 s, and returns to 15 s when a
+layout survives. A restless room is reshaped rarely and a calm one promptly. This replaces "at least
 every max wait" for reshaping only; attach and repair never wait.
 
 **Circuit breaker is the wrong name.** A breaker refuses work after failures. This holds work back
 because it would not pay for itself, and resumes on evidence that it will. The closer relatives
 are back-off and route-flap damping.
+
+## Mechanism
+
+**A rate limiter on reshapes, with a bucket of one.** The gate is a token bucket that holds a
+single token and refills it once per ceiling. A reshape spends the token; a reshape that finds no
+token is held until the refill, and held requests coalesce into one, as re-plans coalesce today.
+The bucket must hold exactly one token: a second token would allow two reshapes back to back,
+which is the case this plan exists to remove.
+
+**The limiter is also the signal.** A reshape request that the limiter had to hold is the evidence
+that the room is restless: it asked again before the last layout was one ceiling old. So:
+
+- a held request since the last reshape doubles the next ceiling, up to the maximum;
+- a whole ceiling without a held request returns it to the first ceiling.
+
+No second measure is needed to decide. A sliding window over membership changes is what the
+measuring slice uses to report how restless rooms are; it is a meter, not the gate.
+
+**Not a leaky bucket.** A leaky bucket that queues work and lets it out at a steady rate would
+reshape a restless room at that rate for ever, and would queue reshapes of which only the last
+matters. Reshape work is coalesced, never queued.
+
+**Stored, not held in memory.** Any server of the cluster may run a room's planning work, so the
+limiter cannot be an object in one process. Its state is two stored values beside the room's
+coalesced re-plan work, where `replanNotBeforeEpochMs` already carries the layout-age floor: the
+instant before which no reshape is due, and the ceiling in force. One pure function computes the
+next pair from the previous pair, the request and the clock, in the style of
+`computeTopologyReplanDueAt`.
+
+**Shared primitives.** `packages/shared/resilience` already owns a token bucket
+(`rate-limiter.ts`), a sliding-window counter (`sliding-window-counter.ts`) and a back-off
+(`failure-backoff.ts`). The rule reuses their arithmetic where it fits a stored-state shape and
+adds no purpose-named copy; if the stored-state form needs a pure variant of one of them, that
+variant goes into `packages/shared/resilience`, not into the topology folder.
 
 ## Goals
 
@@ -142,8 +175,8 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 
 ### Later, decided after slice 2
 
-- The restless and calm rule with its ceiling and back-off, as one pure function with the
-  lifecycle policy's `topology` section as its only configuration.
+- The reshape limiter of "Mechanism": one pure function over stored state, with the lifecycle
+  policy's `topology` section carrying its two bounds (first ceiling and maximum).
 - Folding in the two server paths that re-plan without the tree-keeping gate (leader rooting
   after a failed update, the mesh rebuild), which #823 leaves for a follow-up.
 
@@ -155,30 +188,31 @@ Done when the recipe of slice 1 shows joins and leaves no longer move uninvolved
 - The churn recipe of slice 1 is the before-and-after measure for every later slice.
 - A hosted run is guidance, not a gate, and needs the maintainer's go-ahead each time.
 
-## Open questions for the maintainer
+## Decisions
 
-Each has the plan's provisional answer and what it costs if that answer is wrong.
+Decided by the maintainer on 2026-11-14.
 
-1. **Which restlessness matters most: the burst while a room fills, or steady coming and going in
-   a long-lived room?** Provisional: both, steady churn first, because the burst already has the
-   expected-members rule. Cost if wrong: the first slices measure the less important case.
-2. **What may a joiner experience while reshaping is held?** Provisional: it is attached at once
-   with a correct but possibly long path, and WS carries its traffic until its first edge is
-   open. Cost if wrong: if a joiner must have the best path from its first second, attach cannot
-   be cheap and the damping has little to hold back.
-3. **How long may a restless room run without a reshape?** Provisional: a ceiling of one overlap
-   (15 s) that doubles while the room stays restless, up to one minute. Cost if wrong: too short
-   and nothing is damped; too long and a lobby runs on a poor graph.
-4. **Who decides: one server-wide rule, the room's lifecycle policy, or the application?**
-   Provisional: the rule is server-wide and the lifecycle policy's `topology` section carries its
-   two bounds, as it carries the window and max wait today. Cost if wrong: either every
-   application inherits one behaviour it cannot change, or every application must choose.
-5. **May the max wait (product decision 31) change meaning?** Today it promises a re-plan within
-   that time. Under this plan it would promise an attach or a repair within that time, and a
-   reshape within the ceiling. Cost if wrong: the plan must keep reshaping on the max wait and
-   can only damp below it.
-6. **Is a measuring slice acceptable before any behaviour changes?** Provisional: yes. Cost if
-   wrong: the rule's bounds are chosen by argument, not from the room's behaviour.
-7. **Order against the other work.** Provisional: after make-before-break (#823) merges, and this
-   plan absorbs that pull request's follow-up for the two ungated re-plan paths. Cost if wrong:
-   two slices touch the same planner files at once.
+| # | Question                                           | Decision                                                                                                                        |
+| - | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | Which restlessness first                           | Steady coming and going in a long-lived room. The filling burst already has the expected-members rule.                          |
+| 2 | What a joiner experiences while reshaping is held  | It is attached at once, with a correct but possibly long path. WS carries its traffic until its first edge is open.             |
+| 3 | How long a restless room may run without a reshape | A ceiling of 15 s that doubles while the room stays restless, up to 60 s, and returns to 15 s when a layout survives.           |
+| 4 | Who decides                                        | One server rule for every room. The room's lifecycle policy carries the two bounds in its `topology` section; presets set them. |
+| 5 | The max wait (product decision 31)                 | It changes meaning: an attach or a repair is promised within the max wait; a reshape is promised within the ceiling.            |
+| 6 | Measure first                                      | Yes. Slice 1 changes no behaviour and is the before-and-after measure for every later slice.                                    |
+
+## Still open
+
+1. **Order against the other work.** The plan's proposal: start slice 1 after make-before-break
+   (#823) merges, and absorb that pull request's follow-up for the two re-plan paths without the
+   tree-keeping gate. The maintainer's reply to this question began with "1." and went on to the
+   mechanism; whether "1." chose this proposal is not confirmed.
+2. **The mechanism.** The maintainer asked whether a rate limiter fits, as a sliding window or a
+   leaky bucket. "Mechanism" above is the plan's answer: a token bucket of one with a ceiling that
+   backs off, stored with the room; a sliding window as the meter; no leaky bucket. Not yet
+   confirmed.
+3. **What counts as restless when no reshape was requested.** Under "Mechanism" a room that only
+   attaches and repairs never asks for a reshape, so it is never restless and its graph drifts
+   until something else asks. Does the server ask for a reshape on its own after enough attaches
+   and repairs, or when a path grows past a bound? The measuring slice should show how far a
+   graph drifts.
