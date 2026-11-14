@@ -31,20 +31,17 @@ const ORDERING_POSITION = 'ordering-position';
  * The server orders a principal's client-state events on its own producer track, and a principal's event reaches its
  * own sessions and every co-member's. The sender writes its principal three times.
  * The lane starts the sender last and each recipient only once its connect barrier released
- * (`tests/playwright/rallar-black-box/full-stack-agent-run.ts:104` `runRecipesOnAgents` with `toStartOrder` at :203,
- * `tests/playwright/rallar-black-box/full-stack-helpers.ts:706` `startRecipientRecipeRun`), so in the family's first
+ * (`runRecipesOnAgents` with `toStartOrder` in `tests/playwright/rallar-black-box/full-stack-agent-run.ts`,
+ * `startRecipientRecipeRun` in `tests/playwright/rallar-black-box/full-stack-helpers.ts`), so in the family's first
  * cell the sender principal's track carries at least the sibling's connect event before the sender's own: the sender's
  * session enters above seq 1, prior 0, the nonzero-entry witness that before Slice 5 read a gap from 1. The exact seq
  * is not the cell's: on one API the track also carries every earlier lane connect of the principal.
  * The sibling, the principal's second session, enters the same track, prior 0, at its session's first copy on it.
  * The receiver, a co-member of another principal, enters the sender principal's track, prior 0, at its session's first
  * copy on it.
- * A page states `entered` at each new connect, whose volatile inbound lane holds no position, but the prior on it is
- * the WS server's last-sent sequence to the page's session on the track, so `priorSeq` 0 comes once per session per
- * track. The lane keeps a family's sessions across its cells: its close does not log out, and the next connect restores
- * the same session. So only the entry in whichever cell of the family first connected carries prior 0, and the entry
- * wait reads the page's whole history, matched on the track of the cell's own arrival: an earlier cell's entry
- * satisfies it, so it does not show that this cell's connects produced one. No page states `before-entry` in the
+ * The prior-0 entry is a fact of the session, which outlives the cell (the rule at `toCellHistoryMarkedCommands`), so
+ * the entry wait reads the page's whole history, matched on the track of the cell's own arrival: an earlier cell's
+ * entry satisfies it, so it does not show that this cell's connects produced one. No page states `before-entry` in the
  * window after the last write's copy arrived.
  */
 export const serverOrderedEntry: AlmConformanceScenarioDefinition = {

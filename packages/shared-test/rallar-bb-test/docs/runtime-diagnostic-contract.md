@@ -280,8 +280,9 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
   a cell carries `metadata.historyFrom: 'page'` and keeps the page's whole history: the head wait
   above, a store's recovery that a fresh document reports during its first connect, and
   `server-ordered-entry`'s `entered` with `priorSeq` 0 on the sender principal's track. A page states
-  `entered` at every connect, since a connect's volatile inbound lane holds no position
-  (`createBrowserALVolatileInboundRuntimeStores`), but its prior is the WS server's last-sent
+  `entered` when a connect opens a new connection, at its first recorded copy on the track, since that
+  connection's volatile inbound lane holds no position (`createBrowserALVolatileInboundRuntimeStores`;
+  a lane connect that re-uses the open connection states none), but its prior is the WS server's last-sent
   sequence to the session (`ordering.priorSeqByRecipient`, keyed by session id). A `close` command
   does not log out, and the next connect restores the same session, so only the session's first
   entry carries prior 0. So with a room per family, a room of its own or closed connections alike,
