@@ -736,7 +736,7 @@ and it has no status list.
   both campaign rungs until a hosted run reads the build (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
-  `packages/shared/multicast/room-authority/rtc-room-snapshot-admission.ts`). Open: which
+  `packages/shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts`). Open: which
   server path produced the re-plans (neither run records the server's planning
   decision; a tree's leader-rooting or update-failure rebuild and the
   unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
@@ -758,10 +758,17 @@ and it has no status list.
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
 - `WebRtcConnectionService` takes its inbound creation policy, its inbound
-  peer-cap policy and its outbound dial policy through three setters, because
-  the group manager they ask is built after the service: setter injection the
-  code standard counts as construction debt. Building the policies before the
-  service, or giving the service one required policies input, removes it.
+  peer-cap policy and its outbound dial policy through three setters
+  (`setInboundPeerCreationPolicy`, `setInboundPeerCapPolicy`, `setOutboundDialPolicy`):
+  setter injection the code standard counts as construction debt. The make-before-break slice
+  added the third, the cap policy. The policies read the group manager's peer
+  ownership and retained-peer state, and the manager is built after the service and takes
+  it, so a cycle blocks one required policies input. The fix is a retained-peer and
+  cap state owner built before the service (the group, client and overlay caches, the
+  retained-connection map and its order), with the known-peer read and the
+  early-peer close either behind a port the service exposes or passed into each
+  policy call, and one required policies input in place of the three setters.
+  It moves who owns retention and cap state, so it is a redesign, not a small edit.
 - Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
   `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
   that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating
@@ -771,8 +778,9 @@ and it has no status list.
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
   rebuild: the group dynamics damping plan (draft pull request #827) takes them.
-- Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a forward
-  dropped on the inbound side (`planForwarding` returns undefined) is not reported; the `admission-outcome`
+- Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
+  forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
+  forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`
   diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
 - `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
   peer ids of equal length that differ only in late characters, for almost every message id; ids that differ early
@@ -786,4 +794,29 @@ and it has no status list.
   16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
   publication work, not a defect of the overlap.
 - Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
-  the cap closes early peers only for it.
+  the cap closes early peers only for it. At a full cap there is no overlap: no early dial starts, and the promotion's
+  own pass closes the replaced edges for the new accepted dials, while admission still lists them for their window.
+- A frozen multicast's double fault during the forwarding half: a relay drops a neighbour only when the union of its own
+  two layouts gives it no route to a recipient, so a frame is lost when a peer that lags across a second promotion
+  forwards over a layout outside that union and the copy to the path child is also lost, on a frame that carries no
+  receipt.
+- A stale planned layout counts for up to 60 s: the rule owner (`resolveRtcRoomRoutingEdges`) and the dial policy
+  (`selectGroupEarlyDialPeerIds`) take whatever the planned slot holds, and a planned layout that the accepted one has
+  moved past stays until its 60 s cache entry expires or a newer plan replaces it. It costs early dials in the cap's
+  lowest class and not-yet-in-sync answers to its neighbours. First, the connection-cap test
+  `a promotion does not close the replaced layout's edges while early peers are still wanted`
+  (`packages/tests/shared/web-rtc-group-manager-reconcile-wakes.test.ts`), whose early peers come from a planned layout
+  the accepted one has moved past, is rebuilt on a newer planned layout. Then one predicate, "the planned layout
+  dominates the accepted one", serves the rule owner and the dial policy.
+- The browser spec of the overlap shows the hand-over, not the rule (D648). A case in which a promotion re-parents a
+  browser onto an edge that is not open is not built. It needs a formation driver for more than three browsers (today's
+  forms the room with `{mesh, degreeLimit 2}`, which leaves a fourth session without an edge), the shape read from
+  the layouts at run time, and a bounded search for an owner request that re-parents a browser onto an edge that is
+  not open: `{mesh, degreeLimit 2, meshParamK 1}` then `{tree}` adds an edge the first layout lacks and drops
+  another in about 80 % of 300 random-id planner runs with four sessions and 98 to 100 % with five, and which session moves
+  depends on the session ids and the RTT reports.
+- The browser spec of the overlap (`npm run test:rallar:full-stack:memory:live-rtc-3:layout-switch`) runs in no required
+  gate lane. It would catch a regression of the hand-over over the served overlap, which only a browser run shows.
+  It is not added because it is a 65 s live-RTC stream with timing assertions, not measured on hosted runners.
+- Admission work per prepared copy: each prepared copy runs one or two admissions at every authority read, and each
+  admission, a denial included, builds the authorized list and runs the rule. Measure it before changing it.
