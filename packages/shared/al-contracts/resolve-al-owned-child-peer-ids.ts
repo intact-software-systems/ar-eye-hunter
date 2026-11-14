@@ -18,22 +18,9 @@ export interface ALPreviousOverlayLayout {
 }
 
 /**
- * The peers this peer owns as its children for one copy, reachable now or not: the immediate peer of a
- * unicast it does not address itself, or the overlay neighbours of a group message that are neither this
- * peer nor its sender, not already visited or excepted, in the room and in a broadcast's fixed list, and within
- * the forwarding hint when one is given. A multicast frozen to its recipients keeps only the neighbours that lead to one
- * of them over their layout's adjacency; a peer that is its only recipient, or holds an audience frozen to nobody, keeps
- * none. A peer that is no recipient and whose layout leads none of its neighbours to one holds a layout that disagrees
- * with its sender's, so it keeps every neighbour. That fallback cascades: once one peer keeps every neighbour (no adjacency, an unplaced recipient, or a
- * path child its room, hint or visited set removes), each relay below it with a consistent layout sees every recipient
- * behind its sender and keeps every neighbour too, so one disagreement floods that whole subtree as before the
- * adjacency was kept, still at least once. A peer that owns none is a leaf and never asks for a retransmit: the retry of a recipient the origin
- * already counted is the decision of the origin. In the first half of a replaced layout's overlap, its children
- * follow the accepted layout's, each layout's neighbours pruned over that layout's own adjacency, and a peer owned
- * through both appears once. There a path child the visited set removes may have been addressed over the other layout:
- * when every recipient has a path child in some layout in force, visited or not, a layout that falls back keeps only the
- * neighbours that reach a recipient over the edges of both layouts. A recipient behind the sender in every layout in
- * force still keeps every neighbour, and with one layout in force the fallback keeps every neighbour, as before.
+ * A frozen multicast drops a neighbour only when no route from it to a recipient avoids this peer: over its own
+ * layout, or over the union of the layouts in force when a visited path child may have been addressed over the other.
+ * A recipient behind the sender in every layout in force means the layouts disagree, so every neighbour stays.
  */
 export function resolveALOwnedChildPeerIds(
     msg: ALMessage,
@@ -57,15 +44,20 @@ export function resolveALOwnedChildPeerIds(
     if (recipientPeerIds.length === 0) {
         return [];
     }
-    const overlapAdjacency = toALOverlapAdjacency(layouts.map((layout) => layout.adjacency));
     const prunedPeerIds = layouts.map((layout) => resolveALLayoutPrunedPeerIds(layout, recipientPeerIds));
-    const fallbackAdjacency = prunedPeerIds.includes(undefined) && overlapAdjacency !== undefined &&
-            hasEveryRecipientAPathChildUnlessVisited(msg, context, layouts, recipientPeerIds)
-        ? overlapAdjacency
+    const fallbackAdjacency = prunedPeerIds.includes(undefined) && layouts.length > 1 &&
+            hasEveryRecipientAPathChildUnlessVisited(
+                layouts,
+                recipientPeerIds,
+                toALOwnableNeighborPredicate(msg, context, [])
+            )
+        ? toALOverlapAdjacency(layouts.map((layout) => layout.adjacency))
         : undefined;
     const ownedPeerIds = layouts.flatMap((layout, index) =>
         prunedPeerIds[index] ??
-            resolveALChildPeerIdsTowardRecipients(layout.ownablePeerIds, fallbackAdjacency, recipientPeerIds)
+            (fallbackAdjacency === undefined
+                ? layout.ownablePeerIds
+                : resolveALChildPeerIdsTowardRecipients(layout.ownablePeerIds, fallbackAdjacency, recipientPeerIds))
     );
     return [...new Set(ownedPeerIds)];
 }
@@ -162,12 +154,10 @@ function resolveALLayoutPrunedPeerIds(
 }
 
 function hasEveryRecipientAPathChildUnlessVisited(
-    msg: ALMessage,
-    context: ALMessagePlanningContext,
     layouts: readonly ALLayoutChildCandidates[],
-    recipientPeerIds: readonly string[]
+    recipientPeerIds: readonly string[],
+    isOwnableUnlessVisited: (peerId: string) => boolean
 ): boolean {
-    const isOwnableUnlessVisited = toALOwnableNeighborPredicate(msg, context, []);
     return recipientPeerIds.every((recipientPeerId) =>
         layouts.some(({ neighborPeerIds, adjacency }) =>
             adjacency !== undefined &&
