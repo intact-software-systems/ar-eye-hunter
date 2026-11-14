@@ -208,12 +208,12 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
-/** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
 interface BrowserTransports {
     readonly webSocketTransport: BrowserWebSocketTransport;
     readonly rtcTransport: BrowserRtcTransport;
 }
 
+/** Only successfully acquired RTC owners enter startup rollback; construction fills this journal. */
 interface BrowserRtcAcquisitions {
     readonly webRtcConnectionService: WebRtcConnectionService;
     webRtcOverlayMulticastManager?: WebRtcOverlayMulticastManager;
@@ -291,7 +291,7 @@ export function configureBrowserRtcPeerCreationPolicies(
 
 /**
  * A peer no room dials yet is held while an early peer could make room for it, so the adoption that names it releases
- * it; with no early peer it is refused, as the full cap always did. Nothing closes while it is held.
+ * it; with no early peer it is refused. Nothing closes while it is held.
  */
 function toPeerCapDecision(
     webRtcGroupManager: WebRtcGroupManager,

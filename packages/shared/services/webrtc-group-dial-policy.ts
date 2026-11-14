@@ -47,7 +47,7 @@ export function selectGroupDialPeerIds(
 function selectGroupEarlyDialPeerIds(
     input: SelectGroupDialPeerIdsInput
 ): readonly PeerId[] {
-    if (input.lifecycleState !== 'active') {
+    if (input.lifecycleState !== 'active' || resolveDialLayoutRoles(input.lifecycleState) !== 'accepted-and-planned') {
         return [];
     }
     const acceptedPeerIds = new Set(serverLayoutPeerIds(input.accepted, input.localSessionId));

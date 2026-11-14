@@ -50,7 +50,8 @@ interface CapClosingOrder {
  * peers first (retained ones oldest first, then desired ones), then edges retained from a replaced accepted layout,
  * oldest first; an inbound accepted offer at a full cap closes early peers only, and is refused when there are too few.
  * An early peer takes only a slot that is free after every known peer and every accepted candidate, and never closes
- * anything. With no early peer only retained edges close, and an inbound offer at a full cap is refused.
+ * anything. With no early peer only retained edges close, and an inbound accepted offer that would exceed the cap is
+ * refused.
  */
 export function computeConnectionCapSpend(input: ConnectionCapSpendInput): ConnectionCapSpend {
     const isAccepted = (peerId: PeerId): boolean =>
