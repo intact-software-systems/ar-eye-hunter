@@ -12,6 +12,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import type { WebRtcGroupPeerSelection } from '@shared/services/webrtc-group-manager-contracts.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 import {
     acceptActiveLayoutGroup,
     createClientInfo,
@@ -956,14 +957,16 @@ describe('WebRtcGroupManager', () => {
     it('frees a pacing slot at once when an admitted dial starts nothing', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
-        const rtcQBox = createRtcConnectionHarness('self');
+        const rtcQBox = createSimulatedRtcConnections('self', () => true, {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideOutbound: ({ peerId }) => peerId !== 'peer-denied'
+        });
         const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
         const manager = new WebRtcGroupManager(
             rtcQBox.service,
             createTestGroupPeerLedger(rtcQBox.service.input.sessionId, { groupCache, clientCache, acceptedOverlayCache }, { overlayTransitionGraceMs: 0 }),
             { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
-        rtcQBox.service.setOutboundDialPolicy(({ peerId }) => peerId !== 'peer-denied');
         for (const peerId of ['peer-denied', 'peer-b']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
         }
@@ -979,7 +982,7 @@ describe('WebRtcGroupManager', () => {
             })
         );
 
-        expect(rtcQBox.knownPeerIds()).toEqual(['peer-b']);
+        expect(rtcQBox.service.knownPeerIds()).toEqual(['peer-b']);
         expect(manager.readDiagnostics()).toMatchObject({ connectFailureCount: 1, connectDeferredPacingCount: 0 });
     });
 

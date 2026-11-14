@@ -199,17 +199,20 @@ describe('owned RTC signaling observations', () => {
 
     it('records real service admission and reuse without publishing policy reason or envelope secrets', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { service, runtime, sent, receive } = createObservedService((event) => events.push(event));
+        let inboundDecision: WebRtcConnectionService.InboundPeerCreationDecision = { decision: 'retry', reason: 'private-policy' };
+        const { service, runtime, sent, receive } = createObservedService(
+            (event) => events.push(event),
+            { ...UNGATED_TEST_PEER_ADMISSION, decideInbound: () => inboundDecision }
+        );
         await service.connectSignaler();
-        service.setInboundPeerCreationPolicy(() => ({ decision: 'retry', reason: 'private-policy' }));
         expect(await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' })).toBe('retry');
         expect(runtime.createdConnections).toHaveLength(0);
         expect(events).toContainEqual(expect.objectContaining({ kind: 'service-signal-route', disposition: 'policy-retry' }));
-        service.setInboundPeerCreationPolicy(() => true);
+        inboundDecision = true;
         await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
         expect(runtime.createdConnections[0].receivedDescriptions).toHaveLength(1);
         expect(sent).toMatchObject([{ signalType: 'Answer', offerId: 'remote' }]);
-        service.setInboundPeerCreationPolicy(() => false);
+        inboundDecision = false;
         await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
         expect(runtime.createdConnections).toHaveLength(1);
         expect(events).toContainEqual(expect.objectContaining({ disposition: 'reuse-selected' }));
@@ -218,7 +221,16 @@ describe('owned RTC signaling observations', () => {
 
     it('rejects invalid service entries and denies missing peers before native allocation', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { service, runtime, receive } = createObservedService((event) => events.push(event));
+        let inboundPolicy: 'allow' | 'deny' | 'throw' = 'allow';
+        const { service, runtime, receive } = createObservedService((event) => events.push(event), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: () => {
+                if (inboundPolicy === 'throw') {
+                    throw new Error('private-policy');
+                }
+                return inboundPolicy === 'deny' ? { decision: 'deny', reason: 'private-policy' } : 'allow';
+            }
+        });
         await service.connectSignaler();
         await expect(receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'other', recipientId: 'self' })).rejects.toThrow(
             'wrong session'
@@ -227,11 +239,9 @@ describe('owned RTC signaling observations', () => {
             TypeError
         );
         await receive({ resource: JSON.stringify({ ...offer(), ...answer('offer') }), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
-        service.setInboundPeerCreationPolicy(() => ({ decision: 'deny', reason: 'private-policy' }));
+        inboundPolicy = 'deny';
         await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
-        service.setInboundPeerCreationPolicy(() => {
-            throw new Error('private-policy');
-        });
+        inboundPolicy = 'throw';
         vi.spyOn(console, 'error').mockImplementation(() => {});
         await receive({ resource: JSON.stringify(offer()), senderId: 'peer', sessionId: 'self', recipientId: 'self' });
         expect(runtime.createdConnections).toHaveLength(0);
@@ -243,13 +253,15 @@ describe('owned RTC signaling observations', () => {
 
     it('drops decoded wrong-target and self signals before admission and stops new peers at the cap', async () => {
         const events: RtcSignalingDiagnostics.Event[] = [];
-        const { service, runtime, receive } = createObservedService((event) => events.push(event));
-        await service.connectSignaler();
         const admittedPeerIds: string[] = [];
-        service.setInboundPeerCreationPolicy(({ peerId }) => {
-            admittedPeerIds.push(peerId);
-            return true;
+        const { service, runtime, receive } = createObservedService((event) => events.push(event), {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: ({ peerId }) => {
+                admittedPeerIds.push(peerId);
+                return true;
+            }
         });
+        await service.connectSignaler();
         await receive({ resource: JSON.stringify({ ...offer(), toId: 'other' }), senderId: 'peer', sessionId: 'self', recipientId: 'other' });
         await receive({ resource: JSON.stringify({ ...offer(), fromId: 'self' }), senderId: 'self', sessionId: 'self', recipientId: 'self' });
         expect(runtime.createdConnections).toHaveLength(0);
@@ -410,7 +422,10 @@ function offer() {
     } as const;
 }
 
-function createObservedService(record: RtcSignalingDiagnostics['record']): ObservedServiceFixture {
+function createObservedService(
+    record: RtcSignalingDiagnostics['record'],
+    peerAdmission: WebRtcConnectionService.PeerAdmission = UNGATED_TEST_PEER_ADMISSION
+): ObservedServiceFixture {
     const runtime = installNativeRtcRuntime();
     let registered: QRtcSignalingTransportInput | undefined;
     const sent: QRtcSignalingMessage[] = [];
@@ -421,7 +436,7 @@ function createObservedService(record: RtcSignalingDiagnostics['record']): Obser
         nowEpochMs,
         signalingDiagnostics: { nowEpochMs, record },
         writeRetainedSignalsDueNow: async () => [],
-        peerAdmission: UNGATED_TEST_PEER_ADMISSION
+        peerAdmission
     };
     const service = new WebRtcConnectionService({
         connect: async (input) => {

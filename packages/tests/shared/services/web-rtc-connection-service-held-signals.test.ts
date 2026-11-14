@@ -117,6 +117,9 @@ async function createHeldSignalFixture(maxPeerConnections?: number): Promise<Hel
         send: async () => {}
     };
     const broughtDue: (readonly ALMessage[])[] = [];
+    const admittedPeerIds = new Set<string>();
+    const deniedPeerIds = new Set<string>();
+    const refusalReasons = new Map<string, string>();
     const service = new WebRtcConnectionService(signaler, {
         sessionId: SELF,
         token: 'test-token',
@@ -132,20 +135,19 @@ async function createHeldSignalFixture(maxPeerConnections?: number): Promise<Hel
             broughtDue.push(envelopes);
             return envelopes;
         },
-        peerAdmission: UNGATED_TEST_PEER_ADMISSION
-    });
-    const admittedPeerIds = new Set<string>();
-    const deniedPeerIds = new Set<string>();
-    const refusalReasons = new Map<string, string>();
-    service.setInboundPeerCreationPolicy(({ peerId }) => {
-        if (admittedPeerIds.has(peerId)) {
-            return 'allow';
+        peerAdmission: {
+            ...UNGATED_TEST_PEER_ADMISSION,
+            decideInbound: ({ peerId }) => {
+                if (admittedPeerIds.has(peerId)) {
+                    return 'allow';
+                }
+                return deniedPeerIds.has(peerId)
+                    ? 'deny'
+                    : { decision: 'retry', reason: refusalReasons.get(peerId) ?? LAYOUT_REASON };
+            },
+            decideOutbound: ({ peerId }) => admittedPeerIds.has(peerId)
         }
-        return deniedPeerIds.has(peerId)
-            ? 'deny'
-            : { decision: 'retry', reason: refusalReasons.get(peerId) ?? LAYOUT_REASON };
     });
-    service.setOutboundDialPolicy(({ peerId }) => admittedPeerIds.has(peerId));
     await service.connectSignaler();
     return {
         service,

@@ -113,7 +113,6 @@ interface PeerCreationAdmission {
 }
 
 type InboundPeerCreationPolicyAnswer =
-    | Readonly<{ kind: 'no-policy'; }>
     | Readonly<{ kind: 'answered'; admission: PeerCreationAdmission; }>
     | Readonly<{ kind: 'threw'; error: Error; }>;
 
@@ -349,25 +348,9 @@ export namespace WebRtcConnectionService {
         readonly message: QRtcSignalingMessage;
     }
 
-    export type InboundPeerCreationPolicy = (
-        input: InboundPeerCreationPolicyInput
-    ) => InboundPeerCreationDecision;
-
-    /** Asked only for a new peer's signal at a full cap; without one that signal is refused. */
-    export interface InboundPeerCapPolicy {
-        /** An `allow` admits only once it has freed a slot; a `retry` holds the signal. */
-        readonly decide: InboundPeerCreationPolicy;
-        /** Whether `decide` would admit the signal now, with no side effect: a held signal is released only then. */
-        readonly wouldAdmit: (input: InboundPeerCreationPolicyInput) => boolean;
-    }
-
     export interface OutboundDialPolicyInput {
         readonly peerId: PeerId;
     }
-
-    export type OutboundDialPolicy = (
-        input: OutboundDialPolicyInput
-    ) => PeerCreationDecision;
 
     /** Which new peers the service creates; the service passes itself as `peers` with each inbound decision. */
     export interface PeerAdmission {
@@ -381,7 +364,7 @@ export namespace WebRtcConnectionService {
             signal: InboundPeerCreationPolicyInput,
             peers: ClosableAdmissionPeers
         ) => InboundPeerCreationDecision;
-        /** Whether `decideInboundAtCap` would admit the signal now, with no side effect. */
+        /** Whether `decideInboundAtCap` would admit the signal now, with no side effect: a held signal is released only then. */
         readonly wouldAdmitInboundAtCap: (signal: InboundPeerCreationPolicyInput, peers: AdmissionPeers) => boolean;
         readonly decideOutbound: (dial: OutboundDialPolicyInput) => PeerCreationDecision;
     }
@@ -401,10 +384,6 @@ export class WebRtcConnectionService {
     private readonly peerEstablishmentWatchdog: AsyncCommand<PeerId, WebRtcConnectionService.Peer>;
     private readonly attemptBudget: RtcPeerConnectionAttemptBudget;
 
-    private inboundPeerCreationPolicy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined;
-    private inboundPeerCapPolicy: WebRtcConnectionService.InboundPeerCapPolicy | undefined;
-    private outboundDialPolicy: WebRtcConnectionService.OutboundDialPolicy | undefined;
-
     public readonly signaler: QRtcSignalingTransport;
     public readonly input: WebRtcConnectionService.InputDto;
     private readonly dependencies: WebRtcConnectionService.Dependencies;
@@ -417,13 +396,6 @@ export class WebRtcConnectionService {
         this.signaler = signaler;
         this.input = input;
         this.dependencies = dependencies;
-        const { peerAdmission } = dependencies;
-        this.inboundPeerCreationPolicy = (signal) => peerAdmission.decideInbound(signal, this);
-        this.inboundPeerCapPolicy = {
-            decide: (signal) => peerAdmission.decideInboundAtCap(signal, this),
-            wouldAdmit: (signal) => peerAdmission.wouldAdmitInboundAtCap(signal, this)
-        };
-        this.outboundDialPolicy = (dial) => peerAdmission.decideOutbound(dial);
         this.peerEstablishmentWatchdog = new AsyncCommand<PeerId, WebRtcConnectionService.Peer>();
         this.heldInboundSignals = new HeldInboundRtcSignals({
             nowEpochMs: dependencies.nowEpochMs,
@@ -435,27 +407,6 @@ export class WebRtcConnectionService {
             onExhausted: (event) =>
                 this.notifyPeerLifecycle('onConnectExhausted', (callback) => callback.onConnectExhausted?.(event))
         });
-    }
-
-    setInboundPeerCreationPolicy(
-        policy?: WebRtcConnectionService.InboundPeerCreationPolicy
-    ): WebRtcConnectionService {
-        this.inboundPeerCreationPolicy = policy;
-        return this;
-    }
-
-    setInboundPeerCapPolicy(
-        policy?: WebRtcConnectionService.InboundPeerCapPolicy
-    ): WebRtcConnectionService {
-        this.inboundPeerCapPolicy = policy;
-        return this;
-    }
-
-    setOutboundDialPolicy(
-        policy?: WebRtcConnectionService.OutboundDialPolicy
-    ): WebRtcConnectionService {
-        this.outboundDialPolicy = policy;
-        return this;
     }
 
     peerConnectionAttemptDiagnostics(
@@ -705,8 +656,8 @@ export class WebRtcConnectionService {
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
             return !this.attemptBudget.wouldRefuse(signal.fromId) && this.wouldPeerCapPolicyAdmit(signal);
         }
-        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCreationPolicy, signal);
-        return answer.kind === 'no-policy' || (answer.kind === 'answered' && answer.admission.allowed);
+        const answer = this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInbound, signal);
+        return answer.kind === 'answered' && answer.admission.allowed;
     }
 
     private observeSignalRoute(
@@ -739,11 +690,8 @@ export class WebRtcConnectionService {
         if (this.peerEntryByPeerId.size >= this.maxPeerConnections()) {
             return this.shouldCreatePeerAtPeerCap(message);
         }
-        const answer = this.readInboundPeerCreationAdmission(this.inboundPeerCreationPolicy, message);
+        const answer = this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInbound, message);
         switch (answer.kind) {
-            case 'no-policy':
-                this.observeSignalRoute('allow-without-policy', message, undefined);
-                return { allowed: true };
             case 'threw':
                 this.observeSignalRoute('policy-threw', message, undefined);
                 console.error(`Inbound RTC peer creation policy failed for ${peerId}`, answer.error);
@@ -762,7 +710,10 @@ export class WebRtcConnectionService {
 
     private wouldPeerCapPolicyAdmit(signal: QRtcSignalingMessage): boolean {
         try {
-            return this.inboundPeerCapPolicy?.wouldAdmit(toInboundPeerCreationPolicyInput(signal)) ?? false;
+            return this.dependencies.peerAdmission.wouldAdmitInboundAtCap(
+                toInboundPeerCreationPolicyInput(signal),
+                this
+            );
         }
         catch (caught) {
             console.error(`Inbound RTC peer cap policy failed for ${signal.fromId}`, toError(caught));
@@ -774,7 +725,7 @@ export class WebRtcConnectionService {
     private shouldCreatePeerAtPeerCap(message: QRtcSignalingMessage): PeerCreationAdmission {
         const answer = this.attemptBudget.wouldRefuse(message.fromId)
             ? undefined
-            : this.readInboundPeerCreationAdmission(this.inboundPeerCapPolicy?.decide, message);
+            : this.readInboundPeerCreationAdmission(this.dependencies.peerAdmission.decideInboundAtCap, message);
         if (answer?.kind === 'threw') {
             console.error(`Inbound RTC peer cap policy failed for ${message.fromId}`, answer.error);
         }
@@ -791,16 +742,13 @@ export class WebRtcConnectionService {
         return { allowed: false, reason: 'max-peer-connections' };
     }
 
-    /** A creation policy's own answer for `signal`; each caller records its own route. */
+    /** An inbound admission decision's own answer for `signal`; each caller records its own route. */
     private readInboundPeerCreationAdmission(
-        policy: WebRtcConnectionService.InboundPeerCreationPolicy | undefined,
+        decide: WebRtcConnectionService.PeerAdmission['decideInbound'],
         signal: QRtcSignalingMessage
     ): InboundPeerCreationPolicyAnswer {
-        if (!policy) {
-            return { kind: 'no-policy' };
-        }
         try {
-            const decision = policy(toInboundPeerCreationPolicyInput(signal));
+            const decision = decide(toInboundPeerCreationPolicyInput(signal), this);
             return { kind: 'answered', admission: this.toPeerCreationAdmission(decision) };
         }
         catch (caught) {
@@ -811,13 +759,9 @@ export class WebRtcConnectionService {
     private shouldCreatePeerFromOutboundDial(
         peerId: PeerId
     ): PeerCreationAdmission {
-        if (!this.outboundDialPolicy) {
-            return { allowed: true };
-        }
-
         try {
             return this.toPeerCreationAdmission(
-                this.outboundDialPolicy({ peerId })
+                this.dependencies.peerAdmission.decideOutbound({ peerId })
             );
         }
         catch (caught) {
