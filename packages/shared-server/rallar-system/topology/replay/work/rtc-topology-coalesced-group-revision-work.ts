@@ -19,6 +19,7 @@ import {
 import {
     EntityStatus,
     isFailed,
+    NOT_COMPLETED_RETRYABLE_STATUSES,
     type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -302,7 +303,7 @@ export async function readPendingTopologyReplan(
 ): Promise<PendingTopologyReplan | null> {
     const headKey = toCoalescedGroupRevisionKey(groupRef);
     const head = await reader.findByKey(headKey);
-    if (head !== null && isPendingCoalescedStatus(head.status)) {
+    if (head !== null && NOT_COMPLETED_RETRYABLE_STATUSES.has(head.status)) {
         return toPendingTopologyReplan(decodeCurrentCoalescedGroupRevisionWork(head));
     }
     const rows = await reader.readPendingByTopicAndContextId(headKey.topicId, headKey.contextId);
@@ -335,10 +336,6 @@ function toPendingTopologyReplan(work: PreviousCoalescedGroupRevisionWork | null
 
 function toCoalescedDueAtEpochMs(work: PreviousCoalescedGroupRevisionWork): number {
     return work.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs;
-}
-
-function isPendingCoalescedStatus(status: EntityStatus): boolean {
-    return isMutableCoalescedStatus(status) || status === EntityStatus.RESERVED;
 }
 
 /**
