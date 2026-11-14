@@ -96,7 +96,7 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     }
     const snapshot = input.snapshot;
     if (!snapshot) {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting a room authority observation' };
+        return { kind: 'pending', reason: 'Awaiting a room authority observation' };
     }
     const authority = toRtcRoomAdmissionAuthority(input, roomRef, snapshot);
     const senderRoster = input.fromPeerId === undefined
@@ -281,10 +281,10 @@ function resolveRoomFloorDenial(
     const targets = input.message.targets;
     const floor = targets && targets.mode !== 'unicast' ? targets.minSnapshotVersion : undefined;
     if (floor !== undefined && snapshot.group.snapshotVersion < floor) {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room snapshot version' };
+        return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
     }
     if (senderRoster === 'behind') {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room roster version' };
+        return { kind: 'pending', reason: 'Awaiting the required room roster version' };
     }
     return undefined;
 }

@@ -271,7 +271,6 @@ describe('a promotion a browser learns of snapshot first, before the promoted la
 
         expect(receiver.readRoomAdmission(relayed, 'b')).toEqual({
             kind: 'pending',
-            cause: 'authority-behind',
             reason: 'Awaiting server room relay authority'
         });
         await receiver.receive(relayed, 'b');

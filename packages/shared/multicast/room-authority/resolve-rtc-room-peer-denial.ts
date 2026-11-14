@@ -11,11 +11,6 @@ export type RtcRoomAuthorityDenial =
     | {
         readonly kind: 'pending';
         readonly reason: string;
-        /**
-         * What the receiver lacks: room authority it has not observed yet, which a room refresh can bring, or its own
-         * promotion of the planned layout that names the relay, which only the layout's own delivery brings.
-         */
-        readonly cause: 'authority-behind' | 'layout-promotion-awaited';
     }
     | {
         readonly kind: 'unauthorized';
@@ -44,7 +39,7 @@ export function resolveRtcRoomPeerDenial(
 ): RtcRoomAuthorityDenial | undefined {
     const session = observation.sessions.get(peerId);
     if (!session) {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' };
+        return { kind: 'pending', reason: 'Awaiting room session authority' };
     }
     const sessionDenial = resolveLiveSessionDenial(observation, session);
     if (sessionDenial) {
@@ -52,7 +47,7 @@ export function resolveRtcRoomPeerDenial(
     }
     const member = observation.members.get(session.principalId);
     if (!member) {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room member authority' };
+        return { kind: 'pending', reason: 'Awaiting room member authority' };
     }
     return isActiveRoomMember(observation, member) ? undefined : {
         kind: 'unauthorized',
@@ -86,7 +81,7 @@ export function resolveRtcRoomSenderDenial(
     if (!session) {
         return roster === 'beyond'
             ? toMembershipFence('Room sender has no live session in a roster beyond its stamp')
-            : { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' };
+            : { kind: 'pending', reason: 'Awaiting room session authority' };
     }
     const sessionDenial = resolveLiveSessionDenial(observation, session);
     if (sessionDenial || roster === 'behind') {

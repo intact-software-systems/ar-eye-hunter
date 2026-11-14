@@ -310,7 +310,7 @@ async function observeFrame(input: PromotionMeshInput, reliability: Reliability)
     const firstIntoReceiver = first.filter((copy) => isFrameCopyInto(copy, frame, 'd'));
     const verdicts = firstIntoReceiver.map((copy) => {
         const verdict = receiver.readRoomAdmission(copy.message, copy.fromPeerId);
-        return `${copy.fromPeerId} ${verdict.kind} ${'cause' in verdict ? verdict.cause : '-'}`;
+        return `${copy.fromPeerId} ${verdict.kind} ${verdict.kind === 'pending' ? verdict.reason : 'cause' in verdict ? verdict.cause : '-'}`;
     });
     const later = await exchangeOver(mesh, SETTLE_MS, sentAtMs);
     const admissionReasons = readAdmissionReasons(receiver, frame);
@@ -619,7 +619,7 @@ describe('a sender that applied both promotions, and a receiver that applied onl
             }, reliability);
 
             expect(observed.copiesIntoReceiver).toEqual(['c>d', 'g>d']);
-            expect(observed.verdicts).toEqual(['c authorized -', 'g pending layout-promotion-awaited']);
+            expect(observed.verdicts).toEqual(['c authorized -', `g pending ${RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON}`]);
             expect(observed.admissionReasons).toEqual(['admitted', AWAITED]);
             expect(observed.deliveredCopies).toBe(1);
             expect(observed.receiverAnswers).toEqual(reliability === 'at-least-once' ? ['c ack', 'g nack'] : ['g nack']);

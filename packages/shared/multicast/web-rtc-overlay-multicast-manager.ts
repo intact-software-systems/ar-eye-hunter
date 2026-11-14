@@ -1160,7 +1160,7 @@ export class WebRtcOverlayMulticastManager {
         const selfPeerId = this.connectionService.input.sessionId;
         const availability = computeRtcOutboundCarrierAvailability({ message, observation: observed, selfPeerId });
         if (availability.kind === 'unavailable') {
-            return { kind: 'pending', cause: 'authority-behind', reason: availability.reason };
+            return { kind: 'pending', reason: availability.reason };
         }
         if (availability.kind !== 'available') {
             return availability;

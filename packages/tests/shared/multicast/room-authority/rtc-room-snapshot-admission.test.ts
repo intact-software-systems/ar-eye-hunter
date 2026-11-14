@@ -347,12 +347,11 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
     const planned: OverlayInfo = { ...promoted, overlayVersion: 3, nextHopSessionIds: ['stranger', 'relay'] };
     const withPlanned = { ...promotionHistory(), planned };
 
-    it('answers a frame relayed by a planned-layout neighbour as pending, with its own cause, instead of unauthorized', () => {
+    it('answers a frame relayed by a planned-layout neighbour as pending, with its own reason, instead of unauthorized', () => {
         const input = relayedInput({ fromPeerId: 'stranger', layoutHistory: withPlanned });
 
         expect(computeRtcRoomSnapshotAdmission(input)).toEqual({
             kind: 'pending',
-            cause: 'layout-promotion-awaited',
             reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON
         });
         const plan = planRelayed(input);
@@ -406,8 +405,8 @@ describe('a receiver\'s previous neighbours across a layout promotion', () => {
         const input = relayedInput({ message: floored, fromPeerId: 'stranger', layoutHistory: withPlanned });
 
         expect(computeRtcRoomSnapshotAdmission({ ...input, layoutHistory: promotionHistory(), fromPeerId: 'relay' }))
-            .toMatchObject({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room snapshot version' });
-        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'pending', cause: 'layout-promotion-awaited' });
+            .toMatchObject({ kind: 'pending', reason: 'Awaiting the required room snapshot version' });
+        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'pending', reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON });
         expect(isRtcRoomSnapshotRefreshReason(planRelayed(input).dropReason!)).toBe(false);
     });
 
@@ -575,12 +574,10 @@ describe('the room roster fence at RTC ingress', () => {
         const held = rosterSnapshot(1);
         expect(computeRtcRoomSnapshotAdmission({ ...receiverInput, message: stampedMessage(1, 2), snapshot: held })).toEqual({
             kind: 'pending',
-            cause: 'authority-behind',
             reason: 'Awaiting the required room roster version'
         });
         expect(computeRtcRoomSnapshotAdmission({ ...receiverInput, message: stampedMessage(2, 2), snapshot: held })).toEqual({
             kind: 'pending',
-            cause: 'authority-behind',
             reason: 'Awaiting the required room snapshot version'
         });
     });
@@ -590,7 +587,7 @@ describe('the room roster fence at RTC ingress', () => {
             ...receiverInput,
             message: stampedMessage(1, 2),
             snapshot: withSenderMember(rosterSnapshot(1), 'left')
-        })).toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting the required room roster version' });
+        })).toEqual({ kind: 'pending', reason: 'Awaiting the required room roster version' });
     });
 
     it.each([
@@ -625,7 +622,7 @@ describe('the room roster fence at RTC ingress', () => {
             ...receiverInput,
             message: stampedMessage(2, 2),
             snapshot: withoutSenderSession(rosterSnapshot(2))
-        })).toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' });
+        })).toEqual({ kind: 'pending', reason: 'Awaiting room session authority' });
     });
 
     it('fences an unstamped sender with no active member and awaits one with no session', () => {
@@ -633,7 +630,7 @@ describe('the room roster fence at RTC ingress', () => {
         expect(computeRtcRoomSnapshotAdmission({ ...unstamped, snapshot: withSenderMember(snapshot(), 'absent') }))
             .toMatchObject({ kind: 'unauthorized', cause: 'membership-fenced' });
         expect(computeRtcRoomSnapshotAdmission({ ...unstamped, snapshot: withoutSenderSession(snapshot()) }))
-            .toEqual({ kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' });
+            .toEqual({ kind: 'pending', reason: 'Awaiting room session authority' });
     });
 
     it('ranks a fenced sender above a pending receiver session', () => {

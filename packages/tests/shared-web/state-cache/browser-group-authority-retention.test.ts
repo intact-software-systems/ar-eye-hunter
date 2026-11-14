@@ -452,7 +452,6 @@ describe('browser group authority retention', () => {
         expect(acceptedOverlay).toEqual(overlay);
         expect(admission).toEqual({
             kind: 'pending',
-            cause: 'authority-behind',
             reason: 'Awaiting a room authority observation'
         });
     });

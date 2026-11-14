@@ -60,14 +60,14 @@ function resolveRtcRoomLayoutEdgeDenial(
     }
     const overlay = input.overlay;
     if (!overlay || overlay.provenance !== 'server') {
-        return { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting server room relay authority' };
+        return { kind: 'pending', reason: 'Awaiting server room relay authority' };
     }
     const { admittedEdgePeerIds, awaitedEdgePeerIds } = authority.routingEdges;
     if (admittedEdgePeerIds.includes(edgePeerId)) {
         return undefined;
     }
     return input.recipientPeerId === undefined && awaitedEdgePeerIds.includes(edgePeerId)
-        ? { kind: 'pending', cause: 'layout-promotion-awaited', reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON }
+        ? { kind: 'pending', reason: RTC_ROOM_LAYOUT_PROMOTION_AWAITED_REASON }
         : {
             kind: 'unauthorized',
             cause: 'edge-unavailable',

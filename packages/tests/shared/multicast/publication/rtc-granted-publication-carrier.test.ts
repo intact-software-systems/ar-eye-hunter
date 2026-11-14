@@ -152,14 +152,14 @@ describe('RtcGrantedPublicationCarrier', () => {
             groupMemberPeerIds: ['a', 'b'],
             overlayNeighborPeerIds: []
         });
-        const roomPlan = toRtcRoomSnapshotHandlingPlan(plan, { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' }, 'a');
+        const roomPlan = toRtcRoomSnapshotHandlingPlan(plan, { kind: 'pending', reason: 'Awaiting room session authority' }, 'a');
         const snapshot = createPublicationRoomSnapshot({ sessionIds: ['a', 'b'], snapshotVersion: 3, keys: {}, grants: {} });
 
         const planned = createKeylessCarrier().planIncomingPublication({
             msg: ungrantedProof,
             fromPeerId: 'a',
             snapshot,
-            admission: { kind: 'pending', cause: 'authority-behind', reason: 'Awaiting room session authority' },
+            admission: { kind: 'pending', reason: 'Awaiting room session authority' },
             plan,
             roomPlan,
             nowMs: Date.now()
