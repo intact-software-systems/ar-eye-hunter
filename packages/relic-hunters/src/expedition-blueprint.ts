@@ -196,18 +196,25 @@ function decodeExpedition(
     value: unknown,
     toRuleIssues: (candidate: ApiJsonObject) => readonly RallarAiValidationIssue[]
 ): Either<RallarAiValidationResult, RelicExpeditionBlueprint> {
-    const issues = [
-        ...validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues,
-        ...(isApiJsonObject(value) ? toRuleIssues(value) : [])
-    ];
-    return issues.length === 0 && isRelicExpeditionBlueprintShape(value)
+    const schemaIssues = validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues;
+    if (!isApiJsonObject(value)) {
+        return Either.ofLeft(failRallarAiValidation(schemaIssues));
+    }
+    const issues = [...schemaIssues, ...toRuleIssues(value)];
+    return isAcceptedBlueprint(value, issues)
         ? Either.ofRight(value)
         : Either.ofLeft(failRallarAiValidation(issues));
 }
 
-/** The schema states every field of a blueprint, so a value it accepts is one. */
-function isRelicExpeditionBlueprintShape(value: unknown): value is RelicExpeditionBlueprint {
-    return validateRallarAiJsonSchemaValue(RELIC_EXPEDITION_BLUEPRINT_SCHEMA, value).issues.length === 0;
+/**
+ * The RallarAI schema check returns issues alone, so its result is the narrowing: the schema states every field of a
+ * blueprint, so an object the decode's one schema check and its rules found no issue with is one.
+ */
+function isAcceptedBlueprint(
+    candidate: ApiJsonObject,
+    issues: readonly RallarAiValidationIssue[]
+): candidate is ApiJsonObject & RelicExpeditionBlueprint {
+    return issues.length === 0;
 }
 
 function toBlueprintRuleIssues(candidate: ApiJsonObject): readonly RallarAiValidationIssue[] {
