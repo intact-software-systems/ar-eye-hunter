@@ -1069,6 +1069,38 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    // A refusal or an admission says nothing of another control's commit: a receipt read is ordered by its own fact.
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'reads a receipt whose recipient lists a role asserts only after an event that settles them over %s: a terminal observe of the handle, the committed admission of a control answering its send, or an absence window',
+        (carrier) => {
+            const settles = (command: RallarBlackBoxTestCommand, handleId: string, sendId: string) =>
+                (command.kind === 'messages.observe' && command.handleId === handleId &&
+                    command.state.every((state) => state === 'acknowledged' || state === 'expired')) ||
+                (command.kind === 'wait' && command.match.kind === 'diagnostic' &&
+                    command.match.contains?.includes(`"targetMsgId":"{resultCache.${sendId}.value.msgId}","outcome":"committed"`) === true) ||
+                (command.kind === 'messages.received' && command.absent === true);
+            const recipes = toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)));
+            const listReads = recipes.flatMap((recipe) => {
+                const commands = toNestedCommands(recipe.commands);
+                return commands.flatMap((read, readIndex) => {
+                    const asserted = (command: RallarBlackBoxTestCommand) =>
+                        command.kind === 'assert' && command.source.startsWith(`resultCache.${read.commandId}.value.`) &&
+                        command.source.includes('RecipientPeerIds');
+                    if (read.kind !== 'messages.receipts' || !commands.some(asserted)) {
+                        return [];
+                    }
+                    const sendIndex = commands.findIndex((command) => isRallarBlackBoxTestMessagesSendCommand(command) && command.handleId === read.handleId);
+                    const sendId = commands[sendIndex]?.commandId ?? '';
+                    const settled = sendIndex >= 0 &&
+                        commands.slice(sendIndex + 1, readIndex).some((command) => settles(command, read.handleId, sendId));
+                    return [[read.commandId, settled] as const];
+                });
+            });
+            expect(listReads.length).toBeGreaterThan(0);
+            expect(listReads.filter(([, settled]) => !settled).map(([commandId]) => commandId)).toEqual([]);
+        }
+    );
+
     describe('receipted-audience scenarios (three agents)', () => {
         const receiptedOf = (carrier: CreateAlmConformanceRecipesInput['carrier'], key: string) => {
             const scenario = createAlmConformanceRecipes(toConformanceInput(carrier)).find((candidate) => candidate.scenarioKey === key);
@@ -1319,6 +1351,31 @@ describe('alm-conformance recipe family', () => {
                 const keys = createAlmConformanceRecipes(toConformanceInput(carrier)).map((candidate) => candidate.scenarioKey);
                 expect(keys.includes('forged-recipient-ack'), carrier).toBe(carrier === 'rtc');
             }
+        });
+
+        // The refusal of a proofless ACK runs before any await, so it can overtake the commit of the genuine one.
+        it('reads the forged-ACK receipt mid-window only once its own page committed the receiver\'s genuine ACK of the send, in the cell\'s history', () => {
+            const sender = receiptedOf('rtc', 'forged-recipient-ack').sender.commands;
+            const indexOf = (suffix: string) => sender.findIndex((command) => command.commandId?.endsWith(suffix) === true);
+            const genuine = indexOf('-sender-genuine-ack-admitted-1');
+            expect(sender[genuine]).toEqual({
+                kind: 'wait',
+                commandId: 'alm-rtc-forged-recipient-ack-sender-genuine-ack-admitted-1',
+                match: {
+                    kind: 'diagnostic',
+                    topic: 'rallar.browser.alm.outbound_diagnostics',
+                    payloadPath: 'data',
+                    contains: '"typeId":"al.control.ack.v3",' +
+                        '"targetMsgId":"{resultCache.alm-rtc-forged-recipient-ack-sender-send-1.value.msgId}","outcome":"committed"',
+                    sinceCommandIdPrefix: 'alm-rtc-forged-recipient-ack-sender-'
+                },
+                timeoutMs: expect.any(Number)
+            });
+            const send = indexOf('-sender-send-1');
+            expect(send).toBeGreaterThan(-1);
+            expect(indexOf('-sender-forged-recipient-ack-refused')).toBe(genuine - 1);
+            expect(indexOf('-sender-receipts-mid-window')).toBe(genuine + 1);
+            expect(send).toBeLessThan(genuine);
         });
 
         it('reshapes the room into a path, has the sender and the owner each send a non-granted receipted multicast and read its own receipt after its window, and resets the config after both read', () => {

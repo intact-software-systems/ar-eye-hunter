@@ -20,7 +20,11 @@ import {
     ALM_CONFORMANCE_RTC_CARRIERS,
     type AlmConformanceCarrier
 } from '../alm-conformance-carriers.ts';
-import { toControlProofRefusalWait, toSentMsgIdReference } from '../alm-conformance-diagnostic-waits.ts';
+import {
+    toControlAdmissionWait,
+    toControlProofRefusalWait,
+    toSentMsgIdReference
+} from '../alm-conformance-diagnostic-waits.ts';
 import { toReceiptsCommand, toResultAssertion } from '../alm-conformance-message-commands.ts';
 import {
     toAckHoldFaultCommand,
@@ -379,7 +383,9 @@ function toRawAckRecipientCommands(
  * The hold is in place before the send, since the sender waits for the victim's cue. The mid-window read cannot name
  * a session, so it pins only that the receipt is incomplete. The refusal wait guards the cell: it waits for the
  * origin's `rejected` admission of the forged control's authored id with `proofRefusal` `missing-proof`, which a
- * forged ACK the origin counted never produces.
+ * forged ACK the origin counted never produces. That refusal runs before any await, so it can overtake the commit of
+ * the receiver's genuine ACK; the read follows the origin's committed admission of an ACK of the send, which before the
+ * release can only be the receiver's, since `recipient-b` holds its own and the forgery is refused.
  */
 function toForgedAckSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const cue = toCueStep(sender);
@@ -404,6 +410,12 @@ function toForgedAckSenderCommands(sender: AlmConformanceStepInput): readonly Ra
             controlMsgId: toRawAckMsgId(sender, 'forged-ack', toSentMsgIdReference({ ...sender, index: 1 })),
             controlTypeId: AL_CONTROL_ACK_TYPE_ID,
             proofRefusal: 'missing-proof'
+        }),
+        toControlAdmissionWait({
+            step: { ...sender, index: 1 },
+            name: 'genuine-ack-admitted-1',
+            controlTypeId: AL_CONTROL_ACK_TYPE_ID,
+            outcome: 'committed'
         }),
         { ...toReceiptsCommand({ ...sender, index: 1 }), commandId: toCommandId(sender, midWindow) },
         toMidWindowAssertion('state', 'notEquals', 'acknowledged'),
