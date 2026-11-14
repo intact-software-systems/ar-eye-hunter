@@ -31,6 +31,7 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { createDistributedRun, mutateDistributedRun } from './distributed-run-requests.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     FULL_STACK_CONTROL_WS_URL,
@@ -728,17 +729,6 @@ async function configureAgentsForDistributedGroup(
     }
 }
 
-async function createDistributedRun(
-    request: APIRequestContext,
-    manifest: RallarBlackBoxDistributedRunManifest
-): Promise<DistributedRunSnapshot> {
-    const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
-        data: { manifest }
-    });
-    expect(response.status()).toBe(201);
-    return await response.json() as DistributedRunSnapshot;
-}
-
 async function fetchDistributedRun(
     request: APIRequestContext,
     distributedRunId: string
@@ -747,19 +737,6 @@ async function fetchDistributedRun(
         `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as DistributedRunSnapshot;
-}
-
-async function mutateDistributedRun(
-    request: APIRequestContext,
-    distributedRunId: string,
-    action: 'stage' | 'start' | 'cancel'
-): Promise<DistributedRunSnapshot> {
-    const response = await request.post(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
-        action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
-    );
-    expect(response.status()).toBe(202);
     return await response.json() as DistributedRunSnapshot;
 }
 
