@@ -83,7 +83,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
 import {
     DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
-    resolveWebRtcMaxPeerConnections,
     WebRtcGroupPeerLedger
 } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -759,7 +758,7 @@ function createBrowserGroupPeerLedger(input: InitialiseBrowserRtcTransportInput)
             plannedOverlayCache: overlaysRepository.readablePlannedOverlayCache(),
             acceptedOverlayCache: overlaysRepository.readableAcceptedOverlayCache()
         },
-        maxPeerConnections: resolveWebRtcMaxPeerConnections(input.options.maxPeerConnections),
+        maxPeerConnections: input.options.maxPeerConnections,
         overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
         nowEpochMs: () => Date.now()
     });

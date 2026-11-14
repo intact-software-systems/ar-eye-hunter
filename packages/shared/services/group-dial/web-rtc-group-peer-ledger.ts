@@ -38,7 +38,7 @@ export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
 export const DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15_000;
 
 /** The connection cap a requested value gives: the default when none is usable, and never below the minimum. */
-export function resolveWebRtcMaxPeerConnections(requested: number | undefined): number {
+function resolveMaxPeerConnections(requested: number | undefined): number {
     if (
         requested === undefined ||
         !Number.isFinite(requested) ||
@@ -64,7 +64,9 @@ export namespace WebRtcGroupPeerLedger {
     export interface Config {
         readonly localSessionId: PeerId;
         readonly repositories: Repositories;
-        readonly maxPeerConnections: number;
+        /** The requested connection cap; the ledger uses the default when none is usable, and never less than the minimum. */
+        readonly maxPeerConnections: number | undefined;
+        /** A negative grace counts as 0. */
         readonly overlayTransitionGraceMs: number;
         readonly nowEpochMs: () => number;
     }
@@ -95,7 +97,7 @@ export class WebRtcGroupPeerLedger {
         this.clientCache = config.repositories.clientCache;
         this.plannedOverlayCache = config.repositories.plannedOverlayCache;
         this.acceptedOverlayCache = config.repositories.acceptedOverlayCache;
-        this.maxPeerConnections = config.maxPeerConnections;
+        this.maxPeerConnections = resolveMaxPeerConnections(config.maxPeerConnections);
         this.nowEpochMs = config.nowEpochMs;
         this.retainedPeers = new RetainedPeerConnections({
             overlayTransitionGraceMs: Math.max(0, config.overlayTransitionGraceMs),

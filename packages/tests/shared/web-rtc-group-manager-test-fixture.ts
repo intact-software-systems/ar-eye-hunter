@@ -12,7 +12,6 @@ import type {
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import {
     DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
-    resolveWebRtcMaxPeerConnections,
     WebRtcGroupPeerLedger
 } from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -54,7 +53,7 @@ export function createTestGroupPeerLedger(
     return new WebRtcGroupPeerLedger({
         localSessionId,
         repositories,
-        maxPeerConnections: resolveWebRtcMaxPeerConnections(cap.maxPeerConnections),
+        maxPeerConnections: cap.maxPeerConnections,
         overlayTransitionGraceMs: cap.overlayTransitionGraceMs ?? DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
         nowEpochMs: cap.now ?? (() => Date.now())
     });
