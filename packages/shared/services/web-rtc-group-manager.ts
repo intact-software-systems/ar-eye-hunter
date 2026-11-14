@@ -20,8 +20,10 @@ import {
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import {
+    computeConnectionCapSpend,
+    selectEarlyOnlyDialPeerIds,
     selectGroupDialPeerIds,
-    selectGroupEarlyDialPeerIds,
+    type ConnectionCapSpend,
     type SelectGroupDialPeerIdsInput
 } from './webrtc-group-dial-policy.ts';
 import {
@@ -82,6 +84,7 @@ export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
     private peerOwnershipCache: WebRtcPeerOwnership | undefined;
+    private reconciledEarlyDialPeerIds: ReadonlySet<PeerId> = new Set();
     private reconcileInFlight: Promise<void> | undefined;
     private reconcileRequested = false;
     private reconcilePassRunning = false;
@@ -281,7 +284,7 @@ export class WebRtcGroupManager {
         const owners = new Map<PeerId, GroupId[]>();
         const groupKeysByPeerId = new Map<PeerId, string[]>();
         const dialAllowedPeerIds = new Set<PeerId>();
-        const earlyDialPeerIds = new Set<PeerId>();
+        const selections: SelectGroupDialPeerIdsInput[] = [];
         const maxConcurrentEdgeSetupsByGroupKey = new Map<string, number>();
 
         for (const group of this.groupsByKey.values()) {
@@ -291,9 +294,9 @@ export class WebRtcGroupManager {
             }
             maxConcurrentEdgeSetupsByGroupKey.set(group.groupKey, snapshot.group.memberPolicy.maxConcurrentEdgeSetups);
             const groupPresentPeerIds = new Set(group.targetPeerIds());
-            selectGroupEarlyDialPeerIds(this.toDialSelectionInput(snapshot, group.groupRef))
-                .forEach((peerId) => earlyDialPeerIds.add(peerId));
-            for (const peerId of this.dialPeerIdsForSnapshot(snapshot, group.groupRef)) {
+            const selection = this.toDialSelectionInput(snapshot, group.groupRef);
+            selections.push(selection);
+            for (const peerId of selectGroupDialPeerIds(selection)) {
                 owners.set(peerId, [...(owners.get(peerId) ?? []), group.groupRef.groupId]);
                 groupKeysByPeerId.set(peerId, [...(groupKeysByPeerId.get(peerId) ?? []), group.groupKey]);
                 if (groupPresentPeerIds.has(peerId)) {
@@ -305,7 +308,7 @@ export class WebRtcGroupManager {
         return {
             groupsByPeerId: owners,
             dialAllowedPeerIds,
-            earlyDialPeerIds,
+            earlyDialPeerIds: selectEarlyOnlyDialPeerIds(selections),
             groupKeysByPeerId,
             maxConcurrentEdgeSetupsByGroupKey
         };
@@ -318,6 +321,11 @@ export class WebRtcGroupManager {
 
     isPeerDialAllowedByAnyGroup(peerId: PeerId): boolean {
         return this.readPeerOwnership().dialAllowedPeerIds.has(peerId);
+    }
+
+    /** Whether an offer from a dial-allowed peer may open a connection under the cap now. */
+    isInboundPeerWithinCap(peerId: PeerId): boolean {
+        return this.computeCapSpend(new Set(this.rtcQBox.knownPeerIds()), peerId).inboundAdmitted;
     }
 
     state(): WebRtcGroupManagerState {
@@ -464,9 +472,6 @@ export class WebRtcGroupManager {
             dialAllowedPeerIds: ownership.dialAllowedPeerIds,
             rtcQBox: this.rtcQBox
         });
-        const peerIdsWithNoReconnectableLanes = new Set(
-            this.rtcQBox.peerIdsWithNoReconnectableLanes()
-        );
         this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
         const dialPlan = computeOutboundDialPlan({
@@ -475,9 +480,7 @@ export class WebRtcGroupManager {
             livePeerIds: new Set(this.rtcQBox.activePeerIds()),
             desiredPeerIds,
             earlyDialPeerIds: ownership.earlyDialPeerIds,
-            connectablePeerIds: Array.from(desiredPeerIds).filter(
-                (peerId) => ownership.dialAllowedPeerIds.has(peerId) && !peerIdsWithNoReconnectableLanes.has(peerId)
-            ),
+            connectablePeerIds: this.readConnectablePeerIds(ownership),
             serverDesiredPeerIds: computeServerDesiredPeerIds(
                 this.acceptedOverlayCache,
                 this.groups().map((group) => group.groupRef),
@@ -489,6 +492,7 @@ export class WebRtcGroupManager {
         );
 
         this.reconcileRetainedPeers(desiredPeerIds);
+        this.reconciledEarlyDialPeerIds = ownership.earlyDialPeerIds;
 
         this.options.onDesiredPeerIdsChanged?.({
             desiredPeerIds: [...desiredPeerIds],
@@ -501,7 +505,7 @@ export class WebRtcGroupManager {
         this.removeUnknownRetainedPeers(reconciledKnownPeerIds);
         this.retainUndesiredKnownPeers(desiredPeerIds, reconciledKnownPeerIds);
         this.disconnectExpiredRetainedPeers(reconciledKnownPeerIds);
-        this.evictRetainedPeers(desiredPeerIds, reconciledKnownPeerIds);
+        this.evictPeersOverCap(new Set(this.rtcQBox.knownPeerIds()));
         this.startRetainedExpiryWake();
     }
 
@@ -513,20 +517,46 @@ export class WebRtcGroupManager {
         this.waitingDialCount = started.deferredCount + started.pacedCount;
     }
 
-    private evictRetainedPeers(
-        desiredPeerIds: Set<PeerId>,
-        knownPeerIds: Set<PeerId>
-    ): void {
-        for (const peerId of this.retainedPeersToEvict(desiredPeerIds, knownPeerIds)) {
+    /** A desired early peer closed here waits for a free slot like a deferred dial. */
+    private evictPeersOverCap(knownPeerIds: ReadonlySet<PeerId>): void {
+        for (const peerId of this.computeCapSpend(knownPeerIds, null).evictPeerIds) {
             try {
                 this.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
-                this.retainedPeerConnections.delete(peerId);
-                this.diagnostics.retainedEvictionCount += 1;
+                this.recordEvictedOverCap(peerId);
             }
             catch (error) {
-                console.error(`Failed to disconnect retained peer ${peerId}`, toError(error));
+                console.error(`Failed to disconnect peer ${peerId} over the connection cap`, toError(error));
             }
         }
+    }
+
+    private recordEvictedOverCap(peerId: PeerId): void {
+        if (this.retainedPeerConnections.delete(peerId)) {
+            this.diagnostics.retainedEvictionCount += 1;
+            return;
+        }
+        this.diagnostics.disconnectCount += 1;
+        this.waitingDialCount += 1;
+    }
+
+    private computeCapSpend(knownPeerIds: ReadonlySet<PeerId>, inboundPeerId: PeerId | null): ConnectionCapSpend {
+        const ownership = this.readPeerOwnership();
+        return computeConnectionCapSpend({
+            maxPeerConnections: this.maxPeerConnections(),
+            knownPeerIds,
+            desiredPeerIds: new Set(ownership.groupsByPeerId.keys()),
+            earlyDialPeerIds: ownership.earlyDialPeerIds,
+            retainedPeers: Array.from(this.retainedPeerConnections.values()),
+            candidatePeerIds: this.readConnectablePeerIds(ownership).filter((peerId) => !knownPeerIds.has(peerId)),
+            inboundPeerId
+        });
+    }
+
+    private readConnectablePeerIds(ownership: WebRtcPeerOwnership): readonly PeerId[] {
+        const peerIdsWithNoReconnectableLanes = new Set(this.rtcQBox.peerIdsWithNoReconnectableLanes());
+        return Array.from(ownership.groupsByPeerId.keys()).filter(
+            (peerId) => ownership.dialAllowedPeerIds.has(peerId) && !peerIdsWithNoReconnectableLanes.has(peerId)
+        );
     }
 
     /**
@@ -549,6 +579,7 @@ export class WebRtcGroupManager {
                 groupKey: null,
                 groupId: null,
                 retainedOrder: this.retainedOrder++,
+                earlyDial: this.reconciledEarlyDialPeerIds.has(peerId),
                 reason: 'overlay-transition',
                 expiresAtEpochMs: this.now() + this.overlayTransitionGraceMs()
             });
@@ -793,6 +824,7 @@ export class WebRtcGroupManager {
                 groupKey,
                 groupId: group.groupRef.groupId,
                 retainedOrder: this.retainedOrder++,
+                earlyDial: this.reconciledEarlyDialPeerIds.has(peerId),
                 reason: 'left-group',
                 expiresAtEpochMs: null
             });
@@ -829,30 +861,6 @@ export class WebRtcGroupManager {
                 this.retainedPeerConnections.delete(peerId);
             }
         }
-    }
-
-    private retainedPeersToEvict(
-        desiredPeerIds: Set<PeerId>,
-        knownPeerIds: Set<PeerId>
-    ): readonly PeerId[] {
-        const activeKnownCount = Array.from(knownPeerIds)
-            .filter((peerId) => desiredPeerIds.has(peerId))
-            .length;
-        const retainedKnownPeers = Array.from(this.retainedPeerConnections.values())
-            .filter((retained) =>
-                knownPeerIds.has(retained.peerId) &&
-                !desiredPeerIds.has(retained.peerId)
-            )
-            .sort((left, right) => left.retainedOrder - right.retainedOrder);
-        const retainedBudget = Math.max(0, this.maxPeerConnections() - activeKnownCount);
-        const evictCount = retainedKnownPeers.length - retainedBudget;
-        if (evictCount <= 0) {
-            return [];
-        }
-
-        return retainedKnownPeers
-            .slice(0, evictCount)
-            .map((retained) => retained.peerId);
     }
 
     private maxPeerConnections(): number {

@@ -37,13 +37,14 @@ export interface WebRtcRttReportingPeerOptions {
  * `commanded` is reserved for the activation design's commanded-edge
  * retention (the Phase 5 merge point); this manager only produces the first
  * two reasons. Eviction order is defined across reasons: expired entries
- * first, then oldest `retainedOrder` regardless of reason.
+ * first, then `computeConnectionCapSpend`'s order, which reads `earlyDial` and
+ * `retainedOrder` and never the reason.
  */
 /** Which groups want each desired peer, and each group's in-flight setup bound (product decision 18). */
 export interface WebRtcPeerOwnership {
     readonly groupsByPeerId: ReadonlyMap<PeerId, readonly GroupId[]>;
     readonly dialAllowedPeerIds: ReadonlySet<PeerId>;
-    /** Peers an active room wants only through its published planned layout. */
+    /** Desired peers no room wants except through an active room's published planned layout. */
     readonly earlyDialPeerIds: ReadonlySet<PeerId>;
     /** The same ownership by the scoped group key, which the bound is keyed on. */
     readonly groupKeysByPeerId: ReadonlyMap<PeerId, readonly string[]>;
@@ -58,6 +59,8 @@ export interface RetainedPeerConnection {
     readonly groupKey: string | null;
     readonly groupId: GroupId | null;
     readonly retainedOrder: number;
+    /** The peer was wanted only through an active room's planned layout when it was retained. */
+    readonly earlyDial: boolean;
     readonly reason: RetainedPeerConnectionReason;
     /** `null` retains until budget eviction; a timestamp is the grace-window expiry. */
     readonly expiresAtEpochMs: number | null;

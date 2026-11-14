@@ -416,6 +416,32 @@ describe('WebRtcGroupManager reconcile wakes', () => {
             expect(retirement.rtcQBox.knownPeerIds()).toEqual([]);
             expect(retirement.manager.readDiagnostics().retainedExpiredCount).toBe(3);
         });
+
+        it('a retained peer that expired and is desired again in the same pass is kept, not closed and redialled', async () => {
+            const retirement = await retireLayoutOverPeers();
+            const retainedPeer = retirement.rtcQBox.nativePeer('peer-a');
+            const attemptsBefore = retirement.manager.readDiagnostics().connectAttemptCount;
+            // The clock passes the grace without running the expiry wake, so the next pass sees both facts at once.
+            vi.setSystemTime(Date.now() + DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+
+            await acceptActiveLayoutGroup(
+                retirement.manager,
+                retirement.acceptedOverlayCache,
+                createGroupSnapshot({
+                    groupId: 'group-1',
+                    membershipVersion: 3,
+                    memberSessionIds: ['self', 'peer-a']
+                })
+            );
+
+            expect(retirement.rtcQBox.nativePeer('peer-a')).toBe(retainedPeer);
+            expect(retainedPeer.connectionState).toBe('connected');
+            expect(retirement.manager.readDiagnostics()).toMatchObject({
+                retainedExpiredCount: 1,
+                connectAttemptCount: attemptsBefore
+            });
+            expect(retirement.rtcQBox.knownPeerIds()).toEqual(['peer-a']);
+        });
     });
 });
 
@@ -451,9 +477,19 @@ describe('WebRtcGroupManager planned layouts', () => {
 
         await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
         expect(fixture.rtcQBox.knownPeerIds()).toContain('peer-b');
+        expect(fixture.manager.readDiagnostics()).toMatchObject({
+            retainedCreatedCount: 1,
+            retainedExpiredCount: 0,
+            retainedEvictionCount: 0
+        });
 
         await vi.advanceTimersByTimeAsync(2);
         expect(fixture.rtcQBox.knownPeerIds()).toEqual(['peer-a', 'peer-c']);
+        // Only an overlay-transition retention expires at the grace; a left-group retention has no expiry.
+        expect(fixture.manager.readDiagnostics()).toMatchObject({
+            retainedExpiredCount: 1,
+            retainedEvictionCount: 0
+        });
         fixture.manager.stopReconcileWakes();
     });
 
@@ -494,7 +530,13 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
         );
         expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
 
-        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS + 1);
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
+        expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
+            ['a1', 'a2', 'a3', 'a4', 'a5', 'p1', 'p2', 'p3', 'p4', 'p5']
+        );
+        expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
+
+        await vi.advanceTimersByTimeAsync(2);
         await fixture.connectKnownPeers();
 
         expect(fixture.rtcQBox.knownPeerIds().slice().sort()).toEqual(
@@ -514,7 +556,91 @@ describe('WebRtcGroupManager planned layouts under the connection cap', () => {
         );
         expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
     });
+
+    it('a promotion does not close the replaced layout\'s edges while early peers are still wanted', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('planned', peerRange('b'));
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('b')]);
+
+        // The accepted layout moves on while the planned slot still names the b peers.
+        await fixture.setLayout('accepted', peerRange('c'));
+
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
+        await fixture.connectKnownPeers();
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+        expect(fixture.manager.readDiagnostics().retainedEvictionCount).toBe(0);
+
+        await vi.advanceTimersByTimeAsync(2);
+        await fixture.connectKnownPeers();
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('b'), ...peerRange('c')]);
+    });
+
+    it('a plan replaced and its successor promoted in one read-through keeps the replaced ACCEPTED layout\'s edges and closes the never-used planned ones first', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('planned', peerRange('b'));
+
+        await fixture.setLayouts({ accepted: peerRange('c'), planned: peerRange('c') });
+
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+        await vi.advanceTimersByTimeAsync(DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS - 1);
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+    });
+
+    it('a second room\'s accepted peers are dialled although the first room\'s early peers fill the cap', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('planned', peerRange('b'));
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('b')]);
+
+        await fixture.acceptSecondRoom(peerRange('c'));
+
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('c')]);
+    });
+
+    it('admits an early peer\'s offer only into a slot no accepted peer is waiting for', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('accepted', peerRange('p'));
+        await fixture.setLayout('planned', peerRange('q'));
+        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(false);
+
+        // Each check runs before the wake the removal schedules.
+        fixture.rtcQBox.service.removePeerIfPresent('p1');
+        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(false);
+        expect(fixture.manager.isInboundPeerWithinCap('p1')).toBe(true);
+        await fixture.manager.whenReconciled();
+        expect(fixture.rtcQBox.knownPeerIds()).toContain('p1');
+
+        fixture.rtcQBox.service.removePeerIfPresent('a1');
+        expect(fixture.manager.isInboundPeerWithinCap('q1')).toBe(true);
+    });
+
+    it('an early peer deferred by the cap is dialled when a retained edge closes before its grace', async () => {
+        const fixture = createCapFixture(10);
+        await fixture.setLayout('accepted', peerRange('a'));
+        await fixture.setLayout('accepted', peerRange('p'));
+        await fixture.setLayout('planned', peerRange('q'));
+        expect(sortedKnownPeerIds(fixture)).toEqual([...peerRange('a'), ...peerRange('p')]);
+
+        fixture.rtcQBox.nativePeer('a1').close();
+        await fixture.manager.whenReconciled();
+
+        expect(sortedKnownPeerIds(fixture)).toEqual(
+            [...peerRange('a').slice(1), ...peerRange('p'), 'q1']
+        );
+    });
 });
+
+function peerRange(prefix: string): string[] {
+    return [1, 2, 3, 4, 5].map((index) => `${prefix}${index}`);
+}
+
+function sortedKnownPeerIds(fixture: { readonly rtcQBox: RtcConnectionHarness; }): string[] {
+    return fixture.rtcQBox.knownPeerIds().slice().sort();
+}
 
 function createCapFixture(maxPeerConnections: number) {
     const rtcQBox = createRtcConnectionHarness('self');
@@ -527,7 +653,7 @@ function createCapFixture(maxPeerConnections: number) {
         plannedOverlayCache
     }, { maxPeerConnections, onOverlayAdopted: async () => {} });
     manager.startReconcileWakes();
-    const peerIds = ['a', 'p', 'q'].flatMap((prefix) => [1, 2, 3, 4, 5].map((index) => `${prefix}${index}`));
+    const peerIds = ['a', 'b', 'c', 'p', 'q'].flatMap(peerRange);
     const group = createGroupSnapshot({
         groupId: 'group-1',
         membershipVersion: 1,
@@ -543,16 +669,42 @@ function createCapFixture(maxPeerConnections: number) {
         await manager.whenReconciled();
     }
 
-    async function setLayout(role: 'accepted' | 'planned', nextHopSessionIds: readonly string[]): Promise<void> {
+    function writeLayout(role: 'accepted' | 'planned', nextHopSessionIds: readonly string[]): void {
         const cache = role === 'accepted' ? acceptedOverlayCache : plannedOverlayCache;
         overlayVersion += 1;
         cache.set(toScopedOverlayId(group.group), createOverlayInfo(group, nextHopSessionIds, overlayVersion));
+    }
+
+    async function readThrough(): Promise<void> {
         await manager.acceptGroupUpdate(group);
         await manager.notifyOverlayTopologyChanged();
         await connectKnownPeers();
     }
 
-    return { manager, rtcQBox, setLayout, connectKnownPeers };
+    async function setLayout(role: 'accepted' | 'planned', nextHopSessionIds: readonly string[]): Promise<void> {
+        writeLayout(role, nextHopSessionIds);
+        await readThrough();
+    }
+
+    async function setLayouts(layouts: Readonly<Record<'accepted' | 'planned', readonly string[]>>): Promise<void> {
+        writeLayout('accepted', layouts.accepted);
+        writeLayout('planned', layouts.planned);
+        await readThrough();
+    }
+
+    async function acceptSecondRoom(acceptedPeerIds: readonly string[]): Promise<void> {
+        const secondRoom = createGroupSnapshot({
+            groupId: 'group-2',
+            membershipVersion: 1,
+            memberSessionIds: ['self', ...acceptedPeerIds],
+            maxConcurrentEdgeSetups: 20
+        });
+        acceptedOverlayCache.set(toScopedOverlayId(secondRoom.group), createOverlayInfo(secondRoom, acceptedPeerIds, 1));
+        await manager.acceptGroupUpdate(secondRoom);
+        await connectKnownPeers();
+    }
+
+    return { manager, rtcQBox, setLayout, setLayouts, acceptSecondRoom, connectKnownPeers };
 }
 
 function createPlannedLayoutFixture() {

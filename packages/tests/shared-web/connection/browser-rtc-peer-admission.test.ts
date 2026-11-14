@@ -209,17 +209,18 @@ describe('browser RTC peer admission', () => {
             const runtime = await createAdmissionRuntime({ lifecycleState: 'connecting', planned: true, accepted: true });
             const established = await activateWithEstablishedPlannedPeer(runtime);
             scenario.replan(runtime);
+            await runtime.manager.notifyOverlayTopologyChanged();
 
             expect(runtime.connection.service.ensurePeerConnectionStarted('peer-planned').right?.peer.peerId).toBe('peer-planned');
             expect(runtime.connection.nativePeer('peer-planned')).toBe(established);
+            expect(established.connectionState).toBe('connected');
             runtime.connection.service.removePeerIfPresent('peer-planned');
-            await runtime.connection.receive(offer('peer-planned'));
-            await runtime.connection.receive(offer('peer-accepted'));
 
+            // The policy holds the offer for a retry because no layout this room dials names the peer.
+            expect(runtime.manager.isPeerDialAllowedByAnyGroup('peer-planned')).toBe(false);
+            expect(await runtime.connection.receive(offer('peer-planned'))).toBe('retry');
             expect(runtime.connection.service.readPeer('peer-planned')).toBeUndefined();
-            expect(runtime.connection.nativePeer('peer-accepted').remoteDescription?.type).toBe('offer');
-            expect(nativeRuntime.createdConnections).toHaveLength(2);
-            expect(runtime.connection.service.knownPeerIds()).toEqual(['peer-accepted']);
+            expect(runtime.connection.service.knownPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-shared']);
         }
     );
 });

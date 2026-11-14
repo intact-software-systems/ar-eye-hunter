@@ -254,16 +254,21 @@ export function createBrowserRttHeartbeatMessage(
 
 /** Why a peer is refused until this browser adopts the layout that names it; adoption releases its held offers. */
 export const BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON = 'stage-layout-mismatch';
+/** Why an early-dial peer's offer waits: no connection slot is free for it. */
+export const BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON = 'early-dial-capacity';
 
 export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
+    webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) => {
+        if (!webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)) {
+            return { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON };
+        }
+        return webRtcGroupManager.isInboundPeerWithinCap(peerId)
             ? { decision: 'allow' }
-            : { decision: 'retry', reason: BROWSER_RTC_STAGE_LAYOUT_MISMATCH_REASON }
-    );
+            : { decision: 'retry', reason: BROWSER_RTC_EARLY_DIAL_CAPACITY_REASON };
+    });
     webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
         webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }

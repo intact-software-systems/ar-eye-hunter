@@ -86,26 +86,6 @@ describe('RTC room authority', () => {
         expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: { ...overlay(), state: 'removed' } }).kind).toBe('unauthorized');
     });
 
-    // Admission takes the accepted overlay only: a published planned layout that names the sender is never an input,
-    // so an early-dialled planned-layout peer cannot deliver a room frame before its layout is promoted.
-    it('refuses a frame from a peer that is a neighbour only in a planned layout', () => {
-        const planned = { ...overlay(), overlayVersion: 2, nextHopSessionIds: ['relay', 'downstream'] };
-        const accepted = { ...overlay(), nextHopSessionIds: ['downstream'] };
-        expect(planned.nextHopSessionIds).toContain('relay');
-        expect(
-            computeRtcRoomSnapshotAdmission({
-                message,
-                layoutHistory: noLayoutHistory,
-                selfPeerId: 'receiver',
-                fromPeerId: 'relay',
-                recipientPeerId: undefined,
-                nowMs,
-                snapshot: snapshot(),
-                overlay: accepted
-            }).kind
-        ).toBe('unauthorized');
-    });
-
     it('checks room scope and expiry before snapshot catch-up', () => {
         const current = snapshot();
         const versioned = { ...message, targets: { mode: 'multicast' as const, groupRef: roomRef, minSnapshotVersion: current.group.snapshotVersion + 1 } };

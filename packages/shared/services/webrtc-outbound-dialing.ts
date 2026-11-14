@@ -31,7 +31,7 @@ export interface AbsentPeerDialsInput {
 export interface OutboundDialsStarted {
     readonly attemptCount: number;
     readonly failureCount: number;
-    /** Desired peers that waited for a connection-budget slot. */
+    /** Desired peers that waited for a connection-budget slot, early peers with no free slot among them. */
     readonly deferredCount: number;
     /** Desired peers that waited for an owner's in-flight slot (product decision 18). */
     readonly pacedCount: number;
@@ -74,6 +74,7 @@ export class WebRtcOutboundDialing {
         for (const peerId of this.dialPlan.candidatePeerIds) {
             this.startDial(peerId, 'new-connection');
         }
+        this.started.deferredCount += this.dialPlan.deferredPeerIds.length;
         return { ...this.started };
     }
 
