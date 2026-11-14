@@ -17,15 +17,17 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
+import {
+    computeConnectionCapSpend,
+    type ConnectionCapInboundVerdict,
+    type ConnectionCapSpend
+} from './compute-connection-cap-spend.ts';
 import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import {
-    computeConnectionCapSpend,
     selectEarlyOnlyDialPeerIds,
     selectGroupDialPeerIds,
     selectRetentionsEndedByDesire,
-    type ConnectionCapInboundVerdict,
-    type ConnectionCapSpend,
     type SelectGroupDialPeerIdsInput
 } from './webrtc-group-dial-policy.ts';
 import {
