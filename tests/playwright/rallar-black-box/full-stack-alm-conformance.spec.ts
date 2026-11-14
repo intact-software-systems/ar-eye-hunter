@@ -38,6 +38,10 @@ import {
     type AlmConformanceIdentityParticipant
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
 import {
+    assessAlmUnconfirmedReceiptRole,
+    toAlmUnconfirmedReceiptRole
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
+import {
     ALM_LANE_DEFAULT_SELECTION,
     decodeAlmLaneParameters,
     type AlmLaneParameters
@@ -62,10 +66,6 @@ import {
     type ALMObservationCellOutcome,
     type ALMObservationRegime
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
-import {
-    assessSubscriptionRevokeDisconnected,
-    toAlmUnconfirmedReceiptRole
-} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -637,10 +637,10 @@ async function assertRevokedRoleUnconfirmed(
     unconfirmed: Readonly<{ evidence: readonly ScenarioRoleEvidence[]; unconfirmedRole: AlmConformanceRole; }>
 ): Promise<void> {
     const participants = toIdentityParticipants(await run.readSnapshot(), scenario, unconfirmed.evidence);
-    const issues = assessSubscriptionRevokeDisconnected({
+    const issues = assessAlmUnconfirmedReceiptRole({
         runId: run.runId,
         sender: requireRoleParticipant(participants, 'sender'),
-        sibling: requireRoleParticipant(participants, unconfirmed.unconfirmedRole)
+        unconfirmed: requireRoleParticipant(participants, unconfirmed.unconfirmedRole)
     });
     expect.soft(issues, `${scenario.scenarioKey}: no receipt confirms the ${unconfirmed.unconfirmedRole}`).toEqual([]);
 }

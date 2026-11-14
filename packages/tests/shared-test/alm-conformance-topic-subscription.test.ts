@@ -12,11 +12,11 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
-import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import {
-    assessSubscriptionRevokeDisconnected,
+    assessAlmUnconfirmedReceiptRole,
     toAlmUnconfirmedReceiptRole
-} from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
+} from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
+import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
@@ -313,7 +313,7 @@ describe('ALM topic subscription conformance', () => {
         });
     });
 
-    it('fails a revoke-disconnected receipt that confirms the sibling', () => {
+    it('fails a receipt that confirms the role the sender names unconfirmed, naming that role', () => {
         const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
         if (scenario?.sibling === undefined) {
             throw new Error('The ws carrier creates the subscription-revoke-disconnected cell.');
@@ -326,23 +326,23 @@ describe('ALM topic subscription conformance', () => {
                 'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: second }
             });
 
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: toSender(['receiver-session'], ['receiver-session']),
-            sibling
+            unconfirmed: sibling
         })).toEqual([]);
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: toSender(['receiver-session'], ['receiver-session', 'sibling-session']),
-            sibling
+            unconfirmed: sibling
         })).toEqual([
-            'alm-ws-subscription-revoke-disconnected-sender-publication-2-send: the receipt confirms the sibling, whose ' +
-            'election was revoked while it was disconnected.'
+            'alm-ws-subscription-revoke-disconnected-sender-publication-2-send: the receipt confirms the sibling, which ' +
+            'no receipt of the cell may confirm.'
         ]);
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: { ...toSender([], []), result: undefined },
-            sibling
+            unconfirmed: sibling
         })).toEqual(['sender: missing, mismatched or failed recipe envelope.']);
     });
 
@@ -362,7 +362,7 @@ describe('ALM topic subscription conformance', () => {
             'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: ['receiver-session'] }
         });
 
-        expect(assessSubscriptionRevokeDisconnected({ runId: 'run', sender, sibling })).toEqual([]);
+        expect(assessAlmUnconfirmedReceiptRole({ runId: 'run', sender, unconfirmed: sibling })).toEqual([]);
     });
 });
 
