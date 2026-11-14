@@ -137,6 +137,7 @@ function toOrderingEntryCommands({ step, aboveFirstSeq }: OrderingEntryInput): r
             step,
             name: 'no-before-entry',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             payloadFields: { 'data.kind': ORDERING_POSITION, 'data.status': 'before-entry' },
             absent: true
         })

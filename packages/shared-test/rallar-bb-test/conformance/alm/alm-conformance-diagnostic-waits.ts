@@ -8,6 +8,7 @@ import type { RallarBlackBoxTestWaitCommand } from '../../rallar-black-box-test-
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
+import { toWaitHistoryMetadata, type AlmWaitHistory } from './cell/to-cell-history-marked-commands.ts';
 import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-budgets.ts';
 
 /** The page's runtime diagnostics topics; an event's `data` is the runtime event itself, in its emitted key order. */
@@ -33,8 +34,7 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     /** The page states no such event before the wait or within `SUBSCRIPTION_ABSENCE_MS` of its start. */
     readonly absent?: boolean;
-    /** `page` reads the page's whole history; absent, the wait reads its own cell's. */
-    readonly historyFrom?: 'page';
+    readonly historyFrom: AlmWaitHistory;
 }
 
 interface AlmConformanceOrderingPositionTrack {
@@ -91,7 +91,7 @@ export function toDiagnosticWait(
         },
         ...(absent === true ? { absent: true } : {}),
         timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs),
-        ...(historyFrom === 'page' ? { metadata: { historyFrom } } : {})
+        ...toWaitHistoryMetadata(historyFrom)
     };
 }
 
@@ -108,6 +108,7 @@ export function toOrderingPositionWait(
         step,
         name: position.name,
         topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"trackKey":"${position.track}:`,
         ...('absent' in position
             ? { payloadFields: kind, absent: true }
@@ -129,6 +130,7 @@ export function toControlAdmissionWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}"${admitted}${phase}`
     });
 }
@@ -144,6 +146,7 @@ export function toControlProofRefusalWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains:
             `"msgId":"${controlMsgId}","typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}",` +
             '"outcome":"rejected","reason":"',
@@ -165,6 +168,7 @@ export function toRepairDispatchWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"msgId":"${toSentMsgIdReference(step)}",${toRepairDispatchText(step)}`
     });
 }
@@ -181,6 +185,7 @@ export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly Rall
         step,
         name: 'no-gap-nack',
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"nackReason":"gap","nackOrderingKey":"${step.scenarioKey}:`,
         absent: true
     });
@@ -193,6 +198,7 @@ function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): Ra
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: toRepairDispatchText(step),
         absent: true
     });

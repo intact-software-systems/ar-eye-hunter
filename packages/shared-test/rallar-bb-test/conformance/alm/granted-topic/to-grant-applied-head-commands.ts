@@ -16,6 +16,6 @@ export function toGrantAppliedHeadCommands(
         step,
         name,
         purpose: 'Read the room head this page must apply once a grant change committed.',
-        history: 'cell'
+        historyFrom: 'cell'
     });
 }

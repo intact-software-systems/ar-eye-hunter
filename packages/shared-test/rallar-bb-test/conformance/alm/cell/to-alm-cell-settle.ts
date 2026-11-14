@@ -27,7 +27,7 @@ export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
             step,
             name: 'head',
             purpose: 'Read the room head this page must apply before its cell starts.',
-            history: 'page'
+            historyFrom: 'page'
         })
     };
 }

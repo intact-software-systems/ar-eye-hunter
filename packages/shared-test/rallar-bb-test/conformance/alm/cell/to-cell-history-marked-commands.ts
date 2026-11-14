@@ -7,6 +7,16 @@ import type { AlmConformanceStepInput } from '../alm-conformance-scenario-defini
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
 
+/** Where a wait of a cell reads from: `cell`, its own cell's first event on the page; `page`, the page's whole history. */
+export type AlmWaitHistory = 'cell' | 'page';
+
+/** The metadata a wait declares for its history: only `page` is declared, since every other wait reads its cell's. */
+export function toWaitHistoryMetadata(
+    history: AlmWaitHistory
+): Readonly<{ metadata?: Readonly<{ historyFrom: 'page'; }>; }> {
+    return history === 'page' ? { metadata: { historyFrom: 'page' } } : {};
+}
+
 /**
  * Starts every wait of the commands, nested ones included, at the first event of any of its own cell's commands, so no
  * wait reads an event an earlier cell left on the same page. The mark opens at that first event, which can come before

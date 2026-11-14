@@ -26,6 +26,7 @@ import {
     toScenarioTypeId
 } from './alm-conformance-step-identities.ts';
 import { toAlmCellRequestId } from './cell/to-alm-cell-request-id.ts';
+import { toWaitHistoryMetadata, type AlmWaitHistory } from './cell/to-cell-history-marked-commands.ts';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
@@ -267,7 +268,7 @@ export interface AlmConformanceRecoveredStore {
     readonly connectName: string;
     readonly timeoutMs: number;
     /** `page` when the named connect is a fresh document's first, a successor's or the one after a reload. */
-    readonly historyFrom: 'cell' | 'page';
+    readonly historyFrom: AlmWaitHistory;
 }
 
 /** The absence window plus the time the next owner of the original needs before it can submit. */
@@ -306,7 +307,7 @@ export function toStoreRecoveryWait(
                 `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}${store.lane}","outcome":{"kind":"restored"`
         },
         timeoutMs: store.timeoutMs,
-        ...(store.historyFrom === 'page' ? { metadata: { historyFrom: 'page' } } : {})
+        ...toWaitHistoryMetadata(store.historyFrom)
     };
 }
 

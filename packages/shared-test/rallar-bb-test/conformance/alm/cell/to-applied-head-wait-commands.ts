@@ -7,6 +7,7 @@ import { CONNECT_READINESS_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../alm-conformance-step-identities.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
+import { toWaitHistoryMetadata, type AlmWaitHistory } from './to-cell-history-marked-commands.ts';
 import { toHeldGroupAppliedMatch } from './to-held-group-applied-match.ts';
 
 export const CAUSAL_REVISION_KEYS = ['groupRevision', 'presenceRevision'] as const;
@@ -24,7 +25,7 @@ export interface AppliedHeadWaitInput {
      * since: an open window of D647. A `removed` event, which the page emits when its cache drops the group, is not
      * matched. `cell` reads from the cell's own first event on the page, as every other wait of the cell does.
      */
-    readonly history: 'page' | 'cell';
+    readonly historyFrom: AlmWaitHistory;
 }
 
 /**
@@ -55,6 +56,6 @@ function toAppliedWait(input: AppliedHeadWaitInput, readCommandId: string): Rall
             )
         },
         timeoutMs: CONNECT_READINESS_TIMEOUT_MS,
-        ...(input.history === 'page' ? { metadata: { historyFrom: 'page' } } : {})
+        ...toWaitHistoryMetadata(input.historyFrom)
     };
 }
