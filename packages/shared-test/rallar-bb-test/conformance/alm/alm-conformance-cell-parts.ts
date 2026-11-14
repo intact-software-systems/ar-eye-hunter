@@ -1,18 +1,18 @@
-import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
-import { toStorageCountersCommand } from '../alm-conformance-message-commands.ts';
-import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
+import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
+import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
     toConnectCommand,
     toEnsureGroupCommand,
     toSelfMembershipCommand,
     toStatsCommand
-} from '../alm-conformance-session-commands.ts';
-import { toCommandId, toConnectionName } from '../alm-conformance-step-identities.ts';
-import { toOwnerLeaseLapseWait } from '../to-pause-command.ts';
-import { isAlmCellCueSubscription } from './to-alm-cell-arming.ts';
-import { toAlmCellStartState } from './to-alm-cell-start-state.ts';
-import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
+} from './alm-conformance-session-commands.ts';
+import { toCommandId, toConnectionName } from './alm-conformance-step-identities.ts';
+import { isAlmCellCueSubscription } from './cell/to-alm-cell-arming.ts';
+import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
+import { toAlmCellStartState } from './granted-topic/to-alm-cell-start-state.ts';
+import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
 
 /**
  * A role's recipe in two parts. The prologue opens the role's page through the connect; a delivery-diagnostics

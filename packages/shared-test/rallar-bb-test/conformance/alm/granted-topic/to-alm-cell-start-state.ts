@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { toAlmConformancePrincipalRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStartGrant, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
-import { toTopicGrantCommand } from '../granted-topic/to-topic-grant-command.ts';
+import { toTopicGrantCommand } from './to-topic-grant-command.ts';
 
 /** Set on each command of a cell's start state, which a recipe's reader tells from the cell's own grant changes by it. */
 export const ALM_CELL_START_STATE_METADATA = { cellStartState: 'declared-grants' } as const;

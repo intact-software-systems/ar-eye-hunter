@@ -4,10 +4,10 @@ import {
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS,
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
 import type { AlmConformanceLaneFamily } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
-import type { AlmConformanceCellParts } from '@shared-test/rallar-bb-test/conformance/alm/cell/alm-conformance-cell-parts.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import {
     toAlmCellBarrier,

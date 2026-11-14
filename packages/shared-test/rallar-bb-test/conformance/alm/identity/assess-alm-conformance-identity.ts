@@ -61,7 +61,7 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         toRecordedAlmConformanceParticipant(input.runId, participant)
     );
     const issues = EitherCollectors.toListFoldLefts(readings);
-    const recorded = EitherCollectors.toListFoldRights(readings).map(toAuthoredParticipant);
+    const recorded = EitherCollectors.toListFoldRights(readings).map(toAuthoredAlmConformanceParticipant);
     const sender = recorded.find((participant) => participant.participant.role === 'sender');
     const receiver = recorded.find((participant) => participant.participant.role === 'receiver');
     if (issues.length > 0 || !sender || !receiver) {
@@ -100,7 +100,9 @@ export function hasAlmIdentityEvidence(sender: RallarBlackBoxTestRecipe): boolea
  * cell's settle runs in front of them and is the harness's. Whether the run is complete is read before, on the whole
  * recipe.
  */
-function toAuthoredParticipant(recorded: RecordedAlmConformanceParticipant): RecordedAlmConformanceParticipant {
+export function toAuthoredAlmConformanceParticipant(
+    recorded: RecordedAlmConformanceParticipant
+): RecordedAlmConformanceParticipant {
     const recipe = recorded.participant.recipe;
     return {
         ...recorded,

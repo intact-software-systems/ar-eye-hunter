@@ -5,6 +5,7 @@ import { isJsonRecordValue } from '../../../../schema/json-schema-validation.ts'
 import { isAlmConformanceRole, type AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import { toConnectedSessionIds } from '../../identity/assess-alm-acknowledged-identity.ts';
 import {
+    toAuthoredAlmConformanceParticipant,
     toRecordedAlmConformanceParticipant,
     type AlmConformanceIdentityParticipant,
     type RecordedAlmConformanceParticipant
@@ -28,7 +29,8 @@ export function assessSubscriptionRevokeDisconnected(
 ): readonly string[] {
     const readings = [sender, sibling].map((participant) => toRecordedAlmConformanceParticipant(runId, participant));
     const issues = EitherCollectors.toListFoldLefts(readings);
-    const [recordedSender, recordedSibling] = EitherCollectors.toListFoldRights(readings);
+    const [recordedSender, recordedSibling] = EitherCollectors.toListFoldRights(readings)
+        .map(toAuthoredAlmConformanceParticipant);
     if (issues.length > 0 || recordedSender === undefined || recordedSibling === undefined) {
         return issues;
     }

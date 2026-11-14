@@ -5,7 +5,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toAlmCellPrincipalStartCommands } from '../../cell/to-alm-cell-start-state.ts';
+import { toAlmCellPrincipalStartCommands } from '../../granted-topic/to-alm-cell-start-state.ts';
 import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { GRANTED_RTC_CARRIERS, toGrantedRefusalPollCommand, UNRECEIPTED_DELIVERY } from './granted-rtc-commands.ts';
 

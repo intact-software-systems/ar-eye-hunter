@@ -1,9 +1,9 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../../../barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
+import type { AlmConformanceCellParts } from '../alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
-import type { AlmConformanceCellParts } from './alm-conformance-cell-parts.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellSettleCommand } from './to-alm-cell-authored-commands.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';

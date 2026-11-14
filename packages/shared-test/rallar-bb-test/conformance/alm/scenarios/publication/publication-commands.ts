@@ -123,7 +123,7 @@ export function toPublicationLeadCommands(
             index: 0,
             publication,
             ttlMs: undefined,
-            resourceId: toResourceId(step, undefined),
+            resourceId: toPublicationResourceId(step, undefined),
             recipientPeers
         }),
         ...toPublicationVerdictCommands({
@@ -148,7 +148,7 @@ export function toPublicationSendCommands(sends: AlmPublicationSendsInput): read
 /** One send `index` with `seq` `index`, for a cell whose sends name their streams one by one. */
 export function toPublicationSendCommand(send: AlmPublicationSendInput): RallarBlackBoxTestMessagesSendCommand {
     const { stream, ...live } = send;
-    return toLiveSendCommand({ ...live, resourceId: toResourceId(send.step, stream) });
+    return toLiveSendCommand({ ...live, resourceId: toPublicationResourceId(send.step, stream) });
 }
 
 function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestLoopCommand {
@@ -165,7 +165,7 @@ function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackB
                 index: 0,
                 publication: sends.publication,
                 ttlMs: sends.ttlMs,
-                resourceId: toResourceId(step, stream),
+                resourceId: toPublicationResourceId(step, stream),
                 recipientPeers: undefined
             }),
             commandId: toCommandId(step, 'paced-send'),
@@ -175,7 +175,7 @@ function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackB
     };
 }
 
-function toResourceId(step: AlmConformanceStepInput, stream: string | undefined): string {
+function toPublicationResourceId(step: AlmConformanceStepInput, stream: string | undefined): string {
     return stream === undefined ? `alm-${step.scenarioKey}` : `alm-${step.scenarioKey}-${stream}`;
 }
 

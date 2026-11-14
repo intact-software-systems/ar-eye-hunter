@@ -1,6 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
-import type { AlmConformanceCellParts } from './alm-conformance-cell-parts.ts';
+import type { AlmConformanceCellParts } from '../alm-conformance-cell-parts.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 
 /**

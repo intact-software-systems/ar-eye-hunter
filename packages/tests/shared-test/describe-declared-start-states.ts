@@ -9,12 +9,12 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import { ALM_CELL_START_STATE_METADATA } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-start-state.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { ALM_CELL_START_STATE_METADATA } from '@shared-test/rallar-bb-test/conformance/alm/granted-topic/to-alm-cell-start-state.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestHttpRequestCommand

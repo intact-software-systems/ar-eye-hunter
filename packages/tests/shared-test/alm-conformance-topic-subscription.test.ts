@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -344,6 +345,25 @@ describe('ALM topic subscription conformance', () => {
             sender: { ...toSender([], []), result: undefined },
             sibling
         })).toEqual(['sender: missing, mismatched or failed recipe envelope.']);
+    });
+
+    it('judges the revoke-disconnected sender on the commands the shared identity entry yields: its settle is the harness\'s', () => {
+        const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+        if (scenario?.sibling === undefined) {
+            throw new Error('The ws carrier creates the subscription-revoke-disconnected cell.');
+        }
+        const siblingConnect = scenario.sibling.commands.find(({ kind }) => kind === 'rtc.connect')!.commandId!;
+        const sibling = toRecipeRunParticipant('sibling', scenario.sibling, { [siblingConnect]: { sessionId: 'sibling-session' } });
+        const receipt = scenario.sender.commands.find(({ kind }) => kind === 'messages.receipts')!;
+        const settleReceipt = toAlmCellSettleCommand({ ...receipt, commandId: 'settle-receipt' });
+        const settled = { ...scenario.sender, commands: [settleReceipt, ...scenario.sender.commands] };
+        const sender = toRecipeRunParticipant('sender', settled, {
+            'settle-receipt': { confirmedRecipientPeerIds: ['sibling-session'] },
+            'alm-ws-subscription-revoke-disconnected-sender-publication-1-receipts': { confirmedRecipientPeerIds: ['receiver-session'] },
+            'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: ['receiver-session'] }
+        });
+
+        expect(assessSubscriptionRevokeDisconnected({ runId: 'run', sender, sibling })).toEqual([]);
     });
 });
 

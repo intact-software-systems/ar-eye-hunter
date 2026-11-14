@@ -9,6 +9,11 @@ import {
     MINIMUM_POST_EXPIRY_OBSERVATION_MS,
     RESPONSE_MARGIN_MS
 } from './alm-conformance-budgets.ts';
+import {
+    toAlmConformanceCellParts,
+    type AlmConformanceCellParts,
+    type AlmConformanceCellPartsInput
+} from './alm-conformance-cell-parts.ts';
 import { FAULT_TIMEOUT_MS } from './alm-conformance-fault-commands.ts';
 import type { AlmConformanceReceiptRoles } from './alm-conformance-receipt-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
@@ -32,11 +37,6 @@ import {
     toSendHandleId
 } from './alm-conformance-step-identities.ts';
 import type { AlmReloadCheckpoint } from './alm-reload-pair.ts';
-import {
-    toAlmConformanceCellParts,
-    type AlmConformanceCellParts,
-    type AlmConformanceCellPartsInput
-} from './cell/alm-conformance-cell-parts.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 import { toAlmCellSettledBody } from './cell/to-alm-cell-settled-body.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';

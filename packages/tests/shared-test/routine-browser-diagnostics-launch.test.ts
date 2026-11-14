@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import {
     afterEach,
+    beforeAll,
     beforeEach,
     describe,
     expect,
@@ -15,6 +16,10 @@ import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rall
 
 import { createBrowserTestStorage } from './browser-test-storage.ts';
 
+// The shared runtime loads the browser runtime on its first command; the first timed test must not pay that import.
+beforeAll(async () => {
+    await import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts');
+});
 beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal('localStorage', createBrowserTestStorage());
