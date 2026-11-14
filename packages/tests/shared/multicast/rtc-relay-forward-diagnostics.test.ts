@@ -162,6 +162,16 @@ describe('a relay\'s forward and its outbound diagnostics', () => {
         expect(readForwardEvents(relay)).toEqual([]);
     });
 
+    it('a relay whose first forward attempt is refused is not retried: one report, however long it waits', async () => {
+        const relay = createRelay(LEAF);
+        const frame = createFrame('at-least-once', 'refused-not-retried');
+
+        await relay.forward(frame, 'a');
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect(readForwardEvents(relay)).toEqual([expect.objectContaining({ outcome: 'unroutable', reason: 'no-route' })]);
+    });
+
     it('an origin\'s own send whose planner drops it reports no relay forward', async () => {
         const snapshot = createOriginSnapshot(['a', 'c', 'd'], 4);
         const origin = createRtcOriginOverlayFixture({ snapshot, nextHopPeerIds: [], nextHopsBySessionId: { a: [] } });

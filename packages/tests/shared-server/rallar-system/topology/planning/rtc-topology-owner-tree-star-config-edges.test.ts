@@ -154,7 +154,10 @@ function toRttReports(roles: RoleAssignment): readonly RttMeasurementInfo[] {
 
 describe('RTC topology: the owner-issued tree and star configs of a matrix-driver room (three sessions)', () => {
     it('plans the relay of the no-RTT tree as session-c for the fixture ids, whatever the role assignment', () => {
-        const relays = ROLE_ASSIGNMENTS.map((roles) => readRelaySessionId(planTreeConfig(roles, planMatrixRoom(roles).snapshot).snapshot.nextHopsBySessionId));
+        const relays = ROLE_ASSIGNMENTS.map((roles) => {
+            const matrixRoom = planMatrixRoom(roles).snapshot;
+            return readRelaySessionId(planTreeConfig(roles, matrixRoom).snapshot.nextHopsBySessionId);
+        });
 
         expect(relays).toEqual(ROLE_ASSIGNMENTS.map(() => 'session-c'));
     });

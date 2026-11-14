@@ -443,7 +443,7 @@ every session the page opens. The event's `data` is the event itself:
   that was retained as `pending` and is replayed later ends in the effect
   worker, which holds the verdict but not whether its owner is a relay (the
   runtime knows no own peer id), so a refusal there is stated as a delivery
-  settlement and not as this event:
+  settlement, which a relay has no send handle to show, and not as this event:
   `{"kind":"relay-forward-not-enqueued","msgId":"frame-1","typeId":"chat.message.v1","outcome":"skipped","reason":"planner-drop","traceId":"trace-1","corrId":"frame-1"}`
 - `receipt-confirmation` is a separate closed observation for each receipt
   admission attempt that reaches a validation decision or actual commit
