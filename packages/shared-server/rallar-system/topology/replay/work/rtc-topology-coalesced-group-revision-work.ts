@@ -250,10 +250,10 @@ export function toCoalescedGroupRevisionKey(groupRef: GroupRef): Key {
  * successor row that outlives the head's completion, and an explicit
  * reconfigure or a topology-config write queues a plain per-command row.
  * Current coalesced work of this room answers with the earliest due time
- * and that row's own generation. Failing that, a per-command row, or a
- * coalesced row in an older envelope version, reports queued with a null due
- * time and generation, as an undecodable head does. RTT-refresh work is
- * never reported: it is periodic refinement of a layout, not a queued replan.
+ * and that row's own generation. Failing that, a per-command row reports
+ * queued with a null due time and generation, as an undecodable head does.
+ * Of these rows, one that does not decode is not reported, and RTT-refresh
+ * work never is: it is periodic refinement of a layout, not a queued replan.
  */
 export async function readPendingTopologyReplan(
     reader: PendingTopologyReplanReader,

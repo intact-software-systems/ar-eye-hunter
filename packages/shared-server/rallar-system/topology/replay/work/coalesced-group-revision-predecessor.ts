@@ -4,7 +4,6 @@ import { decodeRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-e
 import { AppOutboxType } from '../../../app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
-    tryReadCoalescedAppOutboxWorkEnvelope,
     type CoalescedAppOutboxWorkEnvelope
 } from '../../../app-outbox/coalesced-app-outbox-work.ts';
 import type { RtcTopologyGroupRevisionWork } from '../../mutation/rtc-topology-outbox-entry.ts';
@@ -75,23 +74,17 @@ export function decodeCurrentCoalescedGroupRevisionWork(
 }
 
 /**
- * The overlay a stored row replans when it is group-revision work that carries no current coalesced timing: a
- * per-command row (an explicit reconfigure or a topology-config receipt) decodes through the work codec, and a coalesced
- * row in an unsupported envelope version yields its overlay from its coalescing envelope. Any other row, RTT-refresh
- * work included, is null.
+ * The overlay a stored group-revision row replans, a per-command row (an explicit reconfigure or a topology-config
+ * receipt) among them; null for RTT-refresh work and for a row that does not decode.
  */
 export function decodeGroupRevisionWorkOverlayId(entry: ResourceEntry): string | null {
     try {
-        const decoded = decodeRtcTopologyWorkEntry(entry);
-        if (decoded.right !== undefined) {
-            const work = readRtcTopologyWorkEnvelope(decoded.right, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
-            return work.kind === 'group-revision' ? work.overlayId : null;
+        const message = decodeRtcTopologyWorkEntry(entry).right;
+        if (message === undefined) {
+            return null;
         }
-        if (decoded.left?.code === 'unsupported') {
-            const data = tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(entry)?.data;
-            return data?.kind === 'group-revision' && typeof data.overlayId === 'string' ? data.overlayId : null;
-        }
-        return null;
+        const work = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data;
+        return work.kind === 'group-revision' ? work.overlayId : null;
     }
     catch {
         return null;

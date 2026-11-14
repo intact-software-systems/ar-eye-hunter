@@ -318,10 +318,9 @@ it against the bound room, rejecting a body that is malformed or names another g
 reports any queued group-revision replan of the group: the coalesced head, a replan parked behind a
 settled head, an explicit reconfigure or a topology-config write. Its `dueAtEpochMs` is the earliest
 due coalesced row's (not a bound on when the room settles). `dueAtEpochMs` and `generation` are
-`null` for a per-command replan, a coalesced row in an older envelope version and a head that no
-longer decodes; `generation` is the reported row's own coalescing count, so it is not comparable
-across reads. RTT-refresh work is not reported, and neither is a per-command row in an older envelope
-version, which the AL envelope codec refuses. Readiness
+`null` for a per-command replan and a head that no longer decodes; `generation` is the reported
+row's own coalescing count, so it is not comparable across reads. RTT-refresh work is not reported,
+and neither is a row other than the head that does not decode. Readiness
 for application traffic stays `rtc.waitForRoom(...)` and `realtime.room().wait()`, which follow
 the accepted layout only.
 

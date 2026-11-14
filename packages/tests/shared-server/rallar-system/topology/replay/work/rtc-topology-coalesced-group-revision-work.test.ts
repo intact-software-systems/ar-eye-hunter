@@ -921,15 +921,6 @@ describe('readPendingTopologyReplan', () => {
         ).resolves.toEqual({ reconfigureQueued: true, dueAtEpochMs: null, generation: null });
     });
 
-    it('reports a coalesced row in an older envelope version as queued with an unknown due time', async () => {
-        const older = toEntryWithEnvelopeVersion(parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), 3);
-        await expect(readPendingTopologyReplan(settledHeadReader([older]), GROUP_REF)).resolves.toEqual({
-            reconfigureQueued: true,
-            dueAtEpochMs: null,
-            generation: null
-        });
-    });
-
     it('answers from current coalesced work ahead of a per-command row', async () => {
         const perCommand = createPerCommandEntry(createGroupSnapshot(5, 3));
         const successor = parkedSuccessor(createGroupSnapshot(6, 3), BASE_EPOCH_MS + 100);
@@ -945,6 +936,11 @@ describe('readPendingTopologyReplan', () => {
     it('ignores a row that does not decode as RTC topology work', async () => {
         const undecodable = { ...parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), resource: '{}' };
         await expect(readPendingTopologyReplan(settledHeadReader([undecodable]), GROUP_REF)).resolves.toBeNull();
+    });
+
+    it('ignores a coalesced row stamped with an envelope version this build does not support', async () => {
+        const unsupported = toEntryWithEnvelopeVersion(parkedSuccessor(createGroupSnapshot(5, 3), BASE_EPOCH_MS + 100), 3);
+        await expect(readPendingTopologyReplan(settledHeadReader([unsupported]), GROUP_REF)).resolves.toBeNull();
     });
 
     it('ignores group-revision work of another room', async () => {
