@@ -136,8 +136,10 @@ describe('live RTC control client', () => {
                 topic: 'credential=must-not-be-retained',
                 payload: {
                     data: {
-                        matrixId: 'credential=must-not-be-retained',
-                        credential: 'must-not-be-retained'
+                        payload: {
+                            matrixId: 'credential=must-not-be-retained',
+                            credential: 'must-not-be-retained'
+                        }
                     }
                 }
             }
