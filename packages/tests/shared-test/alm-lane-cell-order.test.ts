@@ -247,10 +247,12 @@ describe('the ALM lane parameters', () => {
             const planned = carriers.some((carrier) =>
                 ALM_CONFORMANCE_LANE_FAMILIES.some((family) =>
                     resolveAlmLanePlan({
-                        ...toPlanInput(family, { only: [key], skip }),
+                        family,
                         carrier,
                         scenarios: FAMILY_CATALOGS.get(`${family}/${carrier}`)!,
-                        scope
+                        scope,
+                        parameters: { ...DECLARED, only: [key], skip },
+                        mintSeed: refuseMint
                     }).cells.length > 0
                 )
             );

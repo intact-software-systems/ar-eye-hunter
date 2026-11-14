@@ -87,6 +87,7 @@ import {
     type TwoAgentRunParticipant
 } from './full-stack-helpers.ts';
 import { openSuccessorPage, runRecipeTrioOnSameContext } from './full-stack-same-context-run.ts';
+import { runObservedFamily } from './run-observed-family.ts';
 import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
@@ -198,31 +199,28 @@ test.describe('ALM conformance lane', () => {
                         : `alm-${carrier}-${family}-${uniqueSuffix()}`
                 });
 
-                let scenarioFailed = false;
-                try {
-                    await startCellGateRun({
-                        run,
-                        cellKey: undefined,
-                        agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
-                    });
-                    await runAlmConformanceScenarios(run, carrier, family, plan);
-                }
-                catch (scenarioError) {
-                    scenarioFailed = true;
-                    throw scenarioError;
-                }
-                finally {
-                    await recordObservation({
-                        run,
-                        family,
-                        participants: [run.sender, run.receiver],
-                        testInfo,
-                        carrier,
-                        cellOutcome: toCellOutcome(testInfo, scenarioFailed),
-                        cellOrder: plan.cellOrder
-                    });
-                    await run.close();
-                }
+                await runObservedFamily({
+                    run,
+                    testInfo,
+                    body: async () => {
+                        await startCellGateRun({
+                            run,
+                            cellKey: undefined,
+                            agentsByRole: new Map([['sender', run.sender], ['receiver', run.receiver]])
+                        });
+                        await runAlmConformanceScenarios(run, carrier, family, plan);
+                    },
+                    observe: (cellOutcome) =>
+                        recordObservation({
+                            run,
+                            family,
+                            participants: [run.sender, run.receiver],
+                            testInfo,
+                            carrier,
+                            cellOutcome,
+                            cellOrder: plan.cellOrder
+                        })
+                });
             });
         }
 
@@ -248,27 +246,24 @@ test.describe('ALM conformance lane', () => {
                     runId: `alm-${carrier}-${family}-${uniqueSuffix()}`,
                     roles: AGENT_FAMILY_ROLES[family]
                 });
-                let scenarioFailed = false;
-                try {
-                    await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
-                    await runAgentScenarios(run, carrier, family, plan);
-                }
-                catch (scenarioError) {
-                    scenarioFailed = true;
-                    throw scenarioError;
-                }
-                finally {
-                    await recordObservation({
-                        run,
-                        family,
-                        participants: [...run.agents.values()],
-                        testInfo,
-                        carrier,
-                        cellOutcome: toCellOutcome(testInfo, scenarioFailed),
-                        cellOrder: plan.cellOrder
-                    });
-                    await run.close();
-                }
+                await runObservedFamily({
+                    run,
+                    testInfo,
+                    body: async () => {
+                        await startCellGateRun({ run, cellKey: undefined, agentsByRole: run.agents });
+                        await runAgentScenarios(run, carrier, family, plan);
+                    },
+                    observe: (cellOutcome) =>
+                        recordObservation({
+                            run,
+                            family,
+                            participants: [...run.agents.values()],
+                            testInfo,
+                            carrier,
+                            cellOutcome,
+                            cellOrder: plan.cellOrder
+                        })
+                });
             });
         }
 
@@ -291,26 +286,21 @@ test.describe('ALM conformance lane', () => {
                 runId: `alm-${carrier}-same-context-${uniqueSuffix()}`
             });
             const participants: TwoAgentRunParticipant[] = [run.sender, run.receiver];
-            let scenarioFailed = false;
-            try {
-                await runSameContextScenarios({ run, carrier, plan, testInfo, participants });
-            }
-            catch (scenarioError) {
-                scenarioFailed = true;
-                throw scenarioError;
-            }
-            finally {
-                await recordObservation({
-                    run,
-                    family: 'same-context',
-                    participants,
-                    testInfo,
-                    carrier,
-                    cellOutcome: toCellOutcome(testInfo, scenarioFailed),
-                    cellOrder: plan.cellOrder
-                });
-                await run.close();
-            }
+            await runObservedFamily({
+                run,
+                testInfo,
+                body: async () => await runSameContextScenarios({ run, carrier, plan, testInfo, participants }),
+                observe: (cellOutcome) =>
+                    recordObservation({
+                        run,
+                        family: 'same-context',
+                        participants,
+                        testInfo,
+                        carrier,
+                        cellOutcome,
+                        cellOrder: plan.cellOrder
+                    })
+            });
         });
     }
 });
@@ -536,11 +526,6 @@ function toObservationFileName(
 ): string {
     const cell = family === 'two-agent' ? `${carrier}-${scope}` : `${carrier}-${scope}-${family}`;
     return retry === 0 ? cell : `${cell}-retry${retry}`;
-}
-
-/** Soft assertions record their failures on `testInfo` the moment they fire, before the cell ends. */
-function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservationCellOutcome {
-    return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
 }
 
 function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {

@@ -34,8 +34,10 @@ import {
     type RecipeRun
 } from '../../../tests/playwright/rallar-black-box/full-stack-helpers.ts';
 
+import { closeParticipantContext, PAGE_CLOSE_TIMEOUT_MS } from '../../../tests/playwright/rallar-black-box/close-participant-context.ts';
 import { runRecipesOnAgents } from '../../../tests/playwright/rallar-black-box/full-stack-agent-run.ts';
 import { runRecipeTrioOnSameContext } from '../../../tests/playwright/rallar-black-box/full-stack-same-context-run.ts';
+import { runObservedFamily } from '../../../tests/playwright/rallar-black-box/run-observed-family.ts';
 
 import { openRecordingControlRequest, type RecordingControlRequest } from './recording-control-request-fixture.ts';
 
@@ -580,6 +582,151 @@ describe('control poll timeouts', () => {
         }
     });
 
+    const cancelCommandId = `cancel-${rootCommandId}`;
+
+    function toCancelAnswer(
+        input: { readonly ok: boolean; readonly value?: Readonly<Record<string, string | boolean>>; readonly error?: { code: string; message: string; }; }
+    ): ControlResultEnvelope {
+        return {
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'poll-timeout',
+            agentId: 'sender',
+            commandId: cancelCommandId,
+            ok: input.ok,
+            ...(input.error === undefined ? {} : { error: input.error }),
+            result: {
+                commandId: cancelCommandId,
+                kind: 'recipe.cancel',
+                status: input.ok ? 'ok' : 'failed',
+                ok: input.ok,
+                startedAtEpochMs: 0,
+                endedAtEpochMs: 0,
+                durationMs: 0,
+                value: input.value
+            }
+        };
+    }
+
+    // The cancel's answer is there at the first read after the cancel; the root's result, if any, from the second. Each
+    // read moves the clock by 25 000 ms, so a lane that waits for the root alone spends a second read of the grace on it.
+    async function readOutcomeAfterCancelAnswered(
+        answer: ControlResultEnvelope,
+        rootResult: readonly ControlResultEnvelope[]
+    ): Promise<{ readonly outcome: Promise<unknown>; readonly readsAfterCancel: () => number; close(): Promise<void>; }> {
+        const control = await openRecordingControlRequest('poll-timeout');
+        let readsAfterCancel = 0;
+        const { run } = createSilentRun(control.request, 25_000, () => {
+            if (!control.posted.some(({ command }) => command.kind === 'recipe.cancel')) {
+                return [];
+            }
+            readsAfterCancel += 1;
+            return readsAfterCancel === 1 ? [answer] : [answer, ...rootResult];
+        });
+        const started = await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+        return { outcome: started.readOutcome(), readsAfterCancel: () => readsAfterCancel, close: () => control.close() };
+    }
+
+    it('fails the family at once when the cancel is answered target-not-exclusively-active, naming the command and the agent', async () => {
+        const refused = toCancelAnswer({
+            ok: true,
+            value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'target-not-exclusively-active' }
+        });
+        const read = await readOutcomeAfterCancelAnswered(refused, []);
+        try {
+            await expect(read.outcome).rejects.toThrow(
+                `recipe.cancel ${cancelCommandId} to agent sender was answered target-not-exclusively-active`
+            );
+            expect(read.readsAfterCancel()).toBe(1);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it('lets the run end as before when the cancel is answered with the ordinary answer', async () => {
+        const accepted = toCancelAnswer({
+            ok: true,
+            value: { cancelRequested: true, targetCommandId: rootCommandId, reason: 'late' }
+        });
+        const read = await readOutcomeAfterCancelAnswered(accepted, [toFailedRootResult('RALLAR_BLACK_BOX_COMMAND_CANCELLED')]);
+        try {
+            await expect(read.outcome).resolves.toEqual({
+                commandId: rootCommandId,
+                ok: false,
+                summary: 'RALLAR_BLACK_BOX_COMMAND_CANCELLED: the root ended RALLAR_BLACK_BOX_COMMAND_CANCELLED'
+            });
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it.each([
+        {
+            title: 'a refusal with a reason the lane does not know',
+            answer: { ok: true, value: { cancelRequested: false, targetCommandId: rootCommandId, reason: 'something-new' } },
+            named: 'was answered an unknown answer'
+        },
+        {
+            title: 'an answer that carries no value',
+            answer: { ok: true },
+            named: 'was answered an unknown answer'
+        },
+        {
+            title: 'an error answer',
+            answer: { ok: false, error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: 'no such agent' } },
+            named: 'was answered the error RALLAR_BLACK_BOX_COMMAND_FAILED: no such agent'
+        }
+    ])('fails the family at once on $title, naming it', async ({ answer, named }) => {
+        const read = await readOutcomeAfterCancelAnswered(toCancelAnswer(answer), []);
+        try {
+            await expect(read.outcome).rejects.toThrow(`recipe.cancel ${cancelCommandId} to agent sender ${named}`);
+            expect(read.readsAfterCancel()).toBe(1);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await read.close();
+        }
+    });
+
+    it('waits for a started root that nobody read when the body failed, so the observation never reads a page whose root runs', async () => {
+        const control = await openRecordingControlRequest('poll-timeout');
+        try {
+            // The clock starts at 1 000 and each read moves it by 1 000, so the root's result lands at the third read; the body
+            // fails right after starting it.
+            const { run, readCount } = createSilentRun(
+                control.request,
+                1_000,
+                (nowEpochMs) => nowEpochMs >= 4_000 ? [toFailedRootResult('RALLAR_BLACK_BOX_RECIPE_TIMEOUT')] : []
+            );
+            const observed: { reads: number; posted: readonly string[]; } = { reads: 0, posted: [] };
+            const bodyFailure = new Error('the scenario failed after starting a root');
+
+            await expect(runObservedFamily({
+                run: Object.assign(run, { close: async () => {} }),
+                testInfo: { errors: [] },
+                body: async () => {
+                    await startRecipeRun(run, { agentId: 'sender' }, baseline.sender);
+                    throw bodyFailure;
+                },
+                observe: async () => {
+                    observed.reads = readCount();
+                    observed.posted = toPostedKinds(control);
+                }
+            })).rejects.toBe(bodyFailure);
+
+            expect(observed.reads).toBeGreaterThanOrEqual(3);
+            expect(observed.posted).toEqual(['recipe.run']);
+        }
+        finally {
+            vi.restoreAllMocks();
+            await control.close();
+        }
+    });
+
     it('warns and releases the sender when the receiver neither connects nor ends within the barrier timeout', async () => {
         const control = await openRecordingControlRequest('poll-timeout');
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -1110,5 +1257,161 @@ describe('owned Rallar receiver originating errors', () => {
                 await senderContext.close();
             }
         }
+    });
+});
+
+describe('the observed family run', () => {
+    const bodyFailure = new Error('the scenario failed');
+    const observationFailure = new Error('the observation failed');
+    const closeFailure = new Error('the close failed');
+
+    interface Family {
+        readonly events: string[];
+        readonly run: { close(): Promise<void>; };
+    }
+
+    function createFamily(closeResult: Error | undefined = undefined): Family {
+        const events: string[] = [];
+        return {
+            events,
+            run: {
+                close: async () => {
+                    events.push('close');
+                    if (closeResult !== undefined) {
+                        throw closeResult;
+                    }
+                }
+            }
+        };
+    }
+
+    function toInput(
+        family: Family,
+        failures: { readonly body?: Error; readonly observation?: Error; readonly testErrors?: number; }
+    ): Parameters<typeof runObservedFamily>[0] {
+        return {
+            run: family.run,
+            testInfo: { errors: Array.from({ length: failures.testErrors ?? 0 }, () => ({})) },
+            body: async () => {
+                family.events.push('body');
+                if (failures.body !== undefined) {
+                    throw failures.body;
+                }
+            },
+            observe: async (cellOutcome) => {
+                family.events.push(`observe:${cellOutcome}`);
+                if (failures.observation !== undefined) {
+                    throw failures.observation;
+                }
+            }
+        };
+    }
+
+    it('records the observation after the body and before the close', async () => {
+        const family = createFamily();
+
+        await runObservedFamily(toInput(family, {}));
+
+        expect(family.events).toEqual(['body', 'observe:passed', 'close']);
+    });
+
+    it('records the observation after the body and before the close also when the body throws, and reports the body\'s error', async () => {
+        const family = createFamily();
+
+        await expect(runObservedFamily(toInput(family, { body: bodyFailure }))).rejects.toBe(bodyFailure);
+
+        expect(family.events).toEqual(['body', 'observe:failed', 'close']);
+    });
+
+    it('records a failed cell when the body passed but the test already holds an error', async () => {
+        const family = createFamily();
+
+        await runObservedFamily(toInput(family, { testErrors: 1 }));
+
+        expect(family.events).toEqual(['body', 'observe:failed', 'close']);
+    });
+
+    it('does not let a failing observation replace the body\'s error, and still closes', async () => {
+        const family = createFamily();
+
+        await expect(runObservedFamily(toInput(family, { body: bodyFailure, observation: observationFailure })))
+            .rejects.toBe(bodyFailure);
+
+        expect(family.events).toEqual(['body', 'observe:failed', 'close']);
+    });
+
+    it('fails the run with the observation\'s failure after a passing body, and still closes', async () => {
+        const family = createFamily();
+
+        await expect(runObservedFamily(toInput(family, { observation: observationFailure })))
+            .rejects.toBe(observationFailure);
+
+        expect(family.events).toEqual(['body', 'observe:passed', 'close']);
+    });
+
+    it('fails the run with the close\'s failure after a passing body and a passing observation', async () => {
+        const family = createFamily(closeFailure);
+
+        await expect(runObservedFamily(toInput(family, {}))).rejects.toBe(closeFailure);
+
+        expect(family.events).toEqual(['body', 'observe:passed', 'close']);
+    });
+});
+
+describe('closing a participant whose page cleanup may never settle', () => {
+    function createParticipant(events: string[]): Parameters<typeof closeParticipantContext>[0] {
+        return {
+            page: {} as Playwright.Page,
+            context: {
+                close: async () => {
+                    events.push('close');
+                }
+            } as Playwright.BrowserContext
+        };
+    }
+
+    it('closes the context after a cleanup that settles', async () => {
+        const events: string[] = [];
+
+        await closeParticipantContext(createParticipant(events), async () => {
+            events.push('cleanup');
+        });
+
+        expect(events).toEqual(['cleanup', 'close']);
+    });
+
+    it('closes the context when the cleanup never settles, and reports it after the close', async () => {
+        vi.useFakeTimers();
+        try {
+            const events: string[] = [];
+            const closing = closeParticipantContext(createParticipant(events), () => new Promise<void>(() => {}))
+                .then(() => undefined, (error: unknown) => error);
+
+            await vi.advanceTimersByTimeAsync(PAGE_CLOSE_TIMEOUT_MS - 1);
+            expect(events).toEqual([]);
+            await vi.advanceTimersByTimeAsync(1);
+            const reported = await closing;
+
+            expect(events).toEqual(['close']);
+            expect(reported).toBeInstanceOf(Error);
+            expect((reported as Error).message).toBe(`The page cleanup did not settle within ${PAGE_CLOSE_TIMEOUT_MS} ms; its context was closed.`);
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('closes the context when the cleanup fails, and reports the failure after the close', async () => {
+        const events: string[] = [];
+        const failure = new Error('the cleanup failed');
+
+        await expect(
+            closeParticipantContext(createParticipant(events), async () => {
+                events.push('cleanup');
+                throw failure;
+            })
+        ).rejects.toBe(failure);
+
+        expect(events).toEqual(['cleanup', 'close']);
     });
 });

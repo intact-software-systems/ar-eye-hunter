@@ -9,6 +9,7 @@ import type {
     AlmConformanceContinuation
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { closeParticipantContext, PAGE_CLOSE_TIMEOUT_MS } from './close-participant-context.ts';
 import {
     cleanupRallarPage,
     createTwoAgentRun,
@@ -164,9 +165,6 @@ async function readRoleOutcomes(
     return new Map(settled.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []));
 }
 
-/** A close releases the page's room connection and its subscriptions; well under a recipe's own budget. */
-const CLOSE_TIMEOUT_MS = 30_000;
-
 /** Ends every agent's room connection, so the next cell's connect may name a room of its own. */
 export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string): Promise<void> {
     const closes = [...run.agents.values()].map(({ agentId }) => ({
@@ -183,14 +181,14 @@ export async function closeAgentConnections(run: AgentRecipeRun, cellKey: string
         });
     }
     const read = await readControlRunUntil(run, {
-        timeoutMs: CLOSE_TIMEOUT_MS,
+        timeoutMs: PAGE_CLOSE_TIMEOUT_MS,
         select: (snapshot) => closes.every(({ commandId }) => findControlResult(snapshot, commandId)?.ok === true),
         accept: (closed) => closed
     });
     if (read.kind === 'accepted') {
         return;
     }
-    throw new Error(`${cellKey}: not every agent closed its room connection within ${CLOSE_TIMEOUT_MS} ms.`);
+    throw new Error(`${cellKey}: not every agent closed its room connection within ${PAGE_CLOSE_TIMEOUT_MS} ms.`);
 }
 
 /** The principal of each role, which a recipe's grants name: the lane passes it to recipe creation. */
@@ -250,10 +248,5 @@ async function openRoleAgent(
 }
 
 async function closeParticipant(participant: TwoAgentRunParticipant): Promise<void> {
-    try {
-        await cleanupRallarPage(participant.page);
-    }
-    finally {
-        await participant.context.close();
-    }
+    await closeParticipantContext(participant, cleanupRallarPage);
 }

@@ -39,7 +39,10 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { closeParticipantContext } from './close-participant-context.ts';
+import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
+import { trackStartedRecipeRun } from './track-started-recipe-runs.ts';
 
 export interface FullStackUser {
     readonly username: string;
@@ -699,7 +702,9 @@ export async function startRecipeRun(
         cancel: { kind: 'recipe.cancel', targetCommandId: commandId, reason: toRecipeCancelReason(commandId) }
     };
     let outcome: Promise<RecipeRunOutcome> | undefined;
-    return { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
+    const started = { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
+    trackStartedRecipeRun(run, started);
+    return started;
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
@@ -1101,14 +1106,9 @@ async function openTwoAgentParticipant(
 }
 
 async function closeTwoAgentParticipants(participants: readonly TwoAgentRunParticipant[]): Promise<void> {
-    const results = await Promise.allSettled(participants.map(async (participant) => {
-        try {
-            await cleanupRallarPage(participant.page);
-        }
-        finally {
-            await participant.context.close();
-        }
-    }));
+    const results = await Promise.allSettled(
+        participants.map((participant) => closeParticipantContext(participant, cleanupRallarPage))
+    );
     const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
     if (failures.length > 0) {
         throw new AggregateError(failures, 'Failed to close full-stack participants.');
@@ -1193,20 +1193,35 @@ async function readRecipeRunOutcome(
 }
 
 async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<ControlResultEnvelope> {
+    const cancelCommandId = `cancel-${root.commandId}`;
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
         agentId: root.agentId,
-        commandId: `cancel-${root.commandId}`,
+        commandId: cancelCommandId,
         command: root.cancel
     });
-    const result = await readRecipeRunResult(run, root.commandId, CONTROL_POLL_TIMERS.nowMs() + RECIPE_RESULT_GRACE_MS);
-    if (result === undefined) {
-        throw new Error(
-            `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
-        );
+    const read = await readControlRunUntil(run, {
+        timeoutMs: RECIPE_RESULT_GRACE_MS,
+        select: (snapshot) => ({
+            result: findControlResult(snapshot, root.commandId),
+            failure: resolveRecipeCancelFailure({
+                answer: findControlResult(snapshot, cancelCommandId),
+                cancelCommandId,
+                agentId: root.agentId
+            })
+        }),
+        accept: ({ result, failure }) => result !== undefined || failure !== undefined
+    });
+    if (read.kind === 'accepted' && read.value.result !== undefined) {
+        return read.value.result;
     }
-    return result;
+    if (read.kind === 'accepted') {
+        throw new Error(read.value.failure);
+    }
+    throw new Error(
+        `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
+    );
 }
 
 async function readRecipeRunResult(
