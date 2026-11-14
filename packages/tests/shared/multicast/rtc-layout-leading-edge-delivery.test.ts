@@ -12,14 +12,13 @@ import {
     exchangeOver,
     exchangeUntilQuiet,
     readAdmissionReasons,
-    readCopies,
     toAcceptedLayout,
     toOpenEdgePeerIds,
     toPromotedLayout,
     type LayoutMesh,
     type TransportCopy
 } from './rtc-layout-mesh-fixture.ts';
-import { createOriginFrame, createOriginSnapshot, enqueueAndDrain, useFakeClock } from './rtc-origin-overlay-fixture.ts';
+import { createOriginFrame, createOriginSnapshot, enqueueAndDrain, readCopies, useFakeClock } from './rtc-origin-overlay-fixture.ts';
 
 /**
  * At the leading edge of a promotion a sender that promoted first may send over a new edge that is already open

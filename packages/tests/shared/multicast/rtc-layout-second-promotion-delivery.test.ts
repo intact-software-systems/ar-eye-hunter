@@ -11,7 +11,6 @@ import {
     exchangeOver,
     exchangeUntilQuiet,
     readAdmissionReasons,
-    readCopies,
     toAcceptedLayout,
     toOpenEdgePeerIds,
     type LayoutMesh,
@@ -22,6 +21,7 @@ import {
     createOriginFrame,
     createOriginSnapshot,
     enqueueAndDrain,
+    readCopies,
     useFakeClock,
     type FrameReliability
 } from './rtc-origin-overlay-fixture.ts';

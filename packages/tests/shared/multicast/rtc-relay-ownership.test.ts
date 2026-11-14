@@ -18,7 +18,6 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     CHAIN_PREVIOUS,
     CHAIN_PROMOTED,
-    readCopies,
     toAcceptedLayout,
     toPromotedLayout
 } from './rtc-layout-mesh-fixture.ts';
@@ -29,6 +28,7 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    readCopies,
     SERVED_REPLACED_LAYOUT_OVERLAP_MS,
     useFakeClock,
     type RtcOriginOverlayFixture

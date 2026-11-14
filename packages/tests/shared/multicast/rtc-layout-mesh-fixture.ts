@@ -184,10 +184,6 @@ async function carry(mesh: LayoutMesh, copy: TransportCopy): Promise<void> {
     }
 }
 
-export function readCopies(messages: readonly ALMessage[], message: ALMessage): number {
-    return messages.filter((sent) => sent.id.msgId === message.id.msgId).length;
-}
-
 export function readAdmissionReasons(peer: RtcRelayOverlayFixture, message: ALMessage): readonly string[] {
     return peer.diagnostics.flatMap((event) => event.kind === 'admission-outcome' && event.msgId === message.id.msgId ? [event.reason] : []);
 }

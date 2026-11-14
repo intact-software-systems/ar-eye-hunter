@@ -246,6 +246,11 @@ export function createOriginFrame(reliability: FrameReliability, resourceId: str
         );
 }
 
+/** How many messages of `messages` carry `message`'s id. */
+export function readCopies(messages: readonly ALMessage[], message: ALMessage): number {
+    return messages.filter((sent) => sent.id.msgId === message.id.msgId).length;
+}
+
 /** Fake timers from 2026-01-01T00:00:00Z for every test of the calling `describe`, restored after each. */
 export function useFakeClock(): void {
     beforeEach(() => {
