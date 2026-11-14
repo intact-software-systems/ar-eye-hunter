@@ -19,7 +19,6 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestHttpRequestCommand,
     RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -30,7 +29,15 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
-import { describeDeclaredStartStates, PERMISSIONS, type DeclaredState, type StartStateTable } from './describe-declared-start-states.ts';
+import {
+    describeDeclaredStartStates,
+    PERMISSIONS,
+    toGrantRequests,
+    type DeclaredState,
+    type GrantRequest,
+    type Permissions,
+    type StartStateTable
+} from './describe-declared-start-states.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
@@ -73,16 +80,6 @@ function toTopicSubscriptionScenarios(carrier: (typeof ALM_CONFORMANCE_CARRIERS)
 
 function toRoleRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBoxTestRecipe[] {
     return scenario.roles.flatMap((role) => toAlmConformanceRoleRecipe(scenario, role) ?? []);
-}
-
-function toGrantRequests(
-    recipe: RallarBlackBoxTestRecipe
-): readonly Pick<RallarBlackBoxTestHttpRequestCommand['request'], 'path' | 'body'>[] {
-    return toNestedCommands(recipe.commands).flatMap((command) =>
-        command.kind === 'http.request' && command.request.path?.includes('/publication-grants/')
-            ? [{ path: command.request.path, body: command.request.body }]
-            : []
-    );
 }
 
 /** A request id as the page resolves it: a 13-character runtime identity and a poll's first attempt. */
@@ -169,12 +166,14 @@ describe('ALM topic subscription conformance', () => {
             throw new Error('The ws carrier creates the subscription-delivery cell.');
         }
 
-        const grantee = (principalId: string | undefined, operation: string, body: { publish: boolean; subscribe: boolean; }) => ({
-            path: expect.stringContaining(`/publication-grants/${principalId}/${operation}/requests/`),
-            body: { topicId: GRANTED_TOPIC_ID, ...body }
+        const grantee = (principalId: string | undefined, operation: GrantRequest['operation'], permissions: Permissions) => ({
+            operation,
+            principalId,
+            topicId: GRANTED_TOPIC_ID,
+            permissions
         });
         // Per principal: a revoke of its rows and of what it does not hold, then a grant of what it holds.
-        expect(toGrantRequests(delivery.receiver)).toEqual([
+        expect(toGrantRequests(delivery.receiver.commands)).toEqual([
             grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'revoke', { publish: true, subscribe: true }),
             grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'grant', { publish: false, subscribe: true }),
             grantee(CONFORMANCE_PRINCIPAL_IDS['publisher-b'], 'revoke', { publish: false, subscribe: true }),
@@ -667,10 +666,11 @@ describe('ALM ordered subscription entry conformance', () => {
             'assert-unsubscribe-sibling-regranted-lapsed'
         ]);
         // D492: the revoke takes the sender principal's `subscribe` alone, and the re-grant gives exactly it back.
-        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(6)).toEqual([
-            { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
-            { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
-        ]);
+        expect(toGrantRequests(receiver.commands).map(({ operation, topicId, permissions }) => ({ operation, topicId, permissions })).slice(6))
+            .toEqual([
+                { operation: 'revoke', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } },
+                { operation: 'grant', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } }
+            ]);
         expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
         expect(findStep(requireRoleRecipe(scenario, 'sibling'), 'subscribe-delta-margin'))
             .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });

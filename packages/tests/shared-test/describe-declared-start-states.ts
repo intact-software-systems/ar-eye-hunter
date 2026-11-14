@@ -31,6 +31,7 @@ export interface Permissions {
 export interface GrantRequest {
     readonly operation: 'grant' | 'revoke';
     readonly principalId: string;
+    readonly topicId: string;
     readonly permissions: Permissions;
 }
 
@@ -73,12 +74,13 @@ export function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]):
     return toNestedCommands(commands).flatMap((command): readonly GrantRequest[] => {
         const request = command.kind === 'http.request' ? (command as RallarBlackBoxTestHttpRequestCommand).request : undefined;
         const match = request?.path?.match(/\/publication-grants\/([^/]+)\/(grant|revoke)\/requests\//);
-        const body = request?.body as Permissions | undefined;
+        const body = request?.body as (Permissions & Readonly<{ topicId: string; }>) | undefined;
         return match === null || match === undefined || body === undefined
             ? []
             : [{
                 operation: match[2] as GrantRequest['operation'],
                 principalId: match[1]!,
+                topicId: body.topicId,
                 permissions: { publish: body.publish, subscribe: body.subscribe }
             }];
     });
