@@ -36,3 +36,11 @@ export function computeNextCadenceAtMs(input: CadenceInput): number {
 export function isCadenceDue(input: CadenceDueInput): boolean {
     return input.cadenceMs <= 0 || input.nowMs >= input.boundaryAtMs;
 }
+
+/** An opportunity due at the boundary that runs at now serves one; every later boundary at or before now was missed. */
+export function computeMissedCadenceCount(input: CadenceDueInput): number {
+    if (input.cadenceMs <= 0) {
+        return 0;
+    }
+    return Math.max(0, Math.floor((input.nowMs - input.boundaryAtMs) / input.cadenceMs));
+}
