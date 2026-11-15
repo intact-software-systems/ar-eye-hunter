@@ -297,7 +297,13 @@ it('does not rotate a created room for a session that replaced the creator befor
     const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
     facade.session.mockReturnValue(session);
     facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+    // Server-side join codes: a rotate replaces the room's code and invalidates the previous one.
+    const issuedJoinCodes = new Map<string, string>();
     facade.rooms.rotateJoinCode.mockReset();
+    facade.rooms.rotateJoinCode.mockImplementation(async (room: typeof created.group) => {
+        issuedJoinCodes.set(room.groupId, 'creator-code');
+        return { joinCode: 'creator-code', expiresAtEpochMs: 4_000_000_000_000, snapshot: created };
+    });
     const creation = Promise.withResolvers<typeof created>();
     const creating = { ...arena, roomId: undefined, rooms: [], createArenaRoom: () => creation.promise };
     const container = document.createElement('div');
@@ -311,7 +317,7 @@ it('does not rotate a created room for a session that replaced the creator befor
         const replacement = { ...session, sessionId: 'replacement-session' };
         facade.session.mockReturnValue(replacement);
         await act(async () => creation.resolve(created));
-        expect(facade.rooms.rotateJoinCode).not.toHaveBeenCalled();
+        expect(issuedJoinCodes.has(created.group.groupId)).toBe(false);
         await act(async () =>
             root.render(createElement(ArenaRoomHosting, {
                 arena: {
@@ -323,6 +329,7 @@ it('does not rotate a created room for a session that replaced the creator befor
             }))
         );
         expect(container.querySelector('input')?.value).toBe('');
+        expect(container.textContent).not.toContain('creator-code');
     }
     finally {
         await act(async () => root.unmount());
