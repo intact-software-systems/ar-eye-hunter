@@ -14,6 +14,7 @@ import {
     type DistributedRunWarningRegressionReport
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { BlackBoxRallarConsoleWarningDiagnostics } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
+import { replaceCommandPlaceholders } from '../../../packages/shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlCommandEnvelope,
@@ -29,10 +30,7 @@ import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    createRallarBlackBoxEnsureGroupRequestId,
-    rtcConnectReadiness
-} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import { rtcConnectReadiness } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -154,25 +152,35 @@ const ENSURE_GROUP_CONFLICT_CONSOLE_TEXT =
     'Failed to load resource: the server responded with a status of 409 (Conflict)';
 
 /** The realtime fixture's ensure-group accepts 409 once the group exists; the browser still logs that response. */
-function isAcceptedEnsureGroupConflict(
-    text: string,
-    url: string | undefined,
-    group: RallarBlackBoxDistributedGroupRef
-): boolean {
-    if (text !== ENSURE_GROUP_CONFLICT_CONSOLE_TEXT || url === undefined) {
-        return false;
+function isAcceptedEnsureGroupConflict(text: string, url: string, ensureGroupRequestPath: string): boolean {
+    return text === ENSURE_GROUP_CONFLICT_CONSOLE_TEXT &&
+        URL.canParse(url) &&
+        new URL(url).pathname === ensureGroupRequestPath;
+}
+
+/** The request path an agent's runtime resolves from the realtime recipe's ensure-group command. */
+function resolveEnsureGroupRequestPath(
+    realtimeRecipe: RallarBlackBoxTestRecipe,
+    identity: Readonly<{ runId: string; agentId: string; }>
+): string {
+    return replaceCommandPlaceholders(readEnsureGroupRequestPath(realtimeRecipe), {
+        session: undefined,
+        wsTicket: undefined,
+        config: identity
+    });
+}
+
+function readEnsureGroupRequestPath(realtimeRecipe: RallarBlackBoxTestRecipe): string {
+    const command = realtimeRecipe.commands.find((candidate) => candidate.commandId === 'rtc-realtime-ensure-group');
+    if (command?.kind !== 'http.request' || command.request.path === undefined) {
+        throw new Error(`Recipe ${realtimeRecipe.recipeId} has no ensure-group request path.`);
     }
-    const [requestPathPrefix] = toEnsureGroupRequestPath(group).split('{runtimeIdentity}');
-    return new URL(url).pathname.startsWith(requestPathPrefix);
+    return command.request.path;
 }
 
-function toEnsureGroupRequestPath(group: RallarBlackBoxDistributedGroupRef): string {
-    return `/api/state/apps/${pathSegment(group.applicationId)}/workspaces/${
-        pathSegment(group.workspaceId)
-    }/groups/requests/${createRallarBlackBoxEnsureGroupRequestId({ requestPrefix: 'rtc-realtime', group })}`;
-}
-
-function createConsoleArtifactRecorder(group: RallarBlackBoxDistributedGroupRef): Readonly<{
+function createConsoleArtifactRecorder(
+    input: Readonly<{ runId: string; realtimeRecipe: RallarBlackBoxTestRecipe; }>
+): Readonly<{
     entries: ConsoleArtifactEntry[];
     watch(page: Page, agentId: string): void;
     highSeverityEntries(): readonly ConsoleArtifactEntry[];
@@ -181,6 +189,10 @@ function createConsoleArtifactRecorder(group: RallarBlackBoxDistributedGroupRef)
     return {
         entries,
         watch(page, agentId) {
+            const ensureGroupRequestPath = resolveEnsureGroupRequestPath(input.realtimeRecipe, {
+                runId: input.runId,
+                agentId
+            });
             page.on('console', (message) => {
                 const type = message.type();
                 if (type !== 'warning' && type !== 'error') {
@@ -195,7 +207,7 @@ function createConsoleArtifactRecorder(group: RallarBlackBoxDistributedGroupRef)
                     location,
                     atEpochMs: Date.now(),
                     knownHarmless: isKnownHarmlessConsoleWarning(text) ||
-                        isAcceptedEnsureGroupConflict(text, location.url, group)
+                        isAcceptedEnsureGroupConflict(text, location.url, ensureGroupRequestPath)
                 });
             });
             page.on('pageerror', (error) => {
@@ -813,13 +825,14 @@ async function setupGroupMembership(
         members: readonly AgentHandle[];
         group: RallarBlackBoxDistributedGroupRef;
         suffix: string;
+        realtimeRecipe: RallarBlackBoxTestRecipe;
     }>
 ): Promise<void> {
     const groupSegment = pathSegment(input.group.groupId);
     const createResult = await executeOk(request, runId, input.owner.agentId, `group-create-${input.suffix}`, {
         kind: 'http.request',
         request: {
-            path: toEnsureGroupRequestPath(input.group),
+            path: readEnsureGroupRequestPath(input.realtimeRecipe),
             method: 'POST',
             body: {
                 groupId: input.group.groupId,
@@ -1587,7 +1600,13 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             groupId: `${config.roomId}-${suffix}`
         };
         const handles: AgentHandle[] = [];
-        const consoleArtifacts = createConsoleArtifactRecorder(group);
+        const realtimeDistributedRunId = `dist-live-rtc-realtime-${suffix}`;
+        const realtimeRecipe = rtcRealtimeDistributedRecipe(
+            `live-rtc-realtime-${suffix}`,
+            group,
+            realtimeDistributedRunId
+        );
+        const consoleArtifacts = createConsoleArtifactRecorder({ runId, realtimeRecipe });
 
         try {
             for (const prefix of ['A', 'B', 'C'] as const) {
@@ -1611,7 +1630,8 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 owner: agents[0],
                 members: agents,
                 group,
-                suffix
+                suffix,
+                realtimeRecipe
             });
 
             const ackRecipe = healthRecipe(`live-ack-${suffix}`);
@@ -1801,12 +1821,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             );
             expect(rtcWarningReport.ok, rtcWarningReport.failures.join('\n')).toBe(true);
 
-            const realtimeDistributedRunId = `dist-live-rtc-realtime-${suffix}`;
-            const realtimeRecipe = rtcRealtimeDistributedRecipe(
-                `live-rtc-realtime-${suffix}`,
-                group,
-                realtimeDistributedRunId
-            );
             const realtimePassed = await runToPassed(
                 request,
                 distributedManifest({
