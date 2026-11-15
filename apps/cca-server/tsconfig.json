@@ -34,8 +34,7 @@
       "@shared-test/*": [
         "../../packages/shared-test/*"
       ]
-    },
-    "skipLibCheck": true
+    }
   },
   "include": [
     "src/**/*.ts",

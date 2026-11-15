@@ -7,14 +7,27 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true,
-    "types": ["vite/client"],
-    "lib": ["ES2024", "DOM"],
+    "types": [
+      "vite/client"
+    ],
+    "lib": [
+      "ES2024",
+      "DOM",
+      "ScriptHost"
+    ],
     "paths": {
-      "@shared-web/*": ["../../packages/shared-web/*"],
-      "@shared/*": ["../../packages/shared/*"],
-      "@shared-graph/*": ["../../packages/shared-graph/*"]
+      "@shared-web/*": [
+        "../../packages/shared-web/*"
+      ],
+      "@shared/*": [
+        "../../packages/shared/*"
+      ],
+      "@shared-graph/*": [
+        "../../packages/shared-graph/*"
+      ]
     }
   },
-  "include": ["src/**/*.ts", "../../types/**/*.d.ts"]
+  "include": [
+    "src/**/*.ts"
+  ]
 }

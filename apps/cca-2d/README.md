@@ -27,6 +27,10 @@ leaderboard or durable result. Server restart loses the practice state and requi
 re-entering. A disconnected input expires within 250ms; an inactive seat expires
 after ten seconds. Re-entering after expiry starts a new runner and score.
 
+TypeScript checks dependency declarations as well as app code. The compiler's
+`ScriptHost` library supplies the declaration referenced by Phaser 3.90's XML
+parser type, as documented by Phaser. It adds no runtime script or polyfill.
+
 ## Owners and lifecycle
 
 - `src/main.ts`: landing page, lazy startup, sign-in and teardown.

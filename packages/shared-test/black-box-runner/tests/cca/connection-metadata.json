@@ -1,23 +1,53 @@
 {
-  "variables": { "apiBaseUrl": { "env": "CCA_API_URL", "default": "http://localhost:8092" } },
-  "connections": { "api": { "type": "http", "baseUrl": "{apiBaseUrl}", "timeoutMs": 5000 } },
+  "variables": {
+    "apiBaseUrl": {
+      "env": "CCA_API_URL",
+      "default": "http://localhost:8092"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{apiBaseUrl}",
+      "timeoutMs": 5000
+    }
+  },
   "steps": [
     {
       "name": "readConnectionMetadata",
       "type": "http",
       "connection": "api",
-      "request": { "method": "GET", "path": "/api/cca" },
-      "expect": { "status": 200, "body": { "incarnation": "string", "serverId": "string" } },
-      "outputs": { "connection": "body" }
+      "request": {
+        "method": "GET",
+        "path": "/api/cca"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "incarnation": "string",
+          "serverId": "string"
+        }
+      },
+      "outputs": {
+        "connection": "body"
+      }
     },
     {
       "name": "checkConnectionIdentity",
       "type": "assert",
-      "actual": "{connection}",
+      "actual": {
+        "connection": "{connection}"
+      },
       "expect": {
         "comparators": [
-          { "path": "incarnation", "matches": "^[0-9a-f-]{36}$" },
-          { "path": "serverId", "matches": "^.+$" }
+          {
+            "path": "connection.incarnation",
+            "matches": "^[0-9a-f-]{36}$"
+          },
+          {
+            "path": "connection.serverId",
+            "matches": "^.+$"
+          }
         ]
       }
     },
@@ -25,8 +55,15 @@
       "name": "identityStableWithinProcess",
       "type": "http",
       "connection": "api",
-      "request": { "method": "GET", "path": "/api/cca" },
-      "expect": { "status": 200, "body": "{connection}", "comparison": "exact" }
+      "request": {
+        "method": "GET",
+        "path": "/api/cca"
+      },
+      "expect": {
+        "status": 200,
+        "body": "{connection}",
+        "comparison": "exact"
+      }
     }
   ]
 }
