@@ -305,6 +305,7 @@ describe('ALM conformance hosted lane families', () => {
         const reshaped = toFamilyScenarioCells(ALM_CONFORMANCE_LANE_FAMILIES)
             .flatMap(({ cell, scenario }) => scenario.roomTopology === 'reshaped' ? [cell] : []);
 
+        expect(hosted).toEqual(expect.arrayContaining(['alm-ws-delivery-reload']));
         expect(reshaped).toEqual(expect.arrayContaining(['alm-rtc-receipted-relay-path']));
         expect(reshaped.filter((cell) => hosted.includes(cell))).toEqual([]);
     });
