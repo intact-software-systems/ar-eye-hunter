@@ -25,7 +25,7 @@ import {
 } from '../rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology publication repository', () => {
-    it('validates publication and work direct, list, and page rows before expiry', async () => {
+    it('validates publication and work claim rows, direct and by room page, before expiry', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
@@ -64,21 +64,12 @@ describe('RTC topology publication repository', () => {
             ).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
-            await expect(repository.listPublicationEntries()).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listPublicationEntriesPage({ limit: 10 })).rejects.toMatchObject({
+            await expect(repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 })).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
             await expect(
                 repository.findWorkClaimEntry(groupRef, publication.workId)
             ).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listWorkClaimEntries()).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listWorkClaimEntriesPage({ limit: 10 })).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
             expect(
@@ -161,7 +152,7 @@ describe('RTC topology publication repository', () => {
         vi.setSystemTime(10_000);
         try {
             const defects = ['snapshot', 'expiresAtEpochMs', 'workId', 'traceId'] as const;
-            const surfaces = ['direct', 'list', 'page'] as const;
+            const surfaces = ['direct', 'page'] as const;
             for (const defect of defects) {
                 for (const surface of surfaces) {
                     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -182,11 +173,7 @@ describe('RTC topology publication repository', () => {
 
                     const read = surface === 'direct'
                         ? repository.findPublication(groupRef, publication.publicationId)
-                        : surface === 'list'
-                        ? repository.listPublicationEntries()
-                        : repository.listPublicationEntriesPage({
-                            limit: 10
-                        });
+                        : repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
                     await expect(read).rejects.toMatchObject({
                         code: 'rtc-topology-repository-invariant-corruption'
                     });
@@ -201,7 +188,7 @@ describe('RTC topology publication repository', () => {
         }
     });
 
-    it.each(['direct', 'read', 'list', 'page'] as const)(
+    it.each(['direct', 'read', 'page'] as const)(
         'keeps a malformed v4 publication trace as corruption on the %s surface',
         async (surface) => {
             const runtimeRepository = new FakeRuntimeStateRepository();
@@ -221,9 +208,7 @@ describe('RTC topology publication repository', () => {
                 ? repository.findPublication(groupRef, publication.publicationId)
                 : surface === 'read'
                 ? repository.readPublication(groupRef, publication.publicationId)
-                : surface === 'list'
-                ? repository.listPublicationEntries()
-                : repository.listPublicationEntriesPage({ limit: 10 });
+                : repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
             await expect(read).rejects.toMatchObject({ code: 'rtc-topology-repository-invariant-corruption' });
         }
     );

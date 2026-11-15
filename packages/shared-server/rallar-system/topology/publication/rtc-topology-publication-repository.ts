@@ -21,7 +21,6 @@ import {
 import {
     assertTrustedSlot,
     childKey,
-    compact,
     decodeChildKey,
     parseValue,
     publicationCorruption,
@@ -123,20 +122,6 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         return await this.toLiveWorkClaimEntry(entry, groupRef, workId);
     }
 
-    async listPublicationEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
-        );
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
-    }
-
-    async listPublicationEntriesPage(
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, '', options);
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
-    }
-
     /** Rows are validated before their expiry is judged; expired rows are skipped without ending the walk. */
     async listGroupPublicationEntriesPage(
         groupRef: GroupRef,
@@ -162,24 +147,6 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             afterKey = entries[entries.length - 1]!.key;
         }
         return live;
-    }
-
-    async listWorkClaimEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
-        const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE
-        );
-        return compact(await Promise.all(entries.map((entry) => this.toLiveWorkClaimEntry(entry))));
-    }
-
-    async listWorkClaimEntriesPage(
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
-        const entries = await this.listEntriesPage(
-            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-            '',
-            options
-        );
-        return compact(await Promise.all(entries.map((entry) => this.toLiveWorkClaimEntry(entry))));
     }
 
     publicationKey(groupRef: GroupRef, publicationId: string): string {
@@ -220,8 +187,8 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 
     private async toLiveWorkClaimEntry(
         entry: RuntimeStateEntry,
-        trustedRef?: GroupRef,
-        trustedWorkId?: string
+        trustedRef: GroupRef,
+        trustedWorkId: string
     ): Promise<RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim> | undefined> {
         const decoded = decodeChildKey(entry.key, 'work');
         assertTrustedSlot({

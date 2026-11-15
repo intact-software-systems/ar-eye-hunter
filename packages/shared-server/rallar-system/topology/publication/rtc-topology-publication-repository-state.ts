@@ -164,10 +164,6 @@ export function publicationCorruption(
     return new RtcTopologyRepositoryInvariantCorruptionError(storageKey, message);
 }
 
-export function compact<T>(values: readonly (T | undefined)[]): readonly T[] {
-    return values.filter((value): value is T => value !== undefined);
-}
-
 function validateCausalRevision(
     value: PersistedBoundaryValue
 ): asserts value is GroupStateCausalRevision {
