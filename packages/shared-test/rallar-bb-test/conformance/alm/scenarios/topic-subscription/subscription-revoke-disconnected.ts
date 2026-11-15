@@ -41,6 +41,10 @@ import {
  * neither, and neither receipt confirms the sibling. A clean close removes the sibling's live generation at once, so
  * no dispatch is held for it: the held-dispatch revocation is proven server-side by
  * `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
+ * The reopen re-asserts the sibling's room presence, which re-plans the room's layout, yet the cell needs no re-settle
+ * after it: the sibling reopens only once the revoke deleted its row, so no publication after the reopen addresses it,
+ * and nothing after it reads a repair: the receiver's arrival waits and the receipts, read once each handle ended,
+ * hold whichever route a copy to the receiver took.
  */
 export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-revoke-disconnected',

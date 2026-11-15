@@ -1121,6 +1121,26 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    // A connect after the prologue re-enters the page's room presence, which re-plans the room's layout: over an RTC
+    // carrier a page that sends afterwards waits for its ready peers first, so its links to every peer stand again.
+    it.each(ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws'))(
+        'waits for ready peers at every connect after a page\'s prologue that the page sends after over %s',
+        (carrier) => {
+            const recipes = toAllRoleRecipes(createAlmConformanceRecipes(toConformanceInput(carrier)));
+            const reentries = recipes.flatMap((recipe) => {
+                const commands = toNestedCommands(recipe.commands);
+                const connects = commands.flatMap((command, index) => command.kind === 'rtc.connect' ? [{ command, index }] : []);
+                return connects.slice(1).filter(({ index }) => commands.slice(index + 1).some((command) => isRallarBlackBoxTestMessagesSendCommand(command)));
+            });
+
+            expect(reentries.length).toBeGreaterThan(0);
+            expect(
+                reentries.filter(({ command }) => command.kind === 'rtc.connect' && command.readiness === undefined)
+                    .map(({ command }) => command.commandId)
+            ).toEqual([]);
+        }
+    );
+
     // A refusal, an admission or an elapsed window says nothing of another control's commit: a receipt read is ordered
     // by its own fact.
     it.each(ALM_CONFORMANCE_CARRIERS)(
