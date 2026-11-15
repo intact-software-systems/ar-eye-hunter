@@ -1600,9 +1600,9 @@ describe('alm-conformance recipe family', () => {
                 recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
             for (const role of settled.roles) {
                 const recipe = toAlmConformanceRoleRecipe(settled, role)!;
-                const poll = indexOf(recipe, `-${role}-tree-in-force`);
+                const poll = indexOf(recipe, `-${role}-reshape-in-force`);
                 // The settle owns the poll: the cell's own body reads no overlay before it sends.
-                expect(toAlmConformanceRoleRecipe(scenario, role)!.commands.some((command) => command.commandId?.includes('tree-in-force')))
+                expect(toAlmConformanceRoleRecipe(scenario, role)!.commands.some((command) => command.commandId?.includes('reshape-in-force')))
                     .toBe(false);
                 expect(poll, recipe.recipeId).toBeGreaterThan(indexOf(recipe, `-${role}-head-applied`));
                 expect(poll, recipe.recipeId).toBeLessThan(indexOf(recipe, `-${role}-armed`));
@@ -1729,9 +1729,9 @@ describe('alm-conformance recipe family', () => {
                     expect(indexOf('head-applied'), label).toBeGreaterThan(indexOf('formation-settled'));
                     expect(indexOf('formation-settled'), label).toBeGreaterThan(-1);
                     // Then the page reads its own health until its accepted overlay is the path.
-                    expect(indexOf('tree-in-force'), label).toBeGreaterThan(indexOf('head-applied'));
+                    expect(indexOf('reshape-in-force'), label).toBeGreaterThan(indexOf('head-applied'));
                     // Then it waits out the forwarding window of the layout the reshape replaced, before `armed`.
-                    expect(indexOf('replaced-layout-forwarding'), label).toBeGreaterThan(indexOf('tree-in-force'));
+                    expect(indexOf('replaced-layout-forwarding'), label).toBeGreaterThan(indexOf('reshape-in-force'));
                     expect(indexOf('replaced-layout-forwarding'), label).toBeLessThan(indexOf('armed'));
                     expect(indexOf('replaced-layout-forwarding'), label).toBeLessThan(firstPublicationAt);
                 }

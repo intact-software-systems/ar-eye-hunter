@@ -9,7 +9,7 @@ import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-co
 import { toPauseCommand } from '../to-pause-command.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
 import { CAUSAL_REVISION_KEYS, toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
-import { toPathInForcePollCommand } from './to-path-in-force-poll-command.ts';
+import { toReshapeInForcePollCommand } from './to-reshape-in-force-poll-command.ts';
 
 /**
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and
@@ -34,17 +34,19 @@ export interface AlmCellSettleStepInput extends AlmConformanceStepInput {
 }
 
 export function toAlmCellSettle(step: AlmCellSettleStepInput): AlmCellSettle {
+    const [headRead, headApplied] = toAppliedHeadWaitCommands({
+        step,
+        name: 'head',
+        purpose: 'Read the room head this page must apply before its cell starts.',
+        historyFrom: 'page'
+    });
     return {
         formation: step.role === 'receiver' ? [toFormationSettledPollCommand(step, 'formation-poll')] : [],
         head: [
-            ...toAppliedHeadWaitCommands({
-                step,
-                name: 'head',
-                purpose: 'Read the room head this page must apply before its cell starts.',
-                historyFrom: 'page'
-            }),
+            headRead,
+            headApplied,
             ...(step.roomTopology === 'reshaped'
-                ? [toPathInForcePollCommand(step), toReplacedLayoutForwardingWait(step)]
+                ? [toReshapeInForcePollCommand(step, headRead.commandId!), toReplacedLayoutForwardingWait(step)]
                 : [])
         ]
     };

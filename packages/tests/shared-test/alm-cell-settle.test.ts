@@ -27,6 +27,7 @@ import type {
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { GROUP_LAYOUT_IDENTITY_KEYS } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { computeReplacedLayoutForwardingMs } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 
 import { CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS, toConformanceInput } from './alm-conformance-test-input.ts';
@@ -336,7 +337,7 @@ describe('alm-conformance cell parts', () => {
                     scenario.scenarioKey
                 ).toEqual(
                     scenario.roomTopology === 'reshaped'
-                        ? [`${cellPrefix}-receiver-tree-in-force`, `${cellPrefix}-receiver-replaced-layout-forwarding`]
+                        ? [`${cellPrefix}-receiver-reshape-in-force`, `${cellPrefix}-receiver-replaced-layout-forwarding`]
                         : []
                 );
                 expect(
@@ -371,7 +372,7 @@ describe('alm-conformance cell parts', () => {
                         .map((command) => command.commandId),
                     `${scenarioKey} ${role}`
                 ).toEqual(
-                    ['head-read', 'head-applied', 'tree-in-force', 'replaced-layout-forwarding'].map((name) => `${cellPrefix}-${role}-${name}`)
+                    ['head-read', 'head-applied', 'reshape-in-force', 'replaced-layout-forwarding'].map((name) => `${cellPrefix}-${role}-${name}`)
                 );
                 // The page waits out the server's stated forwarding window: half of /api/config's overlap, by the product's rule.
                 expect(commands[indexOf('replaced-layout-forwarding')], `${scenarioKey} ${role}`).toMatchObject({
@@ -380,15 +381,24 @@ describe('alm-conformance cell parts', () => {
                     timeoutMs: computeReplacedLayoutForwardingMs(CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS)
                 });
                 expect(firstSendAt === -1 || firstSendAt > indexOf('armed'), `${scenarioKey} ${role}`).toBe(true);
-                // The page reads its own health until its accepted overlay is the path.
-                const inForce = commands[indexOf('tree-in-force')];
+                // The page reads its own health until its accepted overlay is a tree whose identity is the accepted layout
+                // its own head read named after the reshape settled, not a tree an earlier reshaped cell left accepted.
+                const inForce = commands[indexOf('reshape-in-force')];
                 expect(inForce, `${scenarioKey} ${role}`).toMatchObject({ kind: 'loop', until: 'first-success' });
-                const [read, fact, ...others] = inForce?.kind === 'loop' ? inForce.commands : [];
-                expect(others).toEqual([]);
-                expect(read).toMatchObject({ kind: 'health', commandId: `${cellPrefix}-${role}-tree-in-force-read` });
+                const [read, fact, ...identityFacts] = inForce?.kind === 'loop' ? inForce.commands : [];
+                expect(read).toMatchObject({ kind: 'health', commandId: `${cellPrefix}-${role}-reshape-in-force-read` });
                 expect(fact).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'tree' });
                 expect(fact?.kind === 'assert' ? fact.source : undefined)
-                    .toMatch(/-tree-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
+                    .toMatch(/-reshape-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
+                expect(identityFacts, `${scenarioKey} ${role}`).toEqual(GROUP_LAYOUT_IDENTITY_KEYS.map((key) =>
+                    expect.objectContaining({
+                        kind: 'assert',
+                        operator: 'equals',
+                        source: expect.stringMatching(new RegExp(`-reshape-in-force-read\\.value\\.rallar\\.formation\\.accepted\\.identity\\.${key}$`)),
+                        comparisonSource: `resultCache.${cellPrefix}-${role}-head-read.value.body.group.acceptedLayoutIdentity.${key}`
+                    })
+                ));
+                expect(indexOf('head-read'), `${scenarioKey} ${role}`).toBeLessThan(indexOf('reshape-in-force'));
                 // After the settle the cell writes no path; the owner only resets it at its end.
                 expect(
                     commands.slice(indexOf('armed')).filter(isTopologyConfigRequest).map((command) => command.commandId),
@@ -642,7 +652,7 @@ const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as con
  * The settle's command names: the receiver's formation poll, each page's head read and applied wait, and a reshaped
  * cell's poll that its path is in force on the page.
  */
-const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'tree-in-force', 'replaced-layout-forwarding'] as const;
+const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'reshape-in-force', 'replaced-layout-forwarding'] as const;
 
 function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
     return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`) || isSettledStartState(command);

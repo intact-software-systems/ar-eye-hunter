@@ -88,8 +88,8 @@ function toFirstAttempt(poll: RallarBlackBoxTestLoopCommand): readonly RallarBla
 /** Runs the attempt's reads against the pair, then judges each of its facts over the resulting result cache. */
 async function readAttemptFailures(pair: SettlePair): Promise<readonly string[]> {
     const bodies = new Map<string, GroupFormationView | GroupSnapshot>([[`${GROUP_PATH}/formation`, pair.formation], [GROUP_PATH, pair.group]]);
-    const runtime = createDefaultRallarBlackBoxTestRuntime({
-        commandExecutor: (command): RallarBlackBoxTestCommandOutcome | undefined => {
+    return readPollFailures({
+        commandExecutor: (command) => {
             if (command.kind !== 'http.request') {
                 return undefined;
             }
@@ -98,12 +98,25 @@ async function readAttemptFailures(pair: SettlePair): Promise<readonly string[]>
             return body === undefined
                 ? { status: 'failed', error: { code: 'NOT_FOUND', message: path } }
                 : { status: 'ok', value: { status: 200, body } };
-        }
+        },
+        before: [],
+        poll: toFormationPoll()
     });
-    const attempt = toFirstAttempt(toFormationPoll());
-    const reads = attempt.filter((command) => command.kind === 'http.request');
-    for (const read of reads) {
-        expect((await runtime.execute(read)).status, read.commandId).toBe('ok');
+}
+
+interface PollJudgement {
+    readonly commandExecutor: (command: RallarBlackBoxTestCommand) => RallarBlackBoxTestCommandOutcome | undefined;
+    /** What the role ran before the poll, whose results the poll's facts may compare with. */
+    readonly before: readonly RallarBlackBoxTestCommand[];
+    readonly poll: RallarBlackBoxTestLoopCommand;
+}
+
+/** Runs the commands before the poll and its first attempt's reads, then judges each of its facts over the result cache. */
+async function readPollFailures({ commandExecutor, before, poll }: PollJudgement): Promise<readonly string[]> {
+    const runtime = createDefaultRallarBlackBoxTestRuntime({ commandExecutor });
+    const attempt = toFirstAttempt(poll);
+    for (const command of [...before, ...attempt.filter((child) => child.kind !== 'assert')]) {
+        expect((await runtime.execute(command)).status, command.commandId).toBe('ok');
     }
     return attempt.flatMap((command) => {
         if (command.kind !== 'assert') {
@@ -184,5 +197,61 @@ describe('the settle\'s formation poll, one attempt', () => {
             expect.stringContaining('status-of-formation-epoch'),
             ...['groupRevision', 'presenceRevision', 'version', 'state'].map((key) => expect.stringContaining(`status-on-accepted-${key}`))
         ]);
+    });
+});
+
+/** The reshaped layout the room's head names, and the tree an earlier reshaped cell of the family room left accepted. */
+const RESHAPED_TREE: GroupLayoutIdentity = { groupRevision: 9, presenceRevision: 5, version: 4, state: 'active' };
+const PREVIOUS_TREE: GroupLayoutIdentity = { groupRevision: 8, presenceRevision: 5, version: 3, state: 'active' };
+
+/** The page's head read and its in-force poll, as a reshaped cell's settle runs them. */
+function toReshapedHead(): Readonly<{ headRead: RallarBlackBoxTestCommand; poll: RallarBlackBoxTestLoopCommand; }> {
+    const { head } = toAlmCellSettle({ ...receiver, roomTopology: 'reshaped' });
+    const headRead = head.find((command) => command.commandId?.endsWith('-head-read') === true);
+    const poll = head.find((command) => command.commandId?.endsWith('-reshape-in-force') === true);
+    expect(headRead?.kind).toBe('http.request');
+    expect(poll?.kind).toBe('loop');
+    return { headRead: headRead!, poll: poll as RallarBlackBoxTestLoopCommand };
+}
+
+/** The page's head read names the reshaped tree; its health names the overlay it accepted. */
+async function readInForceFailures(accepted: Readonly<{ topology: string; identity: GroupLayoutIdentity; }>): Promise<readonly string[]> {
+    const snapshot = createFormationSnapshot({ stage: 'active', formationEpoch: 2, causalRevision: HEAD });
+    const head: GroupSnapshot = { ...snapshot, group: { ...snapshot.group, acceptedLayoutIdentity: RESHAPED_TREE } };
+    const { headRead, poll } = toReshapedHead();
+    return readPollFailures({
+        commandExecutor: (command) => {
+            switch (command.kind) {
+                case 'http.request':
+                    return { status: 'ok', value: { status: 200, body: head } };
+                case 'health':
+                    return {
+                        status: 'ok',
+                        value: { rallar: { formation: { accepted: { overlay: { topology: accepted.topology }, identity: accepted.identity } } } }
+                    };
+                default:
+                    return undefined;
+            }
+        },
+        before: [headRead],
+        poll
+    });
+}
+
+describe('the reshape settle\'s in-force poll, one attempt', () => {
+    it('accepts the page\'s accepted tree when it is the layout the page\'s head read names', async () => {
+        expect(await readInForceFailures({ topology: 'tree', identity: RESHAPED_TREE })).toEqual([]);
+    });
+
+    it('refuses an accepted tree of another identity, such as an earlier reshaped cell\'s', async () => {
+        expect(await readInForceFailures({ topology: 'tree', identity: PREVIOUS_TREE })).toEqual([
+            expect.stringContaining('reshape-in-force-groupRevision'),
+            expect.stringContaining('reshape-in-force-version')
+        ]);
+    });
+
+    it('refuses an accepted layout that is not a tree', async () => {
+        expect(await readInForceFailures({ topology: 'star', identity: RESHAPED_TREE }))
+            .toEqual([expect.stringContaining('reshape-in-force-topology')]);
     });
 });

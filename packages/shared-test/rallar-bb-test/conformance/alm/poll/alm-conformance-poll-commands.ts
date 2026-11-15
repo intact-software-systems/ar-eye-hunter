@@ -30,10 +30,14 @@ export interface PollField {
     readonly field: string;
 }
 
-/** A field of the attempt held to a literal, or held equal to another field of the same attempt. */
+/**
+ * A field of the attempt held to a literal, held equal to another field of the same attempt, or held equal to a result
+ * path a command of the role left before the poll.
+ */
 export type PollFact =
     | Readonly<{ name: string; source: PollField; operator: ResultFactInput['operator']; expected: ApiJsonValue; }>
-    | Readonly<{ name: string; source: PollField; equals: PollField; }>;
+    | Readonly<{ name: string; source: PollField; equals: PollField; }>
+    | Readonly<{ name: string; source: PollField; equalsResult: string; }>;
 
 export interface ReadPollInput {
     readonly step: AlmConformanceStepInput;
@@ -106,15 +110,15 @@ export function toReadPollCommand(
         commands: [
             ...reads.map(({ name: read, read: toRead }) => toRead(toReadName(read))),
             ...facts.map((fact) =>
-                'equals' in fact
-                    ? toResultComparisonFact({
+                'expected' in fact
+                    ? toResultFact({ ...fact, step, source: toSource(fact.source), timeoutMs: commandTimeoutMs })
+                    : toResultComparisonFact({
                         step,
                         name: fact.name,
                         source: toSource(fact.source),
-                        comparisonSource: toSource(fact.equals),
+                        comparisonSource: 'equals' in fact ? toSource(fact.equals) : fact.equalsResult,
                         timeoutMs: commandTimeoutMs
                     })
-                    : toResultFact({ ...fact, step, source: toSource(fact.source), timeoutMs: commandTimeoutMs })
             )
         ]
     });
