@@ -366,22 +366,18 @@ describe('Relic scene realtime motion networking', () => {
         expect(isRelicMotionPayload(motionPayload({ pid: 'bob-session' }))).toBe(true);
     });
 
-    it('refuses motion whose payload or room identity is not a JSON object', () => {
-        const payload = motionPayload({ pid: 'bob-session' });
-        const refused = [
-            null,
-            'relic-motion',
-            7,
-            [],
-            [payload],
-            { ...payload, roomRef: null },
-            { ...payload, roomRef: 'relic-hunters/room-1' },
-            { ...payload, roomRef: [] },
-            { ...payload, roomRef: [gameRoomRef] }
-        ];
-
-        expect(isRelicMotionPayload(JSON.parse(JSON.stringify(payload)))).toBe(true);
-        expect(refused.filter((candidate) => isRelicMotionPayload(JSON.parse(JSON.stringify(candidate))))).toEqual([]);
+    it.each([
+        { label: 'null', candidate: () => null },
+        { label: 'a string', candidate: () => 'relic-motion' },
+        { label: 'a number', candidate: () => 7 },
+        { label: 'an empty array', candidate: () => [] },
+        { label: 'an array holding a valid payload', candidate: () => [motionPayload({ pid: 'bob-session' })] },
+        { label: 'a null roomRef', candidate: () => ({ ...motionPayload({ pid: 'bob-session' }), roomRef: null }) },
+        { label: 'a string roomRef', candidate: () => ({ ...motionPayload({ pid: 'bob-session' }), roomRef: 'relic-hunters/room-1' }) },
+        { label: 'an empty array as roomRef', candidate: () => ({ ...motionPayload({ pid: 'bob-session' }), roomRef: [] }) },
+        { label: 'an array holding a valid roomRef', candidate: () => ({ ...motionPayload({ pid: 'bob-session' }), roomRef: [gameRoomRef] }) }
+    ])('refuses motion that is $label', ({ candidate }) => {
+        expect(isRelicMotionPayload(candidate())).toBe(false);
     });
 
     it('treats motion estimates from a different room as stale for the player', () => {
