@@ -8,18 +8,20 @@ Make a browser game that friends choose to play again, using Rallar for reliable
 multiplayer. Success is a good game experience on phones, iPads, and computers;
 demonstrating Rallar follows from that experience.
 
-The user requested this project pack and is open to 2D. The particular game rules,
-art direction, Phaser recommendation, server authority, and numerical targets below
-are proposals, not previously approved decisions or measured results. No CCA 2D
-implementation, approved artwork, device qualification, or performance evidence exists yet.
+The user selected **option 2: Pocket Arcade Market** on 15 November 2026. Its
+warm pixel-art graphics direction is the visual baseline. Game rules, Phaser,
+server authority, and performance targets remain proposals; selecting the look
+does not approve every design decision. No CCA 2D runtime or device qualification
+exists yet.
 
 ## The proposal
 
-Three [smartphone gameplay visual concepts](visual-concepts/README.md) show
-alternative graphics styles with touch controls. These are generated screen
-mockups for selection, not an implemented game or approved production artwork.
+The [refined smartphone reference](visual-concepts/README.md) translates the selected
+look into a measured 390 × 844 CSS-pixel composition: a 360-square playfield,
+112-pixel joystick, and 72-pixel action controls. It is a static browser layout
+with generated scenery, not a gameplay capture or approved production asset set.
 
-Two to six cartoon thieves race around a bright paper-cut market, collecting loot
+Two to six cartoon thieves race around a bright pixel-art market, collecting loot
 and depositing it at pneumatic bank booths. Carrying more makes the payout better
 and the guards more interested. Dash around a stall, tempt a guard down someone
 else's route, grab an exposed jackpot, and decide whether one more pickup is worth it.
@@ -89,5 +91,5 @@ no migration or compatibility obligation for them.
 - Refreshing or losing a connection has a clear outcome; clients agree on scores.
 - Loading and sustained play meet measured budgets on actual target hardware.
 
-The next decisions should come from a tiny playable slice and an approved visual
-reference. More documents alone cannot establish fun, visual quality, or reliability.
+The next decisions should come from a tiny playable slice using the selected
+visual direction. More documents alone cannot establish fun, visual quality, or reliability.

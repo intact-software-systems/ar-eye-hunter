@@ -1,55 +1,75 @@
-# Smartphone gameplay visual concepts
+# Smartphone gameplay visual direction
 
-Generated with the built-in Imagegen tool on 15 November 2026 for graphics-style
-selection. These are generated gameplay-screen mockups, not captures of an
-implemented game, qualified touch layouts, or shipped sprite assets. None is selected yet.
+**Selected: option 2, Pocket Arcade Market**, by the user on 15 November 2026.
+Warm pixel art, navy outlines, peach paving, teal banks and gold loot are the
+baseline for CCA 2D. The original three options remain below for context.
 
-All three depict the same kind of active four-player match: market obstacles,
-two banks, a jackpot, token trails, guards, a local runner carrying loot, timer and
-scores, and a reserved joystick/Dash/Bank control area. The requested layout was a
-390 × 844 CSS-pixel portrait screen with a square world frame. The generated images
-approximate the proportions and do not establish exact layout compliance.
+## Refined square phone composition
 
-The numbers below match the order the images were displayed in the design chat.
-Use these files as the stable identity when selecting or refining a direction.
+![Selected pixel-art direction with a square playfield and measured touch controls](pocket-arcade-refined.jpg)
 
-## 1. Paper Market Caper
+This is a browser capture of a **static layout reference**, using generated arena
+art. It is not a capture of an implemented game. Open the
+[HTML measurement fixture](pocket-arcade-layout.html) to inspect the composition.
+It has a fixed 390 × 844 CSS-pixel app-content frame, without device/browser chrome.
 
-![Paper-cut smartphone gameplay mockup with touch controls](paper-market-caper.png)
+- Playfield: **360 × 360**, at x=15, y=96; no scenic horizon or stretched world.
+- Movement pad: **112px** diameter, with a **44px** thumb puck.
+- Dash and Bank: **72 × 72px** target references, with **24px** clear separation.
+- Controls sit entirely below the playfield; the lower area reserves thumb space.
+- Jackpot stays closed while the HUD says it opens in three seconds.
 
-Layered paper, ink outlines, warm textured ground, and cutout characters. This
-explores the project pack's initial visual proposal.
+The screenshot was measured from rendered DOM bounds, not estimated from image
+proportions. The HTML intentionally contains no game loop or working controls.
+Use [mobile and controls](../mobile-and-controls.md#selected-portrait-reference)
+for coordinates, safe-area handling and adaptation to other screen sizes.
 
-## 2. Pocket Arcade Market
+### What this approves and what still needs production work
 
-![Pixel-art smartphone gameplay mockup with touch controls](pocket-arcade-market.png)
+The user selected the art direction. The refined composition supplies a concrete
+translation target; it does not approve production sprites or certify gameplay.
+The [arena illustration](pocket-arcade-arena-reference.png) provides mood, palette,
+silhouettes and prop language. It is not a runtime background, tile atlas, exact
+map, collision contract or true pixel-grid sprite sheet. Its visible bank can be
+one part of the larger two-bank arena; the common camera does not show the full map.
 
-Deliberate pixel clusters, warm seaside-market tiles, bold sprite silhouettes,
-and a compact arcade interface. The scenic horizon in this generated image is
-not part of the proposed playable camera; remove it in a production translation.
+Production must simplify tiny scenery, normalize pixel clusters, make target-only
+guard recognition unmistakable, and qualify character sizes in motion. Guard
+wedges are illustrative and do not change catch rules. The static Bank label and
+closed jackpot illustrate state intent; actual eligibility, cooldown and deposit
+progress must come from game state. The menu is omitted from this composition;
+production retains an accessible menu target outside the playfield.
 
-## 3. Toybox Heist
+The reference's HUD values describe one moment. No static image proves animation,
+multitouch, multiplayer, performance, physical thumb reach or fairness. Use the
+[art production workflow](../art-and-polish.md) and retain the first moving scene
+as the quality baseline before expanding assets. Do not crop complete screenshots
+into production sprites. Generation provenance is in [prompts](prompts.md).
 
-![Toy-like smartphone gameplay mockup with touch controls](toybox-heist.png)
+## Original alternatives
 
-Rounded toy figures, pastel surfaces, and soft baked shadows. If selected, develop
-these as 2D sprite assets; the image does not select a 3D game engine.
+These original generated mockups approximate a 390 × 844 portrait screen. Their
+world frames are too tall and controls are not measurement evidence. The refined
+reference above supersedes their layout. Numbers match display order in the chat.
 
-## Selection and production boundaries
+### 1. Paper Market Caper — not selected
 
-Choose the art language first, then revise the chosen screen into an exact layout
-reference. Each generation makes the world taller than the specified square and
-uses somewhat angled scenery. Preserve the common world visibility and orthogonal
-navigation from [mobile and controls](../mobile-and-controls.md), and test camera,
-occlusion, and character scale rather than copying those deviations.
+![Original paper-cut smartphone gameplay mockup](paper-market-caper.png)
 
-The bank prompt, joystick and action sizes, safe areas, typography, and minimum
-playfield must be measured at actual phone scale in implementation. The jackpot
-presentation also needs refinement: a countdown should not appear over a visibly
-collectible open jackpot. No visible mockup state overrides the game rules.
+Layered paper, ink outlines and cutout characters. This was the pack's initial
+proposal; its paper textures and plum outlines are superseded by option 2.
 
-Do not crop these complete screenshots into production assets. Create an approved
-character seed, consistent animation strips, environment tiles, and separate UI
-components through the [art production workflow](../art-and-polish.md). Generated
-static images do not prove animation quality, collision readability, download size,
-or game performance. Their full prompts are recorded in [prompts](prompts.md).
+### 2. Pocket Arcade Market — selected
+
+![Original pixel-art smartphone gameplay mockup](pocket-arcade-market.png)
+
+Warm handheld arcade character, bold silhouettes and market tiles. Preserve that
+identity; the scenic horizon, oversized layout and open-jackpot/countdown mismatch
+in this original are superseded by the refined reference.
+
+### 3. Toybox Heist — not selected
+
+![Original toy-like smartphone gameplay mockup](toybox-heist.png)
+
+Rounded toy figures and soft baked shadows. This remains an alternative only;
+do not mix its smooth toy rendering into the selected pixel-art asset family.

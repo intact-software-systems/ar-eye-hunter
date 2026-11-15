@@ -1,34 +1,43 @@
 # Art direction and polish
 
-Status: proposed direction, awaiting a visual reference and in-game approval.
-No art assets are approved by this document.
+Status: **Pocket Arcade Market selected by the user**, 15 November 2026.
+The [refined phone reference](visual-concepts/README.md) fixes composition and
+control dimensions. Production sprites, animation and in-game polish still need
+review in the actual renderer.
 
-## Direction: a paper-cut market caper
+## Direction: Pocket Arcade Market
 
-Use chunky illustrated animal thieves, toy-like wind-up guards, striped market
-awnings, coin tubes, stamped price labels, and exaggerated loot bags. The world
-looks assembled from coloured paper with dark ink edges and short offset shadows.
-It is bright, mischievous, and tactile. It does not resemble the existing neon arenas.
+Use modern handheld pixel art: chunky animal thieves with oversized loot bags,
+square wind-up guards, striped market stalls, peach paving, teal banks and gold
+loot. Navy silhouettes and compact shade ramps make the action readable. Keep
+warm daylight, mischievous expressions and short baked contact shadows.
 
-True top-down movement uses slightly angled character illustrations so faces and
-bags remain visible. Environment geometry stays orthogonal and readable; this is
-not an isometric navigation or occlusion problem.
+Movement and collision use an orthogonal top-down plane. Modest sprite depth
+makes faces readable; a scenic horizon, isometric navigation and perspective
+camera are outside this direction. The generated reference's decorative detail
+and prop proportions are inspiration, not collision geometry or a tile blueprint.
 
-| Element    | Proposed rule                                                                        |
-| ---------- | ------------------------------------------------------------------------------------ |
-| Ground     | Warm cream and muted mint; low contrast, restrained paper grain                      |
-| Players    | High-contrast silhouettes, large face/bag, dark plum outline                         |
-| Guards     | Squarer silhouette, winding key, amber warning cone, distinct pursuit pose           |
-| Banks      | Teal striped booths, clear deposit ring, mechanical receipt animation                |
-| Loot       | Warm gold, simple sparkle, visible outline against every ground tile                 |
-| Danger     | Coral plus a shape/animation cue; colour alone never carries the meaning             |
-| Lighting   | Baked highlights and one consistent short shadow direction                           |
-| Typography | One compact display face for headlines, one readable UI face; local licensed subsets |
-| Texture    | Mostly large flat shapes; fine detail must survive actual phone scale                |
+| Element          | Selected direction                                                        |
+| ---------------- | ------------------------------------------------------------------------- |
+| Ground           | Low-contrast peach/cream paving; fewer details beneath action             |
+| Players          | Distinct animal silhouettes, readable face/bag, dark navy edge            |
+| Guards           | Squarer silhouette, winding key, amber warning and clear pursuit pose     |
+| Banks            | Teal/jade kiosks, labelled deposit area, mechanical receipt feedback      |
+| Loot             | Gold with dark outline, restrained sparkle                                |
+| Danger           | Amber/coral plus symbol and pose; never colour alone                      |
+| Lighting         | Three or four shades per material, one short shadow direction             |
+| Typography       | Compact arcade character; readable DOM labels and numbers                 |
+| Pixel discipline | Consistent authored pixel grid; no paper grain, blur or painted smoothing |
 
-Palette starting points: cream `#F4E8CB`, plum `#332A43`, mint `#A8CBB7`, teal
-`#247C78`, coral `#E96955`, and gold `#F3B941`. These are art colours, not evidence
-of text contrast compliance. Choose text/background pairs after measuring contrast.
+Starting colours: navy `#182C46`, peach `#EEAA85`, cream `#FFF3D7`, jade
+`#A7D8C8`, coral `#EF7652`, and gold `#FFD16C`. Measure UI contrast separately.
+Use crisp pixel treatment for game art; readable UI text need not imitate a low
+resolution font. Essential text and hit targets remain real UI components.
+
+The square playfield and separated control deck are governed by
+[mobile and controls](mobile-and-controls.md#selected-portrait-reference).
+The reference shows a closed jackpot while its countdown runs. The visible bank
+is outside the runner's reach; Bank is secondary and cannot deposit from anywhere.
 
 ## What Phaser does and does not solve
 
@@ -46,10 +55,10 @@ measurements. Pin a tested engine version; do not mix examples from different ma
 
 ## The visual approval loop
 
-1. Explore two or three still directions showing the same gameplay composition:
-   one runner, one guard, one bank, three obstacles, loot, and a minimal HUD.
-2. Review each at phone gameplay size, not only as an enlarged illustration.
-   Select one reference with the user before making a production asset set.
+1. Use selected option 2 and the refined measured phone layout as the brief.
+   Keep options 1 and 3 as historical alternatives, not competing asset styles.
+2. Produce one pixel-art runner/guard/bank seed at actual phone size. Review
+   silhouette, pixel grid and palette before making a production animation set.
 3. Build one representative corner in the real renderer. Add idle/run/dash/catch,
    one bank animation, and sound. This is the visual quality target for the game.
 4. Capture the same seeded scenes on phone portrait, phone landscape, iPad, and
@@ -82,8 +91,14 @@ pipeline to request a complete animation strip from one approved seed, normalize
 its frame size and shared foot anchor, and preview it in-engine. Generating every
 frame independently invites proportion and costume drift.
 
-- Starting sprite cell: 96 × 96 source pixels, displayed around 24–40 CSS pixels
-  depending on the common playfield's size. Judge the smallest supported scale.
+- Starting runner/guard cell: 32 × 32 authored pixels with a shared foot anchor;
+  tile module: 16 × 16. Review around 24–40 CSS pixels at the smallest supported
+  playfield. Treat these as production starting sizes, not approved finished assets.
+- Normalize generated seeds onto the chosen pixel grid before animation. Prefer
+  integer texture scaling and nearest sampling; snap presentation consistently
+  without quantizing simulation state. Where fractional device/layout scale is
+  unavoidable, qualify edge stability in motion. Never change visible world area
+  to obtain an integer scale.
 - Start with four facing directions. Mirroring is allowed only when the costume,
   lighting, and asymmetry still read correctly; eight directions must earn their cost.
 - Starting animation inventory: idle, run, dash, catch, respawn, deposit reaction.

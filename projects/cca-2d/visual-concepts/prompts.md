@@ -1,9 +1,9 @@
 # Visual concept generation prompts
 
-Generated independently with the built-in Imagegen tool on 15 November 2026.
-No image references were supplied; prompts used the CCA 2D project documents.
-Output numbers follow their displayed order in the design chat. The selected
-style remains undecided. See [concepts and limitations](README.md).
+The original three options were generated independently with Imagegen on
+15 November 2026, without image references. Numbers follow their display order
+in the chat. **Option 2 is selected.** Refinement used the selected image as its
+style reference; see the appended provenance and [current reference](README.md).
 
 ## 1. Paper Market Caper
 
@@ -38,4 +38,22 @@ HUD verbatim: timer "1:42", "BANKED 120", "BAG 16/30", a two-of-three simple hea
 GAMEPLAY: very readable orthographic OVERHEAD toy market, broad clean paths among striped market stalls, two teal bank booths with bright circular deposit zones, a central golden jackpot cart, trails of coins. Four small distinct animal thief sprites: a raccoon marked YOU with a large loot bag making a short dash around an obstacle, a fox banking, a rabbit collecting, a hedgehog crossing the map. Two little wind-up security robots with square bodies and winding keys; one chases the raccoon with a short amber directional warning wedge, another patrols. Runner height around28CSSpx; sensible tile-and-sprite scale, do not enlarge a character into a poster hero.
 STYLE: playful premium miniature toy figures and chunky molded wooden/plastic props baked into 2D game sprites. Rounded silhouettes, clear matte materials, soft contact shadows, peach and butter-yellow ground, lavender blue edging, mint green bank booths, apricot/coral awnings, warm golden tokens. Clean contours without dark comic outlines. Animal faces highly readable, simple forms and restrained highlights. Beautiful polished toy-board-game quality, cheerful daylight, no photorealism, no neon, no bloom, no deep depth of field, no fake lens. Flat overhead level geometry with slightly angled sprites for face readability only. Distinct from paper collage and pixel art.
 Focus on a real active chase situation with visible routes and usable phone controls. One focused primary screen, coherent spacing, clear typography, no extra navigation tabs/cards/shops. A viewer must instantly understand that this is a playable mobile multiplayer chase game.
+```
+
+## Selected direction refinement provenance
+
+Two full-screen Imagegen edits of option 2 removed the horizon, closed the jackpot,
+and reduced the controls. Their generated geometry still deviated from a square,
+so neither is the measured layout baseline. The second edit supplied the visual
+reference for the arena-only generation below. No production assets were derived.
+
+The resulting `pocket-arcade-arena-reference.png` is placed inside a square DOM
+frame in `pocket-arcade-layout.html`. Actual CSS dimensions define the HUD and
+control references. `pocket-arcade-refined.jpg` is the browser capture of that
+fixture at 390 × 844 CSS pixels. This separates illustration from layout evidence.
+
+Arena-only edit prompt:
+
+```text
+Use the attached image as the exact pixel-art style reference. Extract/recompose ONLY the gameplay arena into a standalone perfectly SQUARE 1024 by 1024 pixel image, no phone, no HUD, no controls, no UI outside the arena. Entire square filled by overhead market floor, teal striped stalls along upper corners, colorful fruit crates, warm cream and salmon cobblestones, chunky pixel-art edges, jewel tone animal thieves, navy guard with amber vision wedge. Keep visual clarity: small cream cat player near center-left with subtle pale teal ring, purple raccoon opponent upper-left, orange fox right-center, small teal animal lower-right, two navy guards in lower half. Central upper locked jackpot cart has a closed chest, no coins overflowing, small sign JACKPOT. Small lime bank kiosk lower-right with BANK sign and green deposit apron. Cash token trail across center. Consistent orthographic top-down camera, no horizon, no skyline, no perspective walls. Reference screenshot only, no device border. Bright friendly Pocket Arcade Market pixel art. Avoid blur or painterly textures. Square outer boundary and square composition mandatory.
 ```

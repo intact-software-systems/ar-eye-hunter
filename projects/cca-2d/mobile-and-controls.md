@@ -72,6 +72,37 @@ Resize/orientation changes recompute the canvas and input mapping together. Clea
 held input, retain authoritative match state, and resume only after fresh input.
 Test rotation during a chase and while holding Bank.
 
+## Selected portrait reference
+
+The selected pixel-art direction has a [measured browser composition](visual-concepts/pocket-arcade-layout.html)
+and [captured phone image](visual-concepts/pocket-arcade-refined.jpg). The reference
+is fixed at 390 × 844 CSS pixels, with these app-content coordinates:
+
+| Element           | Bounds or rule                                                 |
+| ----------------- | -------------------------------------------------------------- |
+| World             | x=15, y=96, width=360, height=360; border outside world bounds |
+| Event strip       | x=15, y=472, width=360, height=32                              |
+| Movement pad      | x=32, y=594, diameter=112; thumb puck=44                       |
+| Dash target       | x=266, y=574, width=72, height=72                              |
+| Bank target       | x=266, y=670, width=72, height=72                              |
+| Action spacing    | 24 CSS pixels between target bounds                            |
+| Control exclusion | Entire control deck below world; no gameplay beneath thumbs    |
+
+These are measured layout dimensions, not physical-device comfort certification.
+The reference intentionally has no device bezel or simulated OS chrome. Production
+must reserve actual `env(safe-area-inset-*)` values and use the available dynamic
+viewport; 844 pixels is not assumed to remain available beneath browser toolbars.
+Do not scale the whole screenshot to fit smaller phones: recompute the square and
+control positions, keeping action targets at least 56 pixels and gaps at least 12.
+At 360 × 640, start with a 288-square world and a compact lower deck; qualify it
+with real thumbs. Landscape moves controls to the sides. Tablet/desktop preserve
+the same 12 × 12 world view and use the existing layout rules above.
+
+The HTML is a static measurement fixture, not responsive app code or input logic.
+Its labels omit the menu to focus this composition; the implemented HUD still
+needs the accessible menu described below. No control, image or caption here
+establishes multitouch, camera, network or gameplay correctness.
+
 ## Equal actions across inputs
 
 | Action        | Touch                                           | Keyboard/mouse                                   |
@@ -88,9 +119,10 @@ Bank never activates merely because a thumb crosses a zone. Auto-pickup has the
 same radius for everyone. Mouse and keyboard can operate together, but each action
 has one normalized state to avoid double activation.
 
-Use at least 56 × 56 CSS pixel primary action targets, at least 12 pixels separation,
-and an initial 112-pixel movement pad. Make pad/button placement adjustable within
-reserved control regions and offer a mirrored left-handed layout. Save preferences
+Default to 72 × 72 CSS pixel Dash/Bank targets with 24 pixels separation and a
+112-pixel movement pad with a 44-pixel puck. For constrained layouts, retain at
+least 56 × 56 primary action targets and 12 pixels separation. Make pad/button
+placement adjustable within reserved control regions and offer a mirrored left-handed layout. Save preferences
 locally through Rallar Data. No layout option may cover essential gameplay.
 
 Track joystick and action pointer identities independently. Movement plus dash or

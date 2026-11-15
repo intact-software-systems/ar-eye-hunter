@@ -11,9 +11,10 @@ smallest enjoyable action, connect it through Rallar early, and establish a visu
 quality target before multiplying assets. Keep gameplay, mobile input, reliability,
 and art in the same integration loop.
 
-Before implementation, review this proposal with the user, settle the visual
-direction through references, and choose the initial physical test devices. Design
-approval does not certify fun or remove the playtest gates.
+The user selected Pocket Arcade Market (option 2). Use its refined square
+phone layout and pixel-art contract for all visual work. Before implementation,
+review the remaining gameplay/architecture proposals and choose initial physical
+test devices. Style selection does not certify fun or remove the playtest gates.
 
 ## Next slice 1: one playable raid across two devices
 
@@ -57,7 +58,7 @@ that specific Rallar or game-speed issue before adding mechanics or full art.
 devices in one coherent illustrated arena. The content is small but representative
 of the intended shipping quality.
 
-Select an approved gameplay composition, build the representative scene from
+Translate the selected composition into a representative moving scene from
 [art and polish](art-and-polish.md), then finish the one arena. Add bag heat/bonus,
 the public jackpot, two guards, four distinguishable player identities, concise
 onboarding, results/rematch, and essential audio. Refine portrait and landscape with
@@ -187,6 +188,7 @@ human fun feedback. None is a substitute for the others.
 - Plugin availability: current session tool inventory and plugin-directory lookups
   on 15 November 2026; availability may change.
 
-No GitHub issues were created for this proposal. The next work is user review of
-the design and a small visual exploration, followed by the two slices above once
-implementation is authorized.
+No GitHub issues were created for this proposal. Graphics direction is selected.
+Next is review of remaining design choices, then the two slices above once
+implementation is authorized. The representative scene must demonstrate the chosen
+pixel art in motion; another round of unrelated style exploration is unnecessary.
