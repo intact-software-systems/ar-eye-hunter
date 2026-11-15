@@ -1,5 +1,6 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
+import type { RallarBlackBoxTestAssertComparisonOperator } from '../../../assert/is-assert-comparison.ts';
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
@@ -63,7 +64,7 @@ interface ResultComparisonFactInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly source: string;
-    readonly operator: 'equals' | 'gte';
+    readonly operator: Exclude<RallarBlackBoxTestAssertComparisonOperator, 'sameUniqueStringSet'>;
     readonly comparisonSource: string;
     readonly timeoutMs: number;
 }
