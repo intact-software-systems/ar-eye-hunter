@@ -31,13 +31,13 @@ export interface PollField {
 }
 
 /**
- * A field of the attempt held to a literal, held equal to another field of the same attempt, or held equal to a result
- * path a command of the role left before the poll.
+ * A field of the attempt held to a literal, held equal to another field of the same attempt, or held equal to (or at or
+ * after) a result path a command of the role left before the poll.
  */
 export type PollFact =
     | Readonly<{ name: string; source: PollField; operator: ResultFactInput['operator']; expected: ApiJsonValue; }>
     | Readonly<{ name: string; source: PollField; equals: PollField; }>
-    | Readonly<{ name: string; source: PollField; equalsResult: string; }>;
+    | Readonly<{ name: string; source: PollField; operator: ResultComparisonFactInput['operator']; result: string; }>;
 
 export interface ReadPollInput {
     readonly step: AlmConformanceStepInput;
@@ -58,11 +58,12 @@ export interface ResultFactInput {
     readonly timeoutMs: number;
 }
 
-/** `source` equals `comparisonSource`; both are result paths and both must exist. */
+/** `source` equals, or is a number at or after, `comparisonSource`; both are result paths and both must exist. */
 interface ResultComparisonFactInput {
     readonly step: AlmConformanceStepInput;
     readonly name: string;
     readonly source: string;
+    readonly operator: 'equals' | 'gte';
     readonly comparisonSource: string;
     readonly timeoutMs: number;
 }
@@ -116,7 +117,9 @@ export function toReadPollCommand(
                         step,
                         name: fact.name,
                         source: toSource(fact.source),
-                        comparisonSource: 'equals' in fact ? toSource(fact.equals) : fact.equalsResult,
+                        ...('equals' in fact
+                            ? { operator: 'equals', comparisonSource: toSource(fact.equals) }
+                            : { operator: fact.operator, comparisonSource: fact.result }),
                         timeoutMs: commandTimeoutMs
                     })
             )
@@ -148,7 +151,7 @@ function toResultComparisonFact(fact: ResultComparisonFactInput): RallarBlackBox
         kind: 'assert',
         commandId: toCommandId(fact.step, `assert-${fact.name}`),
         source: fact.source,
-        operator: 'equals',
+        operator: fact.operator,
         comparisonSource: fact.comparisonSource,
         timeoutMs: fact.timeoutMs
     };

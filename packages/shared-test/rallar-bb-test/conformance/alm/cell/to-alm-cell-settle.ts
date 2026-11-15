@@ -18,16 +18,17 @@ import { toReshapeInForcePollCommand } from './to-reshape-in-force-poll-command.
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and
  * owns it, polls until the server holds the room settled; then every page reads the room's head itself and waits until
  * it applied that head, so no role's first send meets a page that would refuse it as not yet in sync. In a cell whose
- * start state reshaped the room, every page then reads its own accepted layout until it is the one its head read names,
- * and waits out the replaced layout's forwarding window, so no role's first send leaves on a layout the reshape
- * replaced.
+ * start state reshaped the room, every page then reads its own accepted layout until it is the one its head read names
+ * or one that replaced it, and waits out the replaced layout's forwarding window, so no role's first send leaves on a
+ * layout the reshape replaced.
  */
 export interface AlmCellSettle {
     /** Before `formation-settled`: the receiver's formation poll, and nothing for any other role. */
     readonly formation: readonly RallarBlackBoxTestCommand[];
     /**
      * After `formation-settled`: the page's head read, its wait for the page to have applied that head, and in a
-     * reshaped cell its poll until its accepted layout is the one that head names, then its forwarding-window wait.
+     * reshaped cell its poll until its accepted layout is the one that head names or one that replaced it, then its
+     * forwarding-window wait.
      */
     readonly head: readonly RallarBlackBoxTestCommand[];
 }

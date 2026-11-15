@@ -396,8 +396,8 @@ describe('alm-conformance cell parts', () => {
                     timeoutMs: computeReplacedLayoutForwardingMs(CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS)
                 });
                 expect(firstSendAt === -1 || firstSendAt > indexOf('armed'), `${scenarioKey} ${role}`).toBe(true);
-                // The page reads its own health until its accepted layout's identity is the accepted layout its own head
-                // read named after the reshape settled, not a tree an earlier reshaped cell left accepted.
+                // The page reads its own health until its accepted layout is the one its own head read named after the
+                // reshape settled or one that replaced it, never a tree an earlier reshaped cell left accepted.
                 const inForce = commands[indexOf('reshape-in-force')];
                 expect(inForce, `${scenarioKey} ${role}`).toMatchObject({ kind: 'loop', until: 'first-success' });
                 const [read, ...identityFacts] = inForce?.kind === 'loop' ? inForce.commands : [];
@@ -405,7 +405,7 @@ describe('alm-conformance cell parts', () => {
                 expect(identityFacts, `${scenarioKey} ${role}`).toEqual(GROUP_LAYOUT_IDENTITY_KEYS.map((key) =>
                     expect.objectContaining({
                         kind: 'assert',
-                        operator: 'equals',
+                        operator: key === 'state' ? 'equals' : 'gte',
                         source: expect.stringMatching(new RegExp(`-reshape-in-force-read\\.value\\.rallar\\.formation\\.accepted\\.identity\\.${key}$`)),
                         comparisonSource: `resultCache.${cellPrefix}-${role}-head-read.value.body.group.acceptedLayoutIdentity.${key}`
                     })

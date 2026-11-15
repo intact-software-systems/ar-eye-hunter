@@ -200,9 +200,13 @@ describe('the settle\'s formation poll, one attempt', () => {
     });
 });
 
-/** The reshaped layout the room's head names, and the tree an earlier reshaped cell of the family room left accepted. */
+/**
+ * The reshaped layout the room's head names, the tree an earlier reshaped cell of the family room left accepted, and
+ * the tree a re-plan after the head read put in the head's place.
+ */
 const RESHAPED_TREE: GroupLayoutIdentity = { groupRevision: 9, presenceRevision: 5, version: 4, state: 'active' };
 const PREVIOUS_TREE: GroupLayoutIdentity = { groupRevision: 8, presenceRevision: 5, version: 3, state: 'active' };
+const REPLACING_TREE: GroupLayoutIdentity = { groupRevision: 9, presenceRevision: 6, version: 5, state: 'active' };
 
 /** The page's head read and its in-force poll, as a reshaped cell's settle runs them. */
 function toReshapedHead(): Readonly<{ headRead: RallarBlackBoxTestCommand; poll: RallarBlackBoxTestLoopCommand; }> {
@@ -241,6 +245,16 @@ async function readInForceFailures(accepted: Readonly<{ topology: string; identi
 describe('the reshape settle\'s in-force poll, one attempt', () => {
     it('accepts the page\'s accepted tree when it is the layout the page\'s head read names', async () => {
         expect(await readInForceFailures({ topology: 'tree', identity: RESHAPED_TREE })).toEqual([]);
+    });
+
+    it('accepts a layout that replaced the head\'s after the head read', async () => {
+        expect(await readInForceFailures({ topology: 'tree', identity: REPLACING_TREE })).toEqual([]);
+    });
+
+    it('refuses the head\'s layout once removed, whose state is another', async () => {
+        expect(await readInForceFailures({ topology: 'tree', identity: { ...RESHAPED_TREE, state: 'removed' } })).toEqual([
+            expect.stringContaining('reshape-in-force-state')
+        ]);
     });
 
     it('refuses an accepted tree of another identity, such as an earlier reshaped cell\'s', async () => {

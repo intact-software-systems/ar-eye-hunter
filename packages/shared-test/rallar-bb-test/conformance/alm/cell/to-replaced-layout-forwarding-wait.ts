@@ -10,9 +10,9 @@ import { toPauseCommand } from '../to-pause-command.ts';
  * the first part of the overlap the server states (`computeReplacedLayoutForwardingMs`), so a send inside it can leave
  * on a direct edge the path no longer has. No page-observable witness of the window's end exists today, so the settle
  * waits the bound itself; the bound is the server's, read from `/api/config` by the lane, never a constant of its own.
- * The wait starts once the page accepted the layout its head read names, so it covers that promotion only: a later
- * promotion, an RTT re-plan or a presence change during the wait or the body, opens a window of its own that nothing
- * here waits out.
+ * The wait starts once the page accepted the layout its head read names or one that replaced it, so it covers the
+ * promotion of the layout the page accepted then only: a later promotion, an RTT re-plan or a presence change during
+ * the wait or the body, opens a window of its own that nothing here waits out.
  */
 export function toReplacedLayoutForwardingWait(
     step: AlmConformanceStepInput,
