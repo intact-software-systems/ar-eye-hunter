@@ -3,6 +3,10 @@ import {
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
+    decodeRelicSnapshotPayload,
+    isRelicCommand,
+    isRelicHunterEvent,
+    isRelicRoundTransitionEvent,
     isRelicSnapshot,
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
@@ -432,6 +436,104 @@ describe('Relic Hunters game rules', () => {
         expect(malformed.every((candidate) => !isRelicSnapshot(candidate))).toBe(true);
     });
 
+    it('refuses a command that is not a JSON object, has another protocol, misses a field or names no known kind', () => {
+        const valid = submit('Alice', { kind: 'search' });
+        const refused: readonly unknown[] = [
+            null,
+            'submit-action',
+            42,
+            [],
+            [valid],
+            { ...valid, protocolVersion: RELIC_PROTOCOL_VERSION + 1 },
+            withoutField(valid, 'gameId'),
+            withoutField(valid, 'username'),
+            { ...valid, kind: 'teleport' },
+            { ...valid, action: null },
+            { ...valid, action: [] },
+            { ...valid, action: 'search' },
+            { ...valid, action: { kind: 'teleport' } }
+        ];
+
+        expect(isRelicCommand(valid)).toBe(true);
+        expect(refused.filter((candidate) => isRelicCommand(candidate))).toEqual([]);
+    });
+
+    it('decodes a snapshot bare or inside its publication envelope and refuses anything else', () => {
+        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+
+        expect(decodeRelicSnapshotPayload(valid).right).toBe(valid);
+        expect(decodeRelicSnapshotPayload({ snapshot: valid }).right).toBe(valid);
+        for (const candidate of [null, 'snapshot', [], [valid], { snapshot: null }, { snapshot: [valid] }]) {
+            expect(decodeRelicSnapshotPayload(candidate).left).toEqual(new TypeError('not a Relic snapshot'));
+        }
+    });
+
+    it('refuses a round transition that is not a JSON object or has another protocol', () => {
+        const valid = {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            createdAtEpochMs: 1,
+            round: 1,
+            phase: 'planning',
+            transition: 'round-started',
+            text: 'Round 1 begins.'
+        };
+
+        expect(isRelicRoundTransitionEvent(valid)).toBe(true);
+        for (
+            const candidate of [
+                null,
+                [],
+                [valid],
+                { ...valid, protocolVersion: RELIC_PROTOCOL_VERSION + 1 },
+                { ...valid, transition: 'paused' },
+                withoutField(valid, 'text')
+            ]
+        ) {
+            expect(isRelicRoundTransitionEvent(candidate)).toBe(false);
+        }
+    });
+
+    it('refuses a hunter event that is not a JSON object, has another protocol or names no known kind', () => {
+        const recorded = {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            principalId: 'alice',
+            playerId: 'alice-session',
+            kind: 'action-recorded',
+            round: 1,
+            action: { kind: 'search' }
+        };
+        const refusal = {
+            protocolVersion: RELIC_PROTOCOL_VERSION,
+            gameId: 'room-1',
+            principalId: 'alice',
+            playerId: 'alice-session',
+            kind: 'command-refused',
+            command: 'submit-action',
+            text: 'Not your turn.',
+            completedGameId: null
+        };
+
+        expect(isRelicHunterEvent(recorded)).toBe(true);
+        expect(isRelicHunterEvent(refusal)).toBe(true);
+        for (
+            const candidate of [
+                null,
+                [],
+                [recorded],
+                { ...recorded, protocolVersion: RELIC_PROTOCOL_VERSION + 1 },
+                { ...recorded, kind: 'action-revealed' },
+                { ...recorded, action: null },
+                { ...recorded, action: [] },
+                { ...refusal, command: 'teleport' },
+                withoutField(refusal, 'principalId')
+            ]
+        ) {
+            expect(isRelicHunterEvent(candidate)).toBe(false);
+        }
+    });
+
     it('adds room-specific notes to empty investigations', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = {
@@ -628,4 +730,8 @@ function submitAndContinue(
     return submitted.phase === 'review'
         ? continueReview(submitted, now + 0.5)
         : submitted;
+}
+
+function withoutField(value: object, field: string): object {
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== field));
 }

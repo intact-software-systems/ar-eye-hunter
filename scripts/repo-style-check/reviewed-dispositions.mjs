@@ -359,13 +359,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'optionalFinite',
         maximumMagnitude: 1
     }),
-    // Independent whole-owner review: The record predicate narrows the raw motion envelope before field access.
-    Object.freeze({
-        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRecord',
-        maximumMagnitude: 1
-    }),
     // Independent whole-owner review: One keyed remote-avatar lifecycle owns motion, health and shot presentation.
     // This warning-tier cap permits no growth and waives no other rule.
     Object.freeze({

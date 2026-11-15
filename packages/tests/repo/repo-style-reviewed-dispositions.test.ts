@@ -80,8 +80,7 @@ const reviewedSpectatingUnknownBoundaries = [
     { file: 'packages/shared/rallar-game/snapshot-request.ts', symbol: 'hasOnlyKeys', cap: 1 },
     { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: undefined, cap: 1 },
     { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'isRelicMotionPhase', cap: 1 },
-    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'optionalFinite', cap: 1 },
-    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'isRecord', cap: 1 }
+    { file: 'apps/relic-hunters-v1/src/game/scene/networking.ts', symbol: 'optionalFinite', cap: 1 }
 ] as const;
 const reviewedSpectatingLayouts = [
     { directory: 'apps/relic-hunters-v1/src/game', prefix: 'relic', count: 12, density: 23 },
