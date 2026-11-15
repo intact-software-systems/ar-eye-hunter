@@ -30,7 +30,11 @@ import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import { rtcConnectReadiness } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    computeRtcEstablishAndReadyCommandTimeoutMs,
+    RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS,
+    rtcConnectReadiness
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
 import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -1155,8 +1159,11 @@ function rtcConnectRecipe(
                 logoutOnClose: false,
                 leaveRoomOnClose: false
             },
-            readiness: rtcConnectReadiness({ readyPeerCount: 2, readyTimeoutMs: 20_000 }),
-            timeoutMs: 45_000
+            readiness: rtcConnectReadiness({
+                readyPeerCount: 2,
+                readyTimeoutMs: RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS
+            }),
+            timeoutMs: computeRtcEstablishAndReadyCommandTimeoutMs(RALLAR_BLACK_BOX_RTC_READINESS_TIMEOUT_MS)
         }]
     };
 }
