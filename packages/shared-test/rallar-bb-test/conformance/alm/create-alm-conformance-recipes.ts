@@ -342,7 +342,8 @@ function toAlmConformanceScenario(
     definition: AlmConformanceScenarioDefinition,
     diagnostics: AlmRecipeDiagnosticSelection
 ): AlmConformanceScenario {
-    const cells = toRoleCells(input, definition, diagnostics);
+    const roomTopology = definition.roomTopology ?? 'kept';
+    const cells = toRoleCells({ input, definition, diagnostics, roomTopology });
     const toDeclaredRecipe = (role: AlmConformanceRole) => cells.get(role)?.recipe;
     const scenario: AlmConformanceScenario = {
         scenarioId: definition.scenarioId,
@@ -359,7 +360,7 @@ function toAlmConformanceScenario(
         partsByRole: Object.fromEntries([...cells].map(([role, cell]) => [role, cell.parts])),
         successorGate: undefined,
         ownerEnd: definition.roles.includes('successor') ? definition.ownerEnd ?? 'close' : undefined,
-        roomTopology: definition.roomTopology ?? 'kept',
+        roomTopology,
         room: definition.room ?? 'family',
         continuation: undefined
     };
@@ -465,11 +466,16 @@ function toContinuationRecipe(
     return resolveAlmConformancePrincipals(recipe, input.principalIdsByRole);
 }
 
+interface AlmRoleCellsInput {
+    readonly input: CreateAlmConformanceRecipesInput;
+    readonly definition: AlmConformanceScenarioDefinition;
+    readonly diagnostics: AlmRecipeDiagnosticSelection;
+    readonly roomTopology: AlmConformanceRoomTopology;
+}
+
 /** Every declared role's cell; a role's settle reads the other roles' parts, so all parts come first. */
 function toRoleCells(
-    input: CreateAlmConformanceRecipesInput,
-    definition: AlmConformanceScenarioDefinition,
-    diagnostics: AlmRecipeDiagnosticSelection
+    { input, definition, diagnostics, roomTopology }: AlmRoleCellsInput
 ): ReadonlyMap<AlmConformanceRole, AlmConformanceRoleCell> {
     const recipeInputs = definition.roles.map((role) => {
         const step = toStepInput(input, definition, role);
@@ -480,7 +486,7 @@ function toRoleCells(
             ...step,
             ...diagnostics,
             commands,
-            roomTopology: definition.roomTopology ?? 'kept',
+            roomTopology,
             receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,
