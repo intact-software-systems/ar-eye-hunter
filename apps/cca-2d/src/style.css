@@ -48,3 +48,6 @@ h2 { font-size: 28px; margin: 8px 0; letter-spacing: -1px; }
 .scene-loading[hidden] { display: none; }
 
 @media (max-height: 500px) and (orientation: landscape) { .pause-overlay > div { width: min(600px, 85vw); padding: 14px 24px; } .pause-overlay p { font-size: 13px; margin: 8px 0; } .pause-overlay button { display: inline-block; width: auto; margin: 8px; } }
+
+.hud-actions { display: flex; gap: 6px; align-items: start; }
+.hud-actions button { padding: 8px; font-size: 10px; }

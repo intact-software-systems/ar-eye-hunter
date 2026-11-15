@@ -19,7 +19,7 @@ Rallar Server authorizes the appointment and traffic; it does not run CCA rules.
 
 | Owner                           | Responsibility                                                                        |
 | ------------------------------- | ------------------------------------------------------------------------------------- |
-| Existing `packages/cca-game`    | Pure movement, collision, prank rules, timer, scoring and transport-neutral contracts |
+| `apps/cca-2d/src/town` and match rules | Current pure movement, collision, prank rules, timer, scoring and transport-neutral contracts |
 | `apps/cca-2d` runtime           | Host simulation lifecycle, Rallar adapters, input, recovery and accepted state        |
 | `apps/cca-2d` renderer          | Babylon camera, cutout scene, animation, effects and resource disposal                |
 | App DOM UI                      | Room, settings, controls, HUD and results; no per-frame entity state                  |
@@ -27,6 +27,8 @@ Rallar Server authorizes the appointment and traffic; it does not run CCA rules.
 | Existing `apps/cca-server`      | Historical practice service; excluded from target deployment                          |
 
 Keep pure rules reusable and independent of Babylon, Rallar and wall-clock APIs.
+The historical `packages/cca-game` cash/banking rules are not the current Grumpy
+Town simulation and must not become a second implementation of its behavior.
 The implementation slice should replace the app's old runtime composition rather
 than maintain two production authority models. Determine old-server removal from
 verified consumers and compatibility; this design revision deletes no code.

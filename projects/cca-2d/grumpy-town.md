@@ -278,3 +278,43 @@ players. Exact scheduling and overlap policy require a separate rules decision.
 
 The subsequent implementation request selected the town pass and all three incidents for this trial. Fire adds a place, witnesses, arrival, a different response and useful
 washing counterplay. The two-slice plan owns this work; the Rallar hosting/recovery gate remains documented separately.
+
+### Further brainstorm: town character and connected reactions
+
+These are additional design proposals, not claims about implemented behavior or
+proven fun. Keep the existing implementation sequence; evaluate these connections
+in playtests before expanding the content backlog.
+
+Three possible emphases are a larger decorative town, more independent prank
+stations, or a town whose ordinary routines and emergency responses interact.
+Recommend the third: recognizable surroundings establish the joke, and connected
+reactions let players invent escapes with the existing controls. Extra scenery
+supports that approach without making every doorway an interaction.
+
+- Give each street a recognizable silhouette and resident routine: crooked
+  terraces with laundry, a tidy bakery queue, mismatched market booths, a solemn
+  municipal frontage, and a cramped service yard. Vary building heights and roof
+  shapes while preserving broad routes, shortcuts and camera visibility.
+- Make fire an excessive response to a tiny incident. A barbecue emits a small
+  cartoon flame; a disproportionately serious crew arrives. Witnesses visibly
+  recognize the culprit, while firefighters prioritize the incident. A hose can
+  wash poop away and interrupt a pursuit. Wet paperwork and a drifting wig are
+  comic reactions, not additional loss-of-control penalties.
+- Make the big poop bomb a rare social event. Its obvious warning gives players
+  a choice to flee, take cover, or lure a pursuer toward the splash. Decorate faces,
+  signs and awnings with bounded splats; leave the playfield readable. Washing
+  provides a useful destination after the gag, rather than prolonging punishment.
+- Stage the café incident around exaggerated dignity: an inspector turns green,
+  a waiter desperately protects one immaculate cake, an umbrella deflects the
+  stream, and a cleaner brings a tiny bucket. Keep a readable playable sequence,
+  not a cutscene that takes control away.
+- Test one connected sequence first: poop blast soils a resident; a fire hose
+  washes them but sends their hat toward the café; the waiter protects the cake
+  while a pursuing officer has to change route. Secondary reactions award no
+  repeated points and cannot generate unbounded new emergencies.
+
+Judge the connection by whether children can explain what caused it, deliberately
+use it to escape or help a friend, and regain a clear route quickly. Gross-out
+effects supply the punchline; anticipation, choices and grumpy reactions should
+make repeating the encounter enjoyable. A whole-town alarm crescendo remains a
+later possibility, contingent on readable smaller combinations.

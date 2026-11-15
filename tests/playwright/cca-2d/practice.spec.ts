@@ -5,7 +5,7 @@ test('phone controls move, slide, drop once, zoom and resume without stuck movem
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
     const app = page.locator('#app');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(app).toHaveAttribute('data-z', '-2.00');
     const joystick = await page.getByLabel('Movement joystick').boundingBox();
     expect(joystick).not.toBeNull();
@@ -66,7 +66,7 @@ test('desktop keyboard moves and action remains reachable after tablet and lands
 
 test('two touch pointers can move and dash together, and a separate pinch zooms', async ({ page, context }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const stick = await page.getByLabel('Movement joystick').boundingBox();
     const dash = await page.getByRole('button', { name: 'Dash and drop' }).boundingBox();
@@ -100,7 +100,7 @@ test('two touch pointers can move and dash together, and a separate pinch zooms'
 
 test('focused buttons keep native Space activation without triggering a prank', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     await page.getByRole('button', { name: 'Pause', exact: true }).focus();
     await page.keyboard.press('Space');
@@ -113,7 +113,7 @@ test('focused buttons keep native Space activation without triggering a prank', 
 
 test('dash spills a stall, its owner cleans while a neighbour watches, and reset restores town', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const app = page.locator('#app');
     await page.keyboard.down('KeyD');
@@ -137,7 +137,7 @@ test('dash spills a stall, its owner cleans while a neighbour watches, and reset
 
 test('powder can be collected in the larger town and used with the same action', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const app = page.locator('#app');
     await page.keyboard.down('KeyS');
@@ -155,7 +155,7 @@ test('powder can be collected in the larger town and used with the same action',
 test('landscape pause keeps help and reset reachable without clipping', async ({ page }) => {
     await page.setViewportSize({ width: 844, height: 390 });
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     const help = await page.locator('#pause-overlay > div').boundingBox();
     expect(help).not.toBeNull();
@@ -170,7 +170,7 @@ test('landscape pause keeps help and reset reachable without clipping', async ({
 
 test('fountain and parcel cart respond to the same dash action', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const app = page.locator('#app');
     await page.keyboard.down('KeyW');

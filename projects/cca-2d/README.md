@@ -26,7 +26,9 @@ The [Babylon local trial](babylon-local-trial.md) now implements movement,
 dash-and-drop, slipping, zoom, pause/reset and
 [varied town buildings, grumpy personalities, fire crew, giant poop bomb, café spectacle, ten-police raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
 It replaces the old Phaser entry and includes actual gameplay captures. Collection,
-banking and multiplayer are absent from this focused trial. The historical CCA
+banking and shared match simulation are absent from this focused trial. The optional
+[Rallar lobby](rallar-multiplayer.md) now supports accounts, friends, invitations
+and matchmaking; appointed-director gameplay is in progress. The historical CCA
 server prototype is independent; the new app does not connect to it.
 Keep this directory name for continuity; “2D” no longer specifies the renderer.
 

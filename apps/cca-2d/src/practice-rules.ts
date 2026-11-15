@@ -1,14 +1,13 @@
 import {
     TOWN_ICE,
-    type TownPoint,
-    type TownPrank
+    type TownPoint
 } from './town/map.ts';
 import { computeTownPosition } from './town/navigation.ts';
 import { computeTownWaterPush, isTownSprayed } from './town/props.ts';
 import type { TownRoutes } from './town/routes.ts';
 import { computeTownTick } from './town/rules.ts';
-import { createCleanCoat, type TownCoat } from './town/soiling.ts';
-import { createTownState, type TownState } from './town/state.ts';
+import { createCleanCoat } from './town/soiling.ts';
+import { createTownState, type TownPlayer, type TownState } from './town/state.ts';
 
 export interface PracticeInput {
     readonly x: number;
@@ -21,28 +20,29 @@ export interface PracticeCloud {
     readonly z: number;
     readonly age: number;
 }
-export interface PracticeState extends TownCoat {
-    readonly frozenUntil: number;
-    readonly shieldUntil: number;
-    readonly x: number;
-    readonly z: number;
+export interface PracticePlayer extends TownPlayer {
     readonly vx: number;
     readonly vz: number;
-    readonly facingX: number;
-    readonly facingZ: number;
     readonly elapsed: number;
     readonly cooldown: number;
-    readonly dashTime: number;
     readonly consumedDash: number;
     readonly slipping: boolean;
     readonly slips: number;
     readonly pranks: number;
     readonly clouds: readonly PracticeCloud[];
+}
+export interface PracticeState extends PracticePlayer {
     readonly town: TownState;
-    readonly power: TownPrank;
-    readonly dizzyUntil: number;
-    readonly immuneUntil: number;
-    readonly sickAt: number;
+}
+export interface PracticePlayerTickInput {
+    readonly player: PracticePlayer;
+    readonly town: TownState;
+    readonly controls: PracticeInput;
+    readonly seconds: number;
+}
+export interface PracticePlayerTick {
+    readonly player: PracticePlayer;
+    readonly dash: boolean;
 }
 interface PracticeMovement extends TownPoint {
     readonly vx: number;
@@ -54,6 +54,10 @@ interface PracticeMovement extends TownPoint {
 }
 
 export function createPracticeState(): PracticeState {
+    return { ...createPracticePlayer(), town: createTownState() };
+}
+
+export function createPracticePlayer(): PracticePlayer {
     return {
         ...createCleanCoat(),
         x: 0,
@@ -72,7 +76,6 @@ export function createPracticeState(): PracticeState {
         slips: 0,
         pranks: 0,
         clouds: [],
-        town: createTownState(),
         power: 'fart',
         dizzyUntil: 0,
         immuneUntil: 0,
@@ -85,72 +88,90 @@ export function computePracticeTick(
     input: PracticeInput,
     context: { seconds: number; routes: TownRoutes; }
 ): PracticeState {
+    const { town, ...player } = state;
     const step = Math.max(0, Math.min(context.seconds, 1 / 30));
-    const dash = input.dash > state.consumedDash && state.cooldown <= 0 && state.frozenUntil <= state.elapsed;
-    const movement = computePracticeMovement({ ...state, dashTime: dash ? 0.2 + step : state.dashTime }, input, step);
-    const elapsed = state.elapsed + step;
+    const advanced = computePracticePlayerTick({ player, town, controls: input, seconds: step });
     const interactions = computeTownTick({
         routes: context.routes,
-        town: state.town,
-        player: { ...state, ...movement },
-        dash,
-        now: elapsed,
+        town,
+        player: advanced.player,
+        dash: advanced.dash,
+        now: advanced.player.elapsed,
         step
     });
-    const clouds = state.clouds.filter((cloud) => cloud.age + step < 2.4).map((cloud) => ({
+    return { ...advanced.player, ...interactions };
+}
+
+/** Player-local rules never advance the shared town; the world coordinator does that once. */
+export function computePracticePlayerTick(
+    tick: PracticePlayerTickInput
+): PracticePlayerTick {
+    const { player, town, controls, seconds } = tick;
+    const step = Math.max(0, Math.min(seconds, 1 / 30));
+    const dash = controls.dash > player.consumedDash && player.cooldown <= 0 && player.frozenUntil <= player.elapsed;
+    const movement = computePracticeMovement({
+        player: { ...player, dashTime: dash ? 0.2 + step : player.dashTime },
+        town,
+        controls,
+        seconds: step
+    });
+    const clouds = player.clouds.filter((cloud) => cloud.age + step < 2.4).map((cloud) => ({
         ...cloud,
         age: cloud.age + step
     }));
-    if (dash && state.power === 'fart') {
-        clouds.push({ id: state.pranks + 1, x: state.x, z: state.z, age: 0 });
+    if (dash && player.power === 'fart') {
+        clouds.push({ id: player.pranks + 1, x: player.x, z: player.z, age: 0 });
     }
     return {
-        ...state,
-        ...movement,
-        ...interactions,
-        elapsed,
-        clouds,
-        cooldown: dash ? 3 : Math.max(0, state.cooldown - step),
-        consumedDash: Math.max(state.consumedDash, input.dash),
-        slips: state.slips + Number(movement.slipping && !state.slipping),
-        pranks: state.pranks + Number(dash)
+        dash,
+        player: {
+            ...player,
+            ...movement,
+            elapsed: player.elapsed + step,
+            clouds,
+            cooldown: dash ? 3 : Math.max(0, player.cooldown - step),
+            consumedDash: Math.max(player.consumedDash, controls.dash),
+            slips: player.slips + Number(movement.slipping && !player.slipping),
+            pranks: player.pranks + Number(dash)
+        }
     };
 }
 
-function computePracticeMovement(state: PracticeState, input: PracticeInput, step: number): PracticeMovement {
-    if (state.frozenUntil > state.elapsed) {
+function computePracticeMovement(tick: PracticePlayerTickInput): PracticeMovement {
+    const { player, town, controls, seconds } = tick;
+    if (player.frozenUntil > player.elapsed) {
         return {
-            x: state.x,
-            z: state.z,
+            x: player.x,
+            z: player.z,
             vx: 0,
             vz: 0,
-            facingX: state.facingX,
-            facingZ: state.facingZ,
+            facingX: player.facingX,
+            facingZ: player.facingZ,
             dashTime: 0,
             slipping: false
         };
     }
-    const magnitude = Math.max(1, Math.hypot(input.x, input.z));
-    const x = input.x / magnitude;
-    const z = input.z / magnitude;
+    const magnitude = Math.max(1, Math.hypot(controls.x, controls.z));
+    const x = controls.x / magnitude;
+    const z = controls.z / magnitude;
     const moving = Math.hypot(x, z) > 0.08;
-    const facingX = moving ? x / Math.hypot(x, z) : state.facingX;
-    const facingZ = moving ? z / Math.hypot(x, z) : state.facingZ;
-    const dashTime = Math.max(0, state.dashTime - step);
-    const slippery = isPracticeSlippery(state);
-    const traction = 1 - Math.exp(-(slippery ? 1.2 : 22) * step);
-    const speed = state.dizzyUntil > state.elapsed ? 2.5 : 3.6;
-    const vx = dashTime > 0 ? facingX * 10 : state.vx + (x * speed - state.vx) * traction;
-    const vz = dashTime > 0 ? facingZ * 10 : state.vz + (z * speed - state.vz) * traction;
-    const jet = computeTownWaterPush(state.town, state, state.elapsed);
-    const position = computeTownPosition(state.town, state, {
-        x: (vx + (jet ? jet.x * 2 : 0)) * step,
-        z: (vz + (jet ? jet.z * 2 : 0)) * step
+    const facingX = moving ? x / Math.hypot(x, z) : player.facingX;
+    const facingZ = moving ? z / Math.hypot(x, z) : player.facingZ;
+    const dashTime = Math.max(0, player.dashTime - seconds);
+    const slippery = isPracticeSlippery(player, town);
+    const traction = 1 - Math.exp(-(slippery ? 1.2 : 22) * seconds);
+    const speed = player.dizzyUntil > player.elapsed ? 2.5 : 3.6;
+    const vx = dashTime > 0 ? facingX * 10 : player.vx + (x * speed - player.vx) * traction;
+    const vz = dashTime > 0 ? facingZ * 10 : player.vz + (z * speed - player.vz) * traction;
+    const jet = computeTownWaterPush(town, player, player.elapsed);
+    const position = computeTownPosition(town, player, {
+        x: (vx + (jet ? jet.x * 2 : 0)) * seconds,
+        z: (vz + (jet ? jet.z * 2 : 0)) * seconds
     });
     return {
         ...position,
-        vx: position.x === state.x ? 0 : vx,
-        vz: position.z === state.z ? 0 : vz,
+        vx: position.x === player.x ? 0 : vx,
+        vz: position.z === player.z ? 0 : vz,
         facingX,
         facingZ,
         dashTime,
@@ -158,12 +179,12 @@ function computePracticeMovement(state: PracticeState, input: PracticeInput, ste
     };
 }
 
-function isPracticeSlippery(state: PracticeState): boolean {
+function isPracticeSlippery(state: PracticePlayer, town: TownState): boolean {
     const onIce = Math.abs(state.x - TOWN_ICE.x) < TOWN_ICE.width / 2 &&
         Math.abs(state.z - TOWN_ICE.z) < TOWN_ICE.depth / 2;
-    return onIce || isTownSprayed(state.town, state, state.elapsed) ||
-        state.town.fruit.some((fruit) => Math.hypot(state.x - fruit.x, state.z - fruit.z) < 0.65) ||
-        state.town.patches.some((patch) =>
+    return onIce || isTownSprayed(town, state, state.elapsed) ||
+        town.fruit.some((fruit) => Math.hypot(state.x - fruit.x, state.z - fruit.z) < 0.65) ||
+        town.patches.some((patch) =>
             patch.kind !== 'powder' && patch.kind !== 'trash' && Math.hypot(state.x - patch.x, state.z - patch.z) < 1
         );
 }

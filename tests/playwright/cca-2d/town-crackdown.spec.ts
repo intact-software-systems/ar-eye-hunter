@@ -31,7 +31,7 @@ test('six real street messes award the bonus and deploy ten police, then the shi
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const app = page.locator('#app');
     await walk(page, { axis: 'z', value: -3.8 });

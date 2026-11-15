@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { computePracticeTick, createPracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
+import {
+    computePracticePlayerTick,
+    computePracticeTick,
+    createPracticePlayer,
+    createPracticeState
+} from '../../../apps/cca-2d/src/practice-rules.ts';
 import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 
 let routes: TownRoutes;
@@ -8,6 +13,24 @@ beforeEach(() => {
 });
 
 describe('cutout practice actions', () => {
+    it('advances independent player controls without advancing or copying their shared town', () => {
+        const town = createPracticeState().town;
+        const before = structuredClone(town);
+        const first = createPracticePlayer();
+        const second = { ...createPracticePlayer(), x: 3, z: -2 };
+        const moving = computePracticePlayerTick({ player: first, town, controls: { x: 1, z: 0, dash: 1 }, seconds: 1 / 30 });
+        const idle = computePracticePlayerTick({ player: second, town, controls: { x: 0, z: 0, dash: 0 }, seconds: 1 / 30 });
+        expect(moving.player.x).toBeGreaterThan(first.x);
+        expect(moving.dash).toBe(true);
+        expect(idle.player.x).toBe(second.x);
+        expect(idle.dash).toBe(false);
+        expect(moving.player.pranks).toBe(1);
+        expect(idle.player.pranks).toBe(0);
+        expect(moving.player.elapsed).toBeCloseTo(1 / 30);
+        expect(idle.player.elapsed).toBeCloseTo(1 / 30);
+        expect(moving.player).not.toHaveProperty('town');
+        expect(town).toEqual(before);
+    });
     it('normalizes diagonal movement without changing the input state', () => {
         const start = createPracticeState();
         const straight = computePracticeTick(start, { x: 1, z: 0, dash: 0 }, { seconds: 1 / 60, routes });

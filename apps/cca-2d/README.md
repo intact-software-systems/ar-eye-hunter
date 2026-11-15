@@ -72,12 +72,49 @@ portrait and scaled by aspect in landscape. The default width is 13. The walkabl
 units with six interactive shops, five street objects, fountain/cart, six
 creatures, eight additional residents, civic/shop/house facades and street furniture; the camera follows through the streets.
 
+## Optional online lobby
+
+Choose **Play with friends** to sign in or create a local test account. Solo
+continues to work without Rallar. Start the development API in another terminal:
+
+```sh
+npm --workspace cca-2d run start:rallar
+npm --workspace cca-2d run dev
+```
+
+The launcher runs the existing Rallar API on port 8084 with an isolated in-memory
+store and fresh process-only secrets. Accounts, rooms and friendships disappear
+when that server stops. It does not run a separate CCA server. The development
+client defaults to `http://localhost:8084`; `VITE_RALLAR_API_BASE_URL` overrides it.
+`CCA_RALLAR_PUBLIC_URL` configures the API's advertised public HTTP/WS origin and
+`CCA_RALLAR_PORT` selects its listening port. These origins must agree; never
+weaken Rallar's WebSocket host validation to work around a mismatch.
+
+The online lobby supports account registration/login, private-by-discovery open
+rooms (anyone with their code may join), two-sided friend requests, visibility,
+blocking and room invitations. Matchmaking requires both players to confirm,
+then explicitly enter their matched town. Admission does not yet start gameplay.
+Leaving hands ownership to another active member, or closes the town when its
+last member leaves. Lost action replies expose a retry button. Returning to solo
+opens the playground immediately while the online session finishes cancelling
+its search; online re-entry waits for that cleanup. If the network stays unavailable,
+cancellation cannot be confirmed and the search status must be checked after reconnecting.
+The shared-town match and appointed director are the next implementation slice in
+[the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
+
+`npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests
+real independent accounts alongside the solo controls. Physical phone online
+access still needs the local public URL and secure browser setup qualified;
+localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
+
 ## Construction and owners
 
-- `main.ts`: lazy import and page lifetime.
+- `main.ts`: lazy solo/online entry and page lifetime.
+- `online/online-session.ts`: optional Rallar account, room, social and matchmaking lifetime.
+- `online/online-lobby.ts`: responsive account and lobby DOM; `online-panels.ts` renders their projections.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
 - `practice-controls.ts`: keyboard, independent pointer capture and pinch input.
-- `practice-rules.ts`: immutable movement, dash, traction, cloud lifetime and collision.
+- `practice-rules.ts`: independent player movement, dash, traction, cloud lifetime and collision; solo composes this with one town tick.
 - `town/rules.ts`: tick coordination for owners, props, raids, effects and rescue.
 - `town/state.ts` and `town/map.ts`: canonical state and map geometry.
 - `town/owners.ts`, `town/authorities.ts`, `town/companion.ts`: duties, pursuit, catch and rescue.

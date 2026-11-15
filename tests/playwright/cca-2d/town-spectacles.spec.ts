@@ -6,7 +6,7 @@ import {
 
 async function openTown(page: Page): Promise<void> {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN', exact: true })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
 }
 
@@ -56,7 +56,7 @@ test('the barbecue dispatches firefighters who extinguish the fire and leave', a
     page.on('pageerror', (error) => errors.push(error.message));
     await openTown(page);
     await walk(page, { axis: 'z', value: -13.5 });
-    await walk(page, { axis: 'x', value: -12 });
+    await walk(page, { axis: 'x', value: -11.5 });
     await walk(page, { axis: 'z', value: -10.5 });
     await walk(page, { axis: 'x', value: -14 });
     await dashNorth(page);
@@ -77,7 +77,7 @@ test('the café sample tray triggers a warned, finite vomit scene', async ({ pag
     page.on('pageerror', (error) => errors.push(error.message));
     await openTown(page);
     await walk(page, { axis: 'z', value: -13.5 });
-    await walk(page, { axis: 'x', value: -12 });
+    await walk(page, { axis: 'x', value: -11.5 });
     await walk(page, { axis: 'z', value: -3.5 });
     await dashNorth(page);
     const app = page.locator('#app');

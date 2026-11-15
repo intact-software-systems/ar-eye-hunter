@@ -32,7 +32,7 @@ export class PracticeApp {
     private paused = false;
     private stopped = false;
 
-    constructor(root: HTMLElement) {
+    constructor(root: HTMLElement, onOnline: () => void) {
         this.root = root;
         root.innerHTML = createPracticeMarkup();
         const canvas = requirePracticeElement<HTMLCanvasElement>(root, 'canvas');
@@ -48,6 +48,7 @@ export class PracticeApp {
         this.pause = requirePracticeElement(root, '#pause');
         this.overlay = requirePracticeElement(root, '#pause-overlay');
         this.bindLifecycle(canvas);
+        requirePracticeElement(root, '#online').addEventListener('click', onOnline, { signal: this.lifetime.signal });
         this.scene.engine.runRenderLoop(() => this.frame());
     }
 
@@ -194,7 +195,7 @@ function createPracticeMarkup(): string {
     return `<main class="practice" aria-label="CCA cutout market practice">
       <canvas aria-label="Market playfield: move with WASD or arrows, dash with Space, zoom with plus and minus"></canvas>
       <div id="scene-loading" class="scene-loading" role="status">Unpacking the market…</div>
-      <header class="hud"><div class="brand"><span>CCA / LOCAL PLAYGROUND + BOT PAL</span><h1>GRUMPY TOWN</h1></div><button id="pause">Pause</button></header>
+      <header class="hud"><div class="brand"><span>CCA / LOCAL PLAYGROUND + BOT PAL</span><h1>GRUMPY TOWN</h1></div><div class="hud-actions"><button id="online">Play with friends</button><button id="pause">Pause</button></div></header>
       <div class="scoreboard"><span>POINTS <b id="points">0</b></span><span>TROUBLE <b id="heat">0</b></span><span>SAVES <b id="rescues">0</b></span></div>
       <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
       <div class="play-hint"><span class="you" id="power">TEAL HOODIE / FART LOADED</span><p id="status">Dash into a stall. Make a mess.</p></div>
