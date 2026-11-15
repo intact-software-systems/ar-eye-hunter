@@ -264,7 +264,7 @@ function toJoinedRoomSnapshot(error: Error, operation: RallarRoomSwitchOperation
     }
 }
 
-function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string | undefined): void {
+function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string): void {
     // The room subscription normally adopts first, while previous-room cleanup is still pending.
     if (input.roomIdRef.current !== roomId) {
         input.clearRoomScopedArenaState();
