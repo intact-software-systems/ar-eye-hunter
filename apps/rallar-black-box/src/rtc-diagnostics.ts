@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type { DistributedRunMonitor } from './distributed-recipes.ts';
 
 export type RtcConnectStageId =
@@ -858,18 +859,6 @@ function toResultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScat
     return 'runtime';
 }
 
-function computePercentile(values: readonly number[], percentileValue: number): number | undefined {
-    if (values.length === 0) {
-        return undefined;
-    }
-    const sorted = [...values].sort((left, right) => left - right);
-    const index = Math.min(
-        sorted.length - 1,
-        Math.max(0, Math.ceil(percentileValue * sorted.length) - 1)
-    );
-    return sorted[index];
-}
-
 function computeHistogramBuckets(
     durations: readonly number[],
     bucketCount: number
@@ -1139,9 +1128,9 @@ export function computeRtcPerformanceView(
     return {
         summary: {
             commandCount: scatter.length,
-            p50Ms: computePercentile(durations, 0.5),
-            p95Ms: computePercentile(durations, 0.95),
-            p99Ms: computePercentile(durations, 0.99),
+            p50Ms: computeNearestRank(durations, 0.5),
+            p95Ms: computeNearestRank(durations, 0.95),
+            p99Ms: computeNearestRank(durations, 0.99),
             maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
             connectMs: input.diagnostics.latency.connectMs,
             firstPayloadMs: input.diagnostics.latency.firstPayloadMs,
