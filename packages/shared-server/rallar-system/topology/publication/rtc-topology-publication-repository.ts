@@ -30,8 +30,7 @@ import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 
 type StoredPublicationRead =
     | Readonly<{ status: 'live'; entry: RuntimeStateEntryValue<RtcTopologyPublication>; }>
-    | Readonly<{ status: 'expired'; }>
-    | Readonly<{ status: 'unsupported'; message: string; }>;
+    | Readonly<{ status: 'expired'; }>;
 
 export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
@@ -63,7 +62,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         if (stored.status === 'live') {
             return { status: 'found', publication: stored.entry.value };
         }
-        return stored.status === 'unsupported' ? stored : { status: 'absent' };
+        return { status: 'absent' };
     }
 
     async findPublicationForWork(
@@ -179,23 +178,20 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             trustedValue: trustedPublicationId,
             storageKey: entry.key
         });
-        const publication = decodeRtcTopologyPublication(parseValue(entry), decoded.groupRef);
-        if (publication.left?.code === 'malformed') {
-            throw publicationCorruption(entry.key, publication.left.message);
-        }
+        const value = decodeRtcTopologyPublication(parseValue(entry), decoded.groupRef).fold<RtcTopologyPublication>(
+            (message) => {
+                throw publicationCorruption(entry.key, message);
+            },
+            (decodedPublication) => decodedPublication
+        );
         const live = await this.toLiveJsonEntryValue(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, entry);
         if (!live) {
             return { status: 'expired' };
         }
-        return publication.fold<StoredPublicationRead>(
-            (refusal) => ({ status: 'unsupported', message: refusal.message }),
-            (value) => {
-                if (value.publicationId !== decoded.value) {
-                    throw publicationCorruption(entry.key, 'publication value differs from key');
-                }
-                return { status: 'live', entry: { entry: live.entry, value } };
-            }
-        );
+        if (value.publicationId !== decoded.value) {
+            throw publicationCorruption(entry.key, 'publication value differs from key');
+        }
+        return { status: 'live', entry: { entry: live.entry, value } };
     }
 
     private async toLiveWorkClaimEntry(
@@ -231,7 +227,6 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     }
 }
 
-/** Listings treat an unsupported (pre-v4) row like an expired one: it is absent, never corruption for the page. */
 function toLivePublicationEntries(
     reads: readonly StoredPublicationRead[]
 ): readonly RuntimeStateEntryValue<RtcTopologyPublication>[] {

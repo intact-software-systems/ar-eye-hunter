@@ -159,7 +159,7 @@ describe('RTC topology publication repository', () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
-            const defects = ['snapshot', 'expiresAtEpochMs', 'workId'] as const;
+            const defects = ['snapshot', 'expiresAtEpochMs', 'workId', 'traceId'] as const;
             const surfaces = ['direct', 'list', 'page'] as const;
             for (const defect of defects) {
                 for (const surface of surfaces) {
@@ -200,46 +200,6 @@ describe('RTC topology publication repository', () => {
         }
     });
 
-    it('skips a pre-v4 publication row on every listing and reads it as unsupported, never as corruption', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
-        const groupRef = createGroupRef();
-        const preV4 = createPublication(createTopologySnapshot(groupRef, 1), 'work-pre-v4');
-        const current = createPublication(createTopologySnapshot(groupRef, 2), 'work-v4');
-        const { traceId: _traceId, ...preV4Row } = preV4;
-        await runtimeRepository.upsert(
-            {
-                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                key: repository.publicationKey(groupRef, preV4.publicationId),
-                value: JSON.stringify(preV4Row),
-                expireAtTimestamp: Date.now() + 60_000
-            }
-        );
-        await runtimeRepository.upsert(
-            {
-                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                key: repository.publicationKey(groupRef, current.publicationId),
-                value: JSON.stringify(current),
-                expireAtTimestamp: Date.now() + 60_000
-            }
-        );
-
-        expect((await repository.listPublicationEntries()).map((entry) => entry.value)).toEqual([current]);
-        expect((await repository.listPublicationEntriesPage({ limit: 10 })).map((entry) => entry.value)).toEqual([
-            current
-        ]);
-        await expect(repository.readPublication(groupRef, preV4.publicationId)).resolves.toEqual({
-            status: 'unsupported',
-            message: 'RTC topology publication predates AL envelope version 4'
-        });
-        await expect(repository.findPublication(groupRef, preV4.publicationId)).resolves.toBeUndefined();
-        await expect(repository.readPublication(groupRef, current.publicationId)).resolves.toEqual({
-            status: 'found',
-            publication: current
-        });
-        await expect(repository.readPublication(groupRef, 'work-absent:1:1:1')).resolves.toEqual({ status: 'absent' });
-    });
-
     it.each(['direct', 'read', 'list', 'page'] as const)(
         'keeps a malformed v4 publication trace as corruption on the %s surface',
         async (surface) => {
@@ -268,6 +228,6 @@ describe('RTC topology publication repository', () => {
     );
 });
 
-function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId') {
+function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId' | 'traceId') {
     return Object.fromEntries(Object.entries(publication).filter(([key]) => key !== defect));
 }

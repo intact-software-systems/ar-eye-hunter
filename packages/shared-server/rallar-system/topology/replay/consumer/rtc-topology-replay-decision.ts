@@ -2,16 +2,11 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-
-import { Either } from '@shared/resilience/Either.ts';
 import { decodeJsonWireValue } from '../../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../../persistence/decode-rtc-topology-snapshot.ts';
 import { rtcTopologySemanticEqual } from '../../persistence/rtc-topology-semantic-equal.ts';
 import { compareTopologyTuple } from '../../persistence/rtc-topology-snapshot-contract.ts';
-import {
-    decodeRtcTopologyPublication,
-    type RtcTopologyPublicationRefusal
-} from '../../publication/decode-rtc-topology-publication.ts';
+import { decodeRtcTopologyPublication } from '../../publication/decode-rtc-topology-publication.ts';
 import type { RtcTopologyPublicationRead } from '../../publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
@@ -50,10 +45,7 @@ export function decideRtcTopologyReplayEntry(
     if (input.entry.retainUntilEpochMs <= databaseNowEpochMs) {
         return { status: 'gap' };
     }
-    return decodeReferencedPublication(input.entry, input.publication).fold<RtcTopologyReplayEntryDecision>(
-        () => ({ status: 'gap' }),
-        (publication) => decidePublicationDelivery(input, publication)
-    );
+    return decidePublicationDelivery(input, readReferencedPublication(input.entry, input.publication));
 }
 
 function decidePublicationDelivery(
@@ -79,29 +71,20 @@ function decidePublicationDelivery(
     throw corruption(input.entry, 'the historical publication appears newer than current topology');
 }
 
-/** A pre-v4 publication is a non-blocking refusal (Left): the consumer re-hydrates as for an expired reference. */
-function decodeReferencedPublication(
+function readReferencedPublication(
     entry: RtcTopologyDeliveryLogEntry,
     read: RtcTopologyPublicationRead
-): Either<RtcTopologyPublicationRefusal, RtcTopologyPublication> {
-    if (read.status === 'unsupported') {
-        return Either.ofLeft({ code: 'unsupported', message: read.message });
-    }
+): RtcTopologyPublication {
     if (read.status === 'absent') {
         throw corruption(entry, 'an unexpired durable reference is missing');
     }
-    return decodeRtcTopologyPublication(read.publication, entry.groupRef).fold<
-        Either<RtcTopologyPublicationRefusal, RtcTopologyPublication>
-    >((refusal) => {
-        if (refusal.code === 'malformed') {
-            throw corruption(entry, 'the referenced publication is invalid');
-        }
-        return Either.ofLeft(refusal);
+    return decodeRtcTopologyPublication(read.publication, entry.groupRef).fold<RtcTopologyPublication>(() => {
+        throw corruption(entry, 'the referenced publication is invalid');
     }, (publication) => {
         if (publication.publicationId !== entry.publicationId) {
             throw corruption(entry, 'the referenced publication identity differs');
         }
-        return Either.ofRight(publication);
+        return publication;
     });
 }
 

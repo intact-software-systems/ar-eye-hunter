@@ -37,11 +37,10 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
-/** One stored publication as a direct read sees it: a pre-v4 row is `unsupported`, refused without being corruption. */
+/** One stored publication as a direct read sees it. */
 export type RtcTopologyPublicationRead =
     | Readonly<{ status: 'found'; publication: RtcTopologyPublication; }>
-    | Readonly<{ status: 'absent'; }>
-    | Readonly<{ status: 'unsupported'; message: string; }>;
+    | Readonly<{ status: 'absent'; }>;
 
 export function computeRtcTopologyExecutionCommandDigest(
     publication: RtcTopologyPublication

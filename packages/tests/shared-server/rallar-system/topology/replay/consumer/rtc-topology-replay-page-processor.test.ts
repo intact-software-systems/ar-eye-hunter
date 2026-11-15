@@ -25,23 +25,8 @@ const PUBLISHER_STREAM_ID = '00000000-0000-4000-8000-000000000007';
 const DATABASE_NOW_EPOCH_MS = 100;
 
 describe('RtcTopologyReplayPageProcessor', () => {
-    it('advances past a pre-v4 publication row as a gap, re-hydrates, and moves the cursor over the later v4 rows', async () => {
-        const replay = await createReplayPage('pre-v4');
-
-        await expect(replay.processor.process(replay.input)).resolves.toBe('done');
-
-        expect(replay.timeline).toEqual(['cursor 0 -> 1', 'hydrate', 'cursor 1 -> 3']);
-        expect(replay.sent.length).toBeGreaterThan(0);
-        expect(replay.diagnostics).toEqual([
-            { kind: 'entry', outcome: 'current-repair' },
-            { kind: 'cursor', outcome: 'gap' },
-            { kind: 'cursor', outcome: 'advanced' },
-            { kind: 'cursor', outcome: 'advanced' }
-        ]);
-    });
-
     it('stalls on a malformed v4 publication row as corruption without hydrating', async () => {
-        const replay = await createReplayPage('malformed-v4');
+        const replay = await createReplayPage();
 
         await expect(replay.processor.process(replay.input)).resolves.toBe('failed');
 
@@ -61,7 +46,7 @@ interface ReplayPageFixture {
     readonly diagnostics: RtcTopologyReplayDiagnosticsEvent[];
 }
 
-async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<ReplayPageFixture> {
+async function createReplayPage(): Promise<ReplayPageFixture> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const groupRef = createGroupRef();
@@ -72,7 +57,7 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<R
             {
                 namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
                 key: publications.publicationKey(groupRef, publication.publicationId),
-                value: JSON.stringify(index === 1 ? toStoredSecondRow(publication, secondRow) : publication),
+                value: JSON.stringify(index === 1 ? { ...publication, traceId: 'not a trace' } : publication),
                 expireAtTimestamp: Date.now() + 60_000
             }
         );
@@ -119,21 +104,6 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<R
         signal: new AbortController().signal
     };
     return { processor, input, sent, timeline, diagnostics };
-}
-
-interface CorruptPublicationRow extends Omit<RtcTopologyPublication, 'traceId'> {
-    readonly traceId?: string;
-}
-
-function toStoredSecondRow(
-    publication: RtcTopologyPublication,
-    secondRow: 'pre-v4' | 'malformed-v4'
-): CorruptPublicationRow {
-    if (secondRow === 'malformed-v4') {
-        return { ...publication, traceId: 'not a trace' };
-    }
-    const { traceId: _traceId, ...preV4Row } = publication;
-    return preV4Row;
 }
 
 function toLogEntry(
