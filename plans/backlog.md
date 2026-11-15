@@ -812,7 +812,17 @@ and it has no status list.
 - A reshaped cell's settle waits half the overlap the server states in
   `/api/config` (D-5), because no page states when a sender stops forwarding
   over the layout a promotion replaced; a page fact for the end of that
-  forwarding window would replace the wait.
+  forwarding window would replace the wait. The wait covers the promotion of
+  the layout the page's head read names; a later promotion during the wait or
+  the body opens a window of its own that nothing waits out.
+- A reshaped cell's `reshape-in-force` poll holds each key of the page's
+  accepted layout identity equal to its head read's, because the browser
+  runtime's `assert` compares two results by `equals` or
+  `sameUniqueStringSet` alone (`isAssertComparison`), and `gte` takes only a
+  literal `expected`. A re-plan between the head read and the poll fails it as a
+  false red: a `reshape-in-force` timeout whose last read names a later
+  `version`. A result-to-result `gte` comparison would let the revisions and the
+  version compare at or after the head's.
 - `granted-rtc-relay-only` and `granted-rtc-ordered-relay` exercise their relay
   half only when the reshaped tree puts recipient-b in the middle, which the
   session ids and RTT decide (5 of 11 sampled runs); they stay shape-agnostic

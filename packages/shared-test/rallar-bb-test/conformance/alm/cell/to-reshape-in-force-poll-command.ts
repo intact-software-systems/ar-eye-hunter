@@ -16,7 +16,10 @@ import { toReadPollCommand } from '../poll/alm-conformance-poll-commands.ts';
  * room the reshape asked for, whose accepted layout then matches the path's config, so the identity names the path's
  * tree. In a room the family shares, a page may still hold an earlier reshaped cell's tree; only the identity tells it
  * from the one this reshape settled on. Each key is its own fact, so a fact reads one number or state, and an attempt
- * stays small enough for the runtime's loop limit over the poll's phase.
+ * stays small enough for the runtime's loop limit over the poll's phase. Each key is held equal, not at or after the
+ * head's: the runtime's `assert` compares two results by equality alone. So a re-plan after the head read, an RTT
+ * re-plan or a presence change, makes the page accept a newer identity and the poll fail as a false red, never a false
+ * green: a `reshape-in-force` timeout whose last read names a later `version` than the head read.
  */
 export function toReshapeInForcePollCommand(
     step: AlmConformanceStepInput,
