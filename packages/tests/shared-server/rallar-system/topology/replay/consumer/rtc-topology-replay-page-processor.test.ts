@@ -25,8 +25,23 @@ const PUBLISHER_STREAM_ID = '00000000-0000-4000-8000-000000000007';
 const DATABASE_NOW_EPOCH_MS = 100;
 
 describe('RtcTopologyReplayPageProcessor', () => {
+    it('advances past an expired retention entry as a gap, re-hydrates, and moves the cursor over the later rows', async () => {
+        const replay = await createReplayPage('expired-retention');
+
+        await expect(replay.processor.process(replay.input)).resolves.toBe('done');
+
+        expect(replay.timeline).toEqual(['cursor 0 -> 1', 'hydrate', 'cursor 1 -> 3']);
+        expect(replay.sent.length).toBeGreaterThan(0);
+        expect(replay.diagnostics).toEqual([
+            { kind: 'entry', outcome: 'current-repair' },
+            { kind: 'cursor', outcome: 'gap' },
+            { kind: 'cursor', outcome: 'advanced' },
+            { kind: 'cursor', outcome: 'advanced' }
+        ]);
+    });
+
     it('stalls on a malformed v4 publication row as corruption without hydrating', async () => {
-        const replay = await createReplayPage();
+        const replay = await createReplayPage('malformed-v4');
 
         await expect(replay.processor.process(replay.input)).resolves.toBe('failed');
 
@@ -46,7 +61,7 @@ interface ReplayPageFixture {
     readonly diagnostics: RtcTopologyReplayDiagnosticsEvent[];
 }
 
-async function createReplayPage(): Promise<ReplayPageFixture> {
+async function createReplayPage(secondRow: 'expired-retention' | 'malformed-v4'): Promise<ReplayPageFixture> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const groupRef = createGroupRef();
@@ -57,7 +72,7 @@ async function createReplayPage(): Promise<ReplayPageFixture> {
             {
                 namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
                 key: publications.publicationKey(groupRef, publication.publicationId),
-                value: JSON.stringify(index === 1 ? { ...publication, traceId: 'not a trace' } : publication),
+                value: JSON.stringify(index === 1 && secondRow === 'malformed-v4' ? { ...publication, traceId: 'not a trace' } : publication),
                 expireAtTimestamp: Date.now() + 60_000
             }
         );
@@ -94,7 +109,7 @@ async function createReplayPage(): Promise<ReplayPageFixture> {
         result: {
             status: 'page',
             expectedCursorSequence: 0,
-            entries: rows.map((publication, index) => toLogEntry(publication, outbox, index + 1)),
+            entries: rows.map((publication, index) => toLogEntry(publication, outbox, index + 1, index === 1 && secondRow === 'expired-retention')),
             hasMore: false,
             capturedHeadSequence: 3,
             retainedFromSequence: 1,
@@ -109,7 +124,8 @@ async function createReplayPage(): Promise<ReplayPageFixture> {
 function toLogEntry(
     publication: RtcTopologyPublication,
     outbox: readonly ResourceEntry[],
-    sequence: number
+    sequence: number,
+    expired: boolean
 ): RtcTopologyDeliveryLogEntry {
     const firstPage = computeRtcTopologyPublicationOutbox(publication)[0];
     return {
@@ -118,7 +134,7 @@ function toLogEntry(
         groupRef: publication.groupRef,
         publicationId: publication.publicationId,
         outboxKey: outbox.find((page) => isKeysEqual(page.key, firstPage.key))!.key,
-        retainUntilEpochMs: publication.expiresAtEpochMs,
+        retainUntilEpochMs: expired ? DATABASE_NOW_EPOCH_MS : publication.expiresAtEpochMs,
         insertedAtEpochMs: publication.createdAtEpochMs
     };
 }
