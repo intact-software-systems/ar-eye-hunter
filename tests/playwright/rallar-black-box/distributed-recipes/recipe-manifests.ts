@@ -188,7 +188,9 @@ export function createPreprovisionedRealtimeRecipe(input: PreprovisionedRealtime
     const base = createRallarBlackBoxRtcRealtimeRecipe({
         durationSeconds: 1,
         connection,
-        group
+        group,
+        readyPeerCount: 2,
+        readyTimeoutMs: 5_000
     });
     return {
         ...base,

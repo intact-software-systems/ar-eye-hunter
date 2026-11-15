@@ -154,6 +154,13 @@ both ready peers before sending, within the existing connection deadline; preser
 that both receivers observe the message. This is another reason to execute the workload routinely
 rather than count its presence in a test listing as coverage.
 
+The first Linux CI execution exposed the same missing precondition on the later, separately
+acquired realtime connection: its first send began 6 ms after connect, before another participant
+finished connecting. Open data channels were insufficient because room-target eligibility was not
+yet established. Apply the shared fixture's bounded two-peer readiness option to this connection
+as well; readiness on an earlier connection does not carry across acquisition. The new execution
+guard correctly rejected that run as one failed case out of five listed cases.
+
 The scenario also provisioned the group and all memberships twice: once in its checked setup and
 again through the standalone realtime fixture. The latter produced three expected HTTP conflicts
 that violated the scenario's strict browser-console assertion. Its adapted realtime workload now
