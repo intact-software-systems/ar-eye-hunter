@@ -133,17 +133,35 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     async listPublicationEntriesPage(
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        return await this.readLivePublicationEntriesPage('', options);
+        const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, '', options);
+        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
     }
 
+    /** Rows are validated before their expiry is judged; expired rows are skipped without ending the walk. */
     async listGroupPublicationEntriesPage(
         groupRef: GroupRef,
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        return await this.readLivePublicationEntriesPage(
-            `${groupStateGroupStorageKey(groupRef)}:publication=`,
-            options
-        );
+        const keyPrefix = `${groupStateGroupStorageKey(groupRef)}:publication=`;
+        const live: RuntimeStateEntryValue<RtcTopologyPublication>[] = [];
+        let afterKey = options.afterKey;
+        while (live.length < options.limit) {
+            const missing = options.limit - live.length;
+            const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, keyPrefix, {
+                afterKey,
+                limit: missing
+            });
+            live.push(
+                ...toLivePublicationEntries(
+                    await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry)))
+                )
+            );
+            if (entries.length < missing) {
+                break;
+            }
+            afterKey = entries[entries.length - 1]!.key;
+        }
+        return live;
     }
 
     async listWorkClaimEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
@@ -170,14 +188,6 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 
     workIndexKey(groupRef: GroupRef, workId: string): string {
         return childKey(groupRef, 'work', workId);
-    }
-
-    private async readLivePublicationEntriesPage(
-        keyPrefix: string,
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, keyPrefix, options);
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
     }
 
     private async toLivePublicationEntry(

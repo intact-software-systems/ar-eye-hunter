@@ -8,6 +8,7 @@ import {
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     describe,
     expect,
@@ -248,6 +249,49 @@ describe('RTC topology publication repository', () => {
         expect(entries.map((entry) => entry.value.workId)).toEqual(['work-own']);
     });
 
+    it('walks past expired rows to the live ones, naming each live publication once', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        await storePublicationsInKeyOrder(runtimeRepository, repository, groupRef, [
+            ['work-1', 'live'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired'],
+            ['work-4', 'live'],
+            ['work-5', 'live']
+        ]);
+
+        const first = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 2 });
+        const second = await repository.listGroupPublicationEntriesPage(groupRef, {
+            limit: 2,
+            afterKey: repository.publicationKey(groupRef, first[1]!.value.publicationId)
+        });
+
+        expect(first.map((entry) => entry.value.workId)).toEqual(['work-1', 'work-4']);
+        expect(second.map((entry) => entry.value.workId)).toEqual(['work-5']);
+    });
+
+    it('lists nothing from a room whose publications are all expired, and from a trailing run of expired ones', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        await storePublicationsInKeyOrder(runtimeRepository, repository, groupRef, [
+            ['work-1', 'expired'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired']
+        ]);
+        expect(await repository.listGroupPublicationEntriesPage(groupRef, { limit: 2 })).toEqual([]);
+
+        const trailing = { ...groupRef, groupId: 'room-trailing' };
+        await storePublicationsInKeyOrder(runtimeRepository, repository, trailing, [
+            ['work-1', 'live'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired']
+        ]);
+        const entries = await repository.listGroupPublicationEntriesPage(trailing, { limit: 2 });
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-1']);
+    });
+
     it('an expired publication is not listed', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new RtcTopologyPublicationRepository(runtimeRepository);
@@ -267,6 +311,23 @@ describe('RTC topology publication repository', () => {
         expect(entries.map((entry) => entry.value.workId)).toEqual(['work-live']);
     });
 });
+
+async function storePublicationsInKeyOrder(
+    runtimeRepository: FakeRuntimeStateRepository,
+    repository: RtcTopologyPublicationRepository,
+    groupRef: GroupRef,
+    rows: readonly (readonly [workId: string, liveness: 'live' | 'expired'])[]
+): Promise<void> {
+    for (const [workId, liveness] of rows) {
+        const publication = createPublication(createTopologySnapshot(groupRef, 1), workId);
+        await runtimeRepository.upsert({
+            namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            key: repository.publicationKey(groupRef, publication.publicationId),
+            value: JSON.stringify(publication),
+            expireAtTimestamp: liveness === 'live' ? Date.now() + 60_000 : Date.now() - 1
+        });
+    }
+}
 
 function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId' | 'traceId') {
     return Object.fromEntries(Object.entries(publication).filter(([key]) => key !== defect));

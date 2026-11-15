@@ -17,7 +17,7 @@ async function createReader() {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const reader = new ReadAdminRoomTopologyPlans({ publications, nowEpochMs: () => NOW });
-    async function store(ref: GroupRef, workId: string, version: number, state: 'active' | 'removed' = 'active') {
+    async function store(ref: GroupRef, workId: string, version: number, state: 'active' | 'removed' = 'active', live = true) {
         const snapshot = state === 'active'
             ? createTopologySnapshot(ref, version)
             : { ...createTopologySnapshot(ref, version), state, nextHopsBySessionId: { 'session-a': [], 'session-b': [] } };
@@ -26,7 +26,7 @@ async function createReader() {
             namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             key: publications.publicationKey(ref, publication.publicationId),
             value: JSON.stringify(publication),
-            expireAtTimestamp: Date.now() + 60_000
+            expireAtTimestamp: live ? Date.now() + 60_000 : Date.now() - 1
         });
         return publication;
     }
@@ -95,4 +95,53 @@ it('serves a removal with a null plan', async () => {
 
     expect(response.plans).toHaveLength(1);
     expect(response.plans[0]).toMatchObject({ layout: { version: 4, state: 'removed' }, plan: null });
+});
+
+it('a walk that follows the cursor sees every live publication once when expired rows sit between them', async () => {
+    const { reader, store } = await createReader();
+    const roomRef = createGroupRef();
+    const expectedIds: string[] = [];
+    for (const [workId, live] of [['work-1', true], ['work-2', false], ['work-3', false], ['work-4', true], ['work-5', true]] as const) {
+        const publication = await store(roomRef, workId, 1, 'active', live);
+        if (live) {
+            expectedIds.push(publication.publicationId);
+        }
+    }
+
+    const first = await reader.read({ roomRef, limit: 2, afterPublicationId: null });
+    expect(first.nextAfterPublicationId).not.toBeNull();
+    const seen = first.plans.map((plan) => plan.publicationId);
+    let cursor = first.nextAfterPublicationId;
+    while (cursor !== null) {
+        const page = await reader.read({ roomRef, limit: 2, afterPublicationId: cursor });
+        seen.push(...page.plans.map((plan) => plan.publicationId));
+        cursor = page.nextAfterPublicationId;
+    }
+
+    expect(seen).toEqual(expectedIds);
+});
+
+it('returns no plans and no cursor for a room whose publications are all expired', async () => {
+    const { reader, store } = await createReader();
+    const roomRef = createGroupRef();
+    await store(roomRef, 'work-1', 1, 'active', false);
+    await store(roomRef, 'work-2', 1, 'active', false);
+
+    const response = await reader.read({ roomRef, limit: 1, afterPublicationId: null });
+
+    expect(response.plans).toEqual([]);
+    expect(response.nextAfterPublicationId).toBeNull();
+});
+
+it('ends the walk with a null cursor when only expired rows follow the last live one', async () => {
+    const { reader, store } = await createReader();
+    const roomRef = createGroupRef();
+    const live = await store(roomRef, 'work-1', 1);
+    await store(roomRef, 'work-2', 1, 'active', false);
+    await store(roomRef, 'work-3', 1, 'active', false);
+
+    const response = await reader.read({ roomRef, limit: 1, afterPublicationId: null });
+
+    expect(response.plans.map((plan) => plan.publicationId)).toEqual([live.publicationId]);
+    expect(response.nextAfterPublicationId).toBeNull();
 });
