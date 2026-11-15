@@ -1070,6 +1070,10 @@ function resolveLoopIterationCount(recipe: RallarBlackBoxTestRecipe): number {
     return loop.count;
 }
 
+function compareAgentIds(left: string, right: string): number {
+    return left.localeCompare(right);
+}
+
 function toCompositeDrilldownOutcomes(
     monitor: DistributedRunMonitor
 ): readonly Pick<
@@ -1086,7 +1090,7 @@ function toCompositeDrilldownOutcomes(
             childDecodeIssues: drilldown.childDecodeIssues,
             summary: drilldown.summary
         }))
-        .sort((left, right) => left.agentId.localeCompare(right.agentId));
+        .sort((left, right) => compareAgentIds(left.agentId, right.agentId));
 }
 
 function wsSendRecipe(
@@ -1900,7 +1904,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             }
             const realtimeLeafResultCount = realtimeRecipe.commands.length - 1 + realtimeLoopIterations;
             expect(toCompositeDrilldownOutcomes(realtimeMonitor)).toEqual(
-                [...realtimePassed.targetAgentIds].sort().map((agentId) => ({
+                [...realtimePassed.targetAgentIds].sort(compareAgentIds).map((agentId) => ({
                     agentId,
                     phase: 'start',
                     recipeId: realtimeRecipe.recipeId,
