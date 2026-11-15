@@ -215,8 +215,8 @@ creates the room and owns it. A settled role runs this, in order:
 3. The `receiver` only: the cell's start state (below), then the formation poll.
 4. The `formation-settled` barrier.
 5. Every settle role: its own head read and the wait for its page to have applied that head. In a
-   cell that reshapes its room (below), then its poll until its page's accepted overlay is the path,
-   then its wait for the replaced layout's forwarding window.
+   cell that reshapes its room (below), then its poll until its page's accepted layout is the one
+   that head read names, then its wait for the replaced layout's forwarding window.
 6. Its arming run: the leading run of its body that is `fault.inject` commands and cue
    subscriptions. A role arms its faults here, so no role's first send meets an unarmed recipient.
    The `sender` is the exception for faults: its storage baseline follows its leading cue

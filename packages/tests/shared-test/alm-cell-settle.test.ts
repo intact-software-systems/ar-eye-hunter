@@ -276,7 +276,7 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('every settle role of a barriered cell runs connected barrier, [receiver: formation poll], formation-settled barrier, head read, applied-revision floor wait, [reshaped: its path in force], its leading faults, armed barrier — in that order, before its first other body command', () => {
+    it('every settle role of a barriered cell runs connected barrier, [receiver: formation poll], formation-settled barrier, head read, applied-revision floor wait, [reshaped: the reshape in force, the forwarding wait], its leading faults, armed barrier — in that order, before its first other body command', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
                 const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
@@ -344,7 +344,7 @@ describe('alm-conformance cell parts', () => {
                 expect(startState.every((command) => command.timeoutMs === 5_000), scenario.scenarioKey).toBe(true);
                 expect(Math.min(...writeAts), scenario.scenarioKey).toBeGreaterThan(connectedAt);
                 // Every write precedes the page's applied wait; after it the settle holds nothing but a reshaped cell's poll
-                // that its path is in force, then the arming run.
+                // that its reshape is in force and its forwarding wait, then the arming run.
                 expect(Math.max(...writeAts), scenario.scenarioKey).toBeLessThan(headAppliedAt);
                 expect(
                     recipe.commands.slice(headAppliedAt + 1, armedAt).filter((command) => command.metadata?.cellSettle === 'lane')

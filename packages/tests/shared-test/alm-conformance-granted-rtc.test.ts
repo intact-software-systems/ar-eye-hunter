@@ -525,13 +525,13 @@ describe('the granted rtc cells', () => {
             ['DELETE', undefined]
         ]);
         expect(toStepIndex(receiver, '-start-grant-receiver-s-request')).toBeLessThan(toStepIndex(receiver, '-topology-tree'));
-        // A cue reaches only a role that already listens, so the owner cues the path once the sender said it listens.
-        expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-tree-received'));
-        expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-tree'));
+        // A cue reaches only a role that already listens, so the owner cues the start once the sender said it listens.
+        expect(toStepIndex(sender, '-cue-ready-sent')).toBeLessThan(toStepIndex(sender, '-cue-start-received'));
+        expect(toStepIndex(receiver, '-cue-ready-received')).toBeLessThan(toStepIndex(receiver, '-cue-start'));
         expect(toStepIndex(receiver, '-cue-recorded-received')).toBeLessThan(toStepIndex(receiver, '-topology-reset'));
         expect(toNestedRecipeCommands(sender).find((command) => command.kind === 'rtc.connect'))
             .toMatchObject({ readiness: { minReadyPeers: 1 } });
-        expect(toStepIndex(sender, '-cue-tree-received')).toBeLessThan(toStepIndex(sender, '-publish'));
+        expect(toStepIndex(sender, '-cue-start-received')).toBeLessThan(toStepIndex(sender, '-publish'));
         expect(toNestedRecipeCommands(receiver).some((command) => command.kind === 'wait' && command.match.payloadFields?.['data.transport'] === 'rtc')).toBe(
             true
         );
@@ -567,7 +567,7 @@ describe('the granted rtc cells', () => {
         // The readiness probe rides no track and expects the receiver alone: recipient-b and the sender hold no subscribe.
         expect(toReceiptCounts(sender)).toEqual({ expected: 1, confirmed: 1, outsideAudience: 0 });
         const order = [
-            '-cue-tree-received',
+            '-cue-start-received',
             '-probe-ready',
             '-send-1',
             '-observe-acknowledged-1',

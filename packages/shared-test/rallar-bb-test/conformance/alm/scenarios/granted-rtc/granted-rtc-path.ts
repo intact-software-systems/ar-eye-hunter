@@ -11,12 +11,12 @@ import {
 import { toOverlayNextHopsCommand } from './granted-rtc-commands.ts';
 
 /**
- * The cell's start state reshapes the room into a path before the sender publishes, so a path leaf's connect waits for
- * its one next hop, and leaves recipient-b `publish` alone. A cue reaches only a role whose own first cue opened its
- * channel, so every role subscribes before the cell's `armed` barrier, the owner first of all, and the owner says the
- * path is set only once the sender says it listens; it says it `received` once its own `received` steps passed. The
- * room's three-agent cells share it, so the owner resets the topology once every page recorded its next hops, which
- * name the layout the run drew.
+ * The cell's start state reshapes the room into a path, and the lane's settle holds every role until every page
+ * accepted it; recipient-b holds `publish` alone. A cue reaches
+ * only a role whose own first cue opened its channel, so every role subscribes before the cell's `armed` barrier, the
+ * owner first of all, and the owner cues `start` only once it subscribed and the sender says it listens; it says it
+ * `received` once its own `received` steps passed. The room's three-agent cells share it, so the owner resets the
+ * topology once every page recorded its next hops, which name the layout the run drew.
  */
 export function toPathOwnerCommands(
     owner: AlmConformanceStepInput,
@@ -26,7 +26,7 @@ export function toPathOwnerCommands(
         ...toCueListenCommands(owner),
         toSubscribeCommand(owner, 'receiver'),
         toCueWait(owner, 'ready'),
-        ...toCueSendCommands(owner, 'tree'),
+        ...toCueSendCommands(owner, 'start'),
         ...received,
         ...toCueSendCommands(owner, 'received'),
         toOverlayNextHopsCommand(owner),
@@ -36,7 +36,7 @@ export function toPathOwnerCommands(
     ];
 }
 
-/** The sender listens, says so, and publishes once the owner set the path; it then records its next hops. */
+/** The sender listens, says so, and publishes once the owner cued `start`; it then records its next hops. */
 export function toPathSenderCommands(
     sender: AlmConformanceStepInput,
     published: readonly RallarBlackBoxTestCommand[]
@@ -44,7 +44,7 @@ export function toPathSenderCommands(
     return [
         ...toCueListenCommands(sender),
         ...toCueSendCommands(sender, 'ready'),
-        toCueWait(sender, 'tree'),
+        toCueWait(sender, 'start'),
         ...published,
         toOverlayNextHopsCommand(sender)
     ];

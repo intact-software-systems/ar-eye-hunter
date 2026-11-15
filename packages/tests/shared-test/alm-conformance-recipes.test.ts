@@ -1555,14 +1555,14 @@ describe('alm-conformance recipe family', () => {
             expect(recipientB.filter((command) => command.kind === 'messages.received').map(shapeOf))
                 .toEqual(['received:2', 'received:3:absent']);
             expect(shapeOf(recipientB.at(-1)!)).toBe('received:3:absent');
-            // Each origin sends only once the path is set: the owner after it sent `tree`, the sender after it heard it.
-            const ownerTree = indexOf(scenario.receiver, '-receiver-cue-tree');
-            expect(scenario.receiver.commands[ownerTree]?.kind).toBe('messages.send');
-            expect(ownerTree).toBeGreaterThan(-1);
-            expect(indexOf(scenario.receiver, '-receiver-send-1')).toBeGreaterThan(ownerTree);
-            const senderTree = indexOf(scenario.sender, '-sender-cue-tree-received');
-            expect(senderTree).toBeGreaterThan(-1);
-            expect(indexOf(scenario.sender, '-sender-send-1')).toBeGreaterThan(senderTree);
+            // Each origin sends only once both origins listen: the owner after it sent `start`, the sender after it heard it.
+            const ownerStart = indexOf(scenario.receiver, '-receiver-cue-start');
+            expect(scenario.receiver.commands[ownerStart]?.kind).toBe('messages.send');
+            expect(ownerStart).toBeGreaterThan(-1);
+            expect(indexOf(scenario.receiver, '-receiver-send-1')).toBeGreaterThan(ownerStart);
+            const senderStart = indexOf(scenario.sender, '-sender-cue-start-received');
+            expect(senderStart).toBeGreaterThan(-1);
+            expect(indexOf(scenario.sender, '-sender-send-1')).toBeGreaterThan(senderStart);
             // The owner resets the path only after its own receipt assertions and the sender's `sender-read` cue.
             const ownerAsserts = scenario.receiver.commands.map((command, index) => command.kind === 'assert' ? index : -1);
             const senderRead = indexOf(scenario.receiver, '-receiver-cue-sender-read-received');
@@ -1592,7 +1592,7 @@ describe('alm-conformance recipe family', () => {
             }
         });
 
-        it('sends from each relay-path origin only once every page\'s accepted overlay is the tree, in the lane\'s settle, and pins that one origin relayed', () => {
+        it('sends from each relay-path origin only once every page accepted the reshape\'s layout, in the lane\'s settle, and pins that one origin relayed', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
             const settled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), cellSettle: CONFORMANCE_BARRIERED_SETTLE })
                 .find((candidate) => candidate.scenarioKey === 'receipted-relay-path')!;
@@ -1610,8 +1610,8 @@ describe('alm-conformance recipe family', () => {
                     .toMatchObject({ kind: 'loop', until: 'first-success', count: 360, intervalMs: 250 });
             }
             for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
-                const treeCue = role === 'sender' ? '-sender-cue-tree-received' : '-receiver-cue-tree-sent';
-                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(indexOf(recipe, treeCue) + 1);
+                const startCue = role === 'sender' ? '-sender-cue-start-received' : '-receiver-cue-start-sent';
+                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(indexOf(recipe, startCue) + 1);
             }
             expect(scenario.sender.metadata?.almRelayedReceiptOrigins).toEqual([
                 { role: 'sender', handleId: 'alm-rtc-receipted-relay-path-send-1' },
@@ -1728,7 +1728,7 @@ describe('alm-conformance recipe family', () => {
                     // Every role meets at `formation-settled` only once the owner's poll found the reshaped room settled.
                     expect(indexOf('head-applied'), label).toBeGreaterThan(indexOf('formation-settled'));
                     expect(indexOf('formation-settled'), label).toBeGreaterThan(-1);
-                    // Then the page reads its own health until its accepted overlay is the path.
+                    // Then the page reads its own health until its accepted layout is the one its head read names.
                     expect(indexOf('reshape-in-force'), label).toBeGreaterThan(indexOf('head-applied'));
                     // Then it waits out the forwarding window of the layout the reshape replaced, before `armed`.
                     expect(indexOf('replaced-layout-forwarding'), label).toBeGreaterThan(indexOf('reshape-in-force'));

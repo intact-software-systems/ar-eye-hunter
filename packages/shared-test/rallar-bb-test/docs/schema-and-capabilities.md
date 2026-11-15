@@ -725,7 +725,7 @@ sends a non-granted receipted multicast through the forced path. The receiver ow
 the room, so its start state PUTs the path config the granted path cells use
 (`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 }`, one shared topology
 command, from `roomTopology: 'reshaped'`), and every page connects with `connect.minReadyPeers: 1`. Once the sender
-says it listens, the receiver cues that the path is set; then the sender and the
+says it listens, the receiver cues `start`; then the sender and the
 receiver each send one `receiver`-receipted (`all-logical-recipients`) multicast
 with no grant, hear the other origin's one send, record their overlay next hops in
 a `health` read and read their own receipt after their window: `acknowledged`, two
