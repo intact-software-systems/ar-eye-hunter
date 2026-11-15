@@ -120,6 +120,33 @@ describe('AR Eye Quick Join action and controls', () => {
         expect(container.textContent).toContain(failure.message);
     });
 
+    it('adopts the joined room when previous-room cleanup fails before the cache observes the host in it', async () => {
+        const snapshot = createGroupSnapshotFixture({
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'players',
+            groupId: 'selected',
+            sessionIds: ['session-1']
+        });
+        mockRallar.rooms.quickJoin.mockRejectedValue(Object.assign(new Error('Joined selected, but leaving arena-1 failed.'), {
+            name: 'RallarRoomSwitchPartialFailureError',
+            operation: 'quick-join',
+            joinedRoom: { ...snapshot, activeSessions: [], onlineMemberCount: 0 },
+            previousRoomRef: arenaRoomRef,
+            leaveError: new Error('leave failed')
+        }));
+        // Until the host's presence in the joined room is observed, the cache still resolves the previous room.
+        mockRallar.rooms.state.mockReturnValue({ rooms: [], currentRoomId: 'arena-1', currentRoomRef: arenaRoomRef });
+        // The refresh is held so the room adopted by the catch is observed before any refresh result replaces it.
+        const refresh = Promise.withResolvers<RallarRoomState>();
+        mockRallar.rooms.refresh.mockReturnValue(refresh.promise);
+        await renderOperations();
+
+        await act(async () => button('Quick Join').click());
+
+        expect(arena.current?.roomId).toBe('selected');
+        await act(async () => refresh.resolve({ rooms: [], currentRoomId: 'selected', currentRoomRef: snapshot.group }));
+    });
+
     it('clears the old snapshot as soon as the selected room is published, while cleanup is pending', async () => {
         await act(async () => {
             await vi.mocked(createArenaRallarGameMatch).mock.calls.at(-1)?.[0].onSnapshot?.(createRallarGameEnvelope({

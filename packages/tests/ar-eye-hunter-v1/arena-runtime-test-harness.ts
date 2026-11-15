@@ -312,6 +312,7 @@ function resetArenaRoomsFixture(): void {
     mockRallar.rooms.quickJoin.mockReset().mockResolvedValue({ status: 'unavailable' });
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
+    mockRallar.rooms.rotateJoinCode.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());
 }
 

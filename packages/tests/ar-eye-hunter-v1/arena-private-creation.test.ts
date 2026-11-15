@@ -70,6 +70,7 @@ describe('AR Eye private arena creation', () => {
         const created = { ...joined, group: { ...joined.group, joinMode: 'code' as const }, activeSessions: [], onlineMemberCount: 0 };
         const state = { rooms: [], currentRoom: previous, currentRoomRef: previous.group, currentRoomId: previous.group.groupId };
         mockRallar.rooms.state.mockReturnValue(state);
+        // Unlike the real store, refresh reports the joined room: this isolates the catch decision from the refresh path, a known separate residual.
         mockRallar.rooms.refresh.mockResolvedValue({
             rooms: [{
                 roomId: created.group.groupId,
@@ -123,6 +124,21 @@ describe('AR Eye private arena creation', () => {
             await act(async () => root.unmount());
             container.remove();
         }
+    });
+
+    it('rethrows the original partial failure when its joined room is not a valid room snapshot', async () => {
+        const failure = Object.assign(new Error('Cannot remove last owner'), {
+            name: 'RallarRoomSwitchPartialFailureError',
+            operation: 'create-and-switch',
+            joinedRoom: { group: { groupId: 'incomplete-room' } },
+            previousRoomRef: { applicationId: 'ar-eye-hunter', workspaceId: 'default', groupId: 'old-arena' },
+            leaveError: new Error('Cannot remove last owner')
+        });
+        mockRallar.rooms.createAndSwitch.mockRejectedValue(failure);
+
+        await act(async () => {
+            await expect(arena.current?.createArenaRoom('code')).rejects.toBe(failure);
+        });
     });
 
     function requireArena() {

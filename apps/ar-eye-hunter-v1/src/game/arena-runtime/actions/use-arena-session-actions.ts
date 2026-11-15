@@ -12,7 +12,8 @@ import {
 import type {
     RallarCreateRoomInput,
     RallarDirectorStatus,
-    RallarRoomSummary
+    RallarRoomSummary,
+    RallarRoomSwitchOperation
 } from '@shared-web/browser/rallar.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -224,11 +225,9 @@ async function quickJoinArena(
         if (!isCurrent()) {
             return undefined;
         }
-        if (
-            error instanceof Error && error.name === 'RallarRoomSwitchPartialFailureError' &&
-            'operation' in error && error.operation === 'quick-join'
-        ) {
-            adoptArenaRoom(input, rallar.rooms.state().currentRoomId);
+        const joinedRoom = toJoinedRoomSnapshot(error, 'quick-join');
+        if (joinedRoom) {
+            adoptArenaRoom(input, joinedRoom.group.groupId);
             try {
                 await refreshRooms();
             }
@@ -247,6 +246,22 @@ async function quickJoinArena(
         await refreshRooms();
     }
     return result.status;
+}
+
+function toJoinedRoomSnapshot(error: unknown, operation: RallarRoomSwitchOperation): GroupSnapshot | undefined {
+    if (
+        !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
+        !('operation' in error) || error.operation !== operation || !('joinedRoom' in error)
+    ) {
+        return undefined;
+    }
+    try {
+        validateAuthoritativeGroupSnapshot(error.joinedRoom);
+        return error.joinedRoom;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string | undefined): void {
@@ -289,14 +304,11 @@ async function createAndSelectArenaRoom(
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
             return undefined;
         }
-        if (
-            !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
-            !('operation' in error) || error.operation !== 'create-and-switch' || !('joinedRoom' in error)
-        ) {
+        const joinedRoom = toJoinedRoomSnapshot(error, 'create-and-switch');
+        if (!joinedRoom) {
             throw error;
         }
-        validateAuthoritativeGroupSnapshot(error.joinedRoom);
-        snapshot = error.joinedRoom;
+        snapshot = joinedRoom;
         input.setError('The new arena is ready, but leaving the previous arena failed. Your membership there remains.');
     }
     if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
