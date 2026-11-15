@@ -119,6 +119,60 @@ detect every backend switch under an unchanged test name, or audit native Bun-on
 collection proves registration and selection; only runtime results prove execution. Keep the
 existing workflow/file reachability check and real backend runs alongside them.
 
+### Confirmed live-browser execution gap: distributed recipes and Recipe Console
+
+The initial review missed a second form of inactive coverage. Both
+`full-stack-distributed-recipes.spec.ts` and `full-stack-recipe-console-monitor.spec.ts` were
+listed by `test:rallar`, but their real-browser cases skipped unless the full-stack and distributed
+environment flags were enabled. No inspected CI lane enabled that workload. A green file-selection
+check therefore did not prove these cases ran. The four remaining manual registry entries are
+four declared manual workloads, **not an exhaustive count of unexecuted workloads**.
+
+The supplied [earlier PR release run](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/43645694674)
+did not execute this workload either. The reported Console Full failure was not reproduced: its
+isolated scenario and both Console scenarios in the combined run passed. The combined run did
+reproduce a distributed-scenario failure: it expected an arbitrary warning payload in runtime
+diagnostics, although the current diagnostic contract deliberately retains only canonical
+pattern/source metadata and envelope scope. After correcting that expectation, the run exposed
+another obsolete assertion: artifacts now retain a finite command-result tree with explicit
+payload-omission evidence, rather than the former `resultsOmitted` flag. The repair preserves the
+current contracts and verifies the emitting agent, scope, transport, pattern/source, retained
+result-tree identities and visible monitor evidence.
+
+The warning scenario uses a real per-run connection identity and verifies that exact identity in
+the canonical diagnostic. The monitor currently associates events by linked command ID or by a
+run-ID reference in retained metadata; it does not associate by time/scope alone. Ordinary Console
+recipes default to a static connection name, so this scenario does **not** establish automatic
+run association for their otherwise unlinked warnings. That remains a diagnostic-coverage limit,
+not a product behavior repaired by this test change. Pattern/source are asserted on runtime
+evidence; the UI proof checks the diagnostic type, emitting agent, group, severity and transport
+that the current renderer actually exposes.
+
+A repeated live run also exposed a readiness race: the connect recipe could pass while only one
+of two intended receivers was ready, so the subsequent broadcast reached only that peer. Require
+both ready peers before sending, within the existing connection deadline; preserve assertions
+that both receivers observe the message. This is another reason to execute the workload routinely
+rather than count its presence in a test listing as coverage.
+
+The scenario also provisioned the group and all memberships twice: once in its checked setup and
+again through the standalone realtime fixture. The latter produced three expected HTTP conflicts
+that violated the scenario's strict browser-console assertion. Its adapted realtime workload now
+omits only the two already-proven provisioning commands, retaining connect, loop and stats plus
+their complete result trees. Unexpected console errors still fail; no broad conflict whitelist is
+introduced.
+
+**Action:** add a dedicated blocking Release Gate lane using migrated PostgreSQL and real browser
+agents, running both complete files with one worker and zero retries. Compare native Playwright
+JSON collection and execution reports, requiring every listed file/title/project case to pass;
+missing reports, omitted cases, runtime skips and empty selections fail the lane. Retain those
+reports and failure traces as CI artifacts. Native runner fixtures cover these failure modes so
+the guard does not rely solely on workflow source assertions.
+
+This execution check covers the new live-browser lane. The existing repository-wide check remains
+a file-selection/declared-manual-ownership check, now named explicitly as such. It does not establish
+repository-wide runtime coverage. Other environment gates and conditional skips still require
+runner outcomes from their owning lanes before the review can claim they execute in CI.
+
 ### Direct assertion gaps: canonical JSON input boundaries
 
 `packages/shared/encoding/canonical-json.ts` explicitly rejects non-finite numbers, sparse arrays,
