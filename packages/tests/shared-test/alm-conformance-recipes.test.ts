@@ -1730,7 +1730,10 @@ describe('alm-conformance recipe family', () => {
                     expect(indexOf('formation-settled'), label).toBeGreaterThan(-1);
                     // Then the page reads its own health until its accepted overlay is the path.
                     expect(indexOf('tree-in-force'), label).toBeGreaterThan(indexOf('head-applied'));
-                    expect(indexOf('tree-in-force'), label).toBeLessThan(firstPublicationAt);
+                    // Then it waits out the forwarding window of the layout the reshape replaced, before `armed`.
+                    expect(indexOf('replaced-layout-forwarding'), label).toBeGreaterThan(indexOf('tree-in-force'));
+                    expect(indexOf('replaced-layout-forwarding'), label).toBeLessThan(indexOf('armed'));
+                    expect(indexOf('replaced-layout-forwarding'), label).toBeLessThan(firstPublicationAt);
                 }
             }
         }

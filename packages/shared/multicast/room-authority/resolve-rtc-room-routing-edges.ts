@@ -102,7 +102,7 @@ function resolveReplacedLayoutEdges(
  * A sender or relay forwards over a replaced layout for the first half of the overlap its receiver admits, so the
  * second half absorbs the difference between the instants at which two browsers applied the same promotion.
  */
-function computeReplacedLayoutForwardingMs(replacedLayoutOverlapMs: number): number {
+export function computeReplacedLayoutForwardingMs(replacedLayoutOverlapMs: number): number {
     return Math.floor(replacedLayoutOverlapMs / 2);
 }
 

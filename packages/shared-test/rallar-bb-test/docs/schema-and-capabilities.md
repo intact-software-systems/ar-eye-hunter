@@ -736,7 +736,9 @@ sender has cued that it read its. Three sessions in a tree of degree at most two
 form a path, so whenever both sends route on one planned path at least one origin
 is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
 PUT only requests the reshape, so in the lane's settle every page reads its own
-health until its accepted overlay is the tree (`tree-in-force`), before `armed`. Each origin's receipt names the
+health until its accepted overlay is the tree (`tree-in-force`), then waits out the
+forwarding window of the replaced layout (`replaced-layout-forwarding`, half the
+overlap the server states), before `armed`. Each origin's receipt names the
 hops it confirmed through; the cell asserts neither which agent relays nor through
 which hop. After the run the identity assessment fails the cell unless at least one
 origin's ending receipt confirms both recipients through one hop: the sender

@@ -1,6 +1,7 @@
 import {
     expect,
     test,
+    type APIRequestContext,
     type Frame,
     type TestInfo
 } from '@playwright/test';
@@ -9,6 +10,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
 
 import {
     ALM_CONFORMANCE_CARRIERS,
@@ -124,7 +126,7 @@ interface ScenarioSelectionInput
     extends
         Pick<
             CreateAlmConformanceRecipesInput,
-            'group' | 'senderConnection' | 'receiverConnection' | 'principalIdsByRole'
+            'group' | 'senderConnection' | 'receiverConnection' | 'principalIdsByRole' | 'rtcReplacedLayoutOverlapMs'
         > {}
 
 interface ObservationRegimeInput {
@@ -398,12 +400,15 @@ function announcePlan(carrier: AlmConformanceCarrier, family: AlmConformanceLane
  * Each planned cell with its scenario for the run's agents. The family's scenarios are created once per planned room,
  * for that room's group.
  */
-function toPlannedScenarios(
+async function toPlannedScenarios(
     run: TwoAgentRun | AgentRun,
     carrier: AlmConformanceCarrier,
     planned: Readonly<{ family: AlmConformanceLaneFamily; plan: AlmLanePlan; }>
-): readonly PlannedScenario[] {
-    const selection = toRunSelection(run);
+): Promise<readonly PlannedScenario[]> {
+    const selection = {
+        ...toRunSelection(run),
+        rtcReplacedLayoutOverlapMs: await readStatedReplacedLayoutOverlapMs(run.request)
+    };
     const createdByRoom = new Map<AlmLaneRoomKey, readonly AlmConformanceScenario[]>();
     return planned.plan.cells.map((cell) => {
         const created = createdByRoom.get(cell.room) ??
@@ -421,6 +426,17 @@ function toPlannedScenarios(
     });
 }
 
+/** The overlap the API server states in `/api/config`, decoded as the browser decodes it. */
+async function readStatedReplacedLayoutOverlapMs(request: APIRequestContext): Promise<number> {
+    const response = await request.get(`${config.apiBaseUrl}/api/config`);
+    return decodeApiConfigResponse(await response.json(), new URL(config.apiBaseUrl)).fold(
+        (issue) => {
+            throw new Error(`The ALM lane cannot read the server's replaced-layout overlap: ${issue}`);
+        },
+        (served) => served.rtcReplacedLayoutOverlapMs
+    );
+}
+
 /** A same-context successor is the sender's own principal on a second page of its context. */
 function toRunSelection(run: TwoAgentRun | AgentRun): ScenarioSelectionInput {
     return {
@@ -435,13 +451,17 @@ function toRunSelection(run: TwoAgentRun | AgentRun): ScenarioSelectionInput {
     };
 }
 
-/** Only the roles decide the selection, so a placeholder group, connections and principals plan a cell before its agents open. */
+/**
+ * Only the roles decide the selection, so a placeholder group, connections, principals and overlap plan a cell before
+ * its agents open.
+ */
 function toPlanningSelection(): ScenarioSelectionInput {
     return {
         group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
         senderConnection: 'planning-sender',
         receiverConnection: 'planning-receiver',
-        principalIdsByRole: Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `planning-${role}`]))
+        principalIdsByRole: Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `planning-${role}`])),
+        rtcReplacedLayoutOverlapMs: 0
     };
 }
 
@@ -525,7 +545,7 @@ async function runAlmConformanceScenarios(
     family: TwoAgentScenarioFamily,
     plan: AlmLanePlan
 ): Promise<void> {
-    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
+    for (const [index, { cell, scenario }] of (await toPlannedScenarios(run, carrier, { family, plan })).entries()) {
         await runPairCell(run, scenario);
         if (isAlmLaneRoomLeftAfter(plan, index)) {
             await closeAgentConnections(toPairAgentRun(run), cell.scenarioKey);
@@ -590,7 +610,7 @@ async function runAgentScenarios(
     family: AgentScenarioFamily,
     plan: AlmLanePlan
 ): Promise<void> {
-    for (const [index, { cell, scenario }] of toPlannedScenarios(run, carrier, { family, plan }).entries()) {
+    for (const [index, { cell, scenario }] of (await toPlannedScenarios(run, carrier, { family, plan })).entries()) {
         const recipes = new Map(scenario.roles.map((role) => [role, requireRoleRecipe(scenario, role)] as const));
         const outcomes = await runRecipesOnAgents(run, recipes, scenario.continuation);
         const evidence = scenario.roles.map((role) => ({
@@ -691,7 +711,7 @@ function requireRoleOutcome(
 async function runSameContextScenarios(cell: SameContextCell): Promise<void> {
     const { run, carrier, plan, testInfo, participants } = cell;
     let owner = run.sender;
-    for (const { scenario } of toPlannedScenarios(run, carrier, { family: 'same-context', plan })) {
+    for (const { scenario } of await toPlannedScenarios(run, carrier, { family: 'same-context', plan })) {
         if (scenario.successor === undefined || scenario.ownerEnd === undefined) {
             throw new Error(`${scenario.scenarioKey} runs on one context without a successor recipe.`);
         }

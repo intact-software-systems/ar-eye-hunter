@@ -35,6 +35,11 @@ export interface CreateAlmConformanceRecipesInput {
      * `formation-settled` and `armed` barriers.
      */
     readonly cellSettle?: 'barriered';
+    /**
+     * The overlap the API server states in `/api/config`, read by the lane before it creates its cells. Absent, no cell
+     * waits out a replaced layout's forwarding window, and a barriered cell that reshapes its room cannot be created.
+     */
+    readonly rtcReplacedLayoutOverlapMs?: number;
 }
 
 export type AlmConformanceScenarioId =

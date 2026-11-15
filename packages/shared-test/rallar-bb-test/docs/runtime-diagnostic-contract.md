@@ -214,7 +214,8 @@ creates the room and owns it. A settled role runs this, in order:
 3. The `receiver` only: the cell's start state (below), then the formation poll.
 4. The `formation-settled` barrier.
 5. Every settle role: its own head read and the wait for its page to have applied that head. In a
-   cell that reshapes its room (below), then its poll until its page's accepted overlay is the path.
+   cell that reshapes its room (below), then its poll until its page's accepted overlay is the path,
+   then its wait for the replaced layout's forwarding window.
 6. Its arming run: the leading run of its body that is `fault.inject` commands and cue
    subscriptions. A role arms its faults here, so no role's first send meets an unarmed recipient.
    The `sender` is the exception for faults: its storage baseline follows its leading cue
@@ -278,8 +279,14 @@ runs on the reshaped room, so it ends only once the server accepted the tree and
 settled on it, and every settle role's head read follows. After its applied-revision wait each settle
 role runs `tree-in-force`: it reads its page's `health` every 250 ms for up to 90 s
 (`SUBSCRIPTION_PHASE_MS`) until `rallar.formation.accepted.overlay.topology` equals `tree`. So every
-page holds the reshaped layout before `armed`, and no role's body sends on a layout the reshape
-replaced. The cell's own body resets the config at its end. In an unsettled cell the reshape leads
+page holds the reshaped layout before `armed`. A sender still forwards over the layout a promotion
+replaced for the first half of the overlap the server states (`rtcReplacedLayoutOverlapMs` in
+`/api/config`, 15 000 ms by default; `computeReplacedLayoutForwardingMs`), and no page states when
+that window ends. So each settle role then runs `replaced-layout-forwarding`, an absence wait as
+long as that half (7 500 ms by default, 0 when the server states 0). The lane reads the overlap from
+`/api/config` with the browser's own decoder before it creates its cells and passes it as
+`rtcReplacedLayoutOverlapMs`; a barriered reshaped cell without it cannot be created. So no role's
+body sends on a layout the reshape replaced. The cell's own body resets the config at its end. In an unsettled cell the reshape leads
 the `receiver`'s body after its cue subscription, as the start grants do, and no page polls its
 overlay.
 

@@ -6,6 +6,9 @@ import type { AlmLaneCellOrderRecord } from '@shared-test/rallar-bb-test/conform
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
+/** The overlap the API server states in `/api/config` by default. */
+export const CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
+
 /** Each role's principal as the lane resolves it: the sender's pages and its sibling share one, as do the third roles. */
 export const CONFORMANCE_PRINCIPAL_IDS: CreateAlmConformanceRecipesInput['principalIdsByRole'] = {
     sender: 'principal-alice',
@@ -35,6 +38,7 @@ export function toConformanceInput(
         receiverConnection: 'receiver',
         deadlineMs: 18_000,
         laneFamilies: ALM_CONFORMANCE_LANE_FAMILIES,
-        principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS
+        principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS,
+        rtcReplacedLayoutOverlapMs: CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS
     };
 }

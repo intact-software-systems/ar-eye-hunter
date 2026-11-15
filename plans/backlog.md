@@ -809,6 +809,10 @@ and it has no status list.
   poll it replaced repeated every 250 ms for up to 90 s
   (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
   refused transiently; a retry would then need its own ruling.
+- A reshaped cell's settle waits half the overlap the server states in
+  `/api/config` (D-5), because no page states when a sender stops forwarding
+  over the layout a promotion replaced; a page fact for the end of that
+  forwarding window would replace the wait.
 - The settle (D647) does not close these windows: an older presence-summary row
   expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
   promotion (`pending` never reports it), a heartbeat that drops or restores a
@@ -824,7 +828,8 @@ and it has no status list.
   settle, a role failing before a barrier (the others time out), and a cell's
   own mid-body writes. A reshaped cell's path is not one of them: its start
   state writes it, and the settle polls the room settled on it and every page's
-  overlay until it is the path. The first three show as a revision past the floor or a refusal after the body
+  overlay until it is the path, then waits half the overlap `/api/config`
+  states. The first three show as a revision past the floor or a refusal after the body
   began. The restored page is silent unless the restore lands on a new
   revision, since the last `held` event does not prove the room readable. The
   dropped page needs a room the family shares: a connect writes the page's

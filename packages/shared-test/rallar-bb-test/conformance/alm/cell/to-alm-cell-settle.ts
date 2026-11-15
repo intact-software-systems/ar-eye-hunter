@@ -1,4 +1,5 @@
 import { GROUP_LAYOUT_IDENTITY_KEYS } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { computeReplacedLayoutForwardingMs } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
@@ -6,6 +7,7 @@ import { CONNECT_READINESS_TIMEOUT_MS, MESSAGE_CONTROL_TIMEOUT_MS } from '../alm
 import type { AlmConformanceRoomTopology, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
 import { toPathInForcePollCommand } from '../scenarios/relay-path/to-path-topology-config-command.ts';
+import { toPauseCommand } from '../to-pause-command.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
 import { CAUSAL_REVISION_KEYS, toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
 
@@ -41,9 +43,25 @@ export function toAlmCellSettle(step: AlmCellSettleStepInput): AlmCellSettle {
                 purpose: 'Read the room head this page must apply before its cell starts.',
                 historyFrom: 'page'
             }),
-            ...(step.roomTopology === 'reshaped' ? [toPathInForcePollCommand(step)] : [])
+            ...(step.roomTopology === 'reshaped'
+                ? [toPathInForcePollCommand(step), toReplacedLayoutForwardingWait(step)]
+                : [])
         ]
     };
+}
+
+/**
+ * The page waits out the forwarding window of the layout the reshape replaced: a sender forwards over that layout for
+ * the first part of the overlap the server states (`computeReplacedLayoutForwardingMs`), so a send inside it can leave
+ * on a direct edge the path no longer has. No page-observable witness of the window's end exists today, so the settle
+ * waits the bound itself; the bound is the server's, read from `/api/config` by the lane, never a constant of its own.
+ */
+function toReplacedLayoutForwardingWait(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const overlapMs = step.input.rtcReplacedLayoutOverlapMs;
+    if (overlapMs === undefined) {
+        throw new Error(`${step.scenarioKey} reshapes its room, but its input names no rtcReplacedLayoutOverlapMs.`);
+    }
+    return toPauseCommand(step, 'replaced-layout-forwarding', computeReplacedLayoutForwardingMs(overlapMs));
 }
 
 const toFormationField = (field: string): PollField => ({ read: 'formation', field: `body.${field}` });

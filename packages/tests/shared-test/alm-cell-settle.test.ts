@@ -27,8 +27,9 @@ import type {
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { computeReplacedLayoutForwardingMs } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS, toConformanceInput } from './alm-conformance-test-input.ts';
 import { isReshapeRequest, isStartStateCommand } from './describe-declared-start-states.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 import { toWaitCommands } from './to-wait-commands.ts';
@@ -273,7 +274,7 @@ describe('alm-conformance cell parts', () => {
                     expect([connected, formationSettled, armed].map((barrier) => barrier?.commandId))
                         .toEqual(SETTLE_BARRIER_PHASES.map((phase) => `${cellPrefix}-${role}-${phase}`));
                     const reshaped = scenario.roomTopology === 'reshaped';
-                    const headLength = reshaped ? 3 : 2;
+                    const headLength = reshaped ? 4 : 2;
                     const formation = settle.slice(0, -headLength);
                     // The receiver's start state, if its cell declares one, leads its formation poll: one request per write.
                     expect(formation.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
@@ -289,7 +290,7 @@ describe('alm-conformance cell parts', () => {
                     }
                     const head = settle.slice(-headLength);
                     expect(head.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
-                        .toEqual(reshaped ? ['http.request', 'wait', 'loop'] : ['http.request', 'wait']);
+                        .toEqual(reshaped ? ['http.request', 'wait', 'loop', 'wait'] : ['http.request', 'wait']);
                     expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([
                         ...prologue,
                         connected,
@@ -333,7 +334,11 @@ describe('alm-conformance cell parts', () => {
                     recipe.commands.slice(headAppliedAt + 1, armedAt).filter((command) => command.metadata?.cellSettle === 'lane')
                         .map((command) => command.commandId),
                     scenario.scenarioKey
-                ).toEqual(scenario.roomTopology === 'reshaped' ? [`${cellPrefix}-receiver-tree-in-force`] : []);
+                ).toEqual(
+                    scenario.roomTopology === 'reshaped'
+                        ? [`${cellPrefix}-receiver-tree-in-force`, `${cellPrefix}-receiver-replaced-layout-forwarding`]
+                        : []
+                );
                 expect(
                     recipe.commands.slice(headAppliedAt + 1, armedAt).some((command) =>
                         command.kind === 'loop' && toNestedCommands([command]).some(isStartStateCommand)
@@ -365,7 +370,15 @@ describe('alm-conformance cell parts', () => {
                     commands.slice(indexOf('formation-settled') + 1, indexOf('armed')).filter((command) => command.metadata?.cellSettle === 'lane')
                         .map((command) => command.commandId),
                     `${scenarioKey} ${role}`
-                ).toEqual(['head-read', 'head-applied', 'tree-in-force'].map((name) => `${cellPrefix}-${role}-${name}`));
+                ).toEqual(
+                    ['head-read', 'head-applied', 'tree-in-force', 'replaced-layout-forwarding'].map((name) => `${cellPrefix}-${role}-${name}`)
+                );
+                // The page waits out the server's stated forwarding window: half of /api/config's overlap, by the product's rule.
+                expect(commands[indexOf('replaced-layout-forwarding')], `${scenarioKey} ${role}`).toMatchObject({
+                    kind: 'wait',
+                    absent: true,
+                    timeoutMs: computeReplacedLayoutForwardingMs(CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS)
+                });
                 expect(firstSendAt === -1 || firstSendAt > indexOf('armed'), `${scenarioKey} ${role}`).toBe(true);
                 // The page reads its own health until its accepted overlay is the path.
                 const inForce = commands[indexOf('tree-in-force')];
@@ -383,6 +396,21 @@ describe('alm-conformance cell parts', () => {
                 ).toEqual(role === 'receiver' ? [`${cellPrefix}-receiver-topology-reset`] : []);
             }
         }
+    });
+
+    it('a reshaped cell\'s forwarding-window wait is half the overlap the server states, by the product\'s rule, and none at 0', () => {
+        const waitOf = (overlapMs: number) => {
+            const scenario = createAlmConformanceRecipes({ ...toBarrieredInput('rtc'), rtcReplacedLayoutOverlapMs: overlapMs })
+                .find((candidate) => candidate.scenarioKey === 'granted-rtc-ordered-relay')!;
+            return toAlmConformanceRoleRecipe(scenario, 'sender')!.commands
+                .find((command) => command.commandId === 'alm-rtc-granted-rtc-ordered-relay-sender-replaced-layout-forwarding');
+        };
+
+        expect(waitOf(15_000)?.timeoutMs).toBe(computeReplacedLayoutForwardingMs(15_000));
+        expect(waitOf(15_000)?.timeoutMs).toBe(7_500);
+        expect(waitOf(0)?.timeoutMs).toBe(0);
+        expect(() => createAlmConformanceRecipes({ ...toBarrieredInput('rtc'), rtcReplacedLayoutOverlapMs: undefined }))
+            .toThrow('names no rtcReplacedLayoutOverlapMs');
     });
 
     it('only the receiver polls', () => {
@@ -508,7 +536,7 @@ describe('alm-conformance cell parts', () => {
                 const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
                 const settleRoles = scenario.roles.filter((role) => role !== 'successor');
                 const settleOf = (role: AlmConformanceRole) => toSettleCommands(toAlmConformanceRoleRecipe(scenario, role)!, `${cellPrefix}-${role}-`);
-                const headLength = scenario.roomTopology === 'reshaped' ? 3 : 2;
+                const headLength = scenario.roomTopology === 'reshaped' ? 4 : 2;
                 const formationMs = (role: AlmConformanceRole) => toCommandsMs(settleOf(role).slice(0, -headLength));
                 const armedMs = (role: AlmConformanceRole) =>
                     toCommandsMs([...settleOf(role).slice(-headLength), ...toAlmCellArming(scenario.partsByRole[role]!.body).arming]);
@@ -527,13 +555,14 @@ describe('alm-conformance cell parts', () => {
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
         // 5 000 ms request: four grants for granted-rtc-delivered, the path alone for receipted-relay-path, six grants for
         // subscription-delivery; a reshaped cell's in-force poll is 90 000 ms of attempts and one 5 000 ms read on each
-        // page. The first arrival waits through every other role's commands, then the 10 000 ms grace.
+        // page, then its 7 500 ms forwarding-window wait. The first arrival waits through every other role's commands, then
+        // the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
         expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
         expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 290_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 305_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
         expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
     });
@@ -613,7 +642,7 @@ const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as con
  * The settle's command names: the receiver's formation poll, each page's head read and applied wait, and a reshaped
  * cell's poll that its path is in force on the page.
  */
-const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'tree-in-force'] as const;
+const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'tree-in-force', 'replaced-layout-forwarding'] as const;
 
 function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
     return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`) || isSettledStartState(command);
