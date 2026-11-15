@@ -72,10 +72,19 @@ Resize/orientation changes recompute the canvas and input mapping together. Clea
 held input, retain authoritative match state, and resume only after fresh input.
 Test rotation during a chase and while holding Bank.
 
+## Current playable layout
+
+The first Phaser app reserves the bottom **25% of the dynamic portrait viewport**
+for controls, including the bottom safe-area inset. At 390 × 844 that is 211 CSS
+pixels. A 112px joystick sits beside two 72px action targets with a 16px gap.
+The square world is sized independently above it; it never extends below thumbs.
+Landscape places movement and actions beside the square world. Desktop keeps
+keyboard controls and visible action buttons. Physical comfort still needs testing.
+
 ## Selected portrait reference
 
 The selected pixel-art direction has a [measured browser composition](visual-concepts/pocket-arcade-layout.html)
-and [captured phone image](visual-concepts/pocket-arcade-refined.jpg). The reference
+and [captured phone image](visual-concepts/pocket-arcade-refined.jpg). This earlier reference has been superseded for control-deck height by the playable layout above. The reference
 is fixed at 390 × 844 CSS pixels, with these app-content coordinates:
 
 | Element           | Bounds or rule                                                 |
@@ -119,7 +128,7 @@ Bank never activates merely because a thumb crosses a zone. Auto-pickup has the
 same radius for everyone. Mouse and keyboard can operate together, but each action
 has one normalized state to avoid double activation.
 
-Default to 72 × 72 CSS pixel Dash/Bank targets with 24 pixels separation and a
+Default to 72 × 72 CSS pixel Dash/Bank targets with 16 pixels separation and a
 112-pixel movement pad with a 44-pixel puck. For constrained layouts, retain at
 least 56 × 56 primary action targets and 12 pixels separation. Make pad/button
 placement adjustable within reserved control regions and offer a mirrored left-handed layout. Save preferences

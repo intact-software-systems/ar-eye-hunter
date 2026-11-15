@@ -1,0 +1,17 @@
+{
+  "name": "cca-2d",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "3.90.0",
+    "@js-temporal/polyfill": "^0.5.1",
+    "graphology": "^0.26.0"
+  },
+  "devDependencies": { "typescript": "7.0.2", "vite": "^8.3.8" }
+}

@@ -12,45 +12,44 @@ quality target before multiplying assets. Keep gameplay, mobile input, reliabili
 and art in the same integration loop.
 
 The user selected Pocket Arcade Market (option 2). Use its refined square
-phone layout and pixel-art contract for all visual work. Before implementation,
-review the remaining gameplay/architecture proposals and choose initial physical
-test devices. Style selection does not certify fun or remove the playtest gates.
+phone layout and pixel-art contract for all visual work. Before the next gameplay expansion,
+review the remaining proposals and choose initial physical test devices. Style selection does not certify fun or remove the playtest gates.
 
-## Next slice 1: one playable raid across two devices
+## Current playable foundation
 
-**Outcome:** a phone and a computer join through Rallar, move around a small arena,
-collect, bank, get caught, respawn, finish a short round, and ready again. The game
-owner is a server; browser closure cannot terminate the other player's round.
+The authorized first slice is open-ended practice: movement, dash, collecting and
+banking, first locally and then with two players through Rallar. It uses the selected
+Pocket Arcade Market art and a portrait control deck occupying 25% of the viewport.
+There is no guard, timer, winner or durable score yet. See the
+[app instructions](../../apps/cca-2d/README.md) and
+[server instructions](../../apps/cca-server/README.md).
 
-Start with a brief local feel spike of the same move/dash/pickup/bank rules. Use
-simple silhouettes, one guard, two bank zones, and large touch controls. Keep the
-spike throwaway unless explicitly retained through normal implementation review.
-Do not spend weeks on offline content before connecting Rallar.
+## Next slice 1: qualify feel and recovery, then complete a round
 
-Then establish the pure shared rules, scoped runtime boundary, exact game-owner
-lifetime, input delivery/expiry, and snapshots. This slice includes the minimum
-reusable Rallar change if existing APIs cannot support the measured workload; it
-must not bypass Rallar to make a demo pass.
+**Outcome:** phone and computer movement feels responsive, connection interruption
+has a clear outcome, and the four practice verbs support a complete short round.
+
+First have the user play on a physical phone. Tune joystick reach, dash distance,
+collision footprints, and visual readability from that observation. Check iPad and
+landscape layouts. Measure latency and frame pacing before adding prediction or
+more entities. Normalize the oversized seed textures to meet the transfer budget.
+
+Then add one guard, catch/respawn, a round timer, shared results and rematch to the
+existing server-owned rules. Do not change the authority boundary or use local
+balances as match truth.
 
 **Acceptance:**
 
-- Visible sign-in/room entry survives an invitation link and reload.
-- On physical phone plus desktop, movement, dash, bank, and catch are understandable.
-- Two clients finish with identical banked scores. One duplicated deposit outcome
-  or dash message cannot apply another effect.
-- Releasing touch, hiding the tab, or dropping the connection cannot leave movement
-  held indefinitely; reconnect resolves the runner's actual state.
-- Closing the room creator's browser leaves the other player able to continue.
-- Measure actual input delivery and queue age at target rates with healthy and
-  150 ms impaired networking. A receipt-tracked path is not assumed suitable.
-- Measure cold shell/renderer transfer and phone frame pacing. Save a short ordinary
-  gameplay recording, not just a screenshot of a successful lobby.
-- Run focused rule/runtime tests, app/server typechecks and builds, and one visible
-  two-client flow against real Rallar. New REST behavior includes shared-test recipes.
+- Real phone plus desktop can join via an HTTPS origin and use all four actions.
+- Pointer cancellation, hidden tab, reconnect and browser closure stop stale input;
+  the remaining player continues. New-controller dash edges work after re-entry.
+- Healthy and 150 ms impaired runs have bounded input age and consistent balances.
+- Cold transfer and sustained frame pacing are recorded on named physical devices.
+- Both clients finish with identical results, then ready into a new round.
+- Focused rule/runtime checks and visible two-client play pass. New REST contracts
+  retain shared-test recipes. A screen capture shows ordinary gameplay.
 
-**Decision:** continue only if the chase controls and authority path are credible.
-If input processing grows queues or corrections make touch play frustrating, resolve
-that specific Rallar or game-speed issue before adding mechanics or full art.
+**Decision:** resolve control or recovery problems before increasing content.
 
 ## Next slice 2: one polished four-player market
 

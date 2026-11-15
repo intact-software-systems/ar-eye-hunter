@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"],
+    "lib": ["ES2024", "DOM"],
+    "paths": {
+      "@shared-web/*": ["../../packages/shared-web/*"],
+      "@shared/*": ["../../packages/shared/*"],
+      "@shared-graph/*": ["../../packages/shared-graph/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "../../types/**/*.d.ts"]
+}

@@ -74,6 +74,23 @@ audiences, coalescing, queue bounds, stale-message expiry, and publication cost.
 Any needed generic improvement belongs in Rallar, with focused tests and public
 surface review, rather than an app-local socket or a private transport fork.
 
+## First practice implementation
+
+The first app consumes Rallar room-bound live messages for input and reserved
+server-only room publications for snapshots. This uses existing public APIs rather
+than receipt-tracked game commands for every joystick sample. The room helper was
+fixed to preserve the caller's live publication policy. Inputs retain only the
+newest value at 50ms cadence with an 8KiB envelope drain budget; the complete message is
+limited to 8KiB at server ingress. The 2KiB initial drain budget was too small for
+the full Rallar envelope, so uplink targets require measurement and optimization.
+
+Practice has one ephemeral server owner, two seats per room, sixteen-room capacity,
+and no persisted game state or results. Rallar authenticates and authorizes room
+traffic; scores and pickups belong to the server simulation. This deliberately
+implements the requested four-verb practice slice, not the complete round-lifecycle
+contract below. Production ownership fencing, terminal results, prediction/replay
+and impaired-network qualification remain release work.
+
 ## Transport and authority contract
 
 Use the existing server authority path over Rallar WS for the first slice. RTC is

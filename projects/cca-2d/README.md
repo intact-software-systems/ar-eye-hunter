@@ -1,6 +1,6 @@
 # Cash Chase Arena 2D
 
-Design proposal · 15 November 2026 · Working subtitle: **Market Mayhem**
+Playable practice and release proposal · 15 November 2026 · Working subtitle: **Market Mayhem**
 
 ## Purpose
 
@@ -9,16 +9,22 @@ multiplayer. Success is a good game experience on phones, iPads, and computers;
 demonstrating Rallar follows from that experience.
 
 The user selected **option 2: Pocket Arcade Market** on 15 November 2026. Its
-warm pixel-art graphics direction is the visual baseline. Game rules, Phaser,
-server authority, and performance targets remain proposals; selecting the look
-does not approve every design decision. No CCA 2D runtime or device qualification
-exists yet.
+warm pixel-art graphics direction is the visual baseline. Phaser and the first server-owned practice slice are now authorized and implemented.
+Complete-round rules and release performance targets remain proposals. The first [Phaser practice slice](../../apps/cca-2d/README.md) now implements movement, dash, collecting and banking, with two-player server-owned practice through Rallar. Physical-device qualification remains pending.
+
+## First playable slice
+
+The user authorized Phaser implementation and reduced portrait controls to the
+bottom **25%** of the available screen. The app keeps the square world above the
+controls. The earlier static reference remains style history, not current spacing.
+Practice is an open-ended learning slice; guards, timed rounds and durable results
+remain future work. See the app README for starting it and joining a friend.
 
 ## The proposal
 
 The [refined smartphone reference](visual-concepts/README.md) translates the selected
 look into a measured 390 × 844 CSS-pixel composition: a 360-square playfield,
-112-pixel joystick, and 72-pixel action controls. It is a static browser layout
+112-pixel joystick, and 72-pixel action controls. The runtime now uses a smaller 25% control deck. It is a static browser layout
 with generated scenery, not a gameplay capture or approved production asset set.
 
 Two to six cartoon thieves race around a bright pixel-art market, collecting loot
@@ -46,9 +52,9 @@ and network qualification. Eight players are outside the initial scope.
 | [Development sequence](development-sequence.md) | Next two slices, later outcome gates, agents, tools, acceptance     |
 
 These documents have distinct owners; cross-link rather than repeating a rule.
-Current repository standards still govern implementation. These files are a design
-proposal and development strategy, not a delivery ledger or an authorization to
-build, deploy, buy assets, install integrations, or change existing public APIs.
+Current repository standards still govern implementation. These files describe the implemented practice boundaries and proposed complete
+game. They do not authorize production deployment, asset purchases or unrelated
+public API changes.
 
 ## Alternatives considered
 
@@ -58,7 +64,7 @@ build, deploy, buy assets, install integrations, or change existing public APIs.
 | Illustrated top-down 2D with repeated raids            | Readable on touch, small content set, frequent decisions, short setbacks | Requires precise animation and map tuning; still needs measured networking                     | Start here                                      |
 | Turn-based heist board game                            | More tolerant of latency and touch imprecision                           | Gives up the immediate chase fantasy and overlaps Relic's experience                           | Reconsider only if action play is not enjoyable |
 
-Within 2D, Phaser is the leading implementation choice. It supplies game systems
+The practice slice uses Phaser 3.90. It supplies game systems
 that otherwise need assembling. It does not supply art direction or guarantee a
 small download. A simpler Canvas or PixiJS implementation remains a possible
 response to measured engine cost, not a parallel project to maintain.
