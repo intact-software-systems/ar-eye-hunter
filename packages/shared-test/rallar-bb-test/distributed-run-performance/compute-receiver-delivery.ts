@@ -27,20 +27,21 @@ const LOWEST_RECEIVER_LIMIT = 5;
 /** Absent when no stats result carries a message count with a receiver delivery bound. */
 export function computeReceiverDelivery(sources: ReceiverDeliverySources): DistributedRunReceiverDelivery | undefined {
     const samples = toReceiverDeliverySamples(sources);
-    if (samples.length === 0) {
+    const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
+    const medianReceivedMessages = computeNearestRank(sortedReceivedMessages, 0.5);
+    const p95ReceivedMessages = computeNearestRank(sortedReceivedMessages, 0.95);
+    if (medianReceivedMessages === undefined || p95ReceivedMessages === undefined) {
         return undefined;
     }
-    const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
-    const minReceivedMessages = sortedReceivedMessages[0];
     const deliveryRatios = samples.flatMap((sample) => toDeliveryRatio(sample) ?? []);
     return {
         sampleCount: samples.length,
         expectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.expectedInboundMessages)),
         minExpectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.minExpectedInboundMessages)),
         minReceiveRatio: toFirstFiniteNumber(samples.map((sample) => sample.minReceiveRatio)),
-        minReceivedMessages,
-        medianReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.5) ?? minReceivedMessages,
-        p95ReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.95) ?? minReceivedMessages,
+        minReceivedMessages: sortedReceivedMessages[0],
+        medianReceivedMessages,
+        p95ReceivedMessages,
         maxReceivedMessages: sortedReceivedMessages[sortedReceivedMessages.length - 1],
         minDeliveryRatio: computeNumberExtrema(deliveryRatios)?.min,
         medianDeliveryRatio: computeNearestRank(deliveryRatios, 0.5),
