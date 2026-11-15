@@ -7,7 +7,7 @@ import { toAlmCellGroupPath } from './to-alm-cell-group-read.ts';
 import { toAlmCellRequestIdSuffix } from './to-alm-cell-request-id.ts';
 
 /** Three sessions in a tree whose degree is at most two form a path; `meshParamK` may not exceed the degree limit. */
-export const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as const;
+const PATH_TOPOLOGY = { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } as const;
 
 /** `tree` writes the path's config through the owner's topology route; `reset` deletes it, restoring the defaults. */
 export function toPathTopologyConfigCommand(

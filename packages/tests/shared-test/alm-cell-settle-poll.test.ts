@@ -250,8 +250,10 @@ describe('the reshape settle\'s in-force poll, one attempt', () => {
         ]);
     });
 
-    it('refuses an accepted layout that is not a tree', async () => {
-        expect(await readInForceFailures({ topology: 'star', identity: RESHAPED_TREE }))
-            .toEqual([expect.stringContaining('reshape-in-force-topology')]);
+    it('refuses the star the reshape replaced, whose identity is another', async () => {
+        expect(await readInForceFailures({ topology: 'star', identity: { ...PREVIOUS_TREE, version: 2 } })).toEqual([
+            expect.stringContaining('reshape-in-force-groupRevision'),
+            expect.stringContaining('reshape-in-force-version')
+        ]);
     });
 });

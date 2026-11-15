@@ -13,6 +13,7 @@ import {
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import { resolveLoopPlan } from '@shared-test/rallar-bb-test/loop/resolve-loop-plan.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -322,6 +323,25 @@ describe('ALM conformance recipe validation', () => {
 
     // A mutation request is every `http.request` whose method is not GET; its path ends in `/requests/<requestId>`.
     // Every cell mutates at least once: its prologue ensures the run's group.
+    // The runtime refuses a loop whose attempts could expand past its command limit before it runs a single attempt.
+    it('every loop of every cell, settled or not, plans within the runtime\'s loop limits', () => {
+        const refused: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const cellSettle of [undefined, CONFORMANCE_BARRIERED_SETTLE]) {
+                const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
+                for (const scenario of createAlmConformanceRecipes(input)) {
+                    for (const command of toPageRecipes(scenario).flatMap((recipe) => toNestedCommands(recipe.commands))) {
+                        if (command.kind === 'loop' && resolveLoopPlan({ ...command, commandId: command.commandId! }).left !== undefined) {
+                            refused.push(`${cellSettle?.kind ?? 'unsettled'} ${carrier} ${command.commandId}`);
+                        }
+                    }
+                }
+            }
+        }
+
+        expect(refused).toEqual([]);
+    });
+
     it('every mutation request id of every cell carries {runtimeIdentity}', () => {
         const findings: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {

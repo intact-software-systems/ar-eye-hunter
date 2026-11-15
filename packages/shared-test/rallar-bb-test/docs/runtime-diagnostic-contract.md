@@ -279,12 +279,13 @@ degreeLimit: 2, meshParamK: 2 }` (`topology-tree`), after any start grants. The 
 runs on the reshaped room, so it ends only once the server accepted the tree and holds the room
 settled on it, and every settle role's head read follows. After its applied-revision wait each settle
 role runs `reshape-in-force`: it reads its page's `health` every 250 ms for up to 90 s
-(`SUBSCRIPTION_PHASE_MS`) until `rallar.formation.accepted.overlay.topology` equals `tree` and each
-key of `rallar.formation.accepted.identity` equals the same key of the `acceptedLayoutIdentity` its
-own head read returned. That read follows `formation-settled`, so it names the layout the server
-settled on after this cell's reshape; a tree an earlier reshaped cell of the family room left
-accepted on a page has another identity and does not pass. So every page holds this reshape's
-layout before `armed`. A sender still forwards over the layout a promotion
+(`SUBSCRIPTION_PHASE_MS`) until each key of `rallar.formation.accepted.identity` equals the same
+key of the `acceptedLayoutIdentity` its own head read returned. That read follows
+`formation-settled`, so it names the layout the server settled on after this cell's reshape, which
+matches the path's config and so is its tree; a tree an earlier reshaped cell of the family room
+left accepted on a page has another identity and does not pass. One fact per key keeps an attempt
+to five commands, so 360 attempts stay inside the runtime's 2 000-command loop limit. So every page
+holds this reshape's layout before `armed`. A sender still forwards over the layout a promotion
 replaced for the first half of the overlap the server states (`rtcReplacedLayoutOverlapMs` in
 `/api/config`, 15 000 ms by default; `computeReplacedLayoutForwardingMs`), and no page states when
 that window ends. So each settle role then runs `replaced-layout-forwarding`, an absence wait as
