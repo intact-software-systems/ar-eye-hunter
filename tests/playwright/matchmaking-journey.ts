@@ -1,11 +1,11 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { assertIdleViewReads } from './assert-idle-view-reads.ts';
 import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+import { signInIdleSocialPlayers } from './sign-in-idle-social-players.ts';
 
 /** The API owns reservations; both browsers reach it only through visible game controls. */
 export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    await signInRoomPlayer(host, 'alice', game);
-    await signInRoomPlayer(guest, 'bob', game);
+    await signInIdleSocialPlayers(host, guest, game);
     const hostPanel = panel(host);
     const guestPanel = panel(guest);
     await expect(hostPanel).toBeVisible();
