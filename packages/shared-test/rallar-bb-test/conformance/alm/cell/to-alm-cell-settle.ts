@@ -6,10 +6,10 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { CONNECT_READINESS_TIMEOUT_MS, MESSAGE_CONTROL_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
 import type { AlmConformanceRoomTopology, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
-import { toPathInForcePollCommand } from '../scenarios/relay-path/to-path-topology-config-command.ts';
 import { toPauseCommand } from '../to-pause-command.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
 import { CAUSAL_REVISION_KEYS, toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
+import { toPathInForcePollCommand } from './to-path-in-force-poll-command.ts';
 
 /**
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and

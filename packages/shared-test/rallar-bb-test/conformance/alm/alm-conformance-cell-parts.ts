@@ -12,8 +12,8 @@ import {
 import { toCommandId, toConnectionName } from './alm-conformance-step-identities.ts';
 import { isAlmCellCueSubscription } from './cell/to-alm-cell-arming.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
+import { toPathTopologyConfigCommand } from './cell/to-path-topology-config-command.ts';
 import { toAlmCellStartState } from './granted-topic/to-alm-cell-start-state.ts';
-import { toPathTopologyConfigCommand } from './scenarios/relay-path/to-path-topology-config-command.ts';
 import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
 
 /**

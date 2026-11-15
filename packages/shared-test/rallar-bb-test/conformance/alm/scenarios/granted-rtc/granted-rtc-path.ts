@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
-import { toPathTopologyConfigCommand } from '../relay-path/to-path-topology-config-command.ts';
+import { toPathTopologyConfigCommand } from '../../cell/to-path-topology-config-command.ts';
 import { toSubscribeCommand, toUnsubscribeCommands } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     toCueListenCommands,

@@ -17,6 +17,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
+import { toPathTopologyConfigCommand } from '../../cell/to-path-topology-config-command.ts';
 import { toOverlayNextHopsCommand } from '../granted-rtc/granted-rtc-commands.ts';
 import { BOTH_CONFIRMED, toCueStep } from '../receipted-audience.ts';
 import {
@@ -24,7 +25,6 @@ import {
     toCueSendCommands,
     toCueWait
 } from '../topic-subscription/topic-subscription-publications.ts';
-import { toPathTopologyConfigCommand } from './to-path-topology-config-command.ts';
 
 /**
  * The cell's start state reshapes the room into a path, then the sender and the owner each send one receipted
