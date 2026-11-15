@@ -15,7 +15,8 @@ Zoom in for faces and action, out for route overview. Offer +/− buttons on eve
 device, pinch on unoccupied canvas, and mouse wheel/keyboard equivalents.
 Change orthographic bounds, not simulation scale or movement speed. Start with
 three bounded presets (close, play, overview), interpolating visually and keeping
-the local player's ground anchor in view. Exact bounds require the first trial.
+the local player's ground anchor in view. The current local trial uses a continuous 8–24 width range with default 13;
+competitive visibility limits still require multiplayer testing.
 
 All players get the same zoom range and maximum ground-information radius.
 Aspect ratio changes the rectangular crop; do not promise identical views on a
@@ -44,7 +45,7 @@ hit targets and must not be copied by scaling the screenshot.
 | Move          | Floating joystick constrained to lower-left region | WASD/arrows                       |
 | Dash-and-drop | One large button, one edge per press               | Space or primary click outside UI |
 | Collect       | Automatic                                          | Automatic                         |
-| Bank          | Proposed stationary dwell inside bank ring         | Same rule                         |
+| Rescue        | Proposed brief dwell beside a frozen friend        | Same rule                         |
 | Zoom          | +/− or two-finger pinch on free canvas             | +/−, wheel or visible buttons     |
 | Menu          | Compact visible control                            | Escape or visible control         |
 
@@ -60,15 +61,17 @@ No desktop-only aim, sprint, jump or extra world-information range.
 
 ## Readability and lifecycle
 
-HUD: timer, banked cash, bag, small menu; show goal progress when target-win mode
-is implemented. Keep critical action above thumbs and away from zoom controls.
+Target HUD: round timer, personal mischief/goal progress, loaded prank and small
+menu. During raids, show the affected district and remaining duration. Frozen
+players need a thaw countdown and nearby rescuers need clear progress. The current
+playground only shows pranks, messes, slips and the loaded power. Keep critical action above thumbs and away from zoom controls.
 No permanent debug dashboard. Show drops' warning, guard reaction and slip recovery
 with pose/symbols as well as color; all essential cues work with sound muted.
 
 Use the dynamic viewport and actual safe-area insets. Recompute input mapping on
 resize/orientation change; neutralize held inputs and require fresh contact.
 Handle pointer cancellation, release outside bounds, blur, menus and connection
-loss. Never let a missing final packet keep a runner moving or auto-banking:
+loss. Never let a missing final packet keep a runner moving or continue a rescue:
 the host expires control freshness.
 
 Menus do not pause other players. Host suspension may pause the whole match for

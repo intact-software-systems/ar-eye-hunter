@@ -35,22 +35,27 @@ export class CutoutArt {
         return material;
     }
 
-    head(guard: boolean, startled: boolean): StandardMaterial {
+    head(guard: boolean, expression: 'grumpy' | 'surprised' | 'angry' | 'dizzy'): StandardMaterial {
+        const startled = expression === 'surprised' || expression === 'dizzy';
         const hair = guard
             ? '<path fill="#283a48" d="M28 66L31 37 180 20 232 54 221 80 82 85z"/><path fill="#dcad4f" d="M117 36l10 7 13-3-3 14 4 11-15-1-11-9z"/>'
             : '<path fill="#292724" d="M26 95L8 71 40 67 18 40 63 45 55 12 90 34 117 6 137 25 169 13 166 35 210 25 201 46 242 62 212 77 234 103 207 95 194 69 165 82 142 56 111 79 84 60 58 99 42 130z"/>';
         const brows = startled
             ? '<path d="M67 105l37-17M151 89l38 17" stroke="#2d2926" stroke-width="9"/>'
             : '<path d="M63 106l41 10M150 115l40-17" stroke="#2d2926" stroke-width="9"/>';
-        const mouth = startled
+        const mouth = expression === 'angry'
+            ? '<path d="M99 210q32-38 64-3" stroke="#332a29" stroke-width="8" fill="none"/>'
+            : startled
             ? '<ellipse cx="132" cy="191" rx="25" ry="23" fill="#332a29"/><path d="M114 202q18-12 35 0" stroke="#c97875" stroke-width="9"/>'
-            : '<path d="M113 194q27 15 47-4" stroke="#332a29" stroke-width="5" fill="none"/>';
+            : '<path d="M113 194q27-15 47-4" stroke="#332a29" stroke-width="5" fill="none"/>';
         const mustache = guard
             ? '<path fill="#604532" d="M128 165q-39-27-57 28l48-8 13-10 13 12 45 6q-25-51-62-28"/>'
             : '';
         return this.texture(
-            `head-${guard}-${startled}`,
-            `<path fill="#d8a77b" d="M39 85L19 114 27 177 45 184 57 221 127 244 204 211 219 177 236 169 238 127 217 115 207 70 144 40 76 48z"/><path fill="#efc49a" d="M51 79L70 53 164 47 210 87 211 165 193 207 131 229 64 209 43 151z"/>${hair}<ellipse fill="#f5f0dc" cx="96" cy="137" rx="32" ry="35"/><ellipse fill="#f5f0dc" cx="161" cy="136" rx="32" ry="35"/><circle cx="110" cy="140" r="5"/><circle cx="148" cy="138" r="5"/>${brows}${mouth}${mustache}`
+            `head-${guard}-${expression}`,
+            `<path fill="#d8a77b" d="M39 85L19 114 27 177 45 184 57 221 127 244 204 211 219 177 236 169 238 127 217 115 207 70 144 40 76 48z"/><path fill="${
+                expression === 'dizzy' ? '#b6c47d' : '#efc49a'
+            }" d="M51 79L70 53 164 47 210 87 211 165 193 207 131 229 64 209 43 151z"/>${hair}<ellipse fill="#f5f0dc" cx="96" cy="137" rx="32" ry="35"/><ellipse fill="#f5f0dc" cx="161" cy="136" rx="32" ry="35"/><circle cx="110" cy="140" r="5"/><circle cx="148" cy="138" r="5"/>${brows}${mouth}${mustache}`
         );
     }
 
@@ -59,7 +64,7 @@ export class CutoutArt {
             ? '<path d="M126 20v205M28 165h200" stroke="#463d32" stroke-width="12"/><path fill="#dfaf51" d="M167 63l9 7 12-3-2 14-10 8-11-7z"/>'
             : '<path d="M65 29L125 70 190 27M126 70v115M76 173h98" stroke="#173f42" stroke-width="6" fill="none"/><path d="M108 60l-5 50M142 61l7 48" stroke="#d2c9a7" stroke-width="5"/>';
         return this.texture(
-            `torso-${color}`,
+            `torso-${color}-${guard}`,
             `<path fill="${color}" d="M53 8L189 13 235 65 218 233 35 238 18 72z"/>${details}`
         );
     }

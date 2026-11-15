@@ -10,6 +10,8 @@ export class PracticeApp {
     private readonly status: HTMLElement;
     private readonly pranks: HTMLElement;
     private readonly slips: HTMLElement;
+    private readonly messes: HTMLElement;
+    private readonly power: HTMLElement;
     private readonly loading: HTMLElement;
     private previousDashLabel = '';
     private readonly dash: HTMLButtonElement;
@@ -31,6 +33,8 @@ export class PracticeApp {
         this.status = requirePracticeElement(root, '#status');
         this.pranks = requirePracticeElement(root, '#pranks');
         this.slips = requirePracticeElement(root, '#slips');
+        this.messes = requirePracticeElement(root, '#messes');
+        this.power = requirePracticeElement(root, '#power');
         this.loading = requirePracticeElement(root, '#scene-loading');
         this.dash = requirePracticeElement(root, '#dash');
         this.pause = requirePracticeElement(root, '#pause');
@@ -94,7 +98,12 @@ export class PracticeApp {
                 this.accumulator -= 1 / 60;
             }
         }
-        this.scene.render(this.state, this.controls.getZoom(), seconds, this.reducedMotion.matches);
+        this.scene.render({
+            state: this.state,
+            zoom: this.controls.getZoom(),
+            seconds,
+            reducedMotion: this.reducedMotion.matches
+        });
         this.updateHud();
     }
 
@@ -103,14 +112,26 @@ export class PracticeApp {
         this.pranks.textContent = String(state.pranks);
         this.slips.textContent = String(state.slips);
         this.loading.hidden = this.scene.scene.isReady();
-        this.status.textContent = state.slipping
-            ? 'ICE! Let go to feel the slide.'
-            : state.dashTime > 0
-            ? 'WHOOPS. Was that you?'
-            : 'Skate through the spill. Leave a little surprise.';
+        this.messes.textContent = String(state.town.spills);
+        this.power.textContent = state.power === 'fart'
+            ? 'TEAL HOODIE / FART LOADED'
+            : `${state.power.toUpperCase()} LOADED / DASH TO USE`;
+        this.status.textContent = state.miniUntil > state.elapsed
+            ? 'FUN SIZE! Back to normal in a few seconds.'
+            : state.dizzyUntil > state.elapsed
+            ? 'URRRP. Get out of that powder!'
+            : state.town.npcs.some((npc) => npc.mode === 'warning')
+            ? 'Owner aiming — move out of the target!'
+            : state.slipping
+            ? 'SLIPPERY! Let go to feel the slide.'
+            : state.power !== 'fart'
+            ? 'Dash near an owner to use your prank.'
+            : 'Dash into a stall. Powder & zappers down the street.';
         const dashLabel = state.cooldown > 0
             ? `<span class="action-icon">↯</span><strong>${state.cooldown.toFixed(1)}s</strong>`
-            : '<span class="action-icon">↯</span><strong>DASH<br>+ DROP</strong>';
+            : `<span class="action-icon">↯</span><strong>DASH<br>+ ${
+                state.power === 'fart' ? 'DROP' : state.power === 'powder' ? 'PUFF' : 'ZAP'
+            }</strong>`;
         if (dashLabel !== this.previousDashLabel) {
             this.dash.innerHTML = dashLabel;
             this.previousDashLabel = dashLabel;
@@ -119,6 +140,11 @@ export class PracticeApp {
         this.root.dataset.x = state.x.toFixed(2);
         this.root.dataset.z = state.z.toFixed(2);
         this.root.dataset.slipping = String(state.slipping);
+        this.root.dataset.spills = String(state.town.spills);
+        this.root.dataset.cleaned = String(state.town.cleaned);
+        this.root.dataset.power = state.power;
+        this.root.dataset.mini = String(state.miniUntil > state.elapsed);
+        this.root.dataset.dizzy = String(state.dizzyUntil > state.elapsed);
         this.root.dataset.zoom = this.controls.getZoom().toFixed(2);
     }
 }
@@ -127,12 +153,12 @@ function createPracticeMarkup(): string {
     return `<main class="practice" aria-label="CCA cutout market practice">
       <canvas aria-label="Market playfield: move with WASD or arrows, dash with Space, zoom with plus and minus"></canvas>
       <div id="scene-loading" class="scene-loading" role="status">Unpacking the market…</div>
-      <header class="hud"><div class="brand"><span>CCA / LOCAL PLAYGROUND</span><h1>BAD MARKET</h1></div><button id="pause">Pause</button></header>
-      <div class="scoreboard"><span>PRANKS <b id="pranks">0</b></span><span>SLIPS <b id="slips">0</b></span></div>
+      <header class="hud"><div class="brand"><span>CCA / LOCAL PLAYGROUND</span><h1>GRUMPY TOWN</h1></div><button id="pause">Pause</button></header>
+      <div class="scoreboard"><span>PRANKS <b id="pranks">0</b></span><span>MESSES <b id="messes">0</b></span><span>SLIPS <b id="slips">0</b></span></div>
       <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
-      <div class="play-hint"><span class="you">YOU = TEAL HOODIE</span><p id="status">Skate through the spill. Leave a little surprise.</p></div>
+      <div class="play-hint"><span class="you" id="power">TEAL HOODIE / FART LOADED</span><p id="status">Dash into a stall. Make a mess.</p></div>
       <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><span class="action-icon">↯</span><strong>DASH<br>+ DROP</strong></button></div>
       <footer>WASD / arrows · Space · scroll to zoom<span>Pinch the street to zoom</span></footer>
-      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Move, dash, drop a cloud.<br>The blue spill is slippery.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Local scene · no multiplayer yet</small></div></section>
+      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Dash into stalls to spill slippery fruit. Dodge the owner’s warning target!<br>Walk over powder or lightning pickups to load your next dash.<br>Owners zap back, sweep up and restock.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Local scene · no multiplayer yet</small></div></section>
     </main>`;
 }

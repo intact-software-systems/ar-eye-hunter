@@ -5,7 +5,7 @@ test('phone controls move, slide, drop once, zoom and resume without stuck movem
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto('/');
     const app = page.locator('#app');
-    await expect(page.getByRole('heading', { name: 'BAD MARKET' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
     await expect(app).toHaveAttribute('data-z', '-2.00');
     const joystick = await page.getByLabel('Movement joystick').boundingBox();
     expect(joystick).not.toBeNull();
@@ -24,7 +24,7 @@ test('phone controls move, slide, drop once, zoom and resume without stuck movem
     // Cooldown is an observable rejection, not a queued second action.
     await page.keyboard.press('Space');
     await page.getByRole('button', { name: 'Zoom out' }).click();
-    await expect(app).toHaveAttribute('data-zoom', '12.00');
+    await expect(app).toHaveAttribute('data-zoom', '15.00');
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     const pausedZ = await app.getAttribute('data-z');
     await page.keyboard.press('KeyW');
@@ -61,11 +61,12 @@ test('desktop keyboard moves and action remains reachable after tablet and lands
         expect(action.y + action.height).toBeLessThanOrEqual(viewport.height);
         await page.getByRole('button', { name: 'Zoom in' }).click();
     }
-    await expect(app).toHaveAttribute('data-zoom', '7.00');
+    await expect(app).toHaveAttribute('data-zoom', '9.00');
 });
 
 test('two touch pointers can move and dash together, and a separate pinch zooms', async ({ page, context }) => {
     await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     const stick = await page.getByLabel('Movement joystick').boundingBox();
     const dash = await page.getByRole('button', { name: 'Dash and drop' }).boundingBox();
@@ -90,7 +91,7 @@ test('two touch pointers can move and dash together, and a separate pinch zooms'
         type: 'touchMove',
         touchPoints: [{ id: 3, x: 120, y: 240 }, { id: 4, x: 270, y: 240 }]
     });
-    await expect(page.locator('#app')).toHaveAttribute('data-zoom', '7.00');
+    await expect(page.locator('#app')).toHaveAttribute('data-zoom', '8.67');
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('button', { name: 'Start over' }).click();
@@ -99,6 +100,7 @@ test('two touch pointers can move and dash together, and a separate pinch zooms'
 
 test('focused buttons keep native Space activation without triggering a prank', async ({ page }) => {
     await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
     await page.getByRole('button', { name: 'Pause', exact: true }).focus();
     await page.keyboard.press('Space');
@@ -107,4 +109,62 @@ test('focused buttons keep native Space activation without triggering a prank', 
     await page.keyboard.press('Space');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await expect(page.locator('#pranks')).toHaveText('0');
+});
+
+test('dash spills a stall, owner zaps back and cleans up, then reset restores town', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.locator('#scene-loading')).toBeHidden();
+    const app = page.locator('#app');
+    await page.keyboard.down('KeyD');
+    await expect.poll(async () => Number(await app.getAttribute('data-x')), { intervals: [30] }).toBeGreaterThan(4.7);
+    await page.keyboard.up('KeyD');
+    await page.keyboard.down('KeyW');
+    await expect.poll(async () => Number(await app.getAttribute('data-z')), { intervals: [30] }).toBeGreaterThan(0.6);
+    await page.keyboard.press('Space');
+    await expect(page.locator('#messes')).toHaveText('1');
+    await page.keyboard.up('KeyW');
+    await expect(page.locator('#status')).toContainText('Owner aiming');
+    await expect(app).toHaveAttribute('data-mini', 'true');
+    await expect.poll(async () => Number(await app.getAttribute('data-cleaned')), { timeout: 15000 }).toBeGreaterThan(
+        0
+    );
+    await expect(app).toHaveAttribute('data-mini', 'false', { timeout: 10000 });
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Start over' }).click();
+    await expect(page.locator('#messes')).toHaveText('0');
+    await expect(app).toHaveAttribute('data-cleaned', '0');
+});
+
+test('powder can be collected in the larger town and used with the same action', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.locator('#scene-loading')).toBeHidden();
+    const app = page.locator('#app');
+    await page.keyboard.down('KeyS');
+    await expect.poll(async () => Number(await app.getAttribute('data-z')), { intervals: [30] }).toBeLessThan(-11.3);
+    await page.keyboard.up('KeyS');
+    await page.keyboard.down('KeyA');
+    await expect(app).toHaveAttribute('data-power', 'powder');
+    await page.keyboard.up('KeyA');
+    await expect(page.locator('#power')).toContainText('POWDER LOADED');
+    await page.getByRole('button', { name: 'Dash and drop' }).click();
+    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(app).toHaveAttribute('data-power', 'fart');
+});
+
+test('landscape pause keeps help and reset reachable without clipping', async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    const help = await page.locator('#pause-overlay > div').boundingBox();
+    expect(help).not.toBeNull();
+    if (!help) {
+        throw new Error('Pause help is missing');
+    }
+    expect(help.y).toBeGreaterThanOrEqual(0);
+    expect(help.y + help.height).toBeLessThanOrEqual(390);
+    await page.getByRole('button', { name: 'Start over' }).click();
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
 });

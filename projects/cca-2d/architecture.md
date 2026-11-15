@@ -35,15 +35,16 @@ verified consumers and compatibility; this design revision deletes no code.
 
 Babylon 2.5D means upright cutout layers in a shallow 3D environment, with a fixed
 orthographic camera. See [construction](babylon-scene-construction.md).
-The host owns movement, hazards, guard targeting, pickups, deposits, elapsed match
-ticks and all winners. Clients own local input and presentation.
+The host owns movement, prop state, owner duties/targeting, pickups, alarms, raids,
+freezing/rescue, scores, elapsed match ticks and all winners. The latest gameplay
+direction is in [game design](game-design.md); cash/banking is optional future content. Clients own local input and presentation.
 
 Input → Rallar room transport → appointed host → pure fixed-step rules →
 accepted snapshot/checkpoint → reconciliation/Motion → Babylon and DOM HUD.
 
 Host-local inputs use the same validation and tick ordering as remote inputs.
 Only local movement/pose may be predicted. Remote actors are interpolated with
-bounded extrapolation. Confirmed money, catches, spawned hazards and results
+bounded extrapolation. Confirmed points, catches, rescues, spawned hazards and results
 never originate from a renderer overlap or speculative animation.
 
 No Havok or rigid-body authority is needed for the first trial. Ice is a
@@ -88,7 +89,7 @@ for low-rate authority coordination, not a durable command per joystick sample.
 Starting rates: fixed 30 Hz host rules, at most 20 Hz fresh movement input while
 held, and 10 Hz bounded full snapshots. These are measurement hypotheses.
 Refresh held state, send neutral on release, and expire input after 250 ms without
-fresh evidence. Idle clients still provide bounded control liveness for banking.
+fresh evidence. Idle clients still provide bounded control liveness for proximity interactions.
 Coalesce replaceable values; do not replay stale movement after reconnect.
 Measure actual envelopes, acknowledgements, queue age and rate under WS load.
 If a public capability cannot support this, improve Rallar rather than bypass it.
@@ -122,7 +123,8 @@ Recovery is the second concrete slice, before multiplayer content expansion.
    Prefer measured stable frame pacing, connection and foreground availability.
    Device labels alone do not establish capability.
 2. Replicate bounded checkpoints containing positions/velocities, guard state,
-   active hazards and lifetimes, loot, bank balances, player/controller identity,
+   active hazards and lifetimes, prop/cleanup state, alarm/raid timers, frozen/release
+   state, rescue progress, immunity, scores and player/controller identity,
    cooldowns, processed action IDs, rules/map version, random-generator state,
    simulation tick and remaining match time.
 3. Separate provisional motion snapshots from committed recovery checkpoints.
@@ -130,7 +132,7 @@ Recovery is the second concrete slice, before multiplayer content expansion.
    state and the host to publish its commit identity. Peers retain recent committed
    states. The exact acknowledgement/commit protocol must be designed and fault-tested
    in slice 2; no single packet or greatest self-reported tick establishes commitment.
-4. Only expose newly banked cash and terminal winners as confirmed after the
+4. Only expose newly earned points and terminal winners as confirmed after the
    recovery commitment requirement is satisfied. If the backup is unavailable,
    pause confirmation/gameplay rather than claim recoverable progress.
    Solo practice is explicitly local and has no failover promise.
@@ -143,7 +145,7 @@ Recovery is the second concrete slice, before multiplayer content expansion.
    provenance and content surviving peers can validate. The old host must stop
    authority work and rejoin as a client under the new epoch.
 7. Broadcast a new-epoch resume snapshot, clear old queued inputs and require
-   fresh input. Recent provisional movement may rewind; confirmed banked cash
+   fresh input. Recent provisional movement may rewind; confirmed scores
    must not disappear or execute twice.
 8. If appointment is blocked, checkpoints disagree, all copies disappear or
    compatible recovery is unavailable, show Round interrupted and offer a new
@@ -168,7 +170,7 @@ public Rallar storage with proper authorization/retention, not a second service.
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Non-host hides or loses network  | Neutralize/expire input; ten-second seat grace; continue only with another valid backup, otherwise pause recovery |
 | Reconnect within grace           | Revalidate membership/controller and current host; receive fresh state; discard stale input                       |
-| Grace expires or voluntary leave | Forfeit carried cash, preserve committed banked score; observer until rematch                                     |
+| Grace expires or voluntary leave | Preserve committed score; cancel active input/rescue; observer until rematch                                     |
 | Host phone locks or backgrounds  | Recover or interrupt through the protocol above; no fictitious continuing clock                                   |
 | Rallar connection disappears     | No local self-appointment; gate multiplayer until current appointment can be verified                             |
 | Two candidates race              | Only server-confirmed appointment authorizes output; old epochs cannot overwrite current state                    |
@@ -203,9 +205,9 @@ behavior over ten minutes. Initial texture budget <=32 MiB decoded. Measure
 draw calls, transparent overdraw, checkpoint memory and network envelopes separately.
 
 Start with two real authenticated clients, then four mixed devices. Test
-150 ms RTT/30 ms jitter/1% loss, stale input, duplicate dash/deposit, host close,
+150 ms RTT/30 ms jitter/1% loss, stale input, duplicate dash/rescue, host close,
 phone background, simultaneous candidates, online-owner eligibility blockage,
-stale old-host outputs, checkpoint gaps, bank during handover, timer pause,
+stale old-host outputs, checkpoint gaps, rescue during handover, timer pause,
 multiple winners and rematch. Confirm independent clients agree after recovery.
 
 A browser emulation capture is not physical phone hosting evidence. Do not call

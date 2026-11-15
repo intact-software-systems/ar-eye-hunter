@@ -2,9 +2,10 @@
 
 ## Actual Babylon trial
 
-![Actual Babylon slip and dash cloud](babylon-trial-slip-and-drop.png)
+![Actual Grumpy Town fruit spill and owner warning](grumpy-town-fruit-zap.png)
 
-[Gameplay recording](babylon-trial-gameplay.webm) · [Starting view](babylon-trial-phone.png).
+[Touch gameplay recording](grumpy-town-gameplay.webm) · [Starting view](grumpy-town-phone.png) ·
+[Mini player and cleanup](grumpy-town-mini-cleanup.png) · [Powder](grumpy-town-powder.png).
 These are actual Chromium gameplay captures of the local Babylon 9.36.0 scene,
 using a 390 × 844 phone viewport. They are not physical-phone captures.
 See [implemented scope, controls and limits](../babylon-local-trial.md).

@@ -11,21 +11,30 @@ import { createMarketEnvironment } from './create-market-environment.ts';
 import { CutoutActor } from './cutout-actor.ts';
 import { CutoutArt } from './cutout-art.ts';
 import type { PracticeState } from './practice-rules.ts';
+import { TownPresentation } from './town-presentation.ts';
+
+export namespace PracticeScene {
+    export interface Frame {
+        readonly state: PracticeState;
+        readonly zoom: number;
+        readonly seconds: number;
+        readonly reducedMotion: boolean;
+    }
+}
 
 export class PracticeScene {
     readonly engine: Engine;
     readonly scene: Scene;
     private readonly camera: FreeCamera;
     private readonly player: CutoutActor;
-    private readonly guard: CutoutActor;
-    private readonly rival: CutoutActor;
+    private readonly town: TownPresentation;
     private readonly cloud: Mesh;
     private readonly shadow: Mesh;
     private readonly marker: Mesh;
     private readonly canvas: HTMLCanvasElement;
     private cameraX = 0;
     private cameraZ = -2;
-    private zoom = 10;
+    private zoom = 13;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -38,10 +47,9 @@ export class PracticeScene {
         this.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
         this.camera.minZ = 0.1;
         const art = new CutoutArt(this.scene);
-        createMarketEnvironment(this.scene, art);
-        this.player = new CutoutActor(this.scene, art, '#347d79', false);
-        this.guard = new CutoutActor(this.scene, art, '#baa77a', true);
-        this.rival = new CutoutActor(this.scene, art, '#bc633b', false);
+        const shops = createMarketEnvironment(this.scene, art);
+        this.town = new TownPresentation({ scene: this.scene, art, shops });
+        this.player = new CutoutActor({ scene: this.scene, art, color: '#347d79', guard: false });
         this.shadow = createShadow(this.scene, art);
         this.marker = createMarker(this.scene, art);
         this.cloud = CreatePlane('fart-decoy', { size: 2.3 }, this.scene);
@@ -50,11 +58,13 @@ export class PracticeScene {
             'puff',
             '<path fill="#a2b856" d="M39 148Q-5 106 43 85Q22 29 88 49Q109-4 144 39Q206 7 207 70Q265 65 233 127Q272 179 211 192Q196 251 143 218Q88 260 64 209Q2 212 39 148z"/><path fill="none" stroke="#728c49" stroke-width="6" d="M68 134q-15-38 20-45m43 78q39 12 44-21m-51-66q17-22 38-2"/>'
         );
+        this.cloud.material.transparencyMode = 2;
         this.cloud.setEnabled(false);
     }
 
-    render(state: PracticeState, zoom: number, seconds: number, reducedMotion: boolean): void {
-        this.updateCamera(state, zoom, seconds, reducedMotion);
+    render(frame: PracticeScene.Frame): void {
+        const { state, reducedMotion } = frame;
+        this.updateCamera(frame);
         const time = reducedMotion ? 0 : state.elapsed;
         this.player.render({
             x: state.x,
@@ -62,11 +72,14 @@ export class PracticeScene {
             time,
             moving: Math.hypot(state.vx, state.vz) > 0.2,
             slipping: state.slipping,
-            facing: state.facingX
+            facing: state.facingX,
+            angry: false,
+            working: false,
+            dizzy: state.dizzyUntil > state.elapsed,
+            mini: state.miniUntil > state.elapsed,
+            puking: state.sickAt >= 0 && state.elapsed >= state.sickAt && state.elapsed < state.sickAt + 1
         });
-        const annoyed = state.clouds.some((cloud) => Math.hypot(cloud.x - 2.6, cloud.z - 5) < 4.5);
-        this.guard.render({ x: 2.6, z: 5, time, moving: false, slipping: annoyed, facing: -1 });
-        this.rival.render({ x: -3, z: -4.7, time, moving: false, slipping: false, facing: 1 });
+        this.town.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.shadow.position.set(state.x, 0.04, state.z);
         this.marker.position.set(state.x, 0.045, state.z);
         const cloud = state.clouds[0];
@@ -74,7 +87,7 @@ export class PracticeScene {
         if (cloud) {
             this.cloud.position.set(cloud.x, 0.65 + cloud.age * 0.25, cloud.z);
             this.cloud.scaling.setAll(0.5 + cloud.age * 0.4);
-            this.cloud.visibility = Math.min(1, (2.4 - cloud.age) * 1.4);
+            this.cloud.visibility = Math.min(0.45, (2.4 - cloud.age) * 0.7);
         }
         this.scene.render();
     }
@@ -88,7 +101,8 @@ export class PracticeScene {
         this.engine.dispose();
     }
 
-    private updateCamera(state: PracticeState, zoom: number, seconds: number, reducedMotion: boolean): void {
+    private updateCamera(frame: PracticeScene.Frame): void {
+        const { state, zoom, seconds, reducedMotion } = frame;
         const blend = reducedMotion ? 1 : 1 - Math.exp(-8 * seconds);
         this.cameraX += (state.x - this.cameraX) * blend;
         this.cameraZ += (state.z - this.cameraZ) * blend;

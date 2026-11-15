@@ -9,9 +9,9 @@ export class PracticeControls {
     private pointer: number | undefined;
     private movement = { x: 0, z: 0 };
     private dash = 0;
-    private zoom = 10;
+    private zoom = 13;
     private pinchDistance = 0;
-    private pinchZoom = 10;
+    private pinchZoom = 13;
 
     constructor(root: HTMLElement, canvas: HTMLCanvasElement) {
         this.pad = requirePracticeElement(root, '#joystick');
@@ -72,7 +72,7 @@ export class PracticeControls {
     }
 
     private changeZoom(delta: number): void {
-        this.zoom = Math.max(7, Math.min(16, this.zoom + delta));
+        this.zoom = Math.max(8, Math.min(24, this.zoom + delta));
     }
 
     private pressKey(event: KeyboardEvent): void {
@@ -151,7 +151,7 @@ export class PracticeControls {
             this.contacts.set(event.pointerId, { x: event.clientX, y: event.clientY });
             const distance = this.computePinchDistance();
             if (distance > 20 && this.pinchDistance > 20) {
-                this.zoom = Math.max(7, Math.min(16, this.pinchZoom * this.pinchDistance / distance));
+                this.zoom = Math.max(8, Math.min(24, this.pinchZoom * this.pinchDistance / distance));
             }
         }, options);
         canvas.addEventListener('pointerup', (event) => this.contacts.delete(event.pointerId), options);

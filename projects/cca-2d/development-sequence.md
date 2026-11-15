@@ -2,12 +2,13 @@
 
 Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
 Only the next two implementation slices are concrete. The basic local Babylon
-trial is implemented; phone feel and device qualification remain open.
+trial and Grumpy Town interactions are implemented; phone feel and device qualification remain open.
 
 ## Existing foundation and change of direction
 
 The [local Babylon trial](babylon-local-trial.md) now replaces the Phaser entry.
-It implements movement, dash-and-drop, ice traction, camera zoom and pause/reset.
+It implements movement, dash-and-drop, slippery surfaces, camera zoom and pause/reset,
+plus six interactive owners, fruit spills, cleanup, powder and mini-zappers.
 It includes real browser captures and focused rule/browser tests. The historical
 server prototype remains outside the app; no new multiplayer is implemented.
 
@@ -16,40 +17,56 @@ The new visual target is [cutout market](visual-concepts/README.md), with a
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Current slice 1: phone feedback on the Babylon scene
+## Current slice 1: prove the chase, freeze and rescue loop locally
 
-**Outcome:** one moving scene on a phone establishes whether the generated look
-is reproducible and the single action is enjoyable.
+**Outcome:** mischief buys useful time, escalating danger is readable, and helping
+friends creates funny choices. The current interaction playground is the base,
+not evidence that the new game loop works yet.
 
-The trial implements the construction guide's small representative corner: one original cutout
-rig, rival, guard, stall, bank, authored puddle/ice and dash/fart decoy. Local rules are separate from rendering. Floating controls, orthographic follow
-and bounded zoom are implemented. Collection and proposed dwell banking wait
-until the four-verb trial is judged; they are not part of its present scope.
+Implement and test a small district before expanding the town further. Give it
+three contrasting interaction sources: the existing fruit stall, a redirected
+fountain jet and a rolling parcel cart. Their rule state must remain bounded.
+Laundry, toilet overflow and additional personalities stay later candidates.
 
-Do not build a full market or parallel engine framework. Measure the Babylon
-dependency and critical art before producing more assets. Keep any retained
-Phaser practice clearly separate from the trial; do not leave two default entry
-paths or silently switch between incompatible authority models.
+- Owners prioritize putting their own business in order. Busy owners are
+  distracted; owners with tidy shops watch for witnessed mischief.
+- Watching owners visibly warn, chase within bounded range/time, then zap away a
+  small number of points. The current immediate zap-before-cleanup sequence must
+  change to support the user's safe-while-busy rule.
+- A witnessed prank can start an interruptible alarm. Announce the entrance and
+  affected district, run one short authority raid, then a quiet cooldown.
+- Authority catches freeze players. A nearby friend can thaw them with a brief
+  dwell; automatic release, visible countdown and post-release protection prevent
+  long exclusion and immediate recapture. Test roughly 6–10 seconds frozen.
+- Preserve floating movement + one dash/prank action. Rescue should not require
+  another button. Avoid awarding repeat capture/rescue farming.
+
+**Working hypothesis, not a confirmed scoring decision:** individual mischief
+scores with shared survival during raids; several players can reach a personal
+winning target. Rescues earn a modest benefit. Pure cooperative and competitive
+variants remain alternatives until playtesting. First use a clearly identified
+local companion stand-in to exercise rescue; real social fun requires slice 2.
 
 **Acceptance:**
 
-- A real Babylon capture visibly matches the cutout identity at phone scale.
-- Run/dash/puff/slide/recovery are controllable and their cause is understandable.
-- Character parts, shadows and depth remain coherent at all zoom presets.
-- Joystick plus action works; pinch does not steal control pointers.
-- Portrait, landscape, iPad and keyboard/mouse have equivalent actions.
-- Named physical-device cold loading and ten-minute frame pacing meet the proposed
-  budgets or cause a specific simplification decision.
-- Pure-rule/runtime checks, app build and visible-control browser play pass.
+- Players see why an owner is safe, watching or chasing, and why a raid arrives.
+- Fresh messes create opportunities; repeatedly dashing one stall does not win.
+- Players can dodge/escape, identify the freeze timer and perform a rescue.
+- Ordinary zaps and authority catches do not stack harsh losses and repeated lockout.
+- Existing phone/touch/keyboard, pause/reset and resource-lifetime checks remain green.
+- Actual phone captures demonstrate the sequence; physical device testing checks
+  control comfort, loading and sustained frame pacing separately.
 
-**Decision:** approve the moving scene and basic interaction before expanding art.
+**Decision:** the user judges whether this creates anticipation, laughter and
+voluntary rescues. Do not add more prank types or larger authority crowds before
+this small loop works.
 
 ## Next slice 2: Rallar-only two-player hosting and recovery
 
 **Outcome:** two authenticated players share the scene using only Rallar as
 multiplayer backend, with one appointed browser running the rules.
 
-Replace the separate CCA server dependency in the selected app composition.
+Keep the separate historical CCA server outside the selected app composition.
 Use Rallar WS room transport first, bounded input/snapshot publication, accepted
 appointment/epoch validation and client reconciliation. Establish the checkpoint
 commit protocol before promising retained scores across host loss.
@@ -61,10 +78,11 @@ bypass authorization or promote everyone to room admin.
 
 **Acceptance:**
 
-- Two independent sessions agree on movement, hazards, pickups and deposits.
+- Two independent sessions agree on movement, hazards, owner duties, alarms,
+  authority catches, rescues, effect expiry and accepted scores.
 - A phone hosts while rendering at an acceptable sustained frame rate.
 - Host close/background and Wi-Fi loss produce bounded recovery or an explicitly
-  interrupted round; confirmed money never duplicates or silently disappears.
+  interrupted round; confirmed scores and rescue/capture state never duplicate or silently disappear.
 - Old-host return, competing candidates and delayed epochs cannot create two games.
 - Input expires, queues stay bounded, resync uses current scope/appointment.
 - Match clock and multiple-winner result contract survive checkpoint recovery in

@@ -1,131 +1,156 @@
-# Game design
+# Grumpy Town game design
 
-Status: selected direction with proposed rules for playtesting. Numerical values
-and the precise win condition are tuning hypotheses, not implemented behavior.
+Status: evolving gameplay direction. See [the local trial](babylon-local-trial.md)
+for implemented behavior and [the development sequence](development-sequence.md)
+for the next two slices. Numeric timings, scoring and final win conditions remain
+playtest hypotheses. This design supersedes cash/banking as the assumed core loop;
+banking is now optional future content, not a prerequisite for proving the fun.
 
 ## Fantasy and purpose
 
-Overconfident troublemakers turn a scruffy market into a slapstick chase.
-You dash away leaving a fart distraction, a friend slides through a puddle onto
-ice, and a furious guard tumbles after them. Cash supplies route objectives;
-outsmarting friends and reacting to readable chaos supplies the fun.
+Mischievous kids keep a town of permanently grumpy people busy putting things
+back in order. Making a mess buys a window to get elsewhere and cause fresh
+trouble. When businesses are tidy, owners watch the streets. Witnessed mischief
+can trigger pursuit, zaps and eventually a short authority raid.
 
-The audience is ages 6–14. Use deadpan expressions, bodily-function jokes and
-absurd falls. Short setbacks should amuse the victim too. Keep clear counterplay,
-avoid repeated helplessness, and keep everyone playing after mistakes.
+The audience is ages 6–14. Use expressive cutout faces, deadpan anger, fart jokes,
+water, slippery fruit, absurd clothes and cartoon mess. Setbacks should be funny
+for the victim too. Keep causes visible, allow counterplay and avoid repeatedly
+removing control. Ordinary play never eliminates a child from the round.
 
 ## Controls and core loop
 
-Move with a joystick or keyboard. One **DASH + DROP** action bursts in the current
-or last movement direction and leaves a distraction at the departure point.
-It uses one cooldown, so spending it on a prank also spends an escape opportunity.
-No aiming stick or inventory selection is required in the first trial.
+Move with the floating joystick or keyboard. One **DASH + DROP** action bursts
+in the current or last movement direction and uses the loaded prank. Pickups
+load automatically; no aiming stick or inventory menu is needed. The current
+playground uses a 0.2-second dash and 3-second cooldown.
 
-Pick up cash automatically. Standing still in a marked bank zone starts a short
-visible deposit; moving or dashing cancels it. This automatic banking is a proposal
-that removes the separate Bank button. The appointed host confirms all outcomes.
+1. Read who is cleaning, watching or chasing, and choose a route.
+2. Cause fresh trouble: spill fruit, redirect water or release a cart.
+3. Use the resulting distraction to move on; another tidy owner may witness it.
+4. Evade ordinary pursuit, or react to a clearly announced local authority raid.
+5. Rescue frozen friends or escape, recover from short setbacks and keep playing.
+6. Finish a short timed round with all qualifying winners and optional funny awards.
 
-1. Join a private Rallar room, choose an identity and ready.
-2. Collect cash while avoiding guards and reacting to friends' pranks.
-3. Choose a safe bank route or risk another pickup.
-4. Slip, recover, retaliate and keep playing.
-5. Finish the timed round, see all winners, and choose a rematch.
+## Owner duties and escalation
 
-## Small first ruleset
+| State | Behavior | Player opportunity |
+| --- | --- | --- |
+| Cleaning/sorting | Prioritizes restoring its own business | A visible temporary window to move or prank elsewhere |
+| Watching | Observes a limited, readable area once business is tidy | Avoid its sight or create a distraction |
+| Chasing | Pursues a witnessed prank with bounded range/time | Break sight, take another route or dodge a warned zap |
+| Calling authorities | Visibly raises an alarm for a few seconds | Interrupt in time or prepare to leave the affected district |
 
-| Rule | Proposed starting behavior |
-| --- | --- |
-| Players | Prove two first, then four; six only after host/device qualification |
-| Round | 180 seconds with a short shared countdown |
-| Movement | Normalized speed across touch and keyboard; no faster diagonals |
-| Dash-and-drop | 0.2-second burst, 4-second cooldown, stops at solids |
-| Drop | One noisy fart decoy at dash origin; short visible warning before activation |
-| Decoy effect | Nearby investigating/patrolling guards turn toward its sound |
-| Pursuit | A guard already chasing must lose line of sight before being distracted |
-| Water/ice | Authored hazard patch; reduced steering and bounded sliding duration |
-| Slip | Brief recoverable loss of traction, expressive fall; no stun chain |
-| Bank | Auto-deposit after 0.9 seconds stationary in the marked zone |
-| Cancellation | Movement, dash, catch, stale control connection, recovery pause or round end |
-| Catch | Spill some carried cash, brief reset, safe re-entry; banked cash remains |
-| Currency | Play tokens only; no real money or purchased gameplay advantage |
+An owner must witness an actual prank, not merely dislike the player's presence.
+Mess at its own business takes cleanup priority; another owner can witness the
+same prank and pursue. Show progress as the cleanup nears completion. The current
+playground instead zaps before cleanup; that sequence must change in the next slice.
 
-In the first moving scene, the puddle/ice is authored and the fart decoy is the
-only dropped prank. The mockup shows a possible chain reaction, not a promise of
-a water/ice/poop inventory. Add new interacting hazards only after the first
-interaction is enjoyable. Cosmetic splats/footprints do not silently change traction.
+Fresh interactions should matter more than repeatedly striking one stall.
+Limit repeat scoring and prevent permanent distraction locks. A chasing owner
+should not instantly abandon pursuit for every fart. NPC personality can later
+vary patience or cleaning speed, but establish one understandable policy first.
 
-Guards announce recognition with a readable pose/symbol and give time to escape.
-Stalls break sight; all valuable areas have two exits. A distracted guard cannot
-instantly catch an uninformed bystander. Players initially pass through each other;
-body-blocking and physical player collisions need a separate fun/fairness decision.
+## Authority raids, freezing and rescue
 
-## Multiple winners
+The user's proposal is a bounded authority swarm. Start with a few readable
+agents in one district: announce their entrance and roughly 20-second presence,
+then have them leave and enforce a quiet cooldown. Crowds everywhere at once
+would remove the route choices the town is meant to provide.
 
-**Requirement:** timed play can have multiple winners; no forced single champion.
+A catch freezes the player into a funny statue. Friends thaw them with about one
+second of nearby dwell; automatic release prevents abandonment. Test a six-second
+starting duration against the user's roughly ten-second suggestion. Display the
+countdown; let frozen players wiggle or signal for help. Catchers move on, and
+newly freed players get a short immunity window to escape.
 
-**Recommended rule to test:** every player reaching a visible banked-cash target
-before the deadline wins. Zero, one or several players can qualify. Crossing the
-target does not eliminate a player or stop the round; earned qualification cannot
-be taken away by later slips. The target is versioned round configuration and is
-chosen through playtests, not inferred from the mockup's score of 120.
+Ordinary owner zaps can cost a small number of points; authority catches impose
+the temporary freeze. Avoid piling a large score loss onto a long freeze or
+instant recapture. Rescue rewards must not make repeated capture/rescue farming
+more profitable than playing. No additional rescue button is planned.
 
-Alternative: highest banked score with shared ties. That technically allows multiple
-winners but may produce them rarely. Do not silently substitute this for the
-recommended target mode. The exact rule needs user/playtest confirmation before
-complete-round implementation. Funny optional awards can celebrate a long slide
-or a chain reaction, but are not a second competitive scoring system.
+## Scores, friends and multiple winners
 
-Results must clearly distinguish target winners, non-qualifiers, departed players
-and an interrupted round. An interrupted round produces no invented winners.
+**Confirmed requirement:** timed rounds can have several winners.
 
-## Market and camera
+**Recommended hypothesis:** personal mischief scores with shared survival during
+raids. Pranks earn most points; rescues give a modest bonus/escape benefit.
+Reaching a visible personal target qualifies a player without ending their play.
+Propose keeping earned qualification once reached; exact score-loss and target
+rules still need confirmation. Start round-length testing around two minutes.
 
-One authored, connected scrolling market with loops, open junctions, narrow-but-
-forgiving shortcuts and stalls that interrupt sight. Start around two default
-phone-view widths across, then tune encounter frequency. Bigger must not mean
-wandering alone. Use natural boundaries and cropped scenery, not a square arena
-frame. Camera and zoom are owned by [mobile and controls](mobile-and-controls.md).
+The user has not chosen between this, a fully cooperative score or competitive
+optional rescue. The hybrid is recommended because it permits rivalry and rescue
+without making abandoning a friend the obvious winning strategy. Judge this in
+real multiplayer, not from a local stand-in.
 
-The overview must let players plan routes; normal play must leave enough space
-to see an approaching guard. Do not create unavoidable hits from outside the
-view. Hazard visibility, guard warning distance and zoom limits are tuned together.
-Public jackpots, bag heat and payout bonuses are deferred until the basic prank
-loop earns them.
+Allow accidental chaotic encounters, but do not make deliberately trapping friends
+or repeated helplessness an optimal strategy. Optional awards such as biggest
+troublemaker and most helpful friend can celebrate different roles. An interrupted
+round must not fabricate winners.
 
-## Ordering and fairness
+## A varied town square
 
-The appointed browser runs the same pure fixed-step rules for everyone, including
-its own player. Clients submit input, never positions, money or victory claims.
-Each tick expires stale input, advances movement and hazards, resolves catches,
-pickups and then eligible deposits. A catch cancels a simultaneous deposit.
-The deadline is checked before new gameplay outcomes on its terminal tick.
+The current six stalls repeat the same spill/cleanup pattern. The requested town
+needs different causal interactions and cleanup jobs, not merely more copies.
 
-Dash edges have identities and cannot be replayed. Contested pickups use contact
-distance and a round-seeded stable tie rule, not packet arrival order.
-Confirmed banked cash and results follow the recovery commitment policy in
-[architecture](architecture.md); prediction never confirms them.
+| Place | Dash/contact interaction | Tactical change | Owner's cleanup |
+| --- | --- | --- | --- |
+| Fruit stall | Tip the display | Rolling fruit creates slippery routes | Gather scattered pieces, then restock |
+| Central fountain | Knock a nozzle sideways | A telegraphed sweeping jet soaks people and nudges loose objects | Reach and repair the source |
+| Parcel cart | Release the brake | A bounded rolling route sheds parcels and briefly obstructs a street | Stop/retrieve cart, collect parcels |
+| Laundry line | Dash through hanging clothes | Scattered washing and absurd temporary headwear | Retrieve washing and rehang it |
+| Powder counter | Burst a sack/use pickup | Local dizziness and cartoon puke alter route choice | Clear spilled stock and recover |
+| Street toilet | Trigger a conspicuous overflowing flush | A substantial, announced mess changes a local route | Stop overflow, then mop |
 
-## Room and interruptions
+These are candidates, not all committed implementation. First prove **fruit,
+fountain and parcel cart**: slippery ground, a changing hazard and a moving
+obstruction. Keep each source interruptible or bounded; do not simulate unlimited
+fluid or physics chains. Funny clothing can initially be cosmetic so it does not
+obscure vital warnings or controls.
 
-One runner per authenticated player; explicit session takeover invalidates old
-input. Late arrivals observe until rematch. Non-host disconnects expire movement
-and use a proposed ten-second seat grace; a live match continues only while a
-healthy host and another valid backup remain. Loss of the only backup pauses the
-match for up to ten seconds, then interrupts it if no backup returns. Host loss is different: freeze the shared match clock during
-recovery, then resume only from a valid checkpoint under a new appointment.
-See [recovery](architecture.md#host-loss-and-recovery).
+Put the fountain at the central landmark, businesses around the perimeter, two
+broad crossing routes and side alleys. Every valuable area needs two exits.
+Interactivity should create routes and encounters without filling every gap with
+colliders. Exact prop positions and sightlines require an authored map pass.
 
-A voluntary departure forfeits carried cash and keeps accepted banked cash in
-the round record. No remaining connected players means interruption, not a
-background simulation or a durable game service.
+## Camera, readability and fairness
+
+Use a connected scrolling and zoomable town with natural borders. Larger must
+still mean frequent interesting encounters. The current local walkable region is
+48 × 48 world units; size alone does not establish a good layout. Protect space
+above thumbs, readable expressions, warning targets and escape routes.
+
+[Mobile and controls](mobile-and-controls.md) owns responsive layout and zoom.
+Essential cues use shapes/poses and timers as well as color and sound. Avoid
+unannounced offscreen catches. Players initially pass through one another;
+competitive body-blocking is not assumed.
+
+## Rallar authority and interruptions
+
+One appointed browser runs pure fixed-step rules through Rallar-only multiplayer.
+Clients submit inputs, never positions, points, captures or victory claims.
+Owner duties, prop state, alarm/raid timers, frozen/release state, rescue progress,
+invulnerability and accepted scores all belong to host state and checkpoints.
+Rendering cannot decide an outcome. See [architecture](architecture.md).
+
+A local companion may demonstrate rescue before networking, but must be clearly
+identified as a stand-in. No local demo proves social fun or host recovery.
+Rallar appointment, stale input, checkpoint and interruption requirements remain
+unchanged by the new gameplay. On authority loss, pause/recover truthfully or
+interrupt the round; never let a frozen player's timer silently continue on one
+client while the host has stopped.
 
 ## Fun acceptance
 
-Observe small mixed-device groups, including younger and older players:
-can they cause a prank deliberately, explain a slip, escape a guard and bank?
-Watch whether victims laugh and retaliate or feel repeatedly trapped.
-Require voluntary rematches, understandable shared wins and comfortable touch use.
+Observe small mixed-age groups using phones, tablets and keyboards:
 
-If two focused tuning rounds still produce dull chasing or frustrating loss of
-control, revise the interaction/map. More props, jokes or another renderer cannot
-substitute for that evidence.
+- Do they understand how mess buys time and change routes as cleanup finishes?
+- Do different props invite different plans instead of repeated button presses?
+- Can they explain why an owner chased or authorities arrived?
+- Are chases escapable and freezes funny rather than frustrating?
+- Do they voluntarily rescue friends, laugh about what caused the raid and rematch?
+- Can younger players contribute without an older player directing every move?
+
+If these signals are absent, tune the duties, route choices and recovery costs.
+More props or another renderer cannot substitute for an enjoyable core loop.

@@ -1,9 +1,9 @@
 # CCA — Babylon cutout playground
 
-A small local trial of the cutout direction in Babylon.js **9.36.0**. Move around
-market stalls, dash while dropping a fart cloud, slide across ice, and zoom the
-following camera. The teal hoodie is you; the orange rival and guard are visual
-stand-ins. A nearby cloud makes the guard react, but there is no guard pursuit yet.
+A local **Grumpy Town** playground in Babylon.js **9.36.0**. Dash into displays,
+scatter slippery fruit, annoy shopkeepers and dodge their mini-zaps. They sweep
+up and restock, ready for another round of mischief. Walk over powder or lightning
+pickups to load a different prank on the same dash button. The teal hoodie is you.
 
 ## Try it
 
@@ -24,13 +24,21 @@ npm --workspace cca-2d exec vite preview -- --host 0.0.0.0 --port 5183 --strictP
 - Keyboard/mouse: WASD or arrows, Space to dash, scroll or +/− to zoom.
 - Pause offers resume and reset. Backgrounding pauses; returning requires resume.
 - Dash lasts 0.2 seconds, drops one 2.4-second cloud and has a 3-second cooldown.
-  Ice reduces traction; release the joystick to feel the remaining momentum.
+  Ice, fallen fruit and cartoon puke reduce traction; release the joystick to
+  feel the remaining momentum. Powder causes 3.2 seconds of dizziness and a puke
+  puddle. A mini-zap shrinks its target for 6 seconds; it never removes control.
+- Owners telegraph a zap at a fixed ground target for 0.85 seconds. Move away to
+  dodge. They then sweep up fruit and restore their display. A nearby fart also
+  makes them angry.
+- Powder and zapper pickups are outside the purple and yellow stalls down the
+  street. One pickup equips one dash; stocked counters replenish pickups after
+  10 seconds. The HUD and action button show the loaded prank.
 
 The portrait joystick is 100 CSS pixels and action button 84, floating within the
 bottom quarter at the tested 390 × 844 viewport. Landscape uses 80/76 pixels.
-Zoom buttons are at least 44 × 44. Camera width is bounded to 7–16 world units in
-portrait and scaled by aspect in landscape. The small practice region is bounded;
-it is not the complete future market.
+Zoom buttons are at least 44 × 44. Camera width is bounded to 8–24 world units in
+portrait and scaled by aspect in landscape. The default width is 13. The walkable town is now 48 × 48 world
+units with six interactive shops; the camera follows through the streets.
 
 ## Construction and owners
 
@@ -38,6 +46,10 @@ it is not the complete future market.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
 - `practice-controls.ts`: keyboard, independent pointer capture and pinch input.
 - `practice-rules.ts`: immutable movement, dash, traction, cloud lifetime and collision.
+- `town-map.ts`: common shop footprints, ice, bank and town boundary.
+- `town-rules.ts`: local town state, stall spills, owner reactions/cleanup and effect expiry.
+- `town-pranks.ts`: pickup collection and aim-assisted prank targeting.
+- `town-presentation.ts`: owner poses, speech, targets, debris and display state.
 - `practice-scene.ts`: Babylon engine, camera, actors and cloud presentation.
 - `cutout-actor.ts`: ground anchor and hinged limbs; visual poses never move rules.
 - `cutout-art.ts`: original SVG part textures, paper grain, shared unlit materials.
@@ -57,14 +69,14 @@ not an implemented capability of this app.
 ## Checks and evidence
 
 ```sh
-npx vitest run packages/tests/cca-game/cutout-practice.test.ts
+npx vitest run packages/tests/cca-game
 npx playwright test --config apps/cca-2d/playwright.config.ts
 npm --workspace cca-2d run build
 ```
 
 The browser suite covers visible controls, simultaneous touch movement/action,
 pinch zoom, desktop movement, responsive layouts, pause/reset and keyboard button
-activation. It uses an isolated Chromium context and port 5182.
+activation, stall damage/retaliation/cleanup and powder pickup. It uses an isolated Chromium context and port 5182.
 
 See [actual captures and trial limits](../../projects/cca-2d/babylon-local-trial.md).
 Physical iPhone/iPad comfort, Safari behavior and sustained frame pacing still

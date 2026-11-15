@@ -1,20 +1,21 @@
 # Cash Chase Arena — Babylon 2.5D direction
 
-Design revision · 15 November 2026 · Working subtitle: **Market Mayhem**
+Design revision · 15 November 2026 · Working subtitle: **Grumpy Town**
 
 ## Intent and current status
 
 Make a funny browser party game for ages 6–14 that friends want to replay on
 phones, iPads and computers. Outsmart friends and guards through readable
 slapstick: fart distractions, water, ice, slipping and absurd reactions.
-Collecting and banking provide a reason to cross the market; funny interactions
-are the experience to prove.
+Making fresh messes buys time while owners clean. Watching owners, pursuit and
+short authority raids create danger; rescuing frozen friends creates a social
+choice. Cash collection/banking is now optional future content.
 
 The user selected a **Babylon 2.5D trial**, a South Park-like cutout direction,
 a larger scrolling and zoomable market, floating controls, combined dash-and-drop,
 and **Rallar-only multiplayer with an appointed player as host**. Timed matches
-must allow multiple winners. This pack records those choices; detailed tuning,
-the exact shared-win condition and the rendered visual result remain proposals.
+must allow multiple winners. This pack records those choices; detailed tuning and the exact win condition remain proposals. The owner duties,
+authority raids, freezing/rescue and varied square are the latest gameplay direction.
 
 The [new smartphone mockup](visual-concepts/README.md) is generated concept
 imagery, not a Babylon screenshot. The [construction guide](babylon-scene-construction.md)
@@ -22,7 +23,8 @@ maps its elements to actual rendering techniques and defines the proof required
 before describing the look as achieved.
 
 The [Babylon local trial](babylon-local-trial.md) now implements movement,
-dash-and-drop, slipping, zoom and pause/reset in the [SPA](../../apps/cca-2d/README.md).
+dash-and-drop, slipping, zoom, pause/reset and
+[interactive grumpy shopkeepers](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
 It replaces the old Phaser entry and includes actual gameplay captures. Collection,
 banking and multiplayer are absent from this focused trial. The historical CCA
 server prototype is independent; the new app does not connect to it.
@@ -32,6 +34,7 @@ Keep this directory name for continuity; “2D” no longer specifies the render
 
 | Document                                              | Owns                                                         |
 | ----------------------------------------------------- | ------------------------------------------------------------ |
+| [Grumpy Town](grumpy-town.md)                       | Stall damage, owner retaliation/cleanup and temporary pranks |
 | [Local trial](babylon-local-trial.md)                 | Implemented controls, actual captures and current limits     |
 | [Game design](game-design.md)                         | Pranks, guards, objective, shared wins and fun tests         |
 | [Art and polish](art-and-polish.md)                   | Cutout identity, asset production and visual review          |
@@ -66,5 +69,9 @@ appointment; the appointed browser owns game rules.
   conflicting matches or fabricated results.
 - A real Babylon capture demonstrates the selected look and measured loading.
 
-No production deployment or broad gameplay expansion is authorized by a mockup.
-The next step is phone feedback on the local trial, followed by Rallar host recovery.
+The Grumpy Town expansion follows the requested playable interactions; generated
+mockups alone do not establish implementation or device qualification.
+The next local slice tests busy/alert owners, bounded pursuit, authority raids and
+freeze/rescue. Shared survival with individual scores is a working hypothesis.
+The following slice proves real two-player Rallar hosting and recovery; full social
+fun cannot be validated with local stand-ins alone.
