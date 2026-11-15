@@ -42,9 +42,12 @@ import {
  * no dispatch is held for it: the held-dispatch revocation is proven server-side by
  * `apps/api-v1/test/services/ws-room-granted-delivery.test.ts`.
  * The reopen re-asserts the sibling's room presence, which re-plans the room's layout, yet the cell needs no re-settle
- * after it: the sibling reopens only once the revoke deleted its row, so no publication after the reopen addresses it,
- * and nothing after it reads a repair: the receiver's arrival waits and the receipts, read once each handle ended,
- * hold whichever route a copy to the receiver took.
+ * after it. Over rtc the sender only hears the `revoked` cue and applies no head, so its snapshot may still freeze the
+ * sibling into `publication-2`; what the cell asserts after the reopen holds either way. The sibling reopens only once
+ * the revoke deleted its row and its re-assertion is refused, so it delivers neither publication and confirms no
+ * copy, whether or not one is addressed to it. Nothing after the reopen reads a repair, an exact recipient list or an
+ * ordering position: the receiver's arrival waits hold whichever route its copy took, and the receipts, read once each
+ * handle ended, are judged only on whether they confirm the sibling.
  */
 export const subscriptionRevokeDisconnected: AlmConformanceScenarioDefinition = {
     scenarioId: 'subscription-revoke-disconnected',
