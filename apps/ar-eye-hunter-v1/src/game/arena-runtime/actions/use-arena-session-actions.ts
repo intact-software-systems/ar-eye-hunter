@@ -16,6 +16,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -288,14 +289,14 @@ async function createAndSelectArenaRoom(
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
             return undefined;
         }
-        const admitted = rallar.rooms.state().currentRoom;
         if (
-            !admitted || !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
-            !('operation' in error) || error.operation !== 'create-and-switch'
+            !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
+            !('operation' in error) || error.operation !== 'create-and-switch' || !('joinedRoom' in error)
         ) {
             throw error;
         }
-        snapshot = admitted;
+        validateAuthoritativeGroupSnapshot(error.joinedRoom);
+        snapshot = error.joinedRoom;
         input.setError('The new arena is ready, but leaving the previous arena failed. Your membership there remains.');
     }
     if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {

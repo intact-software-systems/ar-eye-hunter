@@ -102,6 +102,7 @@ const mockRallar = vi.hoisted(() => ({
         quickJoin: vi.fn<RallarFacade['rooms']['quickJoin']>(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
+        rotateJoinCode: vi.fn(),
         join: vi.fn()
     },
     director: {

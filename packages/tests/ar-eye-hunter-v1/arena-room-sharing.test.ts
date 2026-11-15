@@ -297,7 +297,7 @@ it('does not rotate a created room for a session that replaced the creator befor
     const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
     facade.session.mockReturnValue(session);
     facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
-    // Server-side join codes: a rotate replaces the room's code and invalidates the previous one.
+    // Server-side join codes: a rotate records the code it issues for the room it names.
     const issuedJoinCodes = new Map<string, string>();
     facade.rooms.rotateJoinCode.mockReset();
     facade.rooms.rotateJoinCode.mockImplementation(async (room: typeof created.group) => {
