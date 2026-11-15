@@ -652,12 +652,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'verifyTicketRejection',
         maximumMagnitude: 1
     }),
-    Object.freeze({
-        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
-        rule: 'boundary.unknown',
-        symbol: 'verifyRejectedErrors',
-        maximumMagnitude: 1
-    }),
     // These two process rejection listeners take Node's unknown reason and normalize it directly to Error for
     // absence assertions on the lifecycle's retries; they supply no production input or policy.
     Object.freeze({
@@ -1678,17 +1672,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeIceCandidate'
     }),
-    Object.freeze({
-        path:
-            'packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-delta-emission.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readEventRowPayload'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-server/rallar-system/group-state/presence/group-state-delta-envelope.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readGroupStateEventRowEnvelope'
-    }),
     // Group command and persisted-evidence readers narrow raw JSON before any
     // identity, policy, receipt, or benchmark decision consumes it.
     Object.freeze({
@@ -2018,11 +2001,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
         rule: 'boundary.unknown',
         symbol: 'computeALMessageEnvelopeBytes'
-    }),
-    Object.freeze({
-        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
-        rule: 'boundary.unknown',
-        symbol: 'computeALMessageEnvelopeSize'
     }),
     Object.freeze({
         path: 'packages/shared/api/state-snapshot-page.ts',
