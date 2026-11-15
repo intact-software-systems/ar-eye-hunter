@@ -7,9 +7,11 @@ import {
 } from './mess.ts';
 import { computeTownObjects } from './objects.ts';
 import { computeTownOwners, witnessTownPrank } from './owners.ts';
+import { computeTownPersonalities } from './personalities/rules.ts';
 import { collectTownPickup, releaseTownPrank } from './pranks.ts';
 import { computeTownProps } from './props.ts';
 import { computeTownSoiling } from './soiling.ts';
+import { computeTownSpectacles } from './spectacles/rules.ts';
 import type { TownComputed, TownTickInput } from './state.ts';
 
 export function computeTownTick(input: TownTickInput): TownComputed {
@@ -22,8 +24,10 @@ export function computeTownTick(input: TownTickInput): TownComputed {
     town = tipTownShops(town, player, now);
     town = computeTownProps({ ...input, town });
     town = computeTownObjects({ ...input, town });
+    town = computeTownPersonalities({ ...input, town });
     const creatures = computeTownCreatures({ ...input, town });
-    const soiling = computeTownSoiling({ ...input, ...creatures });
+    const spectacles = computeTownSpectacles({ ...input, ...creatures });
+    const soiling = computeTownSoiling({ ...input, ...spectacles });
     town = soiling.town;
     player = soiling.player;
     if (input.dash || town.mischief > input.town.mischief) {

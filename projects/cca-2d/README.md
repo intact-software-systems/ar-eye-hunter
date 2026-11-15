@@ -24,7 +24,7 @@ before describing the look as achieved.
 
 The [Babylon local trial](babylon-local-trial.md) now implements movement,
 dash-and-drop, slipping, zoom, pause/reset and
-[interactive shopkeepers, creatures, messy street objects, ten-police raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
+[varied town buildings, grumpy personalities, fire crew, giant poop bomb, café spectacle, ten-police raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
 It replaces the old Phaser entry and includes actual gameplay captures. Collection,
 banking and multiplayer are absent from this focused trial. The historical CCA
 server prototype is independent; the new app does not connect to it.
@@ -34,7 +34,8 @@ Keep this directory name for continuity; “2D” no longer specifies the render
 
 | Document                                              | Owns                                                         |
 | ----------------------------------------------------- | ------------------------------------------------------------ |
-| [Grumpy Town](grumpy-town.md)                       | Varied props, owner duties, pursuit, raids and local rescue |
+| [Grumpy Town](grumpy-town.md)                         | Varied props, owner duties, pursuit, raids and local rescue  |
+| [Town-square expansion](town-square-expansion.md)     | Scope, two implementation slices and validation gates        |
 | [Local trial](babylon-local-trial.md)                 | Implemented controls, actual captures and current limits     |
 | [Game design](game-design.md)                         | Pranks, guards, objective, shared wins and fun tests         |
 | [Art and polish](art-and-polish.md)                   | Cutout identity, asset production and visual review          |
@@ -71,7 +72,6 @@ appointment; the appointed browser owns game rules.
 
 The Grumpy Town expansion follows the requested playable interactions; generated
 mockups alone do not establish implementation or device qualification.
-The current local slice implements busy/alert owners, bounded pursuit, authority
-raids and freeze/rescue with a labelled bot. Physical phone feedback is next. Shared survival with individual scores is a working hypothesis.
+The current local slice includes the expanded town, seven personality pranks and three major incidents alongside busy/alert owners, bounded pursuit, raids and freeze/rescue with a labelled bot. Physical phone feedback is next. Shared survival with individual scores is a working hypothesis.
 The following slice proves real two-player Rallar hosting and recovery; full social
 fun cannot be validated with local stand-ins alone.

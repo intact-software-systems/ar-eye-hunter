@@ -1,7 +1,6 @@
 import type { TownPoint } from '../map.ts';
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
-import { computeTownTravel } from '../routes.ts';
 import { splashTown } from '../soiling.ts';
 import type {
     TownPatch,
@@ -71,6 +70,22 @@ export function computeTownCreatures(input: TownTickInput): TownCreaturesCompute
 function computeTownCreature(input: TownCreatureInput): TownCreatureComputed {
     const { town, player, now, step } = input;
     let { creature } = input;
+    const rival = town.personalities.find((resident) =>
+        resident.phase === 'rivalry' && resident.rivalCreature === creature.id
+    );
+    if (rival) {
+        const target = now - rival.startedAt < 2
+            ? rival.home
+            : { x: creature.home.x + Math.sin(now) * 2, z: creature.home.z + Math.cos(now) * 2 };
+        const position = input.routes.travel({
+            town,
+            from: creature,
+            target,
+            speed: creature.kind === 'bird' ? 6 : 2.5,
+            step
+        });
+        return { town, player, creature: { ...creature, ...position, mode: 'roaming', aim: target, until: now + 0.5 } };
+    }
     const distance = Math.hypot(player.x - creature.x, player.z - creature.z);
     const disturbed = town.objects.some((object) =>
         object.disturbedAt > now - step &&
@@ -95,7 +110,7 @@ function computeTownCreature(input: TownCreatureInput): TownCreatureComputed {
         };
     }
     const target = interested ? player : { x: creature.home.x + Math.sin(now * 0.4 + creature.id), z: creature.home.z };
-    const position = computeTownTravel({ town, from: creature, target, speed: interested ? 2.5 : 0.8, step });
+    const position = input.routes.travel({ town, from: creature, target, speed: interested ? 2.5 : 0.8, step });
     return { town, player, creature: { ...creature, ...position, mode: interested ? 'chasing' : 'roaming' } };
 }
 
@@ -106,6 +121,7 @@ function attackTownCreature(input: TownCreatureInput): TownCreatureComputed {
     }
     const kind = creature.kind === 'bird' ? 'poop' : creature.kind === 'dog' ? 'pee' : 'puke';
     const splash = splashTown({
+        radius: 1.25,
         town: input.town,
         player: input.player,
         source: creature,

@@ -1,5 +1,4 @@
 import { hasTownSight } from './navigation.ts';
-import { computeTownTravel } from './routes.ts';
 import type { TownCompanion, TownState, TownTickInput } from './state.ts';
 
 export interface TownRescueResult {
@@ -23,7 +22,7 @@ export function moveTownCompanion(input: TownTickInput): TownCompanion {
     if (distance < 0.3) {
         return companion;
     }
-    const position = computeTownTravel({
+    const position = input.routes.travel({
         town,
         from: companion,
         target,

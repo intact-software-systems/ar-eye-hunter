@@ -6,7 +6,7 @@ import {
     isTownSprayed,
     repairTownProp
 } from './props.ts';
-import { computeTownTravel } from './routes.ts';
+import type { TownRoutes } from './routes.ts';
 import type {
     TownNpc,
     TownPlayer,
@@ -15,6 +15,7 @@ import type {
 } from './state.ts';
 
 interface TownOwnerInput {
+    readonly routes: TownRoutes;
     readonly town: TownState;
     readonly npc: TownNpc;
     readonly shop: TownShop;
@@ -39,6 +40,7 @@ export function computeTownOwners(input: TownTickInput): TownOwnersResult {
     const npcs: TownNpc[] = [];
     for (const [index, npc] of town.npcs.entries()) {
         const result = computeTownOwner({
+            routes: input.routes,
             town,
             npc,
             shop: TOWN_SHOPS[index],
@@ -56,7 +58,7 @@ export function computeTownOwners(input: TownTickInput): TownOwnersResult {
 export function witnessTownPrank(input: TownTickInput): TownState {
     const { player, now } = input;
     const npcs = input.town.npcs.map((npc): TownNpc => {
-        if (hasTownDuty(input.town, npc.shopId) || npc.stainedUntil > now || npc.dizzyUntil > now) {
+        if (hasTownDuty(input.town, npc.shopId) || npc.stainedUntil > now || npc.dizzyUntil > now || npc.until > now) {
             return npc;
         }
         if (Math.hypot(npc.x - player.x, npc.z - player.z) > 12 || !hasTownSight(input.town, npc, player)) {
@@ -94,7 +96,7 @@ function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
         return chaseTownPlayer({ ...input, town, npc });
     }
     const home = { x: input.shop.x, z: input.shop.z - 2 };
-    const position = computeTownTravel({ town, from: npc, target: home, speed: 2, step });
+    const position = input.routes.travel({ town, from: npc, target: home, speed: 2, step });
     return { town, npc: { ...npc, ...position }, shieldUntil: player.shieldUntil };
 }
 
@@ -133,14 +135,14 @@ function chaseTownPlayer(input: TownOwnerInput): TownOwnerResult {
     }
     const slowed = npc.miniUntil > now || isTownSprayed(town, npc, now) ||
         town.fruit.some((fruit) => Math.hypot(npc.x - fruit.x, npc.z - fruit.z) < 0.8);
-    const position = computeTownTravel({ town, from: npc, target: player, speed: slowed ? 1 : 2.7, step });
+    const position = input.routes.travel({ town, from: npc, target: player, speed: slowed ? 1 : 2.7, step });
     return { town, npc: { ...npc, ...position }, shieldUntil: player.shieldUntil };
 }
 
 function cleanTownShop(input: TownOwnerInput): TownOwnerResult {
     const { now, step, player, shop } = input;
     let { town, npc } = input;
-    const repair = repairTownProp({ town, npc, now, step });
+    const repair = repairTownProp({ routes: input.routes, town, npc, now, step });
     if (repair.busy) {
         return { town: repair.town, npc: repair.npc, shieldUntil: player.shieldUntil };
     }
@@ -150,7 +152,7 @@ function cleanTownShop(input: TownOwnerInput): TownOwnerResult {
         )[0];
     const target = fruit ?? { x: shop.x, z: shop.z - 2 };
     const distance = Math.hypot(target.x - npc.x, target.z - npc.z);
-    const position = computeTownTravel({ town, from: npc, target, speed: npc.miniUntil > now ? 1 : 2.3, step });
+    const position = input.routes.travel({ town, from: npc, target, speed: npc.miniUntil > now ? 1 : 2.3, step });
     npc = { ...npc, ...position };
     if (fruit && distance < 0.5 && npc.cleanAt <= now) {
         town = { ...town, fruit: town.fruit.filter((item) => item.id !== fruit.id), cleaned: town.cleaned + 1 };

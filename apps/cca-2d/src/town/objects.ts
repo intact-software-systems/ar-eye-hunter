@@ -1,7 +1,6 @@
 import { TOWN_OBJECTS, type TownObjectDefinition } from './map.ts';
 import { rewardTownMischief } from './mischief.ts';
 import type { TownRepair, TownRepairResult } from './props.ts';
-import { computeTownTravel } from './routes.ts';
 import type {
     TownPatch,
     TownState,
@@ -47,7 +46,7 @@ export function repairTownObject(input: TownRepair): TownRepairResult {
         return { town, npc, busy: false };
     }
     const target = { x: object.x, z: object.z - object.depth / 2 - 0.65 };
-    const position = computeTownTravel({ town, from: npc, target, speed: 2.3, step });
+    const position = input.routes.travel({ town, from: npc, target, speed: 2.3, step });
     const near = Math.hypot(position.x - target.x, position.z - target.z) < 0.4;
     const repair = near ? object.repair + step : 0;
     const objects = town.objects.map((entry) =>

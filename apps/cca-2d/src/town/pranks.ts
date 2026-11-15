@@ -1,6 +1,16 @@
-import { TOWN_SHOPS, type TownPoint, type TownPrank } from './map.ts';
+import {
+    TOWN_SHOPS,
+    type TownPoint,
+    type TownPrank
+} from './map.ts';
 import { hasTownSight } from './navigation.ts';
-import type { TownNpc, TownPlayer, TownState } from './state.ts';
+import { requestTownSpectacle } from './spectacles/rules.ts';
+import { TOWN_BOMB_PICKUP } from './spectacles/state.ts';
+import type {
+    TownNpc,
+    TownPlayer,
+    TownState
+} from './state.ts';
 
 export interface TownPickupComputed {
     readonly town: TownState;
@@ -8,6 +18,9 @@ export interface TownPickupComputed {
 }
 
 export function releaseTownPrank(town: TownState, player: TownPlayer, now: number): TownState {
+    if (player.power === 'poop-bomb') {
+        return requestTownSpectacle(town, { kind: 'poop', origin: { x: player.x, z: player.z }, witnesses: [] });
+    }
     if (player.power === 'powder') {
         return {
             ...town,
@@ -60,6 +73,13 @@ function zapTownOwners(town: TownState, player: TownPlayer, now: number): TownSt
 export function collectTownPickup(town: TownState, player: TownPlayer, now: number): TownPickupComputed {
     if (player.power !== 'fart') {
         return { town, power: player.power };
+    }
+    if (
+        Math.hypot(player.x - TOWN_BOMB_PICKUP.x, player.z - TOWN_BOMB_PICKUP.z) < 0.9 &&
+        town.spectacles.bombReadyAt <= now && town.spectacles.active?.kind !== 'poop' &&
+        !town.spectacles.queue.some((event) => event.kind === 'poop')
+    ) {
+        return { power: 'poop-bomb', town: { ...town, spectacles: { ...town.spectacles, bombReadyAt: now + 45 } } };
     }
     const shop = TOWN_SHOPS.find((entry) =>
         entry.kind !== 'fruit' &&

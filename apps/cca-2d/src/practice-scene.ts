@@ -13,8 +13,10 @@ import { CutoutArt } from './cutout-art.ts';
 import type { PracticeState } from './practice-rules.ts';
 import { TownCreaturePresentation } from './town/creatures/presentation.ts';
 import { TownObjectPresentation } from './town/object-presentation.ts';
+import { TownPersonalityPresentation } from './town/personalities/presentation.ts';
 import { TownPresentation } from './town/presentation.ts';
 import { TownRaidPresentation } from './town/raid-presentation.ts';
+import { TownSpectaclePresentation } from './town/spectacles/presentation.ts';
 import { TownStreetPresentation } from './town/street-presentation.ts';
 
 export namespace PracticeScene {
@@ -34,6 +36,8 @@ export class PracticeScene {
     private readonly town: TownPresentation;
     private readonly creatures: TownCreaturePresentation;
     private readonly objects: TownObjectPresentation;
+    private readonly personalities: TownPersonalityPresentation;
+    private readonly spectacles: TownSpectaclePresentation;
     private readonly street: TownStreetPresentation;
     private readonly raid: TownRaidPresentation;
     private readonly cloud: Mesh;
@@ -58,6 +62,8 @@ export class PracticeScene {
         const shops = createMarketEnvironment(this.scene, art);
         this.creatures = new TownCreaturePresentation(this.scene, art);
         this.objects = new TownObjectPresentation(this.scene, art);
+        this.personalities = new TownPersonalityPresentation(this.scene, art);
+        this.spectacles = new TownSpectaclePresentation(this.scene, art);
         this.town = new TownPresentation({ scene: this.scene, art, shops });
         this.street = new TownStreetPresentation(this.scene, art);
         this.raid = new TownRaidPresentation(this.scene, art);
@@ -97,6 +103,8 @@ export class PracticeScene {
         this.raid.render(frame);
         this.creatures.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.objects.render({ town: state.town, now: state.elapsed, reducedMotion });
+        this.personalities.render({ town: state.town, now: state.elapsed, reducedMotion });
+        this.spectacles.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.shadow.position.set(state.x, 0.04, state.z);
         this.marker.position.set(state.x, 0.045, state.z);
         const cloud = state.clouds[0];

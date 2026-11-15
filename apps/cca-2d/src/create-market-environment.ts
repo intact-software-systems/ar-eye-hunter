@@ -8,6 +8,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from './cutout-art.ts';
+import { createTownLayout } from './town/layout/presentation.ts';
 import {
     TOWN_GOVERNMENT,
     TOWN_ICE,
@@ -46,6 +47,7 @@ interface MarketSign {
 export function createMarketEnvironment(scene: Scene, art: CutoutArt): readonly MarketShopVisual[] {
     createTownStreet(scene, art);
     createTownGovernment(scene, art);
+    createTownLayout(scene, art);
     const shops = TOWN_SHOPS.map((shop) => createTownShop(scene, art, shop));
     createSign({ scene, art, text: 'GRUMPY TOWN', x: 0, y: 0.05, z: -6, width: 5, color: '#d0c29f' }).rotation.x =
         Math.PI / 2;
@@ -98,9 +100,6 @@ function createTownStreet(scene: Scene, art: CutoutArt): void {
             height: 0.7,
             depth: 1
         });
-        for (let z = -20; z <= 20; z += 8) {
-            createTownHouse(scene, art, { x: side * 28, z });
-        }
     }
 }
 
@@ -238,41 +237,6 @@ function createTownGovernment(scene: Scene, art: CutoutArt): void {
     }
     createSign({ scene, art, text: 'MINISTRY OF NO FUN', x, y: 3, z: z - 1.65, width: 5.4, color: '#d6cba4' });
     createSign({ scene, art, text: 'POLICE', x, y: 2.3, z: z - 1.7, width: 1.8, color: '#97a7af' });
-}
-
-function createTownHouse(scene: Scene, art: CutoutArt, point: { x: number; z: number; }): void {
-    createBlock({
-        scene,
-        material: art.paper('town-walls', '#8a8171'),
-        x: point.x,
-        y: 2.7,
-        z: point.z,
-        width: 5,
-        height: 5.4,
-        depth: 6
-    });
-    createBlock({
-        scene,
-        material: art.paper('town-roofs', '#605b52'),
-        x: point.x,
-        y: 5.6,
-        z: point.z,
-        width: 5.4,
-        height: 0.4,
-        depth: 6.4
-    });
-    for (const offset of [-1.3, 1.3]) {
-        createBlock({
-            scene,
-            material: art.paper('house-window', '#3e4a45'),
-            x: point.x + offset,
-            y: 3.3,
-            z: point.z - 3.02,
-            width: 1,
-            height: 1.3,
-            depth: 0.05
-        });
-    }
 }
 
 function createSign(input: MarketSign): Mesh {

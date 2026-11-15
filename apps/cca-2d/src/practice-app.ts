@@ -6,8 +6,11 @@ import {
 } from './practice-rules.ts';
 import { PracticeScene } from './practice-scene.ts';
 import { TOWN_TROUBLE_TARGET } from './town/mischief.ts';
+import { TownRoutes } from './town/routes.ts';
+import { describeTownSpectacle } from './town/spectacles/status.ts';
 
 export class PracticeApp {
+    private readonly routes = new TownRoutes();
     private readonly lifetime = new AbortController();
     private readonly root: HTMLElement;
     private readonly controls: PracticeControls;
@@ -53,6 +56,7 @@ export class PracticeApp {
             return;
         }
         this.stopped = true;
+        this.routes.clear();
         this.lifetime.abort();
         this.controls.stop();
         this.scene.stop();
@@ -63,6 +67,7 @@ export class PracticeApp {
         this.pause.addEventListener('click', () => this.setPaused(!this.paused), options);
         requirePracticeElement(this.root, '#resume').addEventListener('click', () => this.setPaused(false), options);
         requirePracticeElement(this.root, '#reset').addEventListener('click', () => {
+            this.routes.clear();
             this.state = { ...createPracticeState(), consumedDash: this.controls.getInput().dash };
             this.setPaused(false);
         }, options);
@@ -99,7 +104,10 @@ export class PracticeApp {
         if (!this.paused) {
             this.accumulator += seconds;
             while (this.accumulator >= 1 / 60) {
-                this.state = computePracticeTick(this.state, this.controls.getInput(), 1 / 60);
+                this.state = computePracticeTick(this.state, this.controls.getInput(), {
+                    seconds: 1 / 60,
+                    routes: this.routes
+                });
                 this.accumulator -= 1 / 60;
             }
         }
@@ -129,13 +137,33 @@ export class PracticeApp {
             : state.cooldown > 0
             ? `<span class="action-icon">↯</span><strong>${state.cooldown.toFixed(1)}s</strong>`
             : `<span class="action-icon">↯</span><strong>DASH<br>+ ${
-                state.power === 'fart' ? 'DROP' : state.power === 'powder' ? 'PUFF' : 'ZAP'
+                state.power === 'fart'
+                    ? 'DROP'
+                    : state.power === 'powder'
+                    ? 'PUFF'
+                    : state.power === 'poop-bomb'
+                    ? 'BOMB'
+                    : 'ZAP'
             }</strong>`;
         if (dashLabel !== this.previousDashLabel) {
             this.dash.innerHTML = dashLabel;
             this.previousDashLabel = dashLabel;
         }
         this.dash.setAttribute('aria-disabled', String(state.cooldown > 0 || state.frozenUntil > state.elapsed));
+        this.publishObservedState(state);
+    }
+
+    private publishObservedState(state: PracticeState): void {
+        this.root.dataset.spectacle = state.town.spectacles.active?.kind ?? 'none';
+        this.root.dataset.spectaclePhase = state.town.spectacles.active?.phase ?? 'none';
+        this.root.dataset.spectacleQueue = String(state.town.spectacles.queue.length);
+        this.root.dataset.firefighters = String(state.town.spectacles.firefighters.length);
+        this.root.dataset.fires = String(state.town.spectacles.fires);
+        this.root.dataset.bombs = String(state.town.spectacles.bombs);
+        this.root.dataset.dinners = String(state.town.spectacles.dinners);
+        this.root.dataset.residents = state.town.personalities.filter((resident) => resident.phase === 'reacting').map(
+            (resident) => resident.kind
+        ).join(',');
         this.root.dataset.bonuses = String(state.town.raid.bonuses);
         this.root.dataset.police = String(
             state.town.raid.guards.filter((guard) => guard.mode !== 'emerging' || guard.until <= state.elapsed).length
@@ -172,7 +200,7 @@ function createPracticeMarkup(): string {
       <div class="play-hint"><span class="you" id="power">TEAL HOODIE / FART LOADED</span><p id="status">Dash into a stall. Make a mess.</p></div>
       <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><span class="action-icon">↯</span><strong>DASH<br>+ DROP</strong></button></div>
       <footer>WASD / arrows · Space · scroll to zoom<span>Pinch the street to zoom</span></footer>
-      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Tip bins, spill fish, overflow the toilet or break a hydrant. Lure grumpy birds, dogs and cats into your pursuers. Water washes stains off.<br>Six fresh messes earn +50, then ten police leave the Ministry! Dodge for 25 seconds.<br>Stand beside a frozen friend for one second to rescue. You also thaw automatically after six seconds.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Orange BOT PAL is simulated · no multiplayer yet</small></div></section>
+      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Explore the town. Dash the bell, flowers, statue, laundry and queue barrier.<br>Kick the barbecue to call grumpy firefighters. Grab THE BIG STINK and dash to drop it. Tip FREE SAMPLES for a spectacularly bad lunch.<br>Tip bins, spill fish, overflow the toilet or break a hydrant. Lure grumpy birds, dogs and cats into your pursuers. Water washes stains off.<br>Six fresh messes earn +50, then ten police leave the Ministry! Dodge for 25 seconds.<br>Stand beside a frozen friend for one second to rescue. You also thaw automatically after six seconds.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Orange BOT PAL is simulated · no multiplayer yet</small></div></section>
     </main>`;
 }
 
@@ -198,6 +226,10 @@ function describePracticeStatus(state: PracticeState): string {
     }
     if (state.stain !== 'clean') {
         return `${state.stain.toUpperCase()}! Find fountain spray or a broken hydrant to wash off.`;
+    }
+    const spectacle = describeTownSpectacle(town, elapsed);
+    if (spectacle) {
+        return spectacle;
     }
     if (town.npcs.some((npc) => npc.mode === 'warning')) {
         return 'Owner aiming — move out of the target!';

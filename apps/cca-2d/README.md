@@ -8,6 +8,12 @@ clean; tidy neighbours chase and zap away points. Authorities freeze characters
 during short raids. The orange BOT PAL demonstrates proximity rescue. Walk over powder or lightning
 pickups to load a different prank on the same dash button. The teal hoodie is you.
 
+The square now includes thirteen varied buildings and eleven pieces of street
+furniture around the original stalls. Seven grumpy personalities have dashable
+props: bell, flowers, queue barrier, vacuum, statue, laundry and squeaky toy.
+Three larger incidents share one bounded spectacle slot: barbecue fire, a giant
+poop bomb and the café inspector's disastrous free sample.
+
 ## Try it
 
 ```sh
@@ -45,12 +51,26 @@ npm --workspace cca-2d exec vite preview -- --host 0.0.0.0 --port 5183 --strictP
   street. One pickup equips one dash; stocked counters replenish pickups after
   10 seconds. The HUD and action button show the loaded prank.
 
+- Kick **DO NOT KICK** beside the café to earn +20 and dispatch two firefighters.
+  They warn, hose the barbecue, wash/push anyone in the stream, then return to the
+  truck. Nearby witnesses can pursue; walls protect your identity.
+- Walk south to **THE BIG STINK**, then dash to drop the bomb. Its two-second
+  warning marks a six-unit radius. Cover blocks the splash; twelve or fewer
+  temporary patches leave escape gaps. The pickup replenishes after 45 seconds.
+- Dash **FREE SAMPLES** at the café. The inspector warns for two seconds, sprays
+  for six, then the waiter cleans with an absurdly small bucket. Dash the umbrella
+  to deflect the stream while the waiter protects the cake. Fire and café sources
+  have 45-second cooldowns; each incident gives +20 and one trouble mark.
+- Ordinary personality pranks give +10 once per 30 seconds. Watch the gardener
+  chase a wig, residents argue, the vacuum burp, laundry fly and animals steal
+  personal belongings. Ambient routines do not award points.
+
 The portrait joystick is 100 CSS pixels and action button 84, floating within the
 bottom quarter at the tested 390 × 844 viewport. Landscape uses 80/76 pixels.
 Zoom buttons are at least 44 × 44. Camera width is bounded to 8–24 world units in
 portrait and scaled by aspect in landscape. The default width is 13. The walkable town is now 48 × 48 world
 units with six interactive shops, five street objects, fountain/cart, six
-creatures and the government building; the camera follows through the streets.
+creatures, eight additional residents, civic/shop/house facades and street furniture; the camera follows through the streets.
 
 ## Construction and owners
 
@@ -63,6 +83,9 @@ creatures and the government building; the camera follows through the streets.
 - `town/owners.ts`, `town/authorities.ts`, `town/companion.ts`: duties, pursuit, catch and rescue.
 - `town/mess.ts`, `town/props.ts`, `town/objects.ts`, `town/pranks.ts`: bounded interactions and cleanup.
 - `town/creatures/`: creature rules, original cutout art and rendering.
+- `town/layout/`: varied solid buildings, street furniture and their cutout facades.
+- `town/personalities/`: petty rules, reactions, rivalries and resident hose.
+- `town/spectacles/`: queued fire, bomb and café incidents, crew and rendering.
 - `town/soiling.ts`: stains, washing and mess immunity.
 - `town/mischief.ts` and `town/raid.ts`: rewards, trouble and police wave lifecycle.
 - `town/navigation.ts` and `town/routes.ts`: collision, sight and obstacle-aware travel.
@@ -95,7 +118,7 @@ npm --workspace cca-2d run build
 The browser suite covers visible controls, simultaneous touch movement/action,
 pinch zoom, desktop movement, responsive layouts, pause/reset and keyboard button
 activation, stall damage/cleanup, powder pickup, fountain/cart interactions and
-a full bonus/ten-police/freeze/recovery/return cycle. It uses an isolated Chromium context and port 5182.
+a full bonus/ten-police/freeze/recovery/return cycle, plus bomb warning/reset, fire dispatch/return and the finite café spectacle. It uses an isolated Chromium context and port 5182.
 
 See [actual captures and trial limits](../../projects/cca-2d/babylon-local-trial.md).
 Physical iPhone/iPad comfort, Safari behavior and sustained frame pacing still

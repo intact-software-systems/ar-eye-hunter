@@ -5,7 +5,10 @@ import {
     type TownPrank
 } from './map.ts';
 import { createTownObjects, type TownObject } from './objects.ts';
+import { createTownPersonalities, type TownPersonality } from './personalities/state.ts';
+import type { TownRoutes } from './routes.ts';
 import { createCleanCoat, type TownCoat } from './soiling.ts';
+import { createTownSpectacles, type TownSpectacles } from './spectacles/state.ts';
 
 export interface TownFruit extends TownPoint {
     readonly id: number;
@@ -46,6 +49,8 @@ export interface TownNpc extends TownPoint, TownCoat {
     readonly immuneUntil: number;
 }
 export interface TownState {
+    readonly spectacles: TownSpectacles;
+    readonly personalities: readonly TownPersonality[];
     readonly mischief: number;
     readonly creatures: readonly TownCreature[];
     readonly objects: readonly TownObject[];
@@ -78,6 +83,7 @@ export interface TownPlayer extends TownPoint, TownCoat {
     readonly sickAt: number;
 }
 export interface TownTickInput {
+    readonly routes: TownRoutes;
     readonly town: TownState;
     readonly player: TownPlayer;
     readonly dash: boolean;
@@ -126,6 +132,8 @@ export interface TownCart extends TownPoint {
 
 export function createTownState(): TownState {
     return {
+        personalities: createTownPersonalities(),
+        spectacles: createTownSpectacles(),
         mischief: 0,
         creatures: createTownCreatures(),
         objects: createTownObjects(),

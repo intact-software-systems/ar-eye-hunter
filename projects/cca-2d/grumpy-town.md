@@ -6,18 +6,22 @@ It preserves floating movement, one dash-and-drop action and zoom. The orange
 
 ## What is playable
 
-| Interaction | Effect | Cleanup and counterplay |
-| --- | --- | --- |
-| Fruit stall | Dash tips a stocked display and scatters six slippery pieces | Its owner gathers fruit and restocks; tidy neighbours can chase |
-| Fountain | Dash knocks the nozzle into a sweeping jet | Water pushes the player and reduces traction; the apple owner repairs it |
-| Parcel cart | Dash releases it along a short route, obstructing the street | The pear owner follows and retrieves it; the cart returns to its starting place |
-| Powder pickup | The next dash leaves a cloud; exposed characters get dizzy and briefly puke | Dizziness slows movement without reversing input; cloud and puddle expire |
-| Zapper pickup | The next dash shrinks visible owners in front for six seconds | Mini owners move/clean slowly, then recover |
-| Bins and old fish | Dash tips rubbish or scatters slippery fish | The assigned owner puts the object back in order |
-| Public toilet | Dash overflows cartoon poop and pee | Puddles stain and slip; the owner repairs the toilet |
-| Hydrant | Dash releases washing puddles | Water clears stains; the owner repairs it |
-| Birds, dogs and cats | Birds drop poop, dogs spray pee, cats spit puke after a fixed warning | Dodge, wash off, or lure a provoked attack into residents/police |
-| Fart drop | A witnessed dash attracts attention without needing to damage stock | Escape, break sight, or create a cleanup duty |
+| Interaction          | Effect                                                                      | Cleanup and counterplay                                                                                          |
+| -------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Fruit stall          | Dash tips a stocked display and scatters six slippery pieces                | Its owner gathers fruit and restocks; tidy neighbours can chase                                                  |
+| Fountain             | Dash knocks the nozzle into a sweeping jet                                  | Water pushes the player and reduces traction; the apple owner repairs it                                         |
+| Parcel cart          | Dash releases it along a short route, obstructing the street                | The pear owner follows and retrieves it; the cart returns to its starting place                                  |
+| Powder pickup        | The next dash leaves a cloud; exposed characters get dizzy and briefly puke | Dizziness slows movement without reversing input; cloud and puddle expire                                        |
+| Zapper pickup        | The next dash shrinks visible owners in front for six seconds               | Mini owners move/clean slowly, then recover                                                                      |
+| Bins and old fish    | Dash tips rubbish or scatters slippery fish                                 | The assigned owner puts the object back in order                                                                 |
+| Public toilet        | Dash overflows cartoon poop and pee                                         | Puddles stain and slip; the owner repairs the toilet                                                             |
+| Hydrant              | Dash releases washing puddles                                               | Water clears stains; the owner repairs it                                                                        |
+| Birds, dogs and cats | Birds drop poop, dogs spray pee, cats spit puke after a fixed warning       | Dodge, wash off, or lure a provoked attack into residents/police                                                 |
+| Petty-rule residents | Dash the bell, flowers, barrier, vacuum, statue, laundry or squeaky toy     | Brief distraction, flying wig, queue shuffle, burp, silly statue, washing hose or stolen hat; recover and return |
+| Barbecue fire        | Dash starts a localized fire, earns +20 and dispatches the grumpy fire crew | Visible witnesses pursue; crew warn, extinguish, wash/push and return                                            |
+| Big Stink pickup     | Existing dash drops a bomb with a two-second, six-unit warning              | Solid cover blocks the splash; at most twelve temporary patches; water washes stains                             |
+| Café samples         | Inspector warns, then performs a six-second sweeping vomit spectacle        | Dash the umbrella to deflect; waiter saves cake, then uses a tiny bucket                                         |
+| Fart drop            | A witnessed dash attracts attention without needing to damage stock         | Escape, break sight, or create a cleanup duty                                                                    |
 
 Fresh object/stall/fountain/cart trouble and provoked animal collateral award 10 points. Each source has a 30-second
 reward cooldown, and hitting an already damaged source gives no additional points.
@@ -26,8 +30,27 @@ These shared duties create route choices with the existing six NPCs.
 
 The cart follows a bounded scripted path, rather than general physics. It does
 not yet scatter parcels. Water affects the player and slows owners/guards; it
-does not simulate fluid or push other props. Toilet overflow and temporary brown/yellow/green stains are implemented. Laundry
-and clothing transformations remain later candidates.
+does not simulate fluid or push other props. Toilet overflow and temporary brown/yellow/green stains are implemented. Laundry reactions and a washing hose are implemented; clothing transformations remain a later candidate.
+
+## Inhabited square and major incidents
+
+The 48×48 town now has thirteen varied buildings around the original market:
+fire station, bakery, café, post office, florist, newsstand, clockmaker, library,
+council offices and terraces/balcony homes. Eleven furniture footprints add benches,
+mailbox, bus stop, bikes, planters, café tables, noticeboard and lamps. Buildings and
+furniture are solid and participate in sight and travel routing; they are not
+promises of indoor gameplay. Named personality props and the barbecue/sample tray
+provide the new interactions.
+
+Major incidents award +20 and one trouble mark. Fire/sample sources and the bomb
+pickup have 45-second cooldowns. One event runs at a time; a queue retains one
+request of each kind, so accepted rewards cannot discard their consequences.
+Police waves retain their own lifecycle. Each incident has bounded cleanup and
+reset clears crew, pending events, stains and source cooldowns.
+
+The original town-and-spectacle discussion below preserves design rationale.
+The [implementation plan](town-square-expansion.md) distinguishes delivered behavior
+from physical-device and multiplayer evidence still required.
 
 ## Busy owners buy safety
 
@@ -143,3 +166,115 @@ Choices made for the first playtest: +50 versus the normal +10 reward, six incid
 five-second dispatch, 25-second chase and six creatures. These are tuning values,
 not claims of proven fun. The orange BOT PAL still represents a local companion;
 real multiplayer, shared-bonus distribution and timed winners remain next-slice work.
+
+## Brainstorm: petty rules and ridiculous reactions
+
+The user endorsed this set, then requested implementation. The current scene now contains a first playable version of every personality. The table preserves the original comic intent; the playable behavior and tuning above are authoritative for this trial. Give each grump one visible pet peeve, one exaggerated reaction and one
+weakness players can use. Mix tidy, quiet, orderly and self-important personalities
+so encounters change decisions instead of adding interchangeable hazards.
+
+| Grumpy personality     | Prank and comic reaction                                                                      | Gameplay opportunity                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Silence fanatic        | Ring a bicycle bell; the resident shouts QUIET through a huge megaphone, upsetting neighbours | Draw attention toward the noise and start a short NPC argument         |
+| Perfectionist gardener | Scatter carefully arranged pots; pollen causes a giant sneeze that launches their wig         | The gardener chases the wig while players escape                       |
+| Queue tyrant           | Knock a queue barrier sideways; residents insist on reorganizing a queue that leads nowhere   | Briefly redirect pedestrian flow, keeping escape routes open           |
+| Overzealous cleaner    | A cleaning vacuum sucks up mess, swells, then burps a clearly warned fart cloud               | A cleanup job can briefly inconvenience nearby grumps and police       |
+| Self-important mayor   | Dash into the statue plinth to turn its solemn face silly; the mayor frantically covers it    | Draw residents to a public distraction with an obvious reset job       |
+| Fussy washer           | Disturb clean laundry; the resident pursues with a hose and accidentally washes everyone      | Clear stains and interrupt a pursuit with a bounded water sweep        |
+| Nosy window watcher    | A squeaky toy makes the watcher lean out; a bird steals their hat                             | Temporarily remove a lookout without another stun mechanic             |
+| Grumpy animal rivalry  | A dog steals a broom or a cat occupies the mayor's chair; residents blame each other          | Create lively background encounters; no score for unprovoked accidents |
+
+Suggested first experiments: silence fanatic, sneezing gardener and overzealous
+cleaner. They offer noise diversion, a chase for a displaced object and a cleanup
+backfire, respectively. A possible chain: bell → loud complaint → startled dog →
+soiled resident → vacuum cleanup → fart burp → two grumps arguing while the player
+escapes. Bound the chain, telegraph effects and avoid repeated rewards for one cause.
+
+Keep movement and dash/drop as the only required actions. Pet peeves should be
+readable from objects, poses and short signs without requiring children to read
+dialogue. A grump can briefly look smug when order is restored, making the next
+absurd upset more expressive than constant anger. These ideas still need sequencing
+and playtesting; they are not promises of proven fun.
+
+## Brainstorm: a recognizable town and big comic incidents
+
+The user wants a fuller, more varied regular town square: houses, booths and
+familiar town institutions. They also proposed a small fire that awards a bonus
+and brings a grumpy fire department plus witnesses, a large-radius poop bomb,
+and an extravagantly absurd vomit scene. The user subsequently requested a documented plan and implementation of this
+direction. These three incidents are now playable; see [the expansion plan](town-square-expansion.md) for implementation and validation. The earlier personalities have user support; this section
+preserves the design rationale; the expansion plan now defines implementation.
+
+### Town identity and everyday life
+
+Build a recognizable civic square around the fountain/statue, with four distinct
+edges: government and municipal offices; a shopping street with bakery, café,
+florist and newsstand; a service lane with fire station, refuse area and delivery
+access; and a residential edge with terraces, balconies, laundry and window
+watchers. Vary rooflines, facade materials, heights, awnings and shop windows.
+Use benches, bus stop, mailboxes, bicycle racks, café tables, planters and notice
+boards to make the spaces recognizable. Keep broad routes and multiple exits;
+foreground furniture must not become a solid obstacle maze.
+
+Use a mix of scenic facades, reactive details and a smaller set of consequential
+interactive props. Residents drink tea, queue, deliver parcels and tend flowers
+between disturbances. Their routines give pranks a visible setup and recovery.
+Short signs and absurd local rules establish grumpy identity without dialogue
+reading being required. Maintain the selected restrained cutout art direction.
+
+### Small fire and grumpy fire department
+
+Proposal: a contextual prank at designated props creates one small cartoon fire,
+awards a fresh-incident bonus and visibly raises a fire alarm. Fire response follows
+the fire; only residents with sight of the act identify and chase the culprit.
+Witness complaints need a visible pointing/recognition cue. Firefighters emerge
+from the fire station, prioritize extinguishing, then grumpily restore the site.
+Their warned hose sweeps push/slip and wash people, including police. The truck
+occupies a marked service bay without sealing the square's escape routes.
+
+Comedy comes from an excessive response to a tiny incident: giant hoses, a
+soaked mayor, a firefighter sliding backward and an argument over wet paperwork.
+Keep fire localized and bounded, without runaway building destruction. The bonus
+cannot be retained while cancelling its response. One source cannot repeatedly
+farm rewards; the exact bonus, incident contribution and response duration are
+unsettled tuning choices. Firefighters restore/wash; police pursue/freeze.
+
+### Large-radius poop bomb
+
+Proposal: a rare pickup loads the existing dash/drop action with a giant wobbling
+poop bomb. A visible countdown and expanding footprint let everyone escape before
+a broad cartoon splat coats exposed actors, props and a limited set of slippery
+patches. Solid scenery provides cover. Grumps stop to clean; protected/frozen
+players do not accumulate new immobilization. Water provides an immediate remedy.
+
+A spectacular visual radius should not become an equally large impassable or
+unavoidable slow zone. Leave traversable routes, cap the persistent patches and
+bound their lifetime. Credit the initiating prank once; reactions and cleanup do
+not each create another reward. Avoid permanent brown screen overlays or a new
+inventory/aiming UI. Acquisition frequency, radius and reward remain proposals.
+
+### Absurd vomit set piece
+
+Proposal: a pompous food inspector samples something at a café, insists everything
+is perfectly fine, visibly turns green and produces an impossibly long cartoon
+vomit stream while trying to remain dignified. The warned stream sweeps a short
+sector; players sidestep or lure a pursuer into it. An umbrella redirects a spray,
+a waiter shields the cake and a cleaner arrives with an absurdly tiny bucket.
+Borrow theatrical escalation and deadpan reactions, using original characters,
+staging and dialogue rather than recreating a film scene.
+
+Use exaggerated colored shapes and expressive cutouts. Bound duration, slippery
+patches and secondary reactions so one event cannot turn into an endless sickness
+loop. Any secondary victim reaction is brief and cannot recursively restart the
+same event. Keep escape controls available.
+
+### Variety, pacing and development choice
+
+Ordinary pranks should stay frequent; major comic incidents should create a brief
+peak followed by recovery. Start by allowing one major spectacle at a time,
+visibly queueing another emergency if it is already committed. Police/animal
+interactions can still overlap, but not erase all safe routes or repeatedly freeze
+players. Exact scheduling and overlap policy require a separate rules decision.
+
+The subsequent implementation request selected the town pass and all three incidents for this trial. Fire adds a place, witnesses, arrival, a different response and useful
+washing counterplay. The two-slice plan owns this work; the Rallar hosting/recovery gate remains documented separately.

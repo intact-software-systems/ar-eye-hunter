@@ -1,3 +1,4 @@
+import { TOWN_BUILDINGS, TOWN_FURNITURE } from './layout/map.ts';
 import {
     TOWN_FOUNTAIN,
     TOWN_GOVERNMENT,
@@ -8,91 +9,136 @@ import {
 } from './map.ts';
 import {
     computeTownPosition,
-    crossesTownObstacle,
-    getTownObstacles
+    crossesTownObstacle
 } from './navigation.ts';
+import { TOWN_PERSONALITIES } from './personalities/state.ts';
+import { TOWN_BARBECUE, TOWN_UMBRELLA } from './spectacles/state.ts';
 import type { TownState } from './state.ts';
 
-export interface TownTravel {
-    readonly town: TownState;
-    readonly from: TownPoint;
-    readonly target: TownPoint;
-    readonly speed: number;
-    readonly step: number;
-}
-interface TownRouteGraph {
-    readonly points: readonly TownPoint[];
-    readonly obstacles: readonly TownObstacle[];
-}
-
-// Visibility for the fixed stalls is reusable. Only endpoints and the rolling cart change per tick.
-const staticObstacles = [...TOWN_SHOPS, TOWN_GOVERNMENT, ...TOWN_OBJECTS, TOWN_FOUNTAIN].map(expandForActor);
+const staticObstacles = [
+    ...TOWN_SHOPS,
+    TOWN_GOVERNMENT,
+    ...TOWN_OBJECTS,
+    TOWN_BARBECUE,
+    TOWN_UMBRELLA,
+    ...TOWN_BUILDINGS,
+    ...TOWN_FURNITURE,
+    ...TOWN_PERSONALITIES.map((resident) => resident.prop),
+    TOWN_FOUNTAIN
+].map(expandForActor);
 const staticCorners = staticObstacles.flatMap(obstacleCorners);
-const staticLinks = staticCorners.map((from) => staticCorners.map((to) => clearRoute(staticObstacles, from, to)));
-
-export function computeTownTravel(input: TownTravel): TownPoint {
-    const { town, speed, step } = input;
-    const from = computeTownPosition(town, input.from, { x: 0, z: 0 });
-    const obstacles = getTownObstacles(town).map(expandForActor);
-    const target = nearestOpenPoint(obstacles, input.target);
-    const next = clearRoute(obstacles, from, target) ? target : findRouteStep({
-        obstacles,
-        points: [from, target, ...staticCorners, ...obstacleCorners(obstacles[obstacles.length - 1])]
-    });
-    const distance = Math.hypot(next.x - from.x, next.z - from.z);
-    const travel = Math.min(distance, speed * step) / Math.max(0.001, distance);
-    return computeTownPosition(town, from, { x: (next.x - from.x) * travel, z: (next.z - from.z) * travel });
+const staticLinks = staticCorners.map((from) =>
+    staticCorners.map((to) => clearRoute(staticObstacles, from, to) ? distanceBetween(from, to) : Infinity)
+);
+export namespace TownRoutes {
+    export interface Travel {
+        readonly town: TownState;
+        readonly from: TownPoint;
+        readonly target: TownPoint;
+        readonly speed: number;
+        readonly step: number;
+    }
+    export interface Graph {
+        readonly points: readonly TownPoint[];
+        readonly obstacles: readonly TownObstacle[];
+        readonly links: readonly (readonly number[])[];
+        readonly distances: Map<string, readonly number[]>;
+    }
 }
+export class TownRoutes {
+    // Exact geometry/target memoization belongs to one app lifetime, never match state.
+    // At most one cart layout and 128 destinations are retained.
+    private cachedGraph: TownRoutes.Graph | undefined;
 
-function findRouteStep(graph: TownRouteGraph): TownPoint {
-    const { points } = graph;
-    const costs = points.map(() => Infinity);
-    const previous = points.map(() => -1);
-    const visited = new Set<number>();
-    costs[0] = 0;
-    while (visited.size < points.length) {
-        let current = -1;
+    clear(): void {
+        this.cachedGraph = undefined;
+    }
+
+    travel(input: TownRoutes.Travel): TownPoint {
+        const { town, speed, step } = input;
+        const from = computeTownPosition(town, input.from, { x: 0, z: 0 });
+        const graph = this.resolveGraph(town);
+        const target = nearestOpenPoint(graph.obstacles, input.target);
+        const next = clearRoute(graph.obstacles, from, target) ? target : this.findRouteStep({ graph, from, target });
+        const distance = distanceBetween(from, next);
+        const travel = Math.min(distance, speed * step) / Math.max(0.001, distance);
+        return computeTownPosition(town, from, { x: (next.x - from.x) * travel, z: (next.z - from.z) * travel });
+    }
+
+    private resolveGraph(town: TownState): TownRoutes.Graph {
+        const cart = expandForActor({ x: town.cart.x, z: town.cart.z, width: 1.7, depth: 1.3 });
+        const previousCart = this.cachedGraph?.obstacles.at(-1);
+        if (this.cachedGraph && previousCart?.x === cart.x && previousCart.z === cart.z) {
+            return this.cachedGraph;
+        }
+        const obstacles = [...staticObstacles, cart];
+        const points = [...staticCorners, ...obstacleCorners(cart)];
+        const links = points.map((from, row) =>
+            points.map((to, column) => {
+                if (row < staticCorners.length && column < staticCorners.length) {
+                    return crossesTownObstacle(from, to, cart) ? Infinity : staticLinks[row][column];
+                }
+                return clearRoute(obstacles, from, to) ? distanceBetween(from, to) : Infinity;
+            })
+        );
+        this.cachedGraph = { points, obstacles, links, distances: new Map() };
+        return this.cachedGraph;
+    }
+
+    private findRouteStep(input: { graph: TownRoutes.Graph; from: TownPoint; target: TownPoint; }): TownPoint {
+        const { graph, from, target } = input;
+        const costs = this.resolveDestinationCosts(graph, target);
         let best = Infinity;
-        for (let index = 0; index < points.length; index++) {
-            const estimate = costs[index] + distanceBetween(points[index], points[1]);
-            if (!visited.has(index) && estimate < best) {
-                best = estimate;
-                current = index;
+        let next = from;
+        graph.points.forEach((point, index) => {
+            const distance = distanceBetween(from, point);
+            if (distance < 0.08) {
+                return;
+            }
+            const cost = distance + costs[index];
+            if (cost < best && clearRoute(graph.obstacles, from, point)) {
+                best = cost;
+                next = point;
+            }
+        });
+        return next;
+    }
+
+    private resolveDestinationCosts(graph: TownRoutes.Graph, target: TownPoint): readonly number[] {
+        const key = `${target.x},${target.z}`;
+        const saved = graph.distances.get(key);
+        if (saved) {
+            return saved;
+        }
+        const costs = graph.points.map((point) =>
+            clearRoute(graph.obstacles, point, target) ? distanceBetween(point, target) : Infinity
+        );
+        const visited = new Set<number>();
+        while (visited.size < graph.points.length) {
+            let current = -1;
+            let best = Infinity;
+            for (let index = 0; index < costs.length; index++) {
+                if (!visited.has(index) && costs[index] < best) {
+                    current = index;
+                    best = costs[index];
+                }
+            }
+            if (current < 0) {
+                break;
+            }
+            visited.add(current);
+            for (let next = 0; next < costs.length; next++) {
+                if (!visited.has(next)) {
+                    costs[next] = Math.min(costs[next], best + graph.links[current][next]);
+                }
             }
         }
-        if (current < 0) {
-            return points[0];
+        if (graph.distances.size >= 128) {
+            graph.distances.clear();
         }
-        if (current === 1) {
-            return firstRoutePoint(points, previous);
-        }
-        visited.add(current);
-        for (let next = 0; next < points.length; next++) {
-            const cost = costs[current] + distanceBetween(points[current], points[next]);
-            if (visited.has(next) || cost >= costs[next] || !routeLinkClear(graph, current, next)) {
-                continue;
-            }
-            costs[next] = cost;
-            previous[next] = current;
-        }
+        graph.distances.set(key, costs);
+        return costs;
     }
-    return points[0];
-}
-
-function routeLinkClear(graph: TownRouteGraph, from: number, to: number): boolean {
-    if (from >= 2 && to >= 2 && from < staticCorners.length + 2 && to < staticCorners.length + 2) {
-        return staticLinks[from - 2][to - 2] &&
-            !crossesTownObstacle(graph.points[from], graph.points[to], graph.obstacles[graph.obstacles.length - 1]);
-    }
-    return clearRoute(graph.obstacles, graph.points[from], graph.points[to]);
-}
-
-function firstRoutePoint(points: readonly TownPoint[], previous: readonly number[]): TownPoint {
-    let next = 1;
-    while (previous[next] > 0) {
-        next = previous[next];
-    }
-    return points[next];
 }
 
 function clearRoute(obstacles: readonly TownObstacle[], from: TownPoint, to: TownPoint): boolean {

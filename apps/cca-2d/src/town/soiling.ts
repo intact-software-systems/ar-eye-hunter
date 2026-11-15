@@ -24,6 +24,7 @@ export interface TownSplash {
     readonly player: TownPlayer;
     readonly source: TownPoint;
     readonly target: TownPoint;
+    readonly radius: number;
     readonly kind: 'poop' | 'pee' | 'puke';
     readonly now: number;
 }
@@ -36,14 +37,23 @@ export function splashTown(input: TownSplash): TownSoilingComputed {
     const { town, player, now, kind, source, target } = input;
     const hits = (point: TownPoint & TownCoat) =>
         point.messImmuneUntil <= now &&
-        Math.hypot(point.x - target.x, point.z - target.z) < 1.25 && hasTownSight(town, source, point);
+        Math.hypot(point.x - target.x, point.z - target.z) < input.radius && hasTownSight(town, source, point);
     const hitsGuard = (guard: TownGuard) => (guard.mode !== 'emerging' || guard.until <= now) && hits(guard);
-    const hitResident = town.npcs.some(hits) || town.raid.guards.some(hitsGuard);
+    const hitResident = town.npcs.some(hits) || town.personalities.some(hits) || town.raid.guards.some(hitsGuard);
     return {
         player: hits(player) ? { ...player, ...soilTownCoat(kind, now) } : player,
         hitResident,
         town: {
             ...town,
+            personalities: town.personalities.map((resident) =>
+                hits(resident) ? { ...resident, ...soilTownCoat(kind, now) } : resident
+            ),
+            spectacles: {
+                ...town.spectacles,
+                firefighters: town.spectacles.firefighters.map((actor) =>
+                    hits(actor) ? { ...actor, ...soilTownCoat(kind, now) } : actor
+                )
+            },
             npcs: town.npcs.map((npc) => hits(npc) ? { ...npc, ...soilTownCoat(kind, now), mode: 'cleaning' } : npc),
             companion: hits(town.companion) ? { ...town.companion, ...soilTownCoat(kind, now) } : town.companion,
             raid: {
@@ -65,6 +75,14 @@ export function computeTownSoiling(input: TownTickInput): TownSoilingComputed {
         hitResident: false,
         town: {
             ...town,
+            personalities: town.personalities.map((actor) => ({ ...actor, ...computeTownCoat(input, actor) })),
+            spectacles: {
+                ...town.spectacles,
+                firefighters: town.spectacles.firefighters.map((actor) => ({
+                    ...actor,
+                    ...computeTownCoat(input, actor)
+                }))
+            },
             npcs: town.npcs.map((npc) => ({ ...npc, ...computeTownCoat(input, npc) })),
             companion: { ...town.companion, ...computeTownCoat(input, town.companion) },
             raid: {

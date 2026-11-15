@@ -7,7 +7,7 @@ import { TOWN_POLICE_DOOR } from './map.ts';
 import { hasTownSight } from './navigation.ts';
 import { isTownSprayed } from './props.ts';
 import { advanceTownRaid } from './raid.ts';
-import { computeTownTravel } from './routes.ts';
+import type { TownRoutes } from './routes.ts';
 import type {
     TownGuard,
     TownPlayer,
@@ -16,6 +16,7 @@ import type {
 } from './state.ts';
 
 interface TownGuardInput {
+    readonly routes: TownRoutes;
     readonly town: TownState;
     readonly guard: TownGuard;
     readonly player: TownPlayer;
@@ -42,6 +43,7 @@ export function computeTownAuthorities(input: TownTickInput): TownRescueResult {
     const guards: TownGuard[] = [];
     for (const guard of town.raid.guards) {
         const result = computeTownGuard({
+            routes: input.routes,
             town: { ...town, companion },
             guard,
             player: { ...player, frozenUntil },
@@ -75,7 +77,7 @@ function computeTownGuard(input: TownGuardInput): TownGuardResult {
     const { town, player, now, step } = input;
     let { guard } = input;
     if (town.raid.phase === 'returning') {
-        const position = computeTownTravel({ town, from: guard, target: TOWN_POLICE_DOOR, speed: 5, step });
+        const position = input.routes.travel({ town, from: guard, target: TOWN_POLICE_DOOR, speed: 5, step });
         return { guard: { ...guard, ...position, mode: 'patrol' }, playerFrozen: false, buddyFrozen: false };
     }
     if (guard.mode === 'emerging' && guard.until > now) {
@@ -107,7 +109,7 @@ function computeTownGuard(input: TownGuardInput): TownGuardResult {
         ? { x: target.x + Math.sin(guard.id * 2.4) * 1.2, z: target.z + Math.cos(guard.id * 2.4) * 1.2 }
         : TOWN_POLICE_DOOR;
     const speed = guard.stainedUntil > now || isTownSprayed(town, guard, now) ? 0.8 : 2.7;
-    const position = computeTownTravel({ town, from: guard, target: destination, speed, step });
+    const position = input.routes.travel({ town, from: guard, target: destination, speed, step });
     return { guard: { ...guard, ...position, mode: 'patrol' }, playerFrozen: false, buddyFrozen: false };
 }
 

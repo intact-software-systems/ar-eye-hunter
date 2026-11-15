@@ -1,4 +1,4 @@
-export type TownPrank = 'fart' | 'powder' | 'zapper';
+export type TownPrank = 'fart' | 'powder' | 'zapper' | 'poop-bomb';
 export interface TownPoint {
     readonly x: number;
     readonly z: number;

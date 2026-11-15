@@ -1,3 +1,4 @@
+import { TOWN_BUILDINGS, TOWN_FURNITURE } from './layout/map.ts';
 import {
     TOWN_FOUNTAIN,
     TOWN_GOVERNMENT,
@@ -7,15 +8,28 @@ import {
     type TownObstacle,
     type TownPoint
 } from './map.ts';
+import { TOWN_PERSONALITIES } from './personalities/state.ts';
+import { TOWN_BARBECUE, TOWN_UMBRELLA } from './spectacles/state.ts';
 import type { TownState } from './state.ts';
 
 export function getTownObstacles(town: TownState): readonly TownObstacle[] {
-    return [...TOWN_SHOPS, TOWN_GOVERNMENT, ...TOWN_OBJECTS, TOWN_FOUNTAIN, {
-        x: town.cart.x,
-        z: town.cart.z,
-        width: 1.7,
-        depth: 1.3
-    }];
+    return [
+        ...TOWN_SHOPS,
+        TOWN_GOVERNMENT,
+        ...TOWN_OBJECTS,
+        TOWN_BARBECUE,
+        TOWN_UMBRELLA,
+        ...TOWN_BUILDINGS,
+        ...TOWN_FURNITURE,
+        ...TOWN_PERSONALITIES.map((resident) => resident.prop),
+        TOWN_FOUNTAIN,
+        {
+            x: town.cart.x,
+            z: town.cart.z,
+            width: 1.7,
+            depth: 1.3
+        }
+    ];
 }
 
 export function computeTownPosition(town: TownState, from: TownPoint, delta: TownPoint): TownPoint {

@@ -4,7 +4,8 @@ import {
     type TownPrank
 } from './town/map.ts';
 import { computeTownPosition } from './town/navigation.ts';
-import { getTownJet, isTownSprayed } from './town/props.ts';
+import { computeTownWaterPush, isTownSprayed } from './town/props.ts';
+import type { TownRoutes } from './town/routes.ts';
 import { computeTownTick } from './town/rules.ts';
 import { createCleanCoat, type TownCoat } from './town/soiling.ts';
 import { createTownState, type TownState } from './town/state.ts';
@@ -79,12 +80,17 @@ export function createPracticeState(): PracticeState {
     };
 }
 
-export function computePracticeTick(state: PracticeState, input: PracticeInput, seconds: number): PracticeState {
-    const step = Math.max(0, Math.min(seconds, 1 / 30));
+export function computePracticeTick(
+    state: PracticeState,
+    input: PracticeInput,
+    context: { seconds: number; routes: TownRoutes; }
+): PracticeState {
+    const step = Math.max(0, Math.min(context.seconds, 1 / 30));
     const dash = input.dash > state.consumedDash && state.cooldown <= 0 && state.frozenUntil <= state.elapsed;
     const movement = computePracticeMovement({ ...state, dashTime: dash ? 0.2 + step : state.dashTime }, input, step);
     const elapsed = state.elapsed + step;
     const interactions = computeTownTick({
+        routes: context.routes,
         town: state.town,
         player: { ...state, ...movement },
         dash,
@@ -136,11 +142,10 @@ function computePracticeMovement(state: PracticeState, input: PracticeInput, ste
     const speed = state.dizzyUntil > state.elapsed ? 2.5 : 3.6;
     const vx = dashTime > 0 ? facingX * 10 : state.vx + (x * speed - state.vx) * traction;
     const vz = dashTime > 0 ? facingZ * 10 : state.vz + (z * speed - state.vz) * traction;
-    const sprayed = isTownSprayed(state.town, state, state.elapsed);
-    const jet = getTownJet(state.town, state.elapsed);
+    const jet = computeTownWaterPush(state.town, state, state.elapsed);
     const position = computeTownPosition(state.town, state, {
-        x: (vx + (sprayed ? jet.x * 2 : 0)) * step,
-        z: (vz + (sprayed ? jet.z * 2 : 0)) * step
+        x: (vx + (jet ? jet.x * 2 : 0)) * step,
+        z: (vz + (jet ? jet.z * 2 : 0)) * step
     });
     return {
         ...position,

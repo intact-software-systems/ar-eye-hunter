@@ -2,14 +2,22 @@
 
 ## Actual Babylon trial
 
-![Actual Grumpy Town police departing from government](living-town-police.png)
+![Actual expanded Grumpy Town](town-square-phone.png)
 
-[Touch gameplay recording](living-town-gameplay.webm) · [Starting view](living-town-phone.png) ·
-[Bird poop](living-town-bird.png) · [Toilet overflow](living-town-toilet.png) ·
-[Bonus](living-town-bonus.png) · [Police returning](living-town-return.png).
-These are actual Chromium gameplay captures of the local Babylon 9.36.0 scene,
-using a 390 × 844 phone viewport. They are not physical-phone captures.
-See [implemented scope, controls and limits](../babylon-local-trial.md).
+[Touch gameplay: bomb, fire and café](town-square-touch-gameplay.webm) ·
+[Bell touch gameplay](town-square-bell-gameplay.webm) ·
+[Fire crew](town-square-fire.png) · [Café](town-square-cafe.png) ·
+[Umbrella deflection](town-square-umbrella.png) · [Big Stink](town-square-bomb.png) ·
+[Tablet](town-square-tablet.png) · [Desktop](town-square-desktop.png).
+
+These are actual Chromium captures of the local Babylon 9.36.0 scene. The phone
+recordings use visible touch controls at 390 × 844. The main clip is a 75-second
+excerpt of the successful bomb/fire/café interactions; the bell has a separate
+recording. No images were generated or composited into this gameplay. These are
+not physical-device captures and contain no audio.
+
+[Previous ten-police recording](living-town-gameplay.webm) preserves the earlier
+layout. See [implemented scope, controls and limits](../babylon-local-trial.md).
 
 ## Generated reference: cutout market in Babylon 2.5D
 

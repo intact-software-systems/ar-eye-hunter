@@ -1,7 +1,9 @@
 import { TOWN_FOUNTAIN, type TownPoint } from './map.ts';
 import { rewardTownMischief } from './mischief.ts';
+import { hasTownSight } from './navigation.ts';
 import { repairTownObject } from './objects.ts';
-import { computeTownTravel } from './routes.ts';
+import { computeWasherJet } from './personalities/water.ts';
+import type { TownRoutes } from './routes.ts';
 import type {
     TownNpc,
     TownState,
@@ -9,6 +11,7 @@ import type {
 } from './state.ts';
 
 export interface TownRepair {
+    readonly routes: TownRoutes;
     readonly town: TownState;
     readonly npc: TownNpc;
     readonly now: number;
@@ -71,7 +74,7 @@ export function repairTownProp(input: TownRepair): TownRepairResult {
     }
     const object = fountain ? TOWN_FOUNTAIN : town.cart;
     const target = { x: object.x, z: object.z - 2 };
-    const position = computeTownTravel({ town, from: npc, target, speed: 2.3, step });
+    const position = input.routes.travel({ town, from: npc, target, speed: 2.3, step });
     const near = Math.hypot(position.x - target.x, position.z - target.z) < 0.5;
     if (fountain) {
         const repair = near ? town.fountain.repair + step : 0;
@@ -84,18 +87,50 @@ export function repairTownProp(input: TownRepair): TownRepairResult {
     return { town, npc: { ...npc, ...position, mode: 'cleaning' }, busy: true };
 }
 
-export function getTownJet(town: TownState, now: number): TownPoint {
+export function computeTownJet(town: TownState, now: number): TownPoint {
     const angle = Math.PI + Math.sin((now - town.fountain.since) * 1.3) * 1.1;
     return { x: Math.sin(angle), z: Math.cos(angle) };
 }
 
 export function isTownSprayed(town: TownState, point: TownPoint, now: number): boolean {
-    if (!town.fountain.broken) {
-        return false;
+    return computeTownWaterPush(town, point, now) !== undefined;
+}
+
+export function computeTownWaterPush(town: TownState, point: TownPoint, now: number): TownPoint | undefined {
+    const jets: { source: TownPoint; direction: TownPoint; }[] = town.personalities.filter((resident) =>
+        resident.kind === 'washer' && resident.phase === 'reacting' && now - resident.startedAt > 1
+    )
+        .map((resident) => ({ source: resident, direction: computeWasherJet(resident, now) }));
+    for (const firefighter of town.spectacles.firefighters) {
+        if (firefighter.phase !== 'spraying') {
+            continue;
+        }
+        const length = Math.max(0.01, Math.hypot(firefighter.aim.x - firefighter.x, firefighter.aim.z - firefighter.z));
+        jets.push({
+            source: firefighter,
+            direction: {
+                x: (firefighter.aim.x - firefighter.x) / length,
+                z: (firefighter.aim.z - firefighter.z) / length
+            }
+        });
     }
-    const direction = getTownJet(town, now);
-    const x = point.x - TOWN_FOUNTAIN.x;
-    const z = point.z - TOWN_FOUNTAIN.z;
-    const along = x * direction.x + z * direction.z;
-    return along > 1 && along < 5.5 && Math.abs(x * direction.z - z * direction.x) < 0.8;
+    if (town.fountain.broken) {
+        jets.push({ source: TOWN_FOUNTAIN, direction: computeTownJet(town, now) });
+    }
+    for (const jet of jets) {
+        const x = point.x - jet.source.x;
+        const z = point.z - jet.source.z;
+        const along = x * jet.direction.x + z * jet.direction.z;
+        if (along > 1 && along < 5.5 && Math.abs(x * jet.direction.z - z * jet.direction.x) < 0.8) {
+            // The fountain emits from its solid footprint; start visibility just outside the nozzle.
+            const offset = jet.source === TOWN_FOUNTAIN
+                ? 1.21 / Math.max(Math.abs(jet.direction.x), Math.abs(jet.direction.z))
+                : 0;
+            const nozzle = { x: jet.source.x + jet.direction.x * offset, z: jet.source.z + jet.direction.z * offset };
+            if (hasTownSight(town, nozzle, point)) {
+                return jet.direction;
+            }
+        }
+    }
+    return undefined;
 }

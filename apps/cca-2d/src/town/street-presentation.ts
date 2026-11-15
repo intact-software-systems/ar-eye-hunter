@@ -7,7 +7,7 @@ import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from '../cutout-art.ts';
 import { TOWN_FOUNTAIN } from './map.ts';
 import type { TownPresentation } from './presentation.ts';
-import { getTownJet } from './props.ts';
+import { computeTownJet } from './props.ts';
 
 export class TownStreetPresentation {
     private readonly cart: TransformNode;
@@ -54,7 +54,7 @@ export class TownStreetPresentation {
         const { town, now, reducedMotion } = frame;
         this.cart.position.set(town.cart.x, 0, town.cart.z);
         this.cart.rotation.z = town.cart.loose && !reducedMotion ? Math.sin(now * 12) * 0.035 : 0;
-        const direction = getTownJet(town, now);
+        const direction = computeTownJet(town, now);
         this.spray.setEnabled(town.fountain.broken);
         this.spray.position.set(direction.x * 2.75, 0.065, TOWN_FOUNTAIN.z + direction.z * 2.75);
         this.spray.rotation.y = Math.atan2(direction.x, direction.z);

@@ -1,7 +1,7 @@
 # Development sequence, agents, and tools
 
 Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
-Only the next two implementation slices are concrete. The local Babylon trial, living square and ten-police chase/freeze/rescue loop are implemented; phone feel and device qualification remain open.
+The local Babylon trial, expanded square, personality pranks, three major incidents and ten-police chase/freeze/rescue loop are implemented. Phone feel and physical-device qualification remain open. The completed expansion retains its two-slice record; the Rallar gate below remains the next technical outcome.
 
 ## Existing foundation and change of direction
 
@@ -18,55 +18,21 @@ The new visual target is [cutout market](visual-concepts/README.md), with a
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Current slice 1: living square and ten-police crackdown
+## Current two slices: town square and major incidents
 
-**Goal:** implement the approved [living-square expansion](grumpy-town.md#living-square-rules-and-approved-scope)
-in the local Babylon app, then try it on phone. Preserve the existing controls.
+The user requested: **plan it in docs, implement it and provide a playable trial**.
+The [town-square expansion plan](town-square-expansion.md) records the two implemented slices, with final acceptance and publication below:
 
-**Architecture:** immutable town rules own incidents, rewards, creatures, stains,
-objects and police state; Babylon displays that state. `practice-rules.ts` owns
-movement. No new backend or dependency is needed. The government building replaces
-the unused scenery bank; it is the actual police origin, not a label on random spawns.
+1. A recognizable town with varied buildings, ordinary street furniture and the
+   endorsed grumpy personalities/routines, preserving broad playable routes.
+2. Fire-department response, a large poop bomb and an original absurd vomit event,
+   with bounded effects, counterplay, real phone-sized captures and a working preview.
 
-**Task A — reward and consequence:**
+The earlier living-square/ten-police slice is implemented and remains the baseline.
+The expanded request moves networking after this content iteration; it does not
+remove the Rallar-only host/recovery requirements or claim networking is complete.
 
-- [x] Add failing rule tests for six qualifying incidents, exactly one +50 bonus,
-  ten doorway departures, bounded chase/return/cooldown, and no empty-dash farming.
-- [x] Update `town/state.ts`, `town/map.ts`, `town/rules.ts`, `town/mess.ts`,
-  `town/props.ts`, `town/owners.ts` and `town/authorities.ts`; move the police lifecycle
-  into `town/raid.ts` if needed to keep pursuit decisions readable.
-- [x] Update government geometry, police presentation and HUD to show the bonus,
-  deployment countdown, ten departures and remaining pursuit time.
-
-**Task B — creatures and interactive mess:**
-
-- [x] Add failing rule tests for bird poop, dog pee, cat vomit, dodgeable locked aim,
-  player/owner/police soiling, provoked collateral credit, washing and effect expiry.
-- [x] Add `town/creatures/rules.ts`, `town/soiling.ts` and `town/objects.ts` with owned
-  contracts beside their rules; extend canonical town state without parallel legacy paths.
-- [x] Add original creature/prop cutout presentation; two of each creature, two bins,
-  fish display, toilet and hydrant. Apply movement/cleanup effects in rules only.
-- [x] Add visible-control browser checks for new objects and the full bonus/police
-  sequence. Record actual phone-sized gameplay and inspect readable creatures,
-  stains, warnings and crowded police movement.
-
-**Verification:** `npx vitest run packages/tests/cca-game`,
-`npx playwright test --config apps/cca-2d/playwright.config.ts`,
-`npm run build --workspace=cca-2d`, focused test typecheck and scoped style review.
-Check independent cases: attacks through walls, repeated rewards, police returning
-through obstacles, freeze plus animal hits, and reset/pause while a wave is active.
-The fresh review found a scheduled-officer splash edge; a regression now protects
-waiting officers from direct and ground soiling until departure. The 48 rule tests,
-app build and focused source typecheck pass. Nine browser checks cover controls
-and the full wave; actual touch captures show the local production build.
-Update the existing draft PR.
-Keep unrelated app investigations outside this work.
-
-**Phone decision:** can the player deliberately earn the big bonus, understand
-its price, use creatures against grumps, escape ten police, wash off and resume
-mischief? Physical Safari/iPad performance and social fun still need device testing.
-
-## Next slice 2: Rallar-only two-player hosting and recovery
+## Later technical gate: Rallar-only hosting and recovery
 
 **Outcome:** two authenticated players share the scene using only Rallar as
 multiplayer backend, with one appointed browser running the rules.
@@ -103,6 +69,12 @@ If current appointment policy blocks it, the UI interrupts truthfully until the
 reusable Rallar gap is fixed.
 
 ## Later outcomes
+
+New discussion: the user supports the petty-rule personalities and wants a more
+recognizable town square, plus fire-department, poop-bomb and exaggerated-vomit
+possibilities. [Town and spectacle proposals](grumpy-town.md#brainstorm-a-recognizable-town-and-big-comic-incidents)
+record the intended variety, witness behavior and counterplay. The user subsequently requested implementation of the full direction. The
+two-slice expansion plan above now owns that work; retain the Rallar recovery gate.
 
 Four-player mixed-device fun and repeated rounds; a complete authored market;
 shared-win tuning and rematch; release accessibility/device qualification;
@@ -141,4 +113,4 @@ proposed multiplayer; no claim that migration is complete. Keep design/implement
 relevant review and validation are complete.
 
 No new issue is needed for the design pack itself. Host succession and checkpoint
-semantics are dependent work in slice 2, not independent deferred issues.
+semantics remain part of the later Rallar technical gate, not independent deferred issues.
