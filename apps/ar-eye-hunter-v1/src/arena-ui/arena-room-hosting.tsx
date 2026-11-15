@@ -14,7 +14,7 @@ import type {
 } from '@shared/api/group-types.ts';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { ArenaRoomSharing, isCurrentArenaHost, isCurrentArenaSession } from './arena-room-sharing.tsx';
+import { ArenaRoomSharing, isCurrentArenaSession } from './arena-room-sharing.tsx';
 
 interface ArenaRoomHostingProps {
     readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
@@ -144,7 +144,7 @@ async function rotateArenaCode(
         }
     }
     catch {
-        if (pendingOperation.current === pending && isCurrentArenaHost(session, snapshot.group)) {
+        if (pendingOperation.current === pending && isCurrentArenaSession(session)) {
             setError('Could not rotate the room code. No new code is available; try again.');
         }
     }

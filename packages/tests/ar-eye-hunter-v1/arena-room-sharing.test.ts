@@ -8,7 +8,7 @@ import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 import { ArenaRoomHosting } from '../../../apps/ar-eye-hunter-v1/src/arena-ui/arena-room-hosting.tsx';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 
-const facade = vi.hoisted(() => ({ session: vi.fn(), rooms: { state: vi.fn(), onChange: () => () => undefined, rotateJoinCode: vi.fn() } }));
+const facade = vi.hoisted(() => ({ session: vi.fn(), rooms: { state: vi.fn(), onChange: () => () => undefined, rotateJoinCode: vi.fn(), update: vi.fn() } }));
 vi.mock('@shared-web/browser/rallar.ts', () => ({ rallar: facade }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -364,6 +364,98 @@ it.each(['creating', 'rotating'] as const)('reports a failure while %s before th
         await act(async () => create?.click());
         expect(container.querySelector('[role="alert"]')?.textContent).toBe('Could not create the arena. Check your connection and try again.');
         expect(create?.disabled).toBe(false);
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it('reports a failed manual rotation before the room cache observes the host presence', async () => {
+    const { session, arena } = createHostFixture();
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+    facade.rooms.rotateJoinCode.mockReset();
+    facade.rooms.rotateJoinCode.mockRejectedValueOnce(new Error('The manual rotation failed'));
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena })));
+        const rotate = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Rotate room code');
+        await act(async () => rotate?.click());
+        expect(container.querySelector('[role="alert"]')?.textContent).toBe('Could not rotate the room code. No new code is available; try again.');
+        expect(rotate?.disabled).toBe(false);
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it.each(['success', 'failure'] as const)('re-enables a listing change that ends in %s before the room cache observes the host presence', async (outcome) => {
+    const { session, snapshot, arena } = createHostFixture();
+    const open = { ...snapshot, group: { ...snapshot.group, joinMode: 'open' as const } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+    facade.rooms.update.mockReset();
+    if (outcome === 'success') {
+        facade.rooms.update.mockResolvedValueOnce(open);
+    }
+    else {
+        facade.rooms.update.mockRejectedValueOnce(new Error('The listing change failed'));
+    }
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () =>
+            root.render(createElement(ArenaRoomHosting, {
+                arena: { ...arena, rooms: [{ ...arena.rooms[0], joinMode: 'open', roomRef: open.group, snapshot: open }] }
+            }))
+        );
+        const unlist = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Unlist room');
+        await act(async () => unlist?.click());
+        expect(unlist?.disabled).toBe(false);
+        expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+            outcome === 'failure' ? 'Could not change room listing. Check your connection and try again.' : undefined
+        );
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it('keeps a listing failure from a room the host left off the room the host moved to', async () => {
+    const { session, snapshot, arena } = createHostFixture();
+    const open = { ...snapshot, group: { ...snapshot.group, joinMode: 'open' as const } };
+    const other = { ...open, group: { ...open.group, groupId: 'another-arena' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+    const listingChange = Promise.withResolvers<typeof open>();
+    facade.rooms.update.mockReset();
+    facade.rooms.update.mockReturnValueOnce(listingChange.promise);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const render = (current: typeof open) =>
+        root.render(createElement(ArenaRoomHosting, {
+            arena: {
+                ...arena,
+                roomId: current.group.groupId,
+                rooms: [{ ...arena.rooms[0], roomId: current.group.groupId, joinMode: 'open', roomRef: current.group, snapshot: current }]
+            }
+        }));
+    try {
+        await act(async () => render(open));
+        const unlist = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Unlist room');
+        await act(async () => unlist?.click());
+        await act(async () => render(other));
+        await act(async () => listingChange.reject(new Error('The departed room listing change failed')));
+        expect(container.querySelector('[role="alert"]')).toBeNull();
+        const otherUnlist = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Unlist room');
+        expect(otherUnlist?.disabled).toBe(false);
     }
     finally {
         await act(async () => root.unmount());
