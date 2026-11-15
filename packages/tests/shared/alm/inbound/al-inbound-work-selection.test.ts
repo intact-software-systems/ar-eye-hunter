@@ -120,7 +120,8 @@ describe('ALInboundWorkSelector readiness', () => {
     });
 
     it('judges the page it can claim ready although the clock moves on between the handler and the probe', async () => {
-        const fixture = createAdvancingClockFixture();
+        const clock = createAdvancingClock();
+        const fixture = createSelectorFixture(clock);
         const engine = new InboxOutboxEngine();
         const probes: ALWorkReadinessProbeDiagnostics[] = [];
         const handler = new ALWorkHandler({
@@ -128,7 +129,7 @@ describe('ALInboundWorkSelector readiness', () => {
             port: fixture.port,
             queueEngine: engine,
             ownsQueueEngine: false,
-            clock: { nowMs: fixture.nowMs },
+            clock: { nowMs: clock.nowMs },
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             readNextReadyAtMs: fixture.selector.readNextReadyAtMs,
@@ -144,7 +145,7 @@ describe('ALInboundWorkSelector readiness', () => {
         try {
             await handler.ready();
             await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
-            const roundReadAtMs = fixture.readStoreMs();
+            const roundReadAtMs = clock.readStoreMs();
 
             expect(await engine.executeOnce()).toBe(true);
             expect(probes.map((probe) => probe.readyAtMs)).toEqual([roundReadAtMs]);
@@ -602,49 +603,29 @@ interface SelectorFixture {
     readonly selector: ALInboundWorkSelector;
 }
 
-function createSelectorFixture(): SelectorFixture {
-    const namespace = 'inbound-selection';
-    const state = createInMemoryALAdmissionState(
-        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(NOW_MS))
-    );
-    const admissionStore = createALInboundAdmissionStore({
-        nowMs: () => NOW_MS,
-        namespace,
-        backend: new InMemoryAdmissionBackend(state, () => NOW_MS),
-        orderingTrackTtlMs: 60_000,
-        supersedenceTrackTtlMs: 60_000,
-        retention: normalizeALRuntimeStoreRetention(),
-        maxOrderingTracks: undefined,
-        maxDeliveredMarkers: undefined
-    });
-    const stores = { admissionStore, workQueue: state.workQueue };
-    const delivery = createInboundTestDispatch(stores, () => NOW_MS).delivery;
-    return {
-        namespace,
-        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: () => NOW_MS }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS, lane: 'durable' })
-    };
-}
-
-interface AdvancingClockFixture extends SelectorFixture {
-    /** Moves the clock one millisecond on at every reading, as a real clock may between any two readings. */
+/** The clock the selector reads, and the one its stores read. */
+interface SelectorClock {
     readonly nowMs: () => number;
-    /** What the stores read: the same clock, without moving it. */
     readonly readStoreMs: () => number;
 }
 
-function createAdvancingClockFixture(): AdvancingClockFixture {
-    const namespace = 'inbound-selection-advancing-clock';
+const STILL_CLOCK: SelectorClock = { nowMs: () => NOW_MS, readStoreMs: () => NOW_MS };
+
+/** Moves one millisecond on at every runtime reading, as a real clock may between any two readings; the stores read it without moving it. */
+function createAdvancingClock(): SelectorClock {
     let atMs = NOW_MS;
-    const readStoreMs = () => atMs;
-    const nowMs = () => atMs++;
+    return { nowMs: () => atMs++, readStoreMs: () => atMs };
+}
+
+function createSelectorFixture(clock: SelectorClock = STILL_CLOCK): SelectorFixture {
+    const namespace = 'inbound-selection';
     const state = createInMemoryALAdmissionState(
-        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(readStoreMs()))
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(clock.readStoreMs()))
     );
     const admissionStore = createALInboundAdmissionStore({
-        nowMs: readStoreMs,
+        nowMs: clock.readStoreMs,
         namespace,
-        backend: new InMemoryAdmissionBackend(state, readStoreMs),
+        backend: new InMemoryAdmissionBackend(state, clock.readStoreMs),
         orderingTrackTtlMs: 60_000,
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention(),
@@ -652,13 +633,11 @@ function createAdvancingClockFixture(): AdvancingClockFixture {
         maxDeliveredMarkers: undefined
     });
     const stores = { admissionStore, workQueue: state.workQueue };
-    const delivery = createInboundTestDispatch(stores, readStoreMs).delivery;
+    const delivery = createInboundTestDispatch(stores, clock.readStoreMs).delivery;
     return {
         namespace,
-        nowMs,
-        readStoreMs,
-        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: readStoreMs }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs, lane: 'durable' })
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: clock.readStoreMs }),
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: clock.nowMs, lane: 'durable' })
     };
 }
 
