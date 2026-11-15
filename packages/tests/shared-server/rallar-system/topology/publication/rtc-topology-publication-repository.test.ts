@@ -226,6 +226,46 @@ describe('RTC topology publication repository', () => {
             await expect(read).rejects.toMatchObject({ code: 'rtc-topology-repository-invariant-corruption' });
         }
     );
+
+    it('lists only the room\'s own publications, never a room whose id extends it', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        const extendingRef = { ...groupRef, groupId: `${groupRef.groupId}:publication=x` };
+        const siblingRef = { ...groupRef, groupId: `${groupRef.groupId}-2` };
+        for (const [ref, workId] of [[groupRef, 'work-own'], [extendingRef, 'work-extending'], [siblingRef, 'work-sibling']] as const) {
+            const publication = createPublication(createTopologySnapshot(ref, 1), workId);
+            await runtimeRepository.upsert({
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(ref, publication.publicationId),
+                value: JSON.stringify(publication),
+                expireAtTimestamp: Date.now() + 60_000
+            });
+        }
+
+        const entries = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
+
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-own']);
+    });
+
+    it('an expired publication is not listed', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        for (const [workId, expireAtTimestamp] of [['work-live', Date.now() + 60_000], ['work-expired', Date.now() - 1]] as const) {
+            const publication = createPublication(createTopologySnapshot(groupRef, 1), workId);
+            await runtimeRepository.upsert({
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(groupRef, publication.publicationId),
+                value: JSON.stringify(publication),
+                expireAtTimestamp
+            });
+        }
+
+        const entries = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
+
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-live']);
+    });
 });
 
 function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId' | 'traceId') {

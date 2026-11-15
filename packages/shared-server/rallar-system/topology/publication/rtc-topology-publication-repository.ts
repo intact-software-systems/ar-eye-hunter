@@ -7,6 +7,7 @@ import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import { groupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import { decodeRtcTopologyPublication } from './decode-rtc-topology-publication.ts';
 import {
@@ -132,12 +133,17 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     async listPublicationEntriesPage(
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.listEntriesPage(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            '',
+        return await this.readLivePublicationEntriesPage('', options);
+    }
+
+    async listGroupPublicationEntriesPage(
+        groupRef: GroupRef,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
+        return await this.readLivePublicationEntriesPage(
+            `${groupStateGroupStorageKey(groupRef)}:publication=`,
             options
         );
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
     }
 
     async listWorkClaimEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
@@ -164,6 +170,14 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 
     workIndexKey(groupRef: GroupRef, workId: string): string {
         return childKey(groupRef, 'work', workId);
+    }
+
+    private async readLivePublicationEntriesPage(
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions
+    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
+        const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, keyPrefix, options);
+        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
     }
 
     private async toLivePublicationEntry(
