@@ -293,7 +293,10 @@ long as that half (7 500 ms by default, 0 when the server states 0). The lane re
 settle's `rtcReplacedLayoutOverlapMs`. So no role's
 body sends on a layout the reshape replaced. The cell's own body resets the config at its end. In an unsettled cell the reshape leads
 the `receiver`'s body after its cue subscription, as the start grants do, and no page polls its
-overlay.
+overlay or waits out the forwarding window: nothing orders its first send after every page accepted
+the reshaped layout, so its relay and ordering claims hold only by timing. No runner runs one: the
+hosted manifests withhold `receipted-relay-path` and create no granted relay cell, and the lane
+plans from unsettled cells but runs barriered ones.
 
 **The two wait selectors.** Both are fields of a wait's `match`:
 
