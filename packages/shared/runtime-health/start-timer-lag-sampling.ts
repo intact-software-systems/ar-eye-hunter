@@ -59,7 +59,7 @@ function computeTimerLagWindow(
         startedAtMs,
         endedAtMs,
         sampleCount: lagsMs.length,
-        maxLagMs: computeNearestRank(lagsMs, 1) ?? 0,
+        maxLagMs: Math.max(...lagsMs),
         p50LagMs: computeNearestRank(lagsMs, 0.5) ?? 0
     };
 }

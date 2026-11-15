@@ -55,34 +55,42 @@ describe('timer lag sampling', () => {
         stop();
     });
 
-    it('reports the nearest-rank median of an odd and an even count of lags', async () => {
+    it('reports the nearest-rank median and maximum of an odd count of lags', async () => {
+        const timers = createManualTimers(0);
         const windows: TimerLagWindow[] = [];
-        const oddTimers = createManualTimers(0);
-        const stopOdd = startTimerLagSampling({
-            timers: createLateTimers(oddTimers, [5, 1, 4, 2, 3]),
+        const stop = startTimerLagSampling({
+            timers: createLateTimers(timers, [5, 1, 4, 2, 3]),
             tickIntervalMs: 100,
             windowMs: 500,
             onWindow: (window) => windows.push(window)
         });
-        // Ticks fire at 105, 206, 310, 412 and 515: lags 5, 1, 4, 2 and 3 ms.
-        await oddTimers.advanceTo(515);
-        stopOdd();
 
-        const evenTimers = createManualTimers(0);
-        const stopEven = startTimerLagSampling({
-            timers: createLateTimers(evenTimers, [4, 1, 3, 2]),
+        // Ticks fire at 105, 206, 310, 412 and 515: lags 5, 1, 4, 2 and 3 ms.
+        await timers.advanceTo(515);
+
+        expect(windows).toEqual([
+            { startedAtMs: 0, endedAtMs: 515, sampleCount: 5, maxLagMs: 5, p50LagMs: 3 }
+        ]);
+        stop();
+    });
+
+    it('reports the nearest-rank median, not the interpolated one, of an even count of lags', async () => {
+        const timers = createManualTimers(0);
+        const windows: TimerLagWindow[] = [];
+        const stop = startTimerLagSampling({
+            timers: createLateTimers(timers, [4, 1, 3, 2]),
             tickIntervalMs: 100,
             windowMs: 400,
             onWindow: (window) => windows.push(window)
         });
+
         // Ticks fire at 104, 205, 308 and 410: lags 4, 1, 3 and 2 ms; the median is the 2nd of 4, not 2.5.
-        await evenTimers.advanceTo(410);
-        stopEven();
+        await timers.advanceTo(410);
 
         expect(windows).toEqual([
-            { startedAtMs: 0, endedAtMs: 515, sampleCount: 5, maxLagMs: 5, p50LagMs: 3 },
             { startedAtMs: 0, endedAtMs: 410, sampleCount: 4, maxLagMs: 4, p50LagMs: 2 }
         ]);
+        stop();
     });
 
     it('starts the next window where the previous one ended', async () => {
