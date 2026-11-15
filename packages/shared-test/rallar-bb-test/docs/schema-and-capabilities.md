@@ -1301,20 +1301,22 @@ transport before the command returns successfully. Its defaults are
 timeout should be longer than the readiness timeout so connection setup does
 not consume the readiness budget.
 
-For `realtime`, the `browser-rallar` runtime used by browser control agents and
-`rallar-remote-browser` distributed runs retains the peer-health readiness
-loop. Missing peers trigger an immediate exact-room state and topology refresh
-and no more than one refresh per second afterward. Refresh receives
-cancellation and the remaining readiness deadline; transient refresh errors
-are retried, permanent errors fail, and only later health with enough ready
-peer IDs satisfies readiness.
+Both `realtime` and `messages.rtc` use the product's canonical `rtc.waitForRoom`
+operation. Success requires an accepted layout and an `open` or `partial` room
+transport with the requested minimum ready peers. Open global lanes alone do
+not establish room readiness.
 
-For `messages.rtc`, the runtime performs one exact-room refresh and then
-delegates to the product's canonical `rtc.waitForRoom` operation. Success
-requires an accepted layout and an `open` or `partial` room transport with the
-requested minimum ready peers. This path does not poll global health and does
-not retry the refresh. `messages.ws` opens no RTC lane and normally has no RTC
-readiness request.
+For `realtime`, the `browser-rallar` runtime used by browser control agents and
+`rallar-remote-browser` distributed runs performs an immediate exact-room state
+and topology refresh, and no more than one refresh per second while waiting.
+Refresh receives cancellation and the remaining readiness deadline; transient
+refresh errors are retried and permanent errors fail. Room waits are bounded
+by the next refresh opportunity and the same overall readiness deadline.
+
+For `messages.rtc`, the runtime performs one exact-room refresh and then waits
+for room readiness. This path does not retry the refresh. Neither path uses
+global health as its success criterion. `messages.ws` opens no RTC lane and
+normally has no RTC readiness request.
 
 The command or its active `configure` command must therefore resolve either an
 exact `roomRef`, or `applicationId` plus `roomId`; omitted `workspaceId`
