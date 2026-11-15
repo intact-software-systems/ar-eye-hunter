@@ -57,13 +57,17 @@ from one browser and verifies the other browsers receive it, connects RTC and
 verifies a broadcast realtime payload reaches the other browsers, then runs a
 one-second `rtc-realtime` composite recipe. The realtime leg verifies effective
 20 Hz frame rows, loop drilldown evidence, at least one received position
-payload, and visible runtime warnings in the Distributed Recipes monitor.
+payload, and that two known console warnings reach the control run as
+payload-free runtime diagnostics from the agent that logged them, in the run's
+group. Those diagnostics carry no command or distributed-run reference, so the
+Distributed Recipes monitor does not link them to the run.
 
 Each live WS, RTC, and realtime payload carries the distributed-run ID so
 asynchronous receive events can be linked back to the selected distributed run.
 The Playwright test writes warning-regression JSON attachments and captures
 browser console warnings/errors as `distributed-live-console-warnings.json`.
-Known harmless WS/RTC warnings are retained as artifacts; the regression report
+Known harmless WS/RTC warnings, and the browser's log of the realtime fixture's
+accepted ensure-group 409, are retained as artifacts; the regression report
 fails only on configured high-severity runtime diagnostics.
 
 The live WS recipe uses a `room.*` topic. Rallar Server treats `rallar.*` as a
