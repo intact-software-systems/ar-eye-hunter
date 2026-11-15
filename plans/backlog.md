@@ -822,7 +822,9 @@ and it has no status list.
   first petition (the settle accepts either value), the same-context successor,
   which connects outside the settle, hosted combined recipes, which carry no
   settle, a role failing before a barrier (the others time out), and a cell's
-  own mid-body writes. The first three show as a revision past the floor or a refusal after the body
+  own mid-body writes. A reshaped cell's path is not one of them: its start
+  state writes it, and the settle polls the room settled on it and every page's
+  overlay until it is the path. The first three show as a revision past the floor or a refusal after the body
   began. The restored page is silent unless the restore lands on a new
   revision, since the last `held` event does not prove the room readable. The
   dropped page needs a room the family shares: a connect writes the page's

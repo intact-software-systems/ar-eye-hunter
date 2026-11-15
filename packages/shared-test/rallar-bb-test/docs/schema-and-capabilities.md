@@ -694,9 +694,10 @@ reliability. No hosted manifest carries them (D505).
   owner grants the sender's principal `publish` and `subscribe`, so the sender's sibling, elected, receives the copy
   over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is
   absent from the audience and asserts the publication's absence.
-- `granted-rtc-relay-only` (three-agent): the receiver PUTs `{ topologyKind: 'tree', degreeLimit: 2,
-  meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
-  sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
+- `granted-rtc-relay-only` (three-agent): the receiver's start state PUTs `{ topologyKind: 'tree', degreeLimit: 2,
+  meshParamK: 2 }` to the room's topology config through `http.request` (`roomTopology: 'reshaped'`), so the three
+  pages form a path; in the lane every page then holds the path before `armed` (the runtime diagnostic contract's
+  lane cell settle), and the sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
   `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
   to the receiver; the sender publishes until the receiver hears it. Recipient-b delivers nothing whether the path
   puts it in the middle, where it forwards the frame, or at a leaf, where the frozen audience routes it no copy, so
@@ -709,7 +710,9 @@ reliability. No hosted manifest carries them (D505).
 - `granted-rtc-ordered-relay` (three-agent, `rtc`, after `granted-rtc-relay-only` on the same path config): the
   sender publishes a receipted (`all-logical-recipients`, at-least-once) track it mints (`orderingKey`, no
   `seq`): `p1`, then `p2` held at the transport, then `p3`, and releases `p2` only after its repair dispatch
-  commits. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
+  commits. The hold starts only once `p1`'s receipt reads `acknowledged` (`observe-acknowledged-1`, asserted by
+  `assert-reached-1`), so the receiver entered the track at `p1` whichever next hops the layout gave the sender; a
+  carrier's acceptance settles at the first next hop alone. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
   `omitted` event appears. Recipient-b, a publish-only peer, asserts the publications' absence and records its next
   hops; a frame frozen to the receiver reaches it only when the path puts it in the middle, so it asserts no
   admission. The drawn layout is recorded, and when recipient-b is the middle the gap NACK it forwards is in the
@@ -719,9 +722,9 @@ reliability. No hosted manifest carries them (D505).
 
 `receipted-relay-path` (`scenarios/relay-path/`, three-agent, `rtc`, full scope)
 sends a non-granted receipted multicast through the forced path. The receiver owns
-the room, so it PUTs the path config the granted path cells use
+the room, so its start state PUTs the path config the granted path cells use
 (`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 }`, one shared topology
-command), and every page connects with `connect.minReadyPeers: 1`. Once the sender
+command, from `roomTopology: 'reshaped'`), and every page connects with `connect.minReadyPeers: 1`. Once the sender
 says it listens, the receiver cues that the path is set; then the sender and the
 receiver each send one `receiver`-receipted (`all-logical-recipients`) multicast
 with no grant, hear the other origin's one send, record their overlay next hops in
@@ -732,8 +735,8 @@ window. The receiver DELETEs the config once it has read its own receipt and the
 sender has cued that it read its. Three sessions in a tree of degree at most two
 form a path, so whenever both sends route on one planned path at least one origin
 is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
-PUT only requests the reshape, so each origin reads its page's health until the
-accepted overlay is the tree, and only then sends. Each origin's receipt names the
+PUT only requests the reshape, so in the lane's settle every page reads its own
+health until its accepted overlay is the tree (`tree-in-force`), before `armed`. Each origin's receipt names the
 hops it confirmed through; the cell asserts neither which agent relays nor through
 which hop. After the run the identity assessment fails the cell unless at least one
 origin's ending receipt confirms both recipients through one hop: the sender
@@ -782,7 +785,8 @@ neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
 (`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
-proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
+proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
+gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
@@ -807,7 +811,8 @@ receives as its own gap, so the hand-over of an ordered message is a carried lim
 
 The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
-released. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
+released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
+ordering point, and it waits for no carrier acceptance of seq 1. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
 (`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
 The sender sends seq 4 too, whose arrival reports the gap again at both receivers; a later report names its
 requester's first attempt and charges nothing (D573), so it states nothing more. The sender then observes seq 2's

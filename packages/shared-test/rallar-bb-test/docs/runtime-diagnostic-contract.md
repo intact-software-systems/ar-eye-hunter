@@ -213,7 +213,8 @@ creates the room and owns it. A settled role runs this, in order:
 2. The `connected` barrier. Every settle role has connected, so every settle role is a member.
 3. The `receiver` only: the cell's start state (below), then the formation poll.
 4. The `formation-settled` barrier.
-5. Every settle role: its own head read and the wait for its page to have applied that head.
+5. Every settle role: its own head read and the wait for its page to have applied that head. In a
+   cell that reshapes its room (below), then its poll until its page's accepted overlay is the path.
 6. Its arming run: the leading run of its body that is `fault.inject` commands and cue
    subscriptions. A role arms its faults here, so no role's first send meets an unarmed recipient.
    The `sender` is the exception for faults: its storage baseline follows its leading cue
@@ -269,6 +270,18 @@ nothing costs no revision. In a settled cell each write is one `POST
 every grantee is a member. It accepts only status 200 and is not retried: a failed start write fails the receiver's recipe at once. In an unsettled cell, and for a grant that is a step of a cell's body, the write
 is polled instead: it repeats every 250 ms for up to 90 s (`SUBSCRIPTION_PHASE_MS`) until one
 attempt answers 200, because a grantee that has not joined yet is refused `member-not-active`.
+
+**The reshape.** A cell whose definition declares `roomTopology: 'reshaped'` ends its start state
+with the `receiver`'s `PUT …/topology/config/requests/{requestId}` of `{ topologyKind: 'tree',
+degreeLimit: 2, meshParamK: 2 }` (`topology-tree`), after any start grants. The formation poll then
+runs on the reshaped room, so it ends only once the server accepted the tree and holds the room
+settled on it, and every settle role's head read follows. After its applied-revision wait each settle
+role runs `tree-in-force`: it reads its page's `health` every 250 ms for up to 90 s
+(`SUBSCRIPTION_PHASE_MS`) until `rallar.formation.accepted.overlay.topology` equals `tree`. So every
+page holds the reshaped layout before `armed`, and no role's body sends on a layout the reshape
+replaced. The cell's own body resets the config at its end. In an unsettled cell the reshape leads
+the `receiver`'s body after its cue subscription, as the start grants do, and no page polls its
+overlay.
 
 **The two wait selectors.** Both are fields of a wait's `match`:
 
