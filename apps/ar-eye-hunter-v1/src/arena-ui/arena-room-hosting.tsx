@@ -95,7 +95,8 @@ async function createArena(
         const snapshot = await arena.createArenaRoom(joinMode, directoryListing);
         room = snapshot?.group ?? room;
         if (
-            pendingOperation.current === pending && snapshot && isCurrentArenaHost(session, snapshot.group) &&
+            pendingOperation.current === pending && snapshot &&
+            rallar.session()?.sessionId === session.sessionId && rallar.session()?.clientId === session.clientId &&
             joinMode === 'code'
         ) {
             pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: snapshot.group };
