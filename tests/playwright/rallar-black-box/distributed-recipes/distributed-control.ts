@@ -13,7 +13,7 @@ import {
 import { type RallarBlackBoxTestCommand } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeControlDistributedRunArtifactBundle } from '../../../../packages/shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 
-import { createDistributedRun, mutateDistributedRun } from '../distributed-run-requests.ts';
+import { createDistributedRun, mutateDistributedRun, throwBoundaryError } from '../distributed-run-requests.ts';
 import {
     enqueueControlCommand,
     FULL_STACK_CONTROL_BASE_URL,
@@ -158,8 +158,4 @@ export async function runToPassed(
     await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'ready' });
     await mutateDistributedRun(request, manifest.distributedRunId, 'start');
     return await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'passed' });
-}
-
-function throwBoundaryError(issue: string): never {
-    throw new Error(`Invalid control response: ${issue}`);
 }

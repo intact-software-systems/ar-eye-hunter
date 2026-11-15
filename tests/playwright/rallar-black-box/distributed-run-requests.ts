@@ -29,6 +29,6 @@ export async function mutateDistributedRun(
     return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
 }
 
-function throwBoundaryError(issue: string): never {
+export function throwBoundaryError(issue: string): never {
     throw new Error(`Invalid control response: ${issue}`);
 }
