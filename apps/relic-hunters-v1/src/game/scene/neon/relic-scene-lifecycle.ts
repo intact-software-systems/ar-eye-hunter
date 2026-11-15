@@ -115,6 +115,7 @@ function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
     try {
         return startCappedRenderLoop({
             engine: runtime.engine,
+            gpu: runtime.canvas.getContext('webgl2'),
             frameIntervalMs: 1000 / 45,
             renderFrame: () => renderRelicFrame(runtime)
         });
