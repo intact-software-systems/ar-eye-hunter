@@ -1592,23 +1592,26 @@ describe('alm-conformance recipe family', () => {
             }
         });
 
-        it('sends from each relay-path origin only once its own accepted overlay is the tree, and pins that one origin relayed', () => {
+        it('sends from each relay-path origin only once every page\'s accepted overlay is the tree, in the lane\'s settle, and pins that one origin relayed', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
+            const settled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), cellSettle: 'barriered' })
+                .find((candidate) => candidate.scenarioKey === 'receipted-relay-path')!;
             const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
                 recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
-            const treeCues = { sender: '-sender-cue-tree-received', receiver: '-receiver-cue-tree-sent' } as const;
-            for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
+            for (const role of settled.roles) {
+                const recipe = toAlmConformanceRoleRecipe(settled, role)!;
                 const poll = indexOf(recipe, `-${role}-tree-in-force`);
-                const command = recipe.commands[poll];
-                expect(poll, recipe.recipeId).toBeGreaterThan(indexOf(recipe, treeCues[role]));
-                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(poll + 1);
-                expect(command, recipe.recipeId).toMatchObject({ kind: 'loop', until: 'first-success', count: 360, intervalMs: 250 });
-                const [read, fact, ...rest] = command?.kind === 'loop' ? command.commands : [];
-                expect(rest).toEqual([]);
-                expect(read).toMatchObject({ kind: 'health', commandId: `${recipe.recipeId}-tree-in-force-read` });
-                expect(fact).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'tree' });
-                expect(fact?.kind === 'assert' ? fact.source : undefined)
-                    .toMatch(/-tree-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
+                // The settle owns the poll: the cell's own body reads no overlay before it sends.
+                expect(toAlmConformanceRoleRecipe(scenario, role)!.commands.some((command) => command.commandId?.includes('tree-in-force')))
+                    .toBe(false);
+                expect(poll, recipe.recipeId).toBeGreaterThan(indexOf(recipe, `-${role}-head-applied`));
+                expect(poll, recipe.recipeId).toBeLessThan(indexOf(recipe, `-${role}-armed`));
+                expect(recipe.commands[poll], recipe.recipeId)
+                    .toMatchObject({ kind: 'loop', until: 'first-success', count: 360, intervalMs: 250 });
+            }
+            for (const [role, recipe] of [['sender', scenario.sender], ['receiver', scenario.receiver]] as const) {
+                const treeCue = role === 'sender' ? '-sender-cue-tree-received' : '-receiver-cue-tree-sent';
+                expect(indexOf(recipe, `-${role}-send-1`), recipe.recipeId).toBe(indexOf(recipe, treeCue) + 1);
             }
             expect(scenario.sender.metadata?.almRelayedReceiptOrigins).toEqual([
                 { role: 'sender', handleId: 'alm-rtc-receipted-relay-path-send-1' },
@@ -1697,7 +1700,7 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('starts every cell that reshapes its room from the reshaped room settled on every page: the owner\'s reshape request leads its formation poll, and every role that sends or waits for a publication applies the head after it, before its first send or publication wait', () => {
+    it('starts every cell that reshapes its room from the reshaped room settled on every page: the owner\'s reshape request leads its formation poll, and every role that sends or waits for a publication applies the head after it and reads its path in force, before its first send or publication wait', () => {
         const reshaped: string[] = [];
         const unsettled: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
@@ -1725,7 +1728,9 @@ describe('alm-conformance recipe family', () => {
                     // Every role meets at `formation-settled` only once the owner's poll found the reshaped room settled.
                     expect(indexOf('head-applied'), label).toBeGreaterThan(indexOf('formation-settled'));
                     expect(indexOf('formation-settled'), label).toBeGreaterThan(-1);
-                    expect(indexOf('head-applied'), label).toBeLessThan(firstPublicationAt);
+                    // Then the page reads its own health until its accepted overlay is the path.
+                    expect(indexOf('tree-in-force'), label).toBeGreaterThan(indexOf('head-applied'));
+                    expect(indexOf('tree-in-force'), label).toBeLessThan(firstPublicationAt);
                 }
             }
         }

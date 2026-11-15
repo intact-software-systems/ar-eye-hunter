@@ -3,32 +3,46 @@ import { GROUP_LAYOUT_IDENTITY_KEYS } from '@shared/api/group-lifecycle/group-la
 import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-contracts.ts';
 
 import { CONNECT_READINESS_TIMEOUT_MS, MESSAGE_CONTROL_TIMEOUT_MS } from '../alm-conformance-budgets.ts';
-import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
+import type { AlmConformanceRoomTopology, AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toReadPollCommand, type PollFact, type PollField } from '../poll/alm-conformance-poll-commands.ts';
+import { toPathInForcePollCommand } from '../scenarios/relay-path/to-path-topology-config-command.ts';
 import { toAlmCellGroupRead } from './to-alm-cell-group-read.ts';
 import { CAUSAL_REVISION_KEYS, toAppliedHeadWaitCommands } from './to-applied-head-wait-commands.ts';
 
 /**
  * What a settle role runs between its cell's barriers before its arming run. The receiver, which creates the room and
  * owns it, polls until the server holds the room settled; then every page reads the room's head itself and waits until
- * it applied that head, so no role's first send meets a page that would refuse it as not yet in sync.
+ * it applied that head, so no role's first send meets a page that would refuse it as not yet in sync. In a cell whose
+ * start state reshaped the room, every page then reads its own accepted overlay until it is the path, so no role's
+ * first send leaves on a layout the reshape replaced.
  */
 export interface AlmCellSettle {
     /** Before `formation-settled`: the receiver's formation poll, and nothing for any other role. */
     readonly formation: readonly RallarBlackBoxTestCommand[];
-    /** After `formation-settled`: the page's head read, then its wait for the page to have applied that head. */
+    /**
+     * After `formation-settled`: the page's head read, its wait for the page to have applied that head, and in a
+     * reshaped cell its poll until its accepted overlay is the path.
+     */
     readonly head: readonly RallarBlackBoxTestCommand[];
 }
 
-export function toAlmCellSettle(step: AlmConformanceStepInput): AlmCellSettle {
+/** A settle role's step, with what its cell does to the room's topology. */
+export interface AlmCellSettleStepInput extends AlmConformanceStepInput {
+    readonly roomTopology: AlmConformanceRoomTopology;
+}
+
+export function toAlmCellSettle(step: AlmCellSettleStepInput): AlmCellSettle {
     return {
         formation: step.role === 'receiver' ? [toFormationSettledPollCommand(step, 'formation-poll')] : [],
-        head: toAppliedHeadWaitCommands({
-            step,
-            name: 'head',
-            purpose: 'Read the room head this page must apply before its cell starts.',
-            historyFrom: 'page'
-        })
+        head: [
+            ...toAppliedHeadWaitCommands({
+                step,
+                name: 'head',
+                purpose: 'Read the room head this page must apply before its cell starts.',
+                historyFrom: 'page'
+            }),
+            ...(step.roomTopology === 'reshaped' ? [toPathInForcePollCommand(step)] : [])
+        ]
     };
 }
 

@@ -259,7 +259,7 @@ describe('alm-conformance cell parts', () => {
         }
     });
 
-    it('every settle role of a barriered cell runs connected barrier, [receiver: formation poll], formation-settled barrier, head read, applied-revision floor wait, its leading faults, armed barrier — in that order, before its first other body command', () => {
+    it('every settle role of a barriered cell runs connected barrier, [receiver: formation poll], formation-settled barrier, head read, applied-revision floor wait, [reshaped: its path in force], its leading faults, armed barrier — in that order, before its first other body command', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toBarrieredInput(carrier))) {
                 const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
@@ -272,7 +272,9 @@ describe('alm-conformance cell parts', () => {
 
                     expect([connected, formationSettled, armed].map((barrier) => barrier?.commandId))
                         .toEqual(SETTLE_BARRIER_PHASES.map((phase) => `${cellPrefix}-${role}-${phase}`));
-                    const formation = settle.slice(0, -2);
+                    const reshaped = scenario.roomTopology === 'reshaped';
+                    const headLength = reshaped ? 3 : 2;
+                    const formation = settle.slice(0, -headLength);
                     // The receiver's start state, if its cell declares one, leads its formation poll: one request per write.
                     expect(formation.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
                         .toEqual(
@@ -285,16 +287,15 @@ describe('alm-conformance cell parts', () => {
                         expect(formation.slice(0, -1).every(isDeclaredStartCommand), `${scenario.scenarioKey} ${role}`).toBe(true);
                         expect(formation.at(-1)?.commandId, `${scenario.scenarioKey} ${role}`).toBe(`${cellPrefix}-receiver-formation-poll`);
                     }
-                    expect(settle.slice(-2).map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
-                        .toEqual(['http.request', 'wait']);
-                    const [headRead, headApplied] = settle.slice(-2);
+                    const head = settle.slice(-headLength);
+                    expect(head.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
+                        .toEqual(reshaped ? ['http.request', 'wait', 'loop'] : ['http.request', 'wait']);
                     expect(recipe.commands, `${scenario.scenarioKey} ${role}`).toEqual([
                         ...prologue,
                         connected,
-                        ...settle.slice(0, -2),
+                        ...formation,
                         formationSettled,
-                        headRead,
-                        headApplied,
+                        ...head,
                         ...arming,
                         armed,
                         ...rest
@@ -325,12 +326,14 @@ describe('alm-conformance cell parts', () => {
                 expect(startState.map((command) => command.kind), scenario.scenarioKey).toEqual(startState.map(() => 'http.request'));
                 expect(startState.every((command) => command.timeoutMs === 5_000), scenario.scenarioKey).toBe(true);
                 expect(Math.min(...writeAts), scenario.scenarioKey).toBeGreaterThan(connectedAt);
-                // Every write precedes the page's applied wait; after it the settle holds nothing but the arming run.
+                // Every write precedes the page's applied wait; after it the settle holds nothing but a reshaped cell's poll
+                // that its path is in force, then the arming run.
                 expect(Math.max(...writeAts), scenario.scenarioKey).toBeLessThan(headAppliedAt);
                 expect(
-                    recipe.commands.slice(headAppliedAt + 1, armedAt).filter((command) => command.metadata?.cellSettle === 'lane'),
+                    recipe.commands.slice(headAppliedAt + 1, armedAt).filter((command) => command.metadata?.cellSettle === 'lane')
+                        .map((command) => command.commandId),
                     scenario.scenarioKey
-                ).toEqual([]);
+                ).toEqual(scenario.roomTopology === 'reshaped' ? [`${cellPrefix}-receiver-tree-in-force`] : []);
                 expect(
                     recipe.commands.slice(headAppliedAt + 1, armedAt).some((command) =>
                         command.kind === 'loop' && toNestedCommands([command]).some(isStartStateCommand)
@@ -342,7 +345,7 @@ describe('alm-conformance cell parts', () => {
         expect(granted).toBeGreaterThan(0);
     });
 
-    it('a reshaped cell reshapes its room in its settle: the owner\'s path request follows its start grants and leads its formation poll, and every role applies the reshaped room\'s head before its first send', () => {
+    it('a reshaped cell reshapes its room in its settle: the owner\'s path request follows its start grants and leads its formation poll, and every role applies the reshaped room\'s head and reads its own path in force before its first send', () => {
         for (const scenarioKey of ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay']) {
             const scenario = createAlmConformanceRecipes(toBarrieredInput('rtc')).find((candidate) => candidate.scenarioKey === scenarioKey)!;
             const cellPrefix = `alm-rtc-${scenarioKey}`;
@@ -358,8 +361,21 @@ describe('alm-conformance cell parts', () => {
                 expect(settle.filter((command) => !isStartStateCommand(command)).map((command) => command.commandId), `${scenarioKey} ${role}`)
                     .toEqual(role === 'receiver' ? [`${cellPrefix}-receiver-topology-tree`, `${cellPrefix}-receiver-formation-poll`] : []);
                 expect(settle.every((command) => command.metadata?.cellSettle === 'lane'), `${scenarioKey} ${role}`).toBe(true);
-                expect(indexOf('head-applied'), `${scenarioKey} ${role}`).toBeGreaterThan(indexOf('formation-settled'));
-                expect(firstSendAt === -1 || firstSendAt > indexOf('head-applied'), `${scenarioKey} ${role}`).toBe(true);
+                expect(
+                    commands.slice(indexOf('formation-settled') + 1, indexOf('armed')).filter((command) => command.metadata?.cellSettle === 'lane')
+                        .map((command) => command.commandId),
+                    `${scenarioKey} ${role}`
+                ).toEqual(['head-read', 'head-applied', 'tree-in-force'].map((name) => `${cellPrefix}-${role}-${name}`));
+                expect(firstSendAt === -1 || firstSendAt > indexOf('armed'), `${scenarioKey} ${role}`).toBe(true);
+                // The page reads its own health until its accepted overlay is the path.
+                const inForce = commands[indexOf('tree-in-force')];
+                expect(inForce, `${scenarioKey} ${role}`).toMatchObject({ kind: 'loop', until: 'first-success' });
+                const [read, fact, ...others] = inForce?.kind === 'loop' ? inForce.commands : [];
+                expect(others).toEqual([]);
+                expect(read).toMatchObject({ kind: 'health', commandId: `${cellPrefix}-${role}-tree-in-force-read` });
+                expect(fact).toMatchObject({ kind: 'assert', operator: 'equals', expected: 'tree' });
+                expect(fact?.kind === 'assert' ? fact.source : undefined)
+                    .toMatch(/-tree-in-force-read\.value\.rallar\.formation\.accepted\.overlay\.topology$/);
                 // After the settle the cell writes no path; the owner only resets it at its end.
                 expect(
                     commands.slice(indexOf('armed')).filter(isTopologyConfigRequest).map((command) => command.commandId),
@@ -412,7 +428,9 @@ describe('alm-conformance cell parts', () => {
                 for (const role of scenario.roles.filter((candidate) => candidate !== 'successor')) {
                     const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
                     const recipe = toAlmConformanceRoleRecipe(scenario, role)!;
-                    const [headRead, headApplied] = toSettleCommands(recipe, prefix).slice(-2);
+                    const settle = toSettleCommands(recipe, prefix);
+                    const headRead = settle.find((command) => command.commandId === `${prefix}head-read`);
+                    const headApplied = settle.find((command) => command.commandId === `${prefix}head-applied`);
                     const head = `{resultCache.${prefix}head-read.value.body.causalRevision`;
 
                     expect(headRead, `${scenario.scenarioKey} ${role}`).toMatchObject({
@@ -490,9 +508,10 @@ describe('alm-conformance cell parts', () => {
                 const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
                 const settleRoles = scenario.roles.filter((role) => role !== 'successor');
                 const settleOf = (role: AlmConformanceRole) => toSettleCommands(toAlmConformanceRoleRecipe(scenario, role)!, `${cellPrefix}-${role}-`);
-                const formationMs = (role: AlmConformanceRole) => toCommandsMs(settleOf(role).slice(0, -2));
+                const headLength = scenario.roomTopology === 'reshaped' ? 3 : 2;
+                const formationMs = (role: AlmConformanceRole) => toCommandsMs(settleOf(role).slice(0, -headLength));
                 const armedMs = (role: AlmConformanceRole) =>
-                    toCommandsMs([...settleOf(role).slice(-2), ...toAlmCellArming(scenario.partsByRole[role]!.body).arming]);
+                    toCommandsMs([...settleOf(role).slice(-headLength), ...toAlmCellArming(scenario.partsByRole[role]!.body).arming]);
                 const longestOthersMs = (toMs: (role: AlmConformanceRole) => number) =>
                     Math.max(...settleRoles.map((role) => settleRoles.filter((other) => other !== role).reduce((sum, other) => sum + toMs(other), 0))) +
                     RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS;
@@ -507,13 +526,14 @@ describe('alm-conformance cell parts', () => {
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
         // 5 000 ms request: four grants for granted-rtc-delivered, the path alone for receipted-relay-path, six grants for
-        // subscription-delivery. The first arrival waits through every other role's commands, then the 10 000 ms grace.
+        // subscription-delivery; a reshaped cell's in-force poll is 90 000 ms of attempts and one 5 000 ms read on each
+        // page. The first arrival waits through every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
         expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
         expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 100_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 290_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
         expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
     });
@@ -589,8 +609,11 @@ function toArmingRun(
 /** The settle's barrier phases, in the order every settle role meets at them. */
 const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as const;
 
-/** The settle's command names: the receiver's formation poll, then each page's head read and its applied wait. */
-const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied'] as const;
+/**
+ * The settle's command names: the receiver's formation poll, each page's head read and applied wait, and a reshaped
+ * cell's poll that its path is in force on the page.
+ */
+const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'tree-in-force'] as const;
 
 function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string): boolean {
     return SETTLE_COMMAND_NAMES.some((name) => command.commandId === `${rolePrefix}${name}`) || isSettledStartState(command);

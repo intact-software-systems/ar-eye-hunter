@@ -69,7 +69,7 @@ function withGroup(pair: SettlePair, group: Partial<GroupSnapshot['group']>): Se
 }
 
 function toFormationPoll(): RallarBlackBoxTestLoopCommand {
-    const { formation } = toAlmCellSettle(receiver);
+    const { formation } = toAlmCellSettle({ ...receiver, roomTopology: 'kept' });
     expect(formation).toHaveLength(1);
     expect(formation[0]?.kind).toBe('loop');
     return formation[0] as RallarBlackBoxTestLoopCommand;

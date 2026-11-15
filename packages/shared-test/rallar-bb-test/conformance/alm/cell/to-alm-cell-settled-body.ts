@@ -3,13 +3,12 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../../../barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import { requireAlmCellParts, type AlmCellPartsByRole } from '../alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
-import type { AlmConformanceStepInput } from '../alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellSettleCommand } from './to-alm-cell-authored-commands.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';
 import { toAlmCellCommandPrefix } from './to-alm-cell-command-prefix.ts';
 import { toAlmCellPlacedBody } from './to-alm-cell-placed-body.ts';
-import { toAlmCellSettle, type AlmCellSettle } from './to-alm-cell-settle.ts';
+import { toAlmCellSettle, type AlmCellSettle, type AlmCellSettleStepInput } from './to-alm-cell-settle.ts';
 import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.ts';
 
 /** The commands of one role that a barrier waits out. */
@@ -25,7 +24,7 @@ type RoleCommandsSelector = (role: AlmConformanceRole) => readonly RallarBlackBo
  * barrier; the settle roles are every other role of the cell.
  */
 export function toAlmCellSettledBody(
-    step: AlmConformanceStepInput,
+    step: AlmCellSettleStepInput,
     partsByRole: AlmCellPartsByRole
 ): readonly RallarBlackBoxTestCommand[] {
     const parts = requireAlmCellParts(partsByRole, step.scenarioKey, step.role);
@@ -67,7 +66,7 @@ function isSettleRole(role: AlmConformanceRole): boolean {
  * history, except where a wait declares otherwise.
  */
 function toMarkedSettle(
-    step: AlmConformanceStepInput,
+    step: AlmCellSettleStepInput,
     startState: readonly RallarBlackBoxTestCommand[]
 ): AlmCellSettle {
     const { formation, head } = toAlmCellSettle(step);
