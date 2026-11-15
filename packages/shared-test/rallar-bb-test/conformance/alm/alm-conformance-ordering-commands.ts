@@ -50,8 +50,8 @@ export function toReachedCommands(step: AlmConformanceMessageStepInput): readonl
 
 /**
  * The send of `step.index` left the page: its carrier took it, or its recipients already answered it. The carrier's
- * acceptance settles at its first next hop, so it orders a later step only where the sender has one: a room of two
- * pages, or the server over ws.
+ * acceptance settles at its first next hop, so it orders a later step only where the sender has one next hop: a room of
+ * two pages, where the sender's one peer, or over ws the server, is its only next hop.
  */
 export function toSentCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [

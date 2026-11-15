@@ -1751,7 +1751,7 @@ describe('alm-conformance recipe family', () => {
                     for (const { send, hold, between } of toHeldTrackSends(commands)) {
                         const label = `${carrier} ${scenario.scenarioKey} ${role} ${hold.commandId}`;
                         held.push(label);
-                        // Two pages: the sender's one peer, or over ws the server, is its only next hop.
+                        // A room of two pages, where the sender's one peer, or over ws the server, is its only next hop.
                         const oneNextHop = scenario.roles.length === 2;
                         if (
                             !oneNextHop && !isAcknowledgedPoint(between, 'handleId' in send ? send.handleId : undefined) &&
@@ -1763,8 +1763,28 @@ describe('alm-conformance recipe family', () => {
                 }
             }
         }
-        expect(held.length).toBeGreaterThan(0);
+        expect(held).toEqual([
+            'ws ordering-gap-repair sender alm-ws-ordering-gap-repair-sender-hold-ws',
+            'ws buffered-track-drains sender alm-ws-buffered-track-drains-sender-hold-ws',
+            'rtc ordering-resync sender alm-rtc-ordering-resync-sender-hold-rtc',
+            'rtc ordering-gap-repair sender alm-rtc-ordering-gap-repair-sender-hold-rtc',
+            'rtc repair-exhausted sender alm-rtc-repair-exhausted-sender-hold-rtc',
+            'rtc buffered-track-drains sender alm-rtc-buffered-track-drains-sender-hold-rtc',
+            'rtc granted-rtc-ordered-relay sender alm-rtc-granted-rtc-ordered-relay-sender-hold-rtc',
+            'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-rtc',
+            'rtc-with-ws-fallback ordering-resync sender alm-rtc-with-ws-fallback-ordering-resync-sender-hold-ws'
+        ]);
         expect(uncovered).toEqual([]);
+    });
+
+    it('the held-track scan sees a send and its hold wherever a recipe nests them', () => {
+        const sender = createAlmConformanceRecipes(toConformanceInput('rtc'))
+            .find((scenario) => scenario.scenarioKey === 'granted-rtc-ordered-relay')!.sender;
+        const nested: RallarBlackBoxTestCommand = { kind: 'loop', commandId: 'nesting-loop', count: 1, timeoutMs: 1_000, commands: sender.commands };
+        const toHolds = (commands: readonly RallarBlackBoxTestCommand[]) => toHeldTrackSends(commands).map(({ hold }) => hold.commandId);
+
+        expect(toHolds([nested])).toEqual(['alm-rtc-granted-rtc-ordered-relay-sender-hold-rtc']);
+        expect(toHolds([nested])).toEqual(toHolds(sender.commands));
     });
 });
 
@@ -1774,8 +1794,12 @@ interface HeldTrackSend {
     readonly between: readonly RallarBlackBoxTestCommand[];
 }
 
-/** Each type-wide hold a recipe arms after a send on a track of that type, with the commands between the two. */
-function toHeldTrackSends(commands: readonly RallarBlackBoxTestCommand[]): readonly HeldTrackSend[] {
+/**
+ * Each type-wide hold a recipe arms after a send on a track of that type, with the commands between the two, in the
+ * order the recipe runs them with every loop's and parallel group's children.
+ */
+function toHeldTrackSends(recipeCommands: readonly RallarBlackBoxTestCommand[]): readonly HeldTrackSend[] {
+    const commands = toNestedCommands(recipeCommands);
     const sendAts = commands.flatMap((command, index) => isRallarBlackBoxTestMessagesSendCommand(command) && command.orderingKey !== undefined ? [index] : []);
     return commands.flatMap((hold, holdAt): readonly HeldTrackSend[] => {
         if (
@@ -1809,7 +1833,7 @@ function isArrivalCuePoint(
     sender: AlmConformanceRole
 ): boolean {
     const awaitedCues = between.flatMap((command) => command.kind === 'wait' && isCuePayload(command.match.equals) ? [command.match.equals.cue] : []);
-    const expected = scenario.roles.filter((role) => role !== sender).map((role) => toAlmConformanceRoleRecipe(scenario, role)!.commands)
+    const expected = scenario.roles.filter((role) => role !== sender).map((role) => toNestedCommands(toAlmConformanceRoleRecipe(scenario, role)!.commands))
         .filter((commands) => commands.some(isArrivalWait));
     return expected.length > 0 && expected.every((commands) => {
         const arrivalAt = commands.findIndex(isArrivalWait);
