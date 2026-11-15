@@ -1,6 +1,9 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestAssertComparisonOperator,
+    RallarBlackBoxTestAssertOperator
+} from '../rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxTestAssertResultValue =
     | RallarBlackBoxTestValueAssertResultValue
@@ -15,7 +18,7 @@ export interface RallarBlackBoxTestValueAssertResultValue {
 }
 
 export interface RallarBlackBoxTestComparisonAssertResultValue {
-    readonly operator: 'equals' | 'sameUniqueStringSet';
+    readonly operator: RallarBlackBoxTestAssertComparisonOperator;
     readonly expected?: never;
     readonly actual?: ApiJsonValue;
     readonly comparisonActual?: ApiJsonValue;

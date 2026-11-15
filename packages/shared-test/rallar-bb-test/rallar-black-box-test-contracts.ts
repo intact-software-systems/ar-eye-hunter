@@ -317,6 +317,9 @@ export type RallarBlackBoxTestAssertOperator =
     | 'matchesShapeComplete'
     | 'sameUniqueStringSet';
 
+/** The operators that compare the source with a second result path, `comparisonSource`. */
+export type RallarBlackBoxTestAssertComparisonOperator = 'equals' | 'gte' | 'sameUniqueStringSet';
+
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>
     & (
@@ -328,7 +331,7 @@ export type RallarBlackBoxTestAssertCommand =
         }>
         | Readonly<{
             source: string;
-            operator: 'equals' | 'sameUniqueStringSet';
+            operator: RallarBlackBoxTestAssertComparisonOperator;
             comparisonSource: string;
             expected?: never;
         }>

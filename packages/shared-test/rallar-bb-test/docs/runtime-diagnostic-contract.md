@@ -327,8 +327,9 @@ plans from unsettled cells but runs barriered ones.
 **The assert comparison.** `assert` with `operator: 'equals'` names exactly one of `expected` and
 `comparisonSource`; control validation rejects both and neither. With
 `comparisonSource` it passes only when both paths exist and hold the same JSON value, compared as
-JSON text, so object key order matters. [schema-and-capabilities.md](./schema-and-capabilities.md)
-owns the operator list.
+JSON text, so object key order matters. `assert` with `operator: 'gte'` and a `comparisonSource`
+passes only when both paths hold numbers and the source's is at or after the compared one.
+[schema-and-capabilities.md](./schema-and-capabilities.md) owns the operator list.
 
 ## State Read Diagnostics
 

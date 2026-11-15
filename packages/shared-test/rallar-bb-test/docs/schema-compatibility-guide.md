@@ -1089,3 +1089,38 @@ schema-and-capabilities.md describes the equals assert operator.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts packages/tests/shared-test/rallar-bb-test-set-operator-admission.test.ts packages/tests/shared-test/rallar-bb-runtime/result-release.test.ts
 ```
+
+```text
+Title: a gte assert may compare two evidence paths
+Date: 2026-11-15
+Owner: ALM lane determinism 2-ii, Task 30
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (assert)
+- validateRallarBlackBoxTestCommand assert branch
+
+Old shape:
+assert.comparisonSource was accepted only with operators equals and sameUniqueStringSet. gte took an expected number.
+
+New shape:
+assert.operator gte with comparisonSource (and no expected) passes only when both paths exist, both hold numbers, and
+the source's number is at or after the compared one; a non-number on either side fails without coercion. The result
+value carries comparisonActual and comparisonExists. gte with both expected and comparisonSource is rejected.
+
+Migration:
+A recipe without comparisonSource means what it meant. A control agent built before this change rejects gte with
+comparisonSource at command validation; gte is a baseline operator, so the capability preflight does not gate the new
+form. An agent and a recipe that uses the form ship together.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the gte comparison.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts packages/tests/shared-test/rallar-bb-test-set-operator-admission.test.ts
+```

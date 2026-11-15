@@ -1468,8 +1468,13 @@ Operators:
   `comparisonSource` it compares two evidence paths and passes only when both
   paths exist and hold the same JSON value, so a missing path on either side
   fails; the result value then carries `actual`, `comparisonActual`, `exists`
-  and `comparisonExists`. Only `equals` and `sameUniqueStringSet` take a
-  `comparisonSource`.
+  and `comparisonExists`.
+- `gte` names an expected number or a comparison source, never both. With
+  `comparisonSource` it passes only when both paths exist, both hold numbers,
+  and the source's number is at or after the compared one; a non-number on
+  either side fails without coercion. Only `equals`, `gte` and
+  `sameUniqueStringSet` take a `comparisonSource`; `sameUniqueStringSet`
+  always takes one.
 - `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.

@@ -130,6 +130,44 @@ describe('rallar-bb-test extended assert operators', () => {
         }
     });
 
+    it('gte with a comparison source passes when the actual number is at or after the compared one', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { head: 7, later: 8, same: 7, earlier: 6 } });
+        const atOrAfterHead = (commandId: string, source: string) =>
+            runtime.execute({ kind: 'assert', commandId, source, operator: 'gte', comparisonSource: 'messages.0.payload.head' });
+
+        const later = await atOrAfterHead('revision-later', 'messages.0.payload.later');
+        expect(later.ok).toBe(true);
+        expect(later.value).toEqual({ operator: 'gte', actual: 8, comparisonActual: 7, exists: true, comparisonExists: true, passed: true });
+        expect((await atOrAfterHead('revision-same', 'messages.0.payload.same')).ok).toBe(true);
+
+        const earlier = await atOrAfterHead('revision-earlier', 'messages.0.payload.earlier');
+        expect(earlier.ok).toBe(false);
+        expect(earlier.error?.code).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
+        expect(earlier.value).toEqual({ operator: 'gte', actual: 6, comparisonActual: 7, exists: true, comparisonExists: true, passed: false });
+    });
+
+    it('gte with a comparison source fails on a non-number or a missing path on either side, without coercion', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { number: 7, text: '9', state: 'active', nothing: null } });
+
+        for (
+            const [name, source, comparisonSource, exists, comparisonExists] of [
+                ['text actual', 'messages.0.payload.text', 'messages.0.payload.number', true, true],
+                ['state actual', 'messages.0.payload.state', 'messages.0.payload.number', true, true],
+                ['null actual', 'messages.0.payload.nothing', 'messages.0.payload.number', true, true],
+                ['text comparison', 'messages.0.payload.number', 'messages.0.payload.text', true, true],
+                ['missing actual', 'messages.0.payload.absent', 'messages.0.payload.number', false, true],
+                ['missing comparison', 'messages.0.payload.number', 'messages.0.payload.absent', true, false]
+            ] as const
+        ) {
+            const result = await runtime.execute({ kind: 'assert', commandId: `gte-${name.replace(' ', '-')}`, source, operator: 'gte', comparisonSource });
+            expect(result.ok, name).toBe(false);
+            expect(result.error?.code, name).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
+            expect(result.value, name).toMatchObject({ operator: 'gte', exists, comparisonExists, passed: false });
+        }
+    });
+
     it('admission and the outcome judge the same commands to be comparisons', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { present: 2 } });
@@ -138,6 +176,14 @@ describe('rallar-bb-test extended assert operators', () => {
             {
                 kind: 'assert',
                 commandId: 'bound-with-comparison',
+                source: 'messages.0.payload.present',
+                operator: 'lte',
+                expected: 1,
+                comparisonSource: 'messages.0.payload.present'
+            },
+            {
+                kind: 'assert',
+                commandId: 'at-or-after-with-expected',
                 source: 'messages.0.payload.present',
                 operator: 'gte',
                 expected: 1,
@@ -155,7 +201,7 @@ describe('rallar-bb-test extended assert operators', () => {
                 kind: 'assert',
                 commandId: 'blank-bound-with-comparison',
                 source: ' ',
-                operator: 'gte',
+                operator: 'lte',
                 expected: 1,
                 comparisonSource: 'messages.0.payload.present'
             }
@@ -170,9 +216,10 @@ describe('rallar-bb-test extended assert operators', () => {
         const refused = { ok: false, code: 'RALLAR_BLACK_BOX_ASSERT_INVALID' };
         expect(outcomes).toEqual([
             { ...refused, value: { operator: 'sameUniqueStringSet', exists: false, comparisonExists: false, passed: false } },
-            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } },
+            { ...refused, value: { operator: 'lte', expected: 1, exists: false, passed: false } },
+            { ...refused, value: { operator: 'gte', exists: false, comparisonExists: false, passed: false } },
             { ...refused, value: { operator: 'equals', exists: false, comparisonExists: false, passed: false } },
-            { ...refused, value: { operator: 'gte', expected: 1, exists: false, passed: false } }
+            { ...refused, value: { operator: 'lte', expected: 1, exists: false, passed: false } }
         ]);
     });
 

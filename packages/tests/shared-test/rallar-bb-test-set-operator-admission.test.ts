@@ -71,6 +71,14 @@ describe('set assertion control admission', () => {
         {
             name: 'comparison source on value operator',
             command: { kind: 'assert', source: 'state.a', operator: 'equals', comparisonSource: 'state.b', expected: 1 }
+        },
+        {
+            name: 'expected value beside an at-or-after comparison',
+            command: { kind: 'assert', source: 'state.a', operator: 'gte', comparisonSource: 'state.b', expected: 1 }
+        },
+        {
+            name: 'comparison source on an operator that compares no results',
+            command: { kind: 'assert', source: 'state.a', operator: 'lte', comparisonSource: 'state.b' }
         }
     ])('rejects $name in control and schema admission', ({ command }) => {
         expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
@@ -90,7 +98,7 @@ describe('set assertion control admission', () => {
         const comparison = { kind: 'assert', source: 'state.a', operator: 'equals', comparisonSource: 'state.b' };
         const both = { ...comparison, expected: 1 };
         const blank = { ...comparison, comparisonSource: ' ' };
-        const otherOperator = { kind: 'assert', source: 'state.a', operator: 'gte', comparisonSource: 'state.b' };
+        const otherOperator = { kind: 'assert', source: 'state.a', operator: 'lte', comparisonSource: 'state.b' };
 
         expect(validateRallarBlackBoxTestCommand(comparison).ok).toBe(true);
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, comparison).ok).toBe(true);
@@ -109,10 +117,12 @@ describe('set assertion control admission', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, { ...neither, expected: null }).ok).toBe(true);
     });
 
-    it('accepts the distinct set shape and an existing value operator in both validators', () => {
+    it('accepts the set shape, the at-or-after comparison and value operators in both validators', () => {
         for (
             const command of [
                 { kind: 'assert', source: 'state.a', operator: 'sameUniqueStringSet', comparisonSource: 'state.b' },
+                { kind: 'assert', source: 'state.a', operator: 'gte', comparisonSource: 'state.b' },
+                { kind: 'assert', source: 'state.a', operator: 'gte', expected: 1 },
                 { kind: 'assert', source: 'state.a', operator: 'equals', expected: 1 }
             ]
         ) {

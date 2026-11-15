@@ -2,7 +2,7 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
     RallarBlackBoxTestAssertCommand,
-    RallarBlackBoxTestAssertOperator,
+    RallarBlackBoxTestAssertComparisonOperator,
     RallarBlackBoxTestAssertResultValue,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
@@ -12,7 +12,7 @@ import type {
     RallarBlackBoxTestStatsSnapshot
 } from '../rallar-black-box-test-contracts.ts';
 import { toEventHistoryUnavailableOutcome } from '../runtime/event-history.ts';
-import { decodePayloadPathValue, isSameJsonValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
+import { decodePayloadPathValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
 import { areSameUniqueStringSet } from './are-same-unique-string-set.ts';
 import {
     isAssertOperatorSatisfied,
@@ -90,7 +90,8 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
         : undefined;
     const passed = comparison === undefined
         ? isAssertOperatorSatisfied(source, command.operator, command.expected)
-        : source.exists && comparison.exists && isComparisonSatisfied(command.operator, source.value, comparison.value);
+        : isAssertComparison(command) && source.exists && comparison.exists &&
+            isComparisonSatisfied(command.operator, source.value, comparison.value);
     const value = toAssertResultValue({ command, source, comparison, passed });
     return passed
         ? { status: 'ok', value, nextStatus: state.status }
@@ -125,14 +126,15 @@ function toComparisonSource(command: AssertCommandEvidence['command']): Comparis
         : { kind: 'invalid', message: 'A comparison does not take an expected value.' };
 }
 
+/** The compared result stands where a literal comparison names `expected`, so both forms share one meaning. */
 function isComparisonSatisfied(
-    operator: RallarBlackBoxTestAssertOperator,
+    operator: RallarBlackBoxTestAssertComparisonOperator,
     actual: ApiJsonValue,
     comparisonActual: ApiJsonValue
 ): boolean {
     return operator === 'sameUniqueStringSet'
         ? areSameUniqueStringSet(actual, comparisonActual)
-        : isSameJsonValue(actual, comparisonActual);
+        : isAssertOperatorSatisfied({ exists: true, value: actual }, operator, comparisonActual);
 }
 
 function resolveAssertSource(source: string, roots: AssertSourceRoots): PayloadPathLookup {

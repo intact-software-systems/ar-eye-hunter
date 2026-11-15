@@ -1,6 +1,7 @@
 import { AL_PUBLICATION_POLICY_LIMITS } from '@shared/al-contracts/publication/al-publication-policy.ts';
 
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from './assert/assert-value-operators.ts';
+import { RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS } from './assert/is-assert-comparison.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
@@ -653,7 +654,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                 properties: {
                     ...commandBaseProperties('assert'),
                     source: nonEmptyStringSchema,
-                    operator: { enum: ['equals', 'sameUniqueStringSet'] },
+                    operator: { enum: [...RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS] },
                     comparisonSource: nonEmptyStringSchema
                 },
                 additionalProperties: false
