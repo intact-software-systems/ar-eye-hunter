@@ -225,7 +225,7 @@ async function quickJoinArena(
         if (!isCurrent()) {
             return undefined;
         }
-        const joinedRoom = toJoinedRoomSnapshot(error, 'quick-join');
+        const joinedRoom = error instanceof Error ? toJoinedRoomSnapshot(error, 'quick-join') : undefined;
         if (joinedRoom) {
             adoptArenaRoom(input, joinedRoom.group.groupId);
             try {
@@ -248,9 +248,9 @@ async function quickJoinArena(
     return result.status;
 }
 
-function toJoinedRoomSnapshot(error: unknown, operation: RallarRoomSwitchOperation): GroupSnapshot | undefined {
+function toJoinedRoomSnapshot(error: Error, operation: RallarRoomSwitchOperation): GroupSnapshot | undefined {
     if (
-        !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
+        error.name !== 'RallarRoomSwitchPartialFailureError' ||
         !('operation' in error) || error.operation !== operation || !('joinedRoom' in error)
     ) {
         return undefined;
@@ -304,7 +304,7 @@ async function createAndSelectArenaRoom(
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
             return undefined;
         }
-        const joinedRoom = toJoinedRoomSnapshot(error, 'create-and-switch');
+        const joinedRoom = error instanceof Error ? toJoinedRoomSnapshot(error, 'create-and-switch') : undefined;
         if (!joinedRoom) {
             throw error;
         }
