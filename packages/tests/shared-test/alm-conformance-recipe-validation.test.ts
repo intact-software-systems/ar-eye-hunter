@@ -321,8 +321,6 @@ describe('ALM conformance recipe validation', () => {
         }
     });
 
-    // A mutation request is every `http.request` whose method is not GET; its path ends in `/requests/<requestId>`.
-    // Every cell mutates at least once: its prologue ensures the run's group.
     // The runtime refuses a loop whose attempts could expand past its command limit before it runs a single attempt.
     it('every loop of every cell, settled or not, plans within the runtime\'s loop limits', () => {
         const refused: string[] = [];
@@ -342,6 +340,8 @@ describe('ALM conformance recipe validation', () => {
         expect(refused).toEqual([]);
     });
 
+    // A mutation request is every `http.request` whose method is not GET; its path ends in `/requests/<requestId>`.
+    // Every cell mutates at least once: its prologue ensures the run's group.
     it('every mutation request id of every cell carries {runtimeIdentity}', () => {
         const findings: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
