@@ -438,7 +438,7 @@ describe('Relic Hunters game rules', () => {
 
     it('refuses a command that is not a JSON object, has another protocol, misses a field or names no known kind', () => {
         const valid = submit('Alice', { kind: 'search' });
-        const refused: readonly unknown[] = [
+        const refused = [
             null,
             'submit-action',
             42,

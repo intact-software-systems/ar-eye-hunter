@@ -368,7 +368,7 @@ describe('Relic scene realtime motion networking', () => {
 
     it('refuses motion whose payload or room identity is not a JSON object', () => {
         const payload = motionPayload({ pid: 'bob-session' });
-        const refused: readonly unknown[] = [
+        const refused = [
             null,
             'relic-motion',
             7,
