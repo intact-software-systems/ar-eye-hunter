@@ -1,0 +1,188 @@
+import { expect, type APIRequestContext } from '@playwright/test';
+
+import { type ControlResultEnvelope } from '../../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    type ControlDistributedRunArtifactBundle,
+    type ControlDistributedRunSnapshot
+} from '../../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeControlDistributedRunSnapshot } from '../../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import {
+    type RallarBlackBoxDistributedGroupRef,
+    type RallarBlackBoxDistributedRunManifest
+} from '../../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { type RallarBlackBoxTestCommand } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeControlDistributedRunArtifactBundle } from '../../../../packages/shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
+
+import {
+    enqueueControlCommand,
+    FULL_STACK_CONTROL_BASE_URL,
+    readControlRun
+} from '../full-stack-helpers.ts';
+
+interface WaitForCommandResultInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly commandId: string;
+    readonly timeout: number;
+}
+
+interface ExecuteOkInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly command: RallarBlackBoxTestCommand;
+    readonly timeout: number;
+}
+
+interface WaitForAgentsInGroupInput {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly agentIds: readonly string[];
+    readonly group: RallarBlackBoxDistributedGroupRef;
+}
+
+interface WaitForDistributedStateInput {
+    readonly request: APIRequestContext;
+    readonly distributedRunId: string;
+    readonly state: string;
+    readonly timeout?: number;
+}
+
+async function waitForCommandResult(input: WaitForCommandResultInput): Promise<ControlResultEnvelope> {
+    const { request, runId, commandId, timeout } = input;
+
+    let latest: ControlResultEnvelope | undefined;
+    await expect.poll(async () => {
+        const run = await readControlRun(request, runId);
+        latest = run.results.find((result) => result.commandId === commandId);
+        return Boolean(latest);
+    }, { timeout }).toBe(true);
+    if (!latest) {
+        throw new Error(`Command ${commandId} did not return a result.`);
+    }
+    return latest;
+}
+
+export async function executeOk(input: ExecuteOkInput): Promise<ControlResultEnvelope> {
+    const { request, runId, agentId, commandId, command, timeout } = input;
+
+    await enqueueControlCommand({ request, runId, agentId, commandId, command });
+    const result = await waitForCommandResult({ request, runId, commandId, timeout });
+    expect(result.ok).toBe(true);
+    return result;
+}
+
+export async function waitForAgentsInGroup(input: WaitForAgentsInGroupInput): Promise<void> {
+    const { request, runId, agentIds, group } = input;
+
+    await expect.poll(async () => {
+        const run = await readControlRun(request, runId);
+        return agentIds.every((agentId) => {
+            const agent = run.agents.find((candidate) => candidate.agentId === agentId);
+            return agent?.connected === true &&
+                agent.identity?.applicationId === group.applicationId &&
+                agent.identity.workspaceId === group.workspaceId &&
+                agent.identity.groupId === group.groupId;
+        });
+    }, { timeout: 20_000 }).toBe(true);
+}
+
+export async function createDistributedRun(
+    request: APIRequestContext,
+    manifest: RallarBlackBoxDistributedRunManifest
+): Promise<ControlDistributedRunSnapshot> {
+    const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
+        data: { manifest }
+    });
+    expect(response.status()).toBe(201);
+    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
+}
+
+async function readDistributedRun(
+    request: APIRequestContext,
+    distributedRunId: string
+): Promise<ControlDistributedRunSnapshot> {
+    const response = await request.get(
+        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`
+    );
+    expect(response.ok()).toBe(true);
+    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
+}
+
+export async function mutateDistributedRun(
+    request: APIRequestContext,
+    distributedRunId: string,
+    action: 'stage' | 'start' | 'cancel'
+): Promise<ControlDistributedRunSnapshot> {
+    const response = await request.post(
+        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
+        action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
+    );
+    expect(response.status()).toBe(202);
+    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
+}
+
+export async function waitForDistributedState(
+    input: WaitForDistributedStateInput
+): Promise<ControlDistributedRunSnapshot> {
+    const { request, distributedRunId, state, timeout = 45_000 } = input;
+
+    let latest: ControlDistributedRunSnapshot | undefined;
+    try {
+        await expect.poll(async () => {
+            latest = await readDistributedRun(request, distributedRunId);
+            return latest.state;
+        }, { timeout }).toBe(state);
+    }
+    catch (error) {
+        const snapshot = latest
+            ? JSON.stringify(
+                {
+                    distributedRunId: latest.distributedRunId,
+                    state: latest.state,
+                    targetAgentIds: latest.targetAgentIds,
+                    commandLinks: latest.commandLinks,
+                    error: latest.error,
+                    rollup: latest.rollup
+                },
+                null,
+                2
+            )
+            : 'none';
+        throw new Error(
+            `Distributed run ${distributedRunId} did not reach ${state}. Latest snapshot: ${snapshot}`,
+            { cause: error }
+        );
+    }
+    if (!latest) {
+        throw new Error(`Distributed run ${distributedRunId} did not reach ${state}.`);
+    }
+    return latest;
+}
+
+export async function readDistributedArtifact(
+    request: APIRequestContext,
+    distributedRunId: string
+): Promise<ControlDistributedRunArtifactBundle> {
+    const response = await request.get(
+        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/artifacts`
+    );
+    expect(response.ok()).toBe(true);
+    return decodeControlDistributedRunArtifactBundle(await response.json()).fold(throwBoundaryError, (value) => value);
+}
+
+export async function runToPassed(
+    request: APIRequestContext,
+    manifest: RallarBlackBoxDistributedRunManifest
+): Promise<ControlDistributedRunSnapshot> {
+    await createDistributedRun(request, manifest);
+    await mutateDistributedRun(request, manifest.distributedRunId, 'stage');
+    await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'ready' });
+    await mutateDistributedRun(request, manifest.distributedRunId, 'start');
+    return await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'passed' });
+}
+
+function throwBoundaryError(issue: string): never {
+    throw new Error(`Invalid control response: ${issue}`);
+}

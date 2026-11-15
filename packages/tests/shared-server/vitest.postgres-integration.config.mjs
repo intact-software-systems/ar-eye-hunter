@@ -23,6 +23,7 @@ export default {
             'packages/tests/shared-server/rallar-system/view-watch/view-watch-authority-incarnation.test.ts',
             'packages/tests/shared-server/rallar-system/view-watch/view-watch-registration.test.ts',
             'packages/tests/shared-server/rallar-system/tournaments/tournament-service.test.ts',
+            'packages/tests/shared-server/rallar-system/friends/friends-presence.test.ts',
             'packages/tests/shared-server/rallar-system/matchmaking/*.test.ts',
             'packages/tests/shared-server/queuebox/resource-inbox-topic-selection.test.ts',
             'packages/tests/shared-server/rallar-system/group-state/mutation/group-connect-trigger-sql.test.ts',

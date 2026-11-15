@@ -42,15 +42,23 @@ interface RtcRoomReadinessResultInput {
     readonly room?: RallarRoomTransportStatus;
 }
 
+/** Room readiness must match the authority used by scoped RTC sends, not global lane health. */
+export function isRtcRoomConnectReady(
+    room: RallarRoomTransportStatus | undefined,
+    minReadyPeers: number
+): boolean {
+    return room !== undefined &&
+        room.rtc.acceptedLayoutIdentity !== undefined &&
+        (room.rtc.state === 'open' || room.rtc.state === 'partial') &&
+        room.rtc.readyPeerIds.length >= minReadyPeers;
+}
+
 function toRtcRoomReadinessResult(
     input: RtcRoomReadinessResultInput
 ): RtcConnectReadinessResult {
     const readyPeerIds = input.room?.rtc.readyPeerIds ?? [];
     return {
-        ready: input.room !== undefined &&
-            input.room.rtc.acceptedLayoutIdentity !== undefined &&
-            (input.room.rtc.state === 'open' || input.room.rtc.state === 'partial') &&
-            readyPeerIds.length >= input.options.minReadyPeers,
+        ready: isRtcRoomConnectReady(input.room, input.options.minReadyPeers),
         minReadyPeers: input.options.minReadyPeers,
         timeoutMs: input.options.timeoutMs,
         intervalMs: input.options.intervalMs,

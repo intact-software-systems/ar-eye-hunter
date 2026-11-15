@@ -12,6 +12,7 @@ import {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
 import { BlackBoxRallarPublicationLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts';
 import { BlackBoxRallarVolatileLimits } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-volatile-limits.ts';
+import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 
 import {
     createSpaBrowserRallarRuntime,
@@ -34,6 +35,25 @@ import { openFacadeDelivery } from '../shared-test/rallar-browser-runtime/browse
 interface BrowserRuntimeTiming {
     readonly now: () => number;
     readonly delay: (milliseconds: number) => Promise<void>;
+}
+
+function createRtcRoomStatus(readyPeerIds: readonly string[]): RallarRoomTransportStatus {
+    return {
+        ws: facade.rallar.ws.status(),
+        rtc: {
+            desired: true,
+            mode: 'eager',
+            state: readyPeerIds.length > 0 ? 'open' : 'connecting',
+            acceptedLayoutIdentity: { groupRevision: 2, presenceRevision: 2, version: 1, state: 'active' },
+            desiredPeerIds: readyPeerIds,
+            knownPeerIds: readyPeerIds,
+            activePeerIds: readyPeerIds,
+            readyPeerIds,
+            failedPeerIds: [],
+            peers: [],
+            laneId: 'realtime'
+        }
+    };
 }
 
 async function withBrowserRuntime(
@@ -338,18 +358,10 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     });
 
     it('waits for rtc.connect readiness before reporting success', async () => {
-        const health = vi
+        const waitForRoom = vi
             .fn()
-            .mockResolvedValueOnce({
-                rtcStatus: {
-                    readyPeerIds: []
-                }
-            })
-            .mockResolvedValueOnce({
-                rtcStatus: {
-                    readyPeerIds: ['peer-a', 'peer-b']
-                }
-            });
+            .mockResolvedValueOnce(createRtcRoomStatus([]))
+            .mockResolvedValueOnce(createRtcRoomStatus(['peer-a', 'peer-b']));
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
             rallarRuntime: {
@@ -363,7 +375,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 send: vi.fn(),
                 refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
-                health
+                waitForRoom,
+                health: vi.fn(async () => ({}))
             }
         });
 
@@ -659,6 +672,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                         readyPeerIds: ['peer-a']
                     }
                 })),
+                waitForRoom: async () => createRtcRoomStatus(['peer-a']),
                 refreshRoom
             }
         });
@@ -709,6 +723,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 send: vi.fn(),
                 close: vi.fn(),
                 health,
+                waitForRoom: async () => createRtcRoomStatus(roomStateRefreshed ? ['peer-a'] : []),
                 refreshRoom
             }
         });
@@ -874,6 +889,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                             readyPeerIds: roomStateRefreshed ? ['peer-a'] : []
                         }
                     })),
+                    waitForRoom: async () => createRtcRoomStatus(roomStateRefreshed ? ['peer-a'] : []),
                     refreshRoom
                 }
             });
@@ -932,6 +948,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                             readyPeerIds: ['peer-a']
                         }
                     })),
+                    waitForRoom: async () => createRtcRoomStatus(['peer-a']),
                     refreshRoom
                 }
             });
@@ -1049,18 +1066,10 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
     );
 
     it('uses the readiness timeout window after rtc.connect completes', async () => {
-        const health = vi
+        const waitForRoom = vi
             .fn()
-            .mockResolvedValueOnce({
-                rtcStatus: {
-                    readyPeerIds: []
-                }
-            })
-            .mockResolvedValueOnce({
-                rtcStatus: {
-                    readyPeerIds: ['peer-a']
-                }
-            });
+            .mockResolvedValueOnce(createRtcRoomStatus([]))
+            .mockResolvedValueOnce(createRtcRoomStatus(['peer-a']));
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,
             rallarRuntime: {
@@ -1074,7 +1083,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 send: vi.fn(),
                 refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
-                health
+                waitForRoom,
+                health: vi.fn(async () => ({}))
             }
         });
 
@@ -1114,6 +1124,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 send: vi.fn(),
                 refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
+                waitForRoom: async () => createRtcRoomStatus([]),
                 health: vi.fn(async () => ({
                     rtcStatus: {
                         readyPeerIds: []
@@ -1162,7 +1173,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 send: vi.fn(),
                 refreshRoom: vi.fn(async () => undefined),
                 close: vi.fn(),
-                health
+                health,
+                waitForRoom: async () => createRtcRoomStatus([])
             }
         });
 

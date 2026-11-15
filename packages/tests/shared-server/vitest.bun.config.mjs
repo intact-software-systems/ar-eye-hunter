@@ -17,6 +17,9 @@ export default {
     test: {
         environment: 'node',
         globals: true,
+        reporters: process.env.RALLAR_REQUIRE_POSTGRES_EXECUTION === '1'
+            ? ['default', `${repoRoot}/scripts/postgres-test-execution-reporter.mjs`]
+            : ['default'],
         setupFiles: [`${repoRoot}/packages/tests/setup-vitest.ts`]
     }
 };

@@ -1,11 +1,23 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import {
+    existsSync,
+    readdirSync,
+    readFileSync
+} from 'node:fs';
+import {
+    dirname,
+    join,
+    relative,
+    resolve
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { checkPlaywrightTestExecution } from './check-playwright-test-execution.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TEST_FILE_PATTERN = /(\.(test|spec)\.(ts|tsx|mts|mjs|js)|_test\.(ts|mts))$/;
 const manualSuitesPath = 'tests/manual-suites.json';
+const FLAGS_WITH_VALUE = new Set(['--config', '--project', '--shard', '--reporter', '--testTimeout']);
 
 function git(...args) {
     return execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
@@ -74,8 +86,6 @@ function readFlagValue(tokens, flag) {
     }
     return tokens[index].includes('=') ? tokens[index].split('=')[1] : tokens[index + 1];
 }
-
-const FLAGS_WITH_VALUE = new Set(['--config', '--project', '--shard', '--reporter', '--testTimeout']);
 
 function readPathArguments(tokens) {
     return tokens.filter((token, index) =>
@@ -175,26 +185,46 @@ function computeFindings(trackedFiles, reached, suites) {
         for (const file of matches) {
             claimed.add(file);
             if (reached.has(file)) {
-                findings.push(`${manualSuitesPath}: ${file} is run by a CI workflow, so it is not a manual suite`);
+                findings.push(
+                    `${manualSuitesPath}: ${file} is selected by CI; the manual registry owns unselected files`
+                );
             }
         }
     }
     for (const file of trackedFiles) {
         if (!reached.has(file) && !claimed.has(file)) {
-            findings.push(`${file}: no CI workflow runs this test and ${manualSuitesPath} does not own it`);
+            findings.push(`${file}: no CI command selects this test and ${manualSuitesPath} does not own it`);
         }
     }
     return findings;
 }
 
-const trackedFiles = readTrackedTestFiles();
-const reached = computeReachedFiles(trackedFiles);
-const findings = computeFindings(trackedFiles, reached, readManualSuites());
-const manualCount = trackedFiles.filter((file) => !reached.has(file)).length;
-console.log(
-    `Test reachability: ${trackedFiles.length} test files, ${reached.size} reached by CI, ${manualCount} manual.`
-);
-for (const finding of findings) {
-    console.error(finding);
+function main() {
+    const arguments_ = process.argv.slice(2);
+    if (arguments_[0] === '--playwright-execution') {
+        checkPlaywrightTestExecution(arguments_.slice(1), repositoryRoot);
+        return;
+    }
+    if (arguments_.length > 0) {
+        throw new Error('Unknown test reachability arguments');
+    }
+    const trackedFiles = readTrackedTestFiles();
+    const reached = computeReachedFiles(trackedFiles);
+    const findings = computeFindings(trackedFiles, reached, readManualSuites());
+    const manualCount = trackedFiles.filter((file) => !reached.has(file)).length;
+    console.log(
+        `Test file selection: ${trackedFiles.length} test files, ${reached.size} selected by CI, ${manualCount} registered manual. Selection is not execution evidence.`
+    );
+    for (const finding of findings) {
+        console.error(finding);
+    }
+    process.exitCode = findings.length === 0 ? 0 : 1;
 }
-process.exit(findings.length === 0 ? 0 : 1);
+
+try {
+    main();
+}
+catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+}
