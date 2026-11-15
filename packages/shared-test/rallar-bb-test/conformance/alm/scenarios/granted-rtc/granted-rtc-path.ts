@@ -11,12 +11,12 @@ import {
 import { toOverlayNextHopsCommand } from './granted-rtc-commands.ts';
 
 /**
- * The owner reshapes the room into a path before the sender publishes, so a path leaf's connect waits for its one next
- * hop, and the cell's start state leaves recipient-b `publish` alone. A cue reaches only a role whose own
- * first cue opened its channel, so every role subscribes before the cell's `armed` barrier, the owner first of all, and
- * the owner says the path is set only once the sender says it listens; it says it `received` once its own `received`
- * steps passed. The room's three-agent cells share it, so the owner resets the topology once every page recorded its
- * next hops, which name the layout the run drew.
+ * The cell's start state reshapes the room into a path before the sender publishes, so a path leaf's connect waits for
+ * its one next hop, and leaves recipient-b `publish` alone. A cue reaches only a role whose own first cue opened its
+ * channel, so every role subscribes before the cell's `armed` barrier, the owner first of all, and the owner says the
+ * path is set only once the sender says it listens; it says it `received` once its own `received` steps passed. The
+ * room's three-agent cells share it, so the owner resets the topology once every page recorded its next hops, which
+ * name the layout the run drew.
  */
 export function toPathOwnerCommands(
     owner: AlmConformanceStepInput,
@@ -24,7 +24,6 @@ export function toPathOwnerCommands(
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        toPathTopologyConfigCommand(owner, 'tree'),
         toSubscribeCommand(owner, 'receiver'),
         toCueWait(owner, 'ready'),
         ...toCueSendCommands(owner, 'tree'),

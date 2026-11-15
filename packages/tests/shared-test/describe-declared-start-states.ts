@@ -70,6 +70,12 @@ export function isStartStateCommand(command: RallarBlackBoxTestCommand): boolean
     return command.metadata?.cellStartState === ALM_CELL_START_STATE_METADATA.cellStartState;
 }
 
+/** The owner's write of the room's topology config, with which a reshaped cell's start state ends. */
+export function isReshapeRequest(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'http.request' && command.request.method === 'PUT' &&
+        command.request.path?.includes('/topology/config/') === true;
+}
+
 const GRANT_BODY_KEYS: readonly string[] = ['topicId', 'publish', 'subscribe'];
 
 export function toGrantRequests(commands: readonly RallarBlackBoxTestCommand[]): readonly GrantRequest[] {
@@ -175,7 +181,10 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
 
                     expect(written.length, label).toBeGreaterThan(0);
                     expect(written, label).toEqual(Array.from({ length: written.length }, (_, offset) => connected + 1 + offset));
-                    expect(written.at(-1)! + 1, label).toBe(formationPoll);
+                    // A cell that reshapes its room writes its path right after its grants.
+                    const reshapes = scenario.roomTopology === 'reshaped' ? 1 : 0;
+                    expect(receiver.slice(written.at(-1)! + 1, formationPoll).map(isReshapeRequest), label)
+                        .toEqual(Array.from({ length: reshapes }, () => true));
                     for (const role of scenario.roles.filter((candidate) => candidate !== 'receiver')) {
                         expect(toStartRequests(scenario, role), `${label} ${role}`).toEqual([]);
                     }

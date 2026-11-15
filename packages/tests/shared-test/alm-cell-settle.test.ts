@@ -29,7 +29,7 @@ import type {
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
-import { isStartStateCommand } from './describe-declared-start-states.ts';
+import { isReshapeRequest, isStartStateCommand } from './describe-declared-start-states.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 import { toWaitCommands } from './to-wait-commands.ts';
 
@@ -276,11 +276,13 @@ describe('alm-conformance cell parts', () => {
                     // The receiver's start state, if its cell declares one, leads its formation poll: one request per write.
                     expect(formation.map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
                         .toEqual(
-                            formation.map((command, index) => index === formation.length - 1 ? 'loop' : isStartStateCommand(command) ? 'http.request' : 'loop')
+                            formation.map((command, index) =>
+                                index === formation.length - 1 ? 'loop' : isDeclaredStartCommand(command) ? 'http.request' : 'loop'
+                            )
                         );
                     expect(formation.length > 0, `${scenario.scenarioKey} ${role}`).toBe(role === 'receiver');
                     if (role === 'receiver') {
-                        expect(formation.slice(0, -1).every(isStartStateCommand), `${scenario.scenarioKey} ${role}`).toBe(true);
+                        expect(formation.slice(0, -1).every(isDeclaredStartCommand), `${scenario.scenarioKey} ${role}`).toBe(true);
                         expect(formation.at(-1)?.commandId, `${scenario.scenarioKey} ${role}`).toBe(`${cellPrefix}-receiver-formation-poll`);
                     }
                     expect(settle.slice(-2).map((command) => command.kind), `${scenario.scenarioKey} ${role}`)
@@ -338,6 +340,33 @@ describe('alm-conformance cell parts', () => {
             }
         }
         expect(granted).toBeGreaterThan(0);
+    });
+
+    it('a reshaped cell reshapes its room in its settle: the owner\'s path request follows its start grants and leads its formation poll, and every role applies the reshaped room\'s head before its first send', () => {
+        for (const scenarioKey of ['receipted-relay-path', 'granted-rtc-relay-only', 'granted-rtc-ordered-relay']) {
+            const scenario = createAlmConformanceRecipes(toBarrieredInput('rtc')).find((candidate) => candidate.scenarioKey === scenarioKey)!;
+            const cellPrefix = `alm-rtc-${scenarioKey}`;
+            for (const role of scenario.roles) {
+                const commands = toAlmConformanceRoleRecipe(scenario, role)!.commands;
+                const ids = commands.map((command) => command.commandId);
+                const indexOf = (name: string) => ids.indexOf(`${cellPrefix}-${role}-${name}`);
+                const settle = commands.slice(indexOf('connected') + 1, indexOf('formation-settled'));
+                const firstSendAt = commands.findIndex((command, index) =>
+                    index > indexOf('armed') && toNestedCommands([command]).some((nested) => nested.kind === 'messages.send' && !isCueSend(nested))
+                );
+
+                expect(settle.filter((command) => !isStartStateCommand(command)).map((command) => command.commandId), `${scenarioKey} ${role}`)
+                    .toEqual(role === 'receiver' ? [`${cellPrefix}-receiver-topology-tree`, `${cellPrefix}-receiver-formation-poll`] : []);
+                expect(settle.every((command) => command.metadata?.cellSettle === 'lane'), `${scenarioKey} ${role}`).toBe(true);
+                expect(indexOf('head-applied'), `${scenarioKey} ${role}`).toBeGreaterThan(indexOf('formation-settled'));
+                expect(firstSendAt === -1 || firstSendAt > indexOf('head-applied'), `${scenarioKey} ${role}`).toBe(true);
+                // After the settle the cell writes no path; the owner only resets it at its end.
+                expect(
+                    commands.slice(indexOf('armed')).filter(isTopologyConfigRequest).map((command) => command.commandId),
+                    `${scenarioKey} ${role}`
+                ).toEqual(role === 'receiver' ? [`${cellPrefix}-receiver-topology-reset`] : []);
+            }
+        }
     });
 
     it('only the receiver polls', () => {
@@ -477,14 +506,14 @@ describe('alm-conformance cell parts', () => {
         }
         // The poll is 30 000 ms of attempts and one 5 000 ms command; a head read is 5 000 ms and its applied wait
         // 30 000 ms; a cue subscription is two 5 000 ms commands and a fault 3 000 ms; each write of a start state is one
-        // 5 000 ms request, four of them for the first cell below and six for the second. The first arrival waits through
-        // every other role's commands, then the 10 000 ms grace.
+        // 5 000 ms request: four grants for granted-rtc-delivered, the path alone for receipted-relay-path, six grants for
+        // subscription-delivery. The first arrival waits through every other role's commands, then the 10 000 ms grace.
         const timeoutsAt = (carrier: AlmConformanceCarrier, scenarioKey: string) =>
             timeoutsOf(createAlmConformanceRecipes(toBarrieredInput(carrier)).find((scenario) => scenario.scenarioKey === scenarioKey)!, 'receiver')
                 .slice(1);
         expect(timeoutsAt('rtc', 'delivery-baseline')).toEqual([45_000, 45_000]);
         expect(timeoutsAt('rtc', 'granted-rtc-delivered')).toEqual([65_000, 55_000]);
-        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([45_000, 100_000]);
+        expect(timeoutsAt('rtc', 'receipted-relay-path')).toEqual([50_000, 100_000]);
         expect(timeoutsAt('rtc', 'forged-recipient-ack')).toEqual([45_000, 103_000]);
         expect(timeoutsAt('ws', 'subscription-delivery')).toEqual([75_000, 135_000]);
     });
@@ -498,7 +527,7 @@ describe('alm-conformance cell parts', () => {
                     const prefix = `alm-${carrier}-${scenario.scenarioKey}-${role}-`;
 
                     expect(toAlmCellAuthoredCommands(recipe.commands), `${scenario.scenarioKey} ${role}`)
-                        .toEqual(toAlmConformanceRoleRecipe(plain[index]!, role)!.commands.filter((command) => !isStartStateCommand(command)));
+                        .toEqual(toAlmConformanceRoleRecipe(plain[index]!, role)!.commands.filter((command) => !isDeclaredStartCommand(command)));
                     // Every command the authored view leaves out is a settle command, and every settle command is declared.
                     expect(
                         recipe.commands.filter((command) => !toAlmCellAuthoredCommands(recipe.commands).includes(command))
@@ -539,6 +568,10 @@ function isCueSend(command: RallarBlackBoxTestCommand): command is RallarBlackBo
     return isRallarBlackBoxTestMessagesSendCommand(command) && isJsonRecordValue(command.payload) && typeof command.payload.cue === 'string';
 }
 
+function isTopologyConfigRequest(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'http.request' && command.request.path?.includes('/topology/config/') === true;
+}
+
 /** The commands a settle role runs between its cell's `connected` and `armed` barriers. */
 function toArmingRun(
     recipe: RallarBlackBoxTestRecipe,
@@ -564,7 +597,12 @@ function isSettleCommand(command: RallarBlackBoxTestCommand, rolePrefix: string)
 }
 
 function isSettledStartState(command: RallarBlackBoxTestCommand): boolean {
-    return isStartStateCommand(command) && command.metadata?.cellSettle === 'lane';
+    return isDeclaredStartCommand(command) && command.metadata?.cellSettle === 'lane';
+}
+
+/** A start-state write: a granted cell's grants, or a reshaped cell's path. */
+function isDeclaredStartCommand(command: RallarBlackBoxTestCommand): boolean {
+    return isStartStateCommand(command) || isReshapeRequest(command);
 }
 
 /** A role recipe's settle commands, in recipe order. */

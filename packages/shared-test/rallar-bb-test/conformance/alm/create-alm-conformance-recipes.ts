@@ -480,6 +480,7 @@ function toRoleCells(
             ...step,
             ...diagnostics,
             commands,
+            roomTopology: definition.roomTopology ?? 'kept',
             receiptRoles: role === 'sender' ? definition.toReceiptRoles?.(input.carrier) : undefined,
             reloadCheckpoint: definition.toReloadCheckpoint?.(step),
             relayedReceiptOrigins: role === 'sender' ? definition.relayedReceiptOrigins : undefined,

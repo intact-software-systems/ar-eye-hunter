@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-cont
 
 import { toStorageCountersCommand } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
-import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import type { AlmConformanceRoomTopology, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import {
     toConnectCommand,
     toEnsureGroupCommand,
@@ -13,6 +13,7 @@ import { toCommandId, toConnectionName } from './alm-conformance-step-identities
 import { isAlmCellCueSubscription } from './cell/to-alm-cell-arming.ts';
 import { toCellHistoryMarkedCommands } from './cell/to-cell-history-marked-commands.ts';
 import { toAlmCellStartState } from './granted-topic/to-alm-cell-start-state.ts';
+import { toPathTopologyConfigCommand } from './scenarios/relay-path/to-path-topology-config-command.ts';
 import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
 
 /**
@@ -24,7 +25,10 @@ import { toOwnerLeaseLapseWait } from './to-pause-command.ts';
  */
 export interface AlmConformanceCellParts {
     readonly prologue: readonly RallarBlackBoxTestCommand[];
-    /** What the room owner writes once every role is a member; empty for every role but a granted cell's receiver. */
+    /**
+     * What the room owner writes once every role is a member: a granted cell's start grants, then a reshaped cell's
+     * path. Empty for every other role, and for a cell that neither grants its topic nor reshapes its room.
+     */
     readonly startState: readonly RallarBlackBoxTestCommand[];
     readonly body: readonly RallarBlackBoxTestCommand[];
 }
@@ -34,6 +38,7 @@ export interface AlmConformanceCellPartsInput extends AlmConformanceStepInput {
     readonly commands: readonly RallarBlackBoxTestCommand[];
     readonly almDiagnostics: boolean;
     readonly deliveryDiagnostics: boolean;
+    readonly roomTopology: AlmConformanceRoomTopology;
 }
 
 /** A cell's parts by role; a role the cell does not declare has none. */
@@ -69,13 +74,23 @@ export function toAlmConformanceCellParts(input: AlmConformanceCellPartsInput): 
             { ...connect, rallar: { ...connect.rallar, almDiagnostics: input.almDiagnostics } },
             ...(input.deliveryDiagnostics ? [toAppliedDiagnosticsWait(input)] : [])
         ],
-        startState: toAlmCellStartState(input),
+        startState: [...toAlmCellStartState(input), ...toReshapeCommands(input)],
         body: toCellHistoryMarkedCommands(input, [
             ...toBaselinedCommands(input),
             toStatsCommand(input, 'stats'),
             ...(input.deliveryDiagnostics ? toDeliveryDiagnosticEvidenceCommands(input) : [])
         ])
     };
+}
+
+/**
+ * A cell that reshapes its room starts from the reshaped room: the owner writes the path after its start grants, so a
+ * barriered cell's settle polls the reshaped room and every page applies its head before any role's body runs.
+ */
+function toReshapeCommands(input: AlmConformanceCellPartsInput): readonly RallarBlackBoxTestCommand[] {
+    return input.role === 'receiver' && input.roomTopology === 'reshaped'
+        ? [toPathTopologyConfigCommand(input, 'tree')]
+        : [];
 }
 
 /**

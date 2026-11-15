@@ -35,6 +35,7 @@ import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-li
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { isReshapeRequest } from './describe-declared-start-states.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 
@@ -1695,4 +1696,46 @@ describe('alm-conformance recipe family', () => {
             expect(first, scenario.scenarioKey).toMatchObject({ durability: 'local-outbox' });
         }
     });
+
+    it('starts every cell that reshapes its room from the reshaped room settled on every page: the owner\'s reshape request leads its formation poll, and every role that sends or waits for a publication applies the head after it, before its first send or publication wait', () => {
+        const reshaped: string[] = [];
+        const unsettled: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: 'barriered' })) {
+                if (scenario.roomTopology !== 'reshaped') {
+                    continue;
+                }
+                reshaped.push(`${carrier} ${scenario.scenarioKey}`);
+                const cellPrefix = `alm-${carrier}-${scenario.scenarioKey}`;
+                const owner = toAlmConformanceRoleRecipe(scenario, 'receiver')!.commands;
+                const ownerIndexOf = (name: string) => owner.findIndex((command) => command.commandId === `${cellPrefix}-receiver-${name}`);
+                const reshapes = owner.flatMap((command, index) => isReshapeRequest(command) ? [index] : []);
+
+                expect(reshapes, `${carrier} ${scenario.scenarioKey}`).toHaveLength(1);
+                if (!(reshapes[0]! > ownerIndexOf('connected') && reshapes[0]! < ownerIndexOf('formation-poll'))) {
+                    unsettled.push(`${carrier} ${scenario.scenarioKey}`);
+                }
+                for (const role of scenario.roles) {
+                    const commands = toAlmConformanceRoleRecipe(scenario, role)!.commands;
+                    const indexOf = (name: string) => commands.findIndex((command) => command.commandId === `${cellPrefix}-${role}-${name}`);
+                    const firstPublicationAt = commands.findIndex((command) => toNestedCommands([command]).some(isPublicationCommand));
+                    const label = `${carrier} ${scenario.scenarioKey} ${role}`;
+
+                    expect(firstPublicationAt, label).toBeGreaterThan(-1);
+                    // Every role meets at `formation-settled` only once the owner's poll found the reshaped room settled.
+                    expect(indexOf('head-applied'), label).toBeGreaterThan(indexOf('formation-settled'));
+                    expect(indexOf('formation-settled'), label).toBeGreaterThan(-1);
+                    expect(indexOf('head-applied'), label).toBeLessThan(firstPublicationAt);
+                }
+            }
+        }
+        expect(reshaped).toEqual(['rtc receipted-relay-path', 'rtc granted-rtc-relay-only', 'rtc granted-rtc-ordered-relay']);
+        expect(unsettled).toEqual([]);
+    });
 });
+
+/** A send, a received read, or a wait for a message: a role's own publication activity, cues included. */
+function isPublicationCommand(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'messages.send' || command.kind === 'messages.received' ||
+        (command.kind === 'wait' && command.match.kind === 'message');
+}
