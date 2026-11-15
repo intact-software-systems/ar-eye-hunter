@@ -319,7 +319,7 @@ jobs:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
       RALLAR_BLACK_BOX_API_MODE: postgres
-      RALLAR_BLACK_BOX_STORAGE_DIR: ${{ runner.temp }}/rallar-live-recipes
+      RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/.artifacts/live-recipes/control
       RALLAR_ICE_MODE: local
       RALLAR_LOGIN_USER_RATE_LIMIT: '100'
       VITE_RALLAR_SPA_BASE_URL: http://localhost:5176
@@ -376,7 +376,6 @@ jobs:
           path: |
             .artifacts/live-recipes
             apps/rallar-black-box/test-results/live-recipes
-            ${{ runner.temp }}/rallar-live-recipes
           if-no-files-found: error
           retention-days: 7
 
