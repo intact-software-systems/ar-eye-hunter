@@ -235,7 +235,7 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'packages/relic-hunters/src/model.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 57
+        maximumMagnitude: 56
     }),
     // Independent review: constants, schema predicates and redaction serve the same Relic wire contract.
     Object.freeze({

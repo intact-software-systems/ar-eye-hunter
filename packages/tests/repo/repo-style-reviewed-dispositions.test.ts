@@ -300,31 +300,6 @@ describe('reviewed repository style dispositions', () => {
         }
     });
 
-    it('preserves a genuine Relic command-kind predicate review', () => {
-        const findings = scanProductionSources({
-            repoRoot,
-            sources: [{
-                file: path.join(repoRoot, 'tests/playwright/relic-hunters/web.spec.ts'),
-                raw: [
-                    'function isCommandKind(body: unknown, kind: string): boolean {',
-                    '    return typeof body === \'object\' &&',
-                    '        body !== null &&',
-                    '        \'kind\' in body &&',
-                    '        (body as { kind?: unknown; }).kind === kind;',
-                    '}',
-                    ''
-                ].join('\n')
-            }],
-            options: { layoutOnly: false }
-        }).findings.filter(({ ruleId }) => ruleId === 'boundary.unknown');
-
-        expect(findings).not.toEqual([]);
-        for (const finding of findings) {
-            expect(finding.symbol).toBe('isCommandKind');
-            expect(isReviewedDisposition(repoRoot, finding)).toBe(true);
-        }
-    });
-
     it.each([[12, true], [13, true], [14, false]] as const)(
         'keeps the public barrel disposition bounded at %s exports',
         (count, reviewed) => {

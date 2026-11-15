@@ -1413,14 +1413,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // This predicate checks typeof, null and property presence before comparing
-    // kind. Only a boolean leaves the boundary; its unknown values stay local.
-    // The checker reports the boolean signature as a manual-review signal.
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isCommandKind'
-    }),
     // The run-monitor spec mocks the control server and the API inside anonymous
     // test callbacks: route handlers receive raw request bodies, mock services take
     // raw configuration, and one window global is cast at the DOM boundary. Every
