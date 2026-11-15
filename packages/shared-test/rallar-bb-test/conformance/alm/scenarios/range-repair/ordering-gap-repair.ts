@@ -79,12 +79,14 @@ function toBufferedReleaseWaits(receiver: AlmConformanceStepInput): readonly Ral
             step: receiver,
             name: 'release-buffered-track',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             contains: `"effectId":"release:${encodeURIComponent(toOrderingKey(receiver))}%3A`
         }),
         toDiagnosticWait({
             step: receiver,
             name: 'release-buffered-3',
             topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             contains: '%3A0:3","msgId":null,"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"'
         })
     ];

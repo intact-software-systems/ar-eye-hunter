@@ -8,13 +8,14 @@ import { decodeRecord } from '../../../../packages/shared-test/rallar-bb-test/ru
 import { readControlRun } from '../full-stack-helpers.ts';
 import type { AgentHandle } from './browser-agents.ts';
 
-interface RuntimeDiagnosticExpectation {
+export interface RuntimeDiagnosticExpectation {
     readonly agentId: string;
     readonly diagnosticTypeId: string;
     readonly transport: 'ws' | 'realtime';
     readonly pattern: string;
     readonly group: RallarBlackBoxDistributedGroupRef;
-    readonly afterEventIndex: number;
+    /** A control run retains only a tail of its events, so an index into it orders nothing; the agent's stamp does. */
+    readonly recordedFromEpochMs: number;
     readonly connection: string;
 }
 
@@ -65,24 +66,32 @@ export async function waitForRuntimeDiagnostic(
 ): Promise<void> {
     await expect.poll(async () => {
         const run = await readControlRun(request, runId);
-        return run.events.slice(expected.afterEventIndex).some((event) => {
-            const runtime = decodeRecord(event.payload);
-            const diagnostic = decodeRecord(runtime.payload);
-            const scope = decodeRecord(diagnostic.scope);
-            const detail = decodeRecord(diagnostic.data);
-            return event.kind === 'diagnostic' && event.agentId === expected.agentId &&
-                runtime.topic === expected.diagnosticTypeId &&
-                runtime.transport === expected.transport &&
-                diagnostic.diagnosticTypeId === expected.diagnosticTypeId &&
-                diagnostic.severity === 'warning' &&
-                diagnostic.connection === expected.connection &&
-                diagnostic.roomId === expected.group.groupId &&
-                scope.applicationId === expected.group.applicationId &&
-                scope.workspaceId === expected.group.workspaceId &&
-                detail.pattern === expected.pattern && detail.source === 'console.warn' &&
-                Object.keys(detail).length === 2;
-        });
+        return hasRuntimeDiagnostic(run.events, expected);
     }, { timeout: 30_000 }).toBe(true);
+}
+
+export function hasRuntimeDiagnostic(
+    events: readonly ControlEventEnvelope[],
+    expected: RuntimeDiagnosticExpectation
+): boolean {
+    return events.some((event) => {
+        const runtime = decodeRecord(event.payload);
+        const diagnostic = decodeRecord(runtime.payload);
+        const scope = decodeRecord(diagnostic.scope);
+        const detail = decodeRecord(diagnostic.data);
+        return event.kind === 'diagnostic' && event.atEpochMs >= expected.recordedFromEpochMs &&
+            event.agentId === expected.agentId &&
+            runtime.topic === expected.diagnosticTypeId &&
+            runtime.transport === expected.transport &&
+            diagnostic.diagnosticTypeId === expected.diagnosticTypeId &&
+            diagnostic.severity === 'warning' &&
+            diagnostic.connection === expected.connection &&
+            diagnostic.roomId === expected.group.groupId &&
+            scope.applicationId === expected.group.applicationId &&
+            scope.workspaceId === expected.group.workspaceId &&
+            detail.pattern === expected.pattern && detail.source === 'console.warn' &&
+            Object.keys(detail).length === 2;
+    });
 }
 
 export async function emitKnownLiveWarningDiagnostics(

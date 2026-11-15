@@ -9,6 +9,7 @@ import type {
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState,
     RallarBlackBoxTestWaitCommand,
+    RallarBlackBoxTestWaitMatch,
     RallarBlackBoxTestWaitResultValue
 } from '../rallar-black-box-test-contracts.ts';
 
@@ -18,9 +19,12 @@ import {
     type RallarBlackBoxEventHistory,
     type RallarBlackBoxEventHistorySequence
 } from '../runtime/event-history.ts';
+import { resolveWaitHistoryStart } from './resolve-wait-history-start.ts';
 import {
     resolveWaitMatchResultReferences,
+    resolveWaitPayloadMinimums,
     resolveWaitTimeoutFromEpochMs,
+    type InvalidWaitPayloadMinimum,
     type InvalidWaitTimeoutFrom
 } from './resolve-wait-match-result-references.ts';
 import { resolveLatestWaitEvent } from './wait-event-match.ts';
@@ -71,17 +75,29 @@ export async function waitForEvent(
     if (input.cancelRequested()) {
         return toWaitCancelledOutcome(command);
     }
-    return await resolveWaitMatchResultReferences(command.match, input.resultCache).fold(
-        async ({ reference }) =>
-            toWaitInvalidOutcome('Wait match references a result value no earlier command returned.', {
-                reference
-            }),
+    return await resolveWaitMatch(command.match, input.resultCache).fold(
+        async (invalid) => invalid,
         async (match) =>
             await resolveWaitTimeoutStartEpochMs(input).fold(
                 async (invalid) => toWaitTimeoutFromInvalidOutcome(invalid),
                 async (timeoutStartEpochMs) =>
                     await waitForResolvedEvent({ ...input, command: { ...command, match } }, timeoutStartEpochMs)
             )
+    );
+}
+
+function resolveWaitMatch(
+    match: RallarBlackBoxTestWaitMatch,
+    resultCache: RallarBlackBoxTestState['resultCache']
+): Either<RallarBlackBoxTestCommandOutcome, RallarBlackBoxTestWaitMatch> {
+    return resolveWaitMatchResultReferences(match, resultCache).flatMap(
+        ({ reference }) =>
+            Either.ofLeft(
+                toWaitInvalidOutcome('Wait match references a result value no earlier command returned.', {
+                    reference
+                })
+            ),
+        (referenced) => resolveWaitPayloadMinimums(referenced, resultCache).mapLeft(toWaitPayloadMinimumInvalidOutcome)
     );
 }
 
@@ -97,6 +113,25 @@ function resolveWaitTimeoutStartEpochMs(input: WaitForEventInput): Either<Invali
 }
 
 async function waitForResolvedEvent(
+    input: WaitForEventInput,
+    timeoutStartEpochMs: number
+): Promise<RallarBlackBoxTestCommandOutcome> {
+    const sinceCommandIdPrefix = input.command.match.sinceCommandIdPrefix;
+    if (sinceCommandIdPrefix === undefined) {
+        return await waitFromHistoryStart(input, timeoutStartEpochMs);
+    }
+    return await resolveWaitHistoryStart({
+        sinceCommandIdPrefix,
+        events: input.currentEvents(),
+        history: input.currentEventHistory(),
+        ownerStart: input.historyStart
+    }).fold(
+        async (history) => toEventHistoryUnavailableOutcome(history),
+        async (historyStart) => await waitFromHistoryStart({ ...input, historyStart }, timeoutStartEpochMs)
+    );
+}
+
+async function waitFromHistoryStart(
     input: WaitForEventInput,
     timeoutStartEpochMs: number
 ): Promise<RallarBlackBoxTestCommandOutcome> {
@@ -357,6 +392,18 @@ function toWaitTimeoutFromInvalidOutcome(invalid: InvalidWaitTimeoutFrom): Ralla
             timeoutFrom: invalid.timeoutFrom
         })
         : toWaitInvalidOutcome('Wait timeoutFrom references no numeric result value an earlier command returned.', {
+            reference: invalid.reference
+        });
+}
+
+function toWaitPayloadMinimumInvalidOutcome(invalid: InvalidWaitPayloadMinimum): RallarBlackBoxTestCommandOutcome {
+    return invalid.kind === 'not-one-reference'
+        ? toWaitInvalidOutcome('Wait payloadMinimums text must be exactly one result reference.', {
+            path: invalid.path,
+            minimum: invalid.minimum
+        })
+        : toWaitInvalidOutcome('Wait payloadMinimums references no numeric result value an earlier command returned.', {
+            path: invalid.path,
             reference: invalid.reference
         });
 }

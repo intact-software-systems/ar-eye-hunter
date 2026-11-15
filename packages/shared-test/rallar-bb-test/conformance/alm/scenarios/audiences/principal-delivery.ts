@@ -33,7 +33,12 @@ export const principalDelivery: AlmConformanceScenarioDefinition = {
             audience: { scope: 'principal', principalId: '{auth.clientId}' }
         }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, { roles: SIBLING_CONFIRMED, ending: 'acknowledged', mode: 'receiver' })
+        ...toReceiptWindowCommands(sender, {
+            roles: SIBLING_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'sibling'

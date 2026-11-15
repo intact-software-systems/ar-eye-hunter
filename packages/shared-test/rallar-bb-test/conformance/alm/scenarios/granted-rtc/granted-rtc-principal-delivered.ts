@@ -33,6 +33,10 @@ export const grantedRtcPrincipalDelivered: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-principal',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: false, subscribe: true },
+        { grantee: 'sender', publish: true, subscribe: true }
+    ],
     toSenderCommands: (sender) =>
         toPublishUntilConfirmedCommands({
             step: sender,
@@ -48,7 +52,7 @@ export const grantedRtcPrincipalDelivered: AlmConformanceScenarioDefinition = {
 
 function toBystanderOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(owner, [], { publish: true, subscribe: true }),
+        ...toGrantedRtcOwnerCommands(owner),
         toConfirmedCueWait(owner, 'publication'),
         toPublicationWait(owner, 'publication', true),
         ...toUnsubscribeCommands(owner, 'receiver')

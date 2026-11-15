@@ -16,6 +16,7 @@ import {
 } from './validate-control-command-fields.ts';
 
 const WAIT_MATCH_PATH = 'wait.match';
+const WAIT_TIMEOUT_FROM_PATTERN = new RegExp(WAIT_TIMEOUT_FROM_PATTERN_SOURCE);
 
 export function validateWaitControlCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const match = command.match;
@@ -37,7 +38,7 @@ function validateWaitTimeoutFrom(command: RallarBlackBoxTestRecord): readonly Co
     if (typeof timeoutFrom !== 'string') {
         return validateStringField(command, 'timeoutFrom', 'wait');
     }
-    return new RegExp(WAIT_TIMEOUT_FROM_PATTERN_SOURCE).test(timeoutFrom)
+    return WAIT_TIMEOUT_FROM_PATTERN.test(timeoutFrom)
         ? []
         : [toControlCommandIssue('wait.timeoutFrom must be exactly one {resultCache.<commandId>.<path>} reference.')];
 }
@@ -58,11 +59,12 @@ function validateWaitMatchFields(match: RallarBlackBoxTestRecord): readonly Cont
             path: WAIT_MATCH_PATH,
             allowed: values.waitMatchSeverity
         }),
-        ...['topic', 'commandId', 'connection', 'payloadPath', 'contains'].flatMap((key) =>
+        ...['topic', 'commandId', 'connection', 'payloadPath', 'contains', 'sinceCommandIdPrefix'].flatMap((key) =>
             validateStringField(match, key, WAIT_MATCH_PATH)
         ),
         ...validateBooleanField(match, 'exists', WAIT_MATCH_PATH),
         ...validateWaitPayloadFields(match),
+        ...validateWaitPayloadMinimums(match),
         ...validateIntegerField({ record: match, key: 'sinceEpochMs', path: WAIT_MATCH_PATH, minimum: 0 })
     ];
 }
@@ -79,5 +81,27 @@ function validateWaitPayloadFields(match: RallarBlackBoxTestRecord): readonly Co
         decodeJsonValue(expected) === undefined
             ? [toControlCommandIssue(`wait.match.payloadFields[${JSON.stringify(path)}] must have a JSON value.`)]
             : []
+    );
+}
+
+function validateWaitPayloadMinimums(match: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const payloadMinimums = match.payloadMinimums;
+    if (payloadMinimums === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(payloadMinimums)) {
+        return [toControlCommandIssue('wait.match.payloadMinimums must be an object.')];
+    }
+    return Object.entries(payloadMinimums).flatMap(([path, minimum]) =>
+        (typeof minimum === 'number' && Number.isFinite(minimum)) ||
+            (typeof minimum === 'string' && WAIT_TIMEOUT_FROM_PATTERN.test(minimum))
+            ? []
+            : [
+                toControlCommandIssue(
+                    `wait.match.payloadMinimums[${
+                        JSON.stringify(path)
+                    }] must be a finite number or exactly one {resultCache.<commandId>.<path>} reference.`
+                )
+            ]
     );
 }

@@ -5,13 +5,12 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
+import { toGrantAppliedHeadCommands } from '../../granted-topic/to-grant-applied-head-commands.ts';
+import { toTopicGrantCommand } from '../../granted-topic/to-topic-grant-command.ts';
 import {
     TOPIC_SUBSCRIPTION_SELECTOR,
-    toTopicGrantCommand,
     toUnsubscribeCommands
 } from '../topic-subscription/topic-subscription-commands.ts';
-import { GRANT_DELTA_MARGIN_MS } from '../topic-subscription/topic-subscription-polls.ts';
 import {
     toConfirmedCueWait,
     toCueListenCommands,
@@ -22,12 +21,12 @@ import {
     toRejectedPublishCommands
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { toGrantedRtcOwnerCommands } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /**
  * The receiver revokes the sender's `publish` once `publication-1` was confirmed, and `publication-2` settles
- * `rejected` `no-publish-grant`: refused by the sender's snapshot once the delta lands, or, if that still held the
- * grant, dropped at the receiver and refused at the re-plan, or under the fallback carrier at the WS admission of the
- * hand-over. The receiver never delivers it.
+ * `rejected` `no-publish-grant`: refused by the sender's snapshot, which the sender reads after the receiver's cue and
+ * waits until it applied, so its own check judges the revoke. The receiver never delivers it.
  */
 export const grantedRtcRevokedPublisher: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-revoked-publisher',
@@ -38,6 +37,7 @@ export const grantedRtcRevokedPublisher: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: toRevokedPublisherCommands,
     toRecipientCommands: toRevokingOwnerCommands
 };
@@ -53,17 +53,24 @@ function toRevokedPublisherCommands(sender: AlmConformanceStepInput): readonly R
             kind: 'publication'
         }),
         toCueWait(sender, 'revoked'),
-        toPauseCommand(sender, 'revoke-delta-margin', GRANT_DELTA_MARGIN_MS),
+        ...toGrantAppliedHeadCommands(sender, 'revoke-head'),
         ...toRejectedPublishCommands(sender, 'publication-2', 'no-publish-grant')
     ];
 }
 
 function toRevokingOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(owner, []),
+        ...toGrantedRtcOwnerCommands(owner),
         toPublicationWait(owner, 'publication-1', false),
         toConfirmedCueWait(owner, 'publication-1'),
-        toTopicGrantCommand({ step: owner, operation: 'revoke', grantee: 'sender', publish: true, subscribe: false }),
+        toTopicGrantCommand({
+            step: owner,
+            scope: 'cell',
+            operation: 'revoke',
+            grantee: 'sender',
+            publish: true,
+            subscribe: false
+        }),
         ...toCueSendCommands(owner, 'revoked'),
         toPublicationWait(owner, 'publication-2', true),
         ...toUnsubscribeCommands(owner, 'receiver')

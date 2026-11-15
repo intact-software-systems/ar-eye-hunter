@@ -1288,6 +1288,22 @@ test('formation view carries the queued replan the topology view reports', async
     assert.deepEqual(view.pending, { reconfigureQueued: true, dueAtEpochMs: 4_000, generation: 2 });
 });
 
+test('formation view names a parked or commanded replan behind a settled head as the queued remediation', async () => {
+    const parked = { reconfigureQueued: true, dueAtEpochMs: 4_500, generation: 1 };
+    const commanded = { reconfigureQueued: true, dueAtEpochMs: null, generation: null };
+    for (const pending of [parked, commanded]) {
+        const app = createRouteApp({
+            group: withAcceptedLayout(createGroupSnapshot('room-1', ['owner'])),
+            topologyQuery: topologyQueryWithPlanned(ACCEPTED_IDENTITY.version, pending)
+        });
+
+        const view = await readFormationView(app);
+
+        assert.deepEqual(view.pending, pending);
+        assert.equal(view.remediation, 'replan-queued');
+    }
+});
+
 test('formation view states the group causal revision it was derived at', async () => {
     const app = createRouteApp({
         group: withCausalRevision(createGroupSnapshot('room-1', ['owner']), { groupRevision: 7, presenceRevision: 3 })

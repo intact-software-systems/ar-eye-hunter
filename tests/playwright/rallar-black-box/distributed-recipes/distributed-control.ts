@@ -13,6 +13,7 @@ import {
 import { type RallarBlackBoxTestCommand } from '../../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { decodeControlDistributedRunArtifactBundle } from '../../../../packages/shared-test/rallar-bb-test/schema/control-artifact-envelope.ts';
 
+import { createDistributedRun, mutateDistributedRun, throwBoundaryError } from '../distributed-run-requests.ts';
 import {
     enqueueControlCommand,
     FULL_STACK_CONTROL_BASE_URL,
@@ -88,17 +89,6 @@ export async function waitForAgentsInGroup(input: WaitForAgentsInGroupInput): Pr
     }, { timeout: 20_000 }).toBe(true);
 }
 
-export async function createDistributedRun(
-    request: APIRequestContext,
-    manifest: RallarBlackBoxDistributedRunManifest
-): Promise<ControlDistributedRunSnapshot> {
-    const response = await request.post(`${FULL_STACK_CONTROL_BASE_URL}/distributed-runs`, {
-        data: { manifest }
-    });
-    expect(response.status()).toBe(201);
-    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
-}
-
 async function readDistributedRun(
     request: APIRequestContext,
     distributedRunId: string
@@ -107,19 +97,6 @@ async function readDistributedRun(
         `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}`
     );
     expect(response.ok()).toBe(true);
-    return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
-}
-
-export async function mutateDistributedRun(
-    request: APIRequestContext,
-    distributedRunId: string,
-    action: 'stage' | 'start' | 'cancel'
-): Promise<ControlDistributedRunSnapshot> {
-    const response = await request.post(
-        `${FULL_STACK_CONTROL_BASE_URL}/distributed-runs/${encodeURIComponent(distributedRunId)}/${action}`,
-        action === 'cancel' ? { data: { reason: 'Playwright distributed recipe QA cleanup.' } } : undefined
-    );
-    expect(response.status()).toBe(202);
     return decodeControlDistributedRunSnapshot(await response.json()).fold(throwBoundaryError, (value) => value);
 }
 
@@ -181,8 +158,4 @@ export async function runToPassed(
     await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'ready' });
     await mutateDistributedRun(request, manifest.distributedRunId, 'start');
     return await waitForDistributedState({ request, distributedRunId: manifest.distributedRunId, state: 'passed' });
-}
-
-function throwBoundaryError(issue: string): never {
-    throw new Error(`Invalid control response: ${issue}`);
 }

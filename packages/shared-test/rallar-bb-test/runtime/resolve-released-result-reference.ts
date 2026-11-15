@@ -1,4 +1,5 @@
 import { toAssertSourceRoots } from '../assert/compute-assert-command-outcome.ts';
+import { isAssertComparison } from '../assert/is-assert-comparison.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
@@ -31,7 +32,7 @@ export function resolveReleasedResultReference(
         return undefined;
     }
     const sources = command.kind === 'assert'
-        ? [command.source, ...(command.operator === 'sameUniqueStringSet' ? [command.comparisonSource] : [])]
+        ? [command.source, ...(isAssertComparison(command) ? [command.comparisonSource] : [])]
         : toReferenceTexts(command).filter((text) => typeof text === 'string').flatMap(readResultReferencesInText);
     const unavailable = sources.filter((source) => typeof source === 'string')
         .find((source) => isReleasedSourceReference(source, evidence)) ??
@@ -102,6 +103,7 @@ function resolveReleasedWaitPayloadReference(
     const {
         payloadPath: _payloadPath,
         payloadFields: _payloadFields,
+        payloadMinimums: _payloadMinimums,
         equals: _equals,
         contains: _contains,
         exists: _exists,
@@ -116,7 +118,8 @@ function resolveReleasedWaitPayloadReference(
 }
 
 function toWaitPayloadMembers(match: RallarBlackBoxTestWaitMatch): readonly (string | undefined)[] {
-    const members = Object.keys(match.payloadFields ?? {}).map((path) => toPayloadPathSegments(path)[0]);
+    const members = [...Object.keys(match.payloadFields ?? {}), ...Object.keys(match.payloadMinimums ?? {})]
+        .map((path) => toPayloadPathSegments(path)[0]);
     const member = toPayloadPathSegments(match.payloadPath)[0];
     if (member !== undefined || match.equals !== undefined || match.contains !== undefined) {
         members.push(member);
@@ -139,7 +142,10 @@ function isReleasedEventPayloadUnavailable(
 function toReferenceTexts(command: RallarBlackBoxTestCommand): readonly string[] {
     switch (command.kind) {
         case 'wait':
-            return command.match?.contains === undefined ? [] : [command.match.contains];
+            return [
+                ...(command.match?.contains === undefined ? [] : [command.match.contains]),
+                ...Object.values(command.match?.payloadMinimums ?? {}).filter((minimum) => typeof minimum === 'string')
+            ];
         case 'messages.control':
             return [
                 command.msgId,

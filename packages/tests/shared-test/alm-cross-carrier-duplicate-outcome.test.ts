@@ -33,6 +33,7 @@ import {
     createInboundTestStores,
     INBOUND_TEST_SENDER_PEER_ID
 } from '../shared/alm/inbound-runtime-test-fixture.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 type CrossCarrierOrder = 'rtc-then-ws' | 'ws-then-rtc';
 
@@ -117,6 +118,7 @@ async function runDiagnosticOutcomeCommands(
     const scenario = toCrossCarrierScenario(order);
     const recipeRuntime = createDefaultRallarBlackBoxTestRuntime();
     const ports = createRecipeDiagnosticsPorts(recipeRuntime);
+    writeAlmCellStartEvents(recipeRuntime, scenario.receiver.commands);
     for (const event of diagnostics) {
         ports.inboundDiagnostics?.(event);
     }

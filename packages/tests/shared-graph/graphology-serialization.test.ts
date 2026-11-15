@@ -1,3 +1,4 @@
+import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import { serializeGraphInfoSnapshot } from '@shared-graph/graph-diagnostics-serialization.ts';
 import type { EdgeProp, GraphProp, VertexProp, WeightedGraph } from '@shared-graph/graph/graph-props.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
@@ -154,6 +155,22 @@ describe('graphology JSON serialization', () => {
         expect(serialized.measured?.groupGraph).toEqual(measuredTree.export());
         expect('graphId' in serialized).toBe(false);
         expect(serialized.groupRef).toEqual(groupRef);
+    });
+
+    it('keeps graphology\'s exact shape, leaving out the attributes of a bare node and edge', () => {
+        const graph = createGraph([['peer-a', VertexState.MEMBER, 4]], []);
+        graph.addNode('peer-bare');
+        graph.addEdge('peer-a', 'peer-bare');
+        const groupRef = createGroupRef('group-3');
+        const info = { groupRef, graph, groupGraph: graph, coreNodes: ['peer-a'] };
+
+        const serialized = serializeGraphInfoSnapshot({ groupRef, predicted: info, createdAtEpochMs: 1, version: 1 });
+
+        expect(serialized.predicted.graph).toStrictEqual(graph.export());
+        expect(serialized.predicted.graph.attributes).toStrictEqual(DEFAULT_GRAPH_PROP);
+        expect(serialized.predicted.graph.options).toStrictEqual({ type: 'undirected', multi: false, allowSelfLoops: true });
+        expect(serialized.predicted.graph.nodes.map((node) => 'attributes' in node)).toEqual([true, false]);
+        expect(serialized.predicted.graph.edges.map((edge) => 'attributes' in edge)).toEqual([false]);
     });
 });
 

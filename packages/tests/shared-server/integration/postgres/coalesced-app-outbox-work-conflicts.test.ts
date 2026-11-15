@@ -6,22 +6,26 @@ import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/p
 import { toDomain, type ResourceInboxRow } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { writeAppOutboxInserts } from '@shared-server/rallar-system/app-outbox/app-outbox-insert.ts';
 import {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
     readIsObservedCoalescedSuccessorStored,
+    tryReadCoalescedAppOutboxWorkEnvelope,
     writeCoalescedAppOutboxWork,
     type ComputedCoalescedAppOutboxWork
 } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
+    readPendingTopologyReplan,
     resolveQueuedRtcTopologySuccessor,
     toCoalescedGroupRevisionKey
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
-import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    computeRtcTopologyReservationFinish,
+    finishRtcTopologyReservation
+} from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-completion.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 
-import { toEarlierALEnvelopeVersionResource } from '../../../shared/al-contracts/to-earlier-al-envelope-version-resource.ts';
 import {
     createPostgresSql,
     topologyGroupSnapshot,
@@ -140,32 +144,40 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
         expect((await entries.findByKey(head))?.resource).toBe(fresh.entryWrite.entry.resource);
     });
 
-    // #782: a head persisted under an older AL envelope version is replaced by the ordinary compare-and-set.
-    postgresIt.each([
-        { head: 'failed', failed: true },
-        { head: 'pending', failed: false }
-    ])(
-        'replaces a $head head stamped with an unsupported envelope version at the next generation',
-        async ({ head, failed }) => {
-            const ref = toRunGroupRef(`unsupported-head-${head}`);
-            await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
-            const stale = await stampHeadEnvelopeVersion(ref, 3, failed);
+    // A replan written while the head executes parks on a successor row; the head's own completion leaves that row queued.
+    postgresIt('the pending replan read reports a successor parked behind a head that has since completed', async () => {
+        const ref = toRunGroupRef('parked-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        const reserved = await reserveHead(ref);
+        const parked = computeParkedRevisionWork(ref, reserved);
+        expect(await writeInTransaction(parked)).toBe('written');
+        await finishInTransaction(reserved);
 
-            const replaced = computeRevisionWork(ref, stale, 'automatic');
-            expect(await writeInTransaction(replaced)).toBe('written');
+        const entries = createPSqlResourceInboxRepository(requireSql(), () => new Date()).entries;
+        expect((await entries.findByKey(toCoalescedGroupRevisionKey(ref)))?.status).toBe(EntityStatus.COMPLETED);
+        const parkedWork = tryReadCoalescedAppOutboxWorkEnvelope(parked.successorWrite.entry)!.data[
+            COALESCED_APP_OUTBOX_WORK_FIELD
+        ];
+        expect(await readPendingTopologyReplan(entries, ref)).toEqual({
+            reconfigureQueued: true,
+            dueAtEpochMs: parkedWork.dueAtEpochMs,
+            generation: parkedWork.generation
+        });
+    });
 
-            const rows = await readRevisionRows(ref);
-            expect(rows).toHaveLength(1);
-            expect(rows[0]!.resource).toBe(replaced.entryWrite.entry.resource);
-            const message = JSON.parse(rows[0]!.resource) as ALMessage;
-            expect(message.id.v).toBe(AL_MESSAGE_ENVELOPE_VERSION);
-            expect(
-                (JSON.parse(message.payload.resource) as { data: { __rallarCoalescedWork: { generation: number; }; }; })
-                    .data.__rallarCoalescedWork.generation
-            ).toBe(2);
-            expect(isCanonicalRtcTopologyWorkEntry(rows[0]!)).toBe(true);
-        }
-    );
+    postgresIt('the pending replan read reports nothing once the successor has completed too', async () => {
+        const ref = toRunGroupRef('settled-successor');
+        await writeInTransaction(computeRevisionWork(ref, null, 'automatic'));
+        const reserved = await reserveHead(ref);
+        const parked = computeParkedRevisionWork(ref, reserved);
+        expect(await writeInTransaction(parked)).toBe('written');
+        await finishInTransaction(reserved);
+        const repository = createPSqlResourceInboxRepository(requireSql(), () => new Date());
+        const successor = (await repository.reservations.startProcessingEntity(parked.successorWrite.entry)).right;
+        await finishInTransaction(successor!);
+
+        expect(await readPendingTopologyReplan(repository.entries, ref)).toBeNull();
+    });
 
     postgresIt('still reports a duplicate plain outbox insert as corruption', async () => {
         const ref = toRunGroupRef('plain-duplicate');
@@ -189,6 +201,11 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
             requireSql(),
             async (transaction) => await writeCoalescedAppOutboxWork(transaction, computed)
         );
+    }
+
+    async function finishInTransaction(reserved: ResourceEntry): Promise<void> {
+        const finish = computeRtcTopologyReservationFinish(reserved, new Date());
+        await runInPSqlTransaction(requireSql(), async (transaction) => await finishRtcTopologyReservation(transaction, finish));
     }
 
     async function guardInTransaction(observed: ResourceEntry): Promise<boolean> {
@@ -215,29 +232,6 @@ describe('Postgres coalesced APP_OUTBOX work conflicts', () => {
             set expire_ts = (now() - interval '1 minute') at time zone 'UTC'
             where ri_topic_id = ${head.topicId} and fk_ext_bank_id = ${head.contextId}
         `;
-    }
-
-    /** Restamps the stored head's envelope version; failed, it is left as an exhausted attempt budget leaves it. */
-    async function stampHeadEnvelopeVersion(ref: GroupRef, version: number, failed: boolean): Promise<ResourceEntry> {
-        const head: Key = toCoalescedGroupRevisionKey(ref);
-        const [stored] = await readRevisionRows(ref);
-        await requireSql()`
-            update resource_inbox
-            set ri_resource = ${toEarlierALEnvelopeVersionResource(stored!.resource, version)}
-            where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
-              and fk_ext_bank_id = ${head.contextId}
-        `;
-        if (failed) {
-            await requireSql()`
-                update resource_inbox
-                set ri_status = ${EntityStatus.FAILED}, ri_attempts = 20, next_ts = null,
-                    start_ts = now() at time zone 'UTC', end_ts = now() at time zone 'UTC'
-                where ri_topic_id = ${head.topicId} and ri_resource_id = ${head.resourceId}
-                  and fk_ext_bank_id = ${head.contextId}
-            `;
-        }
-        const [restamped] = await readRevisionRows(ref);
-        return restamped!;
     }
 
     async function reserveHead(ref: GroupRef): Promise<ResourceEntry> {
@@ -274,6 +268,25 @@ function computeRevisionWork(
         senderId: 'coalesced-conflicts',
         origin,
         previousEntry
+    });
+}
+
+/**
+ * A replan parked behind the reserved head with a debounce still running: the successor waits as RETRY with a future
+ * retry time, so no worker of another test file claims it before this file reads and cleans it up.
+ */
+function computeParkedRevisionWork(ref: GroupRef, reservedHead: ResourceEntry): ComputedCoalescedAppOutboxWork {
+    const requestedAtEpochMs = Date.now();
+    return computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-coalesced-app-outbox-work-conflicts',
+        aggregateRef: ref,
+        groupSnapshot: topologyGroupSnapshot(ref),
+        requestedAtEpochMs,
+        expireAtEpochMs: requestedAtEpochMs + 60_000,
+        timing: { window: { debounceMs: 30_000, maxWaitMs: 30_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
+        senderId: 'coalesced-conflicts',
+        origin: 'automatic',
+        previousEntry: reservedHead
     });
 }
 

@@ -1,4 +1,5 @@
-import type { ALCongestionCounters } from '../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALCongestionCounters } from '../../../../../shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { AlmLaneCellOrderRecord } from '../lane/resolve-alm-lane-plan.ts';
 import type {
     ALMObservationPageDiagnosticRecord,
     ALMObservationPageDiagnosticsFile
@@ -172,6 +173,8 @@ export interface ALMObservationRegime {
     readonly carrier: string;
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
+    /** The order, seed and room mode the family's cells ran in, so a run can be replayed. */
+    readonly cellOrder: AlmLaneCellOrderRecord;
     readonly regime: ALMObservationRegimeName;
     readonly regimeSource: ALMObservationRegimeSource;
     readonly windowMs: number;
@@ -192,6 +195,7 @@ export interface ALMObservationRegimeInput {
     readonly carrier: string;
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly cellOrder: AlmLaneCellOrderRecord;
     readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
 
@@ -199,6 +203,7 @@ export interface UnreadableALMObservationRegimeInput {
     readonly carrier: string;
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly cellOrder: AlmLaneCellOrderRecord;
     readonly snapshotIssues: readonly string[];
     readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
@@ -221,6 +226,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         carrier: input.carrier,
         scope: input.scope,
         cellOutcome: input.cellOutcome,
+        cellOrder: input.cellOrder,
         regime: measured ? resolveRegimeName(perOperation) : pageRegime.regime,
         regimeSource: measured ? 'per-operation' : 'page',
         windowMs: ALM_OBSERVATION_WINDOW_MS,
@@ -246,6 +252,7 @@ export function createUnreadableALMObservationRegime(
         carrier: input.carrier,
         scope: input.scope,
         cellOutcome: input.cellOutcome,
+        cellOrder: input.cellOrder,
         regime: 'unclassified',
         regimeSource: 'page',
         windowMs: ALM_OBSERVATION_WINDOW_MS,
@@ -295,7 +302,8 @@ export function toALMObservationRegimeSummary(regime: ALMObservationRegime): str
         : `unmeasured (${regime.perOperation.sampleCount} commits)`;
     const source = regime.regimeSource === 'page' ? ' (page)' : '';
     return `ALM observation ${regime.carrier}-${regime.scope}: regime=${regime.regime}${source} ` +
-        `perOperation=${perOperation} outcome=${regime.cellOutcome} ${toPageRegimeSummary(regime.pageRegime)}`;
+        `perOperation=${perOperation} outcome=${regime.cellOutcome} ${toPageRegimeSummary(regime.pageRegime)} ` +
+        `order=${regime.cellOrder.mode} seed=${regime.cellOrder.seed ?? 'none'} rooms=${regime.cellOrder.rooms}`;
 }
 
 function toPageRegimeSummary(pageRegime: ALMObservationPageRegime): string {

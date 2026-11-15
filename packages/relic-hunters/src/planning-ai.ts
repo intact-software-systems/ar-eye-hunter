@@ -1,8 +1,5 @@
-import {
-    validateRallarAiJsonSchemaValue,
-    type RallarAiJsonSchema,
-    type RallarAiJsonValue
-} from '@shared/rallar-ai/mod.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
+import { validateRallarAiJsonSchemaValue, type RallarAiJsonSchema } from '@shared/rallar-ai/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { RELIC_GAME_PHASES, type RelicActionKind, type RelicGamePhase } from './model.ts';
 
@@ -255,7 +252,7 @@ export function decodeRelicPlanningAiSuggestion(
     value: unknown,
     context: RelicPlanningAiContext
 ): Either<string, RelicPlanningAiSuggestion> {
-    if (!isJsonObject(value)) {
+    if (!isApiJsonObject(value)) {
         return Either.ofLeft('Suggestion must be an object.');
     }
     const headline = decodeCappedString(value.headline, 'headline', HEADLINE_MAX_LENGTH);
@@ -321,7 +318,7 @@ function decodeRisks(value: unknown): Either<string, readonly string[]> {
 }
 
 function decodeSuggestedAction(value: unknown): Either<string, RelicPlanningAiSuggestedAction> {
-    if (!isJsonObject(value)) {
+    if (!isApiJsonObject(value)) {
         return Either.ofLeft('Action kind is invalid.');
     }
     const kind = decodeRelicActionKind(value.kind);
@@ -350,8 +347,4 @@ function decodeConfidence(value: unknown): RelicPlanningAiConfidence | undefined
 
 function decodeRelicActionKind(value: unknown): RelicActionKind | undefined {
     return typeof value === 'string' ? RELIC_ACTION_KINDS.find((kind) => kind === value) : undefined;
-}
-
-function isJsonObject(value: unknown): value is Readonly<Record<string, RallarAiJsonValue>> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

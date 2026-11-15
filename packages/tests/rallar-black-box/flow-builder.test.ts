@@ -189,6 +189,34 @@ describe('rallar-black-box flow builder helpers', () => {
         expect(scenario.steps.map((step) => step.type)).toContain('ws.open');
     });
 
+    it('carries an assert\'s comparison source into the runner step', () => {
+        const scenario = toFlowBuilderRunnerScenario({
+            flow: {
+                flowId: 'compare',
+                name: 'Compare',
+                variables: {},
+                steps: [{
+                    stepId: 'revisions',
+                    label: 'Revisions',
+                    kind: 'wait',
+                    commands: [
+                        { kind: 'assert', source: 'state.a', operator: 'equals', comparisonSource: 'state.b' },
+                        { kind: 'assert', source: 'state.a', operator: 'sameUniqueStringSet', comparisonSource: 'state.c' },
+                        { kind: 'assert', source: 'state.a', operator: 'equals', expected: 1 }
+                    ]
+                }]
+            },
+            overrides: {},
+            createRequestId: () => 'compare-request'
+        });
+
+        expect(scenario.steps.map((step) => step.request)).toEqual([
+            { source: 'state.a', operator: 'equals', comparisonSource: 'state.b' },
+            { source: 'state.a', operator: 'sameUniqueStringSet', comparisonSource: 'state.c' },
+            { source: 'state.a', operator: 'equals', expected: 1 }
+        ]);
+    });
+
     it('parses editable flow JSON and appends step templates', () => {
         const parsed = decodeFlowBuilderDefinitionText(toTemplateFlowBuilderText('auth-rest-ws-rtc'));
         const flow = parsed.foldRight((decoded) => decoded);

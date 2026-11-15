@@ -71,6 +71,23 @@ it says so: capture a stamp before the step that should produce the event, and p
 Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
 same hazard `absent: true` carries in the other direction.
 
+## Wait History From A Command
+
+`wait.match.sinceCommandIdPrefix` starts the wait's history at the first event whose `commandId` starts with the
+prefix, and at the next event when none does yet. It resolves once, when the wait starts. Conformance cells that share
+one page name their commands under a cell prefix, so a wait sees only its own cell's history rather than an earlier
+cell's traffic. Beside an owner's own history start, such as a barrier's, the later of the two wins. A prefix wait needs
+a history that has evicted nothing: retained events cannot prove that the oldest retained event of the prefix was its
+first, so under a `recent` history the wait fails with `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction.
+
+## Wait Numeric Floors
+
+`wait.match.payloadMinimums` maps payload paths to floors: every path must reach a number at or above its floor in
+the same event, so a page that reached one revision but not the other does not match. A floor is a finite number or
+exactly one `{resultCache.<commandId>.<path>}` reference with the `wait.timeoutFrom` grammar below, resolved once
+when the wait starts. A reference naming no finite number fails the wait with `RALLAR_BLACK_BOX_WAIT_INVALID`, and any
+other text is refused when the recipe is loaded.
+
 ## Wait Result References
 
 A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number
@@ -312,10 +329,11 @@ connection closes.
 
 The `receipted-audience` conformance scenarios run on three agents: `sender`,
 `receiver` and `recipient-b` (D45). Every send asks for `all-logical-recipients`. The
-sender reads its receipt only after the scenario window, never by polling
-`acknowledged`, and pins the state the handle ended in (`acknowledged` for a receipt
-that completes, `expired` for one that ends timed out), the receipt mode and the
-length of each recipient list. Every send payload names its carrier, and the raw ACK
+sender reads its receipt only after the scenario window and, on its own page, the
+observe of its handle at the ending it expects, which resolves at any terminal
+state; it never polls `acknowledged` on another page. It pins the state the
+handle ended in (`acknowledged` for a receipt that completes, `expired` for one
+that ends timed out), the receipt mode and the length of each recipient list. Every send payload names its carrier, and the raw ACK
 of `unknown-ack-version` its own authored msgId, so a wait in a combined recipe that
 runs every carrier on one page never matches an earlier carrier's event. Its
 recipe metadata `almReceiptRoles` names, per send handle, the recipient roles the
@@ -323,12 +341,18 @@ receipt confirms, leaves unconfirmed and records outside the audience
 (`confirmed`, `unconfirmed`, `outsideAudience`); the expected roles are the three
 together. The identity assessment joins each list to the sessions of those roles
 after the run, reading the receipt the handle ended in: the sender's last read of
-that handle, after any mid-window read.
+that handle, after any mid-window read. In every conformance cell, a receipt read
+whose recipient lists a role asserts follows, after its send, an event that
+settles those lists: a terminal observe of the handle (a non-empty list of
+`acknowledged` and `expired`), or the role's own `committed` `control-admission`
+of the control that confirms a recipient of the send (an `al.control.ack.v3` over
+an rtc leg, over `ws` the server's `complete` `al.control.receipt.v1`). A refusal
+of another control proves no such commit, and a window only lets time pass.
 
 - `aggregated-receipt`: both recipients are confirmed. Over `ws` the sender also
   waits for its committed `control-admission` of `al.control.receipt.v1`; that is the
-  first receipt frame, the `admitted` one, and the `acknowledged` read proves the
-  `complete` one.
+  first receipt frame, the `admitted` one, and the `acknowledged` observe and read
+  prove the `complete` one.
 - `missing-recipient-retry`: `recipient-b` holds its ACK back with a fault it keeps
   armed until it is released. A one-shot `drop` would not lose the ACK: the RTC
   channel settles a dropped frame `not-ready` and its sender resubmits it 50 ms
@@ -366,7 +390,12 @@ that handle, after any mid-window read.
   it, the receiver submits a raw `al.control.ack.v3` whose
   `logicalRecipientPeerId` names that session, with `proof: null`. The sender waits
   for the origin's `rejected` `control-admission` of it with `proofRefusal`
-  `missing-proof`, reads its receipt mid-window and asserts it is not yet
+  `missing-proof`. That refusal runs before any await, while the receiver's
+  genuine ACK commits only after its signature check, so the refusal can
+  overtake it: the sender also waits, in its cell's history, for its own
+  `committed` `control-admission` of an `al.control.ack.v3` answering the send,
+  which before the release can only be the receiver's. Only then does it read
+  its receipt mid-window and assert it is not yet
   `acknowledged` (at least one recipient unconfirmed, at most one confirmed), then
   cues `recipient-b` to release; the receipt ends `acknowledged` with both
   recipients confirmed. Its cues travel on a type of their own
@@ -497,7 +526,7 @@ send: `recipient-b` sends on its own connection, and its handle id names the rol
   its admission and receiving the reclaim. `recipient-b` receives that send, holds
   3500 ms past it as a `messages.received` absence (no second copy arrives), and its own
   exclusive send on the resource is admitted and delivered to the sender and the receiver;
-  it reads its receipt `acknowledged` after its own absence window.
+  it reads its receipt `acknowledged` after its own absence window and its observe of the handle.
 - `claim-refused-on-rtc` (`rtc` only): the RTC origin refuses the sender's exclusive
   send, which ends `rejected` with `failure.kind: 'refused'`, `failure.reason:
   'unsupported'` and no carrier attempt.
@@ -564,7 +593,8 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   socket is down, and the receiver then revokes the principal's
   `subscribe`. The reopened socket's re-assertion is refused and a second publication follows.
   The receiver receives both, the sibling neither, and the lane fails a receipt that confirms the
-  sibling. A clean close removes the sibling's live generation at once, so no dispatch is held
+  sibling. The sender reads each receipt once its publication's handle has ended, which no later
+  confirmation changes, not after a pause. A clean close removes the sibling's live generation at once, so no dispatch is held
   for it; the held-dispatch revocation is proven server-side by
   `apps/api-v1/test/services/ws-room-granted-delivery.test.ts` ("a revoke between enqueue and
   dequeue skips the revoked session at the awaited hold"; "a held row for a session whose
@@ -580,6 +610,19 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   `p4` reach the receiver and never the sibling, then grants it back; the sibling releases its first election,
   elects anew and receives `p5`, whose `ordering-position` event reads `omitted` with prior `2` per track, with
   no gap NACK and no repair dispatch.
+- In these three cells the receiver, which a copy must find current, writes nothing after the sibling's
+  election, so the sibling's cue that it elected (`entered`, `resubscribed`, `reentered`) is its ordering
+  point: the receiver reads the room's head after that cue, waits until it applied that head, then cues
+  `<cue>-applied-by-receiver`, and the producers wait for that cue before they publish after the election. In
+  `subscription-ordered-reconnect` the reopened socket also re-asserts the sibling's room presence, which re-plans
+  the room's layout, and a page that has not accepted the new layout has no route to or from the sibling, so a copy
+  is retried as a repair: there the receiver first runs the settle's formation poll again
+  (`reentered-formation-poll`) before its head read; the re-entered sibling, once it heard the receiver's cue, reads
+  the room's head, waits until it applied it and cues `reentered-applied-by-sibling`; and each producer, once it
+  heard both cues, reads the room's head and waits until its own page applied it. In `subscription-ordered-entry`
+  and `-omission` the sibling keeps its socket and its presence, so the layout does not change, and its page holds
+  its own election from the response its subscribe asserts `active` before it cues. No cell waits a fixed margin for
+  the election's delta.
 - `subscription-ordered-reconnect` (`ws`, `rtc`, `rtc-with-ws-fallback`): a reconnect reads as an omission. Both
   producers publish `p1` and `p2` to the receiver and the sibling on their page-minted tracks; the sibling's product
   socket closes; the producers probe until the receiver alone is expected and publish `p3` and `p4` to it. A closed
@@ -587,7 +630,7 @@ the result events of `messages.subscriptions` and of the subscription rows read,
   continuation names (`AlmConformanceContinuationDefinition.role`, here the sibling) once its gate holds, here the
   receiver's cue that `p4` was confirmed. The continuation reopens the socket, waits for the token to read `active`
   under the new connection generation, for its subscription row and for its own room presence under that
-  generation (the page restored it), waits a 2 s delta margin and cues `reentered`; the producers probe
+  generation (the page restored it) and cues `reentered`; the producers probe
   readiness and publish `p5`, which the sibling receives with `ordering-position` `omitted` prior `2` per track and
   without `p3` or `p4`. The sibling holds its election until both producers' `p5` loops end, and no producer
   dispatches a repair or admits a gap NACK about the cell's tracks.
@@ -651,9 +694,10 @@ reliability. No hosted manifest carries them (D505).
   owner grants the sender's principal `publish` and `subscribe`, so the sender's sibling, elected, receives the copy
   over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is
   absent from the audience and asserts the publication's absence.
-- `granted-rtc-relay-only` (three-agent): the receiver PUTs `{ topologyKind: 'tree', degreeLimit: 2,
-  meshParamK: 2 }` to the room's topology config through `http.request`, so the three pages form a path, and the
-  sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
+- `granted-rtc-relay-only` (three-agent): the receiver's start state PUTs `{ topologyKind: 'tree', degreeLimit: 2,
+  meshParamK: 2 }` to the room's topology config through `http.request` (`roomTopology: 'reshaped'`), so the three
+  pages form a path; in the lane every page then holds the path before `armed` (the runtime diagnostic contract's
+  lane cell settle), and the sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
   `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
   to the receiver; the sender publishes until the receiver hears it. Recipient-b delivers nothing whether the path
   puts it in the middle, where it forwards the frame, or at a leaf, where the frozen audience routes it no copy, so
@@ -666,7 +710,9 @@ reliability. No hosted manifest carries them (D505).
 - `granted-rtc-ordered-relay` (three-agent, `rtc`, after `granted-rtc-relay-only` on the same path config): the
   sender publishes a receipted (`all-logical-recipients`, at-least-once) track it mints (`orderingKey`, no
   `seq`): `p1`, then `p2` held at the transport, then `p3`, and releases `p2` only after its repair dispatch
-  commits. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
+  commits. The hold starts only once `p1`'s receipt reads `acknowledged` (`observe-acknowledged-1`, asserted by
+  `assert-reached-1`), so the receiver entered the track at `p1` whichever next hops the layout gave the sender; a
+  carrier's acceptance settles at the first next hop alone. The receiver receives `p1`–`p3`, its `ordering-position` for `p1` reads `entered` with prior `0`, and no
   `omitted` event appears. Recipient-b, a publish-only peer, asserts the publications' absence and records its next
   hops; a frame frozen to the receiver reaches it only when the path puts it in the middle, so it asserts no
   admission. The drawn layout is recorded, and when recipient-b is the middle the gap NACK it forwards is in the
@@ -676,10 +722,10 @@ reliability. No hosted manifest carries them (D505).
 
 `receipted-relay-path` (`scenarios/relay-path/`, three-agent, `rtc`, full scope)
 sends a non-granted receipted multicast through the forced path. The receiver owns
-the room, so it PUTs the path config the granted path cells use
+the room, so its start state PUTs the path config the granted path cells use
 (`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 }`, one shared topology
-command), and every page connects with `connect.minReadyPeers: 1`. Once the sender
-says it listens, the receiver cues that the path is set; then the sender and the
+command, from `roomTopology: 'reshaped'`), and every page connects with `connect.minReadyPeers: 1`. Once the sender
+says it listens, the receiver cues `start`; then the sender and the
 receiver each send one `receiver`-receipted (`all-logical-recipients`) multicast
 with no grant, hear the other origin's one send, record their overlay next hops in
 a `health` read and read their own receipt after their window: `acknowledged`, two
@@ -689,8 +735,11 @@ window. The receiver DELETEs the config once it has read its own receipt and the
 sender has cued that it read its. Three sessions in a tree of degree at most two
 form a path, so whenever both sends route on one planned path at least one origin
 is a leaf and its send is relayed, the far leaf's signed ACK forwarded back. The
-PUT only requests the reshape, so each origin reads its page's health until the
-accepted overlay is the tree, and only then sends. Each origin's receipt names the
+PUT only requests the reshape, so in the lane's settle every page reads its own
+health until its accepted layout is the tree its own head read names or one that replaced it
+(`reshape-in-force`), then waits out the
+forwarding window of the replaced layout (`replaced-layout-forwarding`, half the
+overlap the server states), before `armed`. Each origin's receipt names the
 hops it confirmed through; the cell asserts neither which agent relays nor through
 which hop. After the run the identity assessment fails the cell unless at least one
 origin's ending receipt confirms both recipients through one hop: the sender
@@ -739,7 +788,8 @@ neither the field nor the waits.
 
 The `ordering-gap-repair` conformance scenario runs over the single-hop carriers `ws` and `rtc`
 (`ALM_CONFORMANCE_SINGLE_HOP_CARRIERS`) and repairs an in-window gap by range. The sender sends seq 1 and
-proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`), arms the native hold of its type on each carrier the cell can hold,
+proves it left (`observe-transport-accepted-1`, asserted `transport-accepted` or `acknowledged`; a room of two pages
+gives the sender one next hop, so the carrier's acceptance orders seq 1 first), arms the native hold of its type on each carrier the cell can hold,
 sends seq 2, then holds that one message by the id its send returned (`hold-message-2-<carrier>`, a
 `fault.inject` whose `match.msgId` names `{resultCache.<send-2>.value.msgId}`) and releases the hold of
 the type, so seq 3 passes while seq 2 stays held across every retransmission. The hop reads the gap and
@@ -764,7 +814,8 @@ receives as its own gap, so the hand-over of an ordered message is a carried lim
 
 The `repair-exhausted` conformance scenario runs over `rtc` alone, on
 three agents: two receivers, each ordering the track itself. It is the gap repair whose message hold is never
-released. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
+released. The sender opens the gap only once both receivers cued that they delivered seq 1 (D630): that cue is its
+ordering point, and it waits for no carrier acceptance of seq 1. Each receiver reports the gap once seq 3 arrives: the first report spends the message's one retransmit
 (`maxRepairs`), still held, and the second receiver's report is another attempt identity and finds the budget spent.
 The sender sends seq 4 too, whose arrival reports the gap again at both receivers; a later report names its
 requester's first attempt and charges nothing (D573), so it states nothing more. The sender then observes seq 2's
@@ -808,16 +859,17 @@ scenario channel on both connects, so both pages hear the server's group-state d
 rejoins it through the self-service membership route, each request under its own `x-request-id`
 (`alm-ws-server-originated-sender-trace-left`, then `-trace-active`), and asserts that each response echoes it. The
 receiver waits for each delta as a `rallar.browser.ws.message` whose `data.topicId` is `group-state.event` and whose
-envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's, holds one second
-for its ACK to settle, reads `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform admin under
-`prod-in-memory`) and asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
+envelope trace `data.traceId` and event trace `data.payload.event.traceId` both equal the request's. No page sees the
+server record its ACK, so it repeats `GET /api/admin/operations/realtime` (the lane's receiver, `bob`, is a platform
+admin under `prod-in-memory`) with the settle's poll budget until the entry below holds, then reads it once more and
+asserts with `matchesShape` that `almReceipts.diagnostics.messages` holds an entry with the
 rejoin's trace and `lastSettlementKind` `acknowledgement`. Those entries are process-local, so the cell runs in the
 one-process local lane: hosted manifest 18 withholds it, since its combined connect carries the scenario topic's
 selector. The identity assessment joins the echo, the one receiver wait that names each trace, the delta's `msgId`, and
 the admin entry of the last trace, confirmed by the receiver's own session. The traces are the same in every run, since
 neither a wait's `payloadFields` nor an assert's `expected` resolves placeholders, so an API process that outlives one
-run may still list an earlier run's entry under the trace; the session join, not the recipe assert, scopes the entry to
-the run.
+run may still list an earlier run's entry under the trace, which then also ends the poll early; the session join, not
+the recipe assert, scopes the entry to the run.
 
 The congestion cells run in the two-agent family, in the full scope, after its other cells (D187). Each holds the
 sender's own carrier at its high watermark with a transport `fault.inject` of action `backpressure` on the cell's
@@ -875,7 +927,9 @@ not settle `repair-exhausted` and the release delivers it.
 sender and reconnects it with the production count and byte limits and `maxTracks: 560`, since each of its tracks counts
 in its own ledger, sends seq 1 on 280 ordering keys of its own (`alm-rtc-churn-bounded-tracks-{loop.index}`: the cap of
 256 and a margin) in a `loop` with `intervalMs: 75`, observes the last one `transport-accepted` and closes; the receiver
-receives the 280, holds one second, and its `stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
+receives the 280, waits in its cell's history for the memory store's `ordering-tracks` statement of 256 (the eviction
+pass a newly opened track runs after its admission commit states it, not the delivery the arrivals count), and its
+`stats` reads `rallar.alm.orderingTracks` both `lte` and `gte` 256 (D191):
 the sum of every store that stated a count since the receiver's last `close`, where the 280 volatile tracks fill the
 memory store to the cap and the cell sends nothing durable, so the IndexedDB store adds none. Hosted manifest 18
 withholds all three, so manifests 18 and 22 stay as recorded. The cells live in `conformance/alm/scenarios/fairness/`.
@@ -1412,6 +1466,18 @@ Operators:
 - `equals` / `notEquals` / `contains` / `exists` — historical semantics kept:
   `notEquals` passes when the path is missing, and `gte` / `lte` accept only
   values that are already numbers.
+- `equals` names an expected value or a comparison source, never both and
+  never neither. With `expected` it compares the path with that value. With
+  `comparisonSource` it compares two evidence paths and passes only when both
+  paths exist and hold the same JSON value, so a missing path on either side
+  fails; the result value then carries `actual`, `comparisonActual`, `exists`
+  and `comparisonExists`.
+- `gte` names an expected number or a comparison source, never both. With
+  `comparisonSource` it passes only when both paths exist, both hold numbers,
+  and the source's number is at or after the compared one; a non-number on
+  either side fails without coercion. Only `equals`, `gte` and
+  `sameUniqueStringSet` take a `comparisonSource`; `sameUniqueStringSet`
+  always takes one.
 - `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
   coerced with `Number(...)` and must be finite; `between` takes an inclusive
   `[low, high]` pair and fails on a malformed pair.

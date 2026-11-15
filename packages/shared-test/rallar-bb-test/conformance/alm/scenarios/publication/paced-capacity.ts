@@ -91,8 +91,12 @@ function toPacedCapacitySenderCommands(sender: AlmConformanceStepInput): readonl
         ...ADMITTED_INDEXES.flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
         ),
-        // A send without a receipt is `transport-accepted` once its socket takes it: the local WS lane lost the second
-        // admitted value to a restoring close 2 ms later, before the relay forwarded it.
+        // A deliberate tradeoff: the pause waits out the relay forwarding the admitted values before the restoring
+        // close, since a send without a receipt is `transport-accepted` once its socket takes it (the local WS lane lost
+        // the second value to a close 2 ms later). The receiver's arrival of each value proves it, but no event on the
+        // sender's page does: its body opens with the lowered reconnect, whose close would end a cue subscription its
+        // arming run opened, and the lane runs no continuation for a two-agent cell. The witness would come from a cue
+        // subscription the sender opens after that reconnect.
         toPauseCommand(sender, 'delivery-settles', PUBLICATION_CADENCE_MS),
         ...toLimitsReconnectCommands(sender, 'restored', {})
     ];

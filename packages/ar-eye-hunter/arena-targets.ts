@@ -1,3 +1,5 @@
+import { createSeededRandom } from '@shared/random/create-seeded-random.ts';
+
 import {
     ArenaSimulationState,
     type ArenaEvent,
@@ -16,7 +18,6 @@ import {
     clamp,
     distance3,
     dot3,
-    mulberry32,
     normalize3,
     round2,
     roundVec3,
@@ -166,7 +167,7 @@ interface CreateTargetInput {
 }
 
 export function createTarget({ id, index, seed, nowEpochMs }: CreateTargetInput): EyeTargetState {
-    const rng = mulberry32(seed + index * 991);
+    const rng = createSeededRandom(seed + index * 991);
     const ring = index % 4;
     const angle = (index / TARGET_COUNT) * Math.PI * 2 + rng() * 0.28;
     const orbitRadius = 14 + ring * 10.5 + rng() * 4.5;

@@ -7,7 +7,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
@@ -37,6 +37,7 @@ export const subscriptionDelivery: AlmConformanceScenarioDefinition = {
     laneFamily: 'four-role',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toSubscriberCommands(recipient)
@@ -61,7 +62,7 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toReceivedPublicationCommands(owner)
     ];
 }

@@ -126,6 +126,54 @@ describe('Relic expedition AI factory', () => {
         }));
     });
 
+    it('names the blueprint issues, then the visual misfits, of generated output it falls back from', async () => {
+        const withoutExit = blueprintWithoutExit();
+        const fallback = vi.fn();
+        const misfitFallback = vi.fn();
+
+        await createRelicExpeditionInitialStateFactory({
+            configuration: expeditionAiConfiguration('mock'),
+            now: () => 7,
+            mockBlueprint: withoutExit,
+            onFallback: fallback
+        })('room-1', 'ensure');
+        await createRelicExpeditionInitialStateFactory({
+            configuration: expeditionAiConfiguration('mock'),
+            now: () => 8,
+            mockBlueprint: { ...createProceduralRelicExpeditionBlueprint({ seed: 'room-1:ensure:ci' }), theme: 'Moonlit Keep' },
+            onFallback: misfitFallback
+        })('room-1', 'ensure');
+
+        expect(fallback).toHaveBeenCalledWith(expect.objectContaining({
+            error: 'Invalid Relic expedition blueprint: $.rooms: Blueprint must include room id exit.; ' +
+                '$.rooms.monster.neighbors: Unknown neighbor exit.; ' +
+                '$.relics[7].roomId: Relic roomId must refer to a room in the blueprint.'
+        }));
+        expect(misfitFallback).toHaveBeenCalledWith(expect.objectContaining({
+            error: `Generated blueprint failed Relic visual fit: $.theme: ${VISUAL_THEME_MESSAGE}`
+        }));
+    });
+
+    it('reports blueprint issues and visual-fit issues of an evaluated blueprint separately', async () => {
+        const report = await runRelicExpeditionDeterministicAiEvaluation({
+            gameId: 'room-1',
+            reason: 'ensure',
+            seed: 'room-1:ensure:ci',
+            timeoutMs: 15_000,
+            mockBlueprint: { ...blueprintWithoutExit(), theme: 'Moonlit Keep' }
+        });
+
+        expect(report.results[0]?.errors).toEqual([
+            'blueprint: $.rooms: Blueprint must include room id exit.',
+            'blueprint: $.rooms.monster.neighbors: Unknown neighbor exit.',
+            'blueprint: $.relics[7].roomId: Relic roomId must refer to a room in the blueprint.',
+            'visual-fit: $.rooms: Blueprint must include room id exit.',
+            'visual-fit: $.rooms.monster.neighbors: Unknown neighbor exit.',
+            'visual-fit: $.relics[7].roomId: Relic roomId must refer to a room in the blueprint.',
+            `visual-fit: $.theme: ${VISUAL_THEME_MESSAGE}`
+        ]);
+    });
+
     it('falls back to procedural setup when a provider times out', async () => {
         const provider = createAbortAwareProvider();
         const factory = createRelicExpeditionInitialStateFactory({
@@ -212,6 +260,13 @@ describe('Relic expedition AI factory', () => {
         }));
     });
 });
+
+const VISUAL_THEME_MESSAGE = 'Theme must be one of: Morning Garden Keep, Koi Courtyard Citadel, Sunlit Lantern Castle, Breeze Watchtower.';
+
+function blueprintWithoutExit(): RelicExpeditionBlueprint {
+    const blueprint = createProceduralRelicExpeditionBlueprint({ seed: 'room-1:ensure:ci', source: 'mock' });
+    return { ...blueprint, rooms: blueprint.rooms.filter((room) => room.id !== 'exit') };
+}
 
 function expeditionAiConfiguration(
     mode: RelicAiExpeditionMode,
