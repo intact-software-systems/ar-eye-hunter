@@ -1750,7 +1750,10 @@ describe('alm-conformance recipe family', () => {
                         held.push(label);
                         // Two pages: the sender's one peer, or over ws the server, is its only next hop.
                         const oneNextHop = scenario.roles.length === 2;
-                        if (!oneNextHop && !isAcknowledgedPoint(between, send.handleId!) && !isArrivalCuePoint(between, scenario, role)) {
+                        if (
+                            !oneNextHop && !isAcknowledgedPoint(between, 'handleId' in send ? send.handleId : undefined) &&
+                            !isArrivalCuePoint(between, scenario, role)
+                        ) {
                             uncovered.push(label);
                         }
                     }
@@ -1787,12 +1790,13 @@ function toHeldTrackSends(commands: readonly RallarBlackBoxTestCommand[]): reado
 }
 
 /** The send's handle observed until `acknowledged`, and its state asserted to be that ending. */
-function isAcknowledgedPoint(between: readonly RallarBlackBoxTestCommand[], handleId: string): boolean {
+function isAcknowledgedPoint(between: readonly RallarBlackBoxTestCommand[], handleId: string | undefined): boolean {
     const observe = between.find((command) => command.kind === 'messages.observe' && command.handleId === handleId && command.state.join() === 'acknowledged');
-    return observe !== undefined && between.some((command) =>
-        command.kind === 'assert' && command.source === `resultCache.${observe.commandId}.value.state` &&
-        command.operator === 'equals' && command.expected === 'acknowledged'
-    );
+    return handleId !== undefined && observe !== undefined &&
+        between.some((command) =>
+            command.kind === 'assert' && command.source === `resultCache.${observe.commandId}.value.state` &&
+            command.operator === 'equals' && command.expected === 'acknowledged'
+        );
 }
 
 /** A cue from each expected recipient, which every one of them sends only once its own arrival wait passed. */
@@ -1801,24 +1805,25 @@ function isArrivalCuePoint(
     scenario: AlmConformanceScenario,
     sender: AlmConformanceRole
 ): boolean {
-    const awaitedCues = between.flatMap((command) => command.kind === 'wait' ? [toCueName(command.match.equals)] : []);
+    const awaitedCues = between.flatMap((command) => command.kind === 'wait' && isCuePayload(command.match.equals) ? [command.match.equals.cue] : []);
     const expected = scenario.roles.filter((role) => role !== sender).map((role) => toAlmConformanceRoleRecipe(scenario, role)!.commands)
         .filter((commands) => commands.some(isArrivalWait));
     return expected.length > 0 && expected.every((commands) => {
         const arrivalAt = commands.findIndex(isArrivalWait);
         return commands.some((command, index) =>
-            index > arrivalAt && isRallarBlackBoxTestMessagesSendCommand(command) && awaitedCues.includes(toCueName(command.payload))
+            index > arrivalAt && isRallarBlackBoxTestMessagesSendCommand(command) && isCuePayload(command.payload) &&
+            awaitedCues.includes(command.payload.cue)
         );
     });
 }
 
 function isArrivalWait(command: RallarBlackBoxTestCommand): boolean {
-    return command.absent !== true && (command.kind === 'messages.received' ||
-        (command.kind === 'wait' && command.match.kind === 'message' && toCueName(command.match.equals) === undefined));
+    return (command.kind === 'messages.received' && command.absent !== true) ||
+        (command.kind === 'wait' && command.absent !== true && command.match.kind === 'message' && !isCuePayload(command.match.equals));
 }
 
-function toCueName(value: unknown): string | undefined {
-    return isJsonRecordValue(value) && typeof value.cue === 'string' ? value.cue : undefined;
+function isCuePayload(value: unknown): value is Readonly<{ cue: string; }> {
+    return isJsonRecordValue(value) && typeof value.cue === 'string';
 }
 
 /** A send, a received read, or a wait for a message: a role's own publication activity, cues included. */
