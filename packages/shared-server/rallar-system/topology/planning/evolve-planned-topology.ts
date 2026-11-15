@@ -14,6 +14,7 @@ import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shar
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
+import { computeTopologyHopLevels } from './compute-topology-hop-levels.ts';
 
 export interface EvolvePlannedTopologyInput {
     readonly previous: RallarOverlayTopologySnapshot;
@@ -140,26 +141,7 @@ function computeHopEccentricity(
     nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
     sessionId: string
 ): number {
-    return computeHopLevels((current) => nextHopsBySessionId[current] ?? [], sessionId).length - 1;
-}
-
-/** Breadth-first levels from the root, each in canonical order, so a level-order scan is deterministic. */
-function computeHopLevels(
-    neighboursOf: (sessionId: string) => readonly string[],
-    rootSessionId: string
-): readonly (readonly string[])[] {
-    const visited = new Set([rootSessionId]);
-    const levels: string[][] = [[rootSessionId]];
-    for (let depth = 0; depth < levels.length; depth += 1) {
-        const nextLevel = [...new Set((levels[depth] ?? []).flatMap(neighboursOf))]
-            .filter((sessionId) => !visited.has(sessionId))
-            .sort(compareRtcTopologyIdentifiers);
-        nextLevel.forEach((sessionId) => visited.add(sessionId));
-        if (nextLevel.length > 0) {
-            levels.push(nextLevel);
-        }
-    }
-    return levels;
+    return computeTopologyHopLevels((current) => nextHopsBySessionId[current] ?? [], sessionId).length - 1;
 }
 
 function computeEvolvedGraph(
@@ -194,7 +176,7 @@ function computeLeaderBreadthFirstJoins(input: LeaderBreadthFirstJoinsInput): We
     const { degreeLimit, globalGraph } = input.evolve;
     const joined = input.graph.copy();
     for (const sessionId of input.joinedSessionIds) {
-        const parentSessionId = computeHopLevels((current) => joined.neighbors(current), input.leaderSessionId)
+        const parentSessionId = computeTopologyHopLevels((current) => joined.neighbors(current), input.leaderSessionId)
             .flat()
             .find((candidate) => joined.degree(candidate) < degreeLimit);
         if (parentSessionId === undefined) {
