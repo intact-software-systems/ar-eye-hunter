@@ -53,3 +53,13 @@ the current cutout, scrolling-camera or player-host architecture.
 
 No still image proves animation, multitouch, multiplayer, load time, frame pacing
 or host recovery. New progress must include actual Babylon gameplay captures.
+
+## Current local raid-loop gameplay
+
+The latest implemented footage is [the touch gameplay recording](grumpy-loop-gameplay.webm),
+with [fountain spray](grumpy-loop-fountain.png), [the rolling cart](grumpy-loop-cart.png),
+[an authority call](grumpy-loop-alarm.png) and [freezing](grumpy-loop-frozen.png).
+These are actual Babylon frames from a 390 × 844 Chromium viewport, not mockups.
+The orange BOT PAL is simulated. See [the current trial](../babylon-local-trial.md)
+for implemented limits and physical-device checks still needed. Earlier captures
+remain historical, including the superseded owner-to-player mini-zap.

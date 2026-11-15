@@ -8,7 +8,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from './cutout-art.ts';
-import { TOWN_BANK, TOWN_ICE, TOWN_LIMIT, TOWN_SHOPS, type TownShop } from './town-map.ts';
+import { TOWN_BANK, TOWN_ICE, TOWN_LIMIT, TOWN_SHOPS, type TownShop } from './town/map.ts';
 
 export interface MarketShopVisual {
     readonly id: string;

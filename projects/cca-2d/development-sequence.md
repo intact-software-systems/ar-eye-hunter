@@ -1,14 +1,14 @@
 # Development sequence, agents, and tools
 
 Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
-Only the next two implementation slices are concrete. The basic local Babylon
-trial and Grumpy Town interactions are implemented; phone feel and device qualification remain open.
+Only the next two implementation slices are concrete. The local Babylon trial, varied square and chase/freeze/rescue loop are implemented; phone feel and device qualification remain open.
 
 ## Existing foundation and change of direction
 
 The [local Babylon trial](babylon-local-trial.md) now replaces the Phaser entry.
 It implements movement, dash-and-drop, slippery surfaces, camera zoom and pause/reset,
-plus six interactive owners, fruit spills, cleanup, powder and mini-zappers.
+plus six interactive owners, fruit spills, fountain spray, a rolling cart, cleanup,
+powder, mini-zappers, bounded raids and a clearly labelled local bot companion.
 It includes real browser captures and focused rule/browser tests. The historical
 server prototype remains outside the app; no new multiplayer is implemented.
 
@@ -17,49 +17,36 @@ The new visual target is [cutout market](visual-concepts/README.md), with a
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Current slice 1: prove the chase, freeze and rescue loop locally
+## Current slice 1: phone feedback on the local chase and rescue loop
 
-**Outcome:** mischief buys useful time, escalating danger is readable, and helping
-friends creates funny choices. The current interaction playground is the base,
-not evidence that the new game loop works yet.
+**Implemented:** fruit, fountain and cart create different cleanup duties. Tidy
+owners witness mischief and chase with dodgable score penalties. Three witnessed
+actions trigger a four-second interruptible call, followed by a 20-second local
+raid. Captures freeze for six seconds; proximity rescue and auto-thaw grant brief
+protection. The orange BOT PAL demonstrates rescue without claiming multiplayer.
 
-Implement and test a small district before expanding the town further. Give it
-three contrasting interaction sources: the existing fruit stall, a redirected
-fountain jet and a rolling parcel cart. Their rule state must remain bounded.
-Laundry, toilet overflow and additional personalities stay later candidates.
+The local rules, actual touch-input captures and browser controls are checked.
+The independent review found a corner-oscillation route bug; collision-clear routes
+and a behind-stall arrival/rescue regression address it. No unrelated app changes
+or broader CI investigation belong to this slice, following the user's direction.
 
-- Owners prioritize putting their own business in order. Busy owners are
-  distracted; owners with tidy shops watch for witnessed mischief.
-- Watching owners visibly warn, chase within bounded range/time, then zap away a
-  small number of points. The current immediate zap-before-cleanup sequence must
-  change to support the user's safe-while-busy rule.
-- A witnessed prank can start an interruptible alarm. Announce the entrance and
-  affected district, run one short authority raid, then a quiet cooldown.
-- Authority catches freeze players. A nearby friend can thaw them with a brief
-  dwell; automatic release, visible countdown and post-release protection prevent
-  long exclusion and immediate recapture. Test roughly 6–10 seconds frozen.
-- Preserve floating movement + one dash/prank action. Rescue should not require
-  another button. Avoid awarding repeat capture/rescue farming.
+**Remaining outcome:** establish whether this is funny and readable on a physical
+phone before expanding content. Try these concrete tasks:
 
-**Working hypothesis, not a confirmed scoring decision:** individual mischief
-scores with shared survival during raids; several players can reach a personal
-winning target. Rescues earn a modest benefit. Pure cooperative and competitive
-variants remain alternatives until playtesting. First use a clearly identified
-local companion stand-in to exercise rescue; real social fun requires slice 2.
+- Tip fruit, leave its cleaning owner behind, and escape the tidy neighbour.
+- Redirect the fountain and release the cart; use the different hazards while escaping.
+- Interrupt one call, then deliberately allow another raid and dodge its targets.
+- Rescue the orange bot or let it rescue you. Compare six seconds frozen with ten.
+- Rotate, zoom, pause/background and resume on phone/iPad; check thumb comfort and frame pacing.
 
-**Acceptance:**
+**Working hypothesis:** individual mischief scores with shared survival during
+raids; several players can eventually qualify. The local scene has points but no
+round timer, target qualification or winners yet. Pure cooperation and competitive
+optional rescue remain alternatives until real multiplayer playtests.
 
-- Players see why an owner is safe, watching or chasing, and why a raid arrives.
-- Fresh messes create opportunities; repeatedly dashing one stall does not win.
-- Players can dodge/escape, identify the freeze timer and perform a rescue.
-- Ordinary zaps and authority catches do not stack harsh losses and repeated lockout.
-- Existing phone/touch/keyboard, pause/reset and resource-lifetime checks remain green.
-- Actual phone captures demonstrate the sequence; physical device testing checks
-  control comfort, loading and sustained frame pacing separately.
-
-**Decision:** the user judges whether this creates anticipation, laughter and
-voluntary rescues. Do not add more prank types or larger authority crowds before
-this small loop works.
+**Decision:** tune based on anticipation, readable consequences and voluntary
+rescues. Keep laundry, toilet overflow, more personalities and larger crowds out
+of the immediate scope. Stay in the draft PR while this design is being tried.
 
 ## Next slice 2: Rallar-only two-player hosting and recovery
 

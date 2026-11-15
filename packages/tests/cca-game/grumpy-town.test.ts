@@ -19,7 +19,7 @@ describe('grumpy town pranks', () => {
         expect(start.town.fruit).toHaveLength(0);
         dashed = advance(dashed, 0.3);
         expect(dashed.town.spills).toBe(1);
-        expect(dashed.town.npcs[0].mode).toBe('angry');
+        expect(dashed.town.npcs[0].mode).toBe('cleaning');
     });
     it('scattered fruit causes slipping off the ice, and the owner eventually cleans and restocks', () => {
         let state = computePracticeTick({ ...createPracticeState(), x: 5, z: 1.35 }, { x: 0, z: 1, dash: 1 }, 1 / 60);
@@ -29,18 +29,19 @@ describe('grumpy town pranks', () => {
         state = advance({ ...state, x: 0, z: -15 }, 35);
         expect(state.town.fruit).toHaveLength(0);
         expect(state.town.shops[0].tipped).toBe(false);
-        expect(state.town.npcs[0].mode).toBe('grumpy');
+        expect(state.town.npcs[0].mode).toBe('watching');
         expect(state.town.cleaned).toBeGreaterThan(0);
     });
-    it('owner warning aims at a fixed spot so movement can dodge a temporary mini zap', () => {
-        const start = computePracticeTick({ ...createPracticeState(), x: 5, z: 1.35 }, { x: 0, z: 1, dash: 1 }, 1 / 60);
+    it('a tidy owner aims at a fixed spot; escaping dodges the three-point penalty', () => {
+        const initial = createPracticeState();
+        const start = computePracticeTick({ ...initial, x: 5, z: 0, town: { ...initial.town, score: 20 } }, { x: 1, z: 0, dash: 1 }, 1 / 60);
         const warned = advance({ ...start, vx: 0, vz: 0, dashTime: 0 }, 0.9);
         expect(warned.town.npcs[0].mode).toBe('warning');
         const hit = advance(warned, 1);
-        expect(hit.miniUntil).toBeGreaterThan(hit.elapsed);
+        expect(hit.town.score).toBe(17);
+        expect(hit.shieldUntil).toBeGreaterThan(hit.elapsed);
         const escaped = advance({ ...warned, x: 0, z: -10 }, 1);
-        expect(escaped.miniUntil).toBe(0);
-        expect(advance(hit, 8).miniUntil).toBeLessThan(advance(hit, 8).elapsed);
+        expect(escaped.town.score).toBe(20);
     });
     it('powder pickup loads one dash, makes an owner dizzy and leaves a temporary puke patch', () => {
         let state = computePracticeTick({ ...createPracticeState(), x: -9, z: -11.5 }, { x: 0, z: 0, dash: 0 }, 1 / 60);
@@ -66,8 +67,8 @@ describe('grumpy town pranks', () => {
     it('a fart upsets a nearby owner without requiring a damaged stall', () => {
         const state = computePracticeTick({ ...createPracticeState(), x: 5, z: 0 }, { x: 1, z: 0, dash: 1 }, 1 / 60);
         expect(state.town.spills).toBe(0);
-        expect(state.town.npcs[0].mode).toBe('angry');
-        expect(state.town.npcs[1].mode).toBe('grumpy');
+        expect(state.town.npcs[0].mode).toBe('chasing');
+        expect(state.town.npcs[1].mode).toBe('chasing');
     });
     it('powder also affects the player, slows movement and recovers without repeated sickness', () => {
         let state = computePracticeTick({ ...createPracticeState(), power: 'powder' }, { x: 1, z: 0, dash: 1 }, 1 / 60);
@@ -84,6 +85,6 @@ describe('grumpy town pranks', () => {
         const state = computePracticeTick({ ...createPracticeState(), x: 1, z: -4, power: 'zapper' }, { x: 0, z: 1, dash: 1 }, 1 / 60);
         const target = state.town.npcs[0];
         expect(target.miniUntil).toBeGreaterThan(state.elapsed);
-        expect(state.town.zaps.some((zap) => zap.target.x === target.x && zap.target.z === target.z)).toBe(true);
+        expect(state.town.zaps.some((zap) => Math.hypot(zap.target.x - target.x, zap.target.z - target.z) < 0.1)).toBe(true);
     });
 });

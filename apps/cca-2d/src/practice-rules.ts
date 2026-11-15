@@ -1,5 +1,8 @@
-import { TOWN_BANK, TOWN_ICE, TOWN_LIMIT, TOWN_SHOPS, type TownPoint, type TownPrank } from './town-map.ts';
-import { computeTownTick, createTownState, type TownState } from './town-rules.ts';
+import { TOWN_ICE, type TownPoint, type TownPrank } from './town/map.ts';
+import { computeTownPosition } from './town/navigation.ts';
+import { getTownJet, isTownSprayed } from './town/props.ts';
+import { computeTownTick } from './town/rules.ts';
+import { createTownState, type TownState } from './town/state.ts';
 
 export interface PracticeInput {
     readonly x: number;
@@ -13,6 +16,8 @@ export interface PracticeCloud {
     readonly age: number;
 }
 export interface PracticeState {
+    readonly frozenUntil: number;
+    readonly shieldUntil: number;
     readonly x: number;
     readonly z: number;
     readonly vx: number;
@@ -29,7 +34,6 @@ export interface PracticeState {
     readonly clouds: readonly PracticeCloud[];
     readonly town: TownState;
     readonly power: TownPrank;
-    readonly miniUntil: number;
     readonly dizzyUntil: number;
     readonly immuneUntil: number;
     readonly sickAt: number;
@@ -47,6 +51,8 @@ export function createPracticeState(): PracticeState {
     return {
         x: 0,
         z: -2,
+        frozenUntil: 0,
+        shieldUntil: 0,
         vx: 0,
         vz: 0,
         facingX: 1,
@@ -61,7 +67,6 @@ export function createPracticeState(): PracticeState {
         clouds: [],
         town: createTownState(),
         power: 'fart',
-        miniUntil: 0,
         dizzyUntil: 0,
         immuneUntil: 0,
         sickAt: -1
@@ -70,7 +75,7 @@ export function createPracticeState(): PracticeState {
 
 export function computePracticeTick(state: PracticeState, input: PracticeInput, seconds: number): PracticeState {
     const step = Math.max(0, Math.min(seconds, 1 / 30));
-    const dash = input.dash > state.consumedDash && state.cooldown <= 0;
+    const dash = input.dash > state.consumedDash && state.cooldown <= 0 && state.frozenUntil <= state.elapsed;
     const movement = computePracticeMovement({ ...state, dashTime: dash ? 0.2 + step : state.dashTime }, input, step);
     const elapsed = state.elapsed + step;
     const interactions = computeTownTick({
@@ -101,6 +106,18 @@ export function computePracticeTick(state: PracticeState, input: PracticeInput, 
 }
 
 function computePracticeMovement(state: PracticeState, input: PracticeInput, step: number): PracticeMovement {
+    if (state.frozenUntil > state.elapsed) {
+        return {
+            x: state.x,
+            z: state.z,
+            vx: 0,
+            vz: 0,
+            facingX: state.facingX,
+            facingZ: state.facingZ,
+            dashTime: 0,
+            slipping: false
+        };
+    }
     const magnitude = Math.max(1, Math.hypot(input.x, input.z));
     const x = input.x / magnitude;
     const z = input.z / magnitude;
@@ -113,7 +130,12 @@ function computePracticeMovement(state: PracticeState, input: PracticeInput, ste
     const speed = state.dizzyUntil > state.elapsed ? 2.5 : 3.6;
     const vx = dashTime > 0 ? facingX * 10 : state.vx + (x * speed - state.vx) * traction;
     const vz = dashTime > 0 ? facingZ * 10 : state.vz + (z * speed - state.vz) * traction;
-    const position = computePracticePosition(state, vx * step, vz * step);
+    const sprayed = isTownSprayed(state.town, state, state.elapsed);
+    const jet = getTownJet(state.town, state.elapsed);
+    const position = computeTownPosition(state.town, state, {
+        x: (vx + (sprayed ? jet.x * 2 : 0)) * step,
+        z: (vz + (sprayed ? jet.z * 2 : 0)) * step
+    });
     return {
         ...position,
         vx: position.x === state.x ? 0 : vx,
@@ -128,24 +150,9 @@ function computePracticeMovement(state: PracticeState, input: PracticeInput, ste
 function isPracticeSlippery(state: PracticeState): boolean {
     const onIce = Math.abs(state.x - TOWN_ICE.x) < TOWN_ICE.width / 2 &&
         Math.abs(state.z - TOWN_ICE.z) < TOWN_ICE.depth / 2;
-    return onIce || state.town.fruit.some((fruit) => Math.hypot(state.x - fruit.x, state.z - fruit.z) < 0.65) ||
+    return onIce || isTownSprayed(state.town, state, state.elapsed) ||
+        state.town.fruit.some((fruit) => Math.hypot(state.x - fruit.x, state.z - fruit.z) < 0.65) ||
         state.town.patches.some((patch) =>
             patch.kind === 'puke' && Math.hypot(state.x - patch.x, state.z - patch.z) < 1
         );
-}
-
-function computePracticePosition(state: PracticeState, dx: number, dz: number): TownPoint {
-    let x = Math.max(-TOWN_LIMIT, Math.min(TOWN_LIMIT, state.x + dx));
-    let z = Math.max(-TOWN_LIMIT, Math.min(TOWN_LIMIT, state.z + dz));
-    for (const obstacle of [...TOWN_SHOPS, TOWN_BANK]) {
-        const halfWidth = obstacle.width / 2 + 0.38;
-        const halfDepth = obstacle.depth / 2 + 0.38;
-        if (Math.abs(x - obstacle.x) < halfWidth && Math.abs(state.z - obstacle.z) < halfDepth) {
-            x = state.x;
-        }
-        if (Math.abs(x - obstacle.x) < halfWidth && Math.abs(z - obstacle.z) < halfDepth) {
-            z = state.z;
-        }
-    }
-    return { x, z };
 }

@@ -24,3 +24,4 @@ export const TOWN_SHOPS: readonly TownShop[] = [
 ];
 export const TOWN_BANK: TownObstacle = { x: 0, z: 18, width: 3.8, depth: 2.4 };
 export const TOWN_ICE: TownObstacle = { x: 0, z: 1.9, width: 4.6, depth: 4.2 };
+export const TOWN_FOUNTAIN: TownObstacle = { x: 0, z: 8, width: 2.4, depth: 2.4 };

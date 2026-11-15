@@ -1,117 +1,93 @@
-# Grumpy Town interaction slice
+# Grumpy Town interaction and raid trial
 
-Extend the local Babylon trial into a larger scrolling market while retaining the
-floating joystick, one dash-and-drop action, pinch zoom and keyboard equivalents.
-The intended feel is mischievous slapstick in a town of permanently unimpressed
-shopkeepers. The updated plan now proves chase/freeze/rescue locally before
-implementing multiplayer.
+The local Babylon playground now tests **make trouble, buy time, escape, rescue**.
+It preserves floating movement, one dash-and-drop action and zoom. The orange
+**BOT PAL** is a simulated companion; this is not multiplayer or a complete match.
 
-## Playable interactions
+## What is playable
 
-- Dash into a stocked fruit stall to tip its display and scatter fruit. Walking
-  into it does not cause damage. The fallen fruit rolls, settles and makes the
-  player skid; the same rule can apply to future human players.
-- Its owner gets angry, visibly aims a warning, then zaps the marked position.
-  Moving away dodges it; being hit makes the player temporarily tiny.
-- The owner walks out to collect the mess, then returns and restocks. Another
-  prank can interrupt this, but effects and debris have bounded lifetimes.
-- Walk over a powder or zapper pickup to equip one use. The same dash button
-  uses it: powder leaves a cloud causing dizziness and a cartoon puke puddle;
-  a zapper miniaturizes characters in front. The next action returns to the
-  normal fart drop. The HUD shows which prank is loaded.
-- Dizziness reduces movement briefly rather than reversing controls. Mini,
-  dizziness and puke poses expire. Characters recover and resume their jobs.
+| Interaction | Effect | Cleanup and counterplay |
+| --- | --- | --- |
+| Fruit stall | Dash tips a stocked display and scatters six slippery pieces | Its owner gathers fruit and restocks; tidy neighbours can chase |
+| Fountain | Dash knocks the nozzle into a sweeping jet | Water pushes the player and reduces traction; the apple owner repairs it |
+| Parcel cart | Dash releases it along a short route, obstructing the street | The pear owner follows and retrieves it; the cart returns to its starting place |
+| Powder pickup | The next dash leaves a cloud; exposed characters get dizzy and briefly puke | Dizziness slows movement without reversing input; cloud and puddle expire |
+| Zapper pickup | The next dash shrinks visible owners in front for six seconds | Mini owners move/clean slowly, then recover |
+| Fart drop | A witnessed dash attracts attention without needing to damage stock | Escape, break sight, or create a cleanup duty |
 
-The world extends across several blocks, with six shops and their owners. Start
-zoom is wider and overview zoom shows more town. Collision remains simple and
-rule-driven; rendered props and animation do not decide gameplay.
+Fresh stall/fountain/cart trouble awards 10 points. Each source has a 30-second
+reward cooldown, and hitting an already damaged source gives no additional points.
+The fruit owner also maintains the fountain; the pear owner retrieves the cart.
+These shared duties create route choices with the existing six NPCs.
 
-## Delivered interaction foundation
+The cart follows a bounded scripted path, rather than general physics. It does
+not yet scatter parcels. Water affects the player and slows owners/guards; it
+does not simulate fluid or push other props. Laundry, toilet overflow and
+cosmetic clothing remain candidates, not implemented content.
 
-1. Deterministic stall damage, debris, pickup/effect lifetimes,
-   dodgable retaliation and cleanup/restocking run behind the existing local loop.
-2. The renderer shows the larger town, toppled displays, rolling fruit, owner
-   moods, warning zaps and temporary transformations. Phone-sized browser tests,
-   a production build and actual gameplay captures accompany the PR update.
+## Busy owners buy safety
 
-The implementation uses the existing Babylon renderer and original cutout assets.
-A physics engine or extra buttons would add complexity without improving this
-first interaction loop. Full competitive matches and Rallar hosting remain
-separate from this local playtest.
+An owner with unfinished duties prioritizes cleanup, showing a broom, complaint
+and a shrinking work bar. Once finished, it returns to watching. Harmless walking
+does not trigger pursuit. Another tidy owner within sight can witness a dash and
+chase even while the affected owner is busy.
 
-## Proposed next gameplay loop: busy owners buy safety
+Chases last at most eight seconds, end after 1.5 seconds without sight, and use
+obstacle-aware routes. Within range an owner marks a fixed target for 0.85 seconds.
+Move out to dodge; a hit removes three points, never below zero, and grants two
+seconds of protection. Authority catches and owner penalties do not stack on an
+already frozen player. Owner zaps no longer miniaturize the player; the player's
+zapper pickup still miniaturizes NPCs.
 
-The next design proposal gives cleanup a strategic purpose. An owner who is
-cleaning is distracted. Once the business is in order, they watch the street;
-seeing an actual prank triggers a readable pursuit and aimed zaps that cost a
-small number of points. This chase/score loop is **not implemented in this slice**.
+Owners visibly repair the fountain for four seconds or retrieve the stopped cart
+for three. A bounded fallback resets unattended fountain/cart trouble after
+22/28 seconds; it is a safety limit, not a substitute for working routes.
 
-Use three clear states: cleaning, watching, chasing. Show cleanup progress and
-make the transition back to watching visible. Require a witnessed prank rather
-than punishing mere proximity. Chases need a range/time limit, telegraphed zaps,
-a way to break sight, and brief protection after a hit. A busy owner should
-finish cleaning before resuming enforcement; the current immediate retaliation
-would need to change to test that promise.
+## Authority raids and rescue
 
-Reward creating fresh trouble and taking risks elsewhere. Repeatedly knocking
-over the same stall should not generate unlimited points or permanent safety.
-Give recently harassed owners temporary resistance to repeated distractions.
-Other owners can witness the mess even while its own owner is busy, creating
-routes and opportunities for friends to distract, rescue or accidentally expose
-each other. Distinguish temporary powder/mini effects from cleanup duties.
+Three witnessed dash actions start a visible **four-second call**. The caller is
+marked; dash nearby, give it a cleanup duty or make it dizzy to interrupt the call.
+Four seconds leaves a usable window after the dash's three-second cooldown.
 
-A first round could last about two minutes, with each player trying to reach a
-mischief target; several players can succeed. Exact scoring and shared/personal
-objectives remain a design choice. First prove that one prank creates a useful
-window, a second owner creates a fair threat, and escaping feels earned.
+If the call completes, three grumps enter from the south for 20 seconds. A dashed
+district boundary marks their 12-unit pursuit area. They aim at a fixed red target
+for 0.7 seconds. Escape the target or leave the district; being hit freezes the
+target for six seconds without deducting points. Guards ignore frozen/protected
+targets and move on after their firing cooldown. A finished raid leaves a
+12-second quiet period; an interrupted call leaves six seconds.
 
-## Proposed escalation: authority raids and rescue
+Stand beside a frozen friend for one second, with a clear line between you, to
+thaw them. No new button is required. The bot follows and attempts the same rescue
+when the player freezes. A countdown and ice cutout make freezing visible; auto-thaw
+prevents abandonment. Rescued or auto-thawed characters get 2.5 seconds of protection.
+The player earns three points for the first companion rescue in a raid; further
+rescues still work but cannot farm that bonus.
 
-A watching shopkeeper can visibly call the authorities after witnessing trouble.
-The proposed sequence is a short interruptible alarm, a clearly marked arrival,
-a local raid lasting roughly 20 seconds, then departure and a cooldown. It should
-create a shared emergency without making the whole market unsafe indefinitely.
-This raid/rescue system is a proposal, not part of the current playable slice.
+Six seconds is a tuning hypothesis against the user's roughly ten-second idea.
+Frozen characters cannot yet wiggle or signal. Real friends, timed rounds,
+personal qualifying targets and multiple-winner results belong to later work.
 
-Authorities catch and freeze players as expressive statues. Nearby playable
-characters can thaw them through about one second of proximity, preserving the
-existing controls; a visible timer automatically releases anyone left behind.
-Test a six-second default against the user's roughly ten-second suggestion.
-Frozen players can still wiggle or signal. Newly freed players need brief capture
-immunity, and the catching authority must move on rather than camp the statue.
+## Construction and evidence
 
-Separate penalties: ordinary shopkeeper zaps can reduce points, while authority
-catches cause the temporary freeze. Avoid stacking a large loss, long freeze and
-instant recapture. Rescuing should be worthwhile without allowing repeated
-capture/rescue point farming. Shared survival with individual mischief targets is
-the recommended starting hypothesis, not a confirmed choice; fully cooperative
-scoring or competitive optional rescue remain alternatives for playtesting. Several players can still win a timed round.
+The immutable fixed-step simulation owns effects, duties, score, alarm, captures
+and rescue. Babylon only displays accepted state. Town rules and presentation live
+under `apps/cca-2d/src/town/`; `practice-rules.ts` owns movement and calls the town
+coordinator. Obstacle corners form routes with character clearance; the rolling
+cart can block route edges. Cutouts, simple meshes and SVG textures keep the build
+self-contained, without physics or runtime AI dependencies.
 
-First playtest only one bounded raid in a small district. Check that players see
-why it arrived, can find an escape route, understand thawing, and voluntarily
-rescue someone. Do not add large crowds before the simple chase, phone readability
-and eventual host simulation budget are proven.
+See [actual gameplay and trial limits](babylon-local-trial.md). Browser emulation
+and deterministic tests establish local behaviour, not physical Safari performance
+or social fun. Keep revisions in the existing draft PR and focus validation on CCA.
 
-## Design status and playtest decisions
+## Decisions still to test
 
-The user proposed both the busy-owner safety loop and authority freeze/rescue.
-The current recommendation is individual mischief scores with shared survival
-when raids arrive. The user asked which is most fun; that remains a hypothesis
-to test, not an approved claim about player behavior. Keep several possible
-winners, no elimination, modest rescue rewards and short recoverable setbacks.
+Individual mischief scores with cooperation during raids remain the recommended
+hypothesis. The user has not selected a final scoring model. Several players may
+qualify in a timed match; no elimination is intended.
 
-Update [the development sequence](development-sequence.md) as decisions change.
-Its next two slices are local chase/freeze/rescue proof, then real Rallar-hosted
-multiplayer/recovery. Avoid implementing more content while the core motivation
-is unsettled. Observe whether players change routes as cleanup finishes and
-voluntarily rescue friends; those are stronger signals than raw prank counts.
-
-
-## Variety direction
-
-The user requested more different things in the square. The proposed set now
-includes fruit displays, a central fountain, rolling parcel carts, laundry,
-powder and a street toilet. Each should create a different temporary hazard or
-cleanup duty. See [the game design](game-design.md#a-varied-town-square) for the
-interaction matrix. The next local slice starts with fruit, fountain and cart;
-the remaining ideas stay candidates rather than expanding the immediate scope.
+Watch whether players change routes as owners finish cleaning, deliberately use
+the fountain/cart, understand why a raid arrived, and voluntarily rescue a friend.
+If they merely spam the action, tune routes/rewards/attention before adding content.
+The [development sequence](development-sequence.md) keeps only the next two useful
+slices concrete: phone feedback on this loop, then Rallar hosting and recovery.

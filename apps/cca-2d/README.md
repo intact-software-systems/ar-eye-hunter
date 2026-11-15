@@ -1,8 +1,9 @@
 # CCA — Babylon cutout playground
 
 A local **Grumpy Town** playground in Babylon.js **9.36.0**. Dash into displays,
-scatter slippery fruit, annoy shopkeepers and dodge their mini-zaps. They sweep
-up and restock, ready for another round of mischief. Walk over powder or lightning
+scatter slippery fruit, break the fountain and release a parcel cart. Busy owners
+clean; tidy neighbours chase and zap away points. Authorities freeze characters
+during short raids. The orange BOT PAL demonstrates proximity rescue. Walk over powder or lightning
 pickups to load a different prank on the same dash button. The teal hoodie is you.
 
 ## Try it
@@ -28,8 +29,10 @@ npm --workspace cca-2d exec vite preview -- --host 0.0.0.0 --port 5183 --strictP
   feel the remaining momentum. Powder causes 3.2 seconds of dizziness and a puke
   puddle. A mini-zap shrinks its target for 6 seconds; it never removes control.
 - Owners telegraph a zap at a fixed ground target for 0.85 seconds. Move away to
-  dodge. They then sweep up fruit and restore their display. A nearby fart also
-  makes them angry.
+  dodge a three-point penalty. Busy owners prioritize cleanup before watching
+  again. Three witnessed dashes trigger a four-second interruptible call and then
+  a 20-second raid. Stay near a frozen friend for one second to rescue; auto-thaw
+  happens after six seconds. Raids do not deduct points.
 - Powder and zapper pickups are outside the purple and yellow stalls down the
   street. One pickup equips one dash; stocked counters replenish pickups after
   10 seconds. The HUD and action button show the loaded prank.
@@ -46,10 +49,12 @@ units with six interactive shops; the camera follows through the streets.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
 - `practice-controls.ts`: keyboard, independent pointer capture and pinch input.
 - `practice-rules.ts`: immutable movement, dash, traction, cloud lifetime and collision.
-- `town-map.ts`: common shop footprints, ice, bank and town boundary.
-- `town-rules.ts`: local town state, stall spills, owner reactions/cleanup and effect expiry.
-- `town-pranks.ts`: pickup collection and aim-assisted prank targeting.
-- `town-presentation.ts`: owner poses, speech, targets, debris and display state.
+- `town/rules.ts`: tick coordination for owners, props, raids, effects and rescue.
+- `town/state.ts` and `town/map.ts`: canonical state and map geometry.
+- `town/owners.ts`, `town/authorities.ts`, `town/companion.ts`: duties, pursuit, catch and rescue.
+- `town/mess.ts`, `town/props.ts`, `town/pranks.ts`: bounded interactions and reward limits.
+- `town/navigation.ts` and `town/routes.ts`: collision, sight and obstacle-aware travel.
+- `town/*presentation.ts`: visual state; it never decides game outcomes.
 - `practice-scene.ts`: Babylon engine, camera, actors and cloud presentation.
 - `cutout-actor.ts`: ground anchor and hinged limbs; visual poses never move rules.
 - `cutout-art.ts`: original SVG part textures, paper grain, shared unlit materials.
@@ -63,8 +68,9 @@ input listeners belong to abortable lifetimes. Context loss shows a reopen link.
 This entry replaces the earlier Phaser practice. That entry's collection,
 banking and online UI are removed from this trial. The separate historical
 `cca-server` / `packages/cca-game` prototype is outside the local renderer and is
-not a dependency. The next local slice proves chase/freeze/rescue; Rallar-only player-hosted
-multiplayer follows it. Neither is an implemented capability of this app.
+not a dependency. The local chase/freeze/rescue slice is implemented with a labelled bot companion.
+Rallar-only player-hosted multiplayer and recovery follow phone feedback. They are
+not yet capabilities of this app.
 
 ## Checks and evidence
 
@@ -76,7 +82,8 @@ npm --workspace cca-2d run build
 
 The browser suite covers visible controls, simultaneous touch movement/action,
 pinch zoom, desktop movement, responsive layouts, pause/reset and keyboard button
-activation, stall damage/retaliation/cleanup and powder pickup. It uses an isolated Chromium context and port 5182.
+activation, stall damage/cleanup, powder pickup, fountain/cart interactions and
+a full alarm/raid/freeze/recovery cycle. It uses an isolated Chromium context and port 5182.
 
 See [actual captures and trial limits](../../projects/cca-2d/babylon-local-trial.md).
 Physical iPhone/iPad comfort, Safari behavior and sustained frame pacing still

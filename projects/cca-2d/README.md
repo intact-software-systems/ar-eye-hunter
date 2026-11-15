@@ -24,7 +24,7 @@ before describing the look as achieved.
 
 The [Babylon local trial](babylon-local-trial.md) now implements movement,
 dash-and-drop, slipping, zoom, pause/reset and
-[interactive grumpy shopkeepers](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
+[interactive grumpy shopkeepers, fountain/cart, raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
 It replaces the old Phaser entry and includes actual gameplay captures. Collection,
 banking and multiplayer are absent from this focused trial. The historical CCA
 server prototype is independent; the new app does not connect to it.
@@ -34,7 +34,7 @@ Keep this directory name for continuity; “2D” no longer specifies the render
 
 | Document                                              | Owns                                                         |
 | ----------------------------------------------------- | ------------------------------------------------------------ |
-| [Grumpy Town](grumpy-town.md)                       | Stall damage, owner retaliation/cleanup and temporary pranks |
+| [Grumpy Town](grumpy-town.md)                       | Varied props, owner duties, pursuit, raids and local rescue |
 | [Local trial](babylon-local-trial.md)                 | Implemented controls, actual captures and current limits     |
 | [Game design](game-design.md)                         | Pranks, guards, objective, shared wins and fun tests         |
 | [Art and polish](art-and-polish.md)                   | Cutout identity, asset production and visual review          |
@@ -62,7 +62,7 @@ appointment; the appointed browser owns game rules.
 
 - The same single action can escape danger and set up a funny interaction.
 - Players understand why they slipped and regain control quickly.
-- A phone user can navigate, zoom, prank, collect and bank without developer help.
+- A phone user can navigate, zoom, prank, escape and rescue without developer help.
 - Multiple players can win a timed match; results come from accepted game state.
 - A physical phone can host while rendering without unacceptable heat or stutter.
 - Host disappearance produces a clear pause/recovery or interruption, never two
@@ -71,7 +71,7 @@ appointment; the appointed browser owns game rules.
 
 The Grumpy Town expansion follows the requested playable interactions; generated
 mockups alone do not establish implementation or device qualification.
-The next local slice tests busy/alert owners, bounded pursuit, authority raids and
-freeze/rescue. Shared survival with individual scores is a working hypothesis.
+The current local slice implements busy/alert owners, bounded pursuit, authority
+raids and freeze/rescue with a labelled bot. Physical phone feedback is next. Shared survival with individual scores is a working hypothesis.
 The following slice proves real two-player Rallar hosting and recovery; full social
 fun cannot be validated with local stand-ins alone.

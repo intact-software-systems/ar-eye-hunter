@@ -20,7 +20,7 @@ test('phone controls move, slide, drop once, zoom and resume without stuck movem
     const releasedZ = Number(await app.getAttribute('data-z'));
     await expect.poll(async () => Number(await app.getAttribute('data-z'))).toBeGreaterThan(releasedZ + 0.2);
     await page.getByRole('button', { name: 'Dash and drop' }).click();
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     // Cooldown is an observable rejection, not a queued second action.
     await page.keyboard.press('Space');
     await page.getByRole('button', { name: 'Zoom out' }).click();
@@ -30,12 +30,12 @@ test('phone controls move, slide, drop once, zoom and resume without stuck movem
     await page.keyboard.press('KeyW');
     await expect(app).toHaveAttribute('data-z', pausedZ ?? '');
     await page.getByRole('button', { name: 'Back to mischief' }).click();
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     await expect(page.getByRole('button', { name: 'Dash and drop' })).toHaveAttribute('aria-disabled', 'false');
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('button', { name: 'Start over' }).click();
-    await expect(page.locator('#pranks')).toHaveText('0');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '0');
     await expect(app).toHaveAttribute('data-z', '-2.00');
     expect(errors).toEqual([]);
 });
@@ -49,7 +49,7 @@ test('desktop keyboard moves and action remains reachable after tablet and lands
     await expect.poll(async () => Number(await app.getAttribute('data-x'))).toBeGreaterThan(1);
     await page.keyboard.up('KeyD');
     await page.keyboard.press('Space');
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     for (const viewport of [{ width: 820, height: 1180 }, { width: 844, height: 390 }]) {
         await page.setViewportSize(viewport);
         const action = await page.getByRole('button', { name: 'Dash and drop' }).boundingBox();
@@ -81,7 +81,7 @@ test('two touch pointers can move and dash together, and a separate pinch zooms'
         type: 'touchStart',
         touchPoints: [movement, { id: 2, x: dash.x + dash.width / 2, y: dash.y + dash.height / 2 }]
     });
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await touch.send('Input.dispatchTouchEvent', {
         type: 'touchStart',
@@ -108,10 +108,10 @@ test('focused buttons keep native Space activation without triggering a prank', 
     await page.getByRole('button', { name: 'Back to mischief' }).focus();
     await page.keyboard.press('Space');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
-    await expect(page.locator('#pranks')).toHaveText('0');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '0');
 });
 
-test('dash spills a stall, owner zaps back and cleans up, then reset restores town', async ({ page }) => {
+test('dash spills a stall, its owner cleans while a neighbour watches, and reset restores town', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
     await expect(page.locator('#scene-loading')).toBeHidden();
@@ -122,17 +122,16 @@ test('dash spills a stall, owner zaps back and cleans up, then reset restores to
     await page.keyboard.down('KeyW');
     await expect.poll(async () => Number(await app.getAttribute('data-z')), { intervals: [30] }).toBeGreaterThan(0.6);
     await page.keyboard.press('Space');
-    await expect(page.locator('#messes')).toHaveText('1');
+    await expect(app).toHaveAttribute('data-spills', '1');
+    await expect(page.locator('#points')).toHaveText('10');
     await page.keyboard.up('KeyW');
-    await expect(page.locator('#status')).toContainText('Owner aiming');
-    await expect(app).toHaveAttribute('data-mini', 'true');
+    await expect(page.locator('#heat')).toHaveText('1');
     await expect.poll(async () => Number(await app.getAttribute('data-cleaned')), { timeout: 15000 }).toBeGreaterThan(
         0
     );
-    await expect(app).toHaveAttribute('data-mini', 'false', { timeout: 10000 });
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('button', { name: 'Start over' }).click();
-    await expect(page.locator('#messes')).toHaveText('0');
+    await expect(app).toHaveAttribute('data-spills', '0');
     await expect(app).toHaveAttribute('data-cleaned', '0');
 });
 
@@ -149,7 +148,7 @@ test('powder can be collected in the larger town and used with the same action',
     await page.keyboard.up('KeyA');
     await expect(page.locator('#power')).toContainText('POWDER LOADED');
     await page.getByRole('button', { name: 'Dash and drop' }).click();
-    await expect(page.locator('#pranks')).toHaveText('1');
+    await expect(page.locator('#app')).toHaveAttribute('data-pranks', '1');
     await expect(app).toHaveAttribute('data-power', 'fart');
 });
 
@@ -167,4 +166,53 @@ test('landscape pause keeps help and reset reachable without clipping', async ({
     expect(help.y + help.height).toBeLessThanOrEqual(390);
     await page.getByRole('button', { name: 'Start over' }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+});
+
+test('fountain and parcel cart respond to the same dash action', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.locator('#scene-loading')).toBeHidden();
+    const app = page.locator('#app');
+    await page.keyboard.down('KeyW');
+    await expect.poll(async () => Number(await app.getAttribute('data-z')), { intervals: [30] }).toBeGreaterThan(5.5);
+    await page.keyboard.press('Space');
+    await expect(app).toHaveAttribute('data-fountain', 'true');
+    await page.keyboard.up('KeyW');
+    await expect(page.locator('#points')).toHaveText('10');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Start over' }).click();
+    await page.keyboard.down('KeyS');
+    await expect.poll(async () => Number(await app.getAttribute('data-z')), { intervals: [30] }).toBeLessThan(-8.1);
+    await page.keyboard.up('KeyS');
+    await page.keyboard.down('KeyA');
+    await expect.poll(async () => Number(await app.getAttribute('data-x')), { intervals: [30] }).toBeLessThan(-2.85);
+    await page.keyboard.up('KeyA');
+    await page.keyboard.down('KeyW');
+    await page.keyboard.press('Space');
+    await expect(app).toHaveAttribute('data-cart', 'true');
+    await page.keyboard.up('KeyW');
+    await expect(page.locator('#points')).toHaveText('10');
+});
+
+test('witnessed pranks announce a raid and catches recover in local play', async ({ page }) => {
+    test.setTimeout(60000);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
+    await expect(page.locator('#scene-loading')).toBeHidden();
+    const app = page.locator('#app');
+    await page.keyboard.down('KeyD');
+    await expect.poll(async () => Number(await app.getAttribute('data-x')), { intervals: [30] }).toBeGreaterThan(3);
+    await page.keyboard.up('KeyD');
+    for (let action = 1; action <= 3; action++) {
+        await expect(page.getByRole('button', { name: 'Dash and drop' })).toHaveAttribute('aria-disabled', 'false');
+        await page.keyboard.press('Space');
+        await expect(app).toHaveAttribute('data-pranks', String(action));
+    }
+    await expect(app).toHaveAttribute('data-raid', 'alarm');
+    await expect(page.locator('#status')).toContainText('CALLING THE GRUMPS');
+    await expect(app).toHaveAttribute('data-raid', 'active', { timeout: 7000 });
+    await expect(app).toHaveAttribute('data-frozen', 'true', { timeout: 12000 });
+    await expect(page.locator('#status')).toContainText('FROZEN');
+    await expect(app).toHaveAttribute('data-frozen', 'false', { timeout: 8000 });
+    await expect(app).toHaveAttribute('data-raid', 'cooldown', { timeout: 22000 });
 });

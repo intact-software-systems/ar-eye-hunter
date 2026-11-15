@@ -46,3 +46,5 @@ h2 { font-size: 28px; margin: 8px 0; letter-spacing: -1px; }
 
 .scene-loading { position: absolute; inset: 0; display: grid; place-items: center; background: #d8d0b7; font-weight: 800; z-index: 3; }
 .scene-loading[hidden] { display: none; }
+
+@media (max-height: 500px) and (orientation: landscape) { .pause-overlay > div { width: min(600px, 85vw); padding: 14px 24px; } .pause-overlay p { font-size: 13px; margin: 8px 0; } .pause-overlay button { display: inline-block; width: auto; margin: 8px; } }

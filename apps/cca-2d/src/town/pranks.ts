@@ -1,5 +1,6 @@
-import { TOWN_SHOPS, type TownPoint, type TownPrank } from './town-map.ts';
-import type { TownNpc, TownPlayer, TownState } from './town-rules.ts';
+import { TOWN_SHOPS, type TownPoint, type TownPrank } from './map.ts';
+import { hasTownSight } from './navigation.ts';
+import type { TownNpc, TownPlayer, TownState } from './state.ts';
 
 export interface TownPickupComputed {
     readonly town: TownState;
@@ -22,14 +23,7 @@ export function releaseTownPrank(town: TownState, player: TownPlayer, now: numbe
         };
     }
     if (player.power === 'fart') {
-        return {
-            ...town,
-            npcs: town.npcs.map((npc) =>
-                Math.hypot(npc.x - player.x, npc.z - player.z) < 3
-                    ? { ...npc, mode: 'angry', until: now + 0.7 }
-                    : npc
-            )
-        };
+        return town;
     }
     return zapTownOwners(town, player, now);
 }
@@ -41,11 +35,14 @@ function zapTownOwners(town: TownState, player: TownPlayer, now: number): TownSt
         const dz = npc.z - player.z;
         const distance = Math.hypot(dx, dz);
         const forward = dx * player.facingX + dz * player.facingZ;
-        if (distance >= 7 || forward <= 0 || forward / Math.max(0.1, distance) <= 0.7) {
+        if (
+            !hasTownSight(town, player, npc) || distance >= 7 || forward <= 0 ||
+            forward / Math.max(0.1, distance) <= 0.7
+        ) {
             return npc;
         }
         hits.push(npc);
-        return { ...npc, miniUntil: now + 6, mode: 'angry' as const, until: now + 0.7 };
+        return { ...npc, miniUntil: now + 6 };
     });
     const targets: readonly TownPoint[] = hits.length > 0
         ? hits

@@ -7,18 +7,21 @@ title: **Grumpy Town**.
 
 ## Actual gameplay
 
-![Actual Babylon gameplay: spilled fruit and an owner aiming a mini-zap](visual-concepts/grumpy-town-fruit-zap.png)
+![Actual Babylon gameplay: fountain spray and the local bot companion](visual-concepts/grumpy-loop-fountain.png)
 
-[Watch actual touch gameplay](visual-concepts/grumpy-town-gameplay.webm).
+[Watch actual touch gameplay](visual-concepts/grumpy-loop-gameplay.webm).
 The recording uses visible touch controls in a fresh Chromium context at
 390 × 844 CSS pixels. Screenshots use device scale 2; render density is capped
 at 1.5. These are rendered Babylon meshes and animated textures, not generated
 concept art or a physical-device recording. There is no audio yet.
 
-[Starting view](visual-concepts/grumpy-town-phone.png) ·
-[Mini player and cleanup](visual-concepts/grumpy-town-mini-cleanup.png) ·
-[Powder prank](visual-concepts/grumpy-town-powder.png).
-The earlier `babylon-trial-*` captures preserve the initial movement-only trial.
+[Starting view](visual-concepts/grumpy-loop-phone.png) ·
+[Runaway cart](visual-concepts/grumpy-loop-cart.png) ·
+[Authority call](visual-concepts/grumpy-loop-alarm.png) ·
+[Freeze and automatic recovery](visual-concepts/grumpy-loop-frozen.png).
+The recording demonstrates actual touch movement/action, fountain, cart and
+alarm/raid/freeze/recovery. Older `grumpy-town-*` and `babylon-trial-*` captures
+preserve earlier versions and their former owner mini-zap behaviour.
 
 ## What to try on your phone
 
@@ -26,17 +29,18 @@ Run the commands in the app README and open its Network URL on the same Wi-Fi.
 A local HTTP URL is sufficient for this offline WebGL trial. Later authenticated
 Rallar testing uses the architecture's HTTPS deployment.
 
-1. Drag toward a fruit stall and press **DASH + DROP** to tip it. Walk through
-   the scattered fruit and feel the skid.
-2. Watch the owner's warning target. Move out before the zap, or stay and become
-   tiny for six seconds. The owner sweeps up fruit and restores the display.
-3. Go down the street to the purple powder or yellow zapper counter. Walk over
-   its pickup, then dash near an owner. Powder makes them wobble and puke; a zapper
-   briefly shrinks characters in front. Your next action returns to a fart drop.
-4. A nearby fart also annoys an owner. Powder can affect you too; its short
-   dizziness slows movement without reversing input.
-5. Pinch the street or tap +/− to explore the wider town. Pause/reset, switch apps
-   and return, then rotate the phone.
+1. Dash into fruit. Its owner cleans while a tidy neighbour may chase. Dodge the
+   marked zap or lose three points. Walking alone does not upset anyone.
+2. Dash into the central fountain to redirect its jet. Try escaping through the
+   spray while the apple owner repairs it. Release the parcel cart near the start
+   and see the pear owner retrieve it.
+3. Go south for powder or a zapper. Walk over a pickup, then use the same dash
+   action near an owner. Powder causes dizziness/puke; zappers shrink NPCs.
+4. Let three witnessed dashes build heat. Interrupt the four-second call or allow
+   the 20-second raid. Dodge red targets or leave its marked district.
+5. A catch freezes for six seconds. Stand beside a frozen BOT PAL for one second
+   to rescue; it attempts the same for you. This companion is local simulation.
+6. Pinch or tap +/−, pause/reset, switch apps and return, then rotate your phone.
 
 The immediate feedback to collect is control comfort, readable faces, dash/slide
 feel and how much of the market you can see. This trial does not yet answer
@@ -54,9 +58,10 @@ are ground quads. A reusable puff plane grows and fades. Texture grain is author
 in the SVG source. No external art tool, physics engine, 3D character rig or
 multiplayer server is needed to reproduce this scene.
 
-The six owners are interactive NPCs driven by the immutable simulation. Displays
-tip, fruit rolls and causes slipping, warning targets mark retaliation, and cleanup
-removes debris before restocking. Stalls keep their collision footprints while
+The six owners and three temporary authorities are driven by immutable rules.
+Displays tip, fruit rolls, water sweeps, a cart moves, warning targets mark attacks,
+and cleanup repairs the square. Ice overlays, countdowns, labels and work bars
+communicate danger and recovery. Stalls keep their collision footprints while
 tipped. The bank and outer buildings remain scenery. Collection/banking, timed
 winners, other human players and a complete match objective are not implemented.
 
@@ -66,13 +71,14 @@ The immutable rules run at a fixed 60 Hz with a bounded frame catch-up. Input
 cancellation clears movement; backgrounding pauses; resuming consumes stale action
 edges. Obstacles stop dashes. A cooldown press is discarded, never queued.
 
-Twenty CCA rule tests and seven visible-control browser tests pass. They cover
-stall damage, slipping, dodgable retaliation, cleanup/restocking, temporary pranks,
+Thirty-three CCA rule tests and nine visible-control browser tests pass. They cover
+stall damage, slipping, chase/score penalties, bounded raids, freeze/rescue,
+collision-clear routes, cleanup/repair, temporary pranks,
 simultaneous touch movement/dash, pinch, keyboard, responsive dimensions and
 pause/reset. These tests establish local behavior, not physical-device performance.
 
 The production build lazy-loads the Babylon scene. The main game/engine chunk is
-about 230 kB gzip; other engine/shader chunks are separate. That figure alone is
+about 236 kB gzip; other engine/shader chunks are separate. That figure alone is
 not a cold-transfer measurement. The old approximately 2 MiB generated WebP seed
 art and Phaser dependency are removed from this entry. All current visual textures
 are generated locally from the shipped source. Vite reports its large uncompressed
@@ -84,9 +90,11 @@ host-recovery or production-release claim follows from these local tests.
 
 ## Next decision
 
-Try this scene and decide whether its proportions, cutout expression and control
-feel are worth taking forward. Judge whether making a mess, dodging retaliation and interrupting cleanup is fun
-before adding more prank types.
-The next local slice tests the varied square and chase/freeze/rescue loop.
-Rallar-only player-hosted multiplayer follows, with explicit recovery behavior. Do not connect the historical separate CCA server
-to this entry as a shortcut.
+Try this scene and judge whether different messes create useful escape choices,
+whether warnings are readable, and whether six seconds frozen is funny or tedious.
+The bot proves mechanics, not the fun of rescuing real friends. No round timer,
+qualification target or winner screen is implemented yet.
+
+The current slice collects physical phone feedback and tunes the local loop.
+Rallar-only player-hosted multiplayer follows, with explicit recovery behaviour.
+Keep the historical separate CCA server outside this app.

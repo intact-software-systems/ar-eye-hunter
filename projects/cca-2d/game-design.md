@@ -43,8 +43,8 @@ playground uses a 0.2-second dash and 3-second cooldown.
 
 An owner must witness an actual prank, not merely dislike the player's presence.
 Mess at its own business takes cleanup priority; another owner can witness the
-same prank and pursue. Show progress as the cleanup nears completion. The current
-playground instead zaps before cleanup; that sequence must change in the next slice.
+same prank and pursue. Show progress as the cleanup nears completion. The current local playground implements cleanup-first priority, a work bar and
+watch/chase states; the phone playtest still needs to establish their readability.
 
 Fresh interactions should matter more than repeatedly striking one stall.
 Limit repeat scoring and prevent permanent distraction locks. A chasing owner
@@ -61,7 +61,8 @@ would remove the route choices the town is meant to provide.
 A catch freezes the player into a funny statue. Friends thaw them with about one
 second of nearby dwell; automatic release prevents abandonment. Test a six-second
 starting duration against the user's roughly ten-second suggestion. Display the
-countdown; let frozen players wiggle or signal for help. Catchers move on, and
+countdown. Wiggles/help signals remain a later improvement; the local trial uses
+ice, a countdown and automatic rescue proximity. Catchers move on, and
 newly freed players get a short immunity window to escape.
 
 Ordinary owner zaps can cost a small number of points; authority catches impose
@@ -91,8 +92,8 @@ round must not fabricate winners.
 
 ## A varied town square
 
-The current six stalls repeat the same spill/cleanup pattern. The requested town
-needs different causal interactions and cleanup jobs, not merely more copies.
+The current local square combines six stalls with a fountain and parcel cart.
+The requested variety comes from different causal interactions and cleanup jobs.
 
 | Place | Dash/contact interaction | Tactical change | Owner's cleanup |
 | --- | --- | --- | --- |
@@ -103,8 +104,8 @@ needs different causal interactions and cleanup jobs, not merely more copies.
 | Powder counter | Burst a sack/use pickup | Local dizziness and cartoon puke alter route choice | Clear spilled stock and recover |
 | Street toilet | Trigger a conspicuous overflowing flush | A substantial, announced mess changes a local route | Stop overflow, then mop |
 
-These are candidates, not all committed implementation. First prove **fruit,
-fountain and parcel cart**: slippery ground, a changing hazard and a moving
+The local trial implements **fruit, fountain and parcel cart** in simplified form
+(no loose parcels or water-driven prop physics); the other additions remain candidates. These test: slippery ground, a changing hazard and a moving
 obstruction. Keep each source interruptible or bounded; do not simulate unlimited
 fluid or physics chains. Funny clothing can initially be cosmetic so it does not
 obscure vital warnings or controls.
