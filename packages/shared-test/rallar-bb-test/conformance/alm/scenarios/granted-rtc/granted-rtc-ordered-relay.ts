@@ -31,7 +31,7 @@ const PUBLICATIONS = [1, 2, 3] as const;
 
 /**
  * A gap on an ordered track is repaired across the path, whichever page it puts in the middle. The sender mints a
- * receipted track on the path the relay-only cell draws: `p1` leaves, `p2` is held at the sender's own RTC transport,
+ * receipted track on the path its own reshape draws: `p1` leaves, `p2` is held at the sender's own RTC transport,
  * `p3` leaves and reveals the gap. The hop that sees it NACKs the range: the receiver, the sender's next hop or not,
  * or recipient-b in the middle, which relays the receiver's NACK to the sender. The sender's repair dispatch of `p2`
  * is proven before the hold is released, so the release cannot stand in for it. The receiver enters the track at `p1`

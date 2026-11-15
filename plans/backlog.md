@@ -813,6 +813,11 @@ and it has no status list.
   `/api/config` (D-5), because no page states when a sender stops forwarding
   over the layout a promotion replaced; a page fact for the end of that
   forwarding window would replace the wait.
+- `granted-rtc-relay-only` and `granted-rtc-ordered-relay` exercise their relay
+  half only when the reshaped tree puts recipient-b in the middle, which the
+  session ids and RTT decide (5 of 11 sampled runs); they stay shape-agnostic
+  (D-6). Declaring the shape needs a director, with its re-plans and leader
+  semantics, or a preferred source in the topology config.
 - The settle (D647) does not close these windows: an older presence-summary row
   expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
   promotion (`pending` never reports it), a heartbeat that drops or restores a
