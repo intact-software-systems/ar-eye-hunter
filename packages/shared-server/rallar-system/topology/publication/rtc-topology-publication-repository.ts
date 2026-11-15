@@ -178,16 +178,16 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             trustedValue: trustedPublicationId,
             storageKey: entry.key
         });
-        const live = await this.toLiveJsonEntryValue(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, entry);
-        if (!live) {
-            return { status: 'expired' };
-        }
         const value = decodeRtcTopologyPublication(parseValue(entry), decoded.groupRef).fold<RtcTopologyPublication>(
             (message) => {
                 throw publicationCorruption(entry.key, message);
             },
             (decodedPublication) => decodedPublication
         );
+        const live = await this.toLiveJsonEntryValue(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, entry);
+        if (!live) {
+            return { status: 'expired' };
+        }
         if (value.publicationId !== decoded.value) {
             throw publicationCorruption(entry.key, 'publication value differs from key');
         }

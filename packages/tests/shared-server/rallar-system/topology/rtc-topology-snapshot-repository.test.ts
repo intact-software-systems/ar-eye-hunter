@@ -320,7 +320,7 @@ describe('RTC topology snapshot repository', () => {
                     const publication = createPublication(snapshot, `work-${defect}`);
                     const key = repository.publicationKey(publication.groupRef, publication.publicationId);
                     await runtimeRepository.upsert(
-                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(publication), expireAtTimestamp: 20_000 }
+                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(publication), expireAtTimestamp: 9_000 }
                     );
 
                     await expect(
