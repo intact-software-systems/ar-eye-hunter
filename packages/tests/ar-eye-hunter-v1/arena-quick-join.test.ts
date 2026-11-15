@@ -144,7 +144,7 @@ describe('AR Eye Quick Join action and controls', () => {
         await act(async () => button('Quick Join').click());
 
         expect(arena.current?.roomId).toBe('selected');
-        await act(async () => refresh.resolve({ rooms: [], currentRoomId: 'selected', currentRoomRef: snapshot.group }));
+        await act(async () => refresh.resolve({ rooms: [], currentRoomId: 'selected', currentRoomRef: snapshot.group, members: [] }));
     });
 
     it('clears the old snapshot as soon as the selected room is published, while cleanup is pending', async () => {
