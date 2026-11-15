@@ -1,7 +1,8 @@
 # Architecture and reliable multiplayer
 
 Status: target design for the selected Babylon trial and player-hosted Rallar
-multiplayer. The existing Phaser/CCA-server practice is unchanged. Host migration,
+multiplayer. The SPA now runs the [local Babylon trial](babylon-local-trial.md)
+without a backend; the historical CCA server is outside this entry. Host migration,
 rates and phone hosting are requirements to prove, not completed platform features.
 
 ## Ownership and deployment
@@ -16,14 +17,14 @@ Its browser runs the authoritative fixed-step game simulation while also renderi
 its own player. Other clients send input and reconcile from its accepted state.
 Rallar Server authorizes the appointment and traffic; it does not run CCA rules.
 
-| Owner | Responsibility |
-| --- | --- |
-| Existing `packages/cca-game` | Pure movement, collision, prank rules, timer, scoring and transport-neutral contracts |
-| `apps/cca-2d` runtime | Host simulation lifecycle, Rallar adapters, input, recovery and accepted state |
-| `apps/cca-2d` renderer | Babylon camera, cutout scene, animation, effects and resource disposal |
-| App DOM UI | Room, settings, controls, HUD and results; no per-frame entity state |
-| Existing shared Rallar packages | Reusable appointment, membership, transport and authority improvements |
-| Existing `apps/cca-server` | Historical practice service; excluded from target deployment |
+| Owner                           | Responsibility                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| Existing `packages/cca-game`    | Pure movement, collision, prank rules, timer, scoring and transport-neutral contracts |
+| `apps/cca-2d` runtime           | Host simulation lifecycle, Rallar adapters, input, recovery and accepted state        |
+| `apps/cca-2d` renderer          | Babylon camera, cutout scene, animation, effects and resource disposal                |
+| App DOM UI                      | Room, settings, controls, HUD and results; no per-frame entity state                  |
+| Existing shared Rallar packages | Reusable appointment, membership, transport and authority improvements                |
+| Existing `apps/cca-server`      | Historical practice service; excluded from target deployment                          |
 
 Keep pure rules reusable and independent of Babylon, Rallar and wall-clock APIs.
 The implementation slice should replace the app's old runtime composition rather
@@ -55,15 +56,15 @@ Decorative particles, boxes and paper wobble may differ between clients.
 Source and test definitions were inspected; this design update does not execute
 or certify their behavior.
 
-| Evidence | Provides | Still to prove |
-| --- | --- | --- |
-| [Director relay](../../examples/director-relay/README.md) | Appointment-aware low-rate intents, outputs and sync | CCA high-rate movement and continuous recovery |
-| [Host election](../../packages/shared-web/game/director/rallar-game-host-election-runtime.ts) | Capability reporting and candidate selection | Suitable phone choice, stable eligibility and handover |
-| [Appointment runtime](../../packages/shared-web/game/director/rallar-game-director-appointment-runtime.ts) | Eligibility checks and server appointment | Replacement while an owner remains online but suspended |
-| [Server appointment](../../packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts) | Server-side eligibility and appointment creation | A CCA-specific recovery protocol |
-| [Relay tests](../../packages/tests/shared-web/director/browser-director-relay-runtime.test.ts) | Defined stale-director refusal and snapshot cases | End-to-end game state continuity on host loss |
-| [Live room messages](../../examples/room-live-channel/README.md) | Paced, replaceable publication semantics | WS workload, complete-envelope cost and bounded recovery traffic |
-| [Room startup](../../examples/browser-startup-room/README.md) | Scoped authentication/room lifecycle | CCA entry UX and real device qualification |
+| Evidence                                                                                                                            | Provides                                             | Still to prove                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------- |
+| [Director relay](../../examples/director-relay/README.md)                                                                           | Appointment-aware low-rate intents, outputs and sync | CCA high-rate movement and continuous recovery                   |
+| [Host election](../../packages/shared-web/game/director/rallar-game-host-election-runtime.ts)                                       | Capability reporting and candidate selection         | Suitable phone choice, stable eligibility and handover           |
+| [Appointment runtime](../../packages/shared-web/game/director/rallar-game-director-appointment-runtime.ts)                          | Eligibility checks and server appointment            | Replacement while an owner remains online but suspended          |
+| [Server appointment](../../packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts) | Server-side eligibility and appointment creation     | A CCA-specific recovery protocol                                 |
+| [Relay tests](../../packages/tests/shared-web/director/browser-director-relay-runtime.test.ts)                                      | Defined stale-director refusal and snapshot cases    | End-to-end game state continuity on host loss                    |
+| [Live room messages](../../examples/room-live-channel/README.md)                                                                    | Paced, replaceable publication semantics             | WS workload, complete-envelope cost and bounded recovery traffic |
+| [Room startup](../../examples/browser-startup-room/README.md)                                                                       | Scoped authentication/room lifecycle                 | CCA entry UX and real device qualification                       |
 
 Current default appointment policy permits active owners/admins to appoint.
 Ordinary-member fallback requires no online owner/admin and no active director.
@@ -163,17 +164,17 @@ public Rallar storage with proper authorization/retention, not a second service.
 
 ## Other lifecycle outcomes
 
-| Event | Target behavior |
-| --- | --- |
-| Non-host hides or loses network | Neutralize/expire input; ten-second seat grace; continue only with another valid backup, otherwise pause recovery |
-| Reconnect within grace | Revalidate membership/controller and current host; receive fresh state; discard stale input |
-| Grace expires or voluntary leave | Forfeit carried cash, preserve committed banked score; observer until rematch |
-| Host phone locks or backgrounds | Recover or interrupt through the protocol above; no fictitious continuing clock |
-| Rallar connection disappears | No local self-appointment; gate multiplayer until current appointment can be verified |
-| Two candidates race | Only server-confirmed appointment authorizes output; old epochs cannot overwrite current state |
-| Renderer/context failure | Neutralize inputs, restore renderer independently; hand over if host cannot sustain simulation |
-| Incompatible build | Refuse control and explain refresh before ready/start |
-| Terminal outcome is missed | Obtain the committed outcome for that match from a surviving valid holder, or report unavailable |
+| Event                            | Target behavior                                                                                                   |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Non-host hides or loses network  | Neutralize/expire input; ten-second seat grace; continue only with another valid backup, otherwise pause recovery |
+| Reconnect within grace           | Revalidate membership/controller and current host; receive fresh state; discard stale input                       |
+| Grace expires or voluntary leave | Forfeit carried cash, preserve committed banked score; observer until rematch                                     |
+| Host phone locks or backgrounds  | Recover or interrupt through the protocol above; no fictitious continuing clock                                   |
+| Rallar connection disappears     | No local self-appointment; gate multiplayer until current appointment can be verified                             |
+| Two candidates race              | Only server-confirmed appointment authorizes output; old epochs cannot overwrite current state                    |
+| Renderer/context failure         | Neutralize inputs, restore renderer independently; hand over if host cannot sustain simulation                    |
+| Incompatible build               | Refuse control and explain refresh before ready/start                                                             |
+| Terminal outcome is missed       | Obtain the committed outcome for that match from a surviving valid holder, or report unavailable                  |
 
 Proposed stale thresholds: indicator after 500 ms without state; stop prediction
 after 1 second. Recovery duration depends on real Rallar presence/appointment

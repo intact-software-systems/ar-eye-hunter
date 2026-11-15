@@ -1,103 +1,45 @@
 import './style.css';
-import type { MarketApp } from './market-app.ts';
+import type { PracticeApp } from './practice-app.ts';
 
 const root = document.getElementById('app');
 if (!root) {
     throw new Error('Application root is missing.');
 }
 const lifetime = new AbortController();
-let market: MarketApp | undefined;
-let starting = false;
+let practice: PracticeApp | undefined;
 root.innerHTML =
-    `<main class="landing"><p class="eyebrow">POCKET ARCADE MARKET</p><h1>Grab the gold.<br>Make your getaway.</h1><img class="mascot" src="/art/runner.webp" alt="Cat thief with a loot bag"><p>A tiny market. A tempting trail.<br>How much will you carry before you bank?</p><button id="practice" class="primary">Play solo practice</button><details><summary>Play with a friend</summary><form id="online"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><label>Room code <small>(empty to create)</small><input name="room" value="${
-        escapeText(new URLSearchParams(location.search).get('room') ?? '')
-    }" maxlength="200"></label><button class="primary">Enter market</button></form></details><p id="error" role="status"></p><small>Practice slice · move / dash / collect / bank</small></main>`;
-root.querySelector('#practice')?.addEventListener('click', () => {
-    void startLocal();
-});
-root.querySelector('#online')?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    void startOnline(event.target);
-});
+    '<main class="loading"><p class="eyebrow">CCA / CUTOUT PLAYGROUND</p><h1>Opening the market…</h1><p>Movement · dash + drop · ice · zoom</p></main>';
+void openPractice(root);
 
-async function startLocal(): Promise<void> {
-    if (!root || starting) {
-        return;
-    }
-    starting = true;
+async function openPractice(element: HTMLElement): Promise<void> {
     try {
-        const { startPractice } = await import('./market-app.ts');
-        lifetime.signal.throwIfAborted();
-        market = startPractice(root);
+        const { PracticeApp } = await import('./practice-app.ts');
+        if (lifetime.signal.aborted) {
+            return;
+        }
+        practice = new PracticeApp(element);
     }
     catch (error) {
-        showError(error);
-        starting = false;
-    }
-}
-async function startOnline(target: EventTarget | null): Promise<void> {
-    if (!root || starting || !(target instanceof HTMLFormElement)) {
-        return;
-    }
-    starting = true;
-    const values = new FormData(target);
-    const button = target.querySelector('button');
-    if (button) {
-        button.disabled = true;
-    }
-    showError(new Error('Connecting to the market…'));
-    try {
-        const [{ openOnlineMarket }, { MarketApp }] = await Promise.all([
-            import('./online-market.ts'),
-            import('./market-app.ts')
-        ]);
-        const session = await openOnlineMarket({
-            username: String(values.get('username')),
-            password: String(values.get('password')),
-            roomId: String(values.get('room')).trim(),
-            signal: lifetime.signal,
-            apiBaseUrl: location.origin
-        });
-        market = new MarketApp(root, session);
-        const url = new URL(location.href);
-        url.searchParams.set('room', session.roomId);
-        history.replaceState(null, '', url);
-        const share = document.createElement('div');
-        share.className = 'room-code';
-        share.textContent = `Room: ${session.roomId}`;
-        root.append(share);
-    }
-    catch (error) {
-        starting = false;
-        showError(error);
-        if (button) {
-            button.disabled = false;
+        if (lifetime.signal.aborted) {
+            return;
+        }
+        element.innerHTML =
+            '<main class="loading"><h1>Could not open the market.</h1><p id="error" role="alert"></p><a href="">Try again</a></main>';
+        const message = element.querySelector('#error');
+        if (message) {
+            message.textContent = error instanceof Error ? error.message : 'Please use a browser with WebGL enabled.';
         }
     }
 }
-function showError(error: unknown): void {
-    const status = root?.querySelector('#error');
-    if (status) {
-        status.textContent = error instanceof Error
-            ? error.cause instanceof Error && error.cause.message.includes('stale-generation')
-                ? 'Your sign-in changed. Reopen this page. Use separate browser profiles for two players.'
-                : error.message
-            : 'Could not start. Please retry.';
-    }
-}
-function escapeText(value: string): string {
-    return value.replace(/[&<>"']/g, (character) => `&#${character.charCodeAt(0)};`);
+
+function stopPractice(): void {
+    lifetime.abort();
+    practice?.stop();
 }
 if (import.meta.hot) {
-    import.meta.hot.dispose(() => {
-        lifetime.abort();
-        market?.stop();
-    });
+    import.meta.hot.dispose(stopPractice);
 }
-window.addEventListener('pagehide', () => {
-    lifetime.abort();
-    market?.stop();
-});
+window.addEventListener('pagehide', stopPractice);
 window.addEventListener('pageshow', (event) => {
     if (event.persisted) {
         location.reload();

@@ -26,11 +26,21 @@ export function isMarketInput(value: unknown): value is MarketInputMessage {
     if (typeof value !== 'object' || value === null) {
         return false;
     }
-    const input = value as Record<string, unknown>;
+    if (
+        !('version' in value && 'roomRef' in value && 'incarnation' in value &&
+            'controller' in value && 'sequence' in value && 'x' in value && 'y' in value &&
+            'bank' in value && 'dash' in value)
+    ) {
+        return false;
+    }
+    const input = value;
     if (typeof input.roomRef !== 'object' || input.roomRef === null) {
         return false;
     }
-    const room = input.roomRef as Record<string, unknown>;
+    const room = input.roomRef;
+    if (!('applicationId' in room && 'workspaceId' in room && 'groupId' in room)) {
+        return false;
+    }
     return input.version === 1 && room.applicationId === MARKET_SCOPE.applicationId &&
         room.workspaceId === MARKET_SCOPE.workspaceId &&
         typeof room.groupId === 'string' && room.groupId.length > 0 && room.groupId.length <= 200 &&

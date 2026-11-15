@@ -1,7 +1,8 @@
 # Mobile, tablet, and desktop play
 
 Status: target layout for the Babylon trial. Generated art is not measured UI or
-physical-device qualification. The existing Phaser layout is historical practice.
+physical-device qualification. The [local Babylon trial](babylon-local-trial.md)
+implements these basic controls; the existing Phaser layout is historical practice.
 
 ## Full-screen camera and zoom
 
@@ -38,14 +39,14 @@ least 56 pixels in constrained layouts; zoom/menu targets start at 44 pixels.
 These are intended CSS sizes. The mockup's larger painted circles are not measured
 hit targets and must not be copied by scaling the screenshot.
 
-| Action | Touch | Keyboard/mouse |
-| --- | --- | --- |
-| Move | Floating joystick constrained to lower-left region | WASD/arrows |
-| Dash-and-drop | One large button, one edge per press | Space or primary click outside UI |
-| Collect | Automatic | Automatic |
-| Bank | Proposed stationary dwell inside bank ring | Same rule |
-| Zoom | +/− or two-finger pinch on free canvas | +/−, wheel or visible buttons |
-| Menu | Compact visible control | Escape or visible control |
+| Action        | Touch                                              | Keyboard/mouse                    |
+| ------------- | -------------------------------------------------- | --------------------------------- |
+| Move          | Floating joystick constrained to lower-left region | WASD/arrows                       |
+| Dash-and-drop | One large button, one edge per press               | Space or primary click outside UI |
+| Collect       | Automatic                                          | Automatic                         |
+| Bank          | Proposed stationary dwell inside bank ring         | Same rule                         |
+| Zoom          | +/− or two-finger pinch on free canvas             | +/−, wheel or visible buttons     |
+| Menu          | Compact visible control                            | Escape or visible control         |
 
 Track joystick, action and pinch pointer identities separately. A second touch
 on DASH must never initiate zoom. Pinch cannot begin from a pointer captured by

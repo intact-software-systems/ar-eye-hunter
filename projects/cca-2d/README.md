@@ -21,32 +21,34 @@ imagery, not a Babylon screenshot. The [construction guide](babylon-scene-constr
 maps its elements to actual rendering techniques and defines the proof required
 before describing the look as achieved.
 
-The existing [Phaser practice app](../../apps/cca-2d/README.md) still implements
-movement, dash, collecting and banking with a separate CCA server. It has not
-been converted by this documentation revision. Its pixel art, square frame,
-separate Bank button and server-owned simulation are superseded design choices.
+The [Babylon local trial](babylon-local-trial.md) now implements movement,
+dash-and-drop, slipping, zoom and pause/reset in the [SPA](../../apps/cca-2d/README.md).
+It replaces the old Phaser entry and includes actual gameplay captures. Collection,
+banking and multiplayer are absent from this focused trial. The historical CCA
+server prototype is independent; the new app does not connect to it.
 Keep this directory name for continuity; “2D” no longer specifies the renderer.
 
 ## Read the pack
 
-| Document | Owns |
-| --- | --- |
-| [Game design](game-design.md) | Pranks, guards, objective, shared wins and fun tests |
-| [Art and polish](art-and-polish.md) | Cutout identity, asset production and visual review |
+| Document                                              | Owns                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------ |
+| [Local trial](babylon-local-trial.md)                 | Implemented controls, actual captures and current limits     |
+| [Game design](game-design.md)                         | Pranks, guards, objective, shared wins and fun tests         |
+| [Art and polish](art-and-polish.md)                   | Cutout identity, asset production and visual review          |
 | [Babylon construction](babylon-scene-construction.md) | How the mockup can be built; rendering feasibility and proof |
-| [Mobile and controls](mobile-and-controls.md) | Camera, zoom, floating controls and device acceptance |
-| [Architecture](architecture.md) | Player authority, Rallar transport and host recovery |
-| [Development sequence](development-sequence.md) | Only the next two concrete slices, tools and gates |
+| [Mobile and controls](mobile-and-controls.md)         | Camera, zoom, floating controls and device acceptance        |
+| [Architecture](architecture.md)                       | Player authority, Rallar transport and host recovery         |
+| [Development sequence](development-sequence.md)       | Only the next two concrete slices, tools and gates           |
 
 ## Approaches and decisions
 
-| Approach | Strength | Tradeoff | Decision |
-| --- | --- | --- | --- |
-| Phaser with flat cutout art | Existing practice foundation; straightforward 2D | Less natural depth and camera flexibility | Valid alternative if the Babylon trial misses its budgets |
-| Babylon 2.5D with paper characters and simple geometry | Shallow depth, orthographic zoom, expressive layered animation | Rendering/asset work and phone performance need proof | Selected for the next trial |
-| Fully modeled 3D characters and physics chaos | Physical spectacle | More rigging, loading and unpredictable collision work | Outside the first trial |
-| Separate game server | Independent game authority | Additional service to operate | Superseded by the user's Rallar-only requirement |
-| Appointed browser host | Rallar is the only multiplayer backend | Trusts the host; suspension and migration become game concerns | Selected, with recovery as an early feasibility gate |
+| Approach                                               | Strength                                                       | Tradeoff                                                       | Decision                                                  |
+| ------------------------------------------------------ | -------------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| Phaser with flat cutout art                            | Existing practice foundation; straightforward 2D               | Less natural depth and camera flexibility                      | Valid alternative if the Babylon trial misses its budgets |
+| Babylon 2.5D with paper characters and simple geometry | Shallow depth, orthographic zoom, expressive layered animation | Rendering/asset work and phone performance need proof          | Selected; local trial implemented                         |
+| Fully modeled 3D characters and physics chaos          | Physical spectacle                                             | More rigging, loading and unpredictable collision work         | Outside the first trial                                   |
+| Separate game server                                   | Independent game authority                                     | Additional service to operate                                  | Superseded by the user's Rallar-only requirement          |
+| Appointed browser host                                 | Rallar is the only multiplayer backend                         | Trusts the host; suspension and migration become game concerns | Selected, with recovery as an early feasibility gate      |
 
 The SPA still needs static HTTPS hosting. No separate CCA simulation service,
 external multiplayer provider, mandatory TURN service or runtime AI is part of
@@ -65,4 +67,4 @@ appointment; the appointed browser owns game rules.
 - A real Babylon capture demonstrates the selected look and measured loading.
 
 No production deployment or broad gameplay expansion is authorized by a mockup.
-The next step is the small visual/feel trial, followed by Rallar host recovery.
+The next step is phone feedback on the local trial, followed by Rallar host recovery.

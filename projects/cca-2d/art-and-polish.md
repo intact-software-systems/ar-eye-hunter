@@ -2,7 +2,8 @@
 
 Status: the user selected a South Park-like cutout direction for the Babylon
 2.5D trial. The [phone mockup](visual-concepts/README.md) is a new visual proposal,
-not approval of finished assets or a runtime capture. It supersedes Pocket Arcade
+not approval of finished assets or a runtime capture. The separate
+[local trial](babylon-local-trial.md) provides actual Babylon gameplay for review. It supersedes Pocket Arcade
 Market's cute animals and pixel-grid production rules.
 
 ## Direction: scruffy cutout market

@@ -1,7 +1,7 @@
 # Building the cutout mockup in Babylon.js
 
-Status: implementation recipe grounded in Babylon capabilities, not a rendered
-proof. The generated [phone mockup](visual-concepts/cutout-market-phone-v1.png)
+Status: construction recipe now exercised by the [local Babylon trial](babylon-local-trial.md).
+Actual browser captures exist; physical-device/performance qualification remains open. The generated [phone mockup](visual-concepts/cutout-market-phone-v1.png)
 is an art target. A static illustration cannot certify reproducibility, motion,
 loading or mobile performance.
 
@@ -19,19 +19,19 @@ show more ground at normal play zoom. Close zoom can retain larger expressions.
 
 ## Scene recipe
 
-| Visible element | Babylon construction | Asset needed | Verification |
-| --- | --- | --- | --- |
-| Three-quarter market | Fixed orthographic camera over an X/Z ground plane, Y up | Authored obstacle footprints and simple map | Same camera basis for input, rendering and ground picking |
-| Streets | Ground mesh with muted repeatable texture | Small seamless ground texture | No distracting repetition or shimmer at overview |
-| Stall/bank/bin | Boxes and low-poly planes with matte shared materials | Small facade/awning atlas | Corners, depth and walkable footprints agree |
-| Player and guard | A ground-anchored root with layered textured planes | Transparent body parts and face atlas | Consistent feet and correct overlap from every allowed view |
-| Faces | Swap eyes/brows/mouth atlas regions or child-plane visibility | Deadpan, smug, surprised, angry expressions | Distinguishable at normal phone scale |
-| Running/dash/fall | Animate limb pivot nodes and visual body tilt | Joint pivots and named pose curves | Animation never moves authoritative ground root |
-| Ice/puddle | Slightly elevated ground-aligned patches | Cyan ice and blue puddle silhouettes | No z-fighting; hazard boundary matches actual rule area |
-| Fart cloud | A few pooled transparent planes or a capped particle emitter | One puff texture plus color/opacity curve | Does not hide faces or hazard edges |
-| Poop/footprints | Bounded ground decals/quads | Simple splat/footprint sheet | Cosmetic unless rules explicitly define a hazard |
-| Shadows | Small blob quads and baked texture shading | One soft oval | Stable ground anchor; no real-time shadow map needed initially |
-| HUD/controls | DOM over the Babylon canvas | Real text, icons and CSS | Measured tap targets and independent pointer handling |
+| Visible element      | Babylon construction                                          | Asset needed                                | Verification                                                   |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------- |
+| Three-quarter market | Fixed orthographic camera over an X/Z ground plane, Y up      | Authored obstacle footprints and simple map | Same camera basis for input, rendering and ground picking      |
+| Streets              | Ground mesh with muted repeatable texture                     | Small seamless ground texture               | No distracting repetition or shimmer at overview               |
+| Stall/bank/bin       | Boxes and low-poly planes with matte shared materials         | Small facade/awning atlas                   | Corners, depth and walkable footprints agree                   |
+| Player and guard     | A ground-anchored root with layered textured planes           | Transparent body parts and face atlas       | Consistent feet and correct overlap from every allowed view    |
+| Faces                | Swap eyes/brows/mouth atlas regions or child-plane visibility | Deadpan, smug, surprised, angry expressions | Distinguishable at normal phone scale                          |
+| Running/dash/fall    | Animate limb pivot nodes and visual body tilt                 | Joint pivots and named pose curves          | Animation never moves authoritative ground root                |
+| Ice/puddle           | Slightly elevated ground-aligned patches                      | Cyan ice and blue puddle silhouettes        | No z-fighting; hazard boundary matches actual rule area        |
+| Fart cloud           | A few pooled transparent planes or a capped particle emitter  | One puff texture plus color/opacity curve   | Does not hide faces or hazard edges                            |
+| Poop/footprints      | Bounded ground decals/quads                                   | Simple splat/footprint sheet                | Cosmetic unless rules explicitly define a hazard               |
+| Shadows              | Small blob quads and baked texture shading                    | One soft oval                               | Stable ground anchor; no real-time shadow map needed initially |
+| HUD/controls         | DOM over the Babylon canvas                                   | Real text, icons and CSS                    | Measured tap targets and independent pointer handling          |
 
 ### Camera and movement
 
@@ -132,8 +132,7 @@ Babylon version and use visible controls on a real phone:
 
 Use Babylon's [optimization guidance](https://doc.babylonjs.com/features/featuresDeepDive/scene/optimize_your_scene/)
 and [modular package guidance](https://doc.babylonjs.com/setup/frameworkPackages/npmSupport/).
-Pin and verify the implementation version; this document does not claim a version
-is installed or tested. Use WebGL as the baseline; optional WebGPU must not be a
+The local trial pins and tests Babylon.js 9.36.0. Use WebGL as the baseline; optional WebGPU must not be a
 phone admission requirement.
 
 Acceptance is a recognizable cutout identity, readable tactical play and the

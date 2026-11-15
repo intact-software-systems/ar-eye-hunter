@@ -12,20 +12,8 @@
     ],
     "lib": [
       "ES2024",
-      "DOM",
-      "ScriptHost"
-    ],
-    "paths": {
-      "@shared-web/*": [
-        "../../packages/shared-web/*"
-      ],
-      "@shared/*": [
-        "../../packages/shared/*"
-      ],
-      "@shared-graph/*": [
-        "../../packages/shared-graph/*"
-      ]
-    }
+      "DOM"
+    ]
   },
   "include": [
     "src/**/*.ts"

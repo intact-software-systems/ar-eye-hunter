@@ -1,6 +1,15 @@
 # Smartphone gameplay visual direction
 
-## Current proposal: cutout market in Babylon 2.5D
+## Actual Babylon trial
+
+![Actual Babylon slip and dash cloud](babylon-trial-slip-and-drop.png)
+
+[Gameplay recording](babylon-trial-gameplay.webm) · [Starting view](babylon-trial-phone.png).
+These are actual Chromium gameplay captures of the local Babylon 9.36.0 scene,
+using a 390 × 844 phone viewport. They are not physical-phone captures.
+See [implemented scope, controls and limits](../babylon-local-trial.md).
+
+## Generated reference: cutout market in Babylon 2.5D
 
 ![Generated smartphone cutout-market gameplay mockup](cutout-market-phone-v1.png)
 
@@ -30,16 +39,16 @@ brief. Keep this large image in the project documents; it is not a runtime asset
 The following artifacts preserve the earlier design exploration. None overrides
 the current cutout, scrolling-camera or player-host architecture.
 
-| Artifact | What it actually shows |
-| --- | --- |
-| [First playable phone](first-playable-phone.png) | Actual Phaser practice capture, square world and 25% control deck |
-| [Refined Pocket Arcade](pocket-arcade-refined.jpg) | Static browser layout capture at 390 × 844, not gameplay |
-| [Layout fixture](pocket-arcade-layout.html) | Historical measured square layout with separate Dash and Bank controls |
-| [Arena illustration](pocket-arcade-arena-reference.png) | Generated pixel-art scenery, not a collision map or sprite atlas |
-| [Paper Market Caper](paper-market-caper.png) | Original paper-style alternative, not the current cutout production brief |
-| [Pocket Arcade Market](pocket-arcade-market.png) | Previously selected animal pixel-art alternative, now superseded |
-| [Toybox Heist](toybox-heist.png) | Original toy-like alternative |
-| [Historical prompts](prompts.md) | Original prompts, retained as provenance rather than active requirements |
+| Artifact                                                | What it actually shows                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| [First playable phone](first-playable-phone.png)        | Actual Phaser practice capture, square world and 25% control deck         |
+| [Refined Pocket Arcade](pocket-arcade-refined.jpg)      | Static browser layout capture at 390 × 844, not gameplay                  |
+| [Layout fixture](pocket-arcade-layout.html)             | Historical measured square layout with separate Dash and Bank controls    |
+| [Arena illustration](pocket-arcade-arena-reference.png) | Generated pixel-art scenery, not a collision map or sprite atlas          |
+| [Paper Market Caper](paper-market-caper.png)            | Original paper-style alternative, not the current cutout production brief |
+| [Pocket Arcade Market](pocket-arcade-market.png)        | Previously selected animal pixel-art alternative, now superseded          |
+| [Toybox Heist](toybox-heist.png)                        | Original toy-like alternative                                             |
+| [Historical prompts](prompts.md)                        | Original prompts, retained as provenance rather than active requirements  |
 
 No still image proves animation, multitouch, multiplayer, load time, frame pacing
 or host recovery. New progress must include actual Babylon gameplay captures.

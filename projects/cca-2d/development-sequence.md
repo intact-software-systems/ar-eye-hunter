@@ -1,30 +1,30 @@
 # Development sequence, agents, and tools
 
 Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
-Only the next two implementation slices are concrete. This documentation/mockup
-task does not itself implement either slice.
+Only the next two implementation slices are concrete. The basic local Babylon
+trial is implemented; phone feel and device qualification remain open.
 
 ## Existing foundation and change of direction
 
-The [Phaser practice](../../apps/cca-2d/README.md) already offers movement, dash,
-collecting and banking through a separate CCA server. It is evidence for that
-earlier slice only. It does not prove Babylon rendering, guards/pranks, zoom,
-multiple winners, mobile host performance or migration.
+The [local Babylon trial](babylon-local-trial.md) now replaces the Phaser entry.
+It implements movement, dash-and-drop, ice traction, camera zoom and pause/reset.
+It includes real browser captures and focused rule/browser tests. The historical
+server prototype remains outside the app; no new multiplayer is implemented.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Next slice 1: a buildable, funny Babylon scene
+## Current slice 1: phone feedback on the Babylon scene
 
 **Outcome:** one moving scene on a phone establishes whether the generated look
 is reproducible and the single action is enjoyable.
 
-Build the construction guide's small representative corner: one original cutout
-rig, rival, guard, stall, bank, authored puddle/ice and dash/fart decoy. Keep local
-rules separate from rendering. Add floating controls, automatic collection and
-proposed dwell banking, orthographic follow and bounded zoom.
+The trial implements the construction guide's small representative corner: one original cutout
+rig, rival, guard, stall, bank, authored puddle/ice and dash/fart decoy. Local rules are separate from rendering. Floating controls, orthographic follow
+and bounded zoom are implemented. Collection and proposed dwell banking wait
+until the four-verb trial is judged; they are not part of its present scope.
 
 Do not build a full market or parallel engine framework. Measure the Babylon
 dependency and critical art before producing more assets. Keep any retained
@@ -32,6 +32,7 @@ Phaser practice clearly separate from the trial; do not leave two default entry
 paths or silently switch between incompatible authority models.
 
 **Acceptance:**
+
 - A real Babylon capture visibly matches the cutout identity at phone scale.
 - Run/dash/puff/slide/recovery are controllable and their cause is understandable.
 - Character parts, shadows and depth remain coherent at all zoom presets.
@@ -59,6 +60,7 @@ Any generic missing capability belongs in Rallar and its focused tests; do not
 bypass authorization or promote everyone to room admin.
 
 **Acceptance:**
+
 - Two independent sessions agree on movement, hazards, pickups and deposits.
 - A phone hosts while rendering at an acceptable sustained frame rate.
 - Host close/background and Wi-Fi loss produce bounded recovery or an explicitly
@@ -110,11 +112,9 @@ do not copy historical claims that CCA commands do not exist. Implementation
 requires focused pure/runtime tests, builds, visible control flows and independent
 authenticated clients. No app build validates a generated mockup.
 
-For this document-only revision, check all local links, inspect the image and
-review the pack for obsolete current-direction claims. Do not run unrelated
-game suites as evidence for a design. Keep PR descriptions clear about implemented
-practice versus proposed replacement; no stale claim that Babylon or migration
-is already complete. Keep design/implementation revisions in draft until the
+Check local links and actual captures, run focused rules/browser tests and build
+the SPA. Keep PR descriptions clear about the implemented local trial versus
+proposed multiplayer; no claim that migration is complete. Keep design/implementation revisions in draft until the
 relevant review and validation are complete.
 
 No new issue is needed for the design pack itself. Host succession and checkpoint
