@@ -31,7 +31,13 @@ import {
     createALInboundWorkSelector,
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
-import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler, type ALWorkBatchDiagnostics } from '@shared/alm/work/al-work-handler.ts';
+import {
+    AL_WORK_PROBE_EVERY_ROUND,
+    AL_WORK_READINESS_MEMORY_MS,
+    ALWorkHandler,
+    type ALWorkBatchDiagnostics,
+    type ALWorkReadinessProbeDiagnostics
+} from '@shared/alm/work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
@@ -93,7 +99,7 @@ describe('ALInboundWorkSelector readiness', () => {
         const fixture = createSelectorFixture();
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
 
-        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
 
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         expect(selection.claims).toHaveLength(1);
@@ -104,13 +110,48 @@ describe('ALInboundWorkSelector readiness', () => {
         const fixture = createSelectorFixture();
 
         // The probe over an empty NEW page caches a rotation that still owes RETRY and RESERVED.
-        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
 
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
         fixture.selector.requestHeadRead();
 
         const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
         expect(selection.claims).toHaveLength(1);
+    });
+
+    it('judges the page it can claim ready although the clock moves on between the handler and the probe', async () => {
+        const fixture = createAdvancingClockFixture();
+        const engine = new InboxOutboxEngine();
+        const probes: ALWorkReadinessProbeDiagnostics[] = [];
+        const handler = new ALWorkHandler({
+            workerId: 'advancing-clock-worker',
+            port: fixture.port,
+            queueEngine: engine,
+            ownsQueueEngine: false,
+            clock: { nowMs: fixture.nowMs },
+            pageSize: AL_INBOUND_WORK_PAGE_SIZE,
+            readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
+            readNextReadyAtMs: fixture.selector.readNextReadyAtMs,
+            selectReady: fixture.selector.selectReady,
+            claimSuccessor: undefined,
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: (event) => {
+                if (event.kind === 'readiness-probe') {
+                    probes.push(event);
+                }
+            }
+        });
+        try {
+            await handler.ready();
+            await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
+            const roundReadAtMs = fixture.readStoreMs();
+
+            expect(await engine.executeOnce()).toBe(true);
+            expect(probes.map((probe) => probe.readyAtMs)).toEqual([roundReadAtMs]);
+        }
+        finally {
+            await handler.dispose();
+        }
     });
 });
 
@@ -137,7 +178,7 @@ describe('ALInboundWorkSelector head read', () => {
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace));
         fixture.selector.requestHeadRead();
 
-        expect(await fixture.selector.readNextReadyAtMs(fixture.port)).toBe(NOW_MS);
+        expect(await fixture.selector.readNextReadyAtMs(fixture.port, NOW_MS)).toBe(NOW_MS);
         // A due row written after the probe, with no commit asking for a head read: a batch that read
         // NEW again would claim it too, so claiming only the probe's row shows the batch took its page.
         await fixture.port.retainIfAbsent(createPendingAdmissionEntry(fixture.namespace, NOW_MS, 'after-probe'));
@@ -582,6 +623,42 @@ function createSelectorFixture(): SelectorFixture {
         namespace,
         port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: () => NOW_MS }),
         selector: createALInboundWorkSelector({ delivery, namespace, nowMs: () => NOW_MS, lane: 'durable' })
+    };
+}
+
+interface AdvancingClockFixture extends SelectorFixture {
+    /** Moves the clock one millisecond on at every reading, as a real clock may between any two readings. */
+    readonly nowMs: () => number;
+    /** What the stores read: the same clock, without moving it. */
+    readonly readStoreMs: () => number;
+}
+
+function createAdvancingClockFixture(): AdvancingClockFixture {
+    const namespace = 'inbound-selection-advancing-clock';
+    let atMs = NOW_MS;
+    const readStoreMs = () => atMs;
+    const nowMs = () => atMs++;
+    const state = createInMemoryALAdmissionState(
+        new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(readStoreMs()))
+    );
+    const admissionStore = createALInboundAdmissionStore({
+        nowMs: readStoreMs,
+        namespace,
+        backend: new InMemoryAdmissionBackend(state, readStoreMs),
+        orderingTrackTtlMs: 60_000,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention(),
+        maxOrderingTracks: undefined,
+        maxDeliveredMarkers: undefined
+    });
+    const stores = { admissionStore, workQueue: state.workQueue };
+    const delivery = createInboundTestDispatch(stores, readStoreMs).delivery;
+    return {
+        namespace,
+        nowMs,
+        readStoreMs,
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: readStoreMs }),
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs, lane: 'durable' })
     };
 }
 

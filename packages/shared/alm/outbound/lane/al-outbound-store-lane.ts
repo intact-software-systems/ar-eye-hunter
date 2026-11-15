@@ -369,8 +369,7 @@ export class ALOutboundStoreLane<TPrepared> {
         this.input.evictExpired();
     }
 
-    private async readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined> {
-        const nowMs = this.readNowMs();
+    private async readNextReadyAtMs(port: ALWorkQueuePort, nowMs: number): Promise<number | undefined> {
         return await readALOutboundWorkReadyAt(port, nowMs, this.getWorkDeferral(nowMs));
     }
 
@@ -658,7 +657,8 @@ export class ALOutboundStoreLane<TPrepared> {
             ownsQueueEngine: runtime.ownsQueueEngine,
             clock: runtime.clock,
             pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
-            readNextReadyAtMs: (port) => this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port), undefined),
+            readNextReadyAtMs: (port, nowMs) =>
+                this.readiness.readOpenedStore(() => this.readNextReadyAtMs(port, nowMs), undefined),
             readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
             selectReady: (port, pageSize, batchStartedAtMs) =>
                 this.selectOutboundWork(port, pageSize, batchStartedAtMs),
