@@ -914,42 +914,42 @@ function runtimeDiagnosticTypeId(event: ControlEventEnvelope): string | undefine
 }
 
 type ConsoleWarningDiagnosticExpectation = Readonly<{
+    group: RallarBlackBoxDistributedGroupRef;
     agentId: string;
     diagnosticTypeId: string;
     warning: BlackBoxRallarConsoleWarningDiagnostics;
+    /** The agent's runtime stamps atEpochMs on this host's clock, so an earlier warning falls below this bound. */
+    loggedFromEpochMs: number;
 }>;
 
 function consoleWarningDiagnosticMatches(
     event: ControlEventEnvelope,
-    group: RallarBlackBoxDistributedGroupRef,
     expected: ConsoleWarningDiagnosticExpectation
 ): boolean {
     const roomRef = decodeRecord(decodeRecord(runtimeEventPayload(event).payload).roomRef);
     const data = messageData(event);
     return event.kind === 'diagnostic' &&
         event.agentId === expected.agentId &&
+        event.atEpochMs >= expected.loggedFromEpochMs &&
         runtimeDiagnosticTypeId(event) === expected.diagnosticTypeId &&
-        roomRef.applicationId === group.applicationId &&
-        roomRef.workspaceId === group.workspaceId &&
-        roomRef.groupId === group.groupId &&
+        roomRef.applicationId === expected.group.applicationId &&
+        roomRef.workspaceId === expected.group.workspaceId &&
+        roomRef.groupId === expected.group.groupId &&
         data.pattern === expected.warning.pattern &&
         data.source === expected.warning.source;
 }
 
 async function waitForConsoleWarningDiagnostic(
     request: APIRequestContext,
-    distributedRun: ControlDistributedRunSnapshot,
+    controlRunId: string,
     expected: ConsoleWarningDiagnosticExpectation
 ): Promise<void> {
     await expect.poll(async () => {
-        const run = await fetchControlRun(request, distributedRun.controlRunId);
-        return run.events.some((event) =>
-            consoleWarningDiagnosticMatches(event, distributedRun.manifest.group, expected)
-        );
+        const run = await fetchControlRun(request, controlRunId);
+        return run.events.some((event) => consoleWarningDiagnosticMatches(event, expected));
     }, { timeout: 30_000 }).toBe(true);
 }
 
-/** The page's console bridge recognises these literals and records a payload-free diagnostic for each. */
 async function emitKnownLiveWarningDiagnostics(agents: readonly AgentHandle[]): Promise<void> {
     await agents[1].page.evaluate(() => {
         console.warn('Unhandled WS message');
@@ -1821,17 +1821,22 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 })
             );
             await waitForRealtimePositionPayload(request, runId, realtimeDistributedRunId);
+            const warningsLoggedFromEpochMs = Date.now();
             await emitKnownLiveWarningDiagnostics(agents);
             await Promise.all([
-                waitForConsoleWarningDiagnostic(request, realtimePassed, {
+                waitForConsoleWarningDiagnostic(request, runId, {
+                    group,
                     agentId: agents[1].agentId,
                     diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
-                    warning: { pattern: 'unhandled-ws-message', source: 'console.warn' }
+                    warning: { pattern: 'unhandled-ws-message', source: 'console.warn' },
+                    loggedFromEpochMs: warningsLoggedFromEpochMs
                 }),
-                waitForConsoleWarningDiagnostic(request, realtimePassed, {
+                waitForConsoleWarningDiagnostic(request, runId, {
+                    group,
                     agentId: agents[2].agentId,
                     diagnosticTypeId: 'rallar.browser.rtc.data_channel_warning',
-                    warning: { pattern: 'data-channel-name-mismatch', source: 'console.warn' }
+                    warning: { pattern: 'data-channel-name-mismatch', source: 'console.warn' },
+                    loggedFromEpochMs: warningsLoggedFromEpochMs
                 })
             ]);
 
