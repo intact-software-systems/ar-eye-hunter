@@ -1,7 +1,7 @@
 import type { ALAckAlgo } from '../../al-contracts/al-policy.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
 import { Either } from '../../resilience/Either.ts';
-import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts';
+import { resolveRoomObservationDenial } from '../room-authority/rtc-room-snapshot-admission.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';
 
 export interface RtcRepairTargetAdmissionInput {

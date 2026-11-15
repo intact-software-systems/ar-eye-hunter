@@ -4,13 +4,13 @@ import { EXPIRY_TTL_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toTypeDropFaultCommands } from '../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
 export const deadlineExpiry: AlmConformanceScenarioDefinition = {
     scenarioId: 'deadline-expiry',

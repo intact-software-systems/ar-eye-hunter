@@ -298,6 +298,10 @@ export class PSqlResourceInboxEntryRepository {
         return await this.reader.findAllByTopicAndResourceId(topicId, resourceId);
     }
 
+    async readPendingByTopicAndContextId(topicId: string, contextId: string): Promise<readonly ResourceEntry[]> {
+        return await this.reader.readPendingByTopicAndContextId(topicId, contextId);
+    }
+
     async findAllKeys(): Promise<Key[]> {
         return await this.reader.findAllKeys();
     }

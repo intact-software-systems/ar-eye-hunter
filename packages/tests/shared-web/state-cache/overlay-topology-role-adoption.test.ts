@@ -13,6 +13,7 @@ import {
     findAcceptedOverlayById,
     findPlannedOverlayById,
     onAcceptedOverlayChange,
+    readableLayoutTransitionsCache,
     resetOverlayAdoptionDiagnostics,
     setAcceptedOverlayById,
     setOverlayAdoptionDiagnosticsSink,
@@ -36,6 +37,8 @@ import {
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createTestGroup } from '../../create-test-group.ts';
 
+const ADOPTION_EPOCH_MS = 42_000;
+
 describe('browser overlay topology role adoption', () => {
     let deferredTopologies: DeferredOverlayTopologies;
     // Mirrors the state-cache observer: cache write, RTC sync, then the deferred layout re-attempt.
@@ -55,7 +58,7 @@ describe('browser overlay topology role adoption', () => {
 
     beforeEach(() => {
         deferredTopologies = new DeferredOverlayTopologies();
-        configureTestCacheRepositories();
+        configureTestCacheRepositories(undefined, () => ADOPTION_EPOCH_MS);
         resetOverlayAdoptionDiagnostics();
         setOverlayAdoptionDiagnosticsSink(undefined);
     });
@@ -247,6 +250,30 @@ describe('browser overlay topology role adoption', () => {
         expect(publication).toMatchObject({ role: 'accepted', changed: true });
         expect(findAcceptedOverlayById(topology.overlayId)?.overlayVersion).toBe(3);
         expect(findPlannedOverlayById(topology.overlayId)?.provenance).toBe('bootstrap');
+    });
+
+    it('adopting a published accepted layout records the layout it replaced', async () => {
+        const group = groupSnapshot(2);
+        const held = topologyOverlay(group, ['session-b'], 1);
+        const topology = topologySnapshot(group, { groupRevision: 2, presenceRevision: 2 }, 3);
+        const acceptedGroup = groupSnapshot(2, toGroupLayoutIdentity(topology));
+        setAcceptedOverlayById(held.overlayId, held);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(acceptedGroup);
+
+        const publication = await adoptOverlayTopology({
+            topology,
+            sessionId: 'session-a',
+            deferredTopologies,
+            webRtcGroupManager: webRtcGroupManager(),
+            adoption: 'publication'
+        });
+
+        expect(publication).toMatchObject({ role: 'accepted', outcome: 'adopted', changed: true });
+        expect(readableLayoutTransitionsCache().read(topology.overlayId)).toEqual([{
+            replaced: held,
+            replacedBy: toGroupLayoutIdentity(topology),
+            replacedAtEpochMs: ADOPTION_EPOCH_MS
+        }]);
     });
 
     it('notifies RTC ownership before publishing an accepted overlay change to browser observers', async () => {

@@ -65,7 +65,12 @@ function toReplyFirstWinsSenderCommands(sender: AlmConformanceStepInput): readon
         }),
         ...toReplyIdentityCommands({ ...sender, index: 1 }, undefined),
         toReplyLateWait({ ...sender, index: 1 }, 'replied'),
-        ...toReceiptWindowCommands(sender, { roles: BOTH_CONFIRMED, ending: 'acknowledged', mode: 'receiver' }),
+        ...toReceiptWindowCommands(sender, {
+            roles: BOTH_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'receiver',
+            endingFacts: []
+        }),
         toReplySenderConfirmedWait(sender)
     ];
 }

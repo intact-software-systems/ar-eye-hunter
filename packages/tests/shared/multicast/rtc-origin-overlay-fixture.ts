@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { onTestFinished, vi } from 'vitest';
+import { afterEach, beforeEach, onTestFinished, vi } from 'vitest';
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import {
@@ -30,9 +30,18 @@ import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay-multicast-service.ts';
+import type { OverlayLayoutTransition } from '@shared/repository/overlay-layout-transition.ts';
+import {
+    didOverlayAdoptionChange,
+    readableLayoutTransitionsCache,
+    readablePlannedOverlayCache,
+    setCurrentAcceptedServerOverlayById
+} from '@shared/repository/overlays-repository.ts';
 import { toCircuitBreaker, type CircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter, type RateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
@@ -46,6 +55,7 @@ import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
 import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 
+import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import {
     ROOM_PUBLICATION_CRYPTO,
@@ -57,6 +67,7 @@ import { KEYLESS_PUBLICATION_VERIFIER } from './rtc-publication-proof-verifier-f
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from './rtc-topic-subscription-reader-fixtures.ts';
 
 import { signTestALReceiptControl, toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 
 export interface CapturedChannel {
     readonly channel: QRtcDataChannel;
@@ -68,7 +79,11 @@ export interface RtcOriginOverlayFixture {
     readonly manager: WebRtcOverlayMulticastManager;
     readonly resources: ALOutboundMessageRuntime.Resources<ALOutboundTransportMessage>;
     readonly groups: LatestRepository<string, GroupSnapshot>;
+    /** The overlay cache the manager reads; a write here records no layout transition, `acceptOverlay` does. */
     readonly overlays: LatestRepository<string, OverlayInfo>;
+    readonly layoutTransitions: ReadableKeyedValues<string, readonly OverlayLayoutTransition[]>;
+    /** Accepts a layout as the overlay repository does, which records the transition it replaces. */
+    acceptOverlay(overlay: OverlayInfo): void;
     readonly channels: Readonly<Record<string, CapturedChannel>>;
     readonly ready: { peerIds: readonly string[]; };
     readonly settlements: readonly ALDeliverySettlement[];
@@ -85,6 +100,8 @@ export interface RtcOriginOverlayFixtureInput {
     /** The accepted layout's whole adjacency; absent, the overlay carries none, as a bootstrap overlay does. */
     readonly nextHopsBySessionId?: OverlayInfo['nextHopsBySessionId'];
     readonly circuitBreaker?: CircuitBreaker;
+    /** The server-served overlap the session was connected with; absent, the served default of 15 s. */
+    readonly replacedLayoutOverlapMs?: number;
     /** The same admission policy port production supplies; absent, the default RTC limiter. */
     readonly rateLimiter?: RateLimiter;
     /** The durable pair the origin admits to; absent, an in-memory pair (a counting test hands an IndexedDB one). */
@@ -120,6 +137,8 @@ export const ORIGIN_PRINCIPAL_REF = {
     principalId: 'principal-1'
 } as const;
 
+/** The overlap the server serves by default. */
+export const SERVED_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
 const CHANNEL_PEER_IDS = ['b', 'c', 'd', 'g', 'r'];
 
 export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInput): RtcOriginOverlayFixture {
@@ -129,7 +148,12 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
     const groups = new LatestRepository<string, GroupSnapshot>();
     groups.accept('room', input.snapshot);
     const overlays = new LatestRepository<string, OverlayInfo>();
-    overlays.accept('room', createOriginOverlay(input.nextHopPeerIds, input.nextHopsBySessionId));
+    const initialOverlay = createOriginOverlay(input.nextHopPeerIds, input.nextHopsBySessionId);
+    overlays.accept('room', initialOverlay);
+    const repositories = new RepositoryManager();
+    configureTestCacheRepositories(repositories, () => Date.now());
+    setCurrentAcceptedServerOverlayById('room', initialOverlay, repositories);
+    const layoutTransitions = readableLayoutTransitionsCache(repositories);
     const resources = createDefaultALOutboundRuntimeResources({
         decodePrepared: decodeALOutboundTransportMessage,
         stores: input.stores,
@@ -143,6 +167,9 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         connectionService: connection,
         groupCache: groups,
         overlayCache: overlays,
+        layoutTransitionsCache: layoutTransitions,
+        plannedOverlayCache: readablePlannedOverlayCache(repositories),
+        replacedLayoutOverlapMs: input.replacedLayoutOverlapMs ?? SERVED_REPLACED_LAYOUT_OVERLAP_MS,
         multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
         qosProvider: toALCarrierQosInputProvider(AL_RTC_OVERLAY_CAPABILITIES, input.qosProvider),
         outboundDiagnostics: (event) => diagnostics.push(event),
@@ -162,7 +189,35 @@ export function createRtcOriginOverlayFixture(input: RtcOriginOverlayFixtureInpu
         selfPrincipalId: 'a'
     });
     onTestFinished(() => manager.dispose());
-    return { manager, resources, groups, overlays, channels, ready, settlements, diagnostics };
+    const acceptOverlay = (overlay: OverlayInfo): void => {
+        writeAcceptedServerOverlay('room', overlay, repositories);
+        overlays.accept('room', overlay);
+    };
+    return {
+        manager,
+        resources,
+        groups,
+        overlays,
+        layoutTransitions,
+        acceptOverlay,
+        channels,
+        ready,
+        settlements,
+        diagnostics
+    };
+}
+
+/**
+ * Writes a fixture's accepted layout to the overlay repository, failing the test when the repository drops it: the
+ * fixture's own overlay cache would keep the layout while the repository's transition named another as replaced.
+ */
+export function writeAcceptedServerOverlay(overlayId: string, overlay: OverlayInfo, repositories: RepositoryManager): void {
+    const outcome = setCurrentAcceptedServerOverlayById(overlayId, overlay, repositories);
+    if (!didOverlayAdoptionChange(outcome) && outcome !== 'equal') {
+        throw new Error(
+            `The overlay repository dropped the accepted layout version ${overlay.overlayVersion} of ${overlayId} (${outcome}).`
+        );
+    }
 }
 
 export function createOriginReceiverMulticast(resourceId: string): ALMessage {
@@ -174,6 +229,40 @@ export function createOriginReceiverMulticast(resourceId: string): ALMessage {
         { text: resourceId },
         { ack: 'all-logical-recipients', reliability: 'at-least-once', ttlMs: 30_000, traceId: `trace-${resourceId}` }
     );
+}
+
+export type FrameReliability = 'at-least-once' | 'best-effort';
+
+/** A frame from the origin `a`: a receipted multicast, or a position frame with no receipt. */
+export function createOriginFrame(reliability: FrameReliability, resourceId: string): ALMessage {
+    return reliability === 'at-least-once'
+        ? createOriginReceiverMulticast(resourceId)
+        : newALMulticastMessage(
+            'a',
+            { topicId: 'position', resourceId, contextId: 'room' },
+            ORIGIN_ROOM,
+            'position.frame.v1',
+            { resourceId },
+            { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
+        );
+}
+
+/** How many messages of `messages` carry `message`'s id. */
+export function readCopies(messages: readonly ALMessage[], message: ALMessage): number {
+    return messages.filter((sent) => sent.id.msgId === message.id.msgId).length;
+}
+
+/** Fake timers from 2026-01-01T00:00:00Z for every test of the calling `describe`, restored after each. */
+export function useFakeClock(): void {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
 }
 
 export function toOriginFrozenTargets(recipientPeerIds: readonly string[], snapshotVersion: number): ALTargets {
@@ -307,7 +396,8 @@ function createConnectionService(
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: crypto.randomUUID.bind(crypto),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     vi.spyOn(connection, 'readyPeerIdsForLane').mockImplementation(() => ready.peerIds);
     vi.spyOn(connection, 'readPeer').mockImplementation((peerId) => {

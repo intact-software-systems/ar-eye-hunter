@@ -2,7 +2,8 @@ import { FULL_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-conf
 import { TOPIC_SUBSCRIPTION_SELECTOR } from '../topic-subscription/topic-subscription-commands.ts';
 import { toPublishUntilConfirmedCommands } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
-import { toConfirmingOwnerCommands } from './granted-rtc-confirming-owner.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
+import { toConfirmingOwnerCommands } from './to-confirming-owner-commands.ts';
 
 /**
  * A receipted granted publication rides RTC: the sender publishes asking every logical recipient until the receipt of
@@ -17,6 +18,7 @@ export const grantedRtcReceiptedDelivered: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: (sender) =>
         toPublishUntilConfirmedCommands({
             step: sender,
@@ -25,5 +27,5 @@ export const grantedRtcReceiptedDelivered: AlmConformanceScenarioDefinition = {
             outsideAudience: 0,
             kind: 'publication'
         }),
-    toRecipientCommands: (receiver) => toConfirmingOwnerCommands(receiver, [])
+    toRecipientCommands: (receiver) => toConfirmingOwnerCommands(receiver)
 };

@@ -386,6 +386,7 @@ function connectionAndCrdtResponse(url: string): Response {
             apiBaseUrl: 'https://api.example.test',
             wsBaseUrl: 'wss://api.example.test',
             endpoints: { createWs: '/api/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000,
             serverPeerId: 'server'
         });
     }

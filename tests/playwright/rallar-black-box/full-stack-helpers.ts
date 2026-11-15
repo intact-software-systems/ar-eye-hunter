@@ -39,6 +39,8 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecipeCancelCommand
 } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { closeParticipantContext } from './close-participant-context.ts';
+import { resolveRecipeCancelFailure } from './resolve-recipe-cancel-failure.ts';
 import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
 export interface FullStackUser {
@@ -212,6 +214,8 @@ export interface RecipeRunAgent {
 export interface RecipeRun {
     readonly request: APIRequestContext;
     readonly runId: string;
+    /** Every root the run started, in start order: the owner of the run waits for them before it reads the pages. */
+    readonly startedRoots: StartedRecipeRun[];
     readSnapshot(): Promise<ControlRunSnapshot>;
 }
 
@@ -644,6 +648,7 @@ export async function createTwoAgentRun(
         group,
         sender,
         receiver,
+        startedRoots: [],
         readSnapshot: async () => await readControlRun(input.request, input.runId),
         close: async () => await closeTwoAgentParticipants([sender, receiver])
     };
@@ -660,11 +665,12 @@ export async function runRecipeOnAgent(
 
 /**
  * Authored paired reload roots are bound and enqueued together; control owns their causal checkpoints.
- * For ordinary recipes, the receiver subscribes at connect, so its recipe starts first and the sender waits until the
- * receiver's connect command reports an ok result. A connect that must see a ready peer cannot
+ * For ordinary recipes, the receiver's prologue creates the group and owns it, so its recipe starts first and the
+ * sender waits until the receiver's connect command reports an ok result. A connect that must see a ready peer cannot
  * report one before the sender exists, so entering the readiness wait — which the runtime records
- * only after the connection is established and subscribed — releases the barrier too, as does a
- * receiver recipe that has already settled.
+ * only after the connection is established and subscribed — releases the wait too, as does a
+ * receiver recipe that has already settled. The order is not what readies a barriered cell: its roles start their
+ * bodies once the cell's settle passed.
  */
 export async function runRecipePairOnTwoAgents(
     run: RecipePairRun,
@@ -691,14 +697,22 @@ export async function startRecipeRun(
     recipe: RallarBlackBoxTestRecipe
 ): Promise<StartedRecipeRun> {
     const commandId = await enqueueRecipeRun(run, agent, recipe);
-    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
-    const root: RecipeRunRoot = {
+    return startRecipeRoot(run, {
         agentId: agent.agentId,
         commandId,
         cancel: { kind: 'recipe.cancel', targetCommandId: commandId, reason: toRecipeCancelReason(commandId) }
-    };
+    });
+}
+
+function startRecipeRoot(run: RecipeRun, root: RecipeRunRoot): StartedRecipeRun {
+    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
     let outcome: Promise<RecipeRunOutcome> | undefined;
-    return { commandId, readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs) };
+    const started = {
+        commandId: root.commandId,
+        readOutcome: () => outcome ??= readRecipeRunOutcome(run, root, deadlineAtMs)
+    };
+    run.startedRoots.push(started);
+    return started;
 }
 
 /** Starts a recipient recipe and returns once its connect barrier releases, so a sender can start after it. */
@@ -1100,14 +1114,9 @@ async function openTwoAgentParticipant(
 }
 
 async function closeTwoAgentParticipants(participants: readonly TwoAgentRunParticipant[]): Promise<void> {
-    const results = await Promise.allSettled(participants.map(async (participant) => {
-        try {
-            await cleanupRallarPage(participant.page);
-        }
-        finally {
-            await participant.context.close();
-        }
-    }));
+    const results = await Promise.allSettled(
+        participants.map((participant) => closeParticipantContext(participant, cleanupRallarPage))
+    );
     const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
     if (failures.length > 0) {
         throw new AggregateError(failures, 'Failed to close full-stack participants.');
@@ -1131,6 +1140,7 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.sender.commandId,
         command: pair.sender.command
     });
+    const sender = startRecipeRoot(run, toReloadRunRoot(run.sender, pair.sender.commandId));
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
@@ -1138,13 +1148,8 @@ async function runReloadPairOnTwoAgents(run: RecipePairRun, recipes: RecipePair)
         commandId: pair.receiver.commandId,
         command: pair.receiver.command
     });
-    const deadlineAtMs = CONTROL_POLL_TIMERS.nowMs() + RECIPE_RUN_TIMEOUT_MS;
-    return requireRecipePairOutcome(
-        await Promise.allSettled([
-            readRecipeRunOutcome(run, toReloadRunRoot(run.sender, pair.sender.commandId), deadlineAtMs),
-            readRecipeRunOutcome(run, toReloadRunRoot(run.receiver, pair.receiver.commandId), deadlineAtMs)
-        ])
-    );
+    const receiver = startRecipeRoot(run, toReloadRunRoot(run.receiver, pair.receiver.commandId));
+    return requireRecipePairOutcome(await Promise.allSettled([sender.readOutcome(), receiver.readOutcome()]));
 }
 
 /** A reload root is a control-owned segment: only the agent's untargeted cancel reaches it, as the paired cleanup. */
@@ -1192,20 +1197,35 @@ async function readRecipeRunOutcome(
 }
 
 async function cancelRecipeRun(run: RecipeRun, root: RecipeRunRoot): Promise<ControlResultEnvelope> {
+    const cancelCommandId = `cancel-${root.commandId}`;
     await enqueueControlCommand({
         request: run.request,
         runId: run.runId,
         agentId: root.agentId,
-        commandId: `cancel-${root.commandId}`,
+        commandId: cancelCommandId,
         command: root.cancel
     });
-    const result = await readRecipeRunResult(run, root.commandId, CONTROL_POLL_TIMERS.nowMs() + RECIPE_RESULT_GRACE_MS);
-    if (result === undefined) {
-        throw new Error(
-            `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
-        );
+    const read = await readControlRunUntil(run, {
+        timeoutMs: RECIPE_RESULT_GRACE_MS,
+        select: (snapshot) => ({
+            result: findControlResult(snapshot, root.commandId),
+            failure: resolveRecipeCancelFailure({
+                answer: findControlResult(snapshot, cancelCommandId),
+                cancelCommandId,
+                agentId: root.agentId
+            })
+        }),
+        accept: ({ result, failure }) => result !== undefined || failure !== undefined
+    });
+    if (read.kind === 'accepted' && read.value.result !== undefined) {
+        return read.value.result;
     }
-    return result;
+    if (read.kind === 'accepted') {
+        throw new Error(read.value.failure);
+    }
+    throw new Error(
+        `${root.commandId} is still running after its deadline and cancellation; no later cell may run on its page.`
+    );
 }
 
 async function readRecipeRunResult(

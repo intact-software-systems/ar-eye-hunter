@@ -11,9 +11,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts';
-import { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 import { WebRtcGroupService } from '@shared/services/web-rtc-group-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
     parseRtcBaselineAcceptedWorker,
@@ -168,19 +166,7 @@ export function runWebRtcGroupCacheFallback(
     const snapshots = createSnapshots(input.snapshots, input.matchingVersions);
     const cache = new FallbackOnlyGroupCache(snapshots);
     const service = new WebRtcGroupService(
-        new WebRtcConnectionService({ send: async () => {}, connect: async () => {} }, {
-            sessionId: 'self',
-            token: 'benchmark-token',
-            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
-            dataChannelName: 'realtime',
-
-            rtcSignalingTopicId: 'rtc'
-        }, {
-            faultPort: createPassThroughTransportFaultPort(),
-            createOfferId: () => crypto.randomUUID(),
-            nowEpochMs: () => Date.now(),
-            writeRetainedSignalsDueNow: async () => []
-        }),
+        'self',
         {
             ...targetScope,
             groupId: targetGroupId

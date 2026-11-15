@@ -11,6 +11,7 @@ export function toApiV1PublicConfiguration(
         wsBaseUrl: configuration.wsBaseUrl,
         endpoints: {
             createWs: API_CREATE_WS_PATH
-        }
+        },
+        rtcReplacedLayoutOverlapMs: configuration.rtcReplacedLayoutOverlapMs
     };
 }

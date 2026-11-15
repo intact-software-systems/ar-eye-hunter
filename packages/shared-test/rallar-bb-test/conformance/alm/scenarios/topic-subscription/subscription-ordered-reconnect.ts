@@ -7,9 +7,9 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
+import { toSiblingLeftWait } from './to-sibling-left-wait.ts';
 import {
-    toFourRoleGrantCommands,
+    PRODUCERS_START_GRANTS,
     TOPIC_SUBSCRIPTION_CARRIERS,
     TOPIC_SUBSCRIPTION_SELECTOR,
     toProductSocketCommand,
@@ -23,6 +23,8 @@ import {
     toRowsGenerationPollCommand
 } from './topic-subscription-generation-polls.ts';
 import {
+    toElectionAppliedCueCommands,
+    toElectionAppliedCueWaitCommands,
     toOrderedAbsenceWaits,
     toOrderedArrivalWaits,
     toOrderedConfirmedCueWaits,
@@ -30,17 +32,18 @@ import {
     toOrderedPublishCommands,
     toReadinessProbeCommands
 } from './topic-subscription-ordered-publications.ts';
-import { GRANT_DELTA_MARGIN_MS } from './topic-subscription-polls.ts';
 import {
     computeUnelectedOutsideCount,
     toCueListenCommands,
     toCueSendCommands,
-    toCueWait,
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
 
 /** The receiver heard both producers' `p4` confirmed: the last cue of the stretch the closed sibling must miss. */
 const SIBLING_GATE = 'cue-c-p4-confirmed-received';
+
+/** The re-opened sibling's cue, which the receiver applies before the producers probe for both subscribers again. */
+const REENTERED = 'reentered';
 
 /**
  * A reconnect reads as an omission, never as loss. The sibling elects and receives `p1` and `p2` of each producer's
@@ -56,8 +59,10 @@ export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
     carriers: TOPIC_SUBSCRIPTION_CARRIERS,
     roles: ALM_CONFORMANCE_FOUR_ROLE_ROLES,
     laneFamily: 'four-role',
+    room: 'own',
     principalRoles: ['receiver', 'publisher-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PRODUCERS_START_GRANTS,
     toSenderCommands: toProducerCommands,
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver' ? toOwnerCommands(recipient) : toDroppedSubscriberCommands(recipient),
@@ -71,8 +76,9 @@ export const subscriptionOrderedReconnect: AlmConformanceScenarioDefinition = {
 /**
  * Over RTC the other producer, unelected, is frozen into each copy. While the sibling's socket is closed a probe
  * publishes until the receiver alone is expected: the WS server stops expecting the sibling with its socket, an RTC
- * producer once its snapshot drops the closed presence. After the reopen a probe waits until both subscribers are
- * expected again: over RTC the producer's snapshot must name the re-asserted presence and the link must be up.
+ * producer once its snapshot drops the closed presence. After the reopen the producer's page applies the head that
+ * carries the layout the re-asserted presence settled on, then a probe waits until both subscribers are expected
+ * again: over RTC the producer's snapshot must name the re-asserted presence and the link must be up.
  */
 function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const outsideAudience = computeUnelectedOutsideCount(producer, 1);
@@ -83,10 +89,11 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
         ...toReadinessProbeCommands(producer, subscribed.confirmations, outsideAudience),
         ...toOrderedPublishCommands({ ...subscribed, publication: 1 }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 2 }),
+        toSiblingLeftWait(producer),
         ...toPublishUntilConfirmedCommands({ ...receiverAlone, name: 'probe-receiver-alone', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 3 }),
         ...toOrderedPublishCommands({ ...receiverAlone, publication: 4 }),
-        toCueWait(producer, 'reentered'),
+        ...toElectionAppliedCueWaitCommands(producer, REENTERED, 'reasserted'),
         ...toPublishUntilConfirmedCommands({ ...subscribed, name: 'probe-reentered', kind: 'probe' }),
         ...toOrderedPublishCommands({ ...subscribed, publication: 5 }),
         ...toNoGapRepairWaits(producer)
@@ -96,11 +103,12 @@ function toProducerCommands(producer: AlmConformanceStepInput): readonly RallarB
 function toOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         ...toCueListenCommands(owner),
-        ...toFourRoleGrantCommands(owner),
+        toSubscribeCommand(owner, 'receiver'),
         ...toOrderedArrivalWaits(owner, [1, 2]),
         ...toOrderedConfirmedCueWaits(owner, 2),
         ...toOrderedArrivalWaits(owner, [3, 4]),
         ...toOrderedConfirmedCueWaits(owner, 4),
+        ...toElectionAppliedCueCommands(owner, REENTERED, 'reasserted'),
         ...toOrderedArrivalWaits(owner, [5]),
         ...toOrderedConfirmedCueWaits(owner, 5),
         ...toUnsubscribeCommands(owner, 'receiver')
@@ -121,7 +129,9 @@ function toDroppedSubscriberCommands(sibling: AlmConformanceStepInput): readonly
 
 /**
  * The reopened socket's election names its generation in the session's row, and its room presence names it too, so
- * the sibling sends its cue again; the election's delta reaches the producers' snapshots before it does.
+ * the sibling sends its cue again, which the receiver applies before it lets the producers publish. Its re-asserted
+ * presence re-plans the room's layout, so the sibling, too, applies the head the receiver's cue follows and tells the
+ * producers before they publish.
  */
 function toReenteredSubscriberCommands(sibling: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -140,8 +150,8 @@ function toReenteredSubscriberCommands(sibling: AlmConformanceStepInput): readon
             names: true
         }),
         toPresenceGenerationPollCommand({ step: sibling, name: 'presence-reasserted', tokens: 'tokens-reconnected' }),
-        toPauseCommand(sibling, 'reentered-delta-margin', GRANT_DELTA_MARGIN_MS),
-        ...toCueSendCommands(sibling, 'reentered'),
+        ...toCueSendCommands(sibling, REENTERED),
+        ...toElectionAppliedCueCommands(sibling, REENTERED, 'reasserted'),
         ...toOrderedArrivalWaits(sibling, [5]),
         ...toOrderedPositionWaits({
             step: sibling,

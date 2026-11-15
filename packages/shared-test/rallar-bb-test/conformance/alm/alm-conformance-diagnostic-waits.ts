@@ -8,7 +8,8 @@ import type { RallarBlackBoxTestWaitCommand } from '../../rallar-black-box-test-
 import { NON_EXPIRING_SEND_TIMEOUT_MS, RESPONSE_MARGIN_MS } from './alm-conformance-budgets.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toCommandId, toScenarioTypeId } from './alm-conformance-step-identities.ts';
-import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-polls.ts';
+import { toWaitHistoryMetadata, type AlmWaitHistory } from './cell/to-cell-history-marked-commands.ts';
+import { SUBSCRIPTION_ABSENCE_MS } from './scenarios/topic-subscription/topic-subscription-budgets.ts';
 
 /** The page's runtime diagnostics topics; an event's `data` is the runtime event itself, in its emitted key order. */
 export const ALM_OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
@@ -33,6 +34,7 @@ interface AlmConformanceDiagnosticWaitInput {
     readonly payloadFields?: Readonly<Record<string, ApiJsonValue>>;
     /** The page states no such event before the wait or within `SUBSCRIPTION_ABSENCE_MS` of its start. */
     readonly absent?: boolean;
+    readonly historyFrom: AlmWaitHistory;
 }
 
 interface AlmConformanceOrderingPositionTrack {
@@ -75,7 +77,7 @@ interface AlmConformanceControlProofRefusalWaitInput {
  * the text must scope the match itself. The wait starts before the other role's sends, so it owns the verdict budget.
  */
 export function toDiagnosticWait(
-    { step, name, topic, contains, payloadFields, absent }: AlmConformanceDiagnosticWaitInput
+    { step, name, topic, contains, payloadFields, absent, historyFrom }: AlmConformanceDiagnosticWaitInput
 ): RallarBlackBoxTestWaitCommand {
     return {
         kind: 'wait',
@@ -88,7 +90,8 @@ export function toDiagnosticWait(
             ...(payloadFields === undefined ? {} : { payloadFields })
         },
         ...(absent === true ? { absent: true } : {}),
-        timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs)
+        timeoutMs: absent === true ? SUBSCRIPTION_ABSENCE_MS : toVerdictTimeoutMs(step.input.deadlineMs),
+        ...toWaitHistoryMetadata(historyFrom)
     };
 }
 
@@ -105,6 +108,7 @@ export function toOrderingPositionWait(
         step,
         name: position.name,
         topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"trackKey":"${position.track}:`,
         ...('absent' in position
             ? { payloadFields: kind, absent: true }
@@ -126,6 +130,7 @@ export function toControlAdmissionWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}"${admitted}${phase}`
     });
 }
@@ -141,6 +146,7 @@ export function toControlProofRefusalWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains:
             `"msgId":"${controlMsgId}","typeId":"${controlTypeId}","targetMsgId":"${toSentMsgIdReference(step)}",` +
             '"outcome":"rejected","reason":"',
@@ -162,6 +168,7 @@ export function toRepairDispatchWait(
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"msgId":"${toSentMsgIdReference(step)}",${toRepairDispatchText(step)}`
     });
 }
@@ -169,7 +176,8 @@ export function toRepairDispatchWait(
 /**
  * No repair dispatched any message of the cell's type from this page, and no gap NACK about the cell's tracks reached
  * it, whatever its origin made of one: a NACK whose repair was refused dispatches nothing, yet its admission states
- * the NACK's reason and track. The first wait listens one window, the second reads the history that window kept.
+ * the NACK's reason and track. The first wait listens one window; the second reads the cell's history, that window
+ * included.
  * A minted send names no index to pin either by.
  */
 export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly RallarBlackBoxTestWaitCommand[] {
@@ -177,6 +185,7 @@ export function toNoGapRepairWaits(step: AlmConformanceStepInput): readonly Rall
         step,
         name: 'no-gap-nack',
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: `"nackReason":"gap","nackOrderingKey":"${step.scenarioKey}:`,
         absent: true
     });
@@ -189,6 +198,7 @@ function toNoRepairDispatchWait(step: AlmConformanceStepInput, name: string): Ra
         step,
         name,
         topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
         contains: toRepairDispatchText(step),
         absent: true
     });

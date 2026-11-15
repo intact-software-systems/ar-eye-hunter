@@ -8,6 +8,7 @@ import {
     NativeRtcRuntime,
     SimulatedNativeRtcPeerConnection
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 
 let nativeRuntime: NativeRtcRuntime | undefined;
 
@@ -39,7 +40,8 @@ export interface SimulatedRtcConnections {
  */
 export function createSimulatedRtcConnections(
     sessionId: string,
-    connect: (peerId: string) => boolean = () => true
+    connect: (peerId: string) => boolean = () => true,
+    peerAdmission: WebRtcConnectionService.PeerAdmission = UNGATED_TEST_PEER_ADMISSION
 ): SimulatedRtcConnections {
     const runtime = installSimulationNativeRuntime();
     const fixture = createNativeRtcConnectionFixture(
@@ -52,7 +54,7 @@ export function createSimulatedRtcConnections(
             rtcSignalingTopicId: 'rtc'
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission }
     );
     const { service } = fixture;
     const connectedPeerIds = installSimulatedLaneTransport(service, connect);

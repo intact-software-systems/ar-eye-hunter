@@ -275,6 +275,9 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly contains?: string;
     readonly exists?: boolean;
     readonly sinceEpochMs?: number;
+    readonly sinceCommandIdPrefix?: string;
+    /** Every path must reach its floor, a finite number or one `{resultCache…}` reference, in the same event. */
+    readonly payloadMinimums?: Readonly<Record<string, number | string>>;
 }
 
 export type RallarBlackBoxTestWaitCommand =
@@ -314,6 +317,9 @@ export type RallarBlackBoxTestAssertOperator =
     | 'matchesShapeComplete'
     | 'sameUniqueStringSet';
 
+/** The operators that compare the source with a second result path, `comparisonSource`. */
+export type RallarBlackBoxTestAssertComparisonOperator = 'equals' | 'gte' | 'sameUniqueStringSet';
+
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>
     & (
@@ -325,7 +331,7 @@ export type RallarBlackBoxTestAssertCommand =
         }>
         | Readonly<{
             source: string;
-            operator: 'sameUniqueStringSet';
+            operator: RallarBlackBoxTestAssertComparisonOperator;
             comparisonSource: string;
             expected?: never;
         }>
@@ -1107,7 +1113,7 @@ export interface RallarBlackBoxTestWaitResultValue {
 
 export type {
     RallarBlackBoxTestAssertResultValue,
-    RallarBlackBoxTestSetAssertResultValue,
+    RallarBlackBoxTestComparisonAssertResultValue,
     RallarBlackBoxTestValueAssertResultValue
 } from './assert/assert-result-contracts.ts';
 

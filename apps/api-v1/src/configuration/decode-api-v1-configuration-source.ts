@@ -91,7 +91,7 @@ const OVERLAY_TOP_LEVEL_KEYS = new Set([
 const CONFIGURATION_KEYS_BY_PATH: Readonly<Record<string, ReadonlySet<string>>> = {
     profile: new Set(['productionHardening']),
     http: new Set(['hostname', 'port', 'replicaCount', 'corsOrigins', 'preflightMaxAgeSeconds', 'shutdownDeadlineMs']),
-    publicApi: new Set(['apiBaseUrl', 'wsBaseUrl']),
+    publicApi: new Set(['apiBaseUrl', 'wsBaseUrl', 'rtcReplacedLayoutOverlapMs']),
     database: new Set([
         'mode',
         'dataDirectory',

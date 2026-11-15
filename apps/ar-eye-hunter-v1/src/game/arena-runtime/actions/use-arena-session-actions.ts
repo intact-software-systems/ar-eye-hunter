@@ -12,10 +12,12 @@ import {
 import type {
     RallarCreateRoomInput,
     RallarDirectorStatus,
-    RallarRoomSummary
+    RallarRoomSummary,
+    RallarRoomSwitchOperation
 } from '@shared-web/browser/rallar.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
 import type { GroupJoinMode, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { QuickJoinGroupResult } from '@shared/api/mutation/group-quick-join.ts';
@@ -223,11 +225,9 @@ async function quickJoinArena(
         if (!isCurrent()) {
             return undefined;
         }
-        if (
-            error instanceof Error && error.name === 'RallarRoomSwitchPartialFailureError' &&
-            'operation' in error && error.operation === 'quick-join'
-        ) {
-            adoptArenaRoom(input, rallar.rooms.state().currentRoomId);
+        const joinedRoom = error instanceof Error ? toJoinedRoomSnapshot(error, 'quick-join') : undefined;
+        if (joinedRoom) {
+            adoptArenaRoom(input, joinedRoom.group.groupId);
             try {
                 await refreshRooms();
             }
@@ -248,7 +248,23 @@ async function quickJoinArena(
     return result.status;
 }
 
-function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string | undefined): void {
+function toJoinedRoomSnapshot(error: Error, operation: RallarRoomSwitchOperation): GroupSnapshot | undefined {
+    if (
+        error.name !== 'RallarRoomSwitchPartialFailureError' ||
+        !('operation' in error) || error.operation !== operation || !('joinedRoom' in error)
+    ) {
+        return undefined;
+    }
+    try {
+        validateAuthoritativeGroupSnapshot(error.joinedRoom);
+        return error.joinedRoom;
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function adoptArenaRoom(input: ArenaSessionActionsInput, roomId: string): void {
     // The room subscription normally adopts first, while previous-room cleanup is still pending.
     if (input.roomIdRef.current !== roomId) {
         input.clearRoomScopedArenaState();
@@ -288,14 +304,11 @@ async function createAndSelectArenaRoom(
         if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {
             return undefined;
         }
-        const admitted = rallar.rooms.state().currentRoom;
-        if (
-            !admitted || !(error instanceof Error) || error.name !== 'RallarRoomSwitchPartialFailureError' ||
-            !('operation' in error) || error.operation !== 'create-and-switch'
-        ) {
+        const joinedRoom = error instanceof Error ? toJoinedRoomSnapshot(error, 'create-and-switch') : undefined;
+        if (!joinedRoom) {
             throw error;
         }
-        snapshot = admitted;
+        snapshot = joinedRoom;
         input.setError('The new arena is ready, but leaving the previous arena failed. Your membership there remains.');
     }
     if (sessionRef.current?.sessionId !== session.sessionId || sessionRef.current?.clientId !== session.clientId) {

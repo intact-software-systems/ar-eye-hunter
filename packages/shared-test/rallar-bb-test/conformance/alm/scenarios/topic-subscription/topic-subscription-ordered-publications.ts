@@ -6,9 +6,14 @@ import type {
 } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { toOrderingPositionWait } from '../../alm-conformance-diagnostic-waits.ts';
+import type { AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
+import { toFormationSettledPollCommand } from '../../cell/to-alm-cell-settle.ts';
+import { toAppliedHeadWaitCommands } from '../../cell/to-applied-head-wait-commands.ts';
 import {
     toConfirmedCueWait,
+    toCueSendCommands,
+    toCueWait,
     toPublicationWait,
     toPublishUntilConfirmedCommands
 } from './topic-subscription-publications.ts';
@@ -76,6 +81,58 @@ export function toOrderedPublishCommands(
     });
 }
 
+/**
+ * How the sibling's election met its room presence: `held`, it kept its socket, so the room keeps its layout;
+ * `reasserted`, a reopened socket re-asserted its presence, which re-plans the room's layout, and until a producer's
+ * page accepted the new layout its copy has no route to the sibling and is retried as a repair.
+ */
+export type ElectedSiblingPresence = 'held' | 'reasserted';
+
+/**
+ * A page that a copy after the sibling's election must find current applies the head that carries the election, then
+ * tells the producers so under its own role. The receiver writes nothing after the election, so the sibling's cue
+ * `elected`, sent after its election's response, is its ordering point; after a re-asserted presence it first polls
+ * until the room settled on the layout that presence re-planned, so the head it reads carries that layout. The
+ * re-entered sibling's ordering point is the receiver's cue, which follows that settled layout.
+ */
+export function toElectionAppliedCueCommands(
+    step: AlmConformanceStepInput,
+    elected: string,
+    presence: ElectedSiblingPresence
+): readonly RallarBlackBoxTestCommand[] {
+    const receiver = step.role === 'receiver';
+    return [
+        toCueWait(step, receiver ? elected : toElectionAppliedCue(elected, 'receiver')),
+        ...(receiver && presence === 'reasserted'
+            ? [toFormationSettledPollCommand(step, `${elected}-formation-poll`)]
+            : []),
+        ...toElectionHeadCommands(step, elected),
+        ...toCueSendCommands(step, toElectionAppliedCue(elected, step.role))
+    ];
+}
+
+/**
+ * A producer's first publication after a sibling's election waits until the receiver applied that election. After a
+ * re-asserted presence it also waits until the re-entered sibling applied the settled layout, then reads the room's
+ * head, which follows that layout through the receiver's cue, and waits until its own page applied it, so every page
+ * the copy must find current holds the layout that routes to the sibling.
+ */
+export function toElectionAppliedCueWaitCommands(
+    producer: AlmConformanceStepInput,
+    elected: string,
+    presence: ElectedSiblingPresence
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toCueWait(producer, toElectionAppliedCue(elected, 'receiver')),
+        ...(presence === 'reasserted'
+            ? [
+                toCueWait(producer, toElectionAppliedCue(elected, 'sibling')),
+                ...toElectionHeadCommands(producer, elected)
+            ]
+            : [])
+    ];
+}
+
 /** Each producer's `publications` arrived on the page, the sender's track first. */
 export function toOrderedArrivalWaits(
     step: AlmConformanceStepInput,
@@ -93,8 +150,8 @@ export function toOrderedAbsenceWaits(
 }
 
 /**
- * None of the named publications arrived on the page. Every absence reads the page's whole history, so the first
- * one's window for a late copy covers the others, which read the history alone.
+ * None of the named publications arrived on the page during the cell. Every absence reads the cell's whole history, so
+ * the first one's window for a late copy covers the others, which read that history alone.
  */
 export function toPublicationAbsenceWaits(
     step: AlmConformanceStepInput,
@@ -151,6 +208,24 @@ function toOrderedPublicationNames(publications: readonly number[]): readonly st
 
 function toProducerTrack(producer: AlmConformanceStepInput): OrderedTrack {
     return producer.role === 'sender' ? 'a' : 'c';
+}
+
+/**
+ * The page reads the room's head after its ordering point and waits until it applied it: the head carries the sibling's
+ * election and, after a re-asserted presence, the layout the room settled on.
+ */
+function toElectionHeadCommands(step: AlmConformanceStepInput, elected: string): readonly RallarBlackBoxTestCommand[] {
+    return toAppliedHeadWaitCommands({
+        step,
+        name: `${elected}-head`,
+        purpose: 'Read the room head that carries the sibling\'s election and any layout its presence re-planned.',
+        historyFrom: 'cell'
+    });
+}
+
+/** The cue a page sends once it applied the head that carries the sibling's election. */
+function toElectionAppliedCue(elected: string, applier: AlmConformanceRole): string {
+    return `${elected}-applied-by-${applier}`;
 }
 
 function toOrderedPublicationName(track: OrderedTrack, publication: number): string {

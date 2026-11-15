@@ -23,6 +23,13 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `queuebox/`, `services/`, `repository/`, `persistence/`, and `resilience/`
   provide runtime-neutral persistence, queue, retry, clock, and utility
   contracts used by browser and server packages.
+- `random/` owns the seeded generator (`createSeededRandom`) and the shuffle
+  over a generator (`computeShuffledOrder`): one seed gives one sequence on
+  every machine. The black-box runner's scenario workload, the ALM conformance
+  lane's cell order, AR Eye Hunter's targets and Relic Hunters' procedural
+  expedition blueprints draw from the generator; the lane's cell order and the
+  blueprints' theme and relic names are the shuffle's users. Relic seeds the
+  generator with an FNV-1a hash of its string seed.
 - `crdt/` owns shared CRDT contracts, document health/recovery helpers, sync
   envelopes, backup/restore support, and retention/erasure primitives.
 - `rallar-ai/` owns shared RallarAI contracts and deterministic helpers. Live
@@ -32,8 +39,8 @@ without pulling in DOM, HTTP-server, Postgres, or app-specific runtime wiring.
 - `webrtc/` owns shared WebRTC group, multicast, overlay, and signaling
   contracts that do not depend on browser APIs directly. The shared RTC
   connection service supports bounded initial connection-attempt budgets,
-  `connect-exhausted` diagnostics, max-peer caps, and symmetric inbound/outbound
-  missing-peer creation policies; it tracks each peer's setup from the started
+  `connect-exhausted` diagnostics, max-peer caps, and one required `peerAdmission`
+  that decides inbound and outbound missing-peer creation; it tracks each peer's setup from the started
   attempt to its first established report, so an ensure names whether it
   started, found in flight, or found established, and lifecycle observers
   receive `onEstablished` once per setup. Browser wiring enables the budget by

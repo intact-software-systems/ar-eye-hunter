@@ -3,6 +3,7 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import type { RallarRoomFormationStatus } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { isGroupLayoutIdentity, isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { resolveDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
 
@@ -99,7 +100,8 @@ function isRoutineFormationStatus(status: RallarRoomFormationStatus): boolean {
             'snapshot'
         ]) ||
         (status.stage !== 'active' && status.stage !== 'reconfiguring') || status.transportState !== 'flowing' ||
-        status.planned !== undefined || status.dialing !== 'accepted' || !isRoutineMemberPolicy(status) ||
+        status.planned !== undefined || status.dialing !== resolveDialLayoutRoles(status.stage) ||
+        !isRoutineMemberPolicy(status) ||
         status.formationAttemptCount !== 0 || !isNonnegativeInteger(status.formationEpoch) ||
         (status.condition !== undefined && status.condition !== 'active' && status.condition !== 'initialising') ||
         (status.coverageRate !== undefined && (!isNonnegativeNumber(status.coverageRate) || status.coverageRate > 1))

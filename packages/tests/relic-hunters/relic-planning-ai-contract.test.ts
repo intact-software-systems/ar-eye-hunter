@@ -57,6 +57,32 @@ describe('the Relic planning companion contract', () => {
         expect(decodeRelicPlanningAiSuggestion(suggestion, CONTEXT).left).toEqual(expect.any(String));
     });
 
+    it.each([
+        { label: 'null', value: null },
+        { label: 'a string', value: 'search' },
+        { label: 'an array', value: [] },
+        { label: 'an array of a suggestion', value: [{ headline: 'Search', rationale: 'Why not.', risks: [], confidence: 'high' }] }
+    ])('refuses $label as a suggestion', ({ value }) => {
+        expect(decodeRelicPlanningAiSuggestion(value, CONTEXT).left).toBe('Suggestion must be an object.');
+    });
+
+    it.each([
+        { label: 'null', action: null },
+        { label: 'a string', action: 'search' },
+        { label: 'an array', action: [] },
+        { label: 'an array of an action', action: [{ kind: 'search' }] }
+    ])('refuses $label as a suggested action', ({ action }) => {
+        const suggestion = {
+            headline: 'Search the Entrance',
+            action,
+            rationale: 'Nothing is known about this room yet.',
+            risks: [],
+            confidence: 'high'
+        };
+
+        expect(decodeRelicPlanningAiSuggestion(suggestion, CONTEXT).left).toBe('Action kind is invalid.');
+    });
+
     it.each(FIXTURE_CONTEXTS)('decodes the $label context it receives as JSON', ({ context }) => {
         const decoded = decodeRelicPlanningAiContext(JSON.parse(JSON.stringify(context)));
 

@@ -8,6 +8,7 @@ import { RtcNativeObservationScope } from '@shared/webrtc/rtc-native-observation
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { installNativeRtcRuntime, SimulatedNativeRtcPeerConnection } from '../native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../ungated-test-peer-admission.ts';
 
 afterEach(() => {
     vi.unstubAllGlobals();
@@ -1049,7 +1050,13 @@ describe('original native owner evidence', () => {
             dataChannelName: 'test',
             rtcSignalingTopicId: 'rtc',
             iceCandidates: { iceServers: [], expiresAtEpochMs: 1000 }
-        }, { nowEpochMs: () => 1, createOfferId: () => 'offer', faultPort: createPassThroughTransportFaultPort(), writeRetainedSignalsDueNow: async () => [] });
+        }, {
+            nowEpochMs: () => 1,
+            createOfferId: () => 'offer',
+            faultPort: createPassThroughTransportFaultPort(),
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
+        });
         onTestFinished(() => {
             service.disconnectPeer('peer');
         });
@@ -1111,7 +1118,8 @@ function createService(events: RtcSignalingDiagnostics.Event[], diagnostics?: Rt
         faultPort: createPassThroughTransportFaultPort(),
         nowEpochMs: () => 1,
         signalingDiagnostics: diagnostics ?? capture?.diagnostics,
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
     onTestFinished(() => {
         for (const peerId of service.knownPeerIds()) {

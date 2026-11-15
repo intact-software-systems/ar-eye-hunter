@@ -6,6 +6,7 @@ import type {
 
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
 /** The product only admits a user WS topic under `app.` or `room.`; the scenario scope stays in the typeId. */
 export const ALM_CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
@@ -16,12 +17,15 @@ const ALM_CONFORMANCE_WORLD_TOPIC_ID = 'app.alm-conformance.world';
 /** The granted topic the lanes' API profiles install; only a session that elected to receive it is sent its messages. */
 export const ALM_CONFORMANCE_GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
 
-/** A scenario whose selector is granted publishes and listens on that selector's topic. */
+/**
+ * A scenario whose selector is granted publishes and listens on that selector's topic; one that declares the world
+ * topic, on it; any other on the room topic.
+ */
 export function toScenarioTopicId(step: AlmConformanceStepInput): string {
-    if (step.messageSelector?.access === 'granted') {
-        return step.messageSelector.topicId;
+    if (step.messages.messageSelector?.access === 'granted') {
+        return step.messages.messageSelector.topicId;
     }
-    return step.scenarioId === 'world-routing' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
+    return step.messages.topic === 'world' ? ALM_CONFORMANCE_WORLD_TOPIC_ID : ALM_CONFORMANCE_TOPIC_ID;
 }
 
 /** A world send names no room, so it publishes on the world topic; any other send on its scenario's topic. */
@@ -37,7 +41,7 @@ export function toScenarioTypeId(step: AlmConformanceStepInput): string {
 }
 
 export function toCommandId(step: AlmConformanceStepInput, name: string): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-${name}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${step.role}-${name}`;
 }
 
 /** A recipient's own send names its role, so no handle of a cell names two sends. */
@@ -52,7 +56,7 @@ export function toLoopIterationSendHandleId(step: AlmConformanceStepInput): stri
 
 /** A responder's reply to the `step.index`-th arrival names its role, so the reply handles of a cell stay apart. */
 export function toReplyHandleId(step: AlmConformanceMessageStepInput): string {
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-reply-${step.index}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${step.role}-reply-${step.index}`;
 }
 
 export function toConnectionName(step: AlmConformanceStepInput): string {
@@ -69,7 +73,7 @@ export function toRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlack
 
 function toHandleId(step: AlmConformanceStepInput, index: number | string): string {
     const origin = isSenderPage(step.role) ? '' : `${step.role}-`;
-    return `alm-${step.input.carrier}-${step.scenarioKey}-${origin}send-${index}`;
+    return `${toAlmCellCommandPrefix(step.input.carrier, step.scenarioKey)}-${origin}send-${index}`;
 }
 
 /**

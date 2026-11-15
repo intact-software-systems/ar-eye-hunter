@@ -10,7 +10,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { computeFrozenAudience, toRtcAudienceNarrowing } from '@shared/multicast/web-rtc-overlay-frozen-audience.ts';
 
 import {
@@ -99,6 +99,7 @@ function computeRtcFrozenRecipients(message: ALMessage, snapshot: GroupSnapshot)
         selfPeerId: 'a',
         fromPeerId: undefined,
         recipientPeerId: undefined,
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
         nowMs: Date.now()
     });
     if (admission.kind !== 'authorized') {

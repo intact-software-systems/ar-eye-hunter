@@ -1,4 +1,5 @@
 import type { PeerId } from '../api/api-config.ts';
+import { computeConnectionCapSpend } from './group-dial/compute-connection-cap-spend.ts';
 
 export type OutboundDialPlanInput = Readonly<{
     maxPeerConnections: number;
@@ -6,6 +7,8 @@ export type OutboundDialPlanInput = Readonly<{
     /** Known peers whose native connection is still connecting or connected. */
     livePeerIds: ReadonlySet<PeerId>;
     desiredPeerIds: ReadonlySet<PeerId>;
+    /** Desired peers wanted only through an active room's planned layout. */
+    earlyDialPeerIds: ReadonlySet<PeerId>;
     connectablePeerIds: readonly PeerId[];
     serverDesiredPeerIds: ReadonlySet<PeerId>;
 }>;
@@ -15,38 +18,46 @@ export type OutboundDialPlan = Readonly<{
     livePeerIds: readonly PeerId[];
     /** Known peers whose connection died: their ensure starts a new setup under the bound, on a connection slot they already hold. */
     deadKnownPeerIds: readonly PeerId[];
-    /** New dials, server-overlay-desired first; only `newDialBudget` of them fit the connection budget. */
+    /** New dials: accepted ones server-overlay-desired first, then the early ones a free slot holds; only `newDialBudget` of them start. */
     candidatePeerIds: readonly PeerId[];
+    /** Early peers no free slot holds this pass. */
+    deferredPeerIds: readonly PeerId[];
     newDialBudget: number;
 }>;
 
 /**
  * Orders outbound dialing under the same peer-connection budget inbound
- * admission uses. Only desired known connections count against the budget:
- * retained (grace) connections are governed by the retained-eviction pass,
- * which trims the overflow in the same reconcile — counting them here would let
- * a full retained set starve required dials that the eviction pass would never
- * unblock. The dial loop spends the budget and the in-flight bound as it goes,
- * so a paced peer never holds a slot a later candidate could use, and a dial
- * that starts nothing frees its slot at once.
+ * admission uses, as `computeConnectionCapSpend` ranks it: retained peers and
+ * early peers never hold back an accepted dial, since the eviction pass closes
+ * them in the same reconcile, while an early dial only takes a slot that is
+ * free after every known peer. The dial loop spends the budget and the
+ * in-flight bound as it goes, so a paced peer never holds a slot a later
+ * candidate could use, and a dial that starts nothing frees its slot at once.
  */
 export function computeOutboundDialPlan(
     input: OutboundDialPlanInput
 ): OutboundDialPlan {
     const known = input.connectablePeerIds.filter((peerId) => input.knownPeerIds.has(peerId));
-    const newCandidates = input.connectablePeerIds.filter((peerId) => !input.knownPeerIds.has(peerId));
-    const desiredKnownCount = Array.from(input.knownPeerIds)
-        .filter((peerId) => input.desiredPeerIds.has(peerId))
-        .length;
+    const unknownPeerIds = input.connectablePeerIds.filter((peerId) => !input.knownPeerIds.has(peerId));
+    const spend = computeConnectionCapSpend({
+        maxPeerConnections: input.maxPeerConnections,
+        knownPeerIds: input.knownPeerIds,
+        desiredPeerIds: input.desiredPeerIds,
+        earlyDialPeerIds: input.earlyDialPeerIds,
+        retainedPeers: [],
+        candidatePeerIds: [
+            ...unknownPeerIds.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
+            ...unknownPeerIds.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
+        ],
+        inboundPeerId: null
+    });
 
     return {
         livePeerIds: known.filter((peerId) => input.livePeerIds.has(peerId)),
         deadKnownPeerIds: known.filter((peerId) => !input.livePeerIds.has(peerId)),
-        candidatePeerIds: [
-            ...newCandidates.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
-            ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
-        ],
-        newDialBudget: Math.max(0, input.maxPeerConnections - desiredKnownCount)
+        candidatePeerIds: spend.dialPeerIds,
+        deferredPeerIds: spend.deferredPeerIds,
+        newDialBudget: spend.acceptedDialBudget
     };
 }
 

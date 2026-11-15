@@ -5,7 +5,7 @@ import { toRoomEntryUrl } from '@shared-web/browser/rooms/entry/rallar-room-entr
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { toGroupDirectoryListing } from '@shared/api/group-directory/group-directory-listing.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupJoinCodeResponse } from '@shared/api/state-types.ts';
 
 import { ArenaRoomInvitations } from './arena-room-invitations.tsx';
@@ -17,15 +17,9 @@ interface ArenaRoomSharingProps {
     readonly rotate: () => Promise<void>;
 }
 
-export function isCurrentArenaHost(session: AuthSession | undefined, room: GroupRef | undefined): boolean {
+export function isCurrentArenaSession(session: AuthSession): boolean {
     const current = rallar.session();
-    const currentRoom = rallar.rooms.state().currentRoomRef;
-    if (!session || current?.sessionId !== session.sessionId || current.clientId !== session.clientId) {
-        return false;
-    }
-    return room === undefined
-        ? currentRoom === undefined
-        : currentRoom !== undefined && isSameGroupRef(currentRoom, room);
+    return current?.sessionId === session.sessionId && current.clientId === session.clientId;
 }
 
 export function ArenaRoomSharing({ snapshot, code, busy, rotate }: ArenaRoomSharingProps) {
@@ -77,10 +71,6 @@ function ArenaDirectoryListing({ snapshot }: Pick<ArenaRoomSharingProps, 'snapsh
     const [error, setError] = useState<string | undefined>();
     const listing = toGroupDirectoryListing(snapshot.group.metadata);
     const change = async () => {
-        const session = rallar.session();
-        if (!session) {
-            return;
-        }
         setBusy(true);
         setError(undefined);
         try {
@@ -90,14 +80,10 @@ function ArenaDirectoryListing({ snapshot }: Pick<ArenaRoomSharingProps, 'snapsh
             });
         }
         catch {
-            if (isCurrentArenaHost(session, snapshot.group)) {
-                setError('Could not change room listing. Check your connection and try again.');
-            }
+            setError('Could not change room listing. Check your connection and try again.');
         }
         finally {
-            if (isCurrentArenaHost(session, snapshot.group)) {
-                setBusy(false);
-            }
+            setBusy(false);
         }
     };
     return (

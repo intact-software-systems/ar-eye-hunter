@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
     decodeALMObservationPageDiagnosticsFile,
     type ALMObservationPageDiagnosticsFile
-} from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-page-diagnostics.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');

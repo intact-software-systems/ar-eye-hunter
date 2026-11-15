@@ -14,7 +14,10 @@ import type { ReadableKeyedValues } from '../../cache/RepositoryInterfaces.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { PublicationCrypto } from '../../signature/publication-crypto.ts';
 import { readRtcGroupSnapshotByRef } from '../read-rtc-outbound-observation.ts';
-import { toRtcPublicationHandlingPlan, type RtcRoomSnapshotAdmission } from '../rtc-room-snapshot-admission.ts';
+import {
+    toRtcPublicationHandlingPlan,
+    type RtcRoomSnapshotAdmission
+} from '../room-authority/rtc-room-snapshot-admission.ts';
 import { toRtcOutboundMessage } from '../to-rtc-outbound-message.ts';
 import { computeRtcFrozenAudienceRefusal } from '../web-rtc-overlay-frozen-audience.ts';
 import { computeGrantedSubscribeHolders } from './compute-granted-subscribe-holders.ts';

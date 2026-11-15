@@ -18,6 +18,7 @@ import {
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+import { createTestGroupPeerLedger } from './web-rtc-group-manager-test-fixture.ts';
 
 export interface SimulatedClient {
     readonly sessionId: string;
@@ -48,7 +49,8 @@ export function createSimulatedClient(
     configureOverlayRepositories(
         {
             plannedOverlays: { ttlMs: 60_000 },
-            acceptedOverlays: { ttlMs: 60_000 }
+            acceptedOverlays: { ttlMs: 60_000 },
+            nowEpochMs: Date.now
         },
         repositoryManager
     );
@@ -67,18 +69,13 @@ export function createSimulatedClient(
 
     const manager = new WebRtcGroupManager(
         service,
-        {
+        createTestGroupPeerLedger(service.input.sessionId, {
             groupCache,
             clientCache,
             plannedOverlayCache: readablePlannedOverlayCache(repositoryManager),
             acceptedOverlayCache: readableAcceptedOverlayCache(repositoryManager)
-        },
-        {
-            maxPeerConnections: options.maxPeerConnections,
-            overlayTransitionGraceMs: options.overlayTransitionGraceMs,
-            now: options.now,
-            onOverlayAdopted: async () => {}
-        }
+        }, { maxPeerConnections: options.maxPeerConnections, overlayTransitionGraceMs: options.overlayTransitionGraceMs, now: options.now }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     return {

@@ -1,6 +1,7 @@
 import { AL_PUBLICATION_POLICY_LIMITS } from '@shared/al-contracts/publication/al-publication-policy.ts';
 
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from './assert/assert-value-operators.ts';
+import { RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS } from './assert/is-assert-comparison.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
@@ -408,12 +409,19 @@ const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELD
     equals: anySchema,
     contains: stringSchema,
     exists: booleanSchema,
-    sinceEpochMs: { type: 'integer', minimum: 0 }
+    sinceEpochMs: { type: 'integer', minimum: 0 },
+    sinceCommandIdPrefix: stringSchema,
+    payloadMinimums: {
+        type: 'object',
+        additionalProperties: {
+            oneOf: [{ type: 'number' }, { type: 'string', pattern: WAIT_TIMEOUT_FROM_PATTERN_SOURCE }]
+        }
+    }
 });
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS.filter((operator) => operator !== 'equals')
 };
 
 const parallelGroupSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.parallelGroup, {
@@ -631,11 +639,22 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
             },
             {
                 type: 'object',
+                required: ['kind', 'source', 'operator', 'expected'],
+                properties: {
+                    ...commandBaseProperties('assert'),
+                    source: nonEmptyStringSchema,
+                    operator: { const: 'equals' },
+                    expected: anySchema
+                },
+                additionalProperties: false
+            },
+            {
+                type: 'object',
                 required: ['kind', 'source', 'operator', 'comparisonSource'],
                 properties: {
                     ...commandBaseProperties('assert'),
                     source: nonEmptyStringSchema,
-                    operator: { const: 'sameUniqueStringSet' },
+                    operator: { enum: [...RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS] },
                     comparisonSource: nonEmptyStringSchema
                 },
                 additionalProperties: false

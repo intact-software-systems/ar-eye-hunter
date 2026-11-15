@@ -371,30 +371,21 @@ and it has no status list.
   view-push and ordering proofs nor the group-delta and auth-logout cluster
   proofs (S9-ii, D636); the file is project instructions, the maintainer's to
   edit.
-- Lane cells of the shared-room families, every family but four-role, which has
-  a room per cell (`toOwnRoomScenario` in
-  `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`),
-  inherit the room's grants, subscriptions, roster and topology from the cells
-  before them, and correct for it with revokes that assume the preceding cell
-  ran; `RALLAR_BLACK_BOX_ALM_SKIP` or the smoke scope changes a cell's start
-  state (S9-ii, D629). Waits on a declared start state per cell: an idempotent
-  grant and subscription reset at each granted cell's start.
+- Lane cells that share a room (under `RALLAR_BLACK_BOX_ALM_ROOMS=family`,
+  every cell of every family except one whose definition declares
+  `room: 'own'`, today only `subscription-ordered-reconnect`) inherit what
+  earlier cells left in the room: a granted cell declares its own start
+  grants and subscription rows, and a cell that reshapes the topology runs
+  after every cell that keeps it (`resolveAlmLanePlan`, in a shared room), but
+  no other room state is declared per cell. A selection
+  (`RALLAR_BLACK_BOX_ALM_SKIP`, `_ONLY` or the smoke scope) changes what a cell
+  inherits; `RALLAR_BLACK_BOX_ALM_ROOMS=cell` gives every family but
+  same-context a room per cell. Waits on a ruling which other cells need a
+  declared start state.
 - The lane's fixed users keep principal-scoped server state across families and
   runs (the principal ordering track; the memberships of every earlier room)
   (S9-ii, D633). `server-ordered-entry` asserts relative to it; no other cell
   is audited for it.
-- A cell's waits and absence waits read the page's whole event history, not the
-  cell's own (S9-ii): `server-ordered-entry`'s `no-before-entry` and the
-  sibling's `entered` hold only because that cell runs first on its pages.
-  Waits on a per-cell history start.
-- `toOrderingKey`
-  (`packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`)
-  is keyed by `scenarioId` while every other lane identity is keyed by
-  `scenarioKey` (S9-ii): a scenario with a second ordered variant would share
-  one ordering key.
-- `server-ordered-entry`'s principal-upsert request id carries no
-  `{runtimeIdentity}` (S9-ii): it is unique across runs only because the queue
-  context includes the session.
 - A full lane run issues about 160 room-create requests that the API refuses
   `group-already-exists` (S9-ii): every role of every cell ensures its room, and
   `alm-conformance-session-commands.ts` accepts the 409. Each costs one
@@ -422,11 +413,6 @@ and it has no status list.
   admission withholds its `admitted` receipt until its replay commits, in the
   receipt-truth slice (`writeAdmittedReceipt`,
   `packages/shared/services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts`).
-- Nothing pins that `packages/tests/tsconfig.json` includes
-  `tests/playwright/**` (S9-ii, D637):
-  `packages/tests/repo/tests-typecheck-gate.test.ts` reads the aliases, not the
-  include list, so dropping the line leaves `tests/playwright/**` untyped with
-  every gate green. Waits on a repo test that reads the include list.
 - `assessAlmRelayedReceipt`
   (`packages/shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-relayed-receipt.ts`)
   is selected by metadata but assumes a three-page path: two recipients
@@ -440,23 +426,6 @@ and it has no status list.
   (S9-ii, D637): the control protocol exports no body contract or decoder both
   could use; its owner is
   `packages/shared-test/rallar-bb-test/control-protocol.ts`.
-- `toSettledStateCommands` lives in
-  `packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts`
-  though five of its nine callers are not ordering cells (S9-ii). Its owner is
-  `alm-conformance-message-commands.ts`, whose 11 runtime exports make the
-  move a split review.
-- Two catalog tests keep a loop-only recipe flattener of their own
-  (`toFlatCommands` in
-  `packages/tests/shared-test/alm-conformance-granted-rtc.test.ts` and
-  `packages/tests/shared-test/alm-conformance-topic-subscription.test.ts`)
-  beside `toNestedCommands`
-  (`packages/tests/shared-test/to-nested-commands.ts`) (S9-ii). The shared one
-  also walks `parallel` children, so replacing them changes what each test
-  reads and needs its assertions checked, not a rename.
-- The ALM lane does not read a `recipe.cancel` command's own answer (S9-ii,
-  D628), so a cancel answered `target-not-exclusively-active` costs a needless
-  30 s before the family fails; owner
-  `tests/playwright/rallar-black-box/full-stack-helpers.ts`.
 - The reload pair's pin in
   `packages/tests/rallar-black-box/full-stack-reload-pair.test.ts` sorts by
   descending `agentId` to put the sender first (S9-ii); a sort by role would
@@ -466,10 +435,6 @@ and it has no status list.
   has no overall bound (S9-ii, D628): a cleanup longer than the lane's 30 s
   grace makes the lane cancel a recipe that was already timing out, and the
   cell reads `cancelled` instead of `RALLAR_BLACK_BOX_RECIPE_TIMEOUT`.
-- A root still live when the ALM lane records a family's observation can add
-  events to it (S9-ii): `recordObservation` runs just before `run.close()` in
-  the same `finally`
-  (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts`).
 - The browser's state-read diagnostics sink is a process-wide setter
   (`setBrowserStateReadDiagnosticsSink`,
   `packages/shared-web/browser/state-read/diagnostics.ts`) with last-writer-wins
@@ -690,6 +655,10 @@ and it has no status list.
   that refuses any other advance, plus one retention case (retention builds its
   own result). Waits on a ruling that first tells fence rewrites, which keep the
   version, apart from event-bearing writes.
+- A black-box wait with `wait.match.sinceCommandIdPrefix` under a `recent` event history fails with
+  `RALLAR_BLACK_BOX_HISTORY_UNAVAILABLE` after the first eviction, because the runner keeps no record of each
+  command's first event ordinal. Such a record would make the wait exact under `recent`; nothing needs it while every
+  lane runs a `full` history.
 - No read states that a group's presence-summary work is outstanding, so a
   page or a lane cannot tell a settled room from one whose summary delta is
   still due. The formation view carries the group's causal revision and
@@ -720,11 +689,6 @@ and it has no status list.
   (`plans/active/deno-to-bun-validation.md`), so a hosted measurement shares
   the API's machine with its load generator. A campaign needs the workers off
   it.
-- Make-before-break routing in the browser, where a new layout's edges open
-  before routing moves to them, is the complete fix for the RTT re-plan
-  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
-  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
-  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
 - At 50 agents the RTC delivery fails after the connect. With #813 merged,
   manifests 07 and 09 connect every agent and then fail on delivery: manifest
   07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
@@ -736,11 +700,12 @@ and it has no status list.
   to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
   refused frames from the old parent (`unauthorized`) and a switched relay
   stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
-  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
-  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  age defaults to 15 s, so a re-plan can land inside any longer stream. Make-before-break
+  routing in the browser (D645) is built for it; no hosted run has read it yet. The delivery loss caps
+  both campaign rungs until a hosted run reads the build (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
-  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  `packages/shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts`). Open: which
   server path produced the re-plans (neither run records the server's planning
   decision; a tree's leader-rooting or update-failure rebuild and the
   unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
@@ -761,3 +726,125 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
+- Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
+  `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
+  that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating
+  planner and finds no route; the origin's receipt keeps an unconfirmed hop and the relay records a false
+  `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing (D646).
+- Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
+  layout's frame from an unauthorized one without a time window. Later.
+- The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
+  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+- Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
+  forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
+  forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`
+  diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
+- `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
+  peer ids of equal length that differ only in late characters, for almost every message id; ids that differ early
+  flip. Pre-existing.
+- Cold ordered track during an overlap: the first frame of a stream that starts during an overlap can be lost at
+  a receiver with no state for the track. An entry rule for ordered tracks is its own slice.
+- Session volatile admission budget against a room stream: with `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000),
+  `AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS` (30 000 ms) and `AL_VOLATILE_SESSION_OWN_SHARE` (0.5), a session
+  refuses an own send once the total would pass 1 000 admissions and its own count would pass 500. Own sends count
+  until their deadline. At a 30 s send lifetime, three members of one room cannot each sustain more than about
+  16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
+  publication work, not a defect of the overlap.
+- Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
+  the cap closes early peers only for it. What a full cap does to the overlap is stated in D646; admission still
+  lists a replaced layout's neighbours for their window whether or not their edges are open.
+- A frozen multicast's double fault during the forwarding half: a relay prunes as the inbound README
+  states under "Which children a relay owns", so a frame can be lost when a peer that lags across a second promotion forwards over a layout outside that union and the copy to the path child
+  is also lost, on a frame that carries no receipt. This follows from the code; no test pins the loss.
+- A stale planned layout counts for up to 60 s: the rule owner (`resolveRtcRoomRoutingEdges`) and the dial policy
+  (`selectGroupEarlyDialPeerIds`) take whatever the planned slot holds, and a planned layout that the accepted one has
+  moved past stays until the planned slot is replaced or removed, at most 60 s. It costs early dials in the cap's
+  lowest class and not-yet-in-sync answers to its neighbours. First, the connection-cap test
+  `a promotion does not close the replaced layout's edges while early peers are still wanted`
+  (`packages/tests/shared/web-rtc-group-manager-reconcile-wakes.test.ts`), whose early peers come from a planned layout
+  the accepted one has moved past, is rebuilt on a newer planned layout. Then one predicate, "the planned layout
+  dominates the accepted one", serves the rule owner and the dial policy.
+- The browser spec of the overlap shows the hand-over, not the rule (D648). A case in which a promotion re-parents a
+  browser onto an edge that is not open is not built. It needs a formation driver for more than three browsers (today's
+  forms the room with `{mesh, degreeLimit 2}`, which leaves a fourth session without an edge), the shape read from
+  the layouts at run time, and a bounded search for an owner request that re-parents a browser onto an edge that is
+  not open: `{mesh, degreeLimit 2, meshParamK 1}` then `{tree}` adds an edge the first layout lacks and drops
+  another for one set of four session ids, moves no edge for another, and with RTT reports moves session-d from
+  session-b onto session-a for the fixture ids (`packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-owner-tree-star-config-edges.test.ts`,
+  the describe block "a mesh write then a tree write for four sessions").
+- The browser spec of the overlap (`npm run test:rallar:full-stack:memory:live-rtc-3:layout-switch`) runs in no required
+  gate lane. It would catch a regression of the hand-over over the served overlap, which only a browser run shows.
+  It is not added because it is a 65 s live-RTC stream with timing assertions, not measured on hosted runners.
+- Admission work per prepared copy: each prepared copy runs one or two admissions at every authority read, and each
+  admission, a denial included, builds the authorized list and runs the rule. Measure it before changing it.
+- The formation read's `pending` costs one more query per read while the
+  coalesced head row is not pending: `readPendingByTopicAndContextId`
+  (`packages/shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts`)
+  selects the group's unexpired topology-topic rows that the queue will still
+  attempt. It rides the `fk_ext_bank_id` prefix of `resource_inbox_unique_k` and
+  filters topic and status on those rows. Measured once with `explain analyze`
+  at 10 000 retained rows: about 1 to 2 ms; no index was added. Its cost grows
+  with the room's unexpired inbox rows of every topic, since only
+  `fk_ext_bank_id` is indexed (`resource_inbox_unique_k`); it waits on a
+  measurement at fleet scale before an index.
+- `server-ordered-entry`'s last-write wait names the write by `contains` of its
+  request id's sender part (`toLastWriteArrivalWait`,
+  `packages/shared-test/rallar-bb-test/conformance/alm/scenarios/server-ordered-entry.ts`),
+  since the writer page's runtime identity is unknowable to the other pages. A
+  suffix-anchored text operator for waits would make that match exact again.
+- `RecipeRun.startedRoots`
+  (`tests/playwright/rallar-black-box/full-stack-helpers.ts`) is a mutable
+  array on a readonly contract, filled by `startRecipeRoot` as a side effect
+  and shared by spread copies. An explicit owner of a run's started roots,
+  constructed with the run and passed where roots start and where they are
+  awaited, would make that visible.
+- `packages/shared-test/rallar-bb-test/conformance/alm` holds 20 direct
+  production files, the layout rule's limit
+  (`directTypeScriptFileCount` in `scripts/repo-style-check/layout-rules.mjs`):
+  the next file needs a sub-folder decision first.
+- A settled cell writes its start-state grants once each
+  (`toTopicGrantOnceCommand` in `granted-topic/to-topic-grant-command.ts`,
+  chosen by `granted-topic/to-alm-cell-start-state.ts`), so a
+  transient failure of one write, a 5xx or a 5 s timeout, fails the cell. The
+  poll it replaced repeated every 250 ms for up to 90 s
+  (`SUBSCRIPTION_PHASE_MS`). Waits on evidence that a start write is ever
+  refused transiently; a retry would then need its own ruling.
+- A reshaped cell's settle waits half the overlap the server states in
+  `/api/config` (D-5), because no page states when a sender stops forwarding
+  over the layout a promotion replaced; a page fact for the end of that
+  forwarding window would replace the wait. The wait covers the promotion of
+  the layout the page accepted when its `reshape-in-force` poll passed; a later
+  promotion during the wait or the body opens a window of its own that nothing
+  waits out.
+- `granted-rtc-relay-only` and `granted-rtc-ordered-relay` exercise their relay
+  half only when the reshaped tree puts recipient-b in the middle, which the
+  session ids and RTT decide (5 of 11 sampled runs); they stay shape-agnostic
+  (D-6). Declaring the shape needs a director, with its re-plans and leader
+  semantics, or a preferred source in the topology config.
+- The settle (D647) does not close these windows: an older presence-summary row
+  expanding after the barrier (D642's outstanding-work read), an `rtt-refresh`
+  promotion (`pending` never reports it), a heartbeat that drops or restores a
+  session or the presence expiry reconciliation that runs every 60 s
+  (`DEFAULT_PRESENCE_EXPIRY_RECONCILIATION_INTERVAL_MSECS`,
+  `packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts`),
+  a page whose cache lapsed and was restored at the same revision, a page whose
+  cache dropped the room after an earlier cell's `held` event and did not
+  restore it, an un-tagged late event of an earlier cell that matches a wait
+  carrying no key of its cell, the activation status's `coverageRate` at the
+  first petition (the settle accepts either value), the same-context successor,
+  which connects outside the settle, hosted combined recipes, which carry no
+  settle, a role failing before a barrier (the others time out), and a cell's
+  own mid-body writes. A reshaped cell's path is not one of them: its start
+  state writes it, and the settle polls the room settled on it and every page's
+  overlay until it is the path, then waits half the overlap `/api/config`
+  states. The first three show as a revision past the floor or a refusal after the body
+  began. The restored page is silent unless the restore lands on a new
+  revision, since the last `held` event does not prove the room readable. The
+  dropped page needs a room the family shares: a connect writes the page's
+  presence session, but `presenceRevision` advances only when the room's
+  presence-summary work runs, so the head's floor can equal the earlier `held`
+  event's revisions; it shows as the cell's first read of the room failing on
+  that page, a settle that passed on a page holding nothing, seen as that
+  cell's failure. The late event shows as a wait that passes on an
+  earlier cell's event: a wait's history opens at its cell's first event, and
+  every event after it is a candidate, tagged or not.

@@ -67,6 +67,7 @@ describe('room formation status projection', () => {
         });
 
         const current = toRallarRoomFormationStatus({ snapshot: withStatus(3), planned: undefined, accepted });
+        expect(current.dialing).toBe('accepted-and-planned');
         const spent = toRallarRoomFormationStatus({ snapshot: withStatus(2), planned: undefined, accepted });
 
         expect([current.condition, current.coverageRate]).toEqual(['degraded', 0.6]);

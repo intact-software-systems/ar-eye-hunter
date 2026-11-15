@@ -13,7 +13,7 @@ import { createFormationSnapshot, createLayoutOverlay } from './room-formation-t
 describe('room formation stage and condition waits', () => {
     beforeEach(() => {
         resetRoomWorkflowTestRuntime();
-        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     });
 
     it('resolves immediately when the cached stage already matches', async () => {
@@ -155,7 +155,7 @@ describe('room formation stage and condition waits', () => {
 describe('room formation layout waits', () => {
     beforeEach(() => {
         resetRoomWorkflowTestRuntime();
-        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
     });
 
     it('resolves when a planned layout at or after the fence lands in the slot', async () => {

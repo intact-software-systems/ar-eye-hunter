@@ -25,6 +25,7 @@ import { createHetznerDistributedManifestCatalog } from '../../../apps/rallar-bl
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const ALM_TOPICS = [
     'rallar.browser.alm.outbound_diagnostics',
@@ -241,6 +242,7 @@ describe('ALM delivery diagnostic selection', () => {
             throw new Error('Expected generated current-carrier baseline payload wait.');
         }
         const runtime = createDefaultRallarBlackBoxTestRuntime();
+        writeAlmCellStartEvents(runtime, [payloadWait]);
         runtime.recordEvent({
             kind: 'message',
             topic: 'rallar.browser.ws.message',

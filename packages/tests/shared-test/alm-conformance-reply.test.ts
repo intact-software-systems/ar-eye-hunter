@@ -19,11 +19,13 @@ import type {
 
 import { toConformanceInput } from './alm-conformance-test-input.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const REPLY_SCENARIO_IDS = ['reply-correlated', 'reply-timeout-late', 'reply-undelivered', 'reply-first-wins'] as const;
 const PROLOGUE = ['ensure-group', 'ensure-member', 'connect'] as const;
 const ADMISSION = ['send-1', 'observe-admitted-1', 'assert-admitted-1'] as const;
 const RECEIPT_READ = [
+    'observe-acknowledged-1',
     'receipts-1',
     'assert-receipt-state-1',
     'assert-receipt-receiptMode-1',
@@ -159,6 +161,7 @@ async function runSenderTail(recipe: RallarBlackBoxTestRecipe, page: SenderPage)
         readSession: () => undefined,
         rallarRuntime: createSenderPage(page)
     });
+    writeAlmCellStartEvents(runtime, recipe.commands);
     for (const event of page.pageEvents ?? []) {
         runtime.receiveRallarBrowserEvent({ kind: 'diagnostic', topic: 'rallar.browser.alm.inbound_diagnostics', data: event });
     }

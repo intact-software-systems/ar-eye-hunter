@@ -9,7 +9,6 @@ import {
 import { toAudienceSendCommand, type AlmConformanceSendClaim } from '../../alm-conformance-receipt-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toConnectionName, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
-import { toRtcRefusalFacts } from '../../to-rtc-refusal-facts.ts';
 import { WS_ROUTE_FACTS } from '../audiences/world-routing.ts';
 
 /** Only the WS server arbitrates a claim; a strategy that allows WS routes an exclusive send there at once. */
@@ -39,13 +38,6 @@ export function toClaimSendCommand(step: AlmConformanceStepInput, ttlMs: number)
 /** The claim send ends rejected: the trusted server NACKed it `held-by-other` and nobody receives it. */
 export function toHeldByOtherVerdictCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return toVerdictCommands(step, 'rejected', HELD_BY_OTHER_FACTS);
-}
-
-/** An exclusive send takes the route a world send takes: WS at once where the strategy allows it, refused on RTC. */
-export function toClaimRouteCommands(step: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    return step.input.carrier === 'rtc'
-        ? toVerdictCommands(step, 'rejected', toRtcRefusalFacts('unsupported'))
-        : toVerdictCommands(step, 'acknowledged', WS_ROUTE_FACTS);
 }
 
 /**

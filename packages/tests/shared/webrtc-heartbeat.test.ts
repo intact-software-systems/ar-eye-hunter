@@ -6,6 +6,7 @@ import {
     installNativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from './native-rtc-connection-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
 
 interface HeartbeatRuntime {
     readonly service: WebRtcHeartbeatService;
@@ -85,7 +86,7 @@ async function createHeartbeatRuntime(maxMissedPings: number): Promise<Heartbeat
             rtcSignalingTopicId: 'rtc'
         },
         native,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     const connected = fixture.service.ensurePeerConnectionStarted('peer-1', true);
     if (!connected.right) {

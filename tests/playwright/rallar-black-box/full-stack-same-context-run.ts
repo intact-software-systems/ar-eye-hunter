@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 
+import type { AlmConformanceOwnerEnd } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     closeBrowserControlAgentPage,
@@ -22,17 +23,11 @@ import {
 } from './full-stack-helpers.ts';
 import { waitForRecipeGate } from './full-stack-recipe-gate.ts';
 
-/**
- * How the owner's page ends: closed, or through a lifecycle flush and a renderer crash, which runs no `pagehide`
- * listener and no later timer, so the successor restores only what the page saved before the crash.
- */
-export type SameContextOwnerEnd = 'close' | 'flush-and-crash';
-
 /** The page that owns the sender's session for one scenario, and the page of the same context that follows it. */
 export interface SameContextPages {
     readonly owner: SameContextRecipeOwner;
     readonly successor: RecipeRunAgent;
-    readonly ownerEnd: SameContextOwnerEnd;
+    readonly ownerEnd: AlmConformanceOwnerEnd;
     /**
      * The owner's command after which the successor starts while the owner's recipe still runs, its page ended once
      * both are done; undefined runs the owner's recipe to its end and ends its page before the successor starts.
@@ -180,7 +175,7 @@ function requireOutcome(outcome: PromiseSettledResult<RecipeRunOutcome>): Recipe
  * A headless page is never hidden, and `Page.setWebLifecycleState` freezes no visible page, so the lane fires the
  * page's own `freeze` event, gives the readwrite it starts time to commit, and crashes the renderer.
  */
-async function endOwnerPage(page: Page, end: SameContextOwnerEnd): Promise<void> {
+async function endOwnerPage(page: Page, end: AlmConformanceOwnerEnd): Promise<void> {
     let crashCommand: Promise<void> | undefined;
     if (end === 'flush-and-crash') {
         await page.evaluate((eventType) => document.dispatchEvent(new Event(eventType)), 'freeze');

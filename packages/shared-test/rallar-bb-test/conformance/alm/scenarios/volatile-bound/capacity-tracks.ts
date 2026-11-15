@@ -12,13 +12,14 @@ import {
     toResultAssertion,
     toSendCommand
 } from '../../alm-conformance-message-commands.ts';
-import { toOrderingKey, toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
+import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 import {
     toBoundReconnectCommands,
     toBoundRefusalCommands,

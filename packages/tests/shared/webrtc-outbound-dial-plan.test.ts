@@ -14,6 +14,7 @@ describe('computeOutboundDialPlan', () => {
             livePeerIds: new Set(),
             desiredPeerIds: new Set(connectablePeerIds),
             connectablePeerIds,
+            earlyDialPeerIds: new Set(),
             serverDesiredPeerIds: new Set()
         });
 
@@ -30,6 +31,7 @@ describe('computeOutboundDialPlan', () => {
             livePeerIds: new Set(['peer-a']),
             desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d']),
             connectablePeerIds: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
+            earlyDialPeerIds: new Set(),
             serverDesiredPeerIds: new Set()
         });
 
@@ -51,6 +53,7 @@ describe('computeOutboundDialPlan', () => {
                 'peer-boot-2',
                 'peer-server-2'
             ],
+            earlyDialPeerIds: new Set(),
             serverDesiredPeerIds: new Set(['peer-server-1', 'peer-server-2'])
         });
 
@@ -65,6 +68,7 @@ describe('computeOutboundDialPlan', () => {
             livePeerIds: new Set(['retained-1', 'retained-2', 'peer-a']),
             desiredPeerIds: new Set(['peer-a', 'peer-b']),
             connectablePeerIds: ['peer-a', 'peer-b'],
+            earlyDialPeerIds: new Set(),
             serverDesiredPeerIds: new Set()
         });
 

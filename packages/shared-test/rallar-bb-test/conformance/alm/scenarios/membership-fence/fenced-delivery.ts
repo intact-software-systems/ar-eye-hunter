@@ -14,7 +14,8 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-import { toCommandId, toRoomRef, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
+import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
+import { toAlmCellGroupRead } from '../../cell/to-alm-cell-group-read.ts';
 
 /**
  * A member's room send carries the roster of its sender's room snapshot and reaches both recipients. Nothing moves the
@@ -40,22 +41,12 @@ function toFencedDeliveryRecipientCommands(recipient: AlmConformanceStepInput): 
 
 /** The group snapshot the server holds; its `body.group.rosterVersion` is the roster the delivered send must carry. */
 function toRosterReadCommand(recipient: AlmConformanceStepInput): RallarBlackBoxTestHttpRequestCommand {
-    const group = recipient.input.group;
-    return {
-        kind: 'http.request',
-        commandId: toCommandId(recipient, 'read-roster'),
-        timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, recipient.input.deadlineMs),
-        metadata: {
-            purpose: 'Read the group roster version the server holds.',
-            idempotent: true,
-            group: toRoomRef(group)
-        },
-        request: {
-            method: 'GET',
-            path: `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}`
-        },
-        response: { body: 'json', acceptedStatusCodes: [200] }
-    };
+    return toAlmCellGroupRead({
+        step: recipient,
+        name: 'read-roster',
+        resource: 'snapshot',
+        purpose: 'Read the group roster version the server holds.'
+    });
 }
 
 /**

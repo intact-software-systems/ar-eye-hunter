@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { toOrderingPositionWait, toRepairDispatchWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
-import { toSentCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toReachedCommands } from '../../alm-conformance-ordering-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -24,13 +24,14 @@ import {
 } from '../topic-subscription/topic-subscription-publications.ts';
 import { GRANTED_RTC_CARRIERS } from './granted-rtc-commands.ts';
 import { toPathMemberCommands, toPathOwnerCommands, toPathSenderCommands } from './granted-rtc-path.ts';
+import { PATH_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /** The track's publications, each named after its place on the track. */
 const PUBLICATIONS = [1, 2, 3] as const;
 
 /**
  * A gap on an ordered track is repaired across the path, whichever page it puts in the middle. The sender mints a
- * receipted track on the path the relay-only cell draws: `p1` leaves, `p2` is held at the sender's own RTC transport,
+ * receipted track on the path its own reshape draws: `p1` leaves, `p2` is held at the sender's own RTC transport,
  * `p3` leaves and reveals the gap. The hop that sees it NACKs the range: the receiver, the sender's next hop or not,
  * or recipient-b in the middle, which relays the receiver's NACK to the sender. The sender's repair dispatch of `p2`
  * is proven before the hold is released, so the release cannot stand in for it. The receiver enters the track at `p1`
@@ -40,12 +41,14 @@ const PUBLICATIONS = [1, 2, 3] as const;
 export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
     scenarioId: 'granted-rtc-ordered-relay',
     scenarioKey: 'granted-rtc-ordered-relay',
+    roomTopology: 'reshaped',
     tags: FULL_TAGS,
     carriers: GRANTED_RTC_CARRIERS,
     roles: ALM_CONFORMANCE_THREE_AGENT_ROLES,
     laneFamily: 'three-agent',
     principalRoles: ['receiver', 'recipient-b', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: PATH_START_GRANTS,
     connect: { minReadyPeers: 1 },
     toSenderCommands: (sender) => toPathSenderCommands(sender, toHeldTrackCommands(sender)),
     toRecipientCommands: (recipient) =>
@@ -59,14 +62,15 @@ export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
 
 /**
  * A readiness probe, on no track, waits until the receiver alone is expected and confirms: recipient-b and the sender
- * hold no `subscribe`. `p1` has left before the hold of `p2` starts, so the hold meets `p2` alone.
+ * hold no `subscribe`. `p1`'s receipt ends acknowledged before the hold of `p2` starts, so the receiver entered the
+ * track at `p1` whichever next hops the layout gave the sender, and the hold meets `p2` alone.
  */
 function toHeldTrackCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const held = { ...sender, index: 2 };
     return [
         ...toReadinessProbeCommands(sender, 1, 0),
         toTrackSend(sender, 1),
-        ...toSentCommands({ ...sender, index: 1 }),
+        ...toReachedCommands({ ...sender, index: 1 }),
         ...toHeldSendCommands(held, [toTrackSend(sender, 2)]),
         toTrackSend(sender, 3),
         toRepairDispatchWait(held, 'repair-dispatch-2'),
