@@ -117,7 +117,7 @@ describe('set assertion control admission', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, { ...neither, expected: null }).ok).toBe(true);
     });
 
-    it('accepts the set shape, the at-or-after comparison and value operators in both validators', () => {
+    it('accepts the set shape, the at-or-after comparison and value operators in control and schema admission', () => {
         for (
             const command of [
                 { kind: 'assert', source: 'state.a', operator: 'sameUniqueStringSet', comparisonSource: 'state.b' },
@@ -127,6 +127,15 @@ describe('set assertion control admission', () => {
             ]
         ) {
             expect(validateRallarBlackBoxTestCommand(command).ok).toBe(true);
+            expect(
+                parseControlServerMessage({
+                    kind: 'command',
+                    protocolVersion: 1,
+                    ...identity,
+                    commandId: 'valid-assert',
+                    command
+                }, identity).ok
+            ).toBe(true);
             expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(true);
         }
     });
