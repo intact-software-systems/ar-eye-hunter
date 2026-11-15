@@ -18,7 +18,7 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, toConformanceInput } from './alm-conformance-test-input.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 
 /**
@@ -325,10 +325,10 @@ describe('ALM conformance recipe validation', () => {
     it('every mutation request id of every cell carries {runtimeIdentity}', () => {
         const findings: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const cellSettle of [undefined, 'barriered'] as const) {
+            for (const cellSettle of [undefined, CONFORMANCE_BARRIERED_SETTLE]) {
                 const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
                 for (const scenario of createAlmConformanceRecipes(input)) {
-                    const cell = `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`;
+                    const cell = `${cellSettle?.kind ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`;
                     const mutations = toPageRecipes(scenario)
                         .flatMap((recipe) => toNestedCommands(recipe.commands))
                         .flatMap((command) => command.kind === 'http.request' && command.request.method !== 'GET' ? [command] : []);
@@ -352,14 +352,14 @@ describe('ALM conformance recipe validation', () => {
     // room's topology config and does not say so would be shuffled in among them.
     it('every cell that writes its room\'s topology config declares that it reshapes the room, and no other does', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const cellSettle of [undefined, 'barriered'] as const) {
+            for (const cellSettle of [undefined, CONFORMANCE_BARRIERED_SETTLE]) {
                 const input = { ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) };
                 for (const scenario of createAlmConformanceRecipes(input)) {
                     const writesTopology = toPageRecipes(scenario)
                         .flatMap((recipe) => toNestedCommands(recipe.commands))
                         .some((command) => command.kind === 'http.request' && command.request.path!.includes('/topology/config/'));
 
-                    expect(scenario.roomTopology, `${cellSettle ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`)
+                    expect(scenario.roomTopology, `${cellSettle?.kind ?? 'unsettled'} ${carrier} ${scenario.scenarioKey}`)
                         .toBe(writesTopology ? 'reshaped' : 'kept');
                 }
             }

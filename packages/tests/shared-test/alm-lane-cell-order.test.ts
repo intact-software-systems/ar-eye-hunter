@@ -29,7 +29,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
 import { toAlmLaneEmptyPlanReason } from '@shared-test/rallar-bb-test/conformance/alm/lane/to-alm-lane-empty-plan-reason.ts';
 
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, toConformanceInput } from './alm-conformance-test-input.ts';
 
 const KEYS = ['a', 'b', 'c', 'd', 'e', 'f'].map((scenarioKey) => ({ scenarioKey }));
 const DECLARED: AlmLaneParameters = {
@@ -78,7 +78,7 @@ function toFamilyCatalog(
     family: AlmConformanceLaneFamily,
     carrier: AlmConformanceCarrier = 'ws'
 ): readonly AlmConformanceScenario[] {
-    return createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: 'barriered' })
+    return createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: CONFORMANCE_BARRIERED_SETTLE })
         .filter((scenario) => scenario.laneFamily === family);
 }
 

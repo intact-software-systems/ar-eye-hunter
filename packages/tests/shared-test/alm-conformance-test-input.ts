@@ -1,5 +1,6 @@
 import {
     ALM_CONFORMANCE_LANE_FAMILIES,
+    type AlmCellBarrieredSettle,
     type CreateAlmConformanceRecipesInput
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import type { AlmLaneCellOrderRecord } from '@shared-test/rallar-bb-test/conformance/alm/lane/resolve-alm-lane-plan.ts';
@@ -8,6 +9,12 @@ const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
 /** The overlap the API server states in `/api/config` by default. */
 export const CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS = 15_000;
+
+/** The settle the lane creates its cells with, at the overlap the API server states by default. */
+export const CONFORMANCE_BARRIERED_SETTLE: AlmCellBarrieredSettle = {
+    kind: 'barriered',
+    rtcReplacedLayoutOverlapMs: CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS
+};
 
 /** Each role's principal as the lane resolves it: the sender's pages and its sibling share one, as do the third roles. */
 export const CONFORMANCE_PRINCIPAL_IDS: CreateAlmConformanceRecipesInput['principalIdsByRole'] = {
@@ -38,7 +45,6 @@ export function toConformanceInput(
         receiverConnection: 'receiver',
         deadlineMs: 18_000,
         laneFamilies: ALM_CONFORMANCE_LANE_FAMILIES,
-        principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS,
-        rtcReplacedLayoutOverlapMs: CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS
+        principalIdsByRole: CONFORMANCE_PRINCIPAL_IDS
     };
 }

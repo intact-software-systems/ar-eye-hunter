@@ -9,6 +9,7 @@ import {
     type AlmConformanceCarrier
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type { AlmCellBarrieredSettle } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
@@ -20,7 +21,7 @@ import type {
     RallarBlackBoxTestHttpRequestCommand
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 
 export interface Permissions {
@@ -134,7 +135,7 @@ function toDeclaredPermissions(declared: DeclaredState, principalId: string): Pe
 function toPlannedGrantedCells(
     prefix: string,
     carrier: AlmConformanceCarrier,
-    cellSettle: 'barriered' | undefined
+    cellSettle: AlmCellBarrieredSettle | undefined
 ): readonly AlmConformanceScenario[] {
     return createAlmConformanceRecipes({ ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) })
         .filter((scenario) => scenario.scenarioId.startsWith(prefix) && isGrantedCell(scenario));
@@ -171,7 +172,7 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
 
         it('its receiver writes exactly that state after the connected barrier and before the formation poll, whatever ran before', () => {
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-                for (const scenario of toPlannedGrantedCells(prefix, carrier, 'barriered')) {
+                for (const scenario of toPlannedGrantedCells(prefix, carrier, CONFORMANCE_BARRIERED_SETTLE)) {
                     const label = `${carrier} ${scenario.scenarioKey}`;
                     const receiver = toRecipeCommands(scenario, 'receiver');
                     const ids = receiver.map(({ commandId }) => commandId ?? '');
@@ -235,7 +236,7 @@ export function describeDeclaredStartStates(prefix: string, table: StartStateTab
 
         it('a barriered and a plain cell write the same grants, the barriered cell as one request each', () => {
             for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-                const barriered = toPlannedGrantedCells(prefix, carrier, 'barriered');
+                const barriered = toPlannedGrantedCells(prefix, carrier, CONFORMANCE_BARRIERED_SETTLE);
                 for (const [index, scenario] of toPlannedGrantedCells(prefix, carrier, undefined).entries()) {
                     const label = `${carrier} ${scenario.scenarioKey}`;
                     const written = toRecipeCommands(barriered[index]!, 'receiver').filter(isStartStateCommand);

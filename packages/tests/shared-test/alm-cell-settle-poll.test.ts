@@ -20,7 +20,7 @@ import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layo
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createFormationSnapshot, createFormationView } from '../shared-web/rooms/formation/room-formation-test-fixtures.ts';
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, toConformanceInput } from './alm-conformance-test-input.ts';
 
 const receiver: AlmConformanceStepInput = {
     input: toConformanceInput('rtc'),
@@ -69,7 +69,7 @@ function withGroup(pair: SettlePair, group: Partial<GroupSnapshot['group']>): Se
 }
 
 function toFormationPoll(): RallarBlackBoxTestLoopCommand {
-    const { formation } = toAlmCellSettle({ ...receiver, roomTopology: 'kept' });
+    const { formation } = toAlmCellSettle({ ...receiver, roomTopology: 'kept' }, CONFORMANCE_BARRIERED_SETTLE);
     expect(formation).toHaveLength(1);
     expect(formation[0]?.kind).toBe('loop');
     return formation[0] as RallarBlackBoxTestLoopCommand;
@@ -206,7 +206,7 @@ const PREVIOUS_TREE: GroupLayoutIdentity = { groupRevision: 8, presenceRevision:
 
 /** The page's head read and its in-force poll, as a reshaped cell's settle runs them. */
 function toReshapedHead(): Readonly<{ headRead: RallarBlackBoxTestCommand; poll: RallarBlackBoxTestLoopCommand; }> {
-    const { head } = toAlmCellSettle({ ...receiver, roomTopology: 'reshaped' });
+    const { head } = toAlmCellSettle({ ...receiver, roomTopology: 'reshaped' }, CONFORMANCE_BARRIERED_SETTLE);
     const headRead = head.find((command) => command.commandId?.endsWith('-head-read') === true);
     const poll = head.find((command) => command.commandId?.endsWith('-reshape-in-force') === true);
     expect(headRead?.kind).toBe('http.request');

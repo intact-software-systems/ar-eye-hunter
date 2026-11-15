@@ -28,7 +28,7 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
 import {
     describeDeclaredStartStates,
     PERMISSIONS,
@@ -483,7 +483,7 @@ function toCounts(confirmations: number, outsideAudience: number): readonly numb
 }
 
 function findBarrieredReconnectScenario(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): AlmConformanceScenario {
-    const scenario = createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: 'barriered' })
+    const scenario = createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: CONFORMANCE_BARRIERED_SETTLE })
         .find(({ scenarioId }) => scenarioId === 'subscription-ordered-reconnect');
     if (scenario === undefined) {
         throw new Error(`${carrier} creates no barriered subscription-ordered-reconnect cell.`);

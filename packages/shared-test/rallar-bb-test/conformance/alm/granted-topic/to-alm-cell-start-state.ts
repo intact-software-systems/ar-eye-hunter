@@ -19,7 +19,7 @@ export function toAlmCellStartState(step: AlmConformanceStepInput): readonly Ral
     }
     assertStartGrantsNameEveryPrincipal(step, startGrants);
     // A barriered cell writes after its `connected` barrier, which every role meets once its page is a member.
-    const attempts = step.input.cellSettle === 'barriered' ? 'once' : 'until-accepted';
+    const attempts = step.input.cellSettle !== undefined ? 'once' : 'until-accepted';
     return startGrants.flatMap((grant) => toAlmCellPrincipalStartCommands(step, grant, attempts))
         .map(toStartStateCommand);
 }

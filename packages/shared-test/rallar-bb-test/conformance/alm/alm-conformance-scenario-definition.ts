@@ -30,16 +30,22 @@ export interface CreateAlmConformanceRecipesInput {
     readonly recoveryOwner?: 'record';
     /**
      * Absent, no cell's roles meet before its body: the hosted combined recipe orders its blocks with barriers of its
-     * own, and a caller without a started distributed run has no participants to meet. `barriered` makes every role but
-     * the successor settle its cell's room between its prologue and its body, at the cell's `connected`,
-     * `formation-settled` and `armed` barriers.
+     * own, and a caller without a started distributed run has no participants to meet.
      */
-    readonly cellSettle?: 'barriered';
+    readonly cellSettle?: AlmCellBarrieredSettle;
+}
+
+/**
+ * Every role but the successor settles its cell's room between its prologue and its body, at the cell's `connected`,
+ * `formation-settled` and `armed` barriers.
+ */
+export interface AlmCellBarrieredSettle {
+    readonly kind: 'barriered';
     /**
-     * The overlap the API server states in `/api/config`, read by the lane before it creates its cells. Absent, no cell
-     * waits out a replaced layout's forwarding window, and a barriered cell that reshapes its room cannot be created.
+     * The overlap the API server states in `/api/config`, read by the lane before it creates its cells: the settle of a
+     * cell that reshapes its room waits out the forwarding window it bounds.
      */
-    readonly rtcReplacedLayoutOverlapMs?: number;
+    readonly rtcReplacedLayoutOverlapMs: number;
 }
 
 export type AlmConformanceScenarioId =

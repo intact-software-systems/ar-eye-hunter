@@ -10,10 +10,14 @@ import { CONNECT_READINESS_TIMEOUT_MS } from '@shared-test/rallar-bb-test/confor
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { requireAlmCellParts } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-cell-parts.ts';
 import { ALM_CONFORMANCE_ROLES, type AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import type {
+    AlmConformanceStepInput,
+    CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
 import { toAlmCellAuthoredCommands } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import { toAlmCellPlacedBody } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-placed-body.ts';
+import { toReplacedLayoutForwardingWait } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-replaced-layout-forwarding-wait.ts';
 import {
     createAlmConformanceRecipes,
     createAlmDeliveryDiagnosticsRecipes,
@@ -30,14 +34,25 @@ import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schem
 import { GROUP_LAYOUT_IDENTITY_KEYS } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { computeReplacedLayoutForwardingMs } from '@shared/multicast/room-authority/resolve-rtc-room-routing-edges.ts';
 
-import { CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS, toConformanceInput } from './alm-conformance-test-input.ts';
 import { isReshapeRequest, isStartStateCommand } from './describe-declared-start-states.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
 import { toWaitCommands } from './to-wait-commands.ts';
 
 function toBarrieredInput(carrier: AlmConformanceCarrier): CreateAlmConformanceRecipesInput {
-    return { ...toConformanceInput(carrier), cellSettle: 'barriered' };
+    return { ...toConformanceInput(carrier), cellSettle: CONFORMANCE_BARRIERED_SETTLE };
 }
+
+/** A reshaped cell's sender, whose settle waits out the replaced layout's forwarding window. */
+const RESHAPED_SENDER: AlmConformanceStepInput = {
+    input: toBarrieredInput('rtc'),
+    scenarioId: 'granted-rtc-ordered-relay',
+    scenarioKey: 'granted-rtc-ordered-relay',
+    role: 'sender',
+    roles: ['sender', 'receiver', 'recipient-b'],
+    messages: {},
+    connect: undefined
+};
 
 function toBarrierCommands(recipe: RallarBlackBoxTestRecipe): readonly RallarBlackBoxTestBarrierCommand[] {
     return toNestedCommands(recipe.commands).filter((command): command is RallarBlackBoxTestBarrierCommand => command.kind === 'barrier');
@@ -410,7 +425,10 @@ describe('alm-conformance cell parts', () => {
 
     it('a reshaped cell\'s forwarding-window wait is half the overlap the server states, by the product\'s rule, and none at 0', () => {
         const waitOf = (overlapMs: number) => {
-            const scenario = createAlmConformanceRecipes({ ...toBarrieredInput('rtc'), rtcReplacedLayoutOverlapMs: overlapMs })
+            const scenario = createAlmConformanceRecipes({
+                ...toConformanceInput('rtc'),
+                cellSettle: { kind: 'barriered', rtcReplacedLayoutOverlapMs: overlapMs }
+            })
                 .find((candidate) => candidate.scenarioKey === 'granted-rtc-ordered-relay')!;
             return toAlmConformanceRoleRecipe(scenario, 'sender')!.commands
                 .find((command) => command.commandId === 'alm-rtc-granted-rtc-ordered-relay-sender-replaced-layout-forwarding');
@@ -419,8 +437,12 @@ describe('alm-conformance cell parts', () => {
         expect(waitOf(15_000)?.timeoutMs).toBe(computeReplacedLayoutForwardingMs(15_000));
         expect(waitOf(15_000)?.timeoutMs).toBe(7_500);
         expect(waitOf(0)?.timeoutMs).toBe(0);
-        expect(() => createAlmConformanceRecipes({ ...toBarrieredInput('rtc'), rtcReplacedLayoutOverlapMs: undefined }))
-            .toThrow('names no rtcReplacedLayoutOverlapMs');
+    });
+
+    it('the forwarding wait of a stated overlap of 0 is an absence wait of 0 ms, and of the default overlap the product\'s half', () => {
+        expect(toReplacedLayoutForwardingWait(RESHAPED_SENDER, 0)).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 0 });
+        expect(toReplacedLayoutForwardingWait(RESHAPED_SENDER, CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS))
+            .toMatchObject({ kind: 'wait', absent: true, timeoutMs: computeReplacedLayoutForwardingMs(CONFORMANCE_REPLACED_LAYOUT_OVERLAP_MS) });
     });
 
     it('only the receiver polls', () => {
@@ -650,7 +672,8 @@ const SETTLE_BARRIER_PHASES = ['connected', 'formation-settled', 'armed'] as con
 
 /**
  * The settle's command names: the receiver's formation poll, each page's head read and applied wait, and a reshaped
- * cell's poll that its path is in force on the page.
+ * cell's poll that its reshape's layout is in force on the page, then its wait out of the replaced layout's forwarding
+ * window.
  */
 const SETTLE_COMMAND_NAMES = ['formation-poll', 'head-read', 'head-applied', 'reshape-in-force', 'replaced-layout-forwarding'] as const;
 

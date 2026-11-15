@@ -11,6 +11,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     ALM_CONFORMANCE_LANE_FAMILIES,
+    type AlmCellBarrieredSettle,
     type AlmConformanceLaneFamily
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-arming.ts';
@@ -31,7 +32,7 @@ import {
     createAlmConformance3AgentEntry,
     toAlmConformanceCombinedRecipe
 } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
-import { CONFORMANCE_PRINCIPAL_IDS } from '../shared-test/alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS } from '../shared-test/alm-conformance-test-input.ts';
 import { toNestedCommands } from '../shared-test/to-nested-commands.ts';
 
 /** No generated scenario carries a request of its own today, so the fixture places one first in the sender's body. */
@@ -333,7 +334,7 @@ describe('ALM conformance combined blocks', () => {
     });
 
     it('a cell\'s command ids, its lane barrier and its combined block barriers share one command prefix on every carrier', () => {
-        const toBaseline = (carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number], cellSettle?: 'barriered') =>
+        const toBaseline = (carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number], cellSettle?: AlmCellBarrieredSettle) =>
             createAlmConformanceRecipes({
                 group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
                 carrier,
@@ -353,7 +354,7 @@ describe('ALM conformance combined blocks', () => {
                 'sender',
                 'two-agent'
             );
-            const laneBarrier = toNestedCommands(toBaseline(carrier, 'barriered').sender.commands)
+            const laneBarrier = toNestedCommands(toBaseline(carrier, CONFORMANCE_BARRIERED_SETTLE).sender.commands)
                 .find((command): command is RallarBlackBoxTestBarrierCommand => command.kind === 'barrier')!;
             const prefixes = [
                 scenario.sender.commands[0]!.commandId!.replace(/-sender-ensure-group$/, ''),

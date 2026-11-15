@@ -200,8 +200,9 @@ page starts with an empty cache and states `held` afresh.
 The applied-revision event is the witness of the ALM conformance lane's cell settle. A cell starts
 its body from a settled room: the server holds no queued replan and describes one layout, and every
 page has applied the room's head. The settle exists only when recipe creation is given
-`cellSettle: 'barriered'` (`CreateAlmConformanceRecipesInput`,
-`conformance/alm/alm-conformance-scenario-definition.ts`). The lane spec passes it. The hosted
+`cellSettle: { kind: 'barriered', rtcReplacedLayoutOverlapMs }` (`AlmCellBarrieredSettle` in
+`conformance/alm/alm-conformance-scenario-definition.ts`). The lane spec passes it; the overlap is
+required there, so a barriered settle cannot be described without it. The hosted
 combiner and every other caller leave it absent, so their recipes carry no settle barrier, poll or
 head read.
 
@@ -288,8 +289,8 @@ replaced for the first half of the overlap the server states (`rtcReplacedLayout
 `/api/config`, 15 000 ms by default; `computeReplacedLayoutForwardingMs`), and no page states when
 that window ends. So each settle role then runs `replaced-layout-forwarding`, an absence wait as
 long as that half (7 500 ms by default, 0 when the server states 0). The lane reads the overlap from
-`/api/config` with the browser's own decoder before it creates its cells and passes it as
-`rtcReplacedLayoutOverlapMs`; a barriered reshaped cell without it cannot be created. So no role's
+`/api/config` with the browser's own decoder before it creates its cells and passes it as the
+settle's `rtcReplacedLayoutOverlapMs`. So no role's
 body sends on a layout the reshape replaced. The cell's own body resets the config at its end. In an unsettled cell the reshape leads
 the `receiver`'s body after its cue subscription, as the start grants do, and no page polls its
 overlay.

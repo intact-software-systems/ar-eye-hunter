@@ -126,7 +126,7 @@ interface ScenarioSelectionInput
     extends
         Pick<
             CreateAlmConformanceRecipesInput,
-            'group' | 'senderConnection' | 'receiverConnection' | 'principalIdsByRole' | 'rtcReplacedLayoutOverlapMs'
+            'group' | 'senderConnection' | 'receiverConnection' | 'principalIdsByRole' | 'cellSettle'
         > {}
 
 interface ObservationRegimeInput {
@@ -319,8 +319,7 @@ function createFamilyScenarios(
         typeId: CONFORMANCE_TYPE_ID,
         deadlineMs: CONFORMANCE_DEADLINE_MS,
         laneFamilies: [family],
-        recoveryOwner: 'record',
-        cellSettle: 'barriered'
+        recoveryOwner: 'record'
     });
 }
 
@@ -405,9 +404,12 @@ async function toPlannedScenarios(
     carrier: AlmConformanceCarrier,
     planned: Readonly<{ family: AlmConformanceLaneFamily; plan: AlmLanePlan; }>
 ): Promise<readonly PlannedScenario[]> {
-    const selection = {
+    const selection: ScenarioSelectionInput = {
         ...toRunSelection(run),
-        rtcReplacedLayoutOverlapMs: await readStatedReplacedLayoutOverlapMs(run.request)
+        cellSettle: {
+            kind: 'barriered',
+            rtcReplacedLayoutOverlapMs: await readStatedReplacedLayoutOverlapMs(run.request)
+        }
     };
     const createdByRoom = new Map<AlmLaneRoomKey, readonly AlmConformanceScenario[]>();
     return planned.plan.cells.map((cell) => {
@@ -452,16 +454,15 @@ function toRunSelection(run: TwoAgentRun | AgentRun): ScenarioSelectionInput {
 }
 
 /**
- * Only the roles decide the selection, so a placeholder group, connections, principals and overlap plan a cell before
- * its agents open.
+ * Only the roles decide the selection, so a placeholder group, connections and principals plan a cell before its agents
+ * open, and its cells are created without the settle they run with.
  */
 function toPlanningSelection(): ScenarioSelectionInput {
     return {
         group: { applicationId: config.applicationId, workspaceId: config.workspaceId, groupId: config.roomId },
         senderConnection: 'planning-sender',
         receiverConnection: 'planning-receiver',
-        principalIdsByRole: Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `planning-${role}`])),
-        rtcReplacedLayoutOverlapMs: 0
+        principalIdsByRole: Object.fromEntries(ALM_CONFORMANCE_ROLES.map((role) => [role, `planning-${role}`]))
     };
 }
 

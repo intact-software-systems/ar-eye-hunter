@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../../../barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import { requireAlmCellParts, type AlmCellPartsByRole } from '../alm-conformance-cell-parts.ts';
 import type { AlmConformanceRole } from '../alm-conformance-roles.ts';
+import type { AlmCellBarrieredSettle } from '../alm-conformance-scenario-definition.ts';
 import { toAlmCellArming } from './to-alm-cell-arming.ts';
 import { toAlmCellSettleCommand } from './to-alm-cell-authored-commands.ts';
 import { toAlmCellBarrier, type AlmCellBarrierPhase } from './to-alm-cell-barrier.ts';
@@ -15,7 +16,7 @@ import { toCellHistoryMarkedCommands } from './to-cell-history-marked-commands.t
 type RoleCommandsSelector = (role: AlmConformanceRole) => readonly RallarBlackBoxTestCommand[];
 
 /**
- * What a role runs after its prologue: its body, or in a cell created `barriered` a settle role's body after the
+ * What a role runs after its prologue: its body, or in a cell created with a barriered settle a settle role's body after the
  * cell's settle. Every settle role meets at `connected` once every page connected; the receiver writes the cell's
  * start state, which every role's membership lets it write, and polls until the room settled, and every role meets at
  * `formation-settled`; each page then waits until it applied the room's head, runs
@@ -29,7 +30,8 @@ export function toAlmCellSettledBody(
 ): readonly RallarBlackBoxTestCommand[] {
     const parts = requireAlmCellParts(partsByRole, step.scenarioKey, step.role);
     const body = parts.body;
-    if (step.input.cellSettle !== 'barriered' || !isSettleRole(step.role)) {
+    const settle = step.input.cellSettle;
+    if (settle === undefined || !isSettleRole(step.role)) {
         return toAlmCellPlacedBody(parts);
     }
     const settleRoles = step.roles.filter(isSettleRole);
@@ -42,7 +44,7 @@ export function toAlmCellSettledBody(
             participants: settleRoles
         }));
     const settleOf = (role: AlmConformanceRole) =>
-        toMarkedSettle({ ...step, role }, requireAlmCellParts(partsByRole, step.scenarioKey, role).startState);
+        toMarkedSettle({ ...step, role }, requireAlmCellParts(partsByRole, step.scenarioKey, role).startState, settle);
     const armingOf = (role: AlmConformanceRole) =>
         toAlmCellArming(requireAlmCellParts(partsByRole, step.scenarioKey, role).body).arming;
     const { formation, head } = settleOf(step.role);
@@ -67,9 +69,10 @@ function isSettleRole(role: AlmConformanceRole): boolean {
  */
 function toMarkedSettle(
     step: AlmCellSettleStepInput,
-    startState: readonly RallarBlackBoxTestCommand[]
+    startState: readonly RallarBlackBoxTestCommand[],
+    settle: AlmCellBarrieredSettle
 ): AlmCellSettle {
-    const { formation, head } = toAlmCellSettle(step);
+    const { formation, head } = toAlmCellSettle(step, settle);
     const toMarked = (commands: readonly RallarBlackBoxTestCommand[]) =>
         toCellHistoryMarkedCommands(step, commands).map(toAlmCellSettleCommand);
     return { formation: toMarked([...startState, ...formation]), head: toMarked(head) };

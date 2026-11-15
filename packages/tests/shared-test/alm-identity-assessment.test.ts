@@ -7,6 +7,7 @@ import {
 import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import type { AlmConformanceCarrier } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import type { AlmConformanceRole } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-roles.ts';
+import type { AlmCellBarrieredSettle } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
@@ -33,7 +34,7 @@ import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, toConformanceInput } from './alm-conformance-test-input.ts';
 
 // These are external evidence transcripts for the pure assessor, not native delivery or persistence proof.
 describe('ALM recipe identity assessment', () => {
@@ -137,7 +138,7 @@ describe('ALM recipe identity assessment', () => {
     });
 
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)('a barriered %s reload cell passes its identity assessment', (carrier) => {
-        const transcript = new IdentityTranscript('reload', carrier, 'barriered');
+        const transcript = new IdentityTranscript('reload', carrier, CONFORMANCE_BARRIERED_SETTLE);
 
         // The receiver owns the room, so its settle carries the formation poll, a loop.
         expect(transcript.receiver.commands.some((command) => command.kind === 'loop')).toBe(true);
@@ -146,7 +147,7 @@ describe('ALM recipe identity assessment', () => {
     });
 
     it('a loop in a reload receiver\'s authored commands is still refused', () => {
-        const transcript = new IdentityTranscript('reload', 'rtc', 'barriered');
+        const transcript = new IdentityTranscript('reload', 'rtc', CONFORMANCE_BARRIERED_SETTLE);
         const receiver = transcript.receiver;
         const armedAt = receiver.commands.findIndex((command) => command.kind === 'barrier' && command.barrierId.endsWith('-armed'));
         const loop: RallarBlackBoxTestCommand = { kind: 'loop', commandId: 'receiver-authored-loop', count: 1, timeoutMs: 1_000, commands: [] };
@@ -160,12 +161,12 @@ describe('ALM recipe identity assessment', () => {
     it.each(['ws', 'rtc', 'rtc-with-ws-fallback'] as const)(
         'every barriered %s cell assesses its identity as the same cell without a settle does',
         (carrier) => {
-            const toInputs = (cellSettle: 'barriered' | undefined) =>
+            const toInputs = (cellSettle: AlmCellBarrieredSettle | undefined) =>
                 createAlmConformanceRecipes({ ...toConformanceInput(carrier), ...(cellSettle === undefined ? {} : { cellSettle }) })
                     .filter((scenario) => hasAlmIdentityEvidence(scenario.sender))
                     .map((scenario) => [scenario.scenarioKey, toScenarioIdentityInput(scenario)] as const);
             const plain = toInputs(undefined);
-            const barriered = toInputs('barriered');
+            const barriered = toInputs(CONFORMANCE_BARRIERED_SETTLE);
 
             expect(barriered.map(([key]) => key)).toEqual(plain.map(([key]) => key));
             expect(plain.length).toBeGreaterThan(0);
@@ -725,7 +726,7 @@ class IdentityTranscript {
     readonly sender: ParticipantTranscript;
     readonly receiver: ParticipantTranscript;
 
-    constructor(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier = 'ws', cellSettle?: 'barriered') {
+    constructor(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier = 'ws', cellSettle?: AlmCellBarrieredSettle) {
         const recipes = transcriptRecipes(kind, carrier, cellSettle);
         this.sender = new ParticipantTranscript('sender', recipes.sender, recipes.sender);
         this.receiver = new ParticipantTranscript('receiver', recipes.receiver, recipes.sender);
@@ -841,7 +842,7 @@ const TRANSCRIPT_SCENARIO_IDS: Readonly<Record<Exclude<IdentityTranscript.Kind, 
     'server-originated': 'server-originated'
 };
 
-function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier, cellSettle: 'barriered' | undefined) {
+function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanceCarrier, cellSettle: AlmCellBarrieredSettle | undefined) {
     if (kind === 'combined') {
         const recipes = createAlmConformance2AgentEntry().manifest.recipes;
         const sender = recipes.find((entry) => entry.role === 'sender')?.recipe;
@@ -857,7 +858,7 @@ function transcriptRecipes(kind: IdentityTranscript.Kind, carrier: AlmConformanc
 function toGeneratedScenario(
     scenarioId: string,
     carrier: AlmConformanceCarrier,
-    cellSettle: 'barriered' | undefined
+    cellSettle: AlmCellBarrieredSettle | undefined
 ): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes({
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },

@@ -34,7 +34,7 @@ import { AL_CONTROL_ACK_TYPE_ID, AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-c
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
-import { toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, toConformanceInput } from './alm-conformance-test-input.ts';
 import { isReshapeRequest } from './describe-declared-start-states.ts';
 import { toFaultInjectShape } from './to-fault-inject-shape.ts';
 import { toNestedCommands } from './to-nested-commands.ts';
@@ -1594,7 +1594,7 @@ describe('alm-conformance recipe family', () => {
 
         it('sends from each relay-path origin only once every page\'s accepted overlay is the tree, in the lane\'s settle, and pins that one origin relayed', () => {
             const scenario = receiptedOf('rtc', 'receipted-relay-path');
-            const settled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), cellSettle: 'barriered' })
+            const settled = createAlmConformanceRecipes({ ...toConformanceInput('rtc'), cellSettle: CONFORMANCE_BARRIERED_SETTLE })
                 .find((candidate) => candidate.scenarioKey === 'receipted-relay-path')!;
             const indexOf = (recipe: RallarBlackBoxTestRecipe, suffix: string) =>
                 recipe.commands.findIndex((command) => command.commandId?.endsWith(suffix) === true);
@@ -1704,7 +1704,7 @@ describe('alm-conformance recipe family', () => {
         const reshaped: string[] = [];
         const unsettled: string[] = [];
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            for (const scenario of createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: 'barriered' })) {
+            for (const scenario of createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: CONFORMANCE_BARRIERED_SETTLE })) {
                 if (scenario.roomTopology !== 'reshaped') {
                     continue;
                 }
