@@ -1,5 +1,5 @@
 import { Either } from '../../resilience/Either.ts';
-import { requireEpoch, requireExactKeys, requireOneOf, requireRecord } from '../exact-object-decoding.ts';
+import { decodePlainRecord, getOwnNumber, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import {
     TOPOLOGY_REPLAN_CAUSES,
@@ -9,73 +9,95 @@ import {
     type TopologyReplanCause
 } from './rtc-topology-plan-record.ts';
 
+const RECORD_KEYS = ['plannedAtEpochMs', 'replaced', 'causes', 'delta', 'longestPathHops'] as const;
+const REPLACED_KEYS = ['layout', 'ageMs'] as const;
+const DELTA_KEYS = [
+    'joinedSessionCount',
+    'leftSessionCount',
+    'changedSessionCount',
+    'reroutedSessionCount',
+    'acceptingSessionCount',
+    'maxJoinerEdgesPerSession'
+] as const satisfies readonly (keyof TopologyLayoutDelta)[];
+
 export function decodeRtcTopologyPlanRecord(value: unknown): Either<string, RtcTopologyPlanRecord> {
-    try {
-        const record = requireRecord(value, 'Topology plan record');
-        requireExactKeys(
-            record,
-            ['plannedAtEpochMs', 'replaced', 'causes', 'delta', 'longestPathHops'],
-            'Topology plan record'
-        );
-        requireEpoch(record.plannedAtEpochMs, 'Topology plan record plannedAtEpochMs');
-        requireEpoch(record.longestPathHops, 'Topology plan record longestPathHops');
-        return Either.ofRight({
-            plannedAtEpochMs: record.plannedAtEpochMs,
-            replaced: record.replaced === null ? null : decodeReplacedTopologyLayout(record.replaced),
-            causes: decodeTopologyReplanCauses(record.causes),
-            delta: decodeTopologyLayoutDelta(record.delta),
-            longestPathHops: record.longestPathHops
-        });
+    const fields = decodePlainRecord(value).right;
+    if (fields === undefined || !hasExactKeys(fields, RECORD_KEYS)) {
+        return Either.ofLeft('Topology plan record must be an exact object with its own fields');
     }
-    catch (error) {
-        return Either.ofLeft(error instanceof Error ? error.message : String(error));
+    const plannedAtEpochMs = getCount(fields, 'plannedAtEpochMs');
+    const longestPathHops = getCount(fields, 'longestPathHops');
+    if (plannedAtEpochMs === null || longestPathHops === null) {
+        return Either.ofLeft('Topology plan record plannedAtEpochMs and longestPathHops must be non-negative integers');
     }
+    const replaced: Either<string, ReplacedTopologyLayout | null> = getOwnField(fields, 'replaced') === null
+        ? Either.ofRight(null)
+        : decodeReplacedTopologyLayout(getOwnField(fields, 'replaced'));
+    const causes = decodeTopologyReplanCauses(getOwnField(fields, 'causes'));
+    const delta = decodeTopologyLayoutDelta(getOwnField(fields, 'delta'));
+    if (replaced.right === undefined || causes.right === undefined || delta.right === undefined) {
+        return Either.ofLeft(replaced.left ?? causes.left ?? delta.left ?? 'Topology plan record is invalid');
+    }
+    return Either.ofRight({
+        plannedAtEpochMs,
+        replaced: replaced.right,
+        causes: causes.right,
+        delta: delta.right,
+        longestPathHops
+    });
 }
 
-function decodeReplacedTopologyLayout(value: unknown): ReplacedTopologyLayout {
-    const replaced = requireRecord(value, 'Replaced topology layout');
-    requireExactKeys(replaced, ['layout', 'ageMs'], 'Replaced topology layout');
-    requireEpoch(replaced.ageMs, 'Replaced topology layout ageMs');
-    if (!isGroupLayoutIdentity(replaced.layout)) {
-        throw new TypeError('Replaced topology layout layout is invalid');
+function decodeReplacedTopologyLayout(value: unknown): Either<string, ReplacedTopologyLayout> {
+    const fields = decodePlainRecord(value).right;
+    if (fields === undefined || !hasExactKeys(fields, REPLACED_KEYS)) {
+        return Either.ofLeft('Replaced topology layout must be an exact object with layout and ageMs');
     }
-    return { layout: replaced.layout, ageMs: replaced.ageMs };
+    const layout = getOwnField(fields, 'layout');
+    if (!isGroupLayoutIdentity(layout)) {
+        return Either.ofLeft('Replaced topology layout layout is not a layout identity');
+    }
+    const ageMs = getCount(fields, 'ageMs');
+    if (ageMs === null) {
+        return Either.ofLeft('Replaced topology layout ageMs must be a non-negative integer');
+    }
+    return Either.ofRight({ layout, ageMs });
 }
 
-function decodeTopologyReplanCauses(value: unknown): readonly TopologyReplanCause[] {
+function decodeTopologyReplanCauses(value: unknown): Either<string, readonly TopologyReplanCause[]> {
     if (!Array.isArray(value)) {
-        throw new TypeError('Topology plan record causes must be an array');
+        return Either.ofLeft('Topology plan record causes must be an array');
     }
-    const causes = value.map((cause) => requireOneOf(cause, TOPOLOGY_REPLAN_CAUSES, 'Topology plan record cause'));
-    const canonical = TOPOLOGY_REPLAN_CAUSES.filter((cause) => causes.includes(cause));
-    if (causes.join('\0') !== canonical.join('\0')) {
-        throw new TypeError('Topology plan record causes must be unique and in canonical order');
+    const causes = TOPOLOGY_REPLAN_CAUSES.filter((cause) => value.includes(cause));
+    if (causes.length !== value.length || causes.some((cause, index) => cause !== value[index])) {
+        return Either.ofLeft('Topology plan record causes must be known, unique and in canonical order');
     }
-    return causes;
+    return Either.ofRight(causes);
 }
 
-function decodeTopologyLayoutDelta(value: unknown): TopologyLayoutDelta {
-    const delta = requireRecord(value, 'Topology layout delta');
-    requireExactKeys(delta, [
-        'joinedSessionCount',
-        'leftSessionCount',
-        'changedSessionCount',
-        'reroutedSessionCount',
-        'acceptingSessionCount',
-        'maxJoinerEdgesPerSession'
-    ], 'Topology layout delta');
-    requireEpoch(delta.joinedSessionCount, 'Topology layout delta joinedSessionCount');
-    requireEpoch(delta.leftSessionCount, 'Topology layout delta leftSessionCount');
-    requireEpoch(delta.changedSessionCount, 'Topology layout delta changedSessionCount');
-    requireEpoch(delta.reroutedSessionCount, 'Topology layout delta reroutedSessionCount');
-    requireEpoch(delta.acceptingSessionCount, 'Topology layout delta acceptingSessionCount');
-    requireEpoch(delta.maxJoinerEdgesPerSession, 'Topology layout delta maxJoinerEdgesPerSession');
-    return {
-        joinedSessionCount: delta.joinedSessionCount,
-        leftSessionCount: delta.leftSessionCount,
-        changedSessionCount: delta.changedSessionCount,
-        reroutedSessionCount: delta.reroutedSessionCount,
-        acceptingSessionCount: delta.acceptingSessionCount,
-        maxJoinerEdgesPerSession: delta.maxJoinerEdgesPerSession
-    };
+function decodeTopologyLayoutDelta(value: unknown): Either<string, TopologyLayoutDelta> {
+    const fields = decodePlainRecord(value).right;
+    if (fields === undefined || !hasExactKeys(fields, DELTA_KEYS)) {
+        return Either.ofLeft('Topology layout delta must be an exact object with its own fields');
+    }
+    const badField = DELTA_KEYS.find((key) => getCount(fields, key) === null);
+    if (badField !== undefined) {
+        return Either.ofLeft(`Topology layout delta ${badField} must be a non-negative integer`);
+    }
+    return Either.ofRight({
+        joinedSessionCount: getOwnNumber(fields, ['joinedSessionCount'], Number.NaN),
+        leftSessionCount: getOwnNumber(fields, ['leftSessionCount'], Number.NaN),
+        changedSessionCount: getOwnNumber(fields, ['changedSessionCount'], Number.NaN),
+        reroutedSessionCount: getOwnNumber(fields, ['reroutedSessionCount'], Number.NaN),
+        acceptingSessionCount: getOwnNumber(fields, ['acceptingSessionCount'], Number.NaN),
+        maxJoinerEdgesPerSession: getOwnNumber(fields, ['maxJoinerEdgesPerSession'], Number.NaN)
+    });
+}
+
+function getCount(record: object, key: string): number | null {
+    const count = getOwnNumber(record, [key], Number.NaN);
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+}
+
+function getOwnField(record: object, key: string) {
+    return Object.getOwnPropertyDescriptor(record, key)?.value;
 }

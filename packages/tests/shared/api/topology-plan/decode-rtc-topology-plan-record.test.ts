@@ -83,4 +83,16 @@ describe('decodeRtcTopologyPlanRecord', () => {
 
         expect(decoded.right?.causes).toEqual([]);
     });
+
+    it('refuses a top-level value that is not an exact object', () => {
+        for (const value of [null, [], 'record', 7, undefined]) {
+            expect(decodeRtcTopologyPlanRecord(value).left).toBeTypeOf('string');
+        }
+    });
+
+    it('names the refused field', () => {
+        expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, longestPathHops: -1 }).left).toContain(
+            'longestPathHops'
+        );
+    });
 });
