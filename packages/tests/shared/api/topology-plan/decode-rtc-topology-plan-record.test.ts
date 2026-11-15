@@ -1,0 +1,86 @@
+import { describe, expect, it } from 'vitest';
+
+import { decodeRtcTopologyPlanRecord } from '@shared/api/topology-plan/decode-rtc-topology-plan-record.ts';
+import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+
+const FIRST_LAYOUT_RECORD: RtcTopologyPlanRecord = {
+    plannedAtEpochMs: 1_700_000_000_000,
+    replaced: null,
+    causes: ['join'],
+    delta: {
+        joinedSessionCount: 3,
+        leftSessionCount: 0,
+        changedSessionCount: 0,
+        reroutedSessionCount: 0,
+        acceptingSessionCount: 3,
+        maxJoinerEdgesPerSession: 2
+    },
+    longestPathHops: 2
+};
+
+const REPLACING_RECORD: RtcTopologyPlanRecord = {
+    ...FIRST_LAYOUT_RECORD,
+    replaced: {
+        layout: { groupRevision: 4, presenceRevision: 9, version: 2, state: 'active' },
+        ageMs: 12_500
+    },
+    causes: ['join', 'leave', 'rtt']
+};
+
+describe('decodeRtcTopologyPlanRecord', () => {
+    it('decodes a first layout\'s record, whose replaced layout is null', () => {
+        const decoded = decodeRtcTopologyPlanRecord(structuredClone(FIRST_LAYOUT_RECORD));
+
+        expect(decoded.right).toEqual(FIRST_LAYOUT_RECORD);
+    });
+
+    it('decodes a record that names the replaced layout, its age and its causes', () => {
+        const decoded = decodeRtcTopologyPlanRecord(structuredClone(REPLACING_RECORD));
+
+        expect(decoded.right).toEqual(REPLACING_RECORD);
+    });
+
+    it('refuses an unknown cause, a repeated cause and causes out of canonical order', () => {
+        for (const causes of [['join', 'storm'], ['join', 'join'], ['leave', 'join']]) {
+            expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, causes }).left).toBeTypeOf('string');
+        }
+    });
+
+    it('refuses a missing or extra key at any level', () => {
+        const { longestPathHops: _omitted, ...withoutHops } = REPLACING_RECORD;
+        const { joinedSessionCount: _joined, ...deltaWithoutJoined } = REPLACING_RECORD.delta;
+        const variants = [
+            withoutHops,
+            { ...REPLACING_RECORD, extra: 1 },
+            { ...REPLACING_RECORD, delta: deltaWithoutJoined },
+            { ...REPLACING_RECORD, delta: { ...REPLACING_RECORD.delta, extra: 1 } },
+            { ...REPLACING_RECORD, replaced: { layout: REPLACING_RECORD.replaced?.layout } },
+            { ...REPLACING_RECORD, replaced: { ...REPLACING_RECORD.replaced, extra: 1 } },
+            { ...REPLACING_RECORD, replaced: { ...REPLACING_RECORD.replaced, layout: { groupRevision: 1 } } }
+        ];
+
+        for (const variant of variants) {
+            expect(decodeRtcTopologyPlanRecord(variant).left).toBeTypeOf('string');
+        }
+    });
+
+    it('refuses a negative or fractional count', () => {
+        const variants = [
+            { ...REPLACING_RECORD, plannedAtEpochMs: -1 },
+            { ...REPLACING_RECORD, longestPathHops: 1.5 },
+            { ...REPLACING_RECORD, delta: { ...REPLACING_RECORD.delta, leftSessionCount: -1 } },
+            { ...REPLACING_RECORD, delta: { ...REPLACING_RECORD.delta, maxJoinerEdgesPerSession: 0.5 } },
+            { ...REPLACING_RECORD, replaced: { ...REPLACING_RECORD.replaced, ageMs: -5 } }
+        ];
+
+        for (const variant of variants) {
+            expect(decodeRtcTopologyPlanRecord(variant).left).toBeTypeOf('string');
+        }
+    });
+
+    it('accepts a record with no cause', () => {
+        const decoded = decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, causes: [] });
+
+        expect(decoded.right?.causes).toEqual([]);
+    });
+});
