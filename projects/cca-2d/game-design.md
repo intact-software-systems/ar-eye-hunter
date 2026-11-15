@@ -1,174 +1,131 @@
 # Game design
 
-Status: proposed rules for playtesting. Numerical values are starting hypotheses.
-This document owns gameplay; [architecture](architecture.md) owns how it is enforced.
+Status: selected direction with proposed rules for playtesting. Numerical values
+and the precise win condition are tuning hypotheses, not implemented behavior.
 
-## Fantasy and player verbs
+## Fantasy and purpose
 
-You are an overconfident little thief in a bustling toy market. Wind-up security
-guards pursue noisy bags of stolen tokens. Your friends are rivals, but their
-chases create opportunities for you.
+Overconfident troublemakers turn a scruffy market into a slapstick chase.
+You dash away leaving a fart distraction, a friend slides through a puddle onto
+ice, and a furious guard tumbles after them. Cash supplies route objectives;
+outsmarting friends and reacting to readable chaos supplies the fun.
 
-**Move, collect, dash, bank.** These four verbs must support a satisfying round
-before introducing another ability or mission. Character appearance has no effect
-on speed, collision size, cooldowns, or earnings.
+The audience is ages 6–14. Use deadpan expressions, bodily-function jokes and
+absurd falls. Short setbacks should amuse the victim too. Keep clear counterplay,
+avoid repeated helplessness, and keep everyone playing after mistakes.
 
-An example moment: you have a valuable bag and the bank is close. A jackpot opens
-across the square. Your friend leads a guard past its entrance. You can bank safely,
-dash behind the guard toward the jackpot, or take the longer route while they fight
-for it. The game produces a story through visible choices.
+## Controls and core loop
 
-## Core loop
+Move with a joystick or keyboard. One **DASH + DROP** action bursts in the current
+or last movement direction and leaves a distraction at the departure point.
+It uses one cooldown, so spending it on a prank also spends an escape opportunity.
+No aiming stick or inventory selection is required in the first trial.
 
-1. Enter a private room through a shared link or code; choose a cosmetic and ready.
-2. See a short countdown and a playable instruction: “Collect. Bank. Don't get caught.”
-3. Collect loose tokens automatically by moving over them.
-4. A bigger carried bag raises its potential deposit bonus and your guard attention.
-5. Reach either bank and hold Bank to deposit; leave with an empty bag and lower heat.
-6. If caught, lose the carried bag, watch a short readable setback, and respawn.
-7. At the round deadline, only accepted banked points count. Compare results and ready again.
+Pick up cash automatically. Standing still in a marked bank zone starts a short
+visible deposit; moving or dashing cancels it. This automatic banking is a proposal
+that removes the separate Bank button. The appointed host confirms all outcomes.
 
-No permanent elimination. No mandatory waiting for other players after every raid.
-No passive survival income. Banking is available from the first second.
+1. Join a private Rallar room, choose an identity and ready.
+2. Collect cash while avoiding guards and reacting to friends' pranks.
+3. Choose a safe bank route or risk another pickup.
+4. Slip, recover, retaliate and keep playing.
+5. Finish the timed round, see all winners, and choose a rematch.
 
-## First complete ruleset
+## Small first ruleset
 
-| Rule                 | Initial proposal                                                                         |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| Room                 | 2–6 human players; prove four before qualifying six                                      |
-| Round                | 180 seconds plus a 3-second shared countdown                                             |
-| Movement             | Same normalized maximum speed on all input devices; no sprint button                     |
-| Dash                 | 0.2-second burst; 4-second cooldown; follows current or last nonzero movement            |
-| Dash collision       | Stops at walls; no invulnerability; cannot pass through a guard                          |
-| Pickup               | Automatic, server-confirmed; no precision tapping or aiming                              |
-| Bag                  | Capacity 30 base-value units; ordinary token worth 1                                     |
-| Deposit              | Hold Bank for 0.9 seconds inside a booth's marked zone, while stationary                 |
-| Deposit cancellation | Movement, dash, released input, catch, lost input freshness, or match end                |
-| Payout               | Base bag value plus floor(value × bonus); 0% at 1–9, 20% at 10–19, 40% at 20–30          |
-| Heat                 | Three readable tiers matching those bag thresholds; cleared by bank/catch                |
-| Catch                | Bag becomes zero; floor(half its base value) drops as bounded loot; remainder disappears |
-| Respawn              | 3 seconds after catch at a safe pad; 1-second shield forbids pickup and banking          |
-| End                  | Unbanked loot expires; greatest banked score wins; ties are shared                       |
+| Rule | Proposed starting behavior |
+| --- | --- |
+| Players | Prove two first, then four; six only after host/device qualification |
+| Round | 180 seconds with a short shared countdown |
+| Movement | Normalized speed across touch and keyboard; no faster diagonals |
+| Dash-and-drop | 0.2-second burst, 4-second cooldown, stops at solids |
+| Drop | One noisy fart decoy at dash origin; short visible warning before activation |
+| Decoy effect | Nearby investigating/patrolling guards turn toward its sound |
+| Pursuit | A guard already chasing must lose line of sight before being distracted |
+| Water/ice | Authored hazard patch; reduced steering and bounded sliding duration |
+| Slip | Brief recoverable loss of traction, expressive fall; no stun chain |
+| Bank | Auto-deposit after 0.9 seconds stationary in the marked zone |
+| Cancellation | Movement, dash, catch, stale control connection, recovery pause or round end |
+| Catch | Spill some carried cash, brief reset, safe re-entry; banked cash remains |
+| Currency | Play tokens only; no real money or purchased gameplay advantage |
 
-A jackpot bundle contributes 5 base-value units. A pickup that cannot fit in the
-remaining bag capacity stays on the ground; do not partially consume it. Deposits
-move the whole bag into banked score atomically. There are no fractional points.
+In the first moving scene, the puddle/ice is authored and the fart decoy is the
+only dropped prank. The mockup shows a possible chain reaction, not a promise of
+a water/ice/poop inventory. Add new interacting hazards only after the first
+interaction is enjoyable. Cosmetic splats/footprints do not silently change traction.
 
-The deposit bonus creates a reason to stay out, but the risk comes from guard
-attention rather than slowing a touch player's movement. Tune bonus and heat together.
-Do not add a hidden bonus for the trailing player or punish the leader through an
-invisible rule.
+Guards announce recognition with a readable pose/symbol and give time to escape.
+Stalls break sight; all valuable areas have two exits. A distracted guard cannot
+instantly catch an uninformed bystander. Players initially pass through each other;
+body-blocking and physical player collisions need a separate fun/fairness decision.
 
-## Guards and social interaction
+## Multiple winners
 
-Start with one guard archetype and two guards on the four-player map. A guard
-patrols a visible route, notices a runner within its line of sight, telegraphs
-recognition for 0.6 seconds, then chases. Obstacles break sight. After 1.5 seconds
-without sight it investigates the last seen position and returns to patrol.
+**Requirement:** timed play can have multiple winners; no forced single champion.
 
-Heat expands detection range within the fixed camera view. It does not grant
-knowledge through walls. Guards use a visible target marker and do not switch
-targets on every frame: a target must be lost or caught before ordinary retargeting.
-Initial map tuning must give a fresh player a viable route away from every bank.
+**Recommended rule to test:** every player reaching a visible banked-cash target
+before the deadline wins. Zero, one or several players can qualify. Crossing the
+target does not eliminate a player or stop the round; earned qualification cannot
+be taken away by later slips. The target is versioned round configuration and is
+chosen through playtests, not inferred from the mockup's score of 120.
 
-Players pass through one another; no body-blocking, attack button, or direct stun.
-They compete for routes and loot. A runner can draw a guard toward a rival's route,
-then break sight behind a stall. A guard can catch only its current pursuit target;
-contact with other runners is harmless and does not push them. After losing that
-target it may notice a rival, but the rival receives the full recognition telegraph
-before becoming catchable. A guarding or investigating guard cannot catch by
-incidental contact. This creates bait-and-escape opportunities without instant
-third-party hits, a combat system, or unavoidable spawn camping.
+Alternative: highest banked score with shared ties. That technically allows multiple
+winners but may produce them rarely. Do not silently substitute this for the
+recommended target mode. The exact rule needs user/playtest confirmation before
+complete-round implementation. Funny optional awards can celebrate a long slide
+or a chain reaction, but are not a second competitive scoring system.
 
-Catch contact is a simple swept-circle test in the game rules. Art, shadows, and
-bag size never change the hitbox. No lag-compensated rewind of catches in the first
-release: readable anticipation, modest speed, and measured correction behavior
-must make the server decision tolerable.
+Results must clearly distinguish target winners, non-qualifiers, departed players
+and an interrupted round. An interrupted round produces no invented winners.
 
-## Arena and public event
+## Market and camera
 
-Ship one authored, top-down market: two bank booths on opposite sides, a central
-jackpot stall, an outer safe-but-long route, two cross-market shortcuts, and stalls
-that break sight. Corners are rounded and passages are generous. Every valuable
-area has at least two exits. Avoid long dead ends, tiny doors, and decorative
-walls that disagree with collision.
+One authored, connected scrolling market with loops, open junctions, narrow-but-
+forgiving shortcuts and stalls that interrupt sight. Start around two default
+phone-view widths across, then tune encounter frequency. Bigger must not mean
+wandering alone. Use natural boundaries and cropped scenery, not a square arena
+frame. Camera and zoom are owned by [mobile and controls](mobile-and-controls.md).
 
-Starting spatial hypothesis: a 24 × 24 world-unit arena, a 12 × 12 local view,
-runner diameter 0.9 units, ordinary speed 3 units/second, and passages at least
-2.5 runner diameters wide. A dash must help navigation without crossing a whole view.
-Freeze map geometry and these values in a versioned round configuration.
-
-Ordinary pickups have authored slots and a 12-second respawn delay. No ordinary
-pickup slot is inside a bank zone or respawn pad. Keep a total entity cap and
-never spawn under a runner. Dropped loot expires after 8 seconds
-and receives no deposit bonus until it is actually collected and banked.
-
-Every 30 seconds, announce one central jackpot 3 seconds before it opens. It
-offers four bundles for 8 seconds, then closes. There is no second mission system.
-At 30 seconds remaining, show a final-run warning. Do not silently change movement
-or guard rules at the end. Test whether players make an informed final bank run.
+The overview must let players plan routes; normal play must leave enough space
+to see an approaching guard. Do not create unavoidable hits from outside the
+view. Hazard visibility, guard warning distance and zoom limits are tuned together.
+Public jackpots, bag heat and payout bonuses are deferred until the basic prank
+loop earns them.
 
 ## Ordering and fairness
 
-Server ticks determine outcomes. For each running tick: expire stale input, move
-runners/guards, resolve catches, resolve uncontested and contested pickups, then
-complete eligible deposits. A catch on a deposit's completion tick cancels the
-deposit. The interface must not show confirmed banked points before that verdict.
+The appointed browser runs the same pure fixed-step rules for everyone, including
+its own player. Clients submit input, never positions, money or victory claims.
+Each tick expires stale input, advances movement and hazards, resolves catches,
+pickups and then eligible deposits. A catch cancels a simultaneous deposit.
+The deadline is checked before new gameplay outcomes on its terminal tick.
 
-At the deadline tick, finish the round before movement, pickup, or deposit work.
-A deposit must complete on an earlier tick. The visible countdown derives from
-accepted server time; the warning should leave room for human judgement, not imply
-that a tap at zero succeeds.
+Dash edges have identities and cannot be replayed. Contested pickups use contact
+distance and a round-seeded stable tie rule, not packet arrival order.
+Confirmed banked cash and results follow the recovery commitment policy in
+[architecture](architecture.md); prediction never confirms them.
 
-For contested pickups on the same tick, compare distance at contact; exact ties
-use a stable round-seeded order rotated by pickup identity. Never use network
-arrival order or permanent account ordering as a hidden advantage. The precise
-deterministic comparison belongs in the pure rules and tests.
+## Room and interruptions
 
-No display may show extra playable world outside the common camera frame. Desktop
-mouse position does not choose a dash direction unavailable on touch. Simultaneous
-keyboard axes are normalized to prevent faster diagonals.
+One runner per authenticated player; explicit session takeover invalidates old
+input. Late arrivals observe until rematch. Non-host disconnects expire movement
+and use a proposed ten-second seat grace; a live match continues only while a
+healthy host and another valid backup remain. Loss of the only backup pauses the
+match for up to ten seconds, then interrupts it if no backup returns. Host loss is different: freeze the shared match clock during
+recovery, then resume only from a valid checkpoint under a new appointment.
+See [recovery](architecture.md#host-loss-and-recovery).
 
-## Room and session outcomes
+A voluntary departure forfeits carried cash and keeps accepted banked cash in
+the round record. No remaining connected players means interruption, not a
+background simulation or a durable game service.
 
-- One active runner per authenticated account per round. A second session observes;
-  explicit takeover fences the previous controller and requires fresh neutral input.
-- Joining after the countdown starts means spectating until the next round. Do not
-  silently add a player to an already balanced match.
-- Disconnects do not pause the round or cash out a bag. Apply the exact grace and
-  loss policy in [architecture](architecture.md#disconnection-and-recovery).
-- A caught player who disconnects can finish the respawn timer but cannot become
-  protected indefinitely. All timers are server-owned.
-- A voluntary departure forfeits the bag and the runner seat for the round.
-  Retain that player's banked score in the final results, marked as left.
-- The match continues with one connected runner until its normal deadline. If no
-  runner remains connected beyond the reconnect grace, interrupt it with no winner.
-- After results, every remaining player explicitly readies for a new round; a
-  designated room organizer starts it. Spectators do not block readiness. If the
-  organizer leaves, another eligible player can request server-validated start
-  after all remaining players are ready; governance privileges do not transfer.
+## Fun acceptance
 
-Use existing Rallar room admission and rematch policy where it fits these semantics.
-An account's room membership and game participation remain distinct.
+Observe small mixed-device groups, including younger and older players:
+can they cause a prank deliberately, explain a slip, escape a guard and bank?
+Watch whether victims laugh and retaliate or feel repeatedly trapped.
+Require voluntary rematches, understandable shared wins and comfortable touch use.
 
-## Fun validation and stop conditions
-
-Observe at least three groups of first-time players, including mixed touch and
-keyboard groups, over several rounds. Record device and build alongside observations.
-Initial targets are learning criteria, not statistical proof:
-
-- At least 4 of 5 observed newcomers collect and bank within 45 seconds without help.
-- Caught players regain control within 4 seconds during healthy operation.
-- At least two of three groups voluntarily choose a rematch.
-- Players can describe a route, bait, escape, or banking decision they enjoyed.
-- Touch players can execute the same escape and banking tasks as keyboard players;
-  investigate repeated disadvantage before interpreting win rates.
-
-Watch for bank camping, hiding, repeated instant catches, one dominant circuit,
-unclear losses, and thumb fatigue. Change map/economy/timing before adding content.
-If the core is still dull after two focused tuning rounds, revisit the loop. Do
-not use more cosmetics, missions, or a new engine to disguise that finding.
-
-Solo practice can reuse the arena and guards without scoring against other people.
-It is onboarding, not proof of multiplayer fun; AI-controlled rival players are
-outside the first release.
+If two focused tuning rounds still produce dull chasing or frustrating loss of
+control, revise the interaction/map. More props, jokes or another renderer cannot
+substitute for that evidence.

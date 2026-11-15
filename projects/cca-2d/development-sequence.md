@@ -1,193 +1,121 @@
 # Development sequence, agents, and tools
 
-Status: proposed development strategy. Only the next two slices are concrete.
-Later stages name outcomes; expand them after playable evidence. This is not a
-commit schedule, progress ledger, or claim that the design has been approved.
+Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
+Only the next two implementation slices are concrete. This documentation/mockup
+task does not itself implement either slice.
 
-## Working principle
+## Existing foundation and change of direction
 
-Every increment should improve a game people can actually play. Start with the
-smallest enjoyable action, connect it through Rallar early, and establish a visual
-quality target before multiplying assets. Keep gameplay, mobile input, reliability,
-and art in the same integration loop.
+The [Phaser practice](../../apps/cca-2d/README.md) already offers movement, dash,
+collecting and banking through a separate CCA server. It is evidence for that
+earlier slice only. It does not prove Babylon rendering, guards/pranks, zoom,
+multiple winners, mobile host performance or migration.
 
-The user selected Pocket Arcade Market (option 2). Use its refined square
-phone layout and pixel-art contract for all visual work. Before the next gameplay expansion,
-review the remaining proposals and choose initial physical test devices. Style selection does not certify fun or remove the playtest gates.
+The new visual target is [cutout market](visual-concepts/README.md), with a
+[construction recipe](babylon-scene-construction.md). Retire the old square frame,
+pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
+pure rules and input lessons, not the old authority boundary.
 
-## Current playable foundation
+## Next slice 1: a buildable, funny Babylon scene
 
-The authorized first slice is open-ended practice: movement, dash, collecting and
-banking, first locally and then with two players through Rallar. It uses the selected
-Pocket Arcade Market art and a portrait control deck occupying 25% of the viewport.
-There is no guard, timer, winner or durable score yet. See the
-[app instructions](../../apps/cca-2d/README.md) and
-[server instructions](../../apps/cca-server/README.md).
+**Outcome:** one moving scene on a phone establishes whether the generated look
+is reproducible and the single action is enjoyable.
 
-## Next slice 1: qualify feel and recovery, then complete a round
+Build the construction guide's small representative corner: one original cutout
+rig, rival, guard, stall, bank, authored puddle/ice and dash/fart decoy. Keep local
+rules separate from rendering. Add floating controls, automatic collection and
+proposed dwell banking, orthographic follow and bounded zoom.
 
-**Outcome:** phone and computer movement feels responsive, connection interruption
-has a clear outcome, and the four practice verbs support a complete short round.
-
-First have the user play on a physical phone. Tune joystick reach, dash distance,
-collision footprints, and visual readability from that observation. Check iPad and
-landscape layouts. Measure latency and frame pacing before adding prediction or
-more entities. Normalize the oversized seed textures to meet the transfer budget.
-
-Then add one guard, catch/respawn, a round timer, shared results and rematch to the
-existing server-owned rules. Do not change the authority boundary or use local
-balances as match truth.
+Do not build a full market or parallel engine framework. Measure the Babylon
+dependency and critical art before producing more assets. Keep any retained
+Phaser practice clearly separate from the trial; do not leave two default entry
+paths or silently switch between incompatible authority models.
 
 **Acceptance:**
+- A real Babylon capture visibly matches the cutout identity at phone scale.
+- Run/dash/puff/slide/recovery are controllable and their cause is understandable.
+- Character parts, shadows and depth remain coherent at all zoom presets.
+- Joystick plus action works; pinch does not steal control pointers.
+- Portrait, landscape, iPad and keyboard/mouse have equivalent actions.
+- Named physical-device cold loading and ten-minute frame pacing meet the proposed
+  budgets or cause a specific simplification decision.
+- Pure-rule/runtime checks, app build and visible-control browser play pass.
 
-- Real phone plus desktop can join via an HTTPS origin and use all four actions.
-- Pointer cancellation, hidden tab, reconnect and browser closure stop stale input;
-  the remaining player continues. New-controller dash edges work after re-entry.
-- Healthy and 150 ms impaired runs have bounded input age and consistent balances.
-- Cold transfer and sustained frame pacing are recorded on named physical devices.
-- Both clients finish with identical results, then ready into a new round.
-- Focused rule/runtime checks and visible two-client play pass. New REST contracts
-  retain shared-test recipes. A screen capture shows ordinary gameplay.
+**Decision:** approve the moving scene and basic interaction before expanding art.
 
-**Decision:** resolve control or recovery problems before increasing content.
+## Next slice 2: Rallar-only two-player hosting and recovery
 
-## Next slice 2: one polished four-player market
+**Outcome:** two authenticated players share the scene using only Rallar as
+multiplayer backend, with one appointed browser running the rules.
 
-**Outcome:** four people can play repeated complete three-minute rounds on mixed
-devices in one coherent illustrated arena. The content is small but representative
-of the intended shipping quality.
+Replace the separate CCA server dependency in the selected app composition.
+Use Rallar WS room transport first, bounded input/snapshot publication, accepted
+appointment/epoch validation and client reconciliation. Establish the checkpoint
+commit protocol before promising retained scores across host loss.
 
-Translate the selected composition into a representative moving scene from
-[art and polish](art-and-polish.md), then finish the one arena. Add bag heat/bonus,
-the public jackpot, two guards, four distinguishable player identities, concise
-onboarding, results/rematch, and essential audio. Refine portrait and landscape with
-the same world visibility and equivalent actions.
+First reproduce the existing appointment-permission constraints. Prove a valid
+successor path for an owner host that backgrounds while still appearing online.
+Any generic missing capability belongs in Rallar and its focused tests; do not
+bypass authorization or promote everyone to room admin.
 
 **Acceptance:**
+- Two independent sessions agree on movement, hazards, pickups and deposits.
+- A phone hosts while rendering at an acceptable sustained frame rate.
+- Host close/background and Wi-Fi loss produce bounded recovery or an explicitly
+  interrupted round; confirmed money never duplicates or silently disappears.
+- Old-host return, competing candidates and delayed epochs cannot create two games.
+- Input expires, queues stay bounded, resync uses current scope/appointment.
+- Match clock and multiple-winner result contract survive checkpoint recovery in
+  a minimal timed harness; confirm the exact target-win rule before complete-round UX.
+- Two-player loss of the only backup pauses and then interrupts after the proposed
+  ten-second window. A three-client fault test proves host replacement with a
+  surviving backup and continued play.
+- Healthy and impaired WS runs pass with real Rallar services; physical Safari
+  backgrounding is recorded separately from browser emulation.
 
-- Three small human groups play multiple rounds; observe banking comprehension,
-  repeated catches, routes, input disadvantage, and voluntary rematches.
-- The representative scene meets every visual rubric category at phone scale and
-  in motion, including muted audio and reduced motion.
-- A physical iPhone, Android phone, iPad, and desktop complete mixed-device rounds;
-  record exact hardware/browser versions and any unsupported target explicitly.
-- Baseline and impaired runs show identical results and bounded recovery.
-- Cold loading and ten-minute frame pacing meet the proposed device budgets or
-  trigger an explicit scope/performance decision before content expansion.
-- No debug HUD, technical error dump, or endless spinner is part of the ordinary
-  player flow. Connection failures have useful actions and truthful outcomes.
+**Decision:** recovery is a release gate, not work deferred until after content.
+If current appointment policy blocks it, the UI interrupts truthfully until the
+reusable Rallar gap is fixed.
 
-**Decision:** if people do not voluntarily replay, revise rules/map/economy. If
-visual quality misses, repair the representative scene and asset process. Avoid
-responding to either failure by adding more systems.
+## Later outcomes
 
-## Later outcomes, deliberately not task breakdowns
+Four-player mixed-device fun and repeated rounds; a complete authored market;
+shared-win tuning and rematch; release accessibility/device qualification;
+six players only if justified; deployment using static HTTPS SPA plus Rallar.
+Additional prank types and physics-driven scenery require observed fun and
+budget headroom. No new concrete third slice until the first two yield evidence.
 
-| Gate                    | Evidence needed                                                                                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Release reliability     | Six-player qualification if retained; cross-room isolation; server capacity; restart/interruption; exact outcome recovery; twenty-round soak                      |
-| Device quality          | Touch comfort, real Safari lifecycle/audio, orientation/safe areas, low-tier performance, desktop browsers, accessibility controls                                |
-| Deployment              | HTTPS SPA, compatible Rallar/game server, exact allowed origins, versioned assets/contracts, admission capacity, logs/health, safe restart and rollback procedure |
-| Small external playtest | Friends outside the developer setup can enter, understand, finish, recover, and rematch without developer assistance                                              |
-| Content expansion       | Additional map/cosmetics/events justified by observed play, maintaining load and visual budgets                                                                   |
+## Tools and agent workflow
 
-Keep revision batches in a draft PR when publishing implementation. Follow current
-repo delivery guidance and required release checks. Do not copy live PR/check state
-into these project documents or create a shared progress registry.
+Existing Imagegen, browser/Playwright, repository skills and Babylon official docs
+cover the first trial. Use game foundations/UI/playtest skills and the Rallar
+app/realtime/code/testing specialists. There is no requirement for a Babylon MCP.
+Blender is optional for later props; a physics engine is optional, not part of the
+first load. Context7 authentication has failed; use official docs until repaired.
 
-## Agent organization
+Physical phone/iPad testing remains the missing evidence capability. Use actual
+devices and a shared HTTPS test URL; emulated viewports cannot certify them.
+A device farm is optional, not a prerequisite to start. Audio can begin with short
+procedural or licensed effects; no purchase/plugin installation is required.
 
-One lead agent owns the integrated product, rules vocabulary, and acceptance.
-Delegate bounded work only when its input and output are clear; all agents use
-the same approved scene and rule documents.
+One lead owns the integrated scene and contracts. Bounded art tasks return source
+parts, pivots, atlas, provenance and an in-engine capture. Reliability tasks return
+a reproduction, canonical owner/fix and focused evidence. Reviewers identify
+concrete visual/lifecycle failures; the user judges the look and fun.
 
-| Role                          | Good assignment                                                 | Required return                                                                |
-| ----------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Gameplay implementer          | One observable behavior, e.g. catch/deposit ordering            | Working slice, focused behavior evidence, assumptions                          |
-| Art/animation agent           | One asset family matched to an approved seed and gameplay scale | Source + runtime assets, preview strip, in-game capture, provenance            |
-| Rallar reliability agent      | One protocol/lifecycle gap with a reproduction                  | Canonical platform fix or measured finding, failure evidence and focused tests |
-| Independent playtest/reviewer | Try specific human flows and failure cases on the candidate     | Severity-ranked defects, exact reproduction, screenshots/recordings            |
+## Validation and delivery
 
-The lead integrates and resolves conflicts; the user judges aesthetic direction
-and whether the game is enjoyable. Do not ask multiple agents to redesign the
-whole game independently or let each asset agent invent a different look.
+Use existing workspace scripts after checking their current package definitions;
+do not copy historical claims that CCA commands do not exist. Implementation
+requires focused pure/runtime tests, builds, visible control flows and independent
+authenticated clients. No app build validates a generated mockup.
 
-An implementation assignment should include the current approved scope, owned
-files, player-visible acceptance, relevant target devices, and forbidden regressions.
-Require the agent to play and capture its change. Passing TypeScript or a DOM text
-assertion is insufficient evidence for movement, animation, or visual polish.
+For this document-only revision, check all local links, inspect the image and
+review the pack for obsolete current-direction claims. Do not run unrelated
+game suites as evidence for a design. Keep PR descriptions clear about implemented
+practice versus proposed replacement; no stale claim that Babylon or migration
+is already complete. Keep design/implementation revisions in draft until the
+relevant review and validation are complete.
 
-## Skills and MCPs
-
-The necessary core tools are exposed in this session; this is capability inventory,
-not a claim that every service credential or physical device has been tested.
-
-| Capability            | Tools/skills                                                                              | Use                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Design and scope      | Superpowers brainstorming; repo adaptive-plan-execution                                   | Keep choices explicit and next work small                   |
-| Game implementation   | Game Studio foundations, phaser-2d-game, game-ui-frontend                                 | Simulation/render boundary, sprites, input and readable HUD |
-| Visual production     | Imagegen, sprite-pipeline, Product Design ideate/audit                                    | Approved reference, consistent frames, real-screen critique |
-| Rallar integration    | building-rallar-apps, rallar-platform, rallar-games, rallar-realtime, rallar-code-writing | Public capabilities, authority, scope, ownership            |
-| Verification          | game-playtest, Playwright MCP/CLI, rallar-testing, performance-analysis                   | Human flows, multi-client tests, captures, measured budgets |
-| Delivery              | GitHub tools, repo publishing-plan-progress, verification/review skills                   | Reviewable increments and current CI evidence               |
-| Library documentation | Context7 MCP or official documentation                                                    | Check APIs against the selected installed version           |
-
-### Gaps and optional additions
-
-1. **Physical mobile verification is the main missing capability.** No connected
-   iPhone/iPad/Android device automation or device farm has been established here.
-   Use the user's actual devices with a shared test URL and structured capture
-   protocol first. A plugin-directory search for BrowserStack/Sauce Labs did not
-   identify a matching device-testing integration; that search is not proof none
-   exists. More may be available in the directory. A device farm can be connected
-   later if manual coverage becomes a bottleneck.
-2. **Context7 configuration needs attention.** Its lookup failed authentication in
-   the preceding discussion. Do not expose credentials; configure it outside the
-   project documents. Official Phaser/Playwright documentation is a working fallback.
-3. **Audio production is optional tooling work.** No dedicated audio-generation
-   tool is currently exposed in the active toolset. Procedural effects and licensed
-   assets suffice to start. The directory currently lists fal with model search,
-   schema and generation tools, and Shutterstock with music/SFX search. Neither is
-   installed here. Model suitability, acquisition rights, pricing, and output quality
-   need checking before use; no purchase or installation is requested by this pack.
-4. **Visual judgement needs a process more than another MCP.** Existing image,
-   sprite, browser, and screenshot tools cover the workflow. A paid editor, a
-   different renderer, or more agents will not substitute for an approved reference,
-   actual-size review, animation inspection, and human taste.
-
-No new plugin is required to start slice 1. Phaser is a project dependency to
-evaluate and pin during implementation, not an MCP or an installed game runtime
-created by this document. No CCA-specific skill needs creating until repeated
-work exposes a real gap; avoid a second rulebook that duplicates this pack.
-
-## Validation and evidence discipline
-
-For implementation, choose commands from the current repo testing skill and
-verify their paths before running them. CCA workspace commands do not exist yet;
-create test/typecheck/build scripts with the first implementation. Do not publish
-invented commands as completed checks.
-
-Behavioral evidence must include pure rule results, runtime cancellation/recovery,
-real Rallar multi-client outcomes, browser captures, and physical-device observations.
-Use Playwright [independent browser contexts](https://playwright.dev/docs/browser-contexts)
-for different authenticated players; use screenshots/video for canvas behavior.
-Browser emulation alone does not qualify phone or tablet play.
-
-Keep playtest recordings consented and diagnostics redacted. Record build, rules,
-device, network profile, scenario, and observation so a result is reproducible.
-Distinguish automated correctness, measured performance, reviewer judgement, and
-human fun feedback. None is a substitute for the others.
-
-## Sources and follow-up
-
-- Repository facts and limitations: [architecture evidence](architecture.md#current-repository-evidence-and-limits).
-- Browser/game capabilities: official [Phaser docs](https://docs.phaser.io/),
-  [Phaser input](https://docs.phaser.io/phaser/concepts/input), and
-  [Playwright emulation](https://playwright.dev/docs/emulation), checked 15 November 2026.
-- Plugin availability: current session tool inventory and plugin-directory lookups
-  on 15 November 2026; availability may change.
-
-No GitHub issues were created for this proposal. Graphics direction is selected.
-Next is review of remaining design choices, then the two slices above once
-implementation is authorized. The representative scene must demonstrate the chosen
-pixel art in motion; another round of unrelated style exploration is unnecessary.
+No new issue is needed for the design pack itself. Host succession and checkpoint
+semantics are dependent work in slice 2, not independent deferred issues.

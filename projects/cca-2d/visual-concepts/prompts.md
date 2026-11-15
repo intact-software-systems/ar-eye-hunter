@@ -2,8 +2,8 @@
 
 The original three options were generated independently with Imagegen on
 15 November 2026, without image references. Numbers follow their display order
-in the chat. **Option 2 is selected.** Refinement used the selected image as its
-style reference; see the appended provenance and [current reference](README.md).
+in the chat. **Historical: option 2 was selected before the cutout/Babylon revision.** Refinement used the selected image as its
+style reference; see the appended provenance. For the superseding direction, see the [current reference](README.md).
 
 ## 1. Paper Market Caper
 
