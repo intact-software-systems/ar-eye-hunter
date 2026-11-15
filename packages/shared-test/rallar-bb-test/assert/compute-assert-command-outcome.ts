@@ -2,7 +2,6 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
     RallarBlackBoxTestAssertCommand,
-    RallarBlackBoxTestAssertComparisonOperator,
     RallarBlackBoxTestAssertResultValue,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
@@ -19,7 +18,7 @@ import {
     isRallarBlackBoxAssertOperator,
     RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
-import { isAssertComparison } from './is-assert-comparison.ts';
+import { isAssertComparison, type RallarBlackBoxTestAssertComparisonOperator } from './is-assert-comparison.ts';
 
 export interface AssertCommandEvidence {
     readonly command: RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;
@@ -86,13 +85,13 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
     const roots = toAssertSourceRoots(evidence);
     const source = resolveAssertSource(command.source, roots);
     const comparison = comparisonSource.kind === 'present'
-        ? resolveAssertSource(comparisonSource.path, roots)
+        ? { operator: comparisonSource.operator, result: resolveAssertSource(comparisonSource.path, roots) }
         : undefined;
     const passed = comparison === undefined
         ? isAssertOperatorSatisfied(source, command.operator, command.expected)
-        : isAssertComparison(command) && source.exists && comparison.exists &&
-            isComparisonSatisfied(command.operator, source.value, comparison.value);
-    const value = toAssertResultValue({ command, source, comparison, passed });
+        : source.exists && comparison.result.exists &&
+            isComparisonSatisfied(comparison.operator, source.value, comparison.result.value);
+    const value = toAssertResultValue({ command, source, comparison: comparison?.result, passed });
     return passed
         ? { status: 'ok', value, nextStatus: state.status }
         : {
@@ -110,7 +109,7 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
 type ComparisonSource =
     | Readonly<{ kind: 'absent'; }>
     | Readonly<{ kind: 'invalid'; message: string; }>
-    | Readonly<{ kind: 'present'; path: string; }>;
+    | Readonly<{ kind: 'present'; path: string; operator: RallarBlackBoxTestAssertComparisonOperator; }>;
 
 function toComparisonSource(command: AssertCommandEvidence['command']): ComparisonSource {
     if (!isAssertComparison(command)) {
@@ -122,7 +121,7 @@ function toComparisonSource(command: AssertCommandEvidence['command']): Comparis
         return { kind: 'invalid', message: 'A comparison requires a non-empty comparisonSource.' };
     }
     return command.expected === undefined
-        ? { kind: 'present', path: command.comparisonSource }
+        ? { kind: 'present', path: command.comparisonSource, operator: command.operator }
         : { kind: 'invalid', message: 'A comparison does not take an expected value.' };
 }
 

@@ -16,6 +16,7 @@ import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-por
 import type { ScriptedTransportFault, TransportFaultRewrite } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { AlmFaultRewrite } from './alm/decode-alm-fault-rewrite.ts';
+import type { RallarBlackBoxTestAssertComparisonOperator } from './assert/is-assert-comparison.ts';
 import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
 import type {
     ResultCaptureIdentity,
@@ -316,9 +317,6 @@ export type RallarBlackBoxTestAssertOperator =
     | 'matchesShape'
     | 'matchesShapeComplete'
     | 'sameUniqueStringSet';
-
-/** The operators that compare the source with a second result path, `comparisonSource`. */
-export type RallarBlackBoxTestAssertComparisonOperator = 'equals' | 'gte' | 'sameUniqueStringSet';
 
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>

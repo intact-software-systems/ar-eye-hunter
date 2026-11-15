@@ -1,13 +1,9 @@
-import type {
-    RallarBlackBoxTestAssertComparisonOperator,
-    RallarBlackBoxTestRecord
-} from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
-export const RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS = [
-    'equals',
-    'gte',
-    'sameUniqueStringSet'
-] as const satisfies readonly RallarBlackBoxTestAssertComparisonOperator[];
+/** The operators that compare the source with a second result path, `comparisonSource`. */
+export const RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS = ['equals', 'gte', 'sameUniqueStringSet'] as const;
+
+export type RallarBlackBoxTestAssertComparisonOperator = (typeof RALLAR_BLACK_BOX_ASSERT_COMPARISON_OPERATORS)[number];
 
 /** `sameUniqueStringSet` always compares two results; the others compare a result only when they name one. */
 export function isAssertComparison<T extends RallarBlackBoxTestRecord>(

@@ -1,7 +1,11 @@
 import { load } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
 
 import vitestConfig from '../../../vitest.config.ts';
 
@@ -9,6 +13,8 @@ interface WorkflowStep {
     readonly run?: string;
     readonly uses?: string;
     readonly with?: Readonly<Record<string, string>>;
+    readonly env?: Readonly<Record<string, string>>;
+    readonly if?: string;
 }
 
 interface MatrixShare {
@@ -167,6 +173,32 @@ describe('Release Gate lanes', () => {
         expect(lane.services?.postgres?.image).toBe('postgres:16');
         expect(commands.slice(-2)).toEqual(['test:postgres:presence-expiry', 'test:postgres:presence-expiry']);
         expect(commands).toContain('test:postgres:integration');
+    });
+
+    it('executes both live browser suites against fresh Postgres and checks every listed case after the run', () => {
+        const lane = releaseGate.jobs['e2e-live-recipes'];
+        const command = scripts['test:rallar:full-stack:postgres:distributed'];
+        const collection = lane.steps.find((step) => step.run?.includes('--list --reporter=json'));
+        const execution = lane.steps.find((step) => step.run?.includes('--reporter=line,json'));
+        const verification = lane.steps.find((step) => step.run?.includes('check:test-reachability:playwright'));
+
+        expect(lane.services?.postgres?.image).toBe('postgres:16');
+        expect(lane.env?.RALLAR_BLACK_BOX_API_MODE).toBe('postgres');
+        for (const flag of ['RALLAR_BLACK_BOX_FULL_STACK', 'RALLAR_BLACK_BOX_DISTRIBUTED_RECIPES', 'RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API']) {
+            expect(command).toContain(`${flag}=1`);
+        }
+        for (const file of ['full-stack-distributed-recipes.spec.ts', 'full-stack-recipe-console-monitor.spec.ts']) {
+            expect(command).toContain(`tests/playwright/rallar-black-box/${file}`);
+            expect(verification?.run).toContain(`--require-file tests/playwright/rallar-black-box/${file}`);
+        }
+        expect(command).not.toContain('--grep');
+        expect(collection?.run).toContain('npm run test:rallar:full-stack:postgres:distributed');
+        expect(execution?.run).toContain('npm run test:rallar:full-stack:postgres:distributed');
+        expect(execution?.run).toContain('--workers=1 --retries=0');
+        expect(verification?.if).toBe('always()');
+        expect(verification?.run).toContain(`--listed ${collection?.env?.PLAYWRIGHT_JSON_OUTPUT_FILE}`);
+        expect(verification?.run).toContain(`--executed ${execution?.env?.PLAYWRIGHT_JSON_OUTPUT_FILE}`);
+        expect(lane.steps.some((step) => step.uses === 'actions/upload-artifact@v7' && step.if === 'always()')).toBe(true);
     });
 });
 

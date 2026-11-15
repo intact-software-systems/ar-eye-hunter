@@ -130,7 +130,7 @@ export interface ALInboundWorkSelector {
      * The readiness probe the handler asks for. The port reports every retained row as due; inbound
      * eligibility defers rows whose predecessor or consumer is missing, so the rotation answers instead.
      */
-    readNextReadyAtMs(port: ALWorkQueuePort): Promise<number | undefined>;
+    readNextReadyAtMs(port: ALWorkQueuePort, nowMs: number): Promise<number | undefined>;
     selectReady(port: ALWorkQueuePort, pageSize: number): Promise<ALWorkReadySelection>;
     /**
      * What this batch's own eligibility read observed for the row it claimed, so the delivery that
@@ -326,7 +326,7 @@ export function createALInboundWorkSelector(
     let promotedCount = 0;
     let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
-        readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
+        readNextReadyAtMs: (port, nowMs) => readALInboundNextReadyAtMs(page, port, nowMs),
         selectReady: async (port, pageSize) => {
             const claimed = await readALInboundClaimedSelection({
                 page,
@@ -372,7 +372,7 @@ export function createALInboundWorkSelector(
 async function readALInboundNextReadyAtMs(
     page: ALInboundRotationPage<ALInboundWorkSelection>,
     port: ALWorkQueuePort,
-    nowMs: () => number
+    nowMs: number
 ): Promise<number | undefined> {
     const pending = page.readSelection(port, AL_INBOUND_WORK_PAGE_SIZE);
     let selection: ALInboundWorkSelection;
@@ -384,7 +384,7 @@ async function readALInboundNextReadyAtMs(
         throw error;
     }
     if (selection.readyNow) {
-        return nowMs();
+        return nowMs;
     }
     page.passSelection(pending, selection);
     return selection.nextReadyAtMs;

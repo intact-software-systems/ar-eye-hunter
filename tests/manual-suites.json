@@ -9,14 +9,6 @@
   },
   {
     "paths": [
-      "tests/playwright/relic-hunters/full-stack-propagation.spec.ts"
-    ],
-    "owner": "Knut-Helge Vik",
-    "command": "npm run test:playwright:relic:full-stack",
-    "reason": "Runs the separate two-browser propagation workload. Relic CI covers private room entry, HTTP, feedback and discovery; this propagation scenario remains manual."
-  },
-  {
-    "paths": [
       "tests/playwright/ar-eye-hunter/mobile-controls.spec.ts"
     ],
     "owner": "Knut-Helge Vik",

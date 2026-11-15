@@ -149,22 +149,26 @@ describe('rallar-bb-test extended assert operators', () => {
 
     it('gte with a comparison source fails on a non-number or a missing path on either side, without coercion', async () => {
         const runtime = createDeterministicRuntime();
-        runtime.recordEvent({ kind: 'message', topic: 'revision', payload: { number: 7, text: '9', state: 'active', nothing: null } });
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'revision',
+            payload: { number: 7, text: '9', smallerText: '5', state: 'active', nothing: null, zero: 0 }
+        });
 
         for (
-            const [name, source, comparisonSource, exists, comparisonExists] of [
-                ['text actual', 'messages.0.payload.text', 'messages.0.payload.number', true, true],
-                ['state actual', 'messages.0.payload.state', 'messages.0.payload.number', true, true],
-                ['null actual', 'messages.0.payload.nothing', 'messages.0.payload.number', true, true],
-                ['text comparison', 'messages.0.payload.number', 'messages.0.payload.text', true, true],
-                ['missing actual', 'messages.0.payload.absent', 'messages.0.payload.number', false, true],
-                ['missing comparison', 'messages.0.payload.number', 'messages.0.payload.absent', true, false]
+            const [name, source, comparisonSource, actual, comparisonActual, exists, comparisonExists] of [
+                ['text actual', 'messages.0.payload.text', 'messages.0.payload.number', '9', 7, true, true],
+                ['state actual', 'messages.0.payload.state', 'messages.0.payload.number', 'active', 7, true, true],
+                ['null actual', 'messages.0.payload.nothing', 'messages.0.payload.zero', null, 0, true, true],
+                ['text comparison', 'messages.0.payload.number', 'messages.0.payload.smallerText', 7, '5', true, true],
+                ['missing actual', 'messages.0.payload.absent', 'messages.0.payload.number', undefined, 7, false, true],
+                ['missing comparison', 'messages.0.payload.number', 'messages.0.payload.absent', 7, undefined, true, false]
             ] as const
         ) {
             const result = await runtime.execute({ kind: 'assert', commandId: `gte-${name.replace(' ', '-')}`, source, operator: 'gte', comparisonSource });
             expect(result.ok, name).toBe(false);
             expect(result.error?.code, name).toBe('RALLAR_BLACK_BOX_ASSERT_FAILED');
-            expect(result.value, name).toMatchObject({ operator: 'gte', exists, comparisonExists, passed: false });
+            expect(result.value, name).toEqual({ operator: 'gte', actual, comparisonActual, exists, comparisonExists, passed: false });
         }
     });
 
