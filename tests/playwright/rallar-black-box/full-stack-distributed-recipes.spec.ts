@@ -756,7 +756,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 .filter({ hasText: realtimeDistributedRunId })
                 .first()
                 .click();
-            await expect(panel).toContainText('room.black-box.rtc-realtime.position', { timeout: 15_000 });
             await expect(panel).toContainText(realtimeDistributedRunId);
             const diagnostics = panel.getByLabel('Distributed runtime diagnostics');
             await diagnostics.getByLabel('Severity', { exact: true }).selectOption('warning');
@@ -782,6 +781,25 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ + 3
                 );
             }
+
+            const receiver = handles[1].page;
+            await receiver.getByLabel('Rallar browser trace')
+                .getByRole('button', { name: 'Event Stream', exact: true }).click();
+            const eventStream = receiver.locator('#panel-event-stream');
+            await expect(eventStream).toBeVisible();
+            await eventStream.getByRole('group', { name: 'Event kind filter' })
+                .getByRole('button', { name: 'message', exact: true }).click();
+            await eventStream.getByLabel('Connection', { exact: true }).selectOption(realtimeConnection);
+            await eventStream.getByLabel('Transport', { exact: true }).selectOption('realtime');
+            await eventStream.getByLabel('Group', { exact: true }).selectOption(group.groupId);
+            await eventStream.getByLabel('Topic', { exact: true }).fill('rallar.browser.realtime.message');
+            const receivedMessage = eventStream.locator('.event-row').first();
+            await expect(receivedMessage.locator('.event-topline .pill')).toHaveText('message');
+            await expect(receivedMessage.locator('.event-topline strong')).toHaveText(
+                'rallar.browser.realtime.message'
+            );
+            await expect(receivedMessage.locator('.event-meta')).toContainText(realtimeConnection);
+            await expect(receivedMessage.locator('.event-meta').getByText('realtime', { exact: true })).toBeVisible();
 
             expect(toHighSeverityConsoleEntries(consoleArtifacts.getEntries())).toEqual([]);
         }

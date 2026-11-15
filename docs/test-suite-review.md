@@ -161,6 +161,14 @@ yet established. Apply the shared fixture's bounded two-peer readiness option to
 as well; readiness on an earlier connection does not carry across acquisition. The new execution
 guard correctly rejected that run as one failed case out of five listed cases.
 
+A subsequent Linux run passed readiness and all delivery/artifact assertions, but the UI check
+expected a position payload topic to remain in the distributed monitor's latest-12-events preview.
+Its recorder contained 119 position receipts; newer stats occupied that preview. Use the existing
+Event Stream's message/connection/transport/group/topic filters to inspect a real visible receipt.
+Keep the nested position payload proof in runtime/artifact assertions and preserve the distributed
+monitor's diagnostics and result-tree UI checks. This avoids depending on incidental preview text
+or suppressing legitimate stats to make a test pass.
+
 The scenario also provisioned the group and all memberships twice: once in its checked setup and
 again through the standalone realtime fixture. The latter produced three expected HTTP conflicts
 that violated the scenario's strict browser-console assertion. Its adapted realtime workload now
@@ -168,11 +176,11 @@ omits only the two already-proven provisioning commands, retaining connect, loop
 their complete result trees. Unexpected console errors still fail; no broad conflict whitelist is
 introduced.
 
-**Action:** add a dedicated blocking Release Gate lane using migrated PostgreSQL and real browser
-agents, running both complete files with one worker and zero retries. Compare native Playwright
+**Implementation:** a dedicated blocking Release Gate lane uses migrated PostgreSQL and real browser
+agents, running both complete files with one worker and zero retries. It compares native Playwright
 JSON collection and execution reports, requiring every listed file/title/project case to pass;
-missing reports, omitted cases, runtime skips and empty selections fail the lane. Retain those
-reports and failure traces as CI artifacts. Native runner fixtures cover these failure modes so
+missing reports, omitted cases, runtime skips and empty selections fail the lane. The reports and
+failure traces are retained as CI artifacts. Native runner fixtures cover these failure modes so
 the guard does not rely solely on workflow source assertions.
 
 This execution check covers the new live-browser lane. The existing repository-wide check remains
