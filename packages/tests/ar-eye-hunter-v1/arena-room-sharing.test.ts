@@ -220,7 +220,7 @@ it('publishes the created room code before the room cache observes the host pres
     facade.session.mockReturnValue(session);
     // The adopted presence snapshot does not list the host yet, so the cache resolves no current room.
     facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
-    facade.rooms.rotateJoinCode.mockClear();
+    facade.rooms.rotateJoinCode.mockReset();
     facade.rooms.rotateJoinCode.mockResolvedValueOnce({ joinCode: 'created-code', expiresAtEpochMs: 4_000_000_000_000, snapshot: created });
     const creating = { ...arena, roomId: undefined, rooms: [], createArenaRoom: async () => created };
     const container = document.createElement('div');
@@ -254,7 +254,7 @@ it('keeps the created room code off another room the host moved to while the roo
     const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
     facade.session.mockReturnValue(session);
     facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
-    facade.rooms.rotateJoinCode.mockClear();
+    facade.rooms.rotateJoinCode.mockReset();
     facade.rooms.rotateJoinCode.mockResolvedValueOnce({ joinCode: 'created-code', expiresAtEpochMs: 4_000_000_000_000, snapshot: created });
     const creation = Promise.withResolvers<typeof created>();
     const creating = { ...arena, createArenaRoom: () => creation.promise };
@@ -285,6 +285,78 @@ it('keeps the created room code off another room the host moved to while the roo
             }))
         );
         expect(container.querySelector('input')?.value).toContain('created-code');
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it('does not rotate a created room for a session that replaced the creator before the create returned', async () => {
+    const { session, snapshot, arena } = createHostFixture();
+    const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
+    facade.session.mockReturnValue(session);
+    facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+    facade.rooms.rotateJoinCode.mockReset();
+    const creation = Promise.withResolvers<typeof created>();
+    const creating = { ...arena, roomId: undefined, rooms: [], createArenaRoom: () => creation.promise };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena: creating })));
+        const create = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New code arena');
+        await act(async () => create?.click());
+        // The facade session changes before React re-renders the hosting view with the replacement.
+        const replacement = { ...session, sessionId: 'replacement-session' };
+        facade.session.mockReturnValue(replacement);
+        await act(async () => creation.resolve(created));
+        expect(facade.rooms.rotateJoinCode).not.toHaveBeenCalled();
+        await act(async () =>
+            root.render(createElement(ArenaRoomHosting, {
+                arena: {
+                    ...creating,
+                    session: replacement,
+                    roomId: created.group.groupId,
+                    rooms: [{ ...arena.rooms[0], roomId: created.group.groupId, roomRef: created.group, snapshot: created }]
+                }
+            }))
+        );
+        expect(container.querySelector('input')?.value).toBe('');
+    }
+    finally {
+        await act(async () => root.unmount());
+        container.remove();
+    }
+});
+
+it.each(['creating', 'rotating'] as const)('reports a failure while %s before the room cache observes the host presence', async (phase) => {
+    const { session, snapshot, arena } = createHostFixture();
+    const created = { ...snapshot, group: { ...snapshot.group, groupId: 'created-arena' } };
+    facade.session.mockReturnValue(session);
+    // The host was in a room before creating; the cache no longer resolves it and has not yet resolved the created room.
+    facade.rooms.state.mockReturnValue({ currentRoomRef: snapshot.group });
+    facade.rooms.rotateJoinCode.mockReset();
+    facade.rooms.rotateJoinCode.mockRejectedValueOnce(new Error('The initial rotation failed'));
+    const creating = {
+        ...arena,
+        createArenaRoom: async () => {
+            facade.rooms.state.mockReturnValue({ currentRoomRef: undefined });
+            if (phase === 'creating') {
+                throw new Error('The create failed');
+            }
+            return created;
+        }
+    };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+        await act(async () => root.render(createElement(ArenaRoomHosting, { arena: creating })));
+        const create = [...container.querySelectorAll('button')].find((button) => button.textContent === 'New code arena');
+        await act(async () => create?.click());
+        expect(container.querySelector('[role="alert"]')?.textContent).toBe('Could not create the arena. Check your connection and try again.');
+        expect(create?.disabled).toBe(false);
     }
     finally {
         await act(async () => root.unmount());

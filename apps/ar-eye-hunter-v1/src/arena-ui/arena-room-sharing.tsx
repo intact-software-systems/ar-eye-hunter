@@ -17,12 +17,16 @@ interface ArenaRoomSharingProps {
     readonly rotate: () => Promise<void>;
 }
 
-export function isCurrentArenaHost(session: AuthSession | undefined, room: GroupRef | undefined): boolean {
+export function isCurrentArenaSession(session: AuthSession): boolean {
     const current = rallar.session();
-    const currentRoom = rallar.rooms.state().currentRoomRef;
-    if (!session || current?.sessionId !== session.sessionId || current.clientId !== session.clientId) {
+    return current?.sessionId === session.sessionId && current.clientId === session.clientId;
+}
+
+export function isCurrentArenaHost(session: AuthSession | undefined, room: GroupRef | undefined): boolean {
+    if (!session || !isCurrentArenaSession(session)) {
         return false;
     }
+    const currentRoom = rallar.rooms.state().currentRoomRef;
     return room === undefined
         ? currentRoom === undefined
         : currentRoom !== undefined && isSameGroupRef(currentRoom, room);
