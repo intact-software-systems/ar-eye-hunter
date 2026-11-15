@@ -33,10 +33,7 @@ import {
     createRallarBlackBoxEnsureGroupRequestId,
     rtcConnectReadiness
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
-import {
-    createRallarBlackBoxRtcRealtimeRecipe,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
-} from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { createRallarBlackBoxRtcRealtimeRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
@@ -1051,6 +1048,15 @@ function retainedRealtimeRecipeEvidence(
     return { compactedStartResults, loopStats };
 }
 
+/** The realtime recipe's loop runs one send per iteration, so its count fixes the loop's statistics and leaves. */
+function resolveLoopIterationCount(recipe: RallarBlackBoxTestRecipe): number {
+    const loop = recipe.commands.find((command) => command.kind === 'loop');
+    if (loop?.kind !== 'loop' || loop.count === undefined) {
+        throw new Error(`Recipe ${recipe.recipeId} has no counted loop.`);
+    }
+    return loop.count;
+}
+
 function toCompositeDrilldownOutcomes(
     monitor: DistributedRunMonitor
 ): readonly Pick<
@@ -1865,20 +1871,20 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     resultEvidence: { status: 'finite', payloadsOmitted: true }
                 });
             }
+            const realtimeLoopIterations = resolveLoopIterationCount(realtimeRecipe);
             expect(retainedRealtimeEvidence.loopStats).toHaveLength(3);
             for (const stats of retainedRealtimeEvidence.loopStats) {
                 expect(stats).toEqual({
                     agentId: expect.any(String),
                     latestLoopCommandId: 'rtc-realtime-position-loop',
-                    plannedIterations: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                    completedIterations: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                    sendCount: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                    succeeded: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                    plannedIterations: realtimeLoopIterations,
+                    completedIterations: realtimeLoopIterations,
+                    sendCount: realtimeLoopIterations,
+                    succeeded: realtimeLoopIterations,
                     failed: 0
                 });
             }
-            const realtimeLeafResultCount = realtimeRecipe.commands.length - 1 +
-                RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+            const realtimeLeafResultCount = realtimeRecipe.commands.length - 1 + realtimeLoopIterations;
             expect(toCompositeDrilldownOutcomes(realtimeMonitor)).toEqual(
                 [...realtimePassed.targetAgentIds].sort().map((agentId) => ({
                     agentId,
