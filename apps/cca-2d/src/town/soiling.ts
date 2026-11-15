@@ -3,9 +3,8 @@ import { hasTownSight } from './navigation.ts';
 import { isTownSprayed } from './props.ts';
 import type {
     TownGuard,
-    TownPlayer,
     TownState,
-    TownTickInput
+    TownStepInput
 } from './state.ts';
 
 export type TownStain = 'clean' | 'poop' | 'pee' | 'puke';
@@ -13,14 +12,6 @@ export interface TownCoat {
     readonly stain: TownStain;
     readonly stainedUntil: number;
     readonly messImmuneUntil: number;
-}
-export interface TownSoilingComputed {
-    readonly town: TownState;
-    readonly player: TownPlayer;
-    readonly hitResident: boolean;
-}
-export interface TownSplash extends TownSplashArea {
-    readonly player: TownPlayer;
 }
 export interface TownSplashComputed<T extends TownPoint & TownCoat> {
     readonly town: TownState;
@@ -38,11 +29,6 @@ export interface TownSplashArea {
 
 export function createCleanCoat(): TownCoat {
     return { stain: 'clean', stainedUntil: 0, messImmuneUntil: 0 };
-}
-
-export function splashTown(input: TownSplash): TownSoilingComputed {
-    const result = splashTownActors(input, [input.player]);
-    return { town: result.town, player: result.actors[0], hitResident: result.hitResident };
 }
 
 export function splashTownActors<T extends TownPoint & TownCoat>(
@@ -70,7 +56,9 @@ export function splashTownActors<T extends TownPoint & TownCoat>(
                 )
             },
             npcs: town.npcs.map((npc) => hits(npc) ? { ...npc, ...soilTownCoat(kind, now), mode: 'cleaning' } : npc),
-            companion: hits(town.companion) ? { ...town.companion, ...soilTownCoat(kind, now) } : town.companion,
+            companion: town.companion && hits(town.companion)
+                ? { ...town.companion, ...soilTownCoat(kind, now) }
+                : town.companion,
             raid: {
                 ...town.raid,
                 guards: town.raid.guards.map((guard) =>
@@ -83,10 +71,13 @@ export function splashTownActors<T extends TownPoint & TownCoat>(
     };
 }
 
-export function computeTownSoiling(input: TownTickInput): TownSoilingComputed {
+export function computeTownSoilingActors<T extends TownPoint & TownCoat>(
+    input: TownStepInput,
+    actors: readonly T[]
+): TownSplashComputed<T> {
     const { town, now } = input;
     return {
-        player: { ...input.player, ...computeTownCoat(input, input.player) },
+        actors: actors.map((actor) => ({ ...actor, ...computeTownCoat(input, actor) })),
         hitResident: false,
         town: {
             ...town,
@@ -99,7 +90,7 @@ export function computeTownSoiling(input: TownTickInput): TownSoilingComputed {
                 }))
             },
             npcs: town.npcs.map((npc) => ({ ...npc, ...computeTownCoat(input, npc) })),
-            companion: { ...town.companion, ...computeTownCoat(input, town.companion) },
+            companion: town.companion ? { ...town.companion, ...computeTownCoat(input, town.companion) } : undefined,
             raid: {
                 ...town.raid,
                 guards: town.raid.guards.map((guard) =>
@@ -113,7 +104,7 @@ export function computeTownSoiling(input: TownTickInput): TownSoilingComputed {
     };
 }
 
-function computeTownCoat(input: TownTickInput, actor: TownPoint & TownCoat): TownCoat {
+function computeTownCoat(input: TownStepInput, actor: TownPoint & TownCoat): TownCoat {
     const { town, now } = input;
     const water = isTownSprayed(town, actor, now) ||
         town.patches.some((patch) =>

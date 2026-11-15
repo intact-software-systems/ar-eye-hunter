@@ -2,9 +2,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 
 import { computePracticeTick, createPracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
-import { computeTownCreatures } from '../../../apps/cca-2d/src/town/creatures/rules.ts';
-import { computeTownSoiling, createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
-import type { TownTickInput } from '../../../apps/cca-2d/src/town/state.ts';
+import { computeTownCreaturesForPlayers } from '../../../apps/cca-2d/src/town/creatures/rules.ts';
+import { computeTownSoilingActors, createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
+import type { TownPlayer, TownState, TownTickInput } from '../../../apps/cca-2d/src/town/state.ts';
+
+interface CreatureEncounterResult {
+    readonly town: TownState;
+    readonly player: TownPlayer;
+}
 
 let routes: TownRoutes;
 beforeEach(() => {
@@ -29,14 +34,14 @@ describe('grumpy creature attacks', () => {
         '%s warns before %s, permits a dodge and leaves bounded slippery mess',
         (kind, stain) => {
             const input = encounter(kind);
-            const warning = computeTownCreatures(input);
+            const warning = tickCreature(input);
             expect(warning.town.creatures[0].mode).toBe('warning');
             expect(warning.player.stain).toBe('clean');
-            const hit = computeTownCreatures({ ...input, ...warning, now: 2.1 });
+            const hit = tickCreature({ ...input, ...warning, now: 2.1 });
             expect(hit.player.stain).toBe(stain);
             expect(hit.town.patches[0].kind).toBe(stain);
             expect(hit.town.score).toBe(0);
-            const missed = computeTownCreatures({ ...input, ...warning, player: { ...warning.player, x: 23.5 }, now: 2.1 });
+            const missed = tickCreature({ ...input, ...warning, player: { ...warning.player, x: 23.5 }, now: 2.1 });
             expect(missed.player.stain).toBe('clean');
             const sliding = computePracticeTick(
                 { ...createPracticeState(), ...input.player, town: hit.town, elapsed: 2.1, vx: 3 },
@@ -44,7 +49,7 @@ describe('grumpy creature attacks', () => {
                 { seconds: 1 / 60, routes }
             );
             expect(sliding.slipping).toBe(true);
-            const cleaned = computeTownSoiling({ ...input, ...hit, now: 13 });
+            const cleaned = soilActors({ ...input, ...hit, now: 13 });
             expect(cleaned.player.stain).toBe('clean');
             expect(cleaned.town.patches).toHaveLength(0);
         }
@@ -52,20 +57,20 @@ describe('grumpy creature attacks', () => {
     it('credits a provoked animal hitting a resident once, but never credits ambient attacks', () => {
         const input = encounter('dog');
         const npc = { ...input.town.npcs[0], x: 21, z: -10 };
-        const warning = computeTownCreatures({ ...input, town: { ...input.town, npcs: [npc] }, dash: true });
-        const hit = computeTownCreatures({ ...input, ...warning, now: 2.1 });
+        const warning = tickCreature({ ...input, town: { ...input.town, npcs: [npc] }, dash: true });
+        const hit = tickCreature({ ...input, ...warning, now: 2.1 });
         expect(hit.town.score).toBe(10);
         expect(hit.town.heat).toBe(1);
         expect(hit.town.npcs[0].stain).toBe('pee');
         expect(hit.town.npcs[0].mode).toBe('cleaning');
-        const repeated = computeTownCreatures({
+        const repeated = tickCreature({
             ...input,
             ...hit,
             town: { ...hit.town, npcs: [npc], creatures: [{ ...hit.town.creatures[0], mode: 'warning', until: 2 }] },
             now: 3
         });
         expect(repeated.town.score).toBe(10);
-        const ambient = computeTownCreatures({
+        const ambient = tickCreature({
             ...input,
             ...warning,
             town: { ...warning.town, creatures: [{ ...warning.town.creatures[0], provokedUntil: 0 }] },
@@ -78,8 +83,8 @@ describe('grumpy creature attacks', () => {
         const input = encounter('cat');
         const player = { ...input.player, x: 5, z: 5 };
         const creature = { ...input.town.creatures[0], x: 5, z: 1, mode: 'warning' as const, aim: { x: 5, z: 5 }, until: 1 };
-        const result = computeTownCreatures({ ...input, player, town: { ...input.town, creatures: [creature] }, now: 2 });
-        const contact = computeTownSoiling({ ...input, ...result, now: 2 });
+        const result = tickCreature({ ...input, player, town: { ...input.town, creatures: [creature] }, now: 2 });
+        const contact = soilActors({ ...input, ...result, now: 2 });
         expect(contact.player.stain).toBe('clean');
         expect(result.town.patches).toHaveLength(0);
     });
@@ -87,9 +92,9 @@ describe('grumpy creature attacks', () => {
         const input = encounter('bird');
         const dirty = { ...input.player, stain: 'poop' as const, stainedUntil: 8, messImmuneUntil: 9 };
         const water = { id: 1, kind: 'water' as const, x: 21, z: -10, born: 0, expires: 10 };
-        const washed = computeTownSoiling({ ...input, player: dirty, town: { ...input.town, patches: [water] } });
+        const washed = soilActors({ ...input, player: dirty, town: { ...input.town, patches: [water] } });
         expect(washed.player.stain).toBe('clean');
-        const next = computeTownCreatures({
+        const next = tickCreature({
             ...input,
             ...washed,
             town: { ...washed.town, creatures: [{ ...washed.town.creatures[0], mode: 'warning', aim: { x: 21, z: -10 }, until: 1 }] },
@@ -101,15 +106,29 @@ describe('grumpy creature attacks', () => {
     it('a provoked splash interrupts a police warning and leaves the officer temporarily distracted', () => {
         const input = encounter('bird');
         const guard = { ...createCleanCoat(), id: 0, x: 21, z: -10, mode: 'warning' as const, until: 2, target: 'player' as const, aim: { x: 21, z: -10 } };
-        const warning = computeTownCreatures({
+        const warning = tickCreature({
             ...input,
             dash: true,
             town: { ...input.town, raid: { ...input.town.raid, phase: 'active', until: 20, guards: [guard] } }
         });
-        const hit = computeTownCreatures({ ...input, ...warning, now: 2.1 });
+        const hit = tickCreature({ ...input, ...warning, now: 2.1 });
         expect(hit.town.raid.guards[0].stain).toBe('poop');
         expect(hit.town.raid.guards[0].mode).toBe('patrol');
         expect(hit.town.score).toBe(10);
         expect(hit.town.heat).toBe(0);
     });
 });
+
+function tickCreature(input: TownTickInput): CreatureEncounterResult {
+    const result = computeTownCreaturesForPlayers({
+        ...input,
+        disturbances: [],
+        players: [{ ...input.player, id: 'player', score: input.town.score, dash: input.dash }]
+    });
+    return { town: { ...result.town, score: result.players[0].score }, player: result.players[0] };
+}
+
+function soilActors(input: TownTickInput): CreatureEncounterResult {
+    const result = computeTownSoilingActors(input, [input.player]);
+    return { town: result.town, player: result.actors[0] };
+}

@@ -44,15 +44,23 @@ export class TownRaidPresentation {
         const { state, reducedMotion } = frame;
         const { town, elapsed } = state;
         const time = reducedMotion ? 0 : elapsed;
-        renderRaidActor(this.companion, {
-            ...town.companion,
-            time,
-            frozen: town.companion.frozenUntil > elapsed,
-            shielded: town.companion.shieldUntil > elapsed
-        });
-        this.companion.ring.setEnabled(town.companion.frozenUntil > elapsed || town.companion.shieldUntil > elapsed);
-        this.companion.ring.position.set(town.companion.x, 0.07, town.companion.z);
-        this.companion.ring.scaling.setAll(1 + town.rescueProgress * 0.4);
+        this.companion.actor.root.setEnabled(Boolean(town.companion));
+        this.companion.label?.setEnabled(Boolean(town.companion));
+        this.companion.ice.setEnabled(false);
+        this.companion.ring.setEnabled(false);
+        if (town.companion) {
+            renderRaidActor(this.companion, {
+                ...town.companion,
+                time,
+                frozen: town.companion.frozenUntil > elapsed,
+                shielded: town.companion.shieldUntil > elapsed
+            });
+            this.companion.ring.setEnabled(
+                town.companion.frozenUntil > elapsed || town.companion.shieldUntil > elapsed
+            );
+            this.companion.ring.position.set(town.companion.x, 0.07, town.companion.z);
+            this.companion.ring.scaling.setAll(1 + town.rescueProgress * 0.4);
+        }
         this.playerIce.setEnabled(state.frozenUntil > elapsed);
         this.playerIce.position.set(state.x, 1, state.z - 0.3);
         this.alarm.setEnabled(town.raid.phase === 'alarm');

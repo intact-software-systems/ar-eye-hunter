@@ -1,9 +1,10 @@
+import type { TownPoint } from '../map.ts';
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
-import { splashTown } from '../soiling.ts';
+import { splashTownActors, type TownCoat } from '../soiling.ts';
 import type {
-    TownPlayer,
     TownState,
+    TownStepInput,
     TownTickInput
 } from '../state.ts';
 import { advanceTownFire } from './fire.ts';
@@ -14,9 +15,12 @@ import {
 } from './state.ts';
 import { advanceTownDinner } from './vomit.ts';
 
-export interface TownSpectacleResult {
+export interface TownSpectacleActors<T extends TownPoint & TownCoat> {
     readonly town: TownState;
-    readonly player: TownPlayer;
+    readonly players: readonly T[];
+}
+export interface TownSpectacleTrigger extends TownTickInput {
+    readonly playerId: string;
 }
 
 export function requestTownSpectacle(town: TownState, request: TownSpectacleRequest): TownState {
@@ -32,8 +36,11 @@ export function requestTownSpectacle(town: TownState, request: TownSpectacleRequ
     };
 }
 
-export function computeTownSpectacles(input: TownTickInput): TownSpectacleResult {
-    let town = triggerTownSpectacles(input);
+export function advanceTownSpectacles<T extends TownPoint & TownCoat>(
+    input: TownStepInput,
+    players: readonly T[]
+): TownSpectacleActors<T> {
+    let town = input.town;
     if (!town.spectacles.active && town.spectacles.queue.length > 0) {
         const [request, ...queue] = town.spectacles.queue;
         town = {
@@ -54,24 +61,24 @@ export function computeTownSpectacles(input: TownTickInput): TownSpectacleResult
     }
     const event = town.spectacles.active;
     if (!event) {
-        return { town, player: input.player };
+        return { town, players };
     }
     if (event.kind === 'fire') {
-        return { town: advanceTownFire({ ...input, town }), player: input.player };
+        return { town: advanceTownFire({ ...input, town }), players };
     }
     if (event.kind === 'vomit') {
-        return advanceTownDinner({ ...input, town });
+        return advanceTownDinner({ ...input, town }, players);
     }
     if (event.phase === 'warning' && input.now >= event.until) {
-        return burstTownBomb({ ...input, town });
+        return burstTownBomb({ ...input, town }, players);
     }
     if (event.phase === 'cleanup' && input.now >= event.until) {
         town = { ...town, spectacles: { ...town.spectacles, active: undefined } };
     }
-    return { town, player: input.player };
+    return { town, players };
 }
 
-function triggerTownSpectacles(input: TownTickInput): TownState {
+export function triggerTownSpectacles(input: TownSpectacleTrigger): TownState {
     const { player, now } = input;
     let town = input.town;
     if (player.dashTime <= 0) {
@@ -95,7 +102,13 @@ function triggerTownSpectacles(input: TownTickInput): TownState {
                 resident.phase === 'idle' && resident.kind !== 'inspector' &&
                     Math.hypot(resident.x - player.x, resident.z - player.z) < 12 &&
                     hasTownSight(town, resident, player)
-                    ? { ...resident, phase: 'chasing', until: now + 8, target: { x: player.x, z: player.z } }
+                    ? {
+                        ...resident,
+                        phase: 'chasing',
+                        until: now + 8,
+                        target: { x: player.x, z: player.z },
+                        targetId: input.playerId
+                    }
                     : resident
             )
         };
@@ -111,17 +124,19 @@ function triggerTownSpectacles(input: TownTickInput): TownState {
     return town;
 }
 
-function burstTownBomb(input: TownTickInput): TownSpectacleResult {
+function burstTownBomb<T extends TownPoint & TownCoat>(
+    input: TownStepInput,
+    players: readonly T[]
+): TownSpectacleActors<T> {
     const event = input.town.spectacles.active!;
-    const splash = splashTown({
+    const splash = splashTownActors({
         town: input.town,
-        player: input.player,
         source: event.origin,
         target: event.origin,
         radius: 6,
         kind: 'poop',
         now: input.now
-    });
+    }, players);
     const positions = Array.from({ length: 12 }, (_, index) => {
         const angle = index * Math.PI / 6;
         const radius = index % 2 ? 4.5 : 2.5;
@@ -135,7 +150,7 @@ function burstTownBomb(input: TownTickInput): TownSpectacleResult {
         expires: input.now + 10
     }));
     return {
-        player: splash.player,
+        players: splash.actors,
         town: {
             ...splash.town,
             nextId: splash.town.nextId + patches.length,

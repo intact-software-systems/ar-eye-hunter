@@ -18,12 +18,19 @@ export function createTownObjects(): readonly TownObject[] {
     return TOWN_OBJECTS.map((object) => ({ ...object, damagedUntil: 0, rewardAt: 0, repair: 0, disturbedAt: -1 }));
 }
 
-export function computeTownObjects(input: TownTickInput): TownState {
+export function advanceTownObjects(town: TownState, now: number): TownState {
+    return {
+        ...town,
+        objects: town.objects.map((object) => object.damagedUntil <= now ? { ...object, damagedUntil: 0 } : object)
+    };
+}
+
+export function triggerTownObjects(input: TownTickInput): TownState {
     const { player, now } = input;
     let town = input.town;
     const objects: TownObject[] = [];
     for (const original of town.objects) {
-        let object = original.damagedUntil <= now ? { ...original, damagedUntil: 0 } : original;
+        let object = original;
         const nearX = Math.max(0, Math.abs(player.x - object.x) - object.width / 2);
         const nearZ = Math.max(0, Math.abs(player.z - object.z) - object.depth / 2);
         const toward = (object.x - player.x) * player.facingX + (object.z - player.z) * player.facingZ;

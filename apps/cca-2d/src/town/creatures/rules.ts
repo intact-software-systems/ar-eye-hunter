@@ -6,8 +6,7 @@ import { splashTownActors } from '../soiling.ts';
 import type {
     TownPatch,
     TownPlayer,
-    TownState,
-    TownTickInput
+    TownState
 } from '../state.ts';
 
 export interface TownCreature extends TownPoint {
@@ -22,10 +21,6 @@ export interface TownCreature extends TownPoint {
     readonly aim: TownPoint;
     readonly rewardAt: number;
     readonly attacks: number;
-}
-export interface TownCreaturesComputed {
-    readonly town: TownState;
-    readonly player: TownPlayer;
 }
 export interface TownCreaturePlayer extends TownPlayer {
     readonly id: string;
@@ -76,16 +71,6 @@ export function createTownCreatures(): readonly TownCreature[] {
         rewardAt: 0,
         attacks: 0
     }));
-}
-
-export function computeTownCreatures(input: TownTickInput): TownCreaturesComputed {
-    const result = computeTownCreaturesForPlayers({
-        ...input,
-        players: [{ ...input.player, id: 'player', score: input.town.score, dash: input.dash }],
-        disturbances: input.town.objects.filter((object) => object.disturbedAt > input.now - input.step)
-            .map((object) => ({ x: object.x, z: object.z, playerId: 'player' }))
-    });
-    return { town: { ...result.town, score: result.players[0].score }, player: result.players[0] };
 }
 
 export function computeTownCreaturesForPlayers(input: TownCreatureRosterInput): TownCreatureRosterComputed {

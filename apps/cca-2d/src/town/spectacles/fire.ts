@@ -1,9 +1,9 @@
 import { TOWN_FIRE_BAY } from '../layout/map.ts';
 import { createCleanCoat } from '../soiling.ts';
-import type { TownState, TownTickInput } from '../state.ts';
+import type { TownState, TownStepInput } from '../state.ts';
 import type { TownFirefighter, TownSpectacle } from './state.ts';
 
-export function advanceTownFire(input: TownTickInput): TownState {
+export function advanceTownFire(input: TownStepInput): TownState {
     const { now, step } = input;
     let town = input.town;
     let event = town.spectacles.active!;
@@ -40,7 +40,7 @@ export function advanceTownFire(input: TownTickInput): TownState {
 }
 
 function moveFirefighter(
-    input: TownTickInput & { event: TownSpectacle; firefighter: TownFirefighter; }
+    input: TownStepInput & { event: TownSpectacle; firefighter: TownFirefighter; }
 ): TownFirefighter {
     const { event, firefighter, town, step } = input;
     if (event.phase === 'warning') {

@@ -10,8 +10,7 @@ import type { TownRoutes } from './routes.ts';
 import type {
     TownNpc,
     TownPlayer,
-    TownState,
-    TownTickInput
+    TownState
 } from './state.ts';
 
 export interface TownOwnerPlayer extends TownPlayer {
@@ -48,19 +47,6 @@ interface TownOwnerResult {
     readonly npc: TownNpc;
     readonly hitPlayerId: string | undefined;
 }
-export interface TownOwnersResult {
-    readonly town: TownState;
-    readonly shieldUntil: number;
-}
-
-export function computeTownOwners(input: TownTickInput): TownOwnersResult {
-    const result = computeTownOwnersForPlayers({
-        ...input,
-        players: [{ ...input.player, id: 'player', score: input.town.score }]
-    });
-    return { town: { ...result.town, score: result.players[0].score }, shieldUntil: result.players[0].shieldUntil };
-}
-
 export function computeTownOwnersForPlayers(input: TownOwnersInput): TownOwnersComputed {
     const { now, step } = input;
     let { town, players } = input;
@@ -88,10 +74,6 @@ export function computeTownOwnersForPlayers(input: TownOwnersInput): TownOwnersC
         npcs.push(result.npc);
     }
     return { town: { ...town, npcs }, players };
-}
-
-export function witnessTownPrank(input: TownTickInput): TownState {
-    return witnessTownPlayer({ ...input, player: { ...input.player, id: 'player', score: input.town.score } });
 }
 
 export function witnessTownPlayer(input: TownWitnessInput): TownState {

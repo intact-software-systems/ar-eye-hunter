@@ -25,6 +25,7 @@ export interface TownPersonality extends TownPersonalityDefinition, TownPoint, T
     readonly rivalAt: number;
     readonly rivalCreature: number;
     readonly target: TownPoint;
+    readonly targetId: string | undefined;
     readonly collected: number;
     readonly released: boolean;
 }
@@ -102,6 +103,7 @@ export function createTownPersonalities(): readonly TownPersonality[] {
         rivalAt: 18 + index * 3,
         rivalCreature: -1,
         target: { ...resident.home },
+        targetId: undefined,
         collected: 0,
         released: false
     }));

@@ -23,7 +23,7 @@ export interface TownRepairResult {
     readonly busy: boolean;
 }
 
-export function computeTownProps(input: TownTickInput): TownState {
+export function triggerTownProps(input: TownTickInput): TownState {
     const { player, now } = input;
     let town = input.town;
     const hitFountain = player.dashTime > 0 && Math.hypot(player.x, player.z - TOWN_FOUNTAIN.z) < 1.9;
@@ -46,6 +46,10 @@ export function computeTownProps(input: TownTickInput): TownState {
             cart: { ...town.cart, loose: true, since: now, repair: 0, rewardAt: now + 30 }
         };
     }
+    return town;
+}
+
+export function advanceTownProps(town: TownState, now: number): TownState {
     if (town.cart.loose) {
         town = { ...town, cart: { ...town.cart, x: -3 + Math.min(7.5, (now - town.cart.since) * 1.5) } };
     }

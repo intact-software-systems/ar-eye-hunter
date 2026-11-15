@@ -6,7 +6,7 @@ import {
 } from '../../../apps/cca-2d/src/practice-rules.ts';
 import { advanceTownRaid } from '../../../apps/cca-2d/src/town/raid.ts';
 import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
-import { computeTownSoiling, splashTown } from '../../../apps/cca-2d/src/town/soiling.ts';
+import { computeTownSoilingActors, splashTownActors } from '../../../apps/cca-2d/src/town/soiling.ts';
 
 let routes: TownRoutes;
 beforeEach(() => {
@@ -51,23 +51,22 @@ describe('government crackdown', () => {
         const alarm = advanceTownRaid(input);
         const active = advanceTownRaid({ ...input, town: alarm, now: 5 });
         const guards = active.raid.guards.map((guard) => guard.id === 0 ? { ...guard, x: 10, z: 10 } : guard);
-        const splash = splashTown({
+        const splash = splashTownActors({
             radius: 1.25,
             town: { ...active, raid: { ...active.raid, guards } },
-            player,
             source: { x: 0, z: 15 },
             target: { x: 0, z: 15.9 },
             kind: 'poop',
             now: 5.1
-        });
+        }, [player]);
         expect(splash.town.raid.guards.filter((guard) => guard.stain !== 'clean')).toHaveLength(0);
         expect(splash.town.raid.guards.filter((guard) => guard.mode !== 'emerging' || guard.until <= 5.1)).toHaveLength(1);
         expect(splash.hitResident).toBe(false);
-        const contact = computeTownSoiling({
+        const contact = computeTownSoilingActors({
             ...input,
             now: 5.1,
             town: { ...active, raid: { ...active.raid, guards }, patches: [{ id: 1, kind: 'pee', born: 5, expires: 10, x: 0, z: 15.9 }] }
-        });
+        }, [player]);
         expect(contact.town.raid.guards.filter((guard) => guard.stain !== 'clean')).toHaveLength(0);
     });
     it('empty dash spam does not build trouble or award a crackdown bonus', () => {

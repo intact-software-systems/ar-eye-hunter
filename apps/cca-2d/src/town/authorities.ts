@@ -1,9 +1,6 @@
-import {
-    moveTownCompanion,
-    rescueTownFriend,
-    type TownRescueResult
-} from './companion.ts';
+import { computeTownRescues, computeTownThaw, moveTownCompanion } from './companion.ts';
 import { TOWN_POLICE_DOOR } from './map.ts';
+import { TOWN_CRACKDOWN_BONUS } from './mischief.ts';
 import { hasTownSight } from './navigation.ts';
 import { isTownSprayed } from './props.ts';
 import { advanceTownRaid } from './raid.ts';
@@ -12,7 +9,8 @@ import type {
     TownCompanion,
     TownGuard,
     TownState,
-    TownTickInput
+    TownWorldComputed,
+    TownWorldInput
 } from './state.ts';
 
 export interface TownGuardTarget extends TownCompanion {
@@ -31,32 +29,36 @@ export interface TownGuardResult {
     readonly frozenTarget: string | undefined;
 }
 
-export function computeTownAuthorities(input: TownTickInput): TownRescueResult {
-    const { now, step } = input;
+export function computeTownAuthorities(input: TownWorldInput): TownWorldComputed {
     let town = advanceTownRaid(input);
-    let frozenUntil = input.player.frozenUntil;
-    let shieldUntil = input.player.shieldUntil;
-    if (frozenUntil > 0 && frozenUntil <= now) {
-        frozenUntil = 0;
-        shieldUntil = now + 2.5;
+    const bonus = town.raid.bonuses > input.town.raid.bonuses;
+    const players = input.players.map((player) => ({
+        ...computeTownThaw(player, input.now),
+        score: player.score + (bonus ? TOWN_CRACKDOWN_BONUS : 0),
+        rewardedThisRaid: bonus ? false : player.rewardedThisRaid
+    }));
+    if (town.companion && players.length > 0) {
+        town = { ...town, companion: moveTownCompanion({ ...input, town, player: players[0], dash: false }) };
     }
-    const player = { ...input.player, frozenUntil, shieldUntil };
-    let companion = moveTownCompanion({ ...input, town, player });
+    const policed = computeTownPolice({ ...input, town, players });
+    return rescueTownPlayers({ ...input, ...policed });
+}
+
+function computeTownPolice(input: TownWorldInput): TownWorldComputed {
+    const { now, step } = input;
+    let { town, players } = input;
     const guards: TownGuard[] = [];
     for (const guard of town.raid.guards) {
-        const result = computeTownGuard({
-            routes: input.routes,
-            town: { ...town, companion },
-            guard,
-            targets: [{ ...player, frozenUntil, id: 'player' }, { ...companion, id: 'companion' }],
-            now,
-            step
-        });
-        if (result.frozenTarget === 'player') {
-            frozenUntil = now + 6;
+        const targets: TownGuardTarget[] = [...players];
+        if (town.companion) {
+            targets.push({ ...town.companion, id: '@companion' });
         }
-        if (result.frozenTarget === 'companion') {
-            companion = { ...companion, frozenUntil: now + 6 };
+        const result = computeTownGuard({ routes: input.routes, town, guard, targets, now, step });
+        players = players.map((player) =>
+            player.id === result.frozenTarget ? { ...player, frozenUntil: now + 6 } : player
+        );
+        if (town.companion && result.frozenTarget === '@companion') {
+            town = { ...town, companion: { ...town.companion, frozenUntil: now + 6 } };
         }
         if (
             town.raid.phase === 'active' && guard.mode === 'warning' && guard.until <= now && guard.stainedUntil <= now
@@ -71,8 +73,50 @@ export function computeTownAuthorities(input: TownTickInput): TownRescueResult {
             guards.push(result.guard);
         }
     }
-    town = { ...town, companion, raid: { ...town.raid, guards } };
-    return rescueTownFriend({ ...input, town, player: { ...player, frozenUntil } });
+    return { town: { ...town, raid: { ...town.raid, guards } }, players };
+}
+
+function rescueTownPlayers(input: TownWorldInput): TownWorldComputed {
+    const { town, players, now, step } = input;
+    const actors = computeTownRescues({
+        town,
+        now,
+        step,
+        actors: [
+            ...players,
+            ...(town.companion
+                ? [{
+                    ...town.companion,
+                    id: '@companion',
+                    dashTime: 0,
+                    rescueTarget: players[0]?.id,
+                    rescueProgress: players[0]?.frozenUntil > now ? town.rescueProgress : 0,
+                    rescues: 0,
+                    score: 0,
+                    rewardedThisRaid: true
+                }]
+                : [])
+        ]
+    });
+    const rescued = players.map((player, index) => ({ ...player, ...actors[index] }));
+    const companion = actors[players.length];
+    return {
+        players: rescued,
+        town: {
+            ...town,
+            score: rescued.reduce((sum, player) => sum + player.score, 0),
+            rescues: rescued.reduce((sum, player) => sum + player.rescues, 0),
+            rescueProgress: Math.max(0, ...actors.map((actor) => actor.rescueProgress)),
+            raid: { ...town.raid, rewarded: rescued[0]?.rewardedThisRaid ?? false },
+            companion: town.companion && companion
+                ? {
+                    ...town.companion,
+                    frozenUntil: companion.frozenUntil,
+                    shieldUntil: companion.shieldUntil
+                }
+                : undefined
+        }
+    };
 }
 
 export function computeTownGuard(input: TownGuardInput): TownGuardResult {

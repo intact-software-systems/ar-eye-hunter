@@ -2,11 +2,6 @@ import type { TownPoint } from './map.ts';
 import { hasTownSight } from './navigation.ts';
 import type { TownCompanion, TownState, TownTickInput } from './state.ts';
 
-export interface TownRescueResult {
-    readonly town: TownState;
-    readonly frozenUntil: number;
-    readonly shieldUntil: number;
-}
 export interface TownRescueActor extends TownPoint {
     readonly id: string;
     readonly frozenUntil: number;
@@ -25,14 +20,11 @@ export interface TownRescueInput {
     readonly step: number;
 }
 
-export function moveTownCompanion(input: TownTickInput): TownCompanion {
+export function moveTownCompanion(input: TownTickInput): TownCompanion | undefined {
     const { town, player, now, step } = input;
-    let companion = town.companion;
-    if (companion.frozenUntil > now) {
+    const companion = town.companion ? computeTownThaw(town.companion, now) : undefined;
+    if (!companion || companion.frozenUntil > now) {
         return companion;
-    }
-    if (companion.frozenUntil > 0) {
-        companion = { ...companion, frozenUntil: 0, shieldUntil: now + 2.5 };
     }
     const target = player.frozenUntil > now
         ? { x: player.x - 0.8, z: player.z }
@@ -51,40 +43,16 @@ export function moveTownCompanion(input: TownTickInput): TownCompanion {
     return { ...companion, ...position };
 }
 
-export function rescueTownFriend(input: TownTickInput): TownRescueResult {
-    const actors = computeTownRescues({
-        town: input.town,
-        actors: [toTownRescueActor(input, 'player'), toTownRescueActor(input, 'companion')],
-        now: input.now,
-        step: input.step
-    });
-    const [player, companion] = actors;
-    return {
-        frozenUntil: player.frozenUntil,
-        shieldUntil: player.shieldUntil,
-        town: {
-            ...input.town,
-            companion: {
-                ...input.town.companion,
-                frozenUntil: companion.frozenUntil,
-                shieldUntil: companion.shieldUntil
-            },
-            rescueProgress: Math.max(player.rescueProgress, companion.rescueProgress),
-            rescues: player.rescues,
-            score: player.score,
-            raid: { ...input.town.raid, rewarded: player.rewardedThisRaid }
-        }
-    };
+export function computeTownThaw<T extends { frozenUntil: number; shieldUntil: number; }>(actor: T, now: number): T {
+    return actor.frozenUntil > 0 && actor.frozenUntil <= now
+        ? { ...actor, frozenUntil: 0, shieldUntil: now + 2.5 }
+        : actor;
 }
 
 /** Each rescuer owns progress toward one identity; the first completion frees that target exactly once. */
 export function computeTownRescues(input: TownRescueInput): readonly TownRescueActor[] {
     const { now, step, town } = input;
-    const actors = input.actors.map((actor) =>
-        actor.frozenUntil > 0 && actor.frozenUntil <= now
-            ? { ...actor, frozenUntil: 0, shieldUntil: now + 2.5 }
-            : actor
-    );
+    const actors = input.actors.map((actor) => computeTownThaw(actor, now));
     const order = actors.map((actor, index) => ({ id: actor.id, index })).toSorted((
         left,
         right
@@ -125,21 +93,4 @@ export function computeTownRescues(input: TownRescueInput): readonly TownRescueA
         };
     }
     return actors;
-}
-
-function toTownRescueActor(input: TownTickInput, id: 'player' | 'companion'): TownRescueActor {
-    const actor = id === 'player' ? input.player : input.town.companion;
-    return {
-        id,
-        x: actor.x,
-        z: actor.z,
-        frozenUntil: actor.frozenUntil,
-        shieldUntil: actor.shieldUntil,
-        dashTime: id === 'player' ? input.player.dashTime : 0,
-        rescueTarget: id === 'player' ? 'companion' : 'player',
-        rescueProgress: input.town.rescueProgress,
-        rescues: id === 'player' ? input.town.rescues : 0,
-        score: id === 'player' ? input.town.score : 0,
-        rewardedThisRaid: id === 'player' ? input.town.raid.rewarded : true
-    };
 }

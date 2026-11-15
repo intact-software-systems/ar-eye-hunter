@@ -1,9 +1,12 @@
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
-import type { TownState, TownTickInput } from '../state.ts';
+import type { TownState, TownStepInput, TownTickInput, TownWorldPlayer } from '../state.ts';
 import type { TownPersonality } from './state.ts';
 
-interface ResidentTick extends TownTickInput {
+export interface TownPersonalitiesInput extends TownStepInput {
+    readonly players: readonly TownWorldPlayer[];
+}
+interface ResidentTick extends TownPersonalitiesInput {
     readonly resident: TownPersonality;
 }
 interface ResidentResult {
@@ -11,7 +14,32 @@ interface ResidentResult {
     readonly resident: TownPersonality;
 }
 
-export function computeTownPersonalities(input: TownTickInput): TownState {
+export function triggerTownPersonalities(input: TownTickInput): TownState {
+    const { player, now } = input;
+    let town = input.town;
+    const personalities: TownPersonality[] = [];
+    for (const resident of town.personalities) {
+        const hit = player.dashTime > 0 && resident.kind !== 'inspector' &&
+            Math.abs(player.x - resident.prop.x) < resident.prop.width / 2 + 0.7 &&
+            Math.abs(player.z - resident.prop.z) < resident.prop.depth / 2 + 0.7;
+        if (resident.stainedUntil <= now && resident.phase === 'idle' && hit && resident.rewardAt <= now) {
+            const reaction = startReaction({
+                ...input,
+                town: rewardTownMischief(town),
+                players: [],
+                resident: { ...resident, rewardAt: now + 30 }
+            });
+            town = reaction.town;
+            personalities.push(reaction.resident);
+        }
+        else {
+            personalities.push(resident);
+        }
+    }
+    return { ...town, personalities };
+}
+
+export function advanceTownPersonalities(input: TownPersonalitiesInput): TownState {
     let town = input.town;
     const personalities: TownPersonality[] = [];
     for (const resident of town.personalities) {
@@ -23,22 +51,18 @@ export function computeTownPersonalities(input: TownTickInput): TownState {
 }
 
 function computeResident(input: ResidentTick): ResidentResult {
-    const { resident, now, player } = input;
+    const { resident, now } = input;
     if (resident.stainedUntil > now) {
         return { town: input.town, resident };
-    }
-    const hit = player.dashTime > 0 && resident.kind !== 'inspector' &&
-        Math.abs(player.x - resident.prop.x) < resident.prop.width / 2 + 0.7 &&
-        Math.abs(player.z - resident.prop.z) < resident.prop.depth / 2 + 0.7;
-    if (resident.phase === 'idle' && hit && resident.rewardAt <= now) {
-        const town = rewardTownMischief(input.town);
-        return startReaction({ ...input, town, resident: { ...resident, rewardAt: now + 30 } });
     }
     if (resident.phase === 'reacting' || resident.phase === 'rivalry') {
         return advanceReaction(input);
     }
     if (resident.phase === 'chasing') {
-        const target = hasTownSight(input.town, resident, player) ? { x: player.x, z: player.z } : resident.target;
+        const player = input.players.find((actor) => actor.id === resident.targetId);
+        const target = player && hasTownSight(input.town, resident, player)
+            ? { x: player.x, z: player.z }
+            : resident.target;
         const position = input.routes.travel({
             town: input.town,
             from: resident,
@@ -48,7 +72,12 @@ function computeResident(input: ResidentTick): ResidentResult {
         });
         return {
             town: input.town,
-            resident: { ...resident, ...position, target, phase: now >= resident.until ? 'returning' : 'chasing' }
+            resident: {
+                ...resident,
+                ...position,
+                target,
+                phase: !player || now >= resident.until ? 'returning' : 'chasing'
+            }
         };
     }
     if (resident.phase === 'returning') {

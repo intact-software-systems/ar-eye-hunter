@@ -4,12 +4,12 @@ import { createCleanCoat } from './soiling.ts';
 import type {
     TownGuard,
     TownState,
-    TownTickInput
+    TownStepInput
 } from './state.ts';
 
 export const TOWN_POLICE_COUNT = 10;
 
-export function advanceTownRaid(input: TownTickInput): TownState {
+export function advanceTownRaid(input: TownStepInput): TownState {
     const { town, now } = input;
     const raid = town.raid;
     if (raid.phase === 'quiet' && town.heat >= TOWN_TROUBLE_TARGET) {

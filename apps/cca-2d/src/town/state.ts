@@ -58,7 +58,7 @@ export interface TownState {
     readonly score: number;
     readonly heat: number;
     readonly raid: TownRaid;
-    readonly companion: TownCompanion;
+    readonly companion: TownCompanion | undefined;
     readonly rescues: number;
     readonly rescueProgress: number;
     readonly fountain: TownFountain;
@@ -83,13 +83,31 @@ export interface TownPlayer extends TownPoint, TownCoat {
     readonly immuneUntil: number;
     readonly sickAt: number;
 }
-export interface TownTickInput {
+export interface TownStepInput {
     readonly routes: TownRoutes;
     readonly town: TownState;
-    readonly player: TownPlayer;
-    readonly dash: boolean;
     readonly now: number;
     readonly step: number;
+}
+export interface TownWorldPlayer extends TownPlayer {
+    readonly id: string;
+    readonly dash: boolean;
+    readonly score: number;
+    readonly rescues: number;
+    readonly rescueTarget: string | undefined;
+    readonly rescueProgress: number;
+    readonly rewardedThisRaid: boolean;
+}
+export interface TownWorldInput extends TownStepInput {
+    readonly players: readonly TownWorldPlayer[];
+}
+export interface TownWorldComputed {
+    readonly town: TownState;
+    readonly players: readonly TownWorldPlayer[];
+}
+export interface TownTickInput extends TownStepInput {
+    readonly player: TownPlayer;
+    readonly dash: boolean;
 }
 export interface TownComputed extends TownCoat {
     readonly frozenUntil: number;

@@ -213,7 +213,7 @@ function describePracticeStatus(state: PracticeState): string {
     if (town.rescueProgress > 0) {
         return `RESCUING ${Math.round(town.rescueProgress * 100)}% — stay close!`;
     }
-    if (town.companion.frozenUntil > elapsed) {
+    if (town.companion && town.companion.frozenUntil > elapsed) {
         return 'BOT PAL FROZEN! Stand beside the orange coat to rescue.';
     }
     if (town.raid.phase === 'alarm') {

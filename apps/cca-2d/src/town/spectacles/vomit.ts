@@ -1,8 +1,8 @@
 import type { TownPoint } from '../map.ts';
 import { hasTownSight } from '../navigation.ts';
-import { splashTown } from '../soiling.ts';
-import type { TownState, TownTickInput } from '../state.ts';
-import type { TownSpectacleResult } from './rules.ts';
+import { splashTownActors, type TownCoat } from '../soiling.ts';
+import type { TownState, TownStepInput } from '../state.ts';
+import type { TownSpectacleActors } from './rules.ts';
 import { TOWN_UMBRELLA } from './state.ts';
 
 export interface TownVomitJet {
@@ -29,10 +29,12 @@ export function computeTownVomitJets(town: TownState, now: number): readonly Tow
     return [{ source: event.origin, direction: { x: Math.sin(angle), z: Math.cos(angle) }, length: 6 }];
 }
 
-export function advanceTownDinner(input: TownTickInput): TownSpectacleResult {
+export function advanceTownDinner<T extends TownPoint & TownCoat>(
+    input: TownStepInput,
+    players: readonly T[]
+): TownSpectacleActors<T> {
     const { now } = input;
     let town = input.town;
-    let player = input.player;
     let event = town.spectacles.active!;
     if (event.phase === 'warning' && now >= event.until) {
         event = { ...event, phase: 'active', until: now + 6 };
@@ -43,7 +45,7 @@ export function advanceTownDinner(input: TownTickInput): TownSpectacleResult {
     }
     if (event.phase === 'cleanup') {
         if (now >= event.until) {
-            return { town: { ...town, spectacles: { ...town.spectacles, active: undefined } }, player };
+            return { town: { ...town, spectacles: { ...town.spectacles, active: undefined } }, players };
         }
         if (event.nextPatchAt <= now) {
             const mess = town.patches.find((patch) =>
@@ -55,19 +57,22 @@ export function advanceTownDinner(input: TownTickInput): TownSpectacleResult {
     }
     town = { ...town, spectacles: { ...town.spectacles, active: event } };
     for (const jet of computeTownVomitJets(town, now)) {
-        const result = applyVomitJet({ ...input, town, player, jet });
+        const result = applyVomitJet({ ...input, town, jet }, players);
         town = result.town;
-        player = result.player;
+        players = result.players;
     }
     if (event.phase === 'active' && event.nextPatchAt <= now) {
         town = { ...town, spectacles: { ...town.spectacles, active: { ...event, nextPatchAt: now + 0.6 } } };
     }
-    return { town, player };
+    return { town, players };
 }
 
-function applyVomitJet(input: TownTickInput & { jet: TownVomitJet; }): TownSpectacleResult {
+function applyVomitJet<T extends TownPoint & TownCoat>(
+    input: TownStepInput & { jet: TownVomitJet; },
+    players: readonly T[]
+): TownSpectacleActors<T> {
     const { jet, now } = input;
-    let { town, player } = input;
+    let { town } = input;
     let endpoint = jet.source;
     for (let distance = 0.5; distance <= jet.length; distance += 0.5) {
         const target = { x: jet.source.x + jet.direction.x * distance, z: jet.source.z + jet.direction.z * distance };
@@ -75,9 +80,9 @@ function applyVomitJet(input: TownTickInput & { jet: TownVomitJet; }): TownSpect
             break;
         }
         endpoint = target;
-        const splash = splashTown({ town, player, source: jet.source, target, radius: 0.55, kind: 'puke', now });
+        const splash = splashTownActors({ town, source: jet.source, target, radius: 0.55, kind: 'puke', now }, players);
         town = splash.town;
-        player = splash.player;
+        players = splash.actors;
     }
     if (town.spectacles.active!.nextPatchAt <= now && endpoint !== jet.source) {
         town = {
@@ -86,5 +91,5 @@ function applyVomitJet(input: TownTickInput & { jet: TownVomitJet; }): TownSpect
             patches: [...town.patches, { ...endpoint, id: town.nextId, kind: 'puke', born: now, expires: now + 10 }]
         };
     }
-    return { town, player };
+    return { town, players };
 }

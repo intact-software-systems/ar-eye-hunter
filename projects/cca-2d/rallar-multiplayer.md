@@ -44,9 +44,9 @@ user's request to make multiplayer and social features optional to solo play.
 ## Current evidence and ownership
 
 - `apps/cca-2d/src/main.ts` mounts the lazy solo `PracticeApp`.
-- `practice-rules.ts` owns movement and calls `town/rules.ts`; these currently
-  assume one player and a simulated companion. This assumption must be resolved
-  for multiplayer, while preserving solo behavior.
+- `practice-rules.ts` owns player-local movement. `town/rules.ts#computeTownWorld`
+  advances one shared town for a human roster; `computeTownTick` is the solo
+  projection. A companion exists only when the caller supplies one.
 - `practice-scene.ts` owns Babylon resources; online rendering will reuse its
   town presentation and render distinct human actors instead of a fake peer.
 - `packages/shared-web/browser/{matchmaking,friends,rooms/entry}` own optional
@@ -91,9 +91,9 @@ Tests belong in `packages/tests/cca-game` and `tests/playwright/cca-2d`.
 Rallar lifecycle and accepted-state presentation. Generalize affected `town/`
 rules to a human roster without duplicating their single-player implementation.
 
-- [ ] Write failing domain tests for shared-world stepping, separate player
+- [x] Write failing domain tests for shared-world stepping, separate player
       controls/scores, rescues, timer/qualification, ready/start/rematch and stale input.
-- [ ] Implement canonical roster/town state and fixed-step match simulation;
+- [x] Implement canonical roster/town state and fixed-step match simulation;
       preserve the full existing prank, creature, cleanup and authority behavior.
 - [ ] Use dedicated Rallar director appointment, current roster/session identity
       and room-scoped channels. Validate protocol/build, scope, match, epoch and sequence.
@@ -187,8 +187,58 @@ speed up a repair. Animal attacks splash all exposed players once and retain the
 provoker's identity for collateral rewards. Departed provokers do not transfer
 their reward to another player. Ties use stable identity ordering.
 
-These are prerequisites within Slice 2, not a completed multiplayer world. The
-town tick still needs to compose all roster rules with shared prank sources,
-personalities, spectacles, pickups and individual scoring. The match lifecycle,
-appointed director, transport, checkpoint recovery and real shared-gameplay
-browser evidence remain required. The standalone bot remains a solo feature.
+The canonical world tick now composes those rules with all existing prank sources,
+personalities, spectacles, pickups and individual scoring. Player interactions
+run in stable identity order; debris, residents, animals, firefighters, cleanup
+and authorities advance once. Competing players cannot collect the same pickup or
+earn the same fresh-source reward twice. Fire witnesses retain the culprit's
+identity. Shared bombs and café streams affect every exposed human, respecting
+cover and washing immunity. An absent solo companion is neither simulated nor
+rendered. Obsolete single-player phase wrappers were removed; the live solo
+entry uses the shared-world implementation.
+
+The raid milestone is a cooperative tuning choice: each participant receives +50
+once when the shared alarm starts. Ordinary prank rewards and owner penalties
+remain individual. Rescue reward eligibility resets at the new raid. The town's
+score is the aggregate; match results use each player's score.
+
+## Match rules and remaining integration
+
+`src/match/town-match.ts` owns the pure lifecycle: a one-to-four-member lobby,
+session-specific readiness, two-to-four ready players to start, a three-second
+countdown, 30 Hz fixed steps for three minutes, a 100-point qualification target,
+multiple qualifiers, and a fresh identity/readiness/world on rematch. Membership
+or session changes during countdown/play interrupt the round explicitly and
+preserve the last world. Empty membership also interrupts; empty creation and
+rematch remain invalid.
+
+`src/match/match-input.ts` validates the current member/session, advancing input
+sequence and bounded movement/dash values. Input expires 250 ms after the
+host's receive time. Callers must keep the sequence watermark after movement
+expires and clear volatile inputs when authority changes. Client timestamps must
+never extend input lifetime.
+
+Read-first map for this increment:
+
+- `practice-rules.ts#computePracticePlayerTick`: player-local movement and dash.
+- `town/rules.ts#computeTownWorld`: ordered pranks, then one world advancement.
+- `town/authorities.ts#computeTownAuthorities`: shared raid, police and rescues.
+- `match/town-match.ts#computeTownMatchTick`: countdown, fixed step and results.
+- `match/match-input.ts#computeTownMatchInput`: validated receive-time controls.
+
+Keep this in the existing draft PR: the world refactor and its solo projection
+must be reviewed together, and the match rules consume that same implementation.
+The removed phase wrappers have no remaining production consumers. No public
+Rallar package contract changed.
+
+The lobby does not yet expose these match rules. Appointed director authority,
+room/protocol validation, network runtime, checkpoint agreement/recovery, shared
+player rendering and real multiplayer browser tests remain required. Domain
+checks and solo browser regressions do not prove those integrations or physical
+phone networking.
+
+Current local evidence: 84 CCA rules tests pass, including a full 5,400-tick round;
+the CCA build and all 12 affected gameplay browser tests pass. Independent world
+and match review is closed after the empty-roster interruption fix. The new
+regression failed before that fix and passes afterward. This does not establish
+networked match authority or recovery.
