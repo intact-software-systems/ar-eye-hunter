@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeMarketTick, createMarket, createRunner, MARKET_BANKS } from '../../cca-game/market-rules.ts';
+import { computeMarketTick, createMarket, createRunner, MARKET_BANKS, type MarketState } from '../../cca-game/market-rules.ts';
 
 describe('market rules', () => {
     it('moves at the same speed diagonally and stops at solid stalls', () => {
@@ -14,7 +14,7 @@ describe('market rules', () => {
         expect(blocked.players[0].y).toBe(125);
     });
     it('consumes a dash edge once and enforces cooldown', () => {
-        let state = { ...createMarket(), players: [{ ...createRunner('one', 0), x: 192, y: 192 }] };
+        let state: MarketState = { ...createMarket(), players: [{ ...createRunner('one', 0), x: 192, y: 192 }] };
         const control = { id: 'one', x: 1, y: 0, bank: false, dash: 1 };
         state = computeMarketTick(state, [control], 1 / 30);
         expect(state.players[0].x).toBeCloseTo(201);
@@ -33,7 +33,7 @@ describe('market rules', () => {
     });
     it('requires a continuous bank hold in a bank zone and banks only once', () => {
         const runner = { ...createRunner('one', 0), ...MARKET_BANKS[0], bag: 10 };
-        let state = { ...createMarket(), players: [runner] };
+        let state: MarketState = { ...createMarket(), players: [runner] };
         const control = { id: 'one', x: 0, y: 0, bank: true, dash: 0 };
         for (let tick = 0; tick < 26; tick++) {
             state = computeMarketTick(state, [control], 1 / 30);
