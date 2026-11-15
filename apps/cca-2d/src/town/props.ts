@@ -1,6 +1,12 @@
 import { TOWN_FOUNTAIN, type TownPoint } from './map.ts';
+import { rewardTownMischief } from './mischief.ts';
+import { repairTownObject } from './objects.ts';
 import { computeTownTravel } from './routes.ts';
-import type { TownNpc, TownState, TownTickInput } from './state.ts';
+import type {
+    TownNpc,
+    TownState,
+    TownTickInput
+} from './state.ts';
 
 export interface TownRepair {
     readonly town: TownState;
@@ -19,17 +25,21 @@ export function computeTownProps(input: TownTickInput): TownState {
     let town = input.town;
     const hitFountain = player.dashTime > 0 && Math.hypot(player.x, player.z - TOWN_FOUNTAIN.z) < 1.9;
     if (hitFountain && !town.fountain.broken) {
+        if (town.fountain.rewardAt <= now) {
+            town = rewardTownMischief(town);
+        }
         town = {
             ...town,
-            score: town.score + (town.fountain.rewardAt <= now ? 10 : 0),
             fountain: { broken: true, since: now, repair: 0, rewardAt: now + 30 }
         };
     }
     const hitCart = player.dashTime > 0 && Math.hypot(player.x - town.cart.x, player.z - town.cart.z) < 1.6;
     if (hitCart && !town.cart.loose) {
+        if (town.cart.rewardAt <= now) {
+            town = rewardTownMischief(town);
+        }
         town = {
             ...town,
-            score: town.score + (town.cart.rewardAt <= now ? 10 : 0),
             cart: { ...town.cart, loose: true, since: now, repair: 0, rewardAt: now + 30 }
         };
     }
@@ -46,7 +56,8 @@ export function computeTownProps(input: TownTickInput): TownState {
 }
 
 export function hasTownDuty(town: TownState, shopId: string): boolean {
-    return town.shops.some((shop) => shop.id === shopId && shop.tipped) ||
+    return town.objects.some((object) => object.owner === shopId && object.damagedUntil > 0) ||
+        town.shops.some((shop) => shop.id === shopId && shop.tipped) ||
         (shopId === 'apples' && town.fountain.broken) || (shopId === 'pears' && town.cart.loose);
 }
 
@@ -56,7 +67,7 @@ export function repairTownProp(input: TownRepair): TownRepairResult {
     const fountain = npc.shopId === 'apples' && town.fountain.broken;
     const cart = npc.shopId === 'pears' && town.cart.loose;
     if (!fountain && !cart) {
-        return { town, npc, busy: false };
+        return repairTownObject(input);
     }
     const object = fountain ? TOWN_FOUNTAIN : town.cart;
     const target = { x: object.x, z: object.z - 2 };

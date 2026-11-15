@@ -1,5 +1,14 @@
-import { TOWN_LIMIT, TOWN_SHOPS, type TownPoint } from './map.ts';
-import type { TownFruit, TownPlayer, TownState } from './state.ts';
+import {
+    TOWN_LIMIT,
+    TOWN_SHOPS,
+    type TownPoint
+} from './map.ts';
+import { rewardTownMischief } from './mischief.ts';
+import type {
+    TownFruit,
+    TownPlayer,
+    TownState
+} from './state.ts';
 
 export function advanceTownDebris(town: TownState, now: number, step: number): TownState {
     return {
@@ -38,12 +47,14 @@ export function tipTownShops(town: TownState, player: TownPlayer, now: number): 
             vz: -1.5 - index % 3,
             born: now
         }));
+        if (state.rewardAt <= now) {
+            result = rewardTownMischief(result);
+        }
         result = {
             ...result,
             nextId: result.nextId + 6,
             fruit: [...result.fruit, ...fruit],
             spills: result.spills + 1,
-            score: result.score + (state.rewardAt <= now ? 10 : 0),
             shops: result.shops.map((entry) =>
                 entry.id === shop.id ? { ...entry, tipped: true, rewardAt: now + 30 } : entry
             ),

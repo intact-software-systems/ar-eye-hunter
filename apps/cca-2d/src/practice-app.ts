@@ -1,6 +1,11 @@
 import { PracticeControls, requirePracticeElement } from './practice-controls.ts';
-import { computePracticeTick, createPracticeState, type PracticeState } from './practice-rules.ts';
+import {
+    computePracticeTick,
+    createPracticeState,
+    type PracticeState
+} from './practice-rules.ts';
 import { PracticeScene } from './practice-scene.ts';
+import { TOWN_TROUBLE_TARGET } from './town/mischief.ts';
 
 export class PracticeApp {
     private readonly lifetime = new AbortController();
@@ -112,7 +117,7 @@ export class PracticeApp {
         this.points.textContent = String(state.town.score);
         this.rescues.textContent = String(state.town.rescues);
         this.loading.hidden = this.scene.scene.isReady();
-        this.heat.textContent = String(Math.min(3, state.town.heat));
+        this.heat.textContent = `${state.town.heat}/${TOWN_TROUBLE_TARGET}`;
         this.power.textContent = state.power === 'fart'
             ? 'TEAL HOODIE / FART LOADED'
             : `${state.power.toUpperCase()} LOADED / DASH TO USE`;
@@ -131,6 +136,15 @@ export class PracticeApp {
             this.previousDashLabel = dashLabel;
         }
         this.dash.setAttribute('aria-disabled', String(state.cooldown > 0 || state.frozenUntil > state.elapsed));
+        this.root.dataset.bonuses = String(state.town.raid.bonuses);
+        this.root.dataset.police = String(
+            state.town.raid.guards.filter((guard) => guard.mode !== 'emerging' || guard.until <= state.elapsed).length
+        );
+        this.root.dataset.stain = state.stain;
+        this.root.dataset.objects = String(
+            state.town.objects.filter((object) => object.damagedUntil > state.elapsed).length
+        );
+        this.root.dataset.mischief = String(state.town.mischief);
         this.root.dataset.raid = state.town.raid.phase;
         this.root.dataset.frozen = String(state.frozenUntil > state.elapsed);
         this.root.dataset.fountain = String(state.town.fountain.broken);
@@ -153,12 +167,12 @@ function createPracticeMarkup(): string {
       <canvas aria-label="Market playfield: move with WASD or arrows, dash with Space, zoom with plus and minus"></canvas>
       <div id="scene-loading" class="scene-loading" role="status">Unpacking the market…</div>
       <header class="hud"><div class="brand"><span>CCA / LOCAL PLAYGROUND + BOT PAL</span><h1>GRUMPY TOWN</h1></div><button id="pause">Pause</button></header>
-      <div class="scoreboard"><span>POINTS <b id="points">0</b></span><span>HEAT <b id="heat">0</b></span><span>SAVES <b id="rescues">0</b></span></div>
+      <div class="scoreboard"><span>POINTS <b id="points">0</b></span><span>TROUBLE <b id="heat">0</b></span><span>SAVES <b id="rescues">0</b></span></div>
       <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
       <div class="play-hint"><span class="you" id="power">TEAL HOODIE / FART LOADED</span><p id="status">Dash into a stall. Make a mess.</p></div>
       <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><span class="action-icon">↯</span><strong>DASH<br>+ DROP</strong></button></div>
       <footer>WASD / arrows · Space · scroll to zoom<span>Pinch the street to zoom</span></footer>
-      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Dash into fruit stalls, the fountain or the parcel cart. Busy owners clean; tidy neighbours chase you.<br>Three witnessed pranks trigger a call. Distract the caller or dodge the raid!<br>Stand beside a frozen friend for one second to rescue. You also thaw automatically after six seconds.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Orange BOT PAL is simulated · no multiplayer yet</small></div></section>
+      <section id="pause-overlay" class="pause-overlay" hidden aria-label="Practice paused"><div><p class="eyebrow">TAKE A BREATHER</p><h2>Market paused</h2><p>Tip bins, spill fish, overflow the toilet or break a hydrant. Lure grumpy birds, dogs and cats into your pursuers. Water washes stains off.<br>Six fresh messes earn +50, then ten police leave the Ministry! Dodge for 25 seconds.<br>Stand beside a frozen friend for one second to rescue. You also thaw automatically after six seconds.</p><button id="resume" class="primary">Back to mischief</button><button id="reset">Start over</button><small>Orange BOT PAL is simulated · no multiplayer yet</small></div></section>
     </main>`;
 }
 
@@ -174,10 +188,16 @@ function describePracticeStatus(state: PracticeState): string {
         return 'BOT PAL FROZEN! Stand beside the orange coat to rescue.';
     }
     if (town.raid.phase === 'alarm') {
-        return `CALLING THE GRUMPS! ${Math.ceil(town.raid.until - elapsed)}s — distract the caller!`;
+        return `+50 MISCHIEF BONUS! Ten police dispatched in ${Math.ceil(town.raid.until - elapsed)}s!`;
     }
     if (town.raid.phase === 'active') {
-        return `RAID ${Math.ceil(town.raid.until - elapsed)}s — dodge red targets. Stick together!`;
+        return `10 POLICE / ${Math.ceil(town.raid.until - elapsed)}s — dodge targets. Lure animals!`;
+    }
+    if (town.raid.phase === 'returning') {
+        return 'SHIFT OVER! Police returning to the Ministry.';
+    }
+    if (state.stain !== 'clean') {
+        return `${state.stain.toUpperCase()}! Find fountain spray or a broken hydrant to wash off.`;
     }
     if (town.npcs.some((npc) => npc.mode === 'warning')) {
         return 'Owner aiming — move out of the target!';
@@ -194,5 +214,5 @@ function describePracticeStatus(state: PracticeState): string {
     if (state.power !== 'fart') {
         return 'Dash near an owner to use your prank.';
     }
-    return 'Tip fruit. Break the fountain. Push the cart. Keep them busy!';
+    return 'Six fresh messes = +50 points… and TEN POLICE.';
 }

@@ -1,9 +1,18 @@
 import { TOWN_SHOPS, type TownShop } from './map.ts';
 import { addPuke } from './mess.ts';
 import { hasTownSight } from './navigation.ts';
-import { hasTownDuty, isTownSprayed, repairTownProp } from './props.ts';
+import {
+    hasTownDuty,
+    isTownSprayed,
+    repairTownProp
+} from './props.ts';
 import { computeTownTravel } from './routes.ts';
-import type { TownNpc, TownPlayer, TownState, TownTickInput } from './state.ts';
+import type {
+    TownNpc,
+    TownPlayer,
+    TownState,
+    TownTickInput
+} from './state.ts';
 
 interface TownOwnerInput {
     readonly town: TownState;
@@ -46,18 +55,16 @@ export function computeTownOwners(input: TownTickInput): TownOwnersResult {
 
 export function witnessTownPrank(input: TownTickInput): TownState {
     const { player, now } = input;
-    let witnessed = false;
     const npcs = input.town.npcs.map((npc): TownNpc => {
-        if (hasTownDuty(input.town, npc.shopId) || npc.dizzyUntil > now) {
+        if (hasTownDuty(input.town, npc.shopId) || npc.stainedUntil > now || npc.dizzyUntil > now) {
             return npc;
         }
         if (Math.hypot(npc.x - player.x, npc.z - player.z) > 12 || !hasTownSight(input.town, npc, player)) {
             return npc;
         }
-        witnessed = true;
         return { ...npc, mode: 'chasing', chaseUntil: now + 8, lastSeenAt: now, zapAt: now + 0.85 };
     });
-    return { ...input.town, npcs, heat: input.town.heat + Number(witnessed) };
+    return { ...input.town, npcs };
 }
 
 function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
@@ -70,6 +77,9 @@ function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
     }
     if (npc.sickAt >= 0 && npc.sickAt > now - step && npc.sickAt <= now) {
         town = addPuke(town, npc, now);
+    }
+    if (npc.stainedUntil > now) {
+        return { town, npc: { ...npc, mode: 'cleaning' }, shieldUntil: player.shieldUntil };
     }
     if (hasTownDuty(town, npc.shopId)) {
         npc = { ...npc, mode: 'cleaning' };

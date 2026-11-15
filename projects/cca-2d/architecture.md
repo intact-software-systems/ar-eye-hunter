@@ -36,7 +36,8 @@ verified consumers and compatibility; this design revision deletes no code.
 Babylon 2.5D means upright cutout layers in a shallow 3D environment, with a fixed
 orthographic camera. See [construction](babylon-scene-construction.md).
 The host owns movement, prop state, owner duties/targeting, pickups, alarms, raids,
-freezing/rescue, scores, elapsed match ticks and all winners. The latest gameplay
+creature positions/targets/provocation, stains/immunity, freezing/rescue, incident
+counts, bonus grants, scores, elapsed match ticks and all winners. The latest gameplay
 direction is in [game design](game-design.md); cash/banking is optional future content. Clients own local input and presentation.
 
 Input → Rallar room transport → appointed host → pure fixed-step rules →
@@ -123,7 +124,9 @@ Recovery is the second concrete slice, before multiplayer content expansion.
    Prefer measured stable frame pacing, connection and foreground availability.
    Device labels alone do not establish capability.
 2. Replicate bounded checkpoints containing positions/velocities, guard state,
-   active hazards and lifetimes, prop/cleanup state, alarm/raid timers, frozen/release
+   active hazards and lifetimes, prop/cleanup state, creature targets/provocation and
+   attack cooldowns, stains/immunity, trouble/bonus counters, dispatch/raid/return
+   timers, frozen/release
    state, rescue progress, immunity, scores and player/controller identity,
    cooldowns, processed action IDs, rules/map version, random-generator state,
    simulation tick and remaining match time.

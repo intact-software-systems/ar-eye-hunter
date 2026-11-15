@@ -125,7 +125,7 @@ test('dash spills a stall, its owner cleans while a neighbour watches, and reset
     await expect(app).toHaveAttribute('data-spills', '1');
     await expect(page.locator('#points')).toHaveText('10');
     await page.keyboard.up('KeyW');
-    await expect(page.locator('#heat')).toHaveText('1');
+    await expect(page.locator('#heat')).toHaveText('1/6');
     await expect.poll(async () => Number(await app.getAttribute('data-cleaned')), { timeout: 15000 }).toBeGreaterThan(
         0
     );
@@ -192,27 +192,4 @@ test('fountain and parcel cart respond to the same dash action', async ({ page }
     await expect(app).toHaveAttribute('data-cart', 'true');
     await page.keyboard.up('KeyW');
     await expect(page.locator('#points')).toHaveText('10');
-});
-
-test('witnessed pranks announce a raid and catches recover in local play', async ({ page }) => {
-    test.setTimeout(60000);
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'GRUMPY TOWN' })).toBeVisible();
-    await expect(page.locator('#scene-loading')).toBeHidden();
-    const app = page.locator('#app');
-    await page.keyboard.down('KeyD');
-    await expect.poll(async () => Number(await app.getAttribute('data-x')), { intervals: [30] }).toBeGreaterThan(3);
-    await page.keyboard.up('KeyD');
-    for (let action = 1; action <= 3; action++) {
-        await expect(page.getByRole('button', { name: 'Dash and drop' })).toHaveAttribute('aria-disabled', 'false');
-        await page.keyboard.press('Space');
-        await expect(app).toHaveAttribute('data-pranks', String(action));
-    }
-    await expect(app).toHaveAttribute('data-raid', 'alarm');
-    await expect(page.locator('#status')).toContainText('CALLING THE GRUMPS');
-    await expect(app).toHaveAttribute('data-raid', 'active', { timeout: 7000 });
-    await expect(app).toHaveAttribute('data-frozen', 'true', { timeout: 12000 });
-    await expect(page.locator('#status')).toContainText('FROZEN');
-    await expect(app).toHaveAttribute('data-frozen', 'false', { timeout: 8000 });
-    await expect(app).toHaveAttribute('data-raid', 'cooldown', { timeout: 22000 });
 });

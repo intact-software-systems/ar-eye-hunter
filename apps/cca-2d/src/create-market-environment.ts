@@ -8,7 +8,13 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from './cutout-art.ts';
-import { TOWN_BANK, TOWN_ICE, TOWN_LIMIT, TOWN_SHOPS, type TownShop } from './town/map.ts';
+import {
+    TOWN_GOVERNMENT,
+    TOWN_ICE,
+    TOWN_LIMIT,
+    TOWN_SHOPS,
+    type TownShop
+} from './town/map.ts';
 
 export interface MarketShopVisual {
     readonly id: string;
@@ -39,7 +45,7 @@ interface MarketSign {
 
 export function createMarketEnvironment(scene: Scene, art: CutoutArt): readonly MarketShopVisual[] {
     createTownStreet(scene, art);
-    createTownBank(scene, art);
+    createTownGovernment(scene, art);
     const shops = TOWN_SHOPS.map((shop) => createTownShop(scene, art, shop));
     createSign({ scene, art, text: 'GRUMPY TOWN', x: 0, y: 0.05, z: -6, width: 5, color: '#d0c29f' }).rotation.x =
         Math.PI / 2;
@@ -185,39 +191,53 @@ function createShopAwning(scene: Scene, art: CutoutArt, input: ShopAwningInput):
     }
 }
 
-function createTownBank(scene: Scene, art: CutoutArt): void {
-    const { x, z } = TOWN_BANK;
+function createTownGovernment(scene: Scene, art: CutoutArt): void {
+    const { x, z, width, depth } = TOWN_GOVERNMENT;
+    createBlock({ scene, material: art.paper('government-paper', '#8b8b79'), x, y: 1.7, z, width, height: 3.4, depth });
     createBlock({
         scene,
-        material: art.paper('bank-paper', '#65765c'),
+        material: art.paper('government-roof', '#555e61'),
         x,
-        y: 1.45,
+        y: 3.6,
         z,
-        width: 3.8,
-        height: 2.9,
-        depth: 2.4
+        width: width + 0.4,
+        height: 0.4,
+        depth: depth + 0.3
     });
     createBlock({
         scene,
-        material: art.paper('bank-roof', '#435744'),
+        material: art.paper('government-door', '#293632'),
         x,
-        y: 3,
-        z,
-        width: 4.1,
-        height: 0.2,
-        depth: 2.7
-    });
-    createBlock({
-        scene,
-        material: art.paper('window', '#293632'),
-        x,
-        y: 1.4,
-        z: z - 1.22,
+        y: 1.1,
+        z: z - depth / 2 - 0.02,
         width: 1.8,
-        height: 1.2,
+        height: 2.2,
         depth: 0.05
     });
-    createSign({ scene, art, text: 'MISERY BANK', x, y: 2.55, z: z - 1.3, width: 3, color: '#d6cba4' });
+    for (const side of [-1, 1]) {
+        createBlock({
+            scene,
+            material: art.paper('government-column', '#c5c4aa'),
+            x: side * 2.3,
+            y: 1.6,
+            z: z - 1.55,
+            width: 0.4,
+            height: 3.2,
+            depth: 0.4
+        });
+        createBlock({
+            scene,
+            material: art.paper('government-window', '#4d6268'),
+            x: side * 1.6,
+            y: 1.7,
+            z: z - 1.52,
+            width: 0.7,
+            height: 1.2,
+            depth: 0.05
+        });
+    }
+    createSign({ scene, art, text: 'MINISTRY OF NO FUN', x, y: 3, z: z - 1.65, width: 5.4, color: '#d6cba4' });
+    createSign({ scene, art, text: 'POLICE', x, y: 2.3, z: z - 1.7, width: 1.8, color: '#97a7af' });
 }
 
 function createTownHouse(scene: Scene, art: CutoutArt, point: { x: number; z: number; }): void {

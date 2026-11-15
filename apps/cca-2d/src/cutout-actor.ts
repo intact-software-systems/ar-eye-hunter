@@ -4,6 +4,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
 import { CutoutArt } from './cutout-art.ts';
+import type { TownStain } from './town/soiling.ts';
 
 interface CutoutPart {
     readonly parent: TransformNode;
@@ -33,6 +34,7 @@ export namespace CutoutActor {
         readonly puking: boolean;
         readonly mini: boolean;
         readonly working: boolean;
+        readonly stain: TownStain;
     }
 }
 export class CutoutActor {
@@ -46,6 +48,8 @@ export class CutoutActor {
     private readonly rightLeg: TransformNode;
     private readonly broom: Mesh;
     private readonly puke: Mesh;
+    private readonly stain: Mesh;
+    private readonly art: CutoutArt;
     private readonly calm: StandardMaterial;
     private readonly surprised: StandardMaterial;
     private readonly angry: StandardMaterial;
@@ -54,6 +58,7 @@ export class CutoutActor {
     constructor(input: CutoutActor.Input) {
         const { scene, art, color, guard } = input;
         this.scene = scene;
+        this.art = art;
         this.root = new TransformNode('actor-ground', scene);
         this.body = new TransformNode('paper-puppet', scene);
         this.body.parent = this.root;
@@ -84,35 +89,21 @@ export class CutoutActor {
             y: 1.64,
             z: -0.08
         });
-        const broom = art.texture(
-            'broom',
-            '<path stroke="#775333" stroke-width="16" d="M130 5L116 191"/><path fill="#cda75b" stroke="#5f5334" stroke-width="5" d="M76 162H163L185 245H51zM80 177l-5 64m32-64v65m27-64l12 63"/>'
-        );
-        this.broom = this.createPart({
+        this.broom = this.createBroom(art);
+        this.puke = this.createPuke(art);
+        this.stain = this.createPart({
             parent: this.body,
-            material: broom,
-            width: 0.65,
-            height: 1.6,
-            x: 0.65,
-            y: 0.75,
-            z: -0.1
-        });
-        const puke = art.texture(
-            'puke-stream',
-            '<path fill="#a5b945" d="M70 10Q140 35 150 100T204 237L89 243Q143 133 106 91T70 10z"/>'
-        );
-        this.puke = this.createPart({
-            parent: this.body,
-            material: puke,
-            width: 0.8,
-            height: 1.3,
-            x: 0.3,
-            y: 0.75,
-            z: -0.2
+            material: art.paper('clean-stain', '#846248'),
+            width: 0.95,
+            height: 1.5,
+            x: 0,
+            y: 1.2,
+            z: -0.25
         });
     }
 
     render(pose: CutoutActor.Pose): void {
+        this.renderStain(pose.stain);
         this.root.position.set(pose.x, 0.08, pose.z);
         this.root.scaling.setAll(pose.mini ? 0.48 : 1);
         const swing = pose.moving ? Math.sin(pose.time * 15) * 0.5 : Math.sin(pose.time * 2) * 0.035;
@@ -138,6 +129,48 @@ export class CutoutActor {
         this.broom.rotation.z = Math.sin(pose.time * 9) * 0.25;
         this.puke.setEnabled(pose.puking);
         this.puke.scaling.x = 0.9 + Math.sin(pose.time * 20) * 0.12;
+    }
+
+    private createBroom(art: CutoutArt): Mesh {
+        return this.createPart({
+            parent: this.body,
+            material: art.texture(
+                'broom',
+                '<path stroke="#775333" stroke-width="16" d="M130 5L116 191"/><path fill="#cda75b" stroke="#5f5334" stroke-width="5" d="M76 162H163L185 245H51zM80 177l-5 64m32-64v65m27-64l12 63"/>'
+            ),
+            width: 0.65,
+            height: 1.6,
+            x: 0.65,
+            y: 0.75,
+            z: -0.1
+        });
+    }
+
+    private createPuke(art: CutoutArt): Mesh {
+        return this.createPart({
+            parent: this.body,
+            material: art.texture(
+                'puke-stream',
+                '<path fill="#a5b945" d="M70 10Q140 35 150 100T204 237L89 243Q143 133 106 91T70 10z"/>'
+            ),
+            width: 0.8,
+            height: 1.3,
+            x: 0.3,
+            y: 0.75,
+            z: -0.2
+        });
+    }
+
+    private renderStain(stain: TownStain): void {
+        this.stain.setEnabled(stain !== 'clean');
+        if (stain === 'clean') {
+            return;
+        }
+        const color = stain === 'poop' ? '#79543b' : stain === 'pee' ? '#c4af3e' : '#82934e';
+        this.stain.material = this.art.texture(
+            `coat-${stain}`,
+            `<path fill="${color}" d="M57 34q32-45 53-6 51-34 62 13 68 4 32 46l-18 59-14-37-12 87-17-68-17 105-21-95-29 27-4-82Q5 87 57 34z"/>`
+        );
     }
 
     private createLimb(material: StandardMaterial, x: number, leg: boolean): TransformNode {

@@ -24,7 +24,7 @@ before describing the look as achieved.
 
 The [Babylon local trial](babylon-local-trial.md) now implements movement,
 dash-and-drop, slipping, zoom, pause/reset and
-[interactive grumpy shopkeepers, fountain/cart, raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
+[interactive shopkeepers, creatures, messy street objects, ten-police raids and local bot rescues](grumpy-town.md) in the [SPA](../../apps/cca-2d/README.md).
 It replaces the old Phaser entry and includes actual gameplay captures. Collection,
 banking and multiplayer are absent from this focused trial. The historical CCA
 server prototype is independent; the new app does not connect to it.

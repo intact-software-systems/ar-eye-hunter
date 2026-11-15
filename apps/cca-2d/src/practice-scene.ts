@@ -11,6 +11,8 @@ import { createMarketEnvironment } from './create-market-environment.ts';
 import { CutoutActor } from './cutout-actor.ts';
 import { CutoutArt } from './cutout-art.ts';
 import type { PracticeState } from './practice-rules.ts';
+import { TownCreaturePresentation } from './town/creatures/presentation.ts';
+import { TownObjectPresentation } from './town/object-presentation.ts';
 import { TownPresentation } from './town/presentation.ts';
 import { TownRaidPresentation } from './town/raid-presentation.ts';
 import { TownStreetPresentation } from './town/street-presentation.ts';
@@ -30,6 +32,8 @@ export class PracticeScene {
     private readonly camera: FreeCamera;
     private readonly player: CutoutActor;
     private readonly town: TownPresentation;
+    private readonly creatures: TownCreaturePresentation;
+    private readonly objects: TownObjectPresentation;
     private readonly street: TownStreetPresentation;
     private readonly raid: TownRaidPresentation;
     private readonly cloud: Mesh;
@@ -52,6 +56,8 @@ export class PracticeScene {
         this.camera.minZ = 0.1;
         const art = new CutoutArt(this.scene);
         const shops = createMarketEnvironment(this.scene, art);
+        this.creatures = new TownCreaturePresentation(this.scene, art);
+        this.objects = new TownObjectPresentation(this.scene, art);
         this.town = new TownPresentation({ scene: this.scene, art, shops });
         this.street = new TownStreetPresentation(this.scene, art);
         this.raid = new TownRaidPresentation(this.scene, art);
@@ -83,11 +89,14 @@ export class PracticeScene {
             working: false,
             dizzy: state.dizzyUntil > state.elapsed,
             mini: false,
+            stain: state.stain,
             puking: state.sickAt >= 0 && state.elapsed >= state.sickAt && state.elapsed < state.sickAt + 1
         });
         this.town.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.street.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.raid.render(frame);
+        this.creatures.render({ town: state.town, now: state.elapsed, reducedMotion });
+        this.objects.render({ town: state.town, now: state.elapsed, reducedMotion });
         this.shadow.position.set(state.x, 0.04, state.z);
         this.marker.position.set(state.x, 0.045, state.z);
         const cloud = state.clouds[0];

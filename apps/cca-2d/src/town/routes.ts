@@ -1,5 +1,16 @@
-import { TOWN_BANK, TOWN_FOUNTAIN, TOWN_SHOPS, type TownObstacle, type TownPoint } from './map.ts';
-import { computeTownPosition, crossesTownObstacle, getTownObstacles } from './navigation.ts';
+import {
+    TOWN_FOUNTAIN,
+    TOWN_GOVERNMENT,
+    TOWN_OBJECTS,
+    TOWN_SHOPS,
+    type TownObstacle,
+    type TownPoint
+} from './map.ts';
+import {
+    computeTownPosition,
+    crossesTownObstacle,
+    getTownObstacles
+} from './navigation.ts';
 import type { TownState } from './state.ts';
 
 export interface TownTravel {
@@ -15,7 +26,7 @@ interface TownRouteGraph {
 }
 
 // Visibility for the fixed stalls is reusable. Only endpoints and the rolling cart change per tick.
-const staticObstacles = [...TOWN_SHOPS, TOWN_BANK, TOWN_FOUNTAIN].map(expandForActor);
+const staticObstacles = [...TOWN_SHOPS, TOWN_GOVERNMENT, ...TOWN_OBJECTS, TOWN_FOUNTAIN].map(expandForActor);
 const staticCorners = staticObstacles.flatMap(obstacleCorners);
 const staticLinks = staticCorners.map((from) => staticCorners.map((to) => clearRoute(staticObstacles, from, to)));
 

@@ -1,7 +1,12 @@
-import { TOWN_ICE, type TownPoint, type TownPrank } from './town/map.ts';
+import {
+    TOWN_ICE,
+    type TownPoint,
+    type TownPrank
+} from './town/map.ts';
 import { computeTownPosition } from './town/navigation.ts';
 import { getTownJet, isTownSprayed } from './town/props.ts';
 import { computeTownTick } from './town/rules.ts';
+import { createCleanCoat, type TownCoat } from './town/soiling.ts';
 import { createTownState, type TownState } from './town/state.ts';
 
 export interface PracticeInput {
@@ -15,7 +20,7 @@ export interface PracticeCloud {
     readonly z: number;
     readonly age: number;
 }
-export interface PracticeState {
+export interface PracticeState extends TownCoat {
     readonly frozenUntil: number;
     readonly shieldUntil: number;
     readonly x: number;
@@ -49,6 +54,7 @@ interface PracticeMovement extends TownPoint {
 
 export function createPracticeState(): PracticeState {
     return {
+        ...createCleanCoat(),
         x: 0,
         z: -2,
         frozenUntil: 0,
@@ -153,6 +159,6 @@ function isPracticeSlippery(state: PracticeState): boolean {
     return onIce || isTownSprayed(state.town, state, state.elapsed) ||
         state.town.fruit.some((fruit) => Math.hypot(state.x - fruit.x, state.z - fruit.z) < 0.65) ||
         state.town.patches.some((patch) =>
-            patch.kind === 'puke' && Math.hypot(state.x - patch.x, state.z - patch.z) < 1
+            patch.kind !== 'powder' && patch.kind !== 'trash' && Math.hypot(state.x - patch.x, state.z - patch.z) < 1
         );
 }

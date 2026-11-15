@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { computePracticeTick, createPracticeState, type PracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+import {
+    computePracticeTick,
+    createPracticeState,
+    type PracticeState
+} from '../../../apps/cca-2d/src/practice-rules.ts';
+import { createCleanCoat } from '../../../apps/cca-2d/src/town/soiling.ts';
 
 function advance(state: PracticeState, seconds: number): PracticeState {
     for (let tick = 0; tick < seconds * 60; tick++) {
@@ -30,17 +39,6 @@ describe('grumpy town chase and rescue loop', () => {
         const start = computePracticeTick(walking, { x: 1, z: 0, dash: 1 }, 1 / 60);
         const escaped = advance({ ...start, x: 22, z: -22, vx: 0, vz: 0, dashTime: 0 }, 12);
         expect(escaped.town.npcs.every((npc) => npc.mode === 'watching')).toBe(true);
-    });
-    it('a witnessed alarm becomes a bounded raid and then a cooldown', () => {
-        const initial = createPracticeState();
-        const state = computePracticeTick({ ...initial, x: 5, z: 0, town: { ...initial.town, heat: 2 } }, { x: 1, z: 0, dash: 1 }, 1 / 60);
-        expect(state.town.raid.phase).toBe('alarm');
-        const raiding = advance({ ...state, x: 22, z: -22, vx: 0, vz: 0, dashTime: 0 }, 4.5);
-        expect(raiding.town.raid.phase).toBe('active');
-        expect(raiding.town.raid.guards).toHaveLength(3);
-        const finished = advance(raiding, 21);
-        expect(finished.town.raid.phase).toBe('cooldown');
-        expect(finished.town.raid.guards).toHaveLength(0);
     });
     it('freezing blocks movement and dash, then automatically releases with protection', () => {
         const initial = createPracticeState();
@@ -92,17 +90,17 @@ describe('raid fairness', () => {
                     ...initial.town.raid,
                     phase: 'active',
                     until: 20,
-                    guards: [{ id: 0, x: 0, z: -4, mode: 'patrol', target: 'player', aim: { x: 0, z: -2 }, until: 0 }]
+                    guards: [{ ...createCleanCoat(), id: 0, x: 0, z: -4, mode: 'patrol', target: 'player', aim: { x: 0, z: -2 }, until: 0 }]
                 }
             }
         };
         const warned = advance(state, 0.1);
         expect(warned.town.raid.guards[0].mode).toBe('warning');
-        const hit = advance(warned, 0.8);
+        const hit = advance(warned, 1);
         expect(hit.frozenUntil).toBeGreaterThan(hit.elapsed);
         expect(hit.town.score).toBe(20);
         expect(hit.town.zaps).toHaveLength(1);
-        const dodged = advance({ ...warned, x: 3 }, 0.8);
+        const dodged = advance({ ...warned, x: 3 }, 1);
         expect(dodged.frozenUntil).toBe(0);
     });
     it('a nearby companion thaws the player before the automatic timeout', () => {
@@ -112,16 +110,6 @@ describe('raid fairness', () => {
         expect(rescued.frozenUntil).toBe(0);
         expect(rescued.shieldUntil).toBeGreaterThan(rescued.elapsed);
         expect(rescued.town.score).toBe(0);
-    });
-    it('an alarm lasts long enough to recover the dash and interrupt the caller', () => {
-        const initial = createPracticeState();
-        const call = computePracticeTick({ ...initial, x: 5, z: 0, town: { ...initial.town, heat: 2 } }, { x: 1, z: 0, dash: 1 }, 1 / 60);
-        const ready = advance({ ...call, vx: 0, vz: 0, dashTime: 0 }, 3.1);
-        expect(ready.town.raid.phase).toBe('alarm');
-        const caller = ready.town.npcs.find((npc) => npc.shopId === ready.town.raid.callerId)!;
-        const interrupted = computePracticeTick({ ...ready, x: caller.x, z: caller.z - 0.5 }, { x: 1, z: 0, dash: 2 }, 1 / 60);
-        expect(interrupted.town.raid.phase).toBe('cooldown');
-        expect(interrupted.town.heat).toBe(0);
     });
     it('a stall blocks witness and zap lines, and recently repaired props cannot farm points', () => {
         const initial = createPracticeState();

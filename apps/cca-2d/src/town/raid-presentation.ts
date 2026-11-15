@@ -5,18 +5,21 @@ import type { Scene } from '@babylonjs/core/scene';
 import { CutoutActor } from '../cutout-actor.ts';
 import { CutoutArt } from '../cutout-art.ts';
 import type { PracticeScene } from '../practice-scene.ts';
-import type { TownPoint } from './map.ts';
+import { TOWN_POLICE_DOOR, type TownPoint } from './map.ts';
+import { TOWN_POLICE_COUNT } from './raid.ts';
+import type { TownStain } from './soiling.ts';
 
 interface TownRaidActor {
     readonly actor: CutoutActor;
     readonly ring: Mesh;
     readonly ice: Mesh;
-    readonly label: Mesh;
+    readonly label: Mesh | undefined;
 }
 interface TownRaidPose extends TownPoint {
     readonly frozen: boolean;
     readonly shielded: boolean;
     readonly time: number;
+    readonly stain: TownStain;
 }
 
 export class TownRaidPresentation {
@@ -24,22 +27,16 @@ export class TownRaidPresentation {
     private readonly guards: readonly TownRaidActor[];
     private readonly playerIce: Mesh;
     private readonly alarm: Mesh;
-    private readonly district: Mesh;
 
     constructor(scene: Scene, art: CutoutArt) {
         this.companion = createRaidActor({ scene, art, guard: false });
-        this.guards = Array.from({ length: 3 }, () => createRaidActor({ scene, art, guard: true }));
+        this.guards = Array.from({ length: TOWN_POLICE_COUNT }, () => createRaidActor({ scene, art, guard: true }));
         this.playerIce = createIce(scene, art);
-        this.district = CreateGround('raid-boundary', { width: 24, height: 24 }, scene);
-        this.district.material = art.texture(
-            'raid-boundary',
-            '<circle cx="128" cy="128" r="124" fill="none" stroke="#b65a43" stroke-width="3" stroke-dasharray="8 5"/>'
-        );
         this.alarm = CreatePlane('calling-authorities', { width: 2.2, height: 0.8 }, scene);
         this.alarm.rotation.x = 0.55;
         this.alarm.material = art.texture(
             'calling-authorities',
-            '<path d="M5 25H251V230H5z" fill="#e9ba65" stroke="#783f39" stroke-width="9"/><text x="128" y="120" text-anchor="middle" font-family="sans-serif" font-size="37" font-weight="900" fill="#783f39">CALLING</text><text x="128" y="180" text-anchor="middle" font-family="sans-serif" font-size="33" font-weight="900" fill="#783f39">THE GRUMPS!</text>'
+            '<path d="M5 25H251V230H5z" fill="#e9ba65" stroke="#783f39" stroke-width="9"/><text x="128" y="120" text-anchor="middle" font-family="sans-serif" font-size="37" font-weight="900" fill="#783f39">DISPATCH</text><text x="128" y="180" text-anchor="middle" font-family="sans-serif" font-size="33" font-weight="900" fill="#783f39">10 POLICE!</text>'
         );
     }
 
@@ -59,16 +56,12 @@ export class TownRaidPresentation {
         this.playerIce.setEnabled(state.frozenUntil > elapsed);
         this.playerIce.position.set(state.x, 1, state.z - 0.3);
         this.alarm.setEnabled(town.raid.phase === 'alarm');
-        this.district.setEnabled(town.raid.phase === 'alarm' || town.raid.phase === 'active');
-        this.district.position.set(town.raid.origin.x, 0.03, town.raid.origin.z);
-        const caller = town.npcs.find((npc) => npc.shopId === town.raid.callerId);
-        if (caller) {
-            this.alarm.position.set(caller.x, 3.6, caller.z);
-        }
+        this.alarm.position.set(TOWN_POLICE_DOOR.x, 4.2, TOWN_POLICE_DOOR.z);
         this.guards.forEach((visual, index) => {
-            const guard = town.raid.guards[index];
+            const guard = town.raid.guards.find((entry) =>
+                entry.id === index && (entry.mode !== 'emerging' || entry.until <= elapsed)
+            );
             visual.actor.root.setEnabled(Boolean(guard));
-            visual.label.setEnabled(Boolean(guard));
             visual.ring.setEnabled(guard?.mode === 'warning');
             if (!guard) {
                 return;
@@ -92,17 +85,18 @@ function createRaidActor(input: { scene: Scene; art: CutoutArt; guard: boolean; 
         }"/>`
     );
     const ice = createIce(scene, art);
-    const label = CreatePlane('raid-label', { width: 1.5, height: 0.42 }, scene);
+    const label = guard ? undefined : createCompanionLabel(scene, art);
+    return { actor, ring, ice, label };
+}
+
+function createCompanionLabel(scene: Scene, art: CutoutArt): Mesh {
+    const label = CreatePlane('companion-label', { width: 1.5, height: 0.42 }, scene);
     label.rotation.x = 0.55;
     label.material = art.texture(
-        `raid-label-${guard}`,
-        `<rect width="256" height="256" fill="${
-            guard ? '#535775' : '#9b5a3d'
-        }"/><text transform="translate(0,-230) scale(1,2.6)" x="128" y="148" text-anchor="middle" font-family="sans-serif" font-size="38" font-weight="900" fill="#f7e4be">${
-            guard ? 'GRUMP' : 'BOT PAL'
-        }</text>`
+        'companion-label',
+        '<rect width="256" height="256" fill="#9b5a3d"/><text transform="translate(0,-230) scale(1,2.6)" x="128" y="148" text-anchor="middle" font-family="sans-serif" font-size="38" font-weight="900" fill="#f7e4be">BOT PAL</text>'
     );
-    return { actor, ring, ice, label };
+    return label;
 }
 
 function createIce(scene: Scene, art: CutoutArt): Mesh {
@@ -129,10 +123,13 @@ function renderRaidActor(visual: TownRaidActor, pose: TownRaidPose): void {
         dizzy: false,
         puking: false,
         mini: false,
+        stain: pose.stain,
         working: false
     });
     visual.ice.setEnabled(pose.frozen);
     visual.ice.position.set(pose.x, 1, pose.z - 0.3);
-    visual.label.position.set(pose.x, 2.6, pose.z);
-    visual.label.visibility = pose.shielded ? 0.6 : 1;
+    if (visual.label) {
+        visual.label.position.set(pose.x, 2.6, pose.z);
+        visual.label.visibility = pose.shielded ? 0.6 : 1;
+    }
 }

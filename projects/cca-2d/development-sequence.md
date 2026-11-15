@@ -1,14 +1,15 @@
 # Development sequence, agents, and tools
 
 Status: revised for the selected Babylon 2.5D and Rallar player-host direction.
-Only the next two implementation slices are concrete. The local Babylon trial, varied square and chase/freeze/rescue loop are implemented; phone feel and device qualification remain open.
+Only the next two implementation slices are concrete. The local Babylon trial, living square and ten-police chase/freeze/rescue loop are implemented; phone feel and device qualification remain open.
 
 ## Existing foundation and change of direction
 
 The [local Babylon trial](babylon-local-trial.md) now replaces the Phaser entry.
 It implements movement, dash-and-drop, slippery surfaces, camera zoom and pause/reset,
 plus six interactive owners, fruit spills, fountain spray, a rolling cart, cleanup,
-powder, mini-zappers, bounded raids and a clearly labelled local bot companion.
+powder, mini-zappers, birds/dogs/cats, bins/fish/toilet/hydrant, stains/washing,
+a +50 bonus and ten-officer raids, plus a clearly labelled local bot companion.
 It includes real browser captures and focused rule/browser tests. The historical
 server prototype remains outside the app; no new multiplayer is implemented.
 
@@ -17,36 +18,53 @@ The new visual target is [cutout market](visual-concepts/README.md), with a
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Current slice 1: phone feedback on the local chase and rescue loop
+## Current slice 1: living square and ten-police crackdown
 
-**Implemented:** fruit, fountain and cart create different cleanup duties. Tidy
-owners witness mischief and chase with dodgable score penalties. Three witnessed
-actions trigger a four-second interruptible call, followed by a 20-second local
-raid. Captures freeze for six seconds; proximity rescue and auto-thaw grant brief
-protection. The orange BOT PAL demonstrates rescue without claiming multiplayer.
+**Goal:** implement the approved [living-square expansion](grumpy-town.md#living-square-rules-and-approved-scope)
+in the local Babylon app, then try it on phone. Preserve the existing controls.
 
-The local rules, actual touch-input captures and browser controls are checked.
-The independent review found a corner-oscillation route bug; collision-clear routes
-and a behind-stall arrival/rescue regression address it. No unrelated app changes
-or broader CI investigation belong to this slice, following the user's direction.
+**Architecture:** immutable town rules own incidents, rewards, creatures, stains,
+objects and police state; Babylon displays that state. `practice-rules.ts` owns
+movement. No new backend or dependency is needed. The government building replaces
+the unused scenery bank; it is the actual police origin, not a label on random spawns.
 
-**Remaining outcome:** establish whether this is funny and readable on a physical
-phone before expanding content. Try these concrete tasks:
+**Task A — reward and consequence:**
 
-- Tip fruit, leave its cleaning owner behind, and escape the tidy neighbour.
-- Redirect the fountain and release the cart; use the different hazards while escaping.
-- Interrupt one call, then deliberately allow another raid and dodge its targets.
-- Rescue the orange bot or let it rescue you. Compare six seconds frozen with ten.
-- Rotate, zoom, pause/background and resume on phone/iPad; check thumb comfort and frame pacing.
+- [x] Add failing rule tests for six qualifying incidents, exactly one +50 bonus,
+  ten doorway departures, bounded chase/return/cooldown, and no empty-dash farming.
+- [x] Update `town/state.ts`, `town/map.ts`, `town/rules.ts`, `town/mess.ts`,
+  `town/props.ts`, `town/owners.ts` and `town/authorities.ts`; move the police lifecycle
+  into `town/raid.ts` if needed to keep pursuit decisions readable.
+- [x] Update government geometry, police presentation and HUD to show the bonus,
+  deployment countdown, ten departures and remaining pursuit time.
 
-**Working hypothesis:** individual mischief scores with shared survival during
-raids; several players can eventually qualify. The local scene has points but no
-round timer, target qualification or winners yet. Pure cooperation and competitive
-optional rescue remain alternatives until real multiplayer playtests.
+**Task B — creatures and interactive mess:**
 
-**Decision:** tune based on anticipation, readable consequences and voluntary
-rescues. Keep laundry, toilet overflow, more personalities and larger crowds out
-of the immediate scope. Stay in the draft PR while this design is being tried.
+- [x] Add failing rule tests for bird poop, dog pee, cat vomit, dodgeable locked aim,
+  player/owner/police soiling, provoked collateral credit, washing and effect expiry.
+- [x] Add `town/creatures/rules.ts`, `town/soiling.ts` and `town/objects.ts` with owned
+  contracts beside their rules; extend canonical town state without parallel legacy paths.
+- [x] Add original creature/prop cutout presentation; two of each creature, two bins,
+  fish display, toilet and hydrant. Apply movement/cleanup effects in rules only.
+- [x] Add visible-control browser checks for new objects and the full bonus/police
+  sequence. Record actual phone-sized gameplay and inspect readable creatures,
+  stains, warnings and crowded police movement.
+
+**Verification:** `npx vitest run packages/tests/cca-game`,
+`npx playwright test --config apps/cca-2d/playwright.config.ts`,
+`npm run build --workspace=cca-2d`, focused test typecheck and scoped style review.
+Check independent cases: attacks through walls, repeated rewards, police returning
+through obstacles, freeze plus animal hits, and reset/pause while a wave is active.
+The fresh review found a scheduled-officer splash edge; a regression now protects
+waiting officers from direct and ground soiling until departure. The 48 rule tests,
+app build and focused source typecheck pass. Nine browser checks cover controls
+and the full wave; actual touch captures show the local production build.
+Update the existing draft PR.
+Keep unrelated app investigations outside this work.
+
+**Phone decision:** can the player deliberately earn the big bonus, understand
+its price, use creatures against grumps, escape ten police, wash off and resume
+mischief? Physical Safari/iPad performance and social fun still need device testing.
 
 ## Next slice 2: Rallar-only two-player hosting and recovery
 

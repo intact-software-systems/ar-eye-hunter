@@ -1,5 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { computePracticeTick, createPracticeState, type PracticeState } from '../../../apps/cca-2d/src/practice-rules.ts';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+import {
+    computePracticeTick,
+    createPracticeState,
+    type PracticeState
+} from '../../../apps/cca-2d/src/practice-rules.ts';
 
 function advance(state: PracticeState, seconds: number): PracticeState {
     for (let tick = 0; tick < seconds * 60; tick++) {
@@ -79,7 +87,7 @@ describe('grumpy town pranks', () => {
         expect(state.town.patches.filter((patch) => patch.kind === 'puke')).toHaveLength(1);
         state = advance(state, 15);
         expect(state.dizzyUntil).toBeLessThan(state.elapsed);
-        expect(state.town.patches).toHaveLength(0);
+        expect(state.town.patches.filter((patch) => patch.kind === 'powder' || patch.kind === 'puke')).toHaveLength(0);
     });
     it('aim-assisted zaps visibly connect to each character they shrink', () => {
         const state = computePracticeTick({ ...createPracticeState(), x: 1, z: -4, power: 'zapper' }, { x: 0, z: 1, dash: 1 }, 1 / 60);

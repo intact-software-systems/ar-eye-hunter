@@ -8,7 +8,12 @@ import type { MarketShopVisual } from '../create-market-environment.ts';
 import { CutoutActor } from '../cutout-actor.ts';
 import { CutoutArt } from '../cutout-art.ts';
 import { TOWN_SHOPS } from './map.ts';
-import type { TownNpc, TownPatch, TownState } from './state.ts';
+import { MESS_DRAWINGS } from './mess-art.ts';
+import type {
+    TownNpc,
+    TownPatch,
+    TownState
+} from './state.ts';
 
 interface TownOwnerVisual {
     readonly actor: CutoutActor;
@@ -70,7 +75,7 @@ export class TownPresentation {
             this.renderOwner(visual, npc, { now, time });
             visual.cleanup.setEnabled(npc.mode === 'cleaning');
             visual.cleanup.position.set(npc.x, 2.3, npc.z + 0.2);
-            visual.cleanup.scaling.x = Math.max(0.05, cleanupRemaining(town, npc));
+            visual.cleanup.scaling.x = Math.max(0.05, cleanupRemaining(frame, npc));
         });
         this.shops.forEach((visual, index) => {
             const shop = town.shops[index];
@@ -102,6 +107,7 @@ export class TownPresentation {
             angry: npc.mode === 'chasing' || npc.mode === 'warning',
             dizzy,
             mini,
+            stain: npc.stain,
             working,
             puking: npc.sickAt >= 0 && now >= npc.sickAt && now < npc.sickAt + 1
         });
@@ -163,14 +169,14 @@ export class TownPresentation {
     private createPatch(patch: TownPatch): Mesh {
         const mesh = patch.kind === 'powder'
             ? CreatePlane('dizzy-powder', { size: 3.4 }, this.scene)
-            : CreateGround('puke-puddle', { width: 2, height: 2 }, this.scene);
+            : CreateGround('street-mess', { width: 2, height: 2 }, this.scene);
         mesh.material = this.art.texture(
             `mess-${patch.kind}`,
             patch.kind === 'powder'
                 ? '<path fill="#b195b7" fill-opacity=".8" d="M28 143Q-5 92 48 75Q37 7 100 44Q153-4 175 51Q253 24 226 103Q279 154 219 180Q221 255 151 215Q81 269 62 207Q1 216 28 143z"/><g fill="#eee0b6"><circle cx="94" cy="91" r="8"/><circle cx="156" cy="140" r="6"/><circle cx="72" cy="167" r="7"/></g>'
-                : '<path fill="#82934e" stroke="#b0bc60" stroke-width="6" d="M24 113Q17 55 74 81Q106 10 148 58Q237 36 214 108Q281 149 214 190Q181 247 124 212Q38 258 51 189Q-10 164 24 113z"/><circle fill="#c5c976" cx="100" cy="120" r="14"/><circle fill="#c5c976" cx="160" cy="158" r="9"/>'
+                : MESS_DRAWINGS[patch.kind]
         );
-        if (patch.kind === 'powder') {
+        if (patch.kind === 'powder' || patch.kind === 'water' || patch.kind === 'pee') {
             mesh.material.transparencyMode = 2;
         }
         mesh.rotation.x = patch.kind === 'powder' ? 0.55 : 0;
@@ -204,12 +210,20 @@ function disposeMissing(meshes: Map<number, Mesh>, alive: readonly { readonly id
     }
 }
 
-function cleanupRemaining(town: TownState, npc: TownNpc): number {
+function cleanupRemaining(frame: TownPresentation.Frame, npc: TownNpc): number {
+    const { town, now } = frame;
+    if (npc.stainedUntil > now) {
+        return (npc.stainedUntil - now) / 6;
+    }
     if (npc.shopId === 'apples' && town.fountain.broken) {
         return 1 - town.fountain.repair / 4;
     }
     if (npc.shopId === 'pears' && town.cart.loose) {
         return 1 - town.cart.repair / 3;
+    }
+    const object = town.objects.find((object) => object.owner === npc.shopId && object.damagedUntil > now);
+    if (object) {
+        return 1 - object.repair / 3;
     }
     return town.fruit.filter((fruit) => fruit.shopId === npc.shopId).length / 6;
 }

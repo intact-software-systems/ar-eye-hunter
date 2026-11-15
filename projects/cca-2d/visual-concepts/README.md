@@ -2,10 +2,11 @@
 
 ## Actual Babylon trial
 
-![Actual Grumpy Town fruit spill and owner warning](grumpy-town-fruit-zap.png)
+![Actual Grumpy Town police departing from government](living-town-police.png)
 
-[Touch gameplay recording](grumpy-town-gameplay.webm) · [Starting view](grumpy-town-phone.png) ·
-[Mini player and cleanup](grumpy-town-mini-cleanup.png) · [Powder](grumpy-town-powder.png).
+[Touch gameplay recording](living-town-gameplay.webm) · [Starting view](living-town-phone.png) ·
+[Bird poop](living-town-bird.png) · [Toilet overflow](living-town-toilet.png) ·
+[Bonus](living-town-bonus.png) · [Police returning](living-town-return.png).
 These are actual Chromium gameplay captures of the local Babylon 9.36.0 scene,
 using a 390 × 844 phone viewport. They are not physical-phone captures.
 See [implemented scope, controls and limits](../babylon-local-trial.md).
@@ -54,12 +55,9 @@ the current cutout, scrolling-camera or player-host architecture.
 No still image proves animation, multitouch, multiplayer, load time, frame pacing
 or host recovery. New progress must include actual Babylon gameplay captures.
 
-## Current local raid-loop gameplay
+## Historical local raid-loop gameplay
 
-The latest implemented footage is [the touch gameplay recording](grumpy-loop-gameplay.webm),
-with [fountain spray](grumpy-loop-fountain.png), [the rolling cart](grumpy-loop-cart.png),
-[an authority call](grumpy-loop-alarm.png) and [freezing](grumpy-loop-frozen.png).
-These are actual Babylon frames from a 390 × 844 Chromium viewport, not mockups.
-The orange BOT PAL is simulated. See [the current trial](../babylon-local-trial.md)
-for implemented limits and physical-device checks still needed. Earlier captures
-remain historical, including the superseded owner-to-player mini-zap.
+The earlier [touch recording](grumpy-loop-gameplay.webm) shows fountain, cart and
+the superseded interruptible three-guard alarm. `grumpy-town-*` captures show the
+preceding owner interactions, including the removed owner-to-player mini-zap.
+These are historical Babylon frames; current behavior is documented above.

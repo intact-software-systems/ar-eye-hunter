@@ -1,4 +1,11 @@
-import { TOWN_SHOPS, type TownPoint, type TownPrank } from './map.ts';
+import { createTownCreatures, type TownCreature } from './creatures/rules.ts';
+import {
+    TOWN_SHOPS,
+    type TownPoint,
+    type TownPrank
+} from './map.ts';
+import { createTownObjects, type TownObject } from './objects.ts';
+import { createCleanCoat, type TownCoat } from './soiling.ts';
 
 export interface TownFruit extends TownPoint {
     readonly id: number;
@@ -9,7 +16,7 @@ export interface TownFruit extends TownPoint {
 }
 export interface TownPatch extends TownPoint {
     readonly id: number;
-    readonly kind: 'powder' | 'puke';
+    readonly kind: 'powder' | 'puke' | 'poop' | 'pee' | 'trash' | 'fish' | 'water';
     readonly born: number;
     readonly expires: number;
 }
@@ -24,7 +31,7 @@ export interface TownShopState {
     readonly pickupAt: number;
     readonly rewardAt: number;
 }
-export interface TownNpc extends TownPoint {
+export interface TownNpc extends TownPoint, TownCoat {
     readonly chaseUntil: number;
     readonly lastSeenAt: number;
     readonly zapAt: number;
@@ -39,6 +46,9 @@ export interface TownNpc extends TownPoint {
     readonly immuneUntil: number;
 }
 export interface TownState {
+    readonly mischief: number;
+    readonly creatures: readonly TownCreature[];
+    readonly objects: readonly TownObject[];
     readonly score: number;
     readonly heat: number;
     readonly raid: TownRaid;
@@ -56,7 +66,7 @@ export interface TownState {
     readonly spills: number;
     readonly cleaned: number;
 }
-export interface TownPlayer extends TownPoint {
+export interface TownPlayer extends TownPoint, TownCoat {
     readonly frozenUntil: number;
     readonly shieldUntil: number;
     readonly facingX: number;
@@ -74,7 +84,7 @@ export interface TownTickInput {
     readonly now: number;
     readonly step: number;
 }
-export interface TownComputed {
+export interface TownComputed extends TownCoat {
     readonly frozenUntil: number;
     readonly shieldUntil: number;
     readonly town: TownState;
@@ -83,22 +93,21 @@ export interface TownComputed {
     readonly immuneUntil: number;
     readonly sickAt: number;
 }
-export interface TownGuard extends TownPoint {
+export interface TownGuard extends TownPoint, TownCoat {
     readonly id: number;
-    readonly mode: 'patrol' | 'warning' | 'cooldown';
+    readonly mode: 'emerging' | 'patrol' | 'warning' | 'cooldown';
     readonly target: 'player' | 'companion';
     readonly aim: TownPoint;
     readonly until: number;
 }
 export interface TownRaid {
+    readonly bonuses: number;
     readonly rewarded: boolean;
-    readonly phase: 'quiet' | 'alarm' | 'active' | 'cooldown';
+    readonly phase: 'quiet' | 'alarm' | 'active' | 'returning' | 'cooldown';
     readonly until: number;
-    readonly callerId: string | null;
-    readonly origin: TownPoint;
     readonly guards: readonly TownGuard[];
 }
-export interface TownCompanion extends TownPoint {
+export interface TownCompanion extends TownPoint, TownCoat {
     readonly frozenUntil: number;
     readonly shieldUntil: number;
 }
@@ -117,8 +126,12 @@ export interface TownCart extends TownPoint {
 
 export function createTownState(): TownState {
     return {
+        mischief: 0,
+        creatures: createTownCreatures(),
+        objects: createTownObjects(),
         shops: TOWN_SHOPS.map((shop) => ({ id: shop.id, tipped: false, pickupAt: 0, rewardAt: 0 })),
         npcs: TOWN_SHOPS.map((shop) => ({
+            ...createCleanCoat(),
             shopId: shop.id,
             chaseUntil: 0,
             lastSeenAt: 0,
@@ -138,8 +151,8 @@ export function createTownState(): TownState {
         heat: 0,
         rescues: 0,
         rescueProgress: 0,
-        raid: { rewarded: false, phase: 'quiet', until: 0, callerId: null, origin: { x: 0, z: 0 }, guards: [] },
-        companion: { x: -2, z: -3, frozenUntil: 0, shieldUntil: 0 },
+        raid: { bonuses: 0, rewarded: false, phase: 'quiet', until: 0, guards: [] },
+        companion: { ...createCleanCoat(), x: -2, z: -3, frozenUntil: 0, shieldUntil: 0 },
         fountain: { broken: false, since: 0, repair: 0, rewardAt: 0 },
         cart: { x: -3, z: -6.5, loose: false, since: 0, repair: 0, rewardAt: 0 },
         fruit: [],

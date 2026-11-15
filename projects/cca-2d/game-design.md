@@ -11,7 +11,8 @@ banking is now optional future content, not a prerequisite for proving the fun.
 Mischievous kids keep a town of permanently grumpy people busy putting things
 back in order. Making a mess buys a window to get elsewhere and cause fresh
 trouble. When businesses are tidy, owners watch the streets. Witnessed mischief
-can trigger pursuit, zaps and eventually a short authority raid.
+can trigger pursuit and zaps. Six fresh rewarded incidents earn a large bonus
+and summon a bounded police wave.
 
 The audience is ages 6–14. Use expressive cutout faces, deadpan anger, fart jokes,
 water, slippery fruit, absurd clothes and cartoon mess. Setbacks should be funny
@@ -39,7 +40,7 @@ playground uses a 0.2-second dash and 3-second cooldown.
 | Cleaning/sorting | Prioritizes restoring its own business | A visible temporary window to move or prank elsewhere |
 | Watching | Observes a limited, readable area once business is tidy | Avoid its sight or create a distraction |
 | Chasing | Pursues a witnessed prank with bounded range/time | Break sight, take another route or dodge a warned zap |
-| Calling authorities | Visibly raises an alarm for a few seconds | Interrupt in time or prepare to leave the affected district |
+| Government dispatch | Six rewarded incidents grant +50 and announce ten police | Use the five-second warning to choose an escape route |
 
 An owner must witness an actual prank, not merely dislike the player's presence.
 Mess at its own business takes cleanup priority; another owner can witness the
@@ -53,10 +54,15 @@ vary patience or cleaning speed, but establish one understandable policy first.
 
 ## Authority raids, freezing and rescue
 
-The user's proposal is a bounded authority swarm. Start with a few readable
-agents in one district: announce their entrance and roughly 20-second presence,
-then have them leave and enforce a quiet cooldown. Crowds everywhere at once
-would remove the route choices the town is meant to provide.
+The approved swarm is **ten police from a government building** after enough
+mischief. Current tuning: six rewarded incidents, an immediate +50 bonus, a
+five-second warning and 25 seconds of pursuit. Officers leave the Ministry in
+staggered departures, stop attacking at shift end, return home and enter a quiet
+cooldown. The bonus cannot be separated from its consequence by cancelling a call.
+
+Use stalls to break sight and creature attacks to distract police. Fixed warning
+targets give the player a chance to dodge; no instant contact captures or repeated
+freeze stacking. Empty dashes and unprovoked animal accidents do not fill trouble.
 
 A catch freezes the player into a funny statue. Friends thaw them with about one
 second of nearby dwell; automatic release prevents abandonment. Test a six-second
@@ -92,7 +98,10 @@ round must not fabricate winners.
 
 ## A varied town square
 
-The current local square combines six stalls with a fountain and parcel cart.
+The current local square combines six stalls, a fountain, parcel cart, two bins,
+a fish display, a toilet, a hydrant and two each of bird-, dog- and cat-like
+creatures. See [implemented interactions](grumpy-town.md) for effect lifetimes and
+cleanup rules.
 The requested variety comes from different causal interactions and cleanup jobs.
 
 | Place | Dash/contact interaction | Tactical change | Owner's cleanup |
@@ -104,11 +113,10 @@ The requested variety comes from different causal interactions and cleanup jobs.
 | Powder counter | Burst a sack/use pickup | Local dizziness and cartoon puke alter route choice | Clear spilled stock and recover |
 | Street toilet | Trigger a conspicuous overflowing flush | A substantial, announced mess changes a local route | Stop overflow, then mop |
 
-The local trial implements **fruit, fountain and parcel cart** in simplified form
-(no loose parcels or water-driven prop physics); the other additions remain candidates. These test: slippery ground, a changing hazard and a moving
-obstruction. Keep each source interruptible or bounded; do not simulate unlimited
-fluid or physics chains. Funny clothing can initially be cosmetic so it does not
-obscure vital warnings or controls.
+Fruit, fountain, cart, powder, bins, fish, toilet and hydrant are implemented in
+simplified form; laundry/headwear, loose parcels and water-driven prop physics
+remain candidates. Water pushes the player and slows pursuers; it does not move
+other objects. Keep each source bounded, with visible cleanup and recovery.
 
 Put the fountain at the central landmark, businesses around the perimeter, two
 broad crossing routes and side alleys. Every valuable area needs two exits.
