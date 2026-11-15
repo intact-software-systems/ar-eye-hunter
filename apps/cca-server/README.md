@@ -43,6 +43,11 @@ without input from its old controller. Older sequences and wrong process
 incarnations cannot change the simulation. The first slice has no seamless
 process failover, durable results or spectator mode.
 
+Recreated rooms receive a newer process-local generation, so a resumed client can
+accept the new tick sequence immediately and reject delayed prior-generation
+snapshots. New seats baseline the incoming dash counter; a consumed press cannot
+trigger again merely because the browser returned after seat expiry.
+
 Run the focused public HTTP contract against this server:
 
 ```sh

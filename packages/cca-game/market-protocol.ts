@@ -17,6 +17,7 @@ export interface MarketInputMessage {
 }
 export interface MarketSnapshot {
     readonly version: 1;
+    readonly generation: number;
     readonly roomRef: GroupRef;
     readonly incarnation: string;
     readonly state: MarketState;

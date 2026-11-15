@@ -24,6 +24,7 @@ interface MarketController {
     readonly control: MarketControl;
 }
 interface MarketRoom {
+    readonly generation: number;
     readonly roomRef: GroupRef;
     state: MarketState;
     readonly controllers: Map<string, MarketController>;
@@ -42,6 +43,7 @@ export class MarketAuthority {
     private readonly rooms = new Map<string, MarketRoom>();
     private unsubscribe: (() => boolean) | undefined;
     private publishing = false;
+    private nextGeneration = 0;
     constructor(dependencies: MarketAuthority.Dependencies) {
         this.dependencies = dependencies;
     }
@@ -83,7 +85,13 @@ export class MarketAuthority {
             if (this.rooms.size >= 16) {
                 return;
             }
-            room = { roomRef: input.roomRef, state: createMarket(), controllers: new Map(), lastInputAt: now };
+            room = {
+                generation: ++this.nextGeneration,
+                roomRef: input.roomRef,
+                state: createMarket(),
+                controllers: new Map(),
+                lastInputAt: now
+            };
             this.rooms.set(input.roomRef.groupId, room);
         }
         const prior = room.controllers.get(sessionId);
@@ -97,9 +105,13 @@ export class MarketAuthority {
             return;
         }
         if (!prior) {
+            const colour = room.state.players.some((player) => player.colour === 0) ? 1 : 0;
             room.state = {
                 ...room.state,
-                players: [...room.state.players, createRunner(sessionId, room.controllers.size)]
+                players: [
+                    ...room.state.players,
+                    { ...createRunner(sessionId, colour), lastDash: input.dash }
+                ]
             };
         }
         else if (prior.controller !== input.controller) {
@@ -163,7 +175,13 @@ export class MarketAuthority {
     }
     private async publishRoom(room: MarketRoom): Promise<void> {
         const { serverId, incarnation, ws } = this.dependencies;
-        const snapshot: MarketSnapshot = { version: 1, roomRef: room.roomRef, incarnation, state: room.state };
+        const snapshot: MarketSnapshot = {
+            version: 1,
+            generation: room.generation,
+            roomRef: room.roomRef,
+            incarnation,
+            state: room.state
+        };
         const message = newALBroadcastMessage(
             serverId,
             newALRoute(MARKET_STATE_TOPIC, room.roomRef.groupId, `${incarnation}:${room.state.tick}`),

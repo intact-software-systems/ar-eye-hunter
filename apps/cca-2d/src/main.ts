@@ -79,7 +79,9 @@ function showError(error: unknown): void {
     const status = root?.querySelector('#error');
     if (status) {
         status.textContent = error instanceof Error
-            ? [error.message, error.cause instanceof Error ? error.cause.message : ''].filter(Boolean).join(' ')
+            ? error.cause instanceof Error && error.cause.message.includes('stale-generation')
+                ? 'Your sign-in changed. Reopen this page. Use separate browser profiles for two players.'
+                : error.message
             : 'Could not start. Please retry.';
     }
 }

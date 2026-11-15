@@ -24,6 +24,9 @@ export interface OpenOnlineMarket {
 }
 
 export async function openOnlineMarket(request: OpenOnlineMarket): Promise<OnlineMarket> {
+    if (!window.isSecureContext) {
+        throw new Error('Online play needs an HTTPS address. Solo practice works at this local address.');
+    }
     const response = await fetch(`${request.apiBaseUrl}/api/cca`, { signal: request.signal });
     if (!response.ok) {
         throw new Error('The market server is unavailable. Solo practice still works.');
@@ -70,6 +73,7 @@ export class OnlineMarket implements MarketSession {
     private failure = '';
     private lastControlDash = 0;
     private dashSequence = 0;
+    private generation = 0;
     constructor(room: RallarRoomSession, playerId: string, connection: MarketConnection) {
         this.room = room;
         this.roomId = room.roomRef.groupId;
@@ -99,6 +103,9 @@ export class OnlineMarket implements MarketSession {
         }
         if (performance.now() - this.lastSnapshot > 1000) {
             return 'RECONNECTING — INPUT STOPPED';
+        }
+        if (this.state.players.length === 2 && !this.state.players.some((player) => player.id === this.playerId)) {
+            return 'MARKET FULL — TWO PLAYERS ARE ALREADY HERE';
         }
         return this.state.players.some((player) => player.id === this.playerId)
             ? `ONLINE · ${this.state.players.length}/2 PLAYERS`
@@ -165,11 +172,14 @@ export class OnlineMarket implements MarketSession {
         }
         if (
             !snapshot.state || !Array.isArray(snapshot.state.players) || !Array.isArray(snapshot.state.coins) ||
-            snapshot.state.tick <= this.state.tick
+            !Number.isSafeInteger(snapshot.generation) || snapshot.generation < 1 ||
+            snapshot.generation < this.generation ||
+            (snapshot.generation === this.generation && snapshot.state.tick <= this.state.tick)
         ) {
             return;
         }
         this.state = snapshot.state;
+        this.generation = snapshot.generation;
         this.lastSnapshot = performance.now();
         this.failure = '';
     }

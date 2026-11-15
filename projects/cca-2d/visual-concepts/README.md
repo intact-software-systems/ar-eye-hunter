@@ -4,6 +4,18 @@
 Warm pixel art, navy outlines, peach paving, teal banks and gold loot are the
 baseline for CCA 2D. The original three options remain below for context.
 
+## First playable phone capture
+
+![Actual Phaser practice after collecting two coins](first-playable-phone.png)
+
+This is the running Phaser game at 390 × 844 CSS pixels, after moving through
+two pickups. The square world measures 366 × 366. The control deck is 211 pixels
+high (25% of the viewport), with a 112-pixel joystick and 72-pixel actions.
+The static composition below remains art history; this capture supersedes its
+spacing. Browser touch-event tests exercised movement, release, dash and banking.
+Physical-device comfort, full animation and production texture sizing still need
+qualification. Run it using the [app instructions](../../../apps/cca-2d/README.md).
+
 ## Refined square phone composition
 
 ![Selected pixel-art direction with a square playfield and measured touch controls](pocket-arcade-refined.jpg)

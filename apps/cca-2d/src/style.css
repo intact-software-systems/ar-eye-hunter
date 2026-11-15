@@ -247,7 +247,8 @@ progress {
     margin-top:8px;
 }
 
-.movement span {
+.movement span,
+.actions small span {
     display:none;
 }
 
@@ -303,7 +304,8 @@ progress {
         justify-content:center;
         gap:100px;
     }
-    .movement span {
+    .movement span,
+    .actions small span {
         display:inline;
     }
     .game {
