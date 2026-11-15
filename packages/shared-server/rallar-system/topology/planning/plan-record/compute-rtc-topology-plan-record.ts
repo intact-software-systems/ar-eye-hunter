@@ -19,7 +19,7 @@ export interface ComputeRtcTopologyPlanRecordInput {
     readonly nowEpochMs: number;
 }
 
-export interface ResolveTopologyReplanCausesInput {
+interface ResolveTopologyReplanCausesInput {
     readonly delta: TopologyLayoutDelta;
     readonly replaced: RallarOverlayTopologySnapshot | null;
     readonly planned: RallarOverlayTopologySnapshot;
@@ -51,7 +51,7 @@ export function computeRtcTopologyPlanRecord(input: ComputeRtcTopologyPlanRecord
     };
 }
 
-export function resolveTopologyReplanCauses(input: ResolveTopologyReplanCausesInput): readonly TopologyReplanCause[] {
+function resolveTopologyReplanCauses(input: ResolveTopologyReplanCausesInput): readonly TopologyReplanCause[] {
     const { delta, replaced, planned } = input;
     const configChanged = replaced !== null &&
         (replaced.degreeLimit !== planned.degreeLimit || replaced.name !== planned.name);

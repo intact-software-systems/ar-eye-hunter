@@ -4,6 +4,7 @@ import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -25,6 +26,7 @@ import type { ReconcileGroupTopologyResult } from '../../planning/group-topology
 import {
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-messages.ts';
+import { computeRtcTopologyPlanRecord } from '../../planning/plan-record/compute-rtc-topology-plan-record.ts';
 import {
     resolveRttReplanPromotion,
     type HeldRttReplan,
@@ -110,6 +112,7 @@ type HeldRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'held-yo
 interface ToTopologyPublicationInput {
     readonly group: GroupSnapshot;
     readonly snapshot: RallarOverlayTopologySnapshot;
+    readonly plan: RtcTopologyPlanRecord | null;
     readonly facts: RtcOverlayTopologyMessageFacts;
 }
 
@@ -356,28 +359,8 @@ function hasRequiredPresenceCoverage(
 function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
-    const { authority, planned, inputFingerprint, promotionRead, publicationExpireAtTimestamp } = input;
-    const { workEnvelope, workId, attemptCount, traceId } = input.facts;
-    const work = workEnvelope.data;
-    const publication = publicationExpireAtTimestamp === null
-        ? null
-        : toTopologyPublication({
-            group: authority.group,
-            snapshot: planned.snapshot,
-            facts: {
-                workId,
-                createdAtEpochMs: work.requestedAtEpochMs,
-                expiresAtEpochMs: publicationExpireAtTimestamp,
-                traceId
-            }
-        });
-    const facts = publication && publicationExpireAtTimestamp !== null
-        ? {
-            publicationExpireAtTimestamp,
-            commandHash: computeRtcTopologyExecutionCommandDigest(publication),
-            attemptCount
-        }
-        : ({ publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null } as const);
+    const { authority, planned, inputFingerprint, promotionRead } = input;
+    const { publication, facts } = computeAcceptedTopologyPublication(input);
     const mutationInput: RtcTopologyMutationInput = {
         read: input.mutationRead,
         candidate: planned.snapshot,
@@ -393,7 +376,7 @@ function computeAcceptedTopologyMutation(
     }
     return Either.ofRight({
         decision: 'accepted',
-        work,
+        work: input.facts.workEnvelope.data,
         group: authority.group,
         computed,
         mutationInput,
@@ -406,8 +389,56 @@ function computeAcceptedTopologyMutation(
     });
 }
 
+function computeAcceptedTopologyPublication(
+    input: ComputeAcceptedTopologyMutationInput
+): Pick<RtcTopologyMutationInput, 'publication' | 'facts'> {
+    const { publicationExpireAtTimestamp } = input;
+    const { workEnvelope, workId, attemptCount, traceId } = input.facts;
+    if (publicationExpireAtTimestamp === null) {
+        return {
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null, commandHash: null, attemptCount: null }
+        };
+    }
+    const publication = toTopologyPublication({
+        group: input.authority.group,
+        snapshot: input.planned.snapshot,
+        plan: toPublishedPlanRecord(input),
+        facts: {
+            workId,
+            createdAtEpochMs: workEnvelope.data.requestedAtEpochMs,
+            expiresAtEpochMs: publicationExpireAtTimestamp,
+            traceId
+        }
+    });
+    return {
+        publication,
+        facts: {
+            publicationExpireAtTimestamp,
+            commandHash: computeRtcTopologyExecutionCommandDigest(publication),
+            attemptCount
+        }
+    };
+}
+
+function toPublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput): RtcTopologyPlanRecord | null {
+    const { planned } = input;
+    if (planned.snapshot.state === 'removed') {
+        return null;
+    }
+    const work = input.facts.workEnvelope.data;
+    return computeRtcTopologyPlanRecord({
+        stored: input.mutationRead.snapshot?.value ?? null,
+        planned: planned.snapshot,
+        rttRefresh: work.kind === 'rtt-refresh',
+        changeGated: isChangeGatedGroupRevisionWork(work),
+        leaderRerooted: planned.planningObservation?.incrementalFallbackReasons.includes('leader-rooting') ?? false,
+        nowEpochMs: input.authority.nowEpochMs
+    });
+}
+
 function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
-    const { group, snapshot, facts } = input;
+    const { group, snapshot, plan, facts } = input;
     const { workId } = facts;
     return {
         publicationId: toRtcTopologyPublicationId({
@@ -422,6 +453,7 @@ function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPu
         targetGroupSnapshotVersion: group.group.snapshotVersion,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
+        plan,
         expiresAtEpochMs: facts.expiresAtEpochMs,
         createdAtEpochMs: facts.createdAtEpochMs,
         traceId: facts.traceId

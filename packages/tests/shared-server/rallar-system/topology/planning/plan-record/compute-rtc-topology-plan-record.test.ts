@@ -73,6 +73,15 @@ describe('computeRtcTopologyPlanRecord', () => {
         expect(computeRtcTopologyPlanRecord(createInput(tombstone, planned))).toEqual(expected);
     });
 
+    it('a first layout on a group revision that is not change-gated is caused by its joiners and by config', () => {
+        const planned = createLayout(1, ['a', 'b', 'c']);
+
+        expect(computeRtcTopologyPlanRecord(createInput(null, planned, { changeGated: false })).causes).toEqual([
+            'join',
+            'config'
+        ]);
+    });
+
     it('names the replaced layout\'s identity and its age at the planning instant', () => {
         const stored = createLayout(3, ['a', 'b'], { updatedAtEpochMs: 4_000 });
         const planned = createLayout(4, ['a', 'b', 'c']);

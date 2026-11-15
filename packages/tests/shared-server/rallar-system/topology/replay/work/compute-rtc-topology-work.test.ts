@@ -11,9 +11,12 @@ import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/top
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
+import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { computeRtcTopologyWorkWrite } from '@shared-server/rallar-system/topology/replay/work/compute-rtc-topology-work-write.ts';
 import {
     computeRtcTopologyWork,
+    validateRtcTopologyWork,
     type ComputeRtcTopologyWorkInput
 } from '@shared-server/rallar-system/topology/replay/work/compute-rtc-topology-work.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-coalesced-group-revision-work.ts';
@@ -21,11 +24,13 @@ import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-
 import { readRtcTopologyWorkEnvelope, toRtcTopologyExecutionId } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { recordRtcTopologyWorkTiming } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-timing.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import {
     computeRtcTopologyHopEccentricity,
@@ -41,69 +46,12 @@ const MINIMUM_LAYOUT_AGE_MS = 15_000;
 describe('RTC topology group-revision work', () => {
     it('replans an accepted layout around a director appointed after it', () => {
         const leaderless = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(30));
-        const leaderlessAuthority = createPlanningAuthority(leaderless, ACCEPTED_AT_EPOCH_MS);
-        const accepted = computeGroupTopologyFromAuthority(leaderlessAuthority, undefined, {
-            intent: 'full-rebuild',
-            origin: 'automatic'
-        });
-        if (accepted.action !== 'planned') {
-            throw new Error('The leaderless layout fixture must plan');
-        }
+        const accepted = acceptPlannedLayout(leaderless);
         const appointed = toAppointedRevision(leaderless, 'peer-12');
-        const queued = computeCoalescedRtcTopologyGroupRevisionWork({
-            traceId: 'trace-compute-rtc-topology-work',
-            aggregateRef: appointed.group,
-            expireAtEpochMs: 10_000,
-            timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
-            senderId: 'topology-service',
-            origin: 'automatic',
-            groupSnapshot: appointed,
-            requestedAtEpochMs: 100,
-            previousEntry: null
-        }).entryWrite.entry;
-        const entry = { ...queued, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
-        const workEnvelope = readRtcTopologyWorkEnvelope(
-            decodePersistedALMessage(entry.resource),
-            AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
-        );
 
-        const computed = computeRtcTopologyWork({
-            facts: {
-                traceId: 'trace-compute-rtc-topology-work',
-                workEnvelope,
-                workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
-                attemptCount: 1,
-                derivedExpireAtEpochMs: 10_000
-            },
-            read: {
-                mutation: {
-                    snapshot: {
-                        value: accepted.snapshot,
-                        entry: {
-                            ...toStoredRtcTopologySnapshotRow(accepted.snapshot),
-                            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-                            updatedTimestamp: '2026-01-02T03:04:05.000Z',
-                            revision: 1
-                        }
-                    },
-                    publicationClaim: null
-                },
-                authority: createPlanningAuthority(appointed, ACCEPTED_AT_EPOCH_MS),
-                promotion: { group: appointed.group, policy: { status: 'absent' } },
-                storedInputFingerprint: computeAuthorityTopologyInputFingerprint(leaderlessAuthority)
-            },
-            publicationExpireAtTimestamp: null,
-            entry,
-            reservationFinish: {
-                key: entry.key,
-                expectedAttempts: 1,
-                status: EntityStatus.COMPLETED,
-                completedAt: new Date(2_000)
-            },
-            formationAutomationEnabled: false,
-            serviceId: 'topology-service',
-            publisherStreamId: undefined
-        });
+        const computed = computeRtcTopologyWork(
+            toGroupRevisionWorkInput({ stored: accepted, current: appointed, nowEpochMs: ACCEPTED_AT_EPOCH_MS })
+        );
 
         const decision = computed.right?.accepted;
         expect(decision?.decision).toBe('accepted');
@@ -114,6 +62,119 @@ describe('RTC topology group-revision work', () => {
         expect(computeRtcTopologyHopEccentricity(replanned, 'peer-12')).toBeLessThan(
             computeRtcTopologyHopEccentricity(accepted.snapshot.nextHopsBySessionId, 'peer-12')
         );
+    });
+});
+
+describe('RTC topology work publication record', () => {
+    it('a first plan\'s publication records that it replaced nothing', () => {
+        const group = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6));
+
+        const publication = computePublishedWork(
+            toGroupRevisionWorkInput({ stored: null, current: group, nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500 })
+        );
+
+        expect(publication.plan).toMatchObject({
+            plannedAtEpochMs: ACCEPTED_AT_EPOCH_MS + 500,
+            replaced: null,
+            causes: ['join'],
+            delta: { joinedSessionCount: 6, leftSessionCount: 0 }
+        });
+    });
+
+    it('a membership plan\'s publication records the replaced layout, its age, join and leave, and the delta', () => {
+        const stored = acceptPlannedLayout(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6)));
+        const current = toLaterGroupRevision(
+            createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(7).slice(1))
+        );
+
+        const publication = computePublishedWork(
+            toGroupRevisionWorkInput({ stored, current, nowEpochMs: ACCEPTED_AT_EPOCH_MS + 4_000 })
+        );
+
+        expect(publication.plan).toMatchObject({
+            plannedAtEpochMs: ACCEPTED_AT_EPOCH_MS + 4_000,
+            replaced: { layout: toGroupLayoutIdentity(stored.snapshot), ageMs: 4_000 },
+            causes: ['join', 'leave'],
+            delta: computeTopologyLayoutDelta(stored.snapshot, publication.snapshot)
+        });
+        expect(publication.plan?.delta).toMatchObject({ joinedSessionCount: 1, leftSessionCount: 1 });
+    });
+
+    it('an RTT refresh\'s publication records rtt as its cause', () => {
+        const workInput = toRttRefreshWorkInput({
+            accepted: acceptPathLayout(createRtcTopologyMemberIds(6)),
+            current: toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6))),
+            nowEpochMs: ACCEPTED_AT_EPOCH_MS + MINIMUM_LAYOUT_AGE_MS
+        });
+
+        const publication = computePublishedWork(workInput);
+
+        expect(publication.plan?.causes).toEqual(['rtt']);
+        expect(publication.plan?.replaced?.ageMs).toBe(MINIMUM_LAYOUT_AGE_MS);
+    });
+
+    it('a removal\'s publication records no plan', () => {
+        const stored = acceptPlannedLayout(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6)));
+        // The room expires with a revision that also lets a member go, so the input fingerprint changes and the work runs.
+        const later = toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(5)));
+        const expired = { ...later, group: { ...later.group, expiresAtEpochMs: ACCEPTED_AT_EPOCH_MS + 1 } };
+
+        const publication = computePublishedWork(
+            toGroupRevisionWorkInput({ stored, current: expired, nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500 })
+        );
+
+        expect(publication.snapshot.state).toBe('removed');
+        expect(publication.plan).toBeNull();
+    });
+
+    it('a plan that only advances presence coverage is published with an empty delta and no cause', () => {
+        const group = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6));
+        const stored = acceptPlannedLayout(group);
+        const present = {
+            ...group,
+            causalRevision: { ...group.causalRevision, presenceRevision: 1 },
+            group: { ...group.group, presenceVersion: 1 }
+        };
+
+        const publication = computePublishedWork(
+            toGroupRevisionWorkInput({ stored, current: present, nowEpochMs: ACCEPTED_AT_EPOCH_MS + 500 })
+        );
+
+        expect(publication.plan?.causes).toEqual([]);
+        expect(publication.plan?.delta).toEqual({
+            joinedSessionCount: 0,
+            leftSessionCount: 0,
+            changedSessionCount: 0,
+            reroutedSessionCount: 0,
+            acceptingSessionCount: 0,
+            maxJoinerEdgesPerSession: 0
+        });
+    });
+
+    it('validateRtcTopologyWork accepts the computed work and refuses one whose record was altered', () => {
+        const stored = acceptPlannedLayout(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6)));
+        const current = toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(7)));
+        const workInput = toPublishingWorkInput(
+            toGroupRevisionWorkInput({ stored, current, nowEpochMs: ACCEPTED_AT_EPOCH_MS + 4_000 })
+        );
+        const computed = computeRtcTopologyWork(workInput);
+        const accepted = computed.right?.accepted;
+        if (
+            computed.right === undefined || accepted?.decision !== 'accepted' || accepted.publication === null ||
+            accepted.publication.plan === null
+        ) {
+            throw new Error('The join must publish a planned layout');
+        }
+        const altered: typeof computed = Either.ofRight({
+            ...computed.right,
+            accepted: {
+                ...accepted,
+                publication: { ...accepted.publication, plan: { ...accepted.publication.plan, causes: ['rtt'] } }
+            }
+        });
+
+        expect(validateRtcTopologyWork(workInput, computed)).toEqual([]);
+        expect(validateRtcTopologyWork(workInput, altered)).not.toEqual([]);
     });
 });
 
@@ -359,6 +420,97 @@ function toPathNextHops(memberSessionIds: readonly string[]): Record<string, rea
     ]));
 }
 
+const PUBLICATION_EXPIRE_AT_EPOCH_MS = 4_102_444_800_000;
+
+interface ToGroupRevisionWorkInput {
+    readonly stored: AcceptedLayout | null;
+    readonly current: GroupSnapshot;
+    readonly nowEpochMs: number;
+}
+
+/** Automatic, coalesced membership work: the change-gated kind every join and leave queues. */
+function toGroupRevisionWorkInput(input: ToGroupRevisionWorkInput): ComputeRtcTopologyWorkInput {
+    const queued = computeCoalescedRtcTopologyGroupRevisionWork({
+        traceId: 'trace-compute-rtc-topology-work',
+        aggregateRef: input.current.group,
+        expireAtEpochMs: PUBLICATION_EXPIRE_AT_EPOCH_MS,
+        timing: { window: { debounceMs: 500, maxWaitMs: 5_000 }, replanNotBeforeEpochMs: null, expectedMembersArrived: false },
+        senderId: 'topology-service',
+        origin: 'automatic',
+        groupSnapshot: input.current,
+        requestedAtEpochMs: 100,
+        previousEntry: null
+    }).entryWrite.entry;
+    const entry = { ...queued, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+    return toWorkInput({
+        entry,
+        stored: input.stored,
+        authority: createPlanningAuthority(input.current, input.nowEpochMs)
+    });
+}
+
+/** The same work as published: with a publication expiry, the work writes a publication row. */
+function toPublishingWorkInput(input: ComputeRtcTopologyWorkInput): ComputeRtcTopologyWorkInput {
+    return { ...input, publicationExpireAtTimestamp: PUBLICATION_EXPIRE_AT_EPOCH_MS };
+}
+
+function computePublishedWork(input: ComputeRtcTopologyWorkInput): RtcTopologyPublication {
+    const accepted = computeRtcTopologyWork(toPublishingWorkInput(input)).right?.accepted;
+    if (accepted?.decision !== 'accepted' || accepted.publication === null) {
+        throw new Error('The work must publish a planned layout');
+    }
+    return accepted.publication;
+}
+
+interface ToWorkInput {
+    readonly entry: ResourceEntry;
+    readonly stored: AcceptedLayout | null;
+    readonly authority: GroupTopologyPlanningAuthority;
+}
+
+function toWorkInput(input: ToWorkInput): ComputeRtcTopologyWorkInput {
+    const { entry, stored, authority } = input;
+    const message = decodePersistedALMessage(entry.resource);
+    const workEnvelope = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+    return {
+        facts: {
+            traceId: 'trace-compute-rtc-topology-work',
+            workEnvelope,
+            workId: toRtcTopologyExecutionId(workEnvelope, message.id.ts),
+            attemptCount: 1,
+            derivedExpireAtEpochMs: PUBLICATION_EXPIRE_AT_EPOCH_MS
+        },
+        read: {
+            mutation: {
+                snapshot: stored === null ? null : {
+                    value: stored.snapshot,
+                    entry: {
+                        ...toStoredRtcTopologySnapshotRow(stored.snapshot),
+                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+                        updatedTimestamp: '2026-01-02T03:04:05.000Z',
+                        revision: 1
+                    }
+                },
+                publicationClaim: null
+            },
+            authority,
+            promotion: { group: authority.group.group, policy: { status: 'absent' } },
+            storedInputFingerprint: stored?.inputFingerprint ?? null
+        },
+        publicationExpireAtTimestamp: null,
+        entry,
+        reservationFinish: {
+            key: entry.key,
+            expectedAttempts: 1,
+            status: EntityStatus.COMPLETED,
+            completedAt: new Date(authority.nowEpochMs)
+        },
+        formationAutomationEnabled: false,
+        serviceId: 'topology-service',
+        publisherStreamId: undefined
+    };
+}
+
 interface ComputeRttRefreshDecisionInput {
     readonly accepted: AcceptedLayout;
     readonly current: GroupSnapshot;
@@ -374,43 +526,11 @@ function computeRttRefreshDecision(input: ComputeRttRefreshDecisionInput) {
 }
 
 function toRttRefreshWorkInput(input: ComputeRttRefreshDecisionInput): ComputeRtcTopologyWorkInput {
-    const entry = toReservedRttRefreshEntry(input.current);
-    const workEnvelope = readRtcTopologyWorkEnvelope(
-        decodePersistedALMessage(entry.resource),
-        AppOutboxType.RTC_TOPOLOGY_RECOMPUTE
-    );
-    return {
-        facts: {
-            traceId: 'trace-compute-rtc-topology-work',
-            workEnvelope,
-            workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
-            attemptCount: 1,
-            derivedExpireAtEpochMs: 4_102_444_800_000
-        },
-        read: {
-            mutation: {
-                snapshot: {
-                    value: input.accepted.snapshot,
-                    entry: {
-                        ...toStoredRtcTopologySnapshotRow(input.accepted.snapshot),
-                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-                        updatedTimestamp: '2026-01-02T03:04:05.000Z',
-                        revision: 1
-                    }
-                },
-                publicationClaim: null
-            },
-            authority: createPlanningAuthority(input.current, input.nowEpochMs),
-            promotion: { group: input.current.group, policy: { status: 'absent' } },
-            storedInputFingerprint: input.accepted.inputFingerprint
-        },
-        publicationExpireAtTimestamp: null,
-        entry,
-        reservationFinish: { key: entry.key, expectedAttempts: 1, status: EntityStatus.COMPLETED, completedAt: new Date(input.nowEpochMs) },
-        formationAutomationEnabled: false,
-        serviceId: 'topology-service',
-        publisherStreamId: undefined
-    };
+    return toWorkInput({
+        entry: toReservedRttRefreshEntry(input.current),
+        stored: input.accepted,
+        authority: createPlanningAuthority(input.current, input.nowEpochMs)
+    });
 }
 
 function toReservedRttRefreshEntry(group: GroupSnapshot): ResourceEntry {

@@ -9,6 +9,8 @@ import {
     it
 } from 'vitest';
 
+import { createRtcTopologyPublicationPlan } from '../rtc-topology-test-fixtures.ts';
+
 describe('stale RTC topology publication', () => {
     it('persists an immutable older publication without regressing the latest snapshot', () => {
         const ref: GroupRef = {
@@ -96,6 +98,7 @@ function toPublication(snapshot: RallarOverlayTopologySnapshot, workId: string) 
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot: snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: 10000,
         createdAtEpochMs,
         traceId: 'trace-rtc-topology-stale-publication'

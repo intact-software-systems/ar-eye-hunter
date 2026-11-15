@@ -1,5 +1,7 @@
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { decodeRtcTopologyPlanRecord } from '@shared/api/topology-plan/decode-rtc-topology-plan-record.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
@@ -18,6 +20,7 @@ const PUBLICATION_KEYS = [
     'targetGroupSnapshotVersion',
     'recipientSessionIds',
     'snapshot',
+    'plan',
     'expiresAtEpochMs',
     'createdAtEpochMs',
     'traceId'
@@ -96,6 +99,19 @@ function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: Gro
         !rtcTopologySemanticEqual(snapshot.activeSessionIds, publication.recipientSessionIds)
     ) {
         throw new TypeError('RTC topology publication winner is internally inconsistent');
+    }
+    assertPublicationPlan(publication, snapshot.state);
+}
+
+function assertPublicationPlan(publication: JsonWireObject, state: RallarOverlayTopologySnapshot['state']): void {
+    const plan = publication.plan;
+    if ((plan === null) !== (state === 'removed')) {
+        throw new TypeError('RTC topology publication plan must be null exactly when its layout is removed');
+    }
+    if (plan !== null) {
+        decodeRtcTopologyPlanRecord(plan).fold((message) => {
+            throw new TypeError(message);
+        }, () => undefined);
     }
 }
 
