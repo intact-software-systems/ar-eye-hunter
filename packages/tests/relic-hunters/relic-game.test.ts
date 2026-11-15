@@ -449,20 +449,22 @@ describe('Relic Hunters game rules', () => {
         expect(isRelicCommand(submit('Alice', { kind: 'search' }))).toBe(true);
     });
 
+    const searchCommand = submit('Alice', { kind: 'search' });
+
     it.each([
         { label: 'null', candidate: () => null },
         { label: 'a string', candidate: () => 'submit-action' },
         { label: 'a number', candidate: () => 42 },
         { label: 'an empty array', candidate: () => [] },
-        { label: 'an array holding a valid command', candidate: () => [submit('Alice', { kind: 'search' })] },
-        { label: 'another protocol version', candidate: () => ({ ...submit('Alice', { kind: 'search' }), protocolVersion: RELIC_PROTOCOL_VERSION + 1 }) },
-        { label: 'no gameId', candidate: () => withoutField(submit('Alice', { kind: 'search' }), 'gameId') },
-        { label: 'no username', candidate: () => withoutField(submit('Alice', { kind: 'search' }), 'username') },
-        { label: 'an unknown command kind', candidate: () => ({ ...submit('Alice', { kind: 'search' }), kind: 'teleport' }) },
-        { label: 'a null action', candidate: () => ({ ...submit('Alice', { kind: 'search' }), action: null }) },
-        { label: 'an array as the action', candidate: () => ({ ...submit('Alice', { kind: 'search' }), action: [] }) },
-        { label: 'a string as the action', candidate: () => ({ ...submit('Alice', { kind: 'search' }), action: 'search' }) },
-        { label: 'an unknown action kind', candidate: () => ({ ...submit('Alice', { kind: 'search' }), action: { kind: 'teleport' } }) }
+        { label: 'an array holding a valid command', candidate: () => [searchCommand] },
+        { label: 'another protocol version', candidate: () => ({ ...searchCommand, protocolVersion: RELIC_PROTOCOL_VERSION + 1 }) },
+        { label: 'no gameId', candidate: () => withoutField(searchCommand, 'gameId') },
+        { label: 'no username', candidate: () => withoutField(searchCommand, 'username') },
+        { label: 'an unknown command kind', candidate: () => ({ ...searchCommand, kind: 'teleport' }) },
+        { label: 'a null action', candidate: () => ({ ...searchCommand, action: null }) },
+        { label: 'an array as the action', candidate: () => ({ ...searchCommand, action: [] }) },
+        { label: 'a string as the action', candidate: () => ({ ...searchCommand, action: 'search' }) },
+        { label: 'an unknown action kind', candidate: () => ({ ...searchCommand, action: { kind: 'teleport' } }) }
     ])('refuses a command that is $label', ({ candidate }) => {
         expect(isRelicCommand(candidate())).toBe(false);
     });
