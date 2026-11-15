@@ -287,7 +287,8 @@ follows `formation-settled`, so it names the layout the server settled on after 
 which matches the path's config and so is its tree. A re-plan after the head read, an RTT re-plan or
 a presence change, replaces that layout with one whose revisions and `version` are each at or after
 its own, so the page passes on it too; a tree an earlier reshaped cell of the family room left
-accepted on a page has lower keys and does not pass. One fact per key keeps an attempt to five
+accepted on a page is not at or after on every ordered key (it has a lower `groupRevision` or
+`version`) and does not pass. One fact per key keeps an attempt to five
 commands, so 360 attempts stay inside the runtime's 2 000-command loop limit. So every page holds
 this reshape's layout, or one that replaced it, before `armed`. A sender still forwards over the layout a promotion
 replaced for the first half of the overlap the server states (`rtcReplacedLayoutOverlapMs` in
