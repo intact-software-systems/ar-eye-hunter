@@ -2,7 +2,6 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
     RallarBlackBoxTestAssertCommand,
-    RallarBlackBoxTestAssertComparisonOperator,
     RallarBlackBoxTestAssertResultValue,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
@@ -19,7 +18,7 @@ import {
     isRallarBlackBoxAssertOperator,
     RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
-import { isAssertComparison } from './is-assert-comparison.ts';
+import { isAssertComparison, type RallarBlackBoxTestAssertComparisonOperator } from './is-assert-comparison.ts';
 
 export interface AssertCommandEvidence {
     readonly command: RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;

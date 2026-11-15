@@ -1,9 +1,7 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type {
-    RallarBlackBoxTestAssertComparisonOperator,
-    RallarBlackBoxTestAssertOperator
-} from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestAssertComparisonOperator } from './is-assert-comparison.ts';
 
 export type RallarBlackBoxTestAssertResultValue =
     | RallarBlackBoxTestValueAssertResultValue
