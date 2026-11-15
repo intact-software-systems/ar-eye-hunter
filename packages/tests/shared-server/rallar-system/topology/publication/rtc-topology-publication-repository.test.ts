@@ -24,7 +24,7 @@ import {
 } from '../rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology publication repository', () => {
-    it('validates publication and work direct, list, and page rows before expiry', async () => {
+    it('validates publication rows (live) and work rows (before expiry) on direct, list, and page reads', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
@@ -42,7 +42,7 @@ describe('RTC topology publication repository', () => {
                         ...publication,
                         publicationId: 'wrong-publication'
                     }),
-                    expireAtTimestamp: 9_000
+                    expireAtTimestamp: 20_000
                 }
             );
             await runtimeRepository.upsert(
@@ -176,7 +176,7 @@ describe('RTC topology publication repository', () => {
                     );
                     const key = repository.publicationKey(groupRef, publication.publicationId);
                     await runtimeRepository.upsert(
-                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(malformedPublication), expireAtTimestamp: 9_000 }
+                        { namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, key, value: JSON.stringify(malformedPublication), expireAtTimestamp: 20_000 }
                     );
 
                     const read = surface === 'direct'
@@ -198,6 +198,27 @@ describe('RTC topology publication repository', () => {
         finally {
             vi.useRealTimers();
         }
+    });
+
+    it('reads an expired row as expired without decoding it, on the direct read and on every listing', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        const expired = createPublication(createTopologySnapshot(groupRef, 1), 'work-expired-undecodable');
+        const { traceId: _traceId, ...expiredRow } = expired;
+        await runtimeRepository.upsert(
+            {
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(groupRef, expired.publicationId),
+                value: JSON.stringify(expiredRow),
+                expireAtTimestamp: Date.now() - 1
+            }
+        );
+
+        await expect(repository.readPublication(groupRef, expired.publicationId)).resolves.toEqual({ status: 'absent' });
+        await expect(repository.findPublication(groupRef, expired.publicationId)).resolves.toBeUndefined();
+        await expect(repository.listPublicationEntries()).resolves.toEqual([]);
+        await expect(repository.listPublicationEntriesPage({ limit: 10 })).resolves.toEqual([]);
     });
 
     it.each(['direct', 'read', 'list', 'page'] as const)(
