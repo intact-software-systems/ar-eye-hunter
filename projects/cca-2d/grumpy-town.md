@@ -3,7 +3,8 @@
 Extend the local Babylon trial into a larger scrolling market while retaining the
 floating joystick, one dash-and-drop action, pinch zoom and keyboard equivalents.
 The intended feel is mischievous slapstick in a town of permanently unimpressed
-shopkeepers. Multiplayer remains the following slice.
+shopkeepers. The updated plan now proves chase/freeze/rescue locally before
+implementing multiplayer.
 
 ## Playable interactions
 
@@ -25,13 +26,13 @@ The world extends across several blocks, with six shops and their owners. Start
 zoom is wider and overview zoom shows more town. Collision remains simple and
 rule-driven; rendered props and animation do not decide gameplay.
 
-## Development sequence
+## Delivered interaction foundation
 
-1. Implement and test deterministic stall damage, debris, pickup/effect lifetimes,
-   dodgable retaliation and cleanup/restocking behind the existing local loop.
-2. Render the larger town, toppled displays, rolling fruit, owner moods, warning
-   zaps and temporary transformations; exercise the visible phone controls,
-   build the SPA, capture actual gameplay and update the existing PR.
+1. Deterministic stall damage, debris, pickup/effect lifetimes,
+   dodgable retaliation and cleanup/restocking run behind the existing local loop.
+2. The renderer shows the larger town, toppled displays, rolling fruit, owner
+   moods, warning zaps and temporary transformations. Phone-sized browser tests,
+   a production build and actual gameplay captures accompany the PR update.
 
 The implementation uses the existing Babylon renderer and original cutout assets.
 A physics engine or extra buttons would add complexity without improving this

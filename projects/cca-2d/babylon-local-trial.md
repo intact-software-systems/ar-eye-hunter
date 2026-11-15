@@ -87,6 +87,6 @@ host-recovery or production-release claim follows from these local tests.
 Try this scene and decide whether its proportions, cutout expression and control
 feel are worth taking forward. Judge whether making a mess, dodging retaliation and interrupting cleanup is fun
 before adding more prank types.
-The following implementation slice remains Rallar-only player-hosted multiplayer
-with explicit recovery behavior. Do not connect the historical separate CCA server
+The next local slice tests the varied square and chase/freeze/rescue loop.
+Rallar-only player-hosted multiplayer follows, with explicit recovery behavior. Do not connect the historical separate CCA server
 to this entry as a shortcut.

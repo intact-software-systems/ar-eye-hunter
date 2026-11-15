@@ -63,8 +63,8 @@ input listeners belong to abortable lifetimes. Context loss shows a reopen link.
 This entry replaces the earlier Phaser practice. That entry's collection,
 banking and online UI are removed from this trial. The separate historical
 `cca-server` / `packages/cca-game` prototype is outside the local renderer and is
-not a dependency. Rallar-only player-hosted multiplayer is the next design slice,
-not an implemented capability of this app.
+not a dependency. The next local slice proves chase/freeze/rescue; Rallar-only player-hosted
+multiplayer follows it. Neither is an implemented capability of this app.
 
 ## Checks and evidence
 
