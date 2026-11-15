@@ -636,7 +636,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 })
             );
             await waitForRealtimePositionPayload(request, runId, realtimeDistributedRunId);
-            const beforeWarningEvents = (await readControlRun(request, runId)).events.length;
+            const warningsLoggedFromEpochMs = Date.now();
             await emitKnownLiveWarningDiagnostics(handles, {
                 distributedRunId: realtimeDistributedRunId,
                 group
@@ -645,7 +645,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 waitForRuntimeDiagnostic(request, runId, {
                     agentId: handles[1].agentId,
                     group,
-                    afterEventIndex: beforeWarningEvents,
+                    recordedFromEpochMs: warningsLoggedFromEpochMs,
                     connection: realtimeConnection,
                     transport: 'ws',
                     pattern: 'unhandled-ws-message',
@@ -654,7 +654,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 waitForRuntimeDiagnostic(request, runId, {
                     agentId: handles[2].agentId,
                     group,
-                    afterEventIndex: beforeWarningEvents,
+                    recordedFromEpochMs: warningsLoggedFromEpochMs,
                     connection: realtimeConnection,
                     transport: 'realtime',
                     pattern: 'data-channel-name-mismatch',
