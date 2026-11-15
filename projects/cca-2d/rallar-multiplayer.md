@@ -171,3 +171,24 @@ checks pass. The earlier full browser pass also covers the police cycle and
 all three spectacles. Independent review of the online slice found no remaining
 substantive findings after the retry/cancellation fixes. This evidence does not
 establish shared gameplay or physical-device networking.
+
+## Shared-world preparation
+
+Police targeting, proximity rescue, shopkeeper pursuit and animal attacks now
+have canonical roster rules. Solo uses those same rules through its explicit
+player/bot projection. Guard warnings retain a target identity through roster
+reordering; a departing target cannot redirect a hit to another player. Rescue
+progress belongs to one rescuer and target, and simultaneous helpers cannot
+duplicate the completion bonus.
+
+Shopkeepers remember the witnessed culprit and apply penalties to that player's
+score. Each owner advances once for the whole roster, so adding players cannot
+speed up a repair. Animal attacks splash all exposed players once and retain the
+provoker's identity for collateral rewards. Departed provokers do not transfer
+their reward to another player. Ties use stable identity ordering.
+
+These are prerequisites within Slice 2, not a completed multiplayer world. The
+town tick still needs to compose all roster rules with shared prank sources,
+personalities, spectacles, pickups and individual scoring. The match lifecycle,
+appointed director, transport, checkpoint recovery and real shared-gameplay
+browser evidence remain required. The standalone bot remains a solo feature.

@@ -35,6 +35,7 @@ export interface TownShopState {
     readonly rewardAt: number;
 }
 export interface TownNpc extends TownPoint, TownCoat {
+    readonly targetId: string | undefined;
     readonly chaseUntil: number;
     readonly lastSeenAt: number;
     readonly zapAt: number;
@@ -102,7 +103,7 @@ export interface TownComputed extends TownCoat {
 export interface TownGuard extends TownPoint, TownCoat {
     readonly id: number;
     readonly mode: 'emerging' | 'patrol' | 'warning' | 'cooldown';
-    readonly target: 'player' | 'companion';
+    readonly target: string;
     readonly aim: TownPoint;
     readonly until: number;
 }
@@ -141,6 +142,7 @@ export function createTownState(): TownState {
         npcs: TOWN_SHOPS.map((shop) => ({
             ...createCleanCoat(),
             shopId: shop.id,
+            targetId: undefined,
             chaseUntil: 0,
             lastSeenAt: 0,
             zapAt: 0,

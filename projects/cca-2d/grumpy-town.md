@@ -318,3 +318,37 @@ use it to escape or help a friend, and regain a clear route quickly. Gross-out
 effects supply the punchline; anticipation, choices and grumpy reactions should
 make repeating the encounter enjoyable. A whole-town alarm crescendo remains a
 later possibility, contingent on readable smaller combinations.
+
+### Brainstorm refinement: routines make the spectacle funny
+
+The latest discussion reinforces the ordinary-town setting and the three big
+incidents. The following additions are proposals for playtesting, not a new
+implementation commitment or a change to the multiplayer delivery sequence.
+
+| Place | Everyday setup | Proposed comic payoff and player choice |
+| --- | --- | --- |
+| Bakery and café | A perfect queue and an immaculate cake | A warned spray disrupts the queue; players choose the umbrella route or the open street while the waiter saves the cake |
+| Residential terraces | A resident sweeps their doorstep and another watches from a balcony | A passing splash interrupts both routines; their exaggerated complaints reveal who witnessed the prank |
+| Post office | A clerk sorts parcels into absurdly precise piles | A disturbed trolley creates a short cleanup diversion and a route choice, without closing the street |
+| Fire station and service lane | Firefighters polish equipment beside a tiny barbecue | A small flame earns its bonus once and summons an excessive hose response; players can use the washing water to remove stains |
+| Public toilets and flower stalls | An attendant demands spotless paving | A rare Big Stink warning makes players choose cover, escape or a risky lure; the cleanup crew restores the site afterward |
+
+The strongest comic pattern is setup, visible warning, disproportionate reaction,
+then a short recovery. A resident should sometimes be smug or content with their
+perfectly ordered business: constant shouting removes the contrast that makes
+the next upset funny. Give the town small visual jokes such as a NO SMILING sign,
+a queue for a closed booth and a fire crew polishing an already spotless truck.
+
+Keep major incidents earned and legible. The initiating player gets one reward;
+secondary reactions create escape or rescue opportunities rather than multiplying
+score. Fire summons firefighters even without witnesses, while identifying the
+culprit requires sight. The poop bomb can stain its thrower too, making its warning
+and cover useful. The café spectacle stays playable throughout, with exaggerated
+cutout streams and expressions rather than realistic bodily detail.
+
+For a first connected playtest, prefer one simple cause and consequence: a poop
+blast dirties a pursuer, then a fire hose washes them and forces a route change.
+Only add the flying hat, queue argument or café interruption if players can still
+read and deliberately exploit that first connection. Town density should come
+from varied facades and routines around broad streets, with useful alleys and
+clear landmarks, rather than filling every free patch with collisions.

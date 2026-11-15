@@ -19,9 +19,16 @@ export interface TownSoilingComputed {
     readonly player: TownPlayer;
     readonly hitResident: boolean;
 }
-export interface TownSplash {
-    readonly town: TownState;
+export interface TownSplash extends TownSplashArea {
     readonly player: TownPlayer;
+}
+export interface TownSplashComputed<T extends TownPoint & TownCoat> {
+    readonly town: TownState;
+    readonly actors: readonly T[];
+    readonly hitResident: boolean;
+}
+export interface TownSplashArea {
+    readonly town: TownState;
     readonly source: TownPoint;
     readonly target: TownPoint;
     readonly radius: number;
@@ -34,14 +41,22 @@ export function createCleanCoat(): TownCoat {
 }
 
 export function splashTown(input: TownSplash): TownSoilingComputed {
-    const { town, player, now, kind, source, target } = input;
+    const result = splashTownActors(input, [input.player]);
+    return { town: result.town, player: result.actors[0], hitResident: result.hitResident };
+}
+
+export function splashTownActors<T extends TownPoint & TownCoat>(
+    input: TownSplashArea,
+    actors: readonly T[]
+): TownSplashComputed<T> {
+    const { town, now, kind, source, target } = input;
     const hits = (point: TownPoint & TownCoat) =>
         point.messImmuneUntil <= now &&
         Math.hypot(point.x - target.x, point.z - target.z) < input.radius && hasTownSight(town, source, point);
     const hitsGuard = (guard: TownGuard) => (guard.mode !== 'emerging' || guard.until <= now) && hits(guard);
     const hitResident = town.npcs.some(hits) || town.personalities.some(hits) || town.raid.guards.some(hitsGuard);
     return {
-        player: hits(player) ? { ...player, ...soilTownCoat(kind, now) } : player,
+        actors: actors.map((actor) => hits(actor) ? { ...actor, ...soilTownCoat(kind, now) } : actor),
         hitResident,
         town: {
             ...town,

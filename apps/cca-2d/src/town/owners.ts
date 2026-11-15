@@ -14,19 +14,39 @@ import type {
     TownTickInput
 } from './state.ts';
 
+export interface TownOwnerPlayer extends TownPlayer {
+    readonly id: string;
+    readonly score: number;
+}
+export interface TownOwnersInput {
+    readonly routes: TownRoutes;
+    readonly town: TownState;
+    readonly players: readonly TownOwnerPlayer[];
+    readonly now: number;
+    readonly step: number;
+}
+export interface TownOwnersComputed {
+    readonly town: TownState;
+    readonly players: readonly TownOwnerPlayer[];
+}
+export interface TownWitnessInput {
+    readonly town: TownState;
+    readonly player: TownOwnerPlayer;
+    readonly now: number;
+}
 interface TownOwnerInput {
     readonly routes: TownRoutes;
     readonly town: TownState;
     readonly npc: TownNpc;
     readonly shop: TownShop;
-    readonly player: TownPlayer;
+    readonly player: TownOwnerPlayer | undefined;
     readonly now: number;
     readonly step: number;
 }
 interface TownOwnerResult {
     readonly town: TownState;
     readonly npc: TownNpc;
-    readonly shieldUntil: number;
+    readonly hitPlayerId: string | undefined;
 }
 export interface TownOwnersResult {
     readonly town: TownState;
@@ -34,28 +54,47 @@ export interface TownOwnersResult {
 }
 
 export function computeTownOwners(input: TownTickInput): TownOwnersResult {
-    const { player, now, step } = input;
-    let town = input.town;
-    let shieldUntil = player.shieldUntil;
+    const result = computeTownOwnersForPlayers({
+        ...input,
+        players: [{ ...input.player, id: 'player', score: input.town.score }]
+    });
+    return { town: { ...result.town, score: result.players[0].score }, shieldUntil: result.players[0].shieldUntil };
+}
+
+export function computeTownOwnersForPlayers(input: TownOwnersInput): TownOwnersComputed {
+    const { now, step } = input;
+    let { town, players } = input;
     const npcs: TownNpc[] = [];
-    for (const [index, npc] of town.npcs.entries()) {
+    for (const npc of town.npcs) {
+        const shop = TOWN_SHOPS.find((shop) => shop.id === npc.shopId);
+        if (!shop) {
+            throw new Error(`Missing shop for owner ${npc.shopId}`);
+        }
         const result = computeTownOwner({
             routes: input.routes,
             town,
             npc,
-            shop: TOWN_SHOPS[index],
-            player: { ...player, shieldUntil },
+            shop,
+            player: players.find((player) => player.id === npc.targetId),
             now,
             step
         });
         town = result.town;
-        shieldUntil = result.shieldUntil;
+        players = players.map((player) =>
+            player.id === result.hitPlayerId
+                ? { ...player, score: Math.max(0, player.score - 3), shieldUntil: now + 2 }
+                : player
+        );
         npcs.push(result.npc);
     }
-    return { town: { ...town, npcs }, shieldUntil };
+    return { town: { ...town, npcs }, players };
 }
 
 export function witnessTownPrank(input: TownTickInput): TownState {
+    return witnessTownPlayer({ ...input, player: { ...input.player, id: 'player', score: input.town.score } });
+}
+
+export function witnessTownPlayer(input: TownWitnessInput): TownState {
     const { player, now } = input;
     const npcs = input.town.npcs.map((npc): TownNpc => {
         if (hasTownDuty(input.town, npc.shopId) || npc.stainedUntil > now || npc.dizzyUntil > now || npc.until > now) {
@@ -64,13 +103,20 @@ export function witnessTownPrank(input: TownTickInput): TownState {
         if (Math.hypot(npc.x - player.x, npc.z - player.z) > 12 || !hasTownSight(input.town, npc, player)) {
             return npc;
         }
-        return { ...npc, mode: 'chasing', chaseUntil: now + 8, lastSeenAt: now, zapAt: now + 0.85 };
+        return {
+            ...npc,
+            targetId: player.id,
+            mode: 'chasing',
+            chaseUntil: now + 8,
+            lastSeenAt: now,
+            zapAt: now + 0.85
+        };
     });
     return { ...input.town, npcs };
 }
 
 function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
-    const { player, now, step } = input;
+    const { now, step } = input;
     let { town, npc } = input;
     const powdered = npc.immuneUntil <= now &&
         town.patches.some((patch) => patch.kind === 'powder' && Math.hypot(patch.x - npc.x, patch.z - npc.z) < 2.2);
@@ -81,13 +127,13 @@ function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
         town = addPuke(town, npc, now);
     }
     if (npc.stainedUntil > now) {
-        return { town, npc: { ...npc, mode: 'cleaning' }, shieldUntil: player.shieldUntil };
+        return { town, npc: { ...npc, mode: 'cleaning' }, hitPlayerId: undefined };
     }
     if (hasTownDuty(town, npc.shopId)) {
         npc = { ...npc, mode: 'cleaning' };
     }
     if (npc.dizzyUntil > now || npc.until > now) {
-        return { town, npc, shieldUntil: player.shieldUntil };
+        return { town, npc, hitPlayerId: undefined };
     }
     if (npc.mode === 'cleaning') {
         return cleanTownShop({ ...input, town, npc });
@@ -97,19 +143,22 @@ function computeTownOwner(input: TownOwnerInput): TownOwnerResult {
     }
     const home = { x: input.shop.x, z: input.shop.z - 2 };
     const position = input.routes.travel({ town, from: npc, target: home, speed: 2, step });
-    return { town, npc: { ...npc, ...position }, shieldUntil: player.shieldUntil };
+    return { town, npc: { ...npc, ...position }, hitPlayerId: undefined };
 }
 
 function chaseTownPlayer(input: TownOwnerInput): TownOwnerResult {
     const { town, player, now, step } = input;
     let { npc } = input;
+    if (!player) {
+        return { town, npc: { ...npc, mode: 'watching', targetId: undefined }, hitPlayerId: undefined };
+    }
     const distance = Math.hypot(player.x - npc.x, player.z - npc.z);
     const visible = distance < 12 && hasTownSight(town, npc, player);
     if (visible) {
         npc = { ...npc, lastSeenAt: now };
     }
     if (now >= npc.chaseUntil || now - npc.lastSeenAt > 1.5 || player.frozenUntil > now) {
-        return { town, npc: { ...npc, mode: 'watching' }, shieldUntil: player.shieldUntil };
+        return { town, npc: { ...npc, mode: 'watching', targetId: undefined }, hitPlayerId: undefined };
     }
     if (npc.mode === 'warning' && npc.until <= now) {
         const hit = visible && distance < 6 && Math.hypot(player.x - npc.aim.x, player.z - npc.aim.z) < 1.1 &&
@@ -118,33 +167,32 @@ function chaseTownPlayer(input: TownOwnerInput): TownOwnerResult {
         return {
             town: {
                 ...town,
-                score: Math.max(0, town.score - (hit ? 3 : 0)),
                 nextId: town.nextId + 1,
                 zaps: [...town.zaps, zap]
             },
             npc: { ...npc, mode: 'chasing', zapAt: now + 2 },
-            shieldUntil: hit ? now + 2 : player.shieldUntil
+            hitPlayerId: hit ? player.id : undefined
         };
     }
     if (visible && distance < 5 && npc.zapAt <= now) {
         return {
             town,
             npc: { ...npc, mode: 'warning', until: now + 0.85, aim: { x: player.x, z: player.z } },
-            shieldUntil: player.shieldUntil
+            hitPlayerId: undefined
         };
     }
     const slowed = npc.miniUntil > now || isTownSprayed(town, npc, now) ||
         town.fruit.some((fruit) => Math.hypot(npc.x - fruit.x, npc.z - fruit.z) < 0.8);
     const position = input.routes.travel({ town, from: npc, target: player, speed: slowed ? 1 : 2.7, step });
-    return { town, npc: { ...npc, ...position }, shieldUntil: player.shieldUntil };
+    return { town, npc: { ...npc, ...position }, hitPlayerId: undefined };
 }
 
 function cleanTownShop(input: TownOwnerInput): TownOwnerResult {
-    const { now, step, player, shop } = input;
+    const { now, step, shop } = input;
     let { town, npc } = input;
     const repair = repairTownProp({ routes: input.routes, town, npc, now, step });
     if (repair.busy) {
-        return { town: repair.town, npc: repair.npc, shieldUntil: player.shieldUntil };
+        return { town: repair.town, npc: repair.npc, hitPlayerId: undefined };
     }
     const fruit =
         town.fruit.filter((item) => item.shopId === shop.id).toSorted((a, b) =>
@@ -163,7 +211,7 @@ function cleanTownShop(input: TownOwnerInput): TownOwnerResult {
             ...town,
             shops: town.shops.map((entry) => entry.id === shop.id ? { ...entry, tipped: false } : entry)
         };
-        npc = { ...npc, mode: 'watching' };
+        npc = { ...npc, mode: 'watching', targetId: undefined };
     }
-    return { town, npc, shieldUntil: player.shieldUntil };
+    return { town, npc, hitPlayerId: undefined };
 }
