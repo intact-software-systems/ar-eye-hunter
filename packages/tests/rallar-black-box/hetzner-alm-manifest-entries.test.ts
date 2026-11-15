@@ -160,6 +160,12 @@ describe('ALM conformance combined recipe', () => {
 
 /** Every `alm-<carrier>-<scenarioKey>` cell the catalog defines in the named lane families. */
 function toFamilyCells(families: readonly AlmConformanceLaneFamily[]): readonly string[] {
+    return toFamilyScenarioCells(families).map(({ cell }) => cell);
+}
+
+function toFamilyScenarioCells(
+    families: readonly AlmConformanceLaneFamily[]
+): readonly { readonly cell: string; readonly scenario: AlmConformanceScenario; }[] {
     return ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         createAlmConformanceRecipes({
             group: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
@@ -170,7 +176,7 @@ function toFamilyCells(families: readonly AlmConformanceLaneFamily[]): readonly 
             deadlineMs: 18_000,
             laneFamilies: families,
             principalIdsByRole: { sender: 'principal-alice', receiver: 'principal-bob', 'publisher-b': 'principal-charlie' }
-        }).map((scenario) => `alm-${carrier}-${scenario.scenarioKey}`)
+        }).map((scenario) => ({ cell: `alm-${carrier}-${scenario.scenarioKey}`, scenario }))
     );
 }
 
@@ -291,6 +297,16 @@ describe('ALM conformance hosted lane families', () => {
 
         expect(samePrincipal).toEqual(expect.arrayContaining(['alm-ws-principal-delivery', 'alm-rtc-world-routing']));
         expect(samePrincipal.filter((cell) => hosted.includes(cell))).toEqual([]);
+    });
+
+    // A hosted entry creates its cells unsettled, and an unsettled placement has no settle behind a reshape.
+    it('starts no cell that reshapes its room in any hosted entry', () => {
+        const hosted = [createAlmConformance2AgentEntry(), createAlmConformance3AgentEntry()].flatMap(toStartedCells);
+        const reshaped = toFamilyScenarioCells(ALM_CONFORMANCE_LANE_FAMILIES)
+            .flatMap(({ cell, scenario }) => scenario.roomTopology === 'reshaped' ? [cell] : []);
+
+        expect(reshaped).toEqual(expect.arrayContaining(['alm-rtc-receipted-relay-path']));
+        expect(reshaped.filter((cell) => hosted.includes(cell))).toEqual([]);
     });
 });
 
