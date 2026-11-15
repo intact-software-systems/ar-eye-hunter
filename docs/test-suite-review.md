@@ -161,7 +161,16 @@ yet established. Apply the shared fixture's bounded two-peer readiness option to
 as well; readiness on an earlier connection does not carry across acquisition. The new execution
 guard correctly rejected that run as one failed case out of five listed cases.
 
-A subsequent Linux run passed readiness and all delivery/artifact assertions, but the UI check
+A later Linux run demonstrated a separate harness defect even with the readiness option enabled.
+Its success result reported two open lane peers while the same evidence showed zero desired and
+ready peers for the room. The realtime path used global peer health as its success criterion;
+only the other RTC path waited for canonical room eligibility. A deterministic regression now
+holds room readiness pending while lane health reports two peers, exposing the false success
+without a browser race. Realtime readiness must use canonical room readiness while preserving its
+documented transient-refresh retries, permanent-error handling, refresh cadence and shared
+cancellation/deadline budget. Open lanes do not authorize a room-scoped send.
+
+Another Linux run passed readiness and all delivery/artifact assertions, but the UI check
 expected a position payload topic to remain in the distributed monitor's latest-12-events preview.
 Its recorder contained 119 position receipts; newer stats occupied that preview. Use the existing
 Event Stream's message/connection/transport/group/topic filters to inspect a real visible receipt.
