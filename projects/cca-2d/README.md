@@ -15,6 +15,10 @@ implementation, approved artwork, device qualification, or performance evidence 
 
 ## The proposal
 
+Three [smartphone gameplay visual concepts](visual-concepts/README.md) show
+alternative graphics styles with touch controls. These are generated screen
+mockups for selection, not an implemented game or approved production artwork.
+
 Two to six cartoon thieves race around a bright paper-cut market, collecting loot
 and depositing it at pneumatic bank booths. Carrying more makes the payout better
 and the guards more interested. Dash around a stall, tempt a guard down someone
