@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type { DistributedRunTimingSummary } from '../distributed-artifact-analysis.ts';
 import type { DistributedRunTimingRecord } from '../distributed-artifact-analysis/decode-distributed-run-stream-summary.ts';
 
@@ -12,9 +13,9 @@ export function computeTimingSummary(
     values: readonly number[]
 ): DistributedRunTimingSummary {
     if (values.length > 0 || recorded === undefined) {
-        const p50Ms = computePercentile(values, 0.5);
-        const p95Ms = computePercentile(values, 0.95);
-        const p99Ms = computePercentile(values, 0.99);
+        const p50Ms = computeNearestRank(values, 0.5);
+        const p95Ms = computeNearestRank(values, 0.95);
+        const p99Ms = computeNearestRank(values, 0.99);
         const extrema = computeNumberExtrema(values);
         return {
             count: values.length,
@@ -39,20 +40,6 @@ export function computeTimingSummary(
         spreadRatio: computeSpreadRatio(recorded.p50Ms, recorded.p95Ms),
         outlierCount: recorded.outlierCount
     };
-}
-
-/** The nearest-rank percentile; absent for no values. */
-export function computePercentile(values: readonly number[], percentileValue: number): number | undefined {
-    if (values.length === 0) {
-        return undefined;
-    }
-    return computeNearestRank([...values].sort((left, right) => left - right), percentileValue);
-}
-
-/** The nearest-rank percentile of values already sorted ascending; the caller guarantees at least one value. */
-export function computeNearestRank(sortedValues: readonly number[], percentileValue: number): number {
-    const index = Math.min(sortedValues.length - 1, Math.ceil(percentileValue * sortedValues.length) - 1);
-    return sortedValues[index];
 }
 
 /** Absent for no values. */

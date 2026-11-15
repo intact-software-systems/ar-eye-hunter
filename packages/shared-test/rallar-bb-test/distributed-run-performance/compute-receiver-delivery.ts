@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunLowestReceiver, DistributedRunReceiverDelivery } from '../distributed-artifact-analysis.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
@@ -5,12 +6,7 @@ import {
     decodeReceiverDeliverySpecsByCommandId,
     type ReceiverDeliverySpec
 } from '../distributed-artifact-analysis/decode-receiver-delivery-spec.ts';
-import {
-    computeNearestRank,
-    computeNumberExtrema,
-    computePercentile,
-    toRoundedMetric
-} from './compute-timing-summary.ts';
+import { computeNumberExtrema, toRoundedMetric } from './compute-timing-summary.ts';
 
 export interface ReceiverDeliverySources {
     readonly distributedRun: ControlDistributedRunSnapshot;
@@ -35,19 +31,20 @@ export function computeReceiverDelivery(sources: ReceiverDeliverySources): Distr
         return undefined;
     }
     const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
+    const minReceivedMessages = sortedReceivedMessages[0];
     const deliveryRatios = samples.flatMap((sample) => toDeliveryRatio(sample) ?? []);
     return {
         sampleCount: samples.length,
         expectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.expectedInboundMessages)),
         minExpectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.minExpectedInboundMessages)),
         minReceiveRatio: toFirstFiniteNumber(samples.map((sample) => sample.minReceiveRatio)),
-        minReceivedMessages: sortedReceivedMessages[0],
-        medianReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.5),
-        p95ReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.95),
+        minReceivedMessages,
+        medianReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.5) ?? minReceivedMessages,
+        p95ReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.95) ?? minReceivedMessages,
         maxReceivedMessages: sortedReceivedMessages[sortedReceivedMessages.length - 1],
         minDeliveryRatio: computeNumberExtrema(deliveryRatios)?.min,
-        medianDeliveryRatio: computePercentile(deliveryRatios, 0.5),
-        p95DeliveryRatio: computePercentile(deliveryRatios, 0.95),
+        medianDeliveryRatio: computeNearestRank(deliveryRatios, 0.5),
+        p95DeliveryRatio: computeNearestRank(deliveryRatios, 0.95),
         lowestAgents: toLowestReceivers(samples)
     };
 }

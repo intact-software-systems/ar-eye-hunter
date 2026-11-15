@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type {
     DistributedRunSlowestStreamAgent,
     DistributedRunStreamTiming,
@@ -7,7 +8,6 @@ import type { DistributedRunStreamSummary } from '../distributed-artifact-analys
 import {
     computeAverage,
     computeMaxNumber,
-    computePercentile,
     computeTimingSummary,
     toRoundedMetric
 } from './compute-timing-summary.ts';
@@ -137,8 +137,8 @@ function computeSlowestStreamAgents(
                 plannedFrames: computeStreamCounterSum(agentSamples, 'plannedFrames'),
                 completedFrames: computeStreamCounterSum(agentSamples, 'completedFrames'),
                 averageMs: computeAverage(durations),
-                p95Ms: computePercentile(durations, 0.95),
-                p99Ms: computePercentile(durations, 0.99),
+                p95Ms: computeNearestRank(durations, 0.95),
+                p99Ms: computeNearestRank(durations, 0.99),
                 maxMs: computeMaxNumber(durations)
             };
         })
