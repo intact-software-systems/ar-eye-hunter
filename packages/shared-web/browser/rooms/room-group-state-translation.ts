@@ -12,7 +12,7 @@ import type {
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPresencePublicationKey, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isAcceptedRoomLayoutOverlay } from '@shared/repository/is-accepted-room-layout-overlay.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 import type {
     AcceptStateGroupInviteBody,
     BanStateGroupMemberBody,

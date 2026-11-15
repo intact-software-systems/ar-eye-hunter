@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OverlayInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { selectGroupDialPeerIds } from '@shared/services/webrtc-group-dial-policy.ts';
+import { selectGroupDialPeerIds } from '@shared/services/group-dial/webrtc-group-dial-policy.ts';
 
 const groupRef: GroupRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'lobby' };
 const localSessionId = 'session-local';
@@ -49,9 +49,18 @@ describe('selectGroupDialPeerIds', () => {
         })).toEqual(['session-a', 'session-b']);
     });
 
-    it('dials the accepted layout and not the planned one while active', () => {
+    it('dials the accepted and the planned layout once each while active', () => {
         expect(selectGroupDialPeerIds({
             lifecycleState: 'active',
+            localSessionId,
+            planned: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-shared', 'session-planned'] }),
+            accepted: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-shared', 'session-accepted'] })
+        })).toEqual(['session-shared', 'session-accepted', 'session-planned']);
+    });
+
+    it('dials the accepted layout and not the planned one while reconfiguring', () => {
+        expect(selectGroupDialPeerIds({
+            lifecycleState: 'reconfiguring',
             localSessionId,
             planned: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-planned'] }),
             accepted: createOverlay({ provenance: 'server', nextHopSessionIds: ['session-accepted'] })

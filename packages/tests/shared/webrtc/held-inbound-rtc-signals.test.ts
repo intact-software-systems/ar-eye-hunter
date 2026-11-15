@@ -28,7 +28,7 @@ interface HeldSignalsFixture {
 
 const SELF = 'a-self';
 const LAYOUT_REASON = 'stage-layout-mismatch';
-const INITIALIZING_REASON = 'browser-runtime-initializing';
+const OTHER_REASON = 'other-hold-reason';
 const SIGNAL_TTL_MS = 60_000;
 
 afterEach(() => {
@@ -39,7 +39,7 @@ it('brings due an admitted hold of its reason once, and leaves holds of another 
     const fixture = createHeldSignalsFixture();
     const layoutHeld = toSignalEnvelope('z-peer', 'offer-from-z');
     fixture.hold(layoutHeld);
-    fixture.hold(toSignalEnvelope('y-peer', 'offer-from-y'), INITIALIZING_REASON);
+    fixture.hold(toSignalEnvelope('y-peer', 'offer-from-y'), OTHER_REASON);
     fixture.admittedSenderIds.add('z-peer').add('y-peer');
 
     await fixture.writeDueNow();
@@ -63,7 +63,7 @@ it('leaves a hold the delivery would still refuse', async () => {
 
 it('reads neither the clock nor the transport while nothing of its reason is held', async () => {
     const fixture = createHeldSignalsFixture();
-    fixture.hold(toSignalEnvelope('z-peer', 'offer-from-z'), INITIALIZING_REASON);
+    fixture.hold(toSignalEnvelope('z-peer', 'offer-from-z'), OTHER_REASON);
     fixture.transport.clockReads = 0;
 
     await fixture.writeDueNow();

@@ -44,7 +44,8 @@ test.describe('rallar-black-box agent tab session tickets', () => {
                         endpoints: {
                             createWs: `${API_BASE_URL}/api/ws`
                         },
-                        serverPeerId: 'server'
+                        serverPeerId: 'server',
+                        rtcReplacedLayoutOverlapMs: 15_000
                     }
                 });
                 return;

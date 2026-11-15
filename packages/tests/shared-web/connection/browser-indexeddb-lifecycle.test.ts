@@ -47,7 +47,8 @@ describe('browser IndexedDB terminal ownership', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 60_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
@@ -117,7 +118,8 @@ describe('browser IndexedDB terminal ownership', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockImplementation(async () => {
             await vi.waitFor(() => expect(opened.length).toBeGreaterThan(0));

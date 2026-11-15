@@ -5,7 +5,7 @@ import {
     isGroupConnectRejectionCode
 } from '@shared/api/group-lifecycle/group-connect-rejection-codes.ts';
 import { isGroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
-import { toOverlayLayoutIdentity } from '@shared/repository/overlays-repository.ts';
+import { toOverlayLayoutIdentity } from '@shared/repository/to-overlay-layout-identity.ts';
 
 describe('group connect rejection codes', () => {
     it('names exactly the three connect conflicts: the stale epoch and the two layouts of product decision 32', () => {

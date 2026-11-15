@@ -9,7 +9,7 @@ import type { RtcOutboundObservation } from './read-rtc-outbound-observation.ts'
 import {
     computeRtcRoomSnapshotAdmission,
     type RtcRoomSnapshotAdmission
-} from './rtc-room-snapshot-admission.ts';
+} from './room-authority/rtc-room-snapshot-admission.ts';
 import {
     isRtcUnfrozenRoomMessage,
     toRtcFrozenRoomMessage,
@@ -57,6 +57,7 @@ export function computeRtcOutboundCarrierAvailability(
         message,
         snapshot: observation.room,
         overlay,
+        layoutChanges: observation.layoutChanges,
         selfPeerId: input.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,
@@ -78,9 +79,9 @@ export function computeRtcOutboundCarrierAvailability(
 export function toAcceptedOverlayContext(
     observation: RtcOutboundObservation
 ): OverlayMulticasterContext | undefined {
-    const { overlayId, room, overlay, nowMs } = observation;
+    const { overlayId, room, overlay, layoutChanges, nowMs } = observation;
     return overlayId && room && isAcceptedRoomLayoutOverlay(overlay, room.group)
-        ? { overlayId, room, overlay, nowMs }
+        ? { overlayId, room, overlay, layoutChanges, nowMs }
         : undefined;
 }
 

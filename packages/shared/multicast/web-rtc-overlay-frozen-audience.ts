@@ -17,7 +17,10 @@ import type { ALOutboundDispatchPlan } from '../alm/outbound/al-outbound-message
 import type { ALOutboundTransportMessage } from '../alm/outbound/al-outbound-transport-message.ts';
 import { Either } from '../resilience/Either.ts';
 import type { OverlayMulticasterContext } from './overlay-multicast-contracts.ts';
-import { computeRtcRoomSnapshotAdmission, type RtcRoomSnapshotAdmission } from './rtc-room-snapshot-admission.ts';
+import {
+    computeRtcRoomSnapshotAdmission,
+    type RtcRoomSnapshotAdmission
+} from './room-authority/rtc-room-snapshot-admission.ts';
 import { toRtcAckTrackingPlan } from './to-rtc-ack-tracking-plan.ts';
 import { toUnfrozenRoomMessage } from './to-unfrozen-room-message.ts';
 
@@ -102,6 +105,7 @@ export function toRtcOriginFrozenMessage(
         message,
         snapshot: context.room,
         overlay: context.overlay,
+        layoutChanges: context.layoutChanges,
         selfPeerId: origin.selfPeerId,
         fromPeerId: undefined,
         recipientPeerId: undefined,

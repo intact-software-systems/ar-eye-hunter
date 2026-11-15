@@ -14,7 +14,7 @@ import type {
 } from '@shared/api/group-types.ts';
 
 import type { ArenaConnection } from '../game/arena-runtime/arena-connection-contracts.ts';
-import { ArenaRoomSharing, isCurrentArenaHost } from './arena-room-sharing.tsx';
+import { ArenaRoomSharing, isCurrentArenaSession } from './arena-room-sharing.tsx';
 
 interface ArenaRoomHostingProps {
     readonly arena: Pick<ArenaConnection, 'session' | 'rooms' | 'roomId' | 'createArenaRoom'>;
@@ -85,7 +85,6 @@ async function createArena(
     if (!session) {
         return;
     }
-    let room = rallar.rooms.state().currentRoomRef;
     let pending: RoomHostingPending = { kind: 'creating', sessionKey: toAuthSessionKey(session) };
     pendingOperation.current = pending;
     setPending(pending);
@@ -93,25 +92,20 @@ async function createArena(
     setCode(undefined);
     try {
         const snapshot = await arena.createArenaRoom(joinMode, directoryListing);
-        room = snapshot?.group ?? room;
         if (
-            pendingOperation.current === pending && snapshot && isCurrentArenaHost(session, snapshot.group) &&
-            joinMode === 'code'
+            pendingOperation.current === pending && snapshot && isCurrentArenaSession(session) && joinMode === 'code'
         ) {
             pending = { kind: 'rotating', sessionKey: toAuthSessionKey(session), room: snapshot.group };
             pendingOperation.current = pending;
             setPending(pending);
             const code = await rallar.rooms.rotateJoinCode(snapshot.group);
-            if (
-                pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
-                rallar.session()?.clientId === session.clientId
-            ) {
+            if (pendingOperation.current === pending && isCurrentArenaSession(session)) {
                 setCode({ sessionKey: toAuthSessionKey(session), response: code });
             }
         }
     }
     catch (error) {
-        if (pendingOperation.current === pending && isCurrentArenaHost(session, room)) {
+        if (pendingOperation.current === pending && isCurrentArenaSession(session)) {
             setError(
                 error instanceof Error && error.name === 'RallarRoomJoinPartialFailureError'
                     ? 'The arena was created, but connecting failed. Refresh your rooms and select it to retry.'
@@ -145,15 +139,12 @@ async function rotateArenaCode(
     setCode(undefined);
     try {
         const code = await rallar.rooms.rotateJoinCode(snapshot.group);
-        if (
-            pendingOperation.current === pending && rallar.session()?.sessionId === session.sessionId &&
-            rallar.session()?.clientId === session.clientId
-        ) {
+        if (pendingOperation.current === pending && isCurrentArenaSession(session)) {
             setCode({ sessionKey: toAuthSessionKey(session), response: code });
         }
     }
     catch {
-        if (pendingOperation.current === pending && isCurrentArenaHost(session, snapshot.group)) {
+        if (pendingOperation.current === pending && isCurrentArenaSession(session)) {
             setError('Could not rotate the room code. No new code is available; try again.');
         }
     }

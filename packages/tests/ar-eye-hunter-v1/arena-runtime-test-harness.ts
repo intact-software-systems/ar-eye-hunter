@@ -102,6 +102,7 @@ const mockRallar = vi.hoisted(() => ({
         quickJoin: vi.fn<RallarFacade['rooms']['quickJoin']>(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
+        rotateJoinCode: vi.fn(),
         join: vi.fn()
     },
     director: {
@@ -311,6 +312,7 @@ function resetArenaRoomsFixture(): void {
     mockRallar.rooms.quickJoin.mockReset().mockResolvedValue({ status: 'unavailable' });
     mockRallar.rooms.create.mockReset();
     mockRallar.rooms.createAndSwitch.mockReset();
+    mockRallar.rooms.rotateJoinCode.mockReset();
     mockRallar.director.onStatus.mockReturnValue(vi.fn());
 }
 

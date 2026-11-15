@@ -9,7 +9,6 @@ import {
 import type { GroupRef } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { toError } from '../resilience/to-error.ts';
-import { WebRtcConnectionService } from './web-rtc-connection-service.ts';
 
 type GroupUpdateSource = 'push' | 'pull';
 
@@ -39,16 +38,16 @@ export class WebRtcGroupService {
         ) => Promise<void>
     >();
 
-    public readonly rtcQBox: WebRtcConnectionService;
+    private readonly localSessionId: PeerId;
     public readonly groupRef: GroupRef;
     public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
 
     constructor(
-        rtcQBox: WebRtcConnectionService,
+        localSessionId: PeerId,
         groupRef: GroupRef,
         groupCache: ReadableKeyedValues<string, AnyGroupPresence>
     ) {
-        this.rtcQBox = rtcQBox;
+        this.localSessionId = localSessionId;
         this.groupRef = groupRef;
         this.groupCache = groupCache;
         this.groupKey = toWebRtcGroupKey(groupRef);
@@ -160,7 +159,7 @@ export class WebRtcGroupService {
         }
 
         return readGroupMemberSessionIds(snapshot).filter(
-            (peerId) => peerId !== this.rtcQBox.input.sessionId
+            (peerId) => peerId !== this.localSessionId
         );
     }
 

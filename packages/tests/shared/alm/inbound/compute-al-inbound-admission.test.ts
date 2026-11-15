@@ -13,7 +13,7 @@ import type {
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { computeALInboundPlanningObservations } from '@shared/alm/inbound/al-inbound-planner-snapshot.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
-import { toRtcPublicationHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { toRtcPublicationHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import {

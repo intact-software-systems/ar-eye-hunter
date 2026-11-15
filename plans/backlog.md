@@ -720,11 +720,6 @@ and it has no status list.
   (`plans/active/deno-to-bun-validation.md`), so a hosted measurement shares
   the API's machine with its load generator. A campaign needs the workers off
   it.
-- Make-before-break routing in the browser, where a new layout's edges open
-  before routing moves to them, is the complete fix for the RTT re-plan
-  failures of manifests 07, 09 and 21 and for the 50-agent RTC delivery loss
-  below (`plans/active/deno-to-bun-validation.md`). It is the next slice after
-  lane determinism, ahead of publication figures, with its own design put to the maintainer before any code (D644).
 - At 50 agents the RTC delivery fails after the connect. With #813 merged,
   manifests 07 and 09 connect every agent and then fail on delivery: manifest
   07 (run 43382453664) ends with 8 of 49 receivers under the 95 % threshold
@@ -736,11 +731,12 @@ and it has no status list.
   to 2.4 s senders and relays dropped their sends (`planner-drop`), receivers
   refused frames from the old parent (`unauthorized`) and a switched relay
   stopped forwarding. It is not a 50-agent limit: the RTT re-plan minimum layout
-  age defaults to 15 s, so a re-plan can land inside any longer stream. It waits
-  on make-before-break routing (D644) and caps both campaign rungs (D643).
+  age defaults to 15 s, so a re-plan can land inside any longer stream. Make-before-break
+  routing in the browser (D645) is built for it; no hosted run has read it yet. The delivery loss caps
+  both campaign rungs until a hosted run reads the build (D643).
   Reproduced in unit tests of the routing code; the `unauthorized` refusal is
   confirmed from the code (`resolveRtcRoomEdgeDenial` in
-  `packages/shared/multicast/rtc-room-snapshot-admission.ts`). Open: which
+  `packages/shared/multicast/room-authority/resolve-rtc-room-edge-denial.ts`). Open: which
   server path produced the re-plans (neither run records the server's planning
   decision; a tree's leader-rooting or update-failure rebuild and the
   unconditional mesh rebuild both skip #810's gate), run 09's full coverage (22
@@ -761,3 +757,54 @@ and it has no status list.
   still runs, so it is latency, not correctness. It matters when the API and its
   database run on hosts whose clocks drift by more than the retry backoff, and
   not before.
+- Relay re-send to a lagging child: a relay does not re-send a forward to a child that answered
+  `not-yet-in-sync`. The outbound control admission refuses a NACK that is not addressed to the frame's owner or
+  that names another origin (`validate-al-outbound-control-admission.ts`); the owner of a relay's forwarded copy is its origin; the relay's timed retry re-plans through the originating
+  planner and finds no route; the origin's receipt keeps an unconfirmed hop and the relay records a false
+  `receipt-exhausted`. Ruled by the maintainer as the next small slice after make-before-break routing (D646).
+- Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
+  layout's frame from an unauthorized one without a time window. Later.
+- The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
+  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+- Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
+  forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
+  forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`
+  diagnostic carries no `fromPeerId`, so the hop of an unacknowledged frame cannot be read.
+- `random-k` rank order: `stableRank` (`packages/shared/al-contracts/al-policy.ts`) keeps one order for two
+  peer ids of equal length that differ only in late characters, for almost every message id; ids that differ early
+  flip. Pre-existing.
+- Cold ordered track during an overlap: the first frame of a stream that starts during an overlap can be lost at
+  a receiver with no state for the track. An entry rule for ordered tracks is its own slice.
+- Session volatile admission budget against a room stream: with `AL_VOLATILE_SESSION_MAX_ADMISSIONS` (1 000),
+  `AL_VOLATILE_SESSION_INBOUND_COUNTED_LIFETIME_MS` (30 000 ms) and `AL_VOLATILE_SESSION_OWN_SHARE` (0.5), a session
+  refuses an own send once the total would pass 1 000 admissions and its own count would pass 500. Own sends count
+  until their deadline. At a 30 s send lifetime, three members of one room cannot each sustain more than about
+  16.7 volatile messages a second; the browser spec of the overlap sends 10 a second. A workload figure for the
+  publication work, not a defect of the overlap.
+- Peer cap and the early dial (D646): an accepted offer at a cap full of a replaced layout's retained edges is refused;
+  the cap closes early peers only for it. What a full cap does to the overlap is stated in D646; admission still
+  lists a replaced layout's neighbours for their window whether or not their edges are open.
+- A frozen multicast's double fault during the forwarding half: a relay prunes as the inbound README
+  states under "Which children a relay owns", so a frame can be lost when a peer that lags across a second promotion forwards over a layout outside that union and the copy to the path child
+  is also lost, on a frame that carries no receipt. This follows from the code; no test pins the loss.
+- A stale planned layout counts for up to 60 s: the rule owner (`resolveRtcRoomRoutingEdges`) and the dial policy
+  (`selectGroupEarlyDialPeerIds`) take whatever the planned slot holds, and a planned layout that the accepted one has
+  moved past stays until the planned slot is replaced or removed, at most 60 s. It costs early dials in the cap's
+  lowest class and not-yet-in-sync answers to its neighbours. First, the connection-cap test
+  `a promotion does not close the replaced layout's edges while early peers are still wanted`
+  (`packages/tests/shared/web-rtc-group-manager-reconcile-wakes.test.ts`), whose early peers come from a planned layout
+  the accepted one has moved past, is rebuilt on a newer planned layout. Then one predicate, "the planned layout
+  dominates the accepted one", serves the rule owner and the dial policy.
+- The browser spec of the overlap shows the hand-over, not the rule (D648). A case in which a promotion re-parents a
+  browser onto an edge that is not open is not built. It needs a formation driver for more than three browsers (today's
+  forms the room with `{mesh, degreeLimit 2}`, which leaves a fourth session without an edge), the shape read from
+  the layouts at run time, and a bounded search for an owner request that re-parents a browser onto an edge that is
+  not open: `{mesh, degreeLimit 2, meshParamK 1}` then `{tree}` adds an edge the first layout lacks and drops
+  another for one set of four session ids, moves no edge for another, and with RTT reports moves session-d from
+  session-b onto session-a for the fixture ids (`packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-owner-tree-star-config-edges.test.ts`,
+  the describe block "a mesh write then a tree write for four sessions").
+- The browser spec of the overlap (`npm run test:rallar:full-stack:memory:live-rtc-3:layout-switch`) runs in no required
+  gate lane. It would catch a regression of the hand-over over the served overlap, which only a browser run shows.
+  It is not added because it is a 65 s live-RTC stream with timing assertions, not measured on hosted runners.
+- Admission work per prepared copy: each prepared copy runs one or two admissions at every authority read, and each
+  admission, a denial included, builds the authorized list and runs the rule. Measure it before changing it.

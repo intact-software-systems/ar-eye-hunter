@@ -20,7 +20,7 @@ import { resolveALFrozenMulticastAudience } from '@shared/al-contracts/al-frozen
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
 import { resolveALChannelSendDefaults } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
-import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import {
     computeFrozenAudience,
     computeRtcFrozenAudienceRefusal,
@@ -403,6 +403,7 @@ function toOriginAdmission(snapshot: GroupSnapshot, message: ALMessage) {
         selfPeerId: 'a',
         fromPeerId: undefined,
         recipientPeerId: undefined,
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
         nowMs: Date.now()
     });
     if (admission.kind !== 'authorized') {

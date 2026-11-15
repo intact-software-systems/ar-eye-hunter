@@ -26,6 +26,7 @@ export interface ApiV1ConfigurationStartupSummary {
     readonly publicApi: {
         readonly apiBaseUrl: string;
         readonly wsBaseUrl: string;
+        readonly rtcReplacedLayoutOverlapMs: number;
     };
     readonly corsOrigins: readonly string[];
     readonly workerCategories: {
@@ -96,7 +97,8 @@ export function toApiV1ConfigurationStartupSummary(
         iceMode: configuration.ice.mode,
         publicApi: {
             apiBaseUrl: configuration.publicApi.apiBaseUrl,
-            wsBaseUrl: configuration.publicApi.wsBaseUrl
+            wsBaseUrl: configuration.publicApi.wsBaseUrl,
+            rtcReplacedLayoutOverlapMs: configuration.publicApi.rtcReplacedLayoutOverlapMs
         },
         corsOrigins: [...configuration.http.corsOrigins],
         workerCategories: {

@@ -10,6 +10,11 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
+    DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
+import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorkerCli,
@@ -24,6 +29,7 @@ import {
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { UNGATED_RTC_BENCHMARK_PEER_ADMISSION } from '../native-rtc/ungated-rtc-benchmark-peer-admission.ts';
 import { createRtcGroupCoordinationSnapshot } from './create-rtc-group-coordination-snapshot.ts';
 
 export interface WebRtcGroupManagerPeerOwnersInput {
@@ -86,25 +92,38 @@ export async function runWebRtcGroupManagerPeerOwners(
 ): Promise<WebRtcGroupManagerPeerOwnersResult> {
     const connections = createSimulatedConnections('self');
     try {
-        const manager = await seedPeerOwnerGroups(input, connections.service);
-        return measureOwnerLookups(input, manager);
+        const seeded = await seedPeerOwnerGroups(input, connections.service);
+        return measureOwnerLookups(input, seeded);
     }
     finally {
         connections.dispose();
     }
 }
 
+/** The manager over the seeded rooms, with the group peer ledger that owns them. */
+interface SeededPeerOwnerGroups {
+    readonly manager: WebRtcGroupManager;
+    readonly groupPeerLedger: WebRtcGroupPeerLedger;
+}
+
 async function seedPeerOwnerGroups(
     input: WebRtcGroupManagerPeerOwnersInput,
     connectionService: WebRtcConnectionService
-): Promise<WebRtcGroupManager> {
+): Promise<SeededPeerOwnerGroups> {
     const groupCache = new LatestRepository<string, GroupSnapshot>();
     const clientCache = new LatestRepository<string, ClientInfo>();
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
+    const groupPeerLedger = new WebRtcGroupPeerLedger({
+        localSessionId: connectionService.input.sessionId,
+        repositories: { groupCache, clientCache, acceptedOverlayCache },
+        maxPeerConnections: DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+        overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        nowEpochMs: () => Date.now()
+    });
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache, acceptedOverlayCache },
-        { onOverlayAdopted: async () => {} }
+        groupPeerLedger,
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     for (let groupIndex = 0; groupIndex < input.groups; groupIndex += 1) {
@@ -128,14 +147,14 @@ async function seedPeerOwnerGroups(
             createAcceptedOverlay(group, peerIds)
         );
 
-        await manager.getOrCreate(group.group).acceptGroupUpdate(group);
+        await groupPeerLedger.getOrCreate(group.group).acceptGroupUpdate(group);
     }
-    return manager;
+    return { manager, groupPeerLedger };
 }
 
 function measureOwnerLookups(
     input: WebRtcGroupManagerPeerOwnersInput,
-    manager: WebRtcGroupManager
+    { manager, groupPeerLedger }: SeededPeerOwnerGroups
 ): WebRtcGroupManagerPeerOwnersResult {
     const lookupPeerIds = Array.from(
         { length: input.lookups },
@@ -146,9 +165,9 @@ function measureOwnerLookups(
     const start = performance.now();
 
     for (const peerId of lookupPeerIds) {
-        const ownerGroups = manager.ownerGroupsOfPeer(peerId);
+        const ownerGroups = groupPeerLedger.ownerGroupsOfPeer(peerId);
         totalOwnerGroups += ownerGroups.length;
-        if (manager.isPeerDialAllowedByAnyGroup(peerId)) {
+        if (groupPeerLedger.isPeerDialAllowedByAnyGroup(peerId)) {
             ownedLookups += 1;
         }
     }
@@ -222,7 +241,8 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_RTC_BENCHMARK_PEER_ADMISSION
     });
     return {
         service,

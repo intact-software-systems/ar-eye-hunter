@@ -53,7 +53,8 @@ export const CAPTURE_APPLICATION_API_CONFIG: ApiConfigResponse = {
     serverPeerId: 'server',
     apiBaseUrl: 'https://test.invalid',
     wsBaseUrl: 'wss://test.invalid',
-    endpoints: { createWs: '/ws' }
+    endpoints: { createWs: '/ws' },
+    rtcReplacedLayoutOverlapMs: 15_000
 };
 
 export function installCaptureApplicationTestEnvironment(): void {

@@ -15,7 +15,7 @@ const DIAL_LAYOUT_ROLES: Readonly<Record<GroupLifecycleState, GroupDialLayoutRol
     forming: 'none',
     planned: 'none',
     connecting: 'planned',
-    active: 'accepted',
+    active: 'accepted-and-planned',
     reconfiguring: 'accepted',
     reconnecting: 'accepted-and-planned'
 };

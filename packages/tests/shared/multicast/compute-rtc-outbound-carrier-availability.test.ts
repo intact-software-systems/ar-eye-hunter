@@ -197,6 +197,7 @@ function computeFor(input: ComputeForInput) {
             overlayId: input.overlay === undefined ? undefined : 'room',
             room: input.room,
             overlay: input.overlay,
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             connectedPeerIds: ['b', 'c'],
             nowMs: NOW_MS
         },
