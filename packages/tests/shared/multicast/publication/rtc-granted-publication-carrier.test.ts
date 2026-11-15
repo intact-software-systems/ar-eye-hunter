@@ -14,7 +14,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RTC_GRANTED_PUBLICATION_REFUSALS } from '@shared/multicast/publication/compute-rtc-granted-publication-refusal.ts';
 import { RtcGrantedPublicationCarrier } from '@shared/multicast/publication/rtc-granted-publication-carrier.ts';
-import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts';
 
 import {
@@ -88,6 +88,7 @@ describe('RtcGrantedPublicationCarrier', () => {
             selfPeerId: 'a',
             fromPeerId: undefined,
             recipientPeerId: undefined,
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             nowMs: Date.now()
         });
 

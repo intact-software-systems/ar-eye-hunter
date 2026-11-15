@@ -180,6 +180,9 @@ function createMulticast(): WebRtcOverlayMulticastManager {
         },
         groupCache: new LatestRepository(),
         overlayCache: new LatestRepository(),
+        layoutTransitionsCache: new LatestRepository(),
+        plannedOverlayCache: new LatestRepository(),
+        replacedLayoutOverlapMs: 15_000,
         multicasterFactory: () => {
             throw new Error('Inbound admission must not construct multicast messages');
         },

@@ -15,6 +15,12 @@ interface ExhaustedPeerConnectionAttemptState extends PeerConnectionAttemptState
     readonly retryAfterEpochMs: number;
 }
 
+type PeerConnectionAttemptStanding =
+    | { readonly kind: 'within-budget'; }
+    | { readonly kind: 'exhausted'; readonly state: PeerConnectionAttemptState; }
+    | { readonly kind: 'cooling-down'; readonly state: ExhaustedPeerConnectionAttemptState; }
+    | { readonly kind: 'cooldown-ended'; };
+
 export namespace RtcPeerConnectionAttemptBudget {
     export interface Input {
         readonly nowEpochMs: () => number;
@@ -54,6 +60,17 @@ export class RtcPeerConnectionAttemptBudget {
         return { ...this.attemptBudgetDiagnostics };
     }
 
+    /** Whether `consume` would refuse this peer now; it changes nothing. */
+    wouldRefuse(peerId: PeerId): boolean {
+        const policy = this.input.readPolicy();
+        const standing = this.resolveAttemptStanding(
+            this.peerConnectionAttemptStateByPeerId.get(peerId),
+            policy,
+            this.input.nowEpochMs()
+        );
+        return standing.kind === 'cooling-down' || standing.kind === 'exhausted';
+    }
+
     consume(
         peerId: PeerId
     ): WebRtcConnectionService.PeerConnectionAttemptExhaustedEvent | undefined {
@@ -63,34 +80,18 @@ export class RtcPeerConnectionAttemptBudget {
         }
 
         const now = this.input.nowEpochMs();
-        const current = this.peerConnectionAttemptStateByPeerId.get(peerId);
-        if (
-            current?.retryAfterEpochMs !== undefined &&
-            current.exhaustedAtEpochMs !== undefined
-        ) {
-            if (now < current.retryAfterEpochMs) {
-                return this.toPeerConnectionAttemptExhaustedEvent(
-                    {
-                        ...current,
-                        exhaustedAtEpochMs: current.exhaustedAtEpochMs,
-                        retryAfterEpochMs: current.retryAfterEpochMs
-                    },
-                    policy
-                );
-            }
-
-            this.peerConnectionAttemptStateByPeerId.delete(peerId);
-            this.attemptBudgetDiagnostics.cooldownExpiredClearCount += 1;
-        }
-        else if (
-            current &&
-            this.isPeerConnectionAttemptBudgetExhausted(current, policy, now)
-        ) {
-            return this.markPeerConnectionAttemptExhausted(
-                current,
-                policy,
-                now
-            );
+        const standing = this.resolveAttemptStanding(this.peerConnectionAttemptStateByPeerId.get(peerId), policy, now);
+        switch (standing.kind) {
+            case 'cooling-down':
+                return this.toPeerConnectionAttemptExhaustedEvent(standing.state, policy);
+            case 'exhausted':
+                return this.markPeerConnectionAttemptExhausted(standing.state, policy, now);
+            case 'cooldown-ended':
+                this.peerConnectionAttemptStateByPeerId.delete(peerId);
+                this.attemptBudgetDiagnostics.cooldownExpiredClearCount += 1;
+                break;
+            case 'within-budget':
+                break;
         }
 
         const latest = this.peerConnectionAttemptStateByPeerId.get(peerId);
@@ -109,6 +110,29 @@ export class RtcPeerConnectionAttemptBudget {
         this.peerConnectionAttemptStateByPeerId.set(peerId, next);
         this.attemptBudgetDiagnostics.consumedCount += 1;
         return undefined;
+    }
+
+    private resolveAttemptStanding(
+        current: PeerConnectionAttemptState | undefined,
+        policy: WebRtcConnectionService.PeerConnectionAttemptBudgetPolicy,
+        now: number
+    ): PeerConnectionAttemptStanding {
+        if (!policy.enabled || !current) {
+            return { kind: 'within-budget' };
+        }
+        if (current.retryAfterEpochMs !== undefined && current.exhaustedAtEpochMs !== undefined) {
+            const exhausted: ExhaustedPeerConnectionAttemptState = {
+                ...current,
+                exhaustedAtEpochMs: current.exhaustedAtEpochMs,
+                retryAfterEpochMs: current.retryAfterEpochMs
+            };
+            return now < exhausted.retryAfterEpochMs
+                ? { kind: 'cooling-down', state: exhausted }
+                : { kind: 'cooldown-ended' };
+        }
+        return this.isPeerConnectionAttemptBudgetExhausted(current, policy, now)
+            ? { kind: 'exhausted', state: current }
+            : { kind: 'within-budget' };
     }
 
     private isPeerConnectionAttemptBudgetExhausted(

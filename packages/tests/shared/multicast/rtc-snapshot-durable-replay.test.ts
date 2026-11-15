@@ -20,7 +20,7 @@ import type { ALInboundPlanner } from '@shared/alm/inbound/al-inbound-admission-
 import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { createDefaultALInboundMessageRuntime } from '@shared/alm/inbound/create-default-al-inbound-message-runtime.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { planRtcRoomSnapshotAdmission } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -387,22 +387,24 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
 }
 
 function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALInboundPlanner {
-    return (message, source, observations) =>
-        planRtcRoomSnapshotAdmission({
+    return (message, source, observations) => {
+        const fromPeerId = source.kind === 'trusted-server' ? undefined : source.peerId;
+        const plan = planALMessageHandling(message, {
+            selfPeerId: 'receiver',
+            fromPeerId,
+            ...observations,
+            overloaded: observed.overloaded,
+            connectedPeerIds: relay ? ['sender', 'downstream'] : ['sender'],
+            groupMemberPeerIds: ['sender', 'receiver', 'downstream'],
+            overlayNeighborPeerIds: relay ? ['sender', 'downstream'] : ['sender']
+        });
+        const admission = computeRtcRoomSnapshotAdmission({
             message,
-            plan: planALMessageHandling(message, {
-                selfPeerId: 'receiver',
-                fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
-                ...observations,
-                overloaded: observed.overloaded,
-                connectedPeerIds: relay ? ['sender', 'downstream'] : ['sender'],
-                groupMemberPeerIds: ['sender', 'receiver', 'downstream'],
-                overlayNeighborPeerIds: relay ? ['sender', 'downstream'] : ['sender']
-            }),
             snapshot: observed.snapshot,
-            fromPeerId: source.kind === 'trusted-server' ? undefined : source.peerId,
+            fromPeerId,
             selfPeerId: 'receiver',
             recipientPeerId: undefined,
+            layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null },
             overlay: {
                 overlayId: 'room',
                 groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
@@ -421,6 +423,8 @@ function createReplayPlanner(observed: ReplayObservedState, relay: boolean): ALI
             },
             nowMs: observations.nowMs
         });
+        return toRtcRoomSnapshotHandlingPlan(plan, admission, fromPeerId);
+    };
 }
 
 /** Every RTC copy of a room multicast carries the audience its origin froze. */

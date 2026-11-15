@@ -256,9 +256,11 @@ describe('live RTC control client', () => {
                 topic: 'direct-topic',
                 payload: {
                     data: {
-                        matrixId: 'an-earlier-message',
-                        deliveryMode: 'direct',
-                        credential: 'must-not-be-retained'
+                        payload: {
+                            matrixId: 'an-earlier-message',
+                            deliveryMode: 'direct',
+                            credential: 'must-not-be-retained'
+                        }
                     }
                 }
             }

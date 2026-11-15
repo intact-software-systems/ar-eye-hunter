@@ -38,7 +38,8 @@ beforeEach(() => {
     resetRoomWorkflowTestRuntime();
     configureOverlayRepositories({
         plannedOverlays: { ttlMs: 60_000 },
-        acceptedOverlays: { ttlMs: 60_000 }
+        acceptedOverlays: { ttlMs: 60_000 },
+        nowEpochMs: Date.now
     });
 });
 afterEach(() => vi.unstubAllGlobals());

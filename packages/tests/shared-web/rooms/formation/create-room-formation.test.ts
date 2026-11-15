@@ -118,7 +118,7 @@ describe('room formation commands', () => {
     beforeEach(() => {
         resetRoomWorkflowTestRuntime();
         configureApiClient({ apiBaseUrl: 'https://api.example.test' });
-        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+        configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 }, nowEpochMs: Date.now });
         removePlannedOverlayByGroupRef(roomRef);
         removeAcceptedOverlayByGroupRef(roomRef);
     });

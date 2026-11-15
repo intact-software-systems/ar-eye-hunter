@@ -5,6 +5,7 @@ import {
     MIN_APP_INBOX_FINISHED_RETENTION_MS
 } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { MAX_RTT_REPLAN_MINIMUM_LAYOUT_AGE_MS } from '@shared-server/rallar-system/topology/planning/resolve-rtt-replan-promotion.ts';
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
 import { API_MUTATION_COMPLETION_WAIT_MAX_ELAPSED_MS } from '@shared/api/mutation/api-mutation-completion-wait-max-elapsed-ms.ts';
 import { decodeRallarCrdtDocumentTypePolicies } from '@shared/crdt/mod.ts';
 import { InboxQueueReader } from '@shared/services/inbox-queue-reader.ts';
@@ -164,7 +165,12 @@ function decodePublicApi(
         wsBaseUrl: decodeApiV1ConfigurationUrl(decoder, 'publicApi.wsBaseUrl', [
             'ws:',
             'wss:'
-        ])
+        ]),
+        rtcReplacedLayoutOverlapMs: decoder.integer(
+            'publicApi.rtcReplacedLayoutOverlapMs',
+            0,
+            MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS
+        )
     };
 }
 

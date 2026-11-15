@@ -213,7 +213,8 @@ async function installDirectoryFixture(page: Page, directory: (route: Route) => 
                     apiBaseUrl: API_URL,
                     wsBaseUrl: 'ws://127.0.0.1:8080',
                     endpoints: { createWs: '/api/ws/:id' },
-                    serverPeerId: 'directory-test-server'
+                    serverPeerId: 'directory-test-server',
+                    rtcReplacedLayoutOverlapMs: 15_000
                 }
             });
         }

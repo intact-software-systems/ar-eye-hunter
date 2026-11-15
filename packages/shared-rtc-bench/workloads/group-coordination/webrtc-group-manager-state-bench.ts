@@ -12,6 +12,11 @@ import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
+    DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+    DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+    WebRtcGroupPeerLedger
+} from '@shared/services/group-dial/web-rtc-group-peer-ledger.ts';
+import {
     parseRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorker,
     runRtcBaselineAcceptedWorkerCli,
@@ -26,6 +31,7 @@ import {
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { UNGATED_RTC_BENCHMARK_PEER_ADMISSION } from '../native-rtc/ungated-rtc-benchmark-peer-admission.ts';
 import { createRtcGroupCoordinationSnapshot } from './create-rtc-group-coordination-snapshot.ts';
 
 export interface WebRtcGroupManagerStateInput {
@@ -176,8 +182,14 @@ async function seedGroupManagerState(
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
     const manager = new WebRtcGroupManager(
         connectionService,
-        { groupCache, clientCache, acceptedOverlayCache },
-        { onOverlayAdopted: async () => {} }
+        new WebRtcGroupPeerLedger({
+            localSessionId: connectionService.input.sessionId,
+            repositories: { groupCache, clientCache, acceptedOverlayCache },
+            maxPeerConnections: DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS,
+            overlayTransitionGraceMs: DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+            nowEpochMs: () => Date.now()
+        }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
     );
 
     for (let index = 0; index < input.clients; index += 1) {
@@ -296,7 +308,8 @@ function createSimulatedConnections(sessionId: string): SimulatedConnections {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_RTC_BENCHMARK_PEER_ADMISSION
     });
     return {
         service,

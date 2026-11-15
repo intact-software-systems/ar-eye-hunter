@@ -28,7 +28,7 @@ the Bun API on three replicas.
 
 The cause of the 07, 09 and 21 failures: an RTT-only re-plan of a stable leaderless room is accepted
 without a churn gate, and browsers route only over the new layout's edges before they are open. #810
-adds the gate. Make-before-break routing in the browser is the complete fix and is not scheduled.
+adds the gate. Make-before-break routing in the browser is decision D645 in `playground/alm/alm-improvement-plan.md`.
 
 ## Why this needs a real fleet
 

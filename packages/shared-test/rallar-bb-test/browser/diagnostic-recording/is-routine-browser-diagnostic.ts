@@ -14,7 +14,7 @@ const SIGNAL_IDENTITY_KEYS = [
     'disposition'
 ];
 
-const ROUTINE_SERVICE_DISPOSITIONS = ['reuse-selected', 'allow-without-policy', 'policy-allow', 'reuse-returned'];
+const ROUTINE_SERVICE_DISPOSITIONS = ['reuse-selected', 'policy-allow', 'reuse-returned'];
 
 /** The closed encoded forms accepted at both the source and the recorder boundary. */
 export function isRoutineBrowserDiagnostic(topic: string, detail: unknown): detail is object | undefined {

@@ -24,6 +24,7 @@ const apiConfiguration: ApiConfigResponse = {
     apiBaseUrl: 'https://first.test',
     wsBaseUrl: 'wss://first.test',
     endpoints: { createWs: '/ws' },
+    rtcReplacedLayoutOverlapMs: 15_000,
     serverPeerId: 'ice-fixture-server'
 };
 const session = { clientId: 'refresh-client', sessionId: 'refresh-session', username: 'test', accessToken: 'initial', expiresAtEpochMs: 1_000_000 };

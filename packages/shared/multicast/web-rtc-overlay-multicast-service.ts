@@ -8,7 +8,11 @@ import type {
     OverlayMulticastForwarding,
     WebRtcOverlayMulticaster
 } from './overlay-multicast-contracts.ts';
-import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import {
+    computeRtcRoomSnapshotAdmission,
+    toRtcRoomSnapshotHandlingPlan
+} from './room-authority/rtc-room-snapshot-admission.ts';
+import { toALLayoutPlanningContext } from './room-authority/to-al-layout-planning-context.ts';
 import { toRtcTransportVisitedPeerIds } from './to-rtc-transport-visited-peer-ids.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
@@ -46,6 +50,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             message: msg,
             snapshot: context.room,
             overlay: context.overlay,
+            layoutChanges: context.layoutChanges,
             selfPeerId,
             fromPeerId: forwarding.fromPeerId,
             recipientPeerId: undefined,
@@ -60,9 +65,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             selfPeerId,
             fromPeerId: forwarding.fromPeerId,
             connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
-            groupMemberPeerIds: admission.kind === 'authorized' ? admission.memberPeerIds : [],
-            overlayNeighborPeerIds: admission.kind === 'authorized' ? admission.forwardingPeerIds : [],
-            overlayNextHopsBySessionId: context.overlay.nextHopsBySessionId
+            ...toALLayoutPlanningContext(admission, context.overlay)
         }, forwarding.qos);
         const handlingPlan = toRtcRoomSnapshotHandlingPlan(plan, admission, forwarding.fromPeerId);
         return {

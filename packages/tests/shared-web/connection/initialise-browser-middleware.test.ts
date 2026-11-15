@@ -65,6 +65,7 @@ import {
     createAvailablePublicationCryptoFixture,
     UNAVAILABLE_PUBLICATION_CRYPTO
 } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { DeterministicRtcOfferIds } from '../../shared/webrtc/deterministic-rtc-offer-ids.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
@@ -131,7 +132,8 @@ describe('native observation handoff cleanup', () => {
             createOfferId: () => 'offer',
             faultPort: createPassThroughTransportFaultPort(),
             signalingDiagnostics: capture.diagnostics,
-            writeRetainedSignalsDueNow: async () => []
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         });
         onTestFinished(() => service.disposeNativeObservations());
         const middleware = createDefaultApiMiddlewareTestDouble({
@@ -142,7 +144,8 @@ describe('native observation handoff cleanup', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(middleware.middleware.webSocketQueueBox);
@@ -187,7 +190,8 @@ describe('the inbound stores a connect hands its two carriers', () => {
             nowEpochMs: () => 1,
             createOfferId: () => 'offer',
             faultPort: createPassThroughTransportFaultPort(),
-            writeRetainedSignalsDueNow: async () => []
+            writeRetainedSignalsDueNow: async () => [],
+            peerAdmission: UNGATED_TEST_PEER_ADMISSION
         });
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
@@ -199,7 +203,8 @@ describe('the inbound stores a connect hands its two carriers', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: 1000 });
         vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockImplementation(async (input) => {
@@ -251,7 +256,8 @@ describe('browser RTC layout adoption composition', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         vi.spyOn(connectionHttp, 'readIceCandidates').mockResolvedValue({ iceServers: [], expiresAtEpochMs: Date.now() + 600_000 });
         vi.spyOn(JsonWebSocketClient.prototype, 'connect').mockResolvedValue();
@@ -287,8 +293,9 @@ describe('browser RTC layout adoption composition', () => {
 
         const group = createAcceptedGroupSnapshotFixture([SESSION.sessionId, 'startup-peer']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        // The room is known before its layout, so the pass this update runs dials no one.
+        await webRtcGroupManager.acceptGroupUpdate(group);
         overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), createAcceptedOverlayFixture(group, 1, ['startup-peer']));
-        await webRtcGroupManager.getOrCreate(group.group).acceptGroupUpdate(group);
         await webRtcGroupManager.notifyOverlayTopologyChanged();
 
         await vi.waitFor(
@@ -336,7 +343,8 @@ describe('the one volatile bound a browser session hands its carriers (D74)', ()
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         const { budget, qosProvider } = input.volatileBound;
@@ -413,7 +421,8 @@ describe('the durable work claim a connect hands its carriers', () => {
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(ws.durableWorkOwnership).toBe(OPTIONS.durableWorkOwnership);
@@ -430,7 +439,8 @@ describe('the transport faults a connect hands its RTC overlay', () => {
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.faultPort).toBe(OPTIONS.diagnosticsPorts.transportFaultPort);
@@ -447,7 +457,8 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.publicationCrypto).toBe(publicationCrypto);
@@ -462,7 +473,8 @@ describe('the page key and granted topics a connect hands its RTC overlay', () =
 
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(rtc.publicationVerifier).toBe(KEYLESS_PUBLICATION_VERIFIER);
@@ -489,7 +501,8 @@ describe('the checkpoint stores a connect hands its carriers', () => {
         });
         const rtc = toRtcOverlayMulticastManagerInput(input, {
             qboxEngine,
-            webRtcConnectionService: createConnectionService()
+            webRtcConnectionService: createConnectionService(),
+            replacedLayoutOverlapMs: 15_000
         });
 
         expect(ws.checkpointStores).toBe(input.checkpointStores.wsClient);
@@ -536,7 +549,8 @@ function createConnectionService(): WebRtcConnectionService {
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: new DeterministicRtcOfferIds().createOfferId,
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_TEST_PEER_ADMISSION
     });
 }
 
@@ -611,7 +625,8 @@ describe('failed browser startup owns acquired transport completion', () => {
             serverPeerId: 'server',
             apiBaseUrl: 'http://test',
             wsBaseUrl: 'ws://test',
-            endpoints: { createWs: '/ws' }
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         const original = wsClientFactory.createDefaultWsQueueBoxClientService;
         vi.spyOn(wsClientFactory, 'createDefaultWsQueueBoxClientService').mockImplementation((input) => {
@@ -751,7 +766,8 @@ function configureFailedStartup(
         serverPeerId: 'server',
         apiBaseUrl: 'http://test',
         wsBaseUrl: 'ws://test',
-        endpoints: { createWs: '/ws' }
+        endpoints: { createWs: '/ws' },
+        rtcReplacedLayoutOverlapMs: 15_000
     });
     const ice = vi.spyOn(connectionHttp, 'readIceCandidates');
     if (boundary === 'rtc-request') {

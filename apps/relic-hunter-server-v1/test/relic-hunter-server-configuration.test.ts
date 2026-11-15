@@ -72,7 +72,8 @@ describe('Relic Hunter server configuration', () => {
         expect(configuration.browser).toEqual({
             apiBaseUrl: 'https://relic.example.test',
             wsBaseUrl: 'wss://relic.example.test',
-            endpoints: { createWs: '/api/ws/:id' }
+            endpoints: { createWs: '/api/ws/:id' },
+            rtcReplacedLayoutOverlapMs: 15_000
         });
         expect(reads.get('RALLAR_API_CONFIGURATION_PROFILE')).toBe(1);
         expect(reads.get('PORT')).toBe(1);
@@ -121,6 +122,7 @@ describe('Relic Hunter server configuration', () => {
         expect(Object.keys(configuration.browser).sort()).toEqual([
             'apiBaseUrl',
             'endpoints',
+            'rtcReplacedLayoutOverlapMs',
             'wsBaseUrl'
         ]);
         expect(serializedBrowserConfiguration).not.toContain(AUTHENTICATION_SECRET);

@@ -373,7 +373,8 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
                 endpoints: {
                     createWs: '/api/ws/{auth.sessionId}'
                 },
-                serverPeerId: 'server'
+                serverPeerId: 'server',
+                rtcReplacedLayoutOverlapMs: 15_000
             })
         });
     });
@@ -617,7 +618,8 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
                 endpoints: {
                     createWs: '/api/ws/:id'
                 },
-                serverPeerId: 'server'
+                serverPeerId: 'server',
+                rtcReplacedLayoutOverlapMs: 15_000
             })
         });
     });

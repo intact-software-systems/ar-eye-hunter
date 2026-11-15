@@ -1,6 +1,6 @@
 import { resolveGroupPublicationPermissions } from '../../api/group-publication/group-publication-grants.ts';
 import type { GroupSnapshot } from '../../api/group-types.ts';
-import { resolveRoomObservationDenial } from '../rtc-room-snapshot-admission.ts';
+import { resolveRoomObservationDenial } from '../room-authority/rtc-room-snapshot-admission.ts';
 
 export interface RtcRepairRefusalInput {
     /** The origin's cached snapshot of the message's room, read by its ref; `null` when it holds none. */

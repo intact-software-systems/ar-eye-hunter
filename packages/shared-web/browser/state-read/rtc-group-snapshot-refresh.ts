@@ -2,6 +2,7 @@ import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-co
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { isRtcRoomSnapshotRefreshReason } from '@shared/multicast/room-authority/is-rtc-room-snapshot-refresh-reason.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
 
 export namespace RtcGroupSnapshotRefresh {
@@ -30,7 +31,7 @@ export class RtcGroupSnapshotRefresh {
     ): Promise<boolean> {
         if (
             this.#controller.signal.aborted || acceptance.kind !== 'not-admitted' ||
-            !isNotYetInSyncReason(acceptance.reason)
+            !isRtcRoomSnapshotRefreshReason(acceptance.reason)
         ) {
             return false;
         }
@@ -60,13 +61,4 @@ export class RtcGroupSnapshotRefresh {
             return false;
         }
     }
-}
-
-/**
- * The acceptance carries the plan's drop reason, not its code. A room-authority denial writes the
- * code at the head of that reason and the denial that fired after it
- * (`rtc-room-snapshot-admission.ts`); a server-side denial writes the bare code.
- */
-function isNotYetInSyncReason(reason: string): boolean {
-    return reason === 'not-yet-in-sync' || reason.startsWith('not-yet-in-sync: ');
 }

@@ -19,7 +19,8 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcPeerConnection
 } from './native-rtc-connection-fixture.ts';
-import { acceptActiveLayoutGroup, createGroupSnapshot } from './web-rtc-group-manager-test-fixture.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from './ungated-test-peer-admission.ts';
+import { acceptActiveLayoutGroup, createGroupSnapshot, createTestGroupPeerLedger } from './web-rtc-group-manager-test-fixture.ts';
 
 let runtime: NativeRtcRuntime;
 const fixtures: { connection: NativeRtcConnectionFixture; manager: WebRtcGroupManager; }[] = [];
@@ -54,14 +55,18 @@ async function createConnectedGroup(): Promise<ConnectedGroup> {
             rtcSignalingTopicId: 'rtc'
         },
         runtime,
-        createPassThroughTransportFaultPort()
+        { faultPort: createPassThroughTransportFaultPort(), peerAdmission: UNGATED_TEST_PEER_ADMISSION }
     );
     const acceptedOverlayCache = new LatestRepository<string, OverlayInfo>();
-    const manager = new WebRtcGroupManager(connection.service, {
-        groupCache: new LatestRepository<string, GroupSnapshot>(),
-        clientCache: new LatestRepository<string, ClientInfo>(),
-        acceptedOverlayCache
-    }, { onOverlayAdopted: async () => {} });
+    const manager = new WebRtcGroupManager(
+        connection.service,
+        createTestGroupPeerLedger(connection.service.input.sessionId, {
+            groupCache: new LatestRepository<string, GroupSnapshot>(),
+            clientCache: new LatestRepository<string, ClientInfo>(),
+            acceptedOverlayCache
+        }),
+        { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
+    );
     fixtures.push({ connection, manager });
     manager.startReconcileWakes();
     const snapshot = createGroupSnapshot({

@@ -23,6 +23,7 @@ import {
     type RtcBaselineSampleDto
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import { installRtcBenchmarkNativeRuntime } from '../native-rtc/rtc-benchmark-native-peer.ts';
+import { UNGATED_RTC_BENCHMARK_PEER_ADMISSION } from '../native-rtc/ungated-rtc-benchmark-peer-admission.ts';
 import { createDeterministicRtcTopologyGroupSnapshot } from '../topology/create-deterministic-rtc-topology-group-snapshot.ts';
 
 export interface RtcMulticastSerializationInput {
@@ -348,7 +349,8 @@ function createConnectionService(peerIds: readonly string[]): RtcMulticastConnec
         faultPort: createPassThroughTransportFaultPort(),
         createOfferId: () => crypto.randomUUID(),
         nowEpochMs: () => Date.now(),
-        writeRetainedSignalsDueNow: async () => []
+        writeRetainedSignalsDueNow: async () => [],
+        peerAdmission: UNGATED_RTC_BENCHMARK_PEER_ADMISSION
     });
     const dispose = (): void => {
         for (const peerId of service.knownPeerIds()) {
@@ -407,7 +409,8 @@ function createOverlayContext(peerIds: readonly string[]): OverlayMulticasterCon
             overlayVersion: 1,
             updatedAtEpochMs: 1,
             nextHopsBySessionId: undefined
-        }
+        },
+        layoutChanges: { transitions: [], replacedLayoutOverlapMs: 15_000, planned: null }
     };
 }
 

@@ -23,6 +23,7 @@ import {
     createRtcOriginOverlayFixture,
     enqueueAndDrain,
     ORIGIN_ROOM,
+    readCopies,
     type RtcOriginOverlayFixture
 } from './rtc-origin-overlay-fixture.ts';
 import { createRtcRelayOverlayFixture, type RtcRelayOverlayFixture } from './rtc-relay-overlay-fixture.ts';
@@ -74,10 +75,6 @@ function createBestEffortMulticast(resourceId: string): ALMessage {
         { text: resourceId },
         { reliability: 'best-effort', ack: 'none', ttlMs: 30_000 }
     );
-}
-
-function readCopies(sent: readonly ALMessage[], message: ALMessage): number {
-    return sent.filter((copy) => copy.id.msgId === message.id.msgId).length;
 }
 
 describe('the session volatile bound as the RTC origin\'s overloaded signal (D78)', () => {

@@ -7,9 +7,10 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
 import { createTestGroup } from '../create-test-group.ts';
 import { createSimulatedRtcConnections } from './simulated-rtc-connection-service.ts';
+import { createTestGroupPeerLedger } from './web-rtc-group-manager-test-fixture.ts';
 
 describe('WebRtcGroupManager overlay roles', () => {
-    it('uses planned topology for RTT evidence and accepted topology for traffic dials', async () => {
+    it('uses planned topology for RTT evidence and dials both layouts while active', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
         const plannedOverlayCache = new LatestRepository<string, OverlayInfo>();
@@ -19,13 +20,13 @@ describe('WebRtcGroupManager overlay roles', () => {
         const overlayId = toScopedOverlayId(group.group);
         const manager = new WebRtcGroupManager(
             rtc,
-            {
+            createTestGroupPeerLedger(rtc.input.sessionId, {
                 groupCache,
                 clientCache,
                 plannedOverlayCache,
                 acceptedOverlayCache
-            },
-            { maxPeerConnections: 10, overlayTransitionGraceMs: 0, onOverlayAdopted: async () => {} }
+            }, { maxPeerConnections: 10, overlayTransitionGraceMs: 0 }),
+            { onOverlayAdopted: async () => {}, onReconcilePassEnded: () => {} }
         );
         for (const peerId of ['peer-accepted', 'peer-planned']) {
             clientCache.set(peerId, createClientInfo(peerId));
@@ -42,9 +43,9 @@ describe('WebRtcGroupManager overlay roles', () => {
         await manager.acceptGroupUpdate(group);
 
         expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-planned']);
-        expect(manager.state().desiredPeerIds).toEqual(['peer-accepted']);
-        expect(rtc.inFlightPeerIds()).toEqual(['peer-accepted']);
-        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 1, connectFailureCount: 0 });
+        expect(manager.state().desiredPeerIds).toEqual(['peer-accepted', 'peer-planned']);
+        expect(rtc.inFlightPeerIds().slice().sort()).toEqual(['peer-accepted', 'peer-planned']);
+        expect(manager.readDiagnostics()).toMatchObject({ connectAttemptCount: 2, connectFailureCount: 0 });
     });
 });
 

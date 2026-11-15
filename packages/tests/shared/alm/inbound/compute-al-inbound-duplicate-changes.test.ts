@@ -37,7 +37,7 @@ import {
     toALInboundNackCommitBundle
 } from '@shared/alm/inbound/control/compute-al-inbound-nack-admission.ts';
 import { readALInboundEffectFacts } from '@shared/alm/inbound/prepare-al-inbound-commit-bundle.ts';
-import { toRtcPublicationHandlingPlan } from '@shared/multicast/rtc-room-snapshot-admission.ts';
+import { toRtcPublicationHandlingPlan } from '@shared/multicast/room-authority/rtc-room-snapshot-admission.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
     describe,
