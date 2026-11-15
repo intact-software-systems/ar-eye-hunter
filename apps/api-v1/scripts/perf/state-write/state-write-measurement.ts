@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import {
     deriveAppInboxAttemptObservations,
     type AppInboxAttemptObservation
@@ -271,25 +272,10 @@ export function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary
 
 function summarizeLatency(samples: readonly number[]): LatencySummary {
     return {
-        p50: percentile(samples, 0.5),
-        p95: percentile(samples, 0.95),
-        p99: percentile(samples, 0.99)
+        p50: computeNearestRank(samples, 0.5) ?? 0,
+        p95: computeNearestRank(samples, 0.95) ?? 0,
+        p99: computeNearestRank(samples, 0.99) ?? 0
     };
-}
-
-function percentile(
-    samples: readonly number[],
-    percentileValue: number
-): number {
-    if (samples.length === 0) {
-        return 0;
-    }
-    const sorted = [...samples].sort((left, right) => left - right);
-    const value = sorted[Math.ceil(percentileValue * sorted.length) - 1];
-    if (value === undefined) {
-        throw new Error('Percentile index is outside the sample set');
-    }
-    return value;
 }
 
 function medianSqlMetrics(samples: readonly RunSample[]): SqlArtifactMetrics {
