@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
@@ -54,12 +55,11 @@ function computeTimerLagWindow(
     endedAtMs: number,
     lagsMs: readonly number[]
 ): TimerLagWindow {
-    const sorted = lagsMs.toSorted((left, right) => left - right);
     return {
         startedAtMs,
         endedAtMs,
-        sampleCount: sorted.length,
-        maxLagMs: sorted[sorted.length - 1] ?? 0,
-        p50LagMs: sorted[Math.max(0, Math.ceil(sorted.length / 2) - 1)] ?? 0
+        sampleCount: lagsMs.length,
+        maxLagMs: computeNearestRank(lagsMs, 1) ?? 0,
+        p50LagMs: computeNearestRank(lagsMs, 0.5) ?? 0
     };
 }
