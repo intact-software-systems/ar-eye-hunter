@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { toOrderingPositionWait, toRepairDispatchWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
-import { toSentCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toReachedCommands } from '../../alm-conformance-ordering-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES } from '../../alm-conformance-roles.ts';
 import {
     FULL_TAGS,
@@ -62,14 +62,15 @@ export const grantedRtcOrderedRelay: AlmConformanceScenarioDefinition = {
 
 /**
  * A readiness probe, on no track, waits until the receiver alone is expected and confirms: recipient-b and the sender
- * hold no `subscribe`. `p1` has left before the hold of `p2` starts, so the hold meets `p2` alone.
+ * hold no `subscribe`. `p1`'s receipt ends acknowledged before the hold of `p2` starts, so the receiver entered the
+ * track at `p1` whichever next hops the layout gave the sender, and the hold meets `p2` alone.
  */
 function toHeldTrackCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const held = { ...sender, index: 2 };
     return [
         ...toReadinessProbeCommands(sender, 1, 0),
         toTrackSend(sender, 1),
-        ...toSentCommands({ ...sender, index: 1 }),
+        ...toReachedCommands({ ...sender, index: 1 }),
         ...toHeldSendCommands(held, [toTrackSend(sender, 2)]),
         toTrackSend(sender, 3),
         toRepairDispatchWait(held, 'repair-dispatch-2'),

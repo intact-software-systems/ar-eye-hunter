@@ -1732,7 +1732,89 @@ describe('alm-conformance recipe family', () => {
         expect(reshaped).toEqual(['rtc receipted-relay-path', 'rtc granted-rtc-relay-only', 'rtc granted-rtc-ordered-relay']);
         expect(unsettled).toEqual([]);
     });
+
+    it('holds a track only once its earlier send reached every expected recipient: its receipt acknowledged, or each expected recipient\'s cue that it arrived, unless the room gives the sender one next hop', () => {
+        const held: string[] = [];
+        const uncovered: string[] = [];
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
+                for (const role of scenario.roles) {
+                    const commands = toAlmConformanceRoleRecipe(scenario, role)!.commands;
+                    for (const { send, hold, between } of toHeldTrackSends(commands)) {
+                        const label = `${carrier} ${scenario.scenarioKey} ${role} ${hold.commandId}`;
+                        held.push(label);
+                        // Two pages: the sender's one peer, or over ws the server, is its only next hop.
+                        const oneNextHop = scenario.roles.length === 2;
+                        if (!oneNextHop && !isAcknowledgedPoint(between, send.handleId!) && !isArrivalCuePoint(between, scenario, role)) {
+                            uncovered.push(label);
+                        }
+                    }
+                }
+            }
+        }
+        expect(held.length).toBeGreaterThan(0);
+        expect(uncovered).toEqual([]);
+    });
 });
+
+interface HeldTrackSend {
+    readonly send: RallarBlackBoxTestCommand & { readonly kind: 'messages.send'; };
+    readonly hold: RallarBlackBoxTestCommand;
+    readonly between: readonly RallarBlackBoxTestCommand[];
+}
+
+/** Each type-wide hold a recipe arms after a send on a track of that type, with the commands between the two. */
+function toHeldTrackSends(commands: readonly RallarBlackBoxTestCommand[]): readonly HeldTrackSend[] {
+    const sendAts = commands.flatMap((command, index) => isRallarBlackBoxTestMessagesSendCommand(command) && command.orderingKey !== undefined ? [index] : []);
+    return commands.flatMap((hold, holdAt): readonly HeldTrackSend[] => {
+        if (
+            hold.kind !== 'fault.inject' || hold.carrier === 'storage' || hold.carrier === 'product-socket' ||
+            hold.match.msgId !== undefined || hold.remaining !== 'until-cleared'
+        ) {
+            return [];
+        }
+        const sendAt = sendAts.filter((index) => index < holdAt).at(-1);
+        const send = sendAt === undefined ? undefined : commands[sendAt];
+        return send !== undefined && isRallarBlackBoxTestMessagesSendCommand(send) && send.typeId === hold.match.typeId
+            ? [{ send, hold, between: commands.slice(sendAt! + 1, holdAt) }]
+            : [];
+    });
+}
+
+/** The send's handle observed until `acknowledged`, and its state asserted to be that ending. */
+function isAcknowledgedPoint(between: readonly RallarBlackBoxTestCommand[], handleId: string): boolean {
+    const observe = between.find((command) => command.kind === 'messages.observe' && command.handleId === handleId && command.state.join() === 'acknowledged');
+    return observe !== undefined && between.some((command) =>
+        command.kind === 'assert' && command.source === `resultCache.${observe.commandId}.value.state` &&
+        command.operator === 'equals' && command.expected === 'acknowledged'
+    );
+}
+
+/** A cue from each expected recipient, which every one of them sends only once its own arrival wait passed. */
+function isArrivalCuePoint(
+    between: readonly RallarBlackBoxTestCommand[],
+    scenario: AlmConformanceScenario,
+    sender: AlmConformanceRole
+): boolean {
+    const awaitedCues = between.flatMap((command) => command.kind === 'wait' ? [toCueName(command.match.equals)] : []);
+    const expected = scenario.roles.filter((role) => role !== sender).map((role) => toAlmConformanceRoleRecipe(scenario, role)!.commands)
+        .filter((commands) => commands.some(isArrivalWait));
+    return expected.length > 0 && expected.every((commands) => {
+        const arrivalAt = commands.findIndex(isArrivalWait);
+        return commands.some((command, index) =>
+            index > arrivalAt && isRallarBlackBoxTestMessagesSendCommand(command) && awaitedCues.includes(toCueName(command.payload))
+        );
+    });
+}
+
+function isArrivalWait(command: RallarBlackBoxTestCommand): boolean {
+    return command.absent !== true && (command.kind === 'messages.received' ||
+        (command.kind === 'wait' && command.match.kind === 'message' && toCueName(command.match.equals) === undefined));
+}
+
+function toCueName(value: unknown): string | undefined {
+    return isJsonRecordValue(value) && typeof value.cue === 'string' ? value.cue : undefined;
+}
 
 /** A send, a received read, or a wait for a message: a role's own publication activity, cues included. */
 function isPublicationCommand(command: RallarBlackBoxTestCommand): boolean {

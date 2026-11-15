@@ -570,7 +570,8 @@ describe('the granted rtc cells', () => {
             '-cue-tree-received',
             '-probe-ready',
             '-send-1',
-            '-assert-sent-1',
+            '-observe-acknowledged-1',
+            '-assert-reached-1',
             '-hold-rtc',
             '-send-2',
             '-hold-message-2-rtc',
@@ -582,6 +583,20 @@ describe('the granted rtc cells', () => {
             '-overlay-next-hops'
         ].map((suffix) => toStepIndex(sender, suffix));
         expect(order).toEqual(order.toSorted((left, right) => left - right));
+        // `p1` reached the receiver before the hold: its receipt ended acknowledged, whichever next hops the layout drew.
+        expect(toStepIndex(sender, '-hold-rtc')).toBe(toStepIndex(sender, '-assert-reached-1') + 1);
+        expect(toNestedRecipeCommands(sender).find(({ commandId }) => commandId === `${prefix}-observe-acknowledged-1`)).toMatchObject({
+            kind: 'messages.observe',
+            handleId: 'alm-rtc-granted-rtc-ordered-relay-send-1',
+            state: ['acknowledged']
+        });
+        expect(toNestedRecipeCommands(sender).find(({ commandId }) => commandId === `${prefix}-assert-reached-1`)).toMatchObject({
+            kind: 'assert',
+            source: `resultCache.${prefix}-observe-acknowledged-1.value.state`,
+            operator: 'equals',
+            expected: 'acknowledged'
+        });
+        expect(toNestedRecipeCommands(sender).some(({ commandId }) => commandId === `${prefix}-assert-sent-1`)).toBe(false);
         expect(toNestedRecipeCommands(sender).find(({ commandId }) => commandId === `${prefix}-repair-dispatch-2`)).toMatchObject({
             match: {
                 topic: 'rallar.browser.alm.outbound_diagnostics',

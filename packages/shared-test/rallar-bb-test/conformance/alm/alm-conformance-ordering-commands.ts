@@ -29,7 +29,30 @@ export function toOrderedSendCommands(
     ];
 }
 
-/** The send of `step.index` left the page: its carrier took it, or its recipients already answered it. */
+/**
+ * The receipted send of `step.index` reached every expected recipient: its handle ended `acknowledged`. A room may give
+ * the sender more than one next hop, and a carrier's acceptance settles at the first, so only the receipt says every
+ * expected recipient holds the send.
+ */
+export function toReachedCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...step, state: 'acknowledged' }),
+        toResultAssertion({
+            step,
+            name: `assert-reached-${step.index}`,
+            resultName: `observe-acknowledged-${step.index}`,
+            field: 'state',
+            operator: 'equals',
+            expected: 'acknowledged'
+        })
+    ];
+}
+
+/**
+ * The send of `step.index` left the page: its carrier took it, or its recipients already answered it. The carrier's
+ * acceptance settles at its first next hop, so it orders a later step only where the sender has one: a room of two
+ * pages, or the server over ws.
+ */
 export function toSentCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         toObserveCommand({ ...step, state: 'transport-accepted' }),

@@ -304,7 +304,8 @@ describe('repair-exhausted', () => {
         const { sender, receiver, recipientB } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 
         const cue = `alm-${carrier}-repair-exhausted-cues-sender-cue`;
-        const firstSend = toHeldSecondSendNames(carrier).slice(0, 5);
+        // The cues of both receivers, not the carrier's acceptance, order the first send before the gap.
+        const firstSend = toHeldSecondSendNames(carrier).slice(0, 3);
         const gap = toHeldSecondSendNames(carrier).slice(5);
 
         expect(toCommandNames(sender)).toEqual([
@@ -357,8 +358,8 @@ describe('repair-exhausted', () => {
             const senderNames = toCommandNames(sender);
             const cueWaits = ['receiver', 'recipient-b'].map((role) => `alm-${carrier}-repair-exhausted-cues-sender-cue-${role}-delivered-1-received`);
 
-            // The first send left the page before the sender waits, and nothing of the gap is sent before both cues.
-            expect(senderNames.slice(senderNames.indexOf('assert-sent-1') + 1, senderNames.indexOf('assert-sent-1') + 4))
+            // The first send was admitted before the sender waits, and nothing of the gap is sent before both cues.
+            expect(senderNames.slice(senderNames.indexOf('assert-admitted-1') + 1, senderNames.indexOf('assert-admitted-1') + 4))
                 .toEqual([...cueWaits, toHoldNames(carrier, 'hold')[0]]);
             expect(recipientB).toBeDefined();
             for (const [role, recipient] of [['receiver', receiver], ['recipient-b', recipientB!]] as const) {
