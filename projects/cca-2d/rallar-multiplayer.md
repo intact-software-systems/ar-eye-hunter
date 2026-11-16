@@ -756,6 +756,23 @@ clocks twenty seconds ahead and behind prove valid inbound delivery, valid wire
 submission and refusal of both directions at the deadline. This supplies another
 required calibration seam without changing transport lifetimes or wire format.
 
+`BrowserServerClock` now owns acquisition and retention of a server-time sample
+for one connection identity. Concurrent refreshes share one bounded HTTP request;
+invalidation cancels the old generation and prevents late results from replacing
+the next acquisition. Closure returns even if the underlying fetch ignores abort.
+A failed refresh preserves a sample only while its bounds remain valid. Expiry,
+observed monotonic rollback or disjoint server-time intervals latch an explicit
+discontinuity until the connection owner stops epoch-dependent work and requests
+reacquisition. No local-clock fallback is permitted. This lifecycle is necessary
+because a correct interval calculation alone cannot prevent a suspended or
+cancelled browser from using an obsolete observation.
+
+The lifecycle has direct tests for acquisition, refresh, cancellation, timeout,
+reentrant replacement, shutdown and discontinuity. It is not yet wired into the
+browser transport: periodic refresh, page suspension and the dependent clock
+consumers below remain integration work. These tests do not qualify clock-skew
+gameplay or physical phones.
+
 Browser integration must distinguish creation from expiry: construct a new
 message from the conservative earliest server bound before publication signing,
 and compare its deadline against the latest bound at admission, fallback and
