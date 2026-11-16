@@ -46,10 +46,17 @@ Authority/recovery changes clear it. Confirmed freezes and terminal phases overr
 live rendering; scores, world effects, results and recovery retain checkpoint truth.
 The host publishes at most 20 compact pose frames/second independently of checkpoint
 acknowledgements. Controls retain their existing host-receipt expiry and dash counter.
-Wire build is `grumpy-town-v5`; reload all clients together.
+Wire build is `grumpy-town-v6`; reload all clients together.
 
-The current two slices are (1) qualify actual RTC, WS-only delivery and live
-fallback, then compare phone starts/stops/reversals; (2) reproduce the separately
+The first RTC phone trial found remote movement acceptable but local movement
+jittery/jumpy and Dash often unresponsive. Local presentation was still bounded
+against slow checkpoints. It now uses validated live movement/dash state, blends
+small corrections and retains its last newer base through short pose gaps without
+renewing prediction time. Confirmed freezes still override it. Dash visibly waits
+for both local and host-observed cooldown. Remote interpolation stays unchanged.
+
+The current two slices are (1) qualify local continuity and accepted Dash effects
+under delayed checkpoints, then retest the phone; (2) reproduce the separately
 reported stale lobby roster. Keep deferred broad clock work in #836. Detailed phone
 feedback and validation limits remain in [the trial report](babylon-local-trial.md).
 

@@ -20,8 +20,22 @@ const frame: TownMatchFrame = {
         kind: 'poses',
         tick: 36,
         players: [
-            { id: 'alice', x: 1, z: -2, vx: 3.6, vz: 0, elapsed: 1.2 },
-            { id: 'bob', x: -1, z: -2, vx: 0, vz: 0, elapsed: 1.2 }
+            {
+                id: 'alice',
+                x: 1,
+                z: -2,
+                vx: 3.6,
+                vz: 0,
+                elapsed: 1.2,
+                facingX: 1,
+                facingZ: 0,
+                dashTime: 0,
+                cooldown: 0,
+                consumedDash: 0,
+                pranks: 0,
+                clouds: []
+            },
+            { id: 'bob', x: -1, z: -2, vx: 0, vz: 0, elapsed: 1.2, facingX: 1, facingZ: 0, dashTime: 0, cooldown: 0, consumedDash: 0, pranks: 0, clouds: [] }
         ]
     }
 };

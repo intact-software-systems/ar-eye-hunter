@@ -101,7 +101,7 @@ round targets 100 individual points and permits several qualifiers. Online playe
 are real human sessions; BOT PAL remains only in solo.
 Ready submits your username for the round's player labels. The host associates it
 with your authenticated seat and retains it through results. This trial uses wire
-build `grumpy-town-v5`; refresh every open trial tab before playing together.
+build `grumpy-town-v6`; refresh every open trial tab before playing together.
 Leaving hands ownership to another active member, or closes the town when its
 last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling
@@ -114,11 +114,18 @@ checkpoint acknowledgements. The host still decides all gameplay. Scores, town
 interactions, results and recovery remain on acknowledged WS checkpoints.
 Receiver checks bind every frame to the full room, current host epoch, match and
 session. Pose sequences/ticks cannot rewind; stale poses expire after 250 ms.
-The smoother 150 ms presentation buffer is retained after the shorter-buffer
+Local prediction now uses live host movement/dash state as its base, with a 300 ms
+lead limit. Missing live poses retain the last newer movement base without renewing
+that limit or falling back to an older checkpoint. Small corrections blend through
+collision constraints; freezes, recovery and authority changes reset immediately.
+Dash shows its cooldown and requires both predicted and observed host readiness.
+The smoother 150 ms remote presentation buffer is retained after the shorter-buffer
 phone trial proved jittery. Network transport and confirmed outcomes are separate
 from visual prediction. DOM diagnostics expose `data-pose-transport`,
 `data-live-send`, `data-input-transport` (last authenticated input carrier) and
-`data-pose-tick`; those are developer observations, not new gameplay controls.
+`data-pose-tick`; successful dash effects use `data-pranks` / `data-render-pranks`,
+while the older dash diagnostics count consumed attempts. These are developer
+observations, not new gameplay controls.
 
 The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
 If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;

@@ -6,10 +6,11 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { validateJsonMessageSize } from '@shared/api/json-message-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { PracticeCloud } from '../practice-rules.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export const TOWN_MATCH_PROTOCOL = 'cca.match.v1';
-export const TOWN_MATCH_BUILD = 'grumpy-town-v5';
+export const TOWN_MATCH_BUILD = 'grumpy-town-v6';
 export interface TownMatchPose {
     readonly id: string;
     readonly x: number;
@@ -17,6 +18,13 @@ export interface TownMatchPose {
     readonly vx: number;
     readonly vz: number;
     readonly elapsed: number;
+    readonly facingX: number;
+    readonly facingZ: number;
+    readonly dashTime: number;
+    readonly cooldown: number;
+    readonly consumedDash: number;
+    readonly pranks: number;
+    readonly clouds: readonly PracticeCloud[];
 }
 export type TownMatchAction =
     | { readonly kind: 'poses'; readonly tick: number; readonly players: readonly TownMatchPose[]; }
@@ -86,14 +94,49 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
                             items: {
                                 type: 'object',
                                 additionalProperties: false,
-                                required: ['id', 'x', 'z', 'vx', 'vz', 'elapsed'],
+                                required: [
+                                    'id',
+                                    'x',
+                                    'z',
+                                    'vx',
+                                    'vz',
+                                    'elapsed',
+                                    'facingX',
+                                    'facingZ',
+                                    'dashTime',
+                                    'cooldown',
+                                    'consumedDash',
+                                    'pranks',
+                                    'clouds'
+                                ],
                                 properties: {
                                     id: identity,
                                     x: { type: 'number', minimum: -24, maximum: 24 },
                                     z: { type: 'number', minimum: -24, maximum: 24 },
                                     vx: { type: 'number', minimum: -50, maximum: 50 },
                                     vz: { type: 'number', minimum: -50, maximum: 50 },
-                                    elapsed: { type: 'number', minimum: 0, maximum: 1000 }
+                                    elapsed: { type: 'number', minimum: 0, maximum: 1000 },
+                                    facingX: { type: 'number', minimum: -1, maximum: 1 },
+                                    facingZ: { type: 'number', minimum: -1, maximum: 1 },
+                                    dashTime: { type: 'number', minimum: 0, maximum: 1 },
+                                    cooldown: { type: 'number', minimum: 0, maximum: 3 },
+                                    consumedDash: { type: 'integer', minimum: 0, maximum: 1000000 },
+                                    pranks: { type: 'integer', minimum: 0, maximum: 1000000 },
+                                    clouds: {
+                                        type: 'array',
+                                        maxItems: 8,
+                                        items: {
+                                            type: 'object',
+                                            additionalProperties: false,
+                                            required: ['id', 'x', 'z', 'age'],
+                                            properties: {
+                                                id: { type: 'integer', minimum: 0, maximum: 1000000 },
+                                                x: { type: 'number', minimum: -24, maximum: 24 },
+                                                z: { type: 'number', minimum: -24, maximum: 24 },
+                                                age: { type: 'number', minimum: 0, maximum: 2.4 }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

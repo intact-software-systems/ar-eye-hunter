@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'cca.match.v1',
-    build: 'grumpy-town-v5',
+    build: 'grumpy-town-v6',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -54,6 +54,7 @@ describe('Rallar match protocol admission', () => {
                 { ...frame, build: 'grumpy-town-v1' },
                 { ...frame, build: 'grumpy-town-v2' },
                 { ...frame, build: 'grumpy-town-v3' },
+                { ...frame, build: 'grumpy-town-v5' },
                 { ...frame, epoch: -1 },
                 { ...frame, sequence: 1.5 },
                 { ...frame, roomRef: { groupId: 'town' } },
@@ -90,7 +91,21 @@ describe('Rallar match protocol admission', () => {
         const action = {
             kind: 'poses',
             tick: 30,
-            players: [{ id: 'alice', x: 1, z: -2, vx: 3.6, vz: 0, elapsed: 1 }]
+            players: [{
+                id: 'alice',
+                x: 1,
+                z: -2,
+                vx: 3.6,
+                vz: 0,
+                elapsed: 1,
+                facingX: 1,
+                facingZ: 0,
+                dashTime: 0,
+                cooldown: 0,
+                consumedDash: 0,
+                pranks: 0,
+                clouds: []
+            }]
         };
         const decoded = decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right;
         expect(decoded).toBeDefined();
@@ -99,6 +114,9 @@ describe('Rallar match protocol admission', () => {
         for (
             const invalid of [
                 { ...action, tick: -1 },
+                { ...action, players: [{ ...action.players[0], cooldown: -1 }] },
+                { ...action, players: [{ ...action.players[0], clouds: Array(9).fill({ id: 1, x: 0, z: 0, age: 0 }) }] },
+                { ...action, players: [{ ...action.players[0], consumedDash: undefined }] },
                 { ...action, players: [] },
                 { ...action, players: Array(5).fill(action.players[0]) },
                 { ...action, players: [{ ...action.players[0], x: 1000 }] },

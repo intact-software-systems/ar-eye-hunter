@@ -560,7 +560,21 @@ export class TownMatchSession {
         }
         const players = working.players.filter((player) =>
             working.seats.some((seat) => seat.id === player.id && seat.status === 'active')
-        ).map(({ id, x, z, vx, vz, elapsed }) => ({ id, x, z, vx, vz, elapsed }));
+        ).map(({ id, x, z, vx, vz, elapsed, facingX, facingZ, dashTime, cooldown, consumedDash, pranks, clouds }) => ({
+            id,
+            x,
+            z,
+            vx,
+            vz,
+            elapsed,
+            facingX,
+            facingZ,
+            dashTime,
+            cooldown,
+            consumedDash,
+            pranks,
+            clouds
+        }));
         await this.write(this.createFrame(working.matchId, { kind: 'poses', tick: working.tick, players }));
     }
 

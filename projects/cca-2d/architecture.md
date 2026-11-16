@@ -112,7 +112,12 @@ If a public capability cannot support this, improve Rallar rather than bypass it
 - Live poses: authenticated current-host observations, monotonic sequence/tick,
   active seats only and 250 ms maximum age. Reset on authority/recovery changes;
   confirmed freezes and terminal phases override provisional presentation.
-  Current wire build is `grumpy-town-v5`; reload all clients together.
+  Local prediction uses the live base with a 300 ms lead limit; an older checkpoint
+  cannot rewind that base when live observations expire, nor renew its budget.
+  Small corrections blend; canonical freeze/recovery/lifecycle resets take priority.
+  The live contract includes bounded dash state/clouds to prevent replaying a
+  consumed dash from an older checkpoint. Readiness needs host-observed cooldown.
+  Current wire build is `grumpy-town-v6`; reload all clients together.
 
 Every envelope binds full scoped `GroupRef`, match ID, protocol/rules version,
 appointment epoch and relevant sequence/tick. Authenticate sender identity from

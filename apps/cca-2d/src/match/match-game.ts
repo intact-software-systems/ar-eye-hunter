@@ -3,7 +3,7 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { CutoutActor } from '../cutout-actor.ts';
 import { CutoutArt } from '../cutout-art.ts';
 import { PracticeControls, requirePracticeElement } from '../practice-controls.ts';
-import type { PracticeInput } from '../practice-rules.ts';
+import type { PracticeInput, PracticePlayer } from '../practice-rules.ts';
 import { PracticeScene } from '../practice-scene.ts';
 import { createTownIce } from '../town/raid-presentation.ts';
 import { TownMatchControls } from './match-controls.ts';
@@ -223,6 +223,7 @@ export class TownMatchGame {
         const controls = this.visible ? this.publishControls() : { x: 0, z: 0, dash: player.consumedDash };
         const shown = this.presentation.advance({
             player,
+            livePose: view.livePoses?.players.find((pose) => pose.id === view.localId),
             town: match.town,
             matchId: match.matchId,
             inputGeneration: view.inputGeneration,
@@ -252,11 +253,12 @@ export class TownMatchGame {
             this.renderedZoom = zoom;
             this.root.dataset.renderX = String(shown.x);
             this.root.dataset.renderDashes = String(shown.consumedDash);
+            this.root.dataset.renderPranks = String(shown.pranks);
         }
-        this.updateHud(view);
+        this.updateHud(view, shown);
     }
 
-    private updateHud(view: TownMatchSession.View): void {
+    private updateHud(view: TownMatchSession.View, shown: PracticePlayer): void {
         const match = view.match;
         const player = match?.players.find((player) => player.id === view.localId) ?? match?.players[0];
         if (!match || !player) {
@@ -276,6 +278,7 @@ export class TownMatchGame {
                 ?.x ?? 0
         );
         this.root.dataset.dashes = String(player.consumedDash);
+        this.root.dataset.pranks = String(player.pranks);
         this.root.dataset.poseTransport = view.livePoses?.transport ?? 'checkpoint';
         this.root.dataset.liveSend = view.liveSend;
         this.root.dataset.inputTransport = view.inputTransport;
@@ -285,7 +288,16 @@ export class TownMatchGame {
         }s`;
         requirePracticeElement(this.root, '#round-score').textContent = `${player.score} / 100 POINTS`;
         requirePracticeElement(this.root, '#leave-round').textContent = view.recovering ? 'Back to solo' : 'Leave town';
-        requirePracticeElement<HTMLButtonElement>(this.root, '#dash').disabled = view.recovering || view.observing;
+        const dash = requirePracticeElement<HTMLButtonElement>(this.root, '#dash');
+        const frozen = player.frozenUntil > player.elapsed;
+        const cooldown = Math.max(
+            shown.cooldown,
+            view.livePoses?.players.find((pose) => pose.id === view.localId)?.cooldown ?? player.cooldown
+        );
+        dash.disabled = view.recovering || view.observing || frozen || cooldown > 0;
+        requirePracticeElement(dash, 'strong').textContent = frozen ? 'FROZEN' : cooldown > 0
+            ? `WAIT ${cooldown.toFixed(1)}s`
+            : 'DASH+ DROP';
         requirePracticeElement(this.root, '.controls').style.display = view.observing ? 'none' : '';
         requirePracticeElement(this.root, '.you').textContent = view.observing
             ? 'WATCHING THE TOWN'

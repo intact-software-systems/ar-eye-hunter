@@ -7,6 +7,57 @@ title: **Grumpy Town**. The sections below the physical-device report preserve
 the original solo trial; their original limitations do not describe the later
 multiplayer implementation.
 
+## Local movement and Dash after RTC — 16 November 2026
+
+The physical v5 trial confirmed RTC controls and live sends in Alice's browser.
+The user reported **"remote it looks alright, but locally it is jittery and jumpy"**,
+then **"local Dash button is often unresponsive"**. Remote smoothing stays at
+150 ms; the next correction targets local prediction and dash readiness.
+
+**Confirmed mechanism:** local prediction still used committed checkpoints and
+stopped after 300 ms of simulation lead. The live sample's host pose was 25 ticks
+(~830 ms) ahead of its checkpoint. This is simulation-state lead, not a network
+latency measurement. A separate Chromium trial at 390×844 delayed each incoming
+checkpoint proposal/commit by 200 ms while RTC continued. Over 713.5 ms the old
+local display advanced 0.806 units, moved in 8 of 23 sampled frames, stepped
+backwards by up to 0.081 units, and still showed consumed Dash count zero at the
+immediate post-tap observation. The initial all-checkpoint-drop harness entered
+recovery and was replaced by this continuing-delivery workload.
+
+Local prediction now uses fresh host movement/dash state; scores, shared world
+and recovery still use checkpoints. Small positional corrections blend through
+collision constraints. When a live observation expires, an older checkpoint
+cannot rewind the retained movement base or renew its 300 ms budget. Canonical
+freezes, recovery, round and authority changes reset prediction. Wire build
+**grumpy-town-v6** adds bounded dash/cooldown/cloud state and requires both clients
+to reload. No Rallar package code changes are needed.
+
+Dash shows a countdown, then becomes available when both prediction and the
+latest admitted host state say cooldown is over. This avoids advertising readiness
+before the host can accept the tap. Consumed input counters alone do not prove a
+dash succeeded; the regression also verifies the host's successful prank count.
+
+Two initial corrected Chromium trials advanced 2.555 and 2.512 units over 710.2
+and 706.5 ms, with movement in all 18 frame-to-frame intervals and no backward
+steps. Both showed the local dash immediately. These small samples establish
+continuity in this workload, not physical iPhone performance. The final validation
+includes the subsequent expiry/cooldown review fixes: final repeated runs advanced
+2.585/2.566 units over 718.9/698.9 ms, every sampled interval moved forward
+(22/22 and 21/21), with no backward step. Both first and immediately-after-ready
+second dashes were confirmed by successful prank counts. Phone acceptance remains
+open.
+Artifacts are ignored under `tmp/perf/cca-local-before`, `cca-local-after` and
+`cca-clean-local-control`.
+
+Final clean-candidate validation passed 180 game/Motion tests, CCA typecheck/build,
+focused test compilation and eight browser checks: local continuity twice, native
+RTC/WS fallback, remote/local response, host-loss recovery, and the complete fruit
+round with matching results/rematch. Deferred AL edits were excluded and restored
+with hash verification. Full changed-file and recursive support review found no
+remaining issue; independent untouched code remained outside closure. No new
+follow-up issue was created. Physical-phone acceptance and the separate stale
+lobby observation remain the next two bounded tasks.
+
 ## Phone retest and remote-player smoothing — 16 November 2026
 
 The user reported **"locally no lag, but remote player looks laggy"** after the
@@ -134,12 +185,11 @@ Full-file and recursive support review found no blocker or retained affected leg
 
 ### Next two useful slices
 
-1. Qualify the user's requested RTC-first realtime controls/host poses with WS
-   fallback, keeping the smoother 150 ms buffer. Fresh poses now use a separate
-   presentation path before checkpoint agreement; points/world/recovery remain
-   confirmed. Verify the native RTC channel and close it mid-round to prove WS
-   fallback. Repeat starts, stops, reversals and dash corrections on the phone;
-   frame-change counts and median delay alone cannot establish smoothness.
+1. Qualify the v6 local-prediction correction under delayed checkpoints and
+   short pose gaps, including successful Dash effects immediately after readiness.
+   Repeat phone starts, stops, reversals and dash. Keep the accepted remote
+   smoothing and RTC-first/WS-fallback policy; desktop samples alone cannot
+   establish physical-phone smoothness.
 2. Reproduce the stale lobby-membership observation: Bob showed the correct room
    code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
    Alice through solo and online refreshed the roster, then both became ready and

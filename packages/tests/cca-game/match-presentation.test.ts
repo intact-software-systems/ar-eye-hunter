@@ -8,8 +8,14 @@ describe('local match presentation', () => {
     const town = createTownState();
     const player = { ...createPracticePlayer(), x: 0, z: -2 };
     const frame = {
-        player, town, matchId: 'round', inputGeneration: 1, enabled: true,
-        controls: { x: 1, z: 0, dash: 0 }, seconds: 1 / 60
+        player,
+        livePose: undefined,
+        town,
+        matchId: 'round',
+        inputGeneration: 1,
+        enabled: true,
+        controls: { x: 1, z: 0, dash: 0 },
+        seconds: 1 / 60
     };
 
     it('shows movement and a single dash before confirmation without mutating match truth', () => {
@@ -45,14 +51,55 @@ describe('local match presentation', () => {
         presentation.advance({ ...frame, controls });
         presentation.advance({ ...frame, controls });
         const confirmed = {
-            ...player, x: 0.1, elapsed: 1 / 60, consumedDash: 1, cooldown: 3,
-            vx: 10, dashTime: 0.2, pranks: 1,
+            ...player,
+            x: 0.1,
+            elapsed: 1 / 60,
+            consumedDash: 1,
+            cooldown: 3,
+            vx: 10,
+            dashTime: 0.2,
+            pranks: 1,
             clouds: [{ id: 1, x: 0, z: -2, age: 0 }]
         };
         const shown = presentation.advance({ ...frame, controls, player: confirmed });
         expect(shown.clouds).toHaveLength(1);
         expect(shown.pranks).toBe(1);
         expect(shown.elapsed).toBeCloseTo(3 / 60);
+    });
+
+    it('blends a small host correction without snapping the local position backwards', () => {
+        const presentation = new TownMatchPresentation();
+        let shown = presentation.advance(frame);
+        for (let index = 0; index < 5; index++) {
+            shown = presentation.advance(frame);
+        }
+        const previousX = shown.x;
+        const corrected = { ...shown, x: shown.x - 0.2 };
+        const next = presentation.advance({ ...frame, player: corrected });
+        expect(next.x).toBeGreaterThan(previousX - 0.05);
+        const stopped = { ...corrected, elapsed: next.elapsed, vx: 0, vz: 0 };
+        for (let index = 0; index < 60; index++) {
+            shown = presentation.advance({ ...frame, player: stopped, controls: { x: 0, z: 0, dash: 0 } });
+        }
+        expect(Math.abs(shown.x - stopped.x)).toBeLessThan(0.02);
+    });
+
+    it('retains a newer live movement base through expiry without rewinding or renewing prediction', () => {
+        const presentation = new TownMatchPresentation();
+        const livePose = { ...player, id: 'alice', elapsed: 1, x: 3, consumedDash: 1, pranks: 1, cooldown: 3 };
+        const controls = { x: 0, z: 0, dash: 1 };
+        const shown = presentation.advance({ ...frame, controls, livePose });
+        let stale = shown;
+        for (let index = 0; index < 120; index++) {
+            stale = presentation.advance({ ...frame, controls });
+        }
+        expect(stale.x).toBe(shown.x);
+        expect(stale.elapsed).toBeLessThanOrEqual(1.3);
+        expect(stale.pranks).toBe(1);
+        expect(stale.consumedDash).toBe(1);
+        const frozen = { ...player, frozenUntil: 10 };
+        expect(presentation.advance({ ...frame, controls, livePose, player: frozen })).toEqual(frozen);
+        expect(presentation.advance({ ...frame, controls, inputGeneration: 2, seconds: 0 })).toEqual(player);
     });
 
     it('immediately accepts freezes and never predicts their release or shared interactions', () => {
@@ -69,7 +116,10 @@ describe('local match presentation', () => {
             const presentation = new TownMatchPresentation();
             presentation.advance({ ...frame, controls: { x: 1, z: 0, dash: 1 } });
             const shown = presentation.advance({
-                ...frame, ...reset, controls: { x: 0, z: 0, dash: 0 }, seconds: 0
+                ...frame,
+                ...reset,
+                controls: { x: 0, z: 0, dash: 0 },
+                seconds: 0
             });
             expect(shown).toEqual(player);
         }
