@@ -1,6 +1,14 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as roomWorkflows from '@shared-web/browser/rooms/room-group-state-workflows.ts';
@@ -48,6 +56,8 @@ describe('room group-state workflows', () => {
         stubSuccessfulGroupFetch(fetchCalls);
 
         await roomWorkflows.createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             displayName: 'My Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -95,6 +105,8 @@ describe('room group-state workflows', () => {
         stubSuccessfulGroupFetch(fetchCalls);
 
         await roomWorkflows.createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
@@ -153,7 +165,14 @@ describe('room group-state workflows', () => {
         ]);
     });
 
-    it('starts the presence lease after create admission and preserves it across retries', async () => {
+    it.each([
+        { label: 'default', groupPresence: undefined, expiresAtEpochMs: 125_000 },
+        {
+            label: 'short',
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 500, retryMs: 500 },
+            expiresAtEpochMs: 13_000
+        }
+    ])('starts the $label presence lease after create admission and preserves it across retries', async ({ groupPresence, expiresAtEpochMs }) => {
         stubUuids(
             'retry-room',
             'create-request-00000001',
@@ -163,7 +182,10 @@ describe('room group-state workflows', () => {
         stubTransientGroupFetch(fetchCalls, '/groups', '/sessions/session-1');
 
         await roomWorkflows.createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
+            groupPresence,
             displayName: 'Retry Room',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -181,7 +203,7 @@ describe('room group-state workflows', () => {
             'presence-request-000001'
         ]);
         expect(fetchCalls.filter((call) => call.method === 'PUT').map((call) => call.body?.expiresAtEpochMs))
-            .toEqual([125_000, 125_000]);
+            .toEqual([expiresAtEpochMs, expiresAtEpochMs]);
         const presenceCalls = fetchCalls.filter((call) => call.method === 'PUT');
         expect(presenceCalls[1]).toEqual(presenceCalls[0]);
     });
@@ -191,6 +213,7 @@ describe('room group-state workflows', () => {
         stubSuccessfulGroupFetch(fetchCalls);
 
         await roomWorkflows.joinStateGroup({
+            nowMs: () => Date.now(),
             publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',
@@ -229,12 +252,21 @@ describe('room group-state workflows', () => {
         ]);
     });
 
-    it('starts the presence lease after join admission and preserves it across retries', async () => {
+    it.each([
+        { label: 'default', groupPresence: undefined, expiresAtEpochMs: 125_000 },
+        {
+            label: 'short',
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 500, retryMs: 500 },
+            expiresAtEpochMs: 13_000
+        }
+    ])('starts the $label presence lease after join admission and preserves it across retries', async ({ groupPresence, expiresAtEpochMs }) => {
         stubUuids('join-request-00000001', 'presence-request-000001', 'unused-request-0000001');
         stubTransientGroupFetch(fetchCalls, '/join', '/sessions/session-1');
 
         await roomWorkflows.joinStateGroup({
+            nowMs: () => Date.now(),
             publicationKey: null,
+            groupPresence,
             groupId: 'group-1',
             principalId: 'principal-1',
             sessionId: 'session-1',
@@ -252,7 +284,7 @@ describe('room group-state workflows', () => {
             'presence-request-000001'
         ]);
         expect(fetchCalls.filter((call) => call.method === 'PUT').map((call) => call.body?.expiresAtEpochMs))
-            .toEqual([125_000, 125_000]);
+            .toEqual([expiresAtEpochMs, expiresAtEpochMs]);
         const presenceCalls = fetchCalls.filter((call) => call.method === 'PUT');
         expect(presenceCalls[1]).toEqual(presenceCalls[0]);
     });

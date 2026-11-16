@@ -302,7 +302,6 @@ starting after authority changes. The parallel police-cycle timeout passed in
 isolation and serially. The local API and preview are reachable; secure physical
 phone multiplayer remains unverified.
 
-
 ## First live shared-match integration
 
 The optional lobby now creates a room-owned `TownMatchSession`. **Host match** uses
@@ -559,69 +558,160 @@ One remaining lifecycle case is a three-player silent outage or suspension follo
 by takeover and return without a delivered socket-close callback. The observed-close
 return test does not establish that transition; retain it in reliability qualification.
 
-### Silent host-loss reproduction and presence policy
+### Silent host loss and opt-in room presence
 
-The three-browser silent-loss regression now reproduces a missing capability.
-It drops the host's application WebSocket traffic and HTTP requests without closing
-its socket. In the recorded trial, 850 outgoing messages were discarded, no close
-callback reached the host and neither survivor proposed a replacement epoch.
-All three browsers showed bounded interruption with their last confirmed state.
-The test remains failing; this is evidence of the gap, not successful takeover.
+CCA now selects a browser group-presence policy with an eight-second lease,
+one-second renewal interval, two-second whole-attempt deadline and 500 ms retry delay.
+Nested requests inherit the attempt cancellation; they do not each receive an
+additional time budget.
+The policy is captured at connection setup and shared by create/join, quick join,
+room moves, invitation acceptance, selected-room recovery and heartbeat renewal.
+General browser defaults and the longer authenticated client-session lease remain
+unchanged. Existing long group leases cannot be shortened by renewing them; fresh
+room admission is required to exercise the short policy.
 
-The current director heartbeat is a peer freshness signal, not a server lease.
-Rallar correctly refuses fallback appointment while an owner session remains
-authoritatively present. Browser room presence currently starts with a two-minute
-lease and renews on a twenty-second heartbeat schedule. Presence renewal takes the
-maximum of old and requested expiry, so merely renewing more frequently cannot
-shorten a lease that was initially issued for two minutes.
+Renewal bounds cover socket-generation lookup, cache recovery, client renewal,
+parallel group renewal and awaited cache observers. The policy validator reserves
+time for completion of the previous attempt, the next attempt and one retry.
+Each mutation retry preserves its request identity and body. A reconnect receipt
+that arrives after its lease expires must be resolved before a fresh request is
+issued; it cannot establish live presence merely because its original write
+succeeded. Late callbacks are fenced against cancellation and replacement.
 
-The proposed next implementation is an opt-in browser group-presence policy shared by
-initial room admission, invitation entry, reconnection and heartbeat renewal.
-Normalize a complete policy at the connection boundary and retain it for that
-connection. Keep existing general-purpose defaults; CCA can select a shorter lease
-and renewal/request bounds that leave time for authoritative expiry and appointment
-inside its recovery deadline. Six-second leases and roughly 1.5-second renewal are
-initial test candidates, not qualified production timing guarantees. Do not weaken
-owner/admin appointment checks, promote players to admin, lengthen the game deadline
-to mask the gap, or let the app declare another session absent by itself.
+For opted-in connections, a missing selected-room presence observation can trigger
+recovery without a socket-close callback. The recovery owner checks current durable
+membership and the selected room, authenticated session and socket epoch. It never
+creates membership from cached selection. An unresolved request belonging to an
+obsolete selection or account cannot block the current owner's recovery.
 
-Acceptance must cover every admission/reconnect path, timely healthy renewals,
-bounded stalled renewals, expiry under silent network loss and suspended JavaScript,
-server-authorized successor appointment, committed-state recovery and old-host
-return without dual authority. Short leases also require clock-skew and background
-qualification. Preserve the existing default-policy regressions and the fallback
-interruption when authoritative recovery cannot be completed. The new fault test
-uses real accounts and normal room/start controls; network hooks only introduce
-loss and observe resulting state.
+The match treats local presence expiry as a transport interruption and requires
+live local room presence before accepting its own outgoing checkpoints. A returning
+former director can accept the replacement director's fully committed checkpoint;
+a local timeout from an older appointment does not keep that follower permanently
+paused. Current-appointment timeout handling and server appointment authorization
+remain in force. The app never declares another session absent or promotes players
+to administrators to obtain a successor.
 
-Feasibility review confirmed that authoritative room reads already filter expired
-group-session leases without waiting for a cleanup sweep. The client authentication
-session has a separate, longer lease; the proposed setting must not promise to
-shorten that lease. This approach preserves server appointment authorization.
+A real three-browser trial has demonstrated silent host loss, successor appointment,
+continued play and active-seat return with no socket-close callback. The trial
+also waits for the old host to show its local interruption before restoring traffic,
+then checks unchanged match identity and score, exactly one director after return,
+and independent player movement. Ordinary shared controls, old-host observer return
+and a same-appointment rematch followed by a second interruption also pass focused
+browser checks. The earlier per-request 500 ms bound produced timing failures; the
+whole-attempt bound replaces it. Full regression and device qualification remain
+required before considering this policy ready for release.
 
-Implementation must cap the first renewal by the selected cadence, capture initial
-presence expiry after admission completes, and bound the entire renewal path,
-including socket-generation lookup. Preserve an immutable request body for each
-retry identity; an expired reconnect command must be resolved before issuing a new
-one, rather than silently changing its expiry. Capture the normalized policy once
-per connection, including the runtime-default cloning path, so live changes to
-defaults cannot split admission and renewal behavior.
+Remaining acceptance includes repeatable takeover within the existing recovery
+window, healthy full rounds, same-appointment interruption/rematch, suspended
+JavaScript, both refresh-before-renewal and renewal-before-refresh returns,
+clock-skew behavior and physical-phone background/hosting qualification. Preserve
+truthful bounded interruption whenever authoritative recovery cannot complete.
 
-Two prerequisites are now implemented: create/join/invitation workflows capture
-their presence lease after admission completes, while each request keeps its body
-and identity across retries; heartbeat socket-generation lookup now has a timeout
-and passes cancellation to its HTTP read. Regression coverage includes recovery
-with the actual socket generation and stop/replacement during a pending lookup.
-These changes retain the existing presence duration and cadence. They do not yet
-provide the proposed short policy or make the silent-loss takeover test pass.
+The subsequent 23-scenario browser run passed 20 cases, including both full rounds,
+but failed the same-page observer return and two host-return rematch cases. The
+rematch failures exposed a real presentation bug: overlay CSS overrode the hidden
+attribute on the former host's button. An explicit hidden-button rule fixes that;
+both focused host-return tests now pass and assert that only the successor can
+start the fresh ready cycle. The protocol already rejected the former host.
 
-Returning without a close event needs explicit qualification: once authoritative
-refresh removes the expired local session, the normal heartbeat no longer targets
-that room, and current selected-room recovery arms on socket close. Exercise both
-refresh-before-renewal and renewal-before-refresh returns. Restore only an existing,
-still-authorized selected room, respecting departure and revocation; do not invent
-membership from cached selection. The fault test requires timely return to a playable
-active seat under the replacement director, not only receipt of spectator snapshots.
+The observer case failed repeatedly when all three players shared one browser
+process. Native traces showed substantial software graphics readback waits, but
+neither disabling the preserved drawing buffer nor running visible Chromium
+fixed that configuration. The buffer experiment was reverted and
+temporary profiling removed. These measurements do not establish graphics as the
+root cause or qualify the current recovery implementation for release.
+
+A separate, reproduced starvation bug is corrected: a timed-out authoritative
+room refresh previously skipped the entire checkpoint exchange. Repeated slow
+reads could therefore prevent live peers from agreeing forever. Recovery now
+reports that read failure and reconciles current authority before attempting
+exchange; fresh appointment, live own presence, authenticated sender and epoch
+guards remain mandatory. A real two-browser regression fails before this fix
+and passes afterward: with room GETs still stalled, restored WS delivery resumes
+the same match, advances its clock and accepts movement. Both missing/stalled-read
+interruption-deadline tests also pass.
+
+Further shared-process diagnostics included three failing native-Metal trials;
+disabled follower draw calls and a hidden follower canvas also did not resolve
+it. Those diagnostic source changes were removed. A duplicate authorized room read
+completed in about 23 ms outside the browser, while public browser fetches became
+slow. This narrows investigation toward browser-side response processing or
+traffic pressure without establishing the cause. The passing starvation regression
+does not close observer recovery or justify increasing its deadlines.
+
+With one browser process per simulated device, the same observer-return scenario
+passed three consecutive repetitions, retaining the network faults, sixteen-second
+seat-expiry observation and forty-second reconnect bound. The disconnection cases
+now use independent processes and inherit the configured browser launch options
+and trial origin. This represents independent devices more closely; it does not
+establish the cause of the shared-process failure or certify physical phones.
+The subsequent full online run passed all 29 scenarios, including both real timed
+rounds, shared rescue, multiple qualifiers, rematch and the social/account flows.
+The separate solo/control run passed all twelve scenarios. These normal-clock
+results do not qualify the clock-skew failures below.
+
+The final browser-resource cleanup change also passed all four disconnection
+outcomes. Launch failures and diagnostic failures now still close every browser
+process already created. The affected unit suite passed 697 tests; final explicit
+test-output contract corrections passed 36 focused tests and the focused test
+typecheck. These checks do not replace physical-device qualification.
+
+Fresh review found a Quick Join cancellation gap between publication-key lookup
+and the presence write. Every presence attempt now checks the captured session
+fence; a regression proves that account replacement at that boundary emits no
+stale presence PUT. Admission/renewal timestamps and generated group IDs now come
+from explicit composed dependencies. Admission captures its lease after the
+membership response, while retries preserve their original identity and payload.
+
+The two-second renewal deadline covers sequential client repair/renewal followed
+by group renewal. Successful receipt therefore requires the entire path to fit
+inside that deadline; two individually shorter requests may collectively exceed
+it. The policy budget allows bounded retries, not arbitrary network latency.
+On persistent failure the match must pause and interrupt truthfully rather than
+pretend the local presence is current.
+
+### Clock-skew acceptance remains open
+
+The new real-server browser cases set one clock two seconds behind and another
+two seconds ahead. They require healthy shared play beyond the eight-second
+presence lease, propagated controls, bounded interruption after losing the only
+partner, and a three-player host handover with one surviving director. All three
+currently fail before Ready appears; this is a release blocker, not a skipped test.
+Fixed offsets do not cover clock jumps or drift.
+
+A bounded wire probe confirmed fresh, active director status in both browsers.
+The clock-behind host sent one hundred observed match frames whose absolute
+expiry was already four to eight milliseconds before the test machine observed
+them; the peer received no match frames. CCA currently gives agreement messages
+a two-second transport lifetime and controls 250 milliseconds, while the message
+builder stamps absolute expiry from the sender's wall clock. This evidence
+identifies cross-clock expiry as the next investigation boundary. Temporary
+instrumentation was removed; runtime deadlines were not widened.
+
+Resolve publication/expiry time across server and browser clocks while retaining
+bounded stale-control rejection, authenticated room/session/epoch checks, and
+truthful interruption when freshness cannot be established. Then rerun the skew
+cases and normal-clock recovery suite. Do not merely increase transport lifetimes
+or narrow the skew test to hide the failure. The probe also emitted an RTC RTT
+measurement-guard error; its relationship to skew needs separate classification
+before claiming that all realtime timing paths are qualified.
+
+### Secure LAN serving
+
+Vite now accepts paired certificate/key paths and a configurable local API proxy
+target. Rallar's local launcher permits its advertised public origin in CORS.
+The phone-facing HTTPS origin serves the game, API and WSS connection together;
+the existing localhost trial can remain running on separate ports. See the
+[phone setup](../../apps/cca-2d/README.md#https-phone-trial) for startup commands,
+certificate trust and temporary-account behavior.
+
+Certificate-chain verification and the proxied API configuration have passed on
+the LAN. Three browser checks through that HTTPS origin pass: independent-player
+movement, registration/solo return, and friendship/invitation/matchmaking.
+Physical-device certificate trust, touch comfort,
+background recovery and sustained phone hosting remain unverified. The short
+presence lease's clock-skew behavior also remains an open acceptance item.
 
 ### Readable names and shared-round acceptance
 
@@ -681,8 +771,9 @@ changed to satisfy the tests. Physical-device qualification remains separate.
 
 The next two useful outcomes remain concrete:
 
-1. Complete match reliability, particularly three-player silent-outage takeover
-   and return without a delivered close callback. Preserve the established shared
+1. Complete match reliability by resolving cross-clock publication expiry, then
+   rerun the skew and normal-clock recovery cases. Preserve silent-outage takeover
+   and return without a delivered close callback, plus the established shared
    rescue, multiple qualifiers, rematch and recovery regressions, including
    host succession with a surviving committed backup. Preserve the
    original acceptance criteria above; retained participants and active controllers

@@ -83,6 +83,7 @@ export class OnlineSession {
             const started = await this.browser.setup({
                 apiBaseUrl: this.apiBaseUrl,
                 ...CCA_SCOPE,
+                groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 },
                 start: { ...START_OPTIONS, signal: this.lifetime.signal }
             });
             if (this.lifetime.signal.aborted) {

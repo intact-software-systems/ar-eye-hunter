@@ -95,6 +95,8 @@ import type { PublicationCrypto } from '@shared/signature/publication-crypto.ts'
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import { JsonWebSocketClient, type WebSocketConnectOptions } from '@shared/websocket/json-web-socket-client.ts';
 import { toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
+
+import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserStartupCleanupFailure
@@ -112,6 +114,7 @@ import {
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface MiddlewareInitOptions {
+    readonly groupPresence?: RallarGroupPresencePolicy;
     readonly rtcCaptureConfiguration: RtcSignalingDiagnostics.CaptureConfiguration;
     readonly qosProvider: ALQosInputProvider;
     readonly readVolatileSessionLimits: () => ALVolatileSessionLimits;
@@ -562,12 +565,12 @@ function createBrowserWebSocketClient(
     apiConfig: ApiConfig
 ): JsonWebSocketClient {
     return new JsonWebSocketClient(
-        async (options) => await createBrowserWebSocketUrl(input, apiConfig, options),
+        async (options) => await readBrowserWebSocketUrl(input, apiConfig, options),
         input.options.diagnosticsPorts.transportFaultPort
     );
 }
 
-async function createBrowserWebSocketUrl(
+async function readBrowserWebSocketUrl(
     input: InitialiseBrowserTransportInput,
     apiConfig: ApiConfig,
     connectOptions: WebSocketConnectOptions
@@ -627,7 +630,7 @@ async function initialiseBrowserRtcTransport(
         acquired.rtcRxStreamer = rtcRxStreamer;
         registerBrowserRttEgress(input, rtcRxStreamer);
         registerBrowserRtcPeerStreaming(webRtcConnectionService, rtcRxStreamer);
-        const webRtcGroupManager = createBrowserRtcGroupManager(
+        const webRtcGroupManager = initBrowserRtcGroupManager(
             input,
             connection,
             rtcRxStreamer
@@ -778,7 +781,7 @@ function registerBrowserRtcPeerStreaming(
     });
 }
 
-function createBrowserRtcGroupManager(
+function initBrowserRtcGroupManager(
     input: InitialiseBrowserRtcTransportInput,
     connection: BrowserRtcConnection,
     rtcRxStreamer: WebRtcRxStreamerService

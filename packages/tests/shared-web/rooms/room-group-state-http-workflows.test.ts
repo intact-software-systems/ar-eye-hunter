@@ -1,3 +1,12 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
@@ -6,10 +15,14 @@ import {
     updateStateGroupDetails,
     updateStateGroupMetadata
 } from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
-import { createAndJoinStateGroup, joinStateGroup, leaveStateGroup } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import {
+    createAndJoinStateGroup,
+    joinStateGroup,
+    leaveStateGroup
+} from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 // Diagnostic traces do not determine the mutation identities exercised here.
@@ -65,6 +78,8 @@ describe('room group-state HTTP workflows', () => {
         });
 
         const result = await createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'My Room',
             principalId: 'principal-1',
@@ -100,6 +115,8 @@ describe('room group-state HTTP workflows', () => {
         });
 
         const result = await createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
@@ -133,6 +150,8 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Rallar',
             principalId: 'principal-1',
@@ -304,6 +323,8 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Retry Room',
             principalId: 'principal-1',
@@ -353,6 +374,8 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Private Room',
             principalId: 'private-principal-id',
@@ -390,6 +413,7 @@ describe('room group-state HTTP workflows', () => {
 
         await expect(
             joinStateGroup({
+                nowMs: () => Date.now(),
                 publicationKey: null,
                 groupId: 'group-1',
                 principalId: 'principal-1',
@@ -433,6 +457,7 @@ describe('room group-state HTTP workflows', () => {
 
             await expect(
                 joinStateGroup({
+                    nowMs: () => Date.now(),
                     publicationKey: null,
                     groupId: 'group-1',
                     principalId: 'principal-1',
@@ -468,6 +493,7 @@ describe('room group-state HTTP workflows', () => {
 
         await expect(
             joinStateGroup({
+                nowMs: () => Date.now(),
                 publicationKey: null,
                 groupId: 'group-1',
                 principalId: 'principal-1',
@@ -522,6 +548,7 @@ describe('room group-state HTTP workflows', () => {
         });
 
         await joinStateGroup({
+            nowMs: () => Date.now(),
             publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',

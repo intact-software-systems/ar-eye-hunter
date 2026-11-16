@@ -13,6 +13,7 @@ test('two survivors replace a silently unreachable host and fence its return', a
     let discarded = 0;
     let closes = 0;
     let hostEpoch = 0;
+    let recoveryElapsedMs = 0;
     await contexts[0].routeWebSocket(/\/api\/ws\//, (socket) => {
         const server = socket.connectToServer();
         socket.onMessage((message) => {
@@ -67,14 +68,17 @@ test('two survivors replace a silently unreachable host and fence its return', a
             await expect.poll(async () => Number(await survivor.locator('#online-game').getAttribute('data-tick')))
                 .toBeGreaterThan(confirmedTick);
         }
-        expect(Date.now() - partitionedAt).toBeLessThan(11500);
+        recoveryElapsedMs = Date.now() - partitionedAt;
+        expect(recoveryElapsedMs).toBeLessThan(11500);
         expect(closes).toBe(0);
+        await expect(alice.locator('#round-results')).toBeVisible();
         offline = false;
         await expect(alice.locator('#online-game')).toHaveAttribute('data-director', 'false', { timeout: 15000 });
         await expect(alice.locator('#online-game')).toHaveAttribute('data-seat', 'active');
         await expect(alice.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
         for (const page of pages) {
             await expect(page.locator('#round-results')).toBeHidden();
+            await expect(page.locator('#round-status')).toContainText('Dash to make trouble');
         }
         await expect.poll(async () =>
             (await Promise.all(pages.map((page) => page.locator('#online-game').getAttribute('data-director'))))
@@ -107,7 +111,7 @@ test('two survivors replace a silently unreachable host and fence its return', a
                 }))
             ));
             const path = test.info().outputPath('silent-host-loss.json');
-            await writeFile(path, JSON.stringify({ discarded, closes, epochs, views }));
+            await writeFile(path, JSON.stringify({ discarded, closes, epochs, recoveryElapsedMs, views }));
             await test.info().attach('silent-host-loss', { path, contentType: 'application/json' });
         }
         finally {

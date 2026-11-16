@@ -1,7 +1,16 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { createAndJoinStateGroup, joinStateGroup } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
@@ -35,6 +44,8 @@ describe('room presence policy failures', () => {
         });
 
         await expect(createAndJoinStateGroup({
+            nowMs: () => Date.now(),
+            newGroupId: () => crypto.randomUUID(),
             publicationKey: null,
             displayName: 'Room 1',
             principalId: 'principal-1',
@@ -68,6 +79,7 @@ describe('room presence policy failures', () => {
         });
 
         await expect(joinStateGroup({
+            nowMs: () => Date.now(),
             publicationKey: null,
             groupId: 'group-1',
             principalId: 'principal-1',

@@ -5,6 +5,8 @@ import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 
+import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
+
 import {
     toAcceptRoomInviteGroupStateRequest,
     toBanRoomMemberGroupStateRequest,
@@ -52,6 +54,8 @@ export interface RevokeStateGroupInviteWorkflowInput extends TargetRoomActorWork
 }
 
 export interface AcceptStateGroupInviteWorkflowInput extends RoomActorWorkflowInput {
+    readonly nowMs: () => number;
+    readonly groupPresence?: RallarGroupPresencePolicy;
     readonly generationId: string;
     readonly connectionGenerationId: string;
     readonly publicationKey: GroupPresencePublicationKey | null;
@@ -141,7 +145,7 @@ export async function acceptStateGroupInvite(
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
         publicationKey: input.publicationKey,
-        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(input.nowMs(), input.groupPresence?.leaseMs),
         actorPrincipalId: input.actorPrincipalId,
         actorSessionId: input.sessionId
     });

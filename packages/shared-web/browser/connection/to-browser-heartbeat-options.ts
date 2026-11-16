@@ -10,6 +10,7 @@ export function toBrowserHeartbeatOptions(
 ): InitHeartbeatOptions {
     return {
         publicationKey: toGroupPresencePublicationKey(input.publicationCrypto),
+        groupPresence: input.options.groupPresence,
         authSession: input.session,
         scope: input.options.scope,
         ownWsConnectionGeneration,

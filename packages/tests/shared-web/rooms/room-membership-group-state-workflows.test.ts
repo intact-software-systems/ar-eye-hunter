@@ -1,6 +1,14 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as membershipWorkflows from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
@@ -87,12 +95,21 @@ describe('room membership group-state workflows', () => {
         ]);
     });
 
-    it('accepts a room invitation before connecting member presence', async () => {
+    it.each([
+        { label: 'default', groupPresence: undefined, expiresAtEpochMs: 123_000 },
+        {
+            label: 'short',
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 500, retryMs: 500 },
+            expiresAtEpochMs: 11_000
+        }
+    ])('accepts a room invitation before connecting $label member presence', async ({ groupPresence, expiresAtEpochMs }) => {
         stubUuids('accept-request-0000001', 'presence-request-000001');
         stubSuccessfulFetch(fetchCalls, 2_000);
 
         await membershipWorkflows.acceptStateGroupInvite({
+            nowMs: () => Date.now(),
             publicationKey: null,
+            groupPresence,
             groupId: 'group-1',
             actorPrincipalId: 'member-1',
             sessionId: 'member-session',
@@ -119,7 +136,7 @@ describe('room membership group-state workflows', () => {
                     generationId: 'generation-1',
                     connectionGenerationId: 'ws-generation-1',
                     publicationKey: null,
-                    expiresAtEpochMs: 123_000,
+                    expiresAtEpochMs,
                     actorPrincipalId: 'member-1',
                     actorSessionId: 'member-session'
                 }

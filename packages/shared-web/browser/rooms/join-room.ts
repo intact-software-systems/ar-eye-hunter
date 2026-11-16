@@ -43,7 +43,12 @@ import { readSummarisedRoomPresence, type SummarisedRoomPresenceInput } from './
 import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import { assertValidRoomTarget, toJoinRoomTarget } from './room-target.ts';
 
-export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
+export interface RoomPresenceDependencies {
+    readonly newPresenceGenerationId: () => string;
+    readonly nowMs: () => number;
+}
+
+export interface JoinRoomInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly room: string | GroupRef | RallarJoinRoomInput;
     readonly options?: RallarJoinRoomOptions;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
@@ -79,8 +84,10 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
     sessionFence.assertCurrent(context);
     const session = sessionFence.session;
     const currentRoomRef = input.stateStore.resolveCurrentRoomRef();
-    const generationId = crypto.randomUUID();
+    const generationId = input.newPresenceGenerationId();
     const snapshot = await joinStateGroup({
+        nowMs: input.nowMs,
+        groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: roomId,
         principalId: session.clientId,
         sessionId: session.sessionId,
@@ -98,6 +105,7 @@ async function joinAuthenticatedRoom(input: JoinRoomInput): Promise<GroupSnapsho
         }
     });
     const arrived = await readRoomSessionPresence({
+        nowMs: input.nowMs,
         snapshot,
         sessionId: session.sessionId,
         generationId,
@@ -176,7 +184,7 @@ async function completeRoomJoin(completion: RoomJoinCompletion): Promise<GroupSn
     return adopted;
 }
 
-export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'> {
+export interface ActivateGroupMoveInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly move: GroupMove;
     readonly options: RallarOperationOptions;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
@@ -267,8 +275,10 @@ interface GroupMoveActivation {
 async function connectMovedSession(
     { input, move, context, fence, options }: GroupMoveActivation
 ): Promise<GroupSnapshot> {
-    const generationId = crypto.randomUUID();
+    const generationId = input.newPresenceGenerationId();
     const connected = await createStateGroupPresenceCommand({
+        nowMs: input.nowMs,
+        groupPresence: context.middleware.heartbeat.groupPresence,
         groupId: move.destination.groupId,
         principalId: fence.session.clientId,
         sessionId: fence.session.sessionId,
@@ -285,6 +295,7 @@ async function connectMovedSession(
         throw new Error('Destination presence did not produce a snapshot.');
     }
     const snapshot = await readRoomSessionPresence({
+        nowMs: input.nowMs,
         snapshot: connected,
         sessionId: fence.session.sessionId,
         generationId,
@@ -298,7 +309,7 @@ async function connectMovedSession(
 }
 
 interface RoomPresenceDeparture {
-    readonly input: Pick<LeaveRoomInput, 'stateStore'>;
+    readonly input: Pick<LeaveRoomInput, 'stateStore'> & Pick<RoomPresenceDependencies, 'nowMs'>;
     readonly roomRef: GroupRef;
     readonly generationId: string;
     readonly context: ApiMiddleware;
@@ -338,6 +349,7 @@ async function disconnectRoomSession(
     fence.assertCurrent(context);
     if (source) {
         return await readRoomSessionPresence({
+            nowMs: input.nowMs,
             snapshot: source,
             sessionId: fence.session.sessionId,
             generationId: request.generationId,
@@ -354,6 +366,7 @@ async function disconnectRoomSession(
 }
 
 interface RoomSessionPresenceInput extends Omit<SummarisedRoomPresenceInput, 'isSummarised'> {
+    readonly nowMs: () => number;
     readonly sessionId: string;
     readonly generationId: string;
     readonly present: boolean;
@@ -373,13 +386,13 @@ async function readRoomSessionPresence(input: RoomSessionPresenceInput): Promise
             }
             const session = candidate.activeSessions.find((row) => row.sessionId === input.sessionId);
             return input.present
-                ? session?.generationId === input.generationId && session.expiresAtEpochMs > Date.now()
+                ? session?.generationId === input.generationId && session.expiresAtEpochMs > input.nowMs()
                 : session === undefined;
         }
     });
 }
 
-export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'> {
+export interface QuickJoinRoomInput extends Omit<LeaveRoomInput, 'input'>, RoomPresenceDependencies {
     readonly options: RallarQuickJoinRoomInput;
     readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
 }
@@ -457,8 +470,10 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         input.options.signal
     );
     input.assertCurrent();
-    const generationId = crypto.randomUUID();
+    const generationId = input.dependencies.newPresenceGenerationId();
     const snapshot = await createStateGroupPresenceCommand({
+        nowMs: input.dependencies.nowMs,
+        groupPresence: input.context.middleware.heartbeat.groupPresence,
         groupId: input.joinedRoom.group.groupId,
         principalId: input.session.clientId,
         sessionId: input.session.sessionId,
@@ -467,6 +482,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         publicationKey: await input.dependencies.readPublicationKey(),
         scope,
         authSession: input.session,
+        assertCurrent: input.assertCurrent,
         policies: toRallarWorkflowPolicies<StateGroupWorkflowValue>(input.options)
     }).run();
     input.assertCurrent();
@@ -474,6 +490,7 @@ async function connectAuthenticatedQuickJoinedRoom(input: ConnectQuickJoinedRoom
         throw new Error('Quick Join presence did not produce a snapshot.');
     }
     const arrived = await readRoomSessionPresence({
+        nowMs: input.dependencies.nowMs,
         snapshot,
         sessionId: input.session.sessionId,
         generationId,

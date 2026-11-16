@@ -43,6 +43,7 @@ import {
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
+
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
@@ -50,7 +51,13 @@ import type { RoomFormationServiceDependencies } from './formation/command-room-
 import { createRoomFormation } from './formation/create-room-formation.ts';
 import type { RallarRoomFormation } from './formation/rallar-room-formation-contracts.ts';
 import type { RallarRoomLayoutSlotsPort } from './formation/room-layout-slots.ts';
-import { activateGroupMove, enterRoom, joinRoom, quickJoinRoom } from './join-room.ts';
+import {
+    activateGroupMove,
+    enterRoom,
+    joinRoom,
+    quickJoinRoom,
+    type RoomPresenceDependencies
+} from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type {
     RallarCreateRoomInput,
@@ -100,7 +107,12 @@ import { captureRoomSession } from './room-session-fence.ts';
 import { createRoomSession } from './room-session.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 import { grantRoomTopic, revokeRoomTopic } from './topic-grants/room-topic-grant-workflows.ts';
-import { archiveRoom, deleteRoom, updateRoom, updateRoomMetadata } from './update-room.ts';
+import {
+    archiveRoom,
+    deleteRoom,
+    updateRoom,
+    updateRoomMetadata
+} from './update-room.ts';
 
 export interface CreateBrowserRallarRoomsInput {
     readonly changeRoom: <T>(operation: () => Promise<T>) => Promise<T>;
@@ -215,6 +227,8 @@ export interface BrowserRallarRooms {
 }
 
 interface CreateRoomEntryOperationsInput {
+    readonly newGroupId: () => string;
+    readonly presence: RoomPresenceDependencies;
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
     readonly createFormation: (roomRef: GroupRef) => RallarRoomFormation;
@@ -268,12 +282,14 @@ export function createBrowserRallarRooms(
         ...createRoomReadOperations(input, refresh),
         ...createRoomEntryOperations({
             rooms: input,
+            newGroupId: () => crypto.randomUUID(),
+            presence: { newPresenceGenerationId: () => crypto.randomUUID(), nowMs: () => Date.now() },
             createSession,
             createFormation,
             resolveRoomRef,
             onCacheChange
         }),
-        ...createRoomMembershipOperations(input),
+        ...createRoomMembershipOperations(input, Date.now),
         ...createRoomUpdateOperations(input)
     };
 }
@@ -336,16 +352,33 @@ function createRoomEntryOperations(
 > {
     const { rooms } = input;
     const join: BrowserRallarRooms['join'] = (room, options = {}) =>
-        rooms.changeRoom(() => joinRoom({ ...rooms, room, options, createRoomSession: input.createSession }));
+        rooms.changeRoom(() =>
+            joinRoom({ ...rooms, ...input.presence, room, options, createRoomSession: input.createSession })
+        );
     return {
-        create: (room) => rooms.changeRoom(() => createAndJoinRoom({ ...rooms, room })),
-        createAndSwitch: (room) => rooms.changeRoom(() => createAndSwitchRoom({ ...rooms, room, leaveRoom })),
+        create: (room) =>
+            rooms.changeRoom(() =>
+                createAndJoinRoom({ ...rooms, nowMs: input.presence.nowMs, newGroupId: input.newGroupId, room })
+            ),
+        createAndSwitch: (room) =>
+            rooms.changeRoom(() =>
+                createAndSwitchRoom({
+                    ...rooms,
+                    nowMs: input.presence.nowMs,
+                    newGroupId: input.newGroupId,
+                    room,
+                    leaveRoom
+                })
+            ),
         join,
         watch: (room, options = {}) => join(room, { ...options, participation: 'spectator' }),
-        activateMove: (move, options = {}) => rooms.changeRoom(() => activateGroupMove({ ...rooms, move, options })),
-        quickJoin: (options = {}) => rooms.changeRoom(() => quickJoinRoom({ ...rooms, options })),
+        activateMove: (move, options = {}) =>
+            rooms.changeRoom(() => activateGroupMove({ ...rooms, ...input.presence, move, options })),
+        quickJoin: (options = {}) => rooms.changeRoom(() => quickJoinRoom({ ...rooms, ...input.presence, options })),
         enter: (room, options = {}) =>
-            rooms.changeRoom(() => enterRoom({ ...rooms, room, options, createRoomSession: input.createSession })),
+            rooms.changeRoom(() =>
+                enterRoom({ ...rooms, ...input.presence, room, options, createRoomSession: input.createSession })
+            ),
         session: (room) =>
             input.createSession(
                 resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
@@ -368,7 +401,8 @@ function createRoomEntryOperations(
 }
 
 function createRoomMembershipOperations(
-    input: CreateBrowserRallarRoomsInput
+    input: CreateBrowserRallarRoomsInput,
+    nowMs: () => number
 ): Pick<
     BrowserRallarRooms,
     | 'invite'
@@ -386,7 +420,7 @@ function createRoomMembershipOperations(
     return {
         invite: async (room, principalId, options = {}) =>
             await createRoomInvite({ ...input, room, principalId, options }),
-        acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, room, options }),
+        acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, nowMs, room, options }),
         revokeInvite: async (room, principalId, options = {}) =>
             await revokeRoomInvite({ ...input, room, principalId, options }),
         rotateJoinCode: async (room, options = {}) => await rotateRoomJoinCode({ ...input, room, options }),
@@ -534,6 +568,7 @@ async function refreshAuthenticatedRoom(
             await input.acceptSnapshots({ context, clients: [], groups: [], scope, assertCurrent });
         }
         if (error instanceof ApiHttpError && error.status === 404 && observed) {
+            assertCurrent();
             await removeMissingRoomSnapshot(roomRef, observed);
         }
         throw error;

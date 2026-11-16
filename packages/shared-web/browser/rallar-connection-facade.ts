@@ -10,6 +10,7 @@ import type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
+import type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALRuntimeStorage } from '@shared/alm/storage/al-runtime-storage.ts';
@@ -31,6 +32,8 @@ import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-stream
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
+export type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
+
 export type {
     RallarDiagnosticsPorts,
     RallarDiagnosticsPortsInput
@@ -40,6 +43,8 @@ export type {
 export interface RallarSessionHeartbeat {
     readonly sessionId: string;
     readonly generationId: string;
+    /** Captured opt-in room policy; absence selects the general-purpose timing. */
+    readonly groupPresence?: RallarGroupPresencePolicy;
     stop(): void;
 }
 
@@ -92,6 +97,7 @@ export interface RallarDefaults {
     readonly messages?: RallarMessageDefaults;
     readonly operations?: RallarOperationDefaults;
     readonly diagnosticsPorts?: RallarDiagnosticsPortsInput;
+    readonly groupPresence?: RallarGroupPresencePolicy;
 }
 
 export interface RallarScopedOperationOptions extends RallarOperationOptions {

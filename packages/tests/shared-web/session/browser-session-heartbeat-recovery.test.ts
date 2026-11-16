@@ -12,6 +12,8 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { initHeartbeat, stopHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
@@ -45,6 +47,7 @@ interface RequestObservation {
 class HeartbeatServer {
     readonly requests: RequestObservation[] = [];
     readonly clientHeartbeats: JsonWireValue[] = [];
+    readonly groupHeartbeats: JsonWireValue[] = [];
     groups: GroupSnapshot[] = [createJoinedRoomFixture()];
     readGroups: () => Response | Promise<Response> = () => Response.json(this.groups);
 
@@ -62,12 +65,17 @@ class HeartbeatServer {
             }
             const group = this.groups.find((snapshot) => path.includes(`/groups/${snapshot.group.groupId}/`));
             if (method === 'POST' && path.includes('/heartbeat/requests/') && group) {
+                const request = decodeJsonWireText(String(init?.body));
+                if (!isApiJsonObject(request) || typeof request.expiresAtEpochMs !== 'number') {
+                    throw new Error('Expected heartbeat expiry.');
+                }
+                this.groupHeartbeats.push(request);
                 return Response.json({
                     ...group,
                     activeSessions: group.activeSessions.map((presence) => ({
                         ...presence,
                         lastHeartbeatAtEpochMs: Date.now(),
-                        expiresAtEpochMs: Date.now() + 120_000
+                        expiresAtEpochMs: request.expiresAtEpochMs
                     }))
                 });
             }
@@ -88,6 +96,111 @@ describe('heartbeat group recovery', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
+    });
+
+    it('renews short group presence promptly without shortening client authentication presence', async () => {
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        const handle = await initHeartbeat(client, {
+            publicationKey: null,
+            authSession: session,
+            scope,
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 }
+        });
+        await vi.advanceTimersByTimeAsync(999);
+        expect(server.requests).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(server.clientHeartbeats).toEqual([
+            expect.objectContaining({ expiresAtEpochMs: START + 121_000 })
+        ]);
+        expect(server.groupHeartbeats).toEqual([
+            expect.objectContaining({ expiresAtEpochMs: START + 9_000 })
+        ]);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(server.groupHeartbeats).toEqual([
+            expect.objectContaining({ expiresAtEpochMs: START + 9_000 }),
+            expect.objectContaining({ expiresAtEpochMs: START + 10_000 })
+        ]);
+        expect(handle.groupPresence).toEqual({ leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 });
+    });
+
+    it('keeps a short lease live through slow requests and one failed renewal', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const server = new HeartbeatServer();
+        server.groups = server.groups.map((group) => ({
+            ...group,
+            activeSessions: group.activeSessions.map((presence) => ({ ...presence, expiresAtEpochMs: START + 8_000 }))
+        }));
+        server.install();
+        const fetchResponse = globalThis.fetch;
+        let clientRequests = 0;
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+            await new Promise<void>((resolve) => setTimeout(resolve, 750));
+            if (String(input).includes('/clients/alice/')) {
+                clientRequests++;
+                if (clientRequests === 2) {
+                    return new Response('Temporary unavailability', { status: 503 });
+                }
+            }
+            return await fetchResponse(input, init);
+        });
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        await initHeartbeat(client, {
+            publicationKey: null,
+            authSession: session,
+            scope,
+            groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 }
+        });
+        await vi.advanceTimersByTimeAsync(2_500);
+        const before = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0];
+        expect(before?.expiresAtEpochMs).toBe(START + 9_000);
+        await vi.advanceTimersByTimeAsync(3_750);
+        const renewed = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0];
+        expect(Date.now()).toBeLessThan(before!.expiresAtEpochMs);
+        expect(renewed?.lastHeartbeatAtEpochMs).toBe(START + 6_250);
+        expect(renewed?.expiresAtEpochMs).toBe(START + 12_750);
+    });
+
+    it('renews again after a cache observer outlives the bounded heartbeat attempt', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const server = new HeartbeatServer();
+        server.groups = server.groups.map((group) => ({
+            ...group,
+            activeSessions: group.activeSessions.map((presence) => ({ ...presence, expiresAtEpochMs: START + 8_000 }))
+        }));
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        await groupSnapshots.waitForGroupStateSnapshotChangesIdle();
+        const observer = Promise.withResolvers<void>();
+        const unsubscribe = groupSnapshots.onGroupStateSnapshotChange(async (change) => {
+            if (change.snapshot?.activeSessions[0]?.lastHeartbeatAtEpochMs === START + 1_000) {
+                await observer.promise;
+            }
+        });
+        try {
+            await initHeartbeat(client, {
+                publicationKey: null,
+                authSession: session,
+                scope,
+                groupPresence: { leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 }
+            });
+            await vi.advanceTimersByTimeAsync(3_500);
+            expect(server.groupHeartbeats).toEqual([
+                expect.objectContaining({ lastHeartbeatAtEpochMs: START + 1_000 }),
+                expect.objectContaining({ lastHeartbeatAtEpochMs: START + 3_500 })
+            ]);
+            const renewed = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group);
+            observer.resolve();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)).toBe(renewed);
+            await vi.advanceTimersByTimeAsync(1_000);
+            expect(server.groupHeartbeats.at(-1)).toMatchObject({ lastHeartbeatAtEpochMs: START + 4_500 });
+        }
+        finally {
+            observer.resolve();
+            unsubscribe();
+        }
     });
 
     it('renews a joined private room after cache expiry while its server lease is still live', async () => {
@@ -473,7 +586,7 @@ describe('heartbeat group recovery', () => {
     });
 });
 
-function createSocketClientSnapshot() {
+function createSocketClientSnapshot(): ClientSnapshot {
     const identity = { ...scope, principalId: 'alice', clientInstanceId: 'alice', sessionId: 'alice' };
     return {
         ...createClientSnapshotFixture(identity),

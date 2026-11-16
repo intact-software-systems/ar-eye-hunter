@@ -133,6 +133,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         const storage = input.diagnosticsPorts.storage;
         const middlewareOptions = {
             ...toMiddlewareOptions(input),
+            groupPresence: this.input.connectionRuntime.readDefaults()?.groupPresence,
             qosProvider: this.input.qosProvider,
             readVolatileSessionLimits: this.input.readVolatileSessionLimits,
             readPublicationStageLimits: this.input.readPublicationStageLimits,

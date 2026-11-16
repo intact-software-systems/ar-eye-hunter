@@ -75,9 +75,9 @@ export class TownMatchSession {
     private error = '';
     private lastInput = 0;
     private lastExchange = 0;
-    private lastCommitAt: number | undefined;
+    private lastCommit: { readonly at: number; readonly epoch: number; } | undefined;
     private recoveryStartedAt: number | undefined;
-    private interruptedMatchId: string | undefined;
+    private interruptedMatch: { readonly matchId: string; readonly epoch: number; } | undefined;
     private intent: TownMatchFrame | undefined;
     private lastProposal: TownMatchFrame | undefined;
     private committedProposal: TownMatchFrame | undefined;
@@ -118,13 +118,16 @@ export class TownMatchSession {
     }
 
     getView(): TownMatchSession.View {
-        const director = this.dependencies.browser.director.status(this.roomRef);
-        const available = !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() && director.isFresh;
+        const { director, members } = this.room.getView();
+        const localSessionId = this.dependencies.browser.session()?.sessionId;
+        const available = !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() &&
+            director.isFresh &&
+            members.some((member) => member.sessionId === localSessionId);
         const checkpoint = this.checkpoints?.getState();
         const match = checkpoint?.committed?.state;
         const authorityAligned = checkpoint?.authority.epoch === director.appointment?.epoch &&
             checkpoint?.authority.sessionId === director.appointment?.sessionId;
-        const interruption = match && this.interruptedMatchId === match.matchId
+        const interruption = match && this.interruptedMatch?.matchId === match.matchId
             ? 'Round interrupted: recovery could not be confirmed. Your last confirmed points are preserved.'
             : undefined;
         return {
@@ -140,8 +143,8 @@ export class TownMatchSession {
             ),
             recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
                 (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
-                    (this.lastCommitAt !== undefined &&
-                        this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500)),
+                    (this.lastCommit !== undefined &&
+                        this.dependencies.timers.nowMs() - this.lastCommit.at >= 1500)),
             interruption,
             inputGeneration: this.generation,
             error: this.error
@@ -251,6 +254,11 @@ export class TownMatchSession {
             return;
         }
         const { director, members, departedIds } = this.room.getView();
+        const localSessionId = this.dependencies.browser.session()?.sessionId;
+        if (localSessionId && !members.some((member) => member.sessionId === localSessionId)) {
+            // Presence expiry can fence our transport before the browser receives a socket-close event.
+            this.checkpoints?.interruptTransport();
+        }
         if (!director.appointment) {
             return;
         }
@@ -310,27 +318,35 @@ export class TownMatchSession {
         const view = this.getView();
         if (!view.recovering) {
             this.recoveryStartedAt = undefined;
-            if (view.match && !view.available) {
-                await this.room.refreshForRecovery();
-                this.reconcileAuthority();
+            if (!view.match || view.available) {
+                return;
             }
-            return;
         }
-        const now = this.dependencies.timers.nowMs();
-        this.expireRecovery(view, now);
-        this.simulation?.pause(now);
-        await this.room.refreshForRecovery();
+        else {
+            const now = this.dependencies.timers.nowMs();
+            this.expireRecovery(view, now);
+            this.simulation?.pause(now);
+        }
+        try {
+            await this.room.refreshForRecovery();
+        }
+        catch (error) {
+            // A failed refresh must not starve agreement over a still-authorized live channel.
+            this.report(error);
+        }
         this.reconcileAuthority();
-        this.interruptSimulation();
+        if (view.recovering) {
+            this.interruptSimulation();
+        }
     }
 
     private expireRecovery(view: TownMatchSession.View, now: number): void {
-        if (!view.recovering || !view.match || this.lastCommitAt === undefined) {
+        if (!view.recovering || !view.match || this.lastCommit === undefined) {
             return;
         }
-        this.recoveryStartedAt ??= Math.min(now, this.lastCommitAt + 1500);
-        if (now - this.recoveryStartedAt >= 10000) {
-            this.interruptedMatchId = view.match.matchId;
+        this.recoveryStartedAt ??= Math.min(now, this.lastCommit.at + 1500);
+        if (now - this.recoveryStartedAt >= 10000 && this.interruptedMatch?.matchId !== view.match.matchId) {
+            this.interruptedMatch = { matchId: view.match.matchId, epoch: this.lastCommit.epoch };
         }
     }
 
@@ -633,13 +649,18 @@ export class TownMatchSession {
         const committed = this.checkpoints?.getState().committed;
         const now = this.dependencies.timers.nowMs();
         this.expireRecovery(this.getView(), now);
-        this.lastCommitAt = now;
+        if (committed) {
+            this.lastCommit = { at: now, epoch: committed.epoch };
+        }
         if (
-            committed?.state.seats.some((seat) =>
-                seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'observer'
+            committed && (
+                committed.state.seats.some((seat) =>
+                    seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'observer'
+                ) ||
+                (this.interruptedMatch && committed.epoch > this.interruptedMatch.epoch && !this.getView().isDirector)
             )
         ) {
-            this.interruptedMatchId = undefined;
+            this.interruptedMatch = undefined;
             this.recoveryStartedAt = undefined;
         }
         this.interruptSimulation();

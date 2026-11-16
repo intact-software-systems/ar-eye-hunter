@@ -1,9 +1,18 @@
-import { expect, test, type Page } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Browser,
+    type Page
+} from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
 import type { TownMatchFrame } from '../../../apps/cca-2d/src/match/match-protocol.ts';
 import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
-import { decodeMatchWire, registerPlayer, startTownMatch } from './match-browser.ts';
+import {
+    decodeMatchWire,
+    registerPlayer,
+    startTownMatch
+} from './match-browser.ts';
 
 interface MatchTrafficFrame {
     readonly player: number;
@@ -151,66 +160,78 @@ for (const departure of ['temporary', 'expired', 'voluntary']) {
 }
 
 for (const outcome of ['active', 'observer', 'solo', 'interrupted-solo'] as const) {
-    test(`a disconnected player returns as ${outcome} without reloading the page`, async ({ browser }) => {
+    test(`a disconnected player returns as ${outcome} without reloading the page`, async ({ playwright, browserName, launchOptions, headless, baseURL, ignoreHTTPSErrors }) => {
         const expires = outcome === 'observer';
         test.setTimeout(90000);
-        const contexts = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
-        const pages = await Promise.all(contexts.map((context) => context.newPage()));
-        const [alice, bob, carol] = pages;
+        const isolatedBrowsers: Browser[] = [];
         const traffic: string[] = [];
-        let offline = false;
-        let disconnect: (() => Promise<void>) | undefined;
-        let expiredSeatProposed = false;
-        let retainedX: number | undefined;
-        let withholdCommit = false;
-        let latestCommit = 0;
-        let unfinishedProposal: number | undefined;
-        let unfinishedAcknowledged = false;
-        await contexts[2].routeWebSocket(/\/api\/ws\//, async (socket) => {
-            traffic.push(JSON.stringify({ at: Date.now(), event: 'socket-attempt', offline }));
-            if (offline) {
-                await socket.close();
-                return;
-            }
-            const server = socket.connectToServer();
-            server.onMessage((message) => {
-                const frame = decodeMatchWire(message);
-                if (frame?.action.kind === 'commit') {
-                    if (withholdCommit) {
-                        return;
-                    }
-                    latestCommit = Math.max(latestCommit, frame.action.proposalSequence);
-                }
-                if (withholdCommit && frame?.action.kind === 'proposal' && frame.sequence > latestCommit) {
-                    unfinishedProposal ??= frame.sequence;
-                }
-                socket.send(message);
-            });
-            socket.onMessage((message) => {
-                const frame = decodeMatchWire(message);
-                if (frame?.action.kind === 'ack' && frame.action.proposalSequence === unfinishedProposal) {
-                    unfinishedAcknowledged = true;
-                }
-                server.send(message);
-            });
-            disconnect = async () => {
-                await Promise.all([socket.close(), server.close()]);
-            };
-        });
-        alice.on('websocket', (socket) =>
-            socket.on('framesent', ({ payload }) => {
-                const frame = decodeMatchWire(payload);
-                if (frame?.action.kind === 'proposal') {
-                    const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
-                    expiredSeatProposed ||= snapshot?.seats.some((seat) => seat.status === 'observer') === true;
-                    const absent = snapshot?.seats.find((seat) => seat.status === 'away');
-                    if (absent) {
-                        retainedX = snapshot?.players.find((player) => player.id === absent.id)?.x;
-                    }
-                }
-            }));
-        pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
         try {
+            // Each simulated device owns its browser process, including network-failure scheduling.
+            for (let index = 0; index < 3; index++) {
+                isolatedBrowsers.push(await playwright[browserName].launch({ ...launchOptions, headless }));
+            }
+            const contexts = await Promise.all(isolatedBrowsers.map((instance) =>
+                instance.newContext({
+                    baseURL,
+                    ignoreHTTPSErrors,
+                    viewport: { width: 390, height: 844 },
+                    hasTouch: true
+                })
+            ));
+            const pages = await Promise.all(contexts.map((context) => context.newPage()));
+            const [alice, bob, carol] = pages;
+            let offline = false;
+            let disconnect: (() => Promise<void>) | undefined;
+            let expiredSeatProposed = false;
+            let retainedX: number | undefined;
+            let withholdCommit = false;
+            let latestCommit = 0;
+            let unfinishedProposal: number | undefined;
+            let unfinishedAcknowledged = false;
+            await contexts[2].routeWebSocket(/\/api\/ws\//, async (socket) => {
+                traffic.push(JSON.stringify({ at: Date.now(), event: 'socket-attempt', offline }));
+                if (offline) {
+                    await socket.close();
+                    return;
+                }
+                const server = socket.connectToServer();
+                server.onMessage((message) => {
+                    const frame = decodeMatchWire(message);
+                    if (frame?.action.kind === 'commit') {
+                        if (withholdCommit) {
+                            return;
+                        }
+                        latestCommit = Math.max(latestCommit, frame.action.proposalSequence);
+                    }
+                    if (withholdCommit && frame?.action.kind === 'proposal' && frame.sequence > latestCommit) {
+                        unfinishedProposal ??= frame.sequence;
+                    }
+                    socket.send(message);
+                });
+                socket.onMessage((message) => {
+                    const frame = decodeMatchWire(message);
+                    if (frame?.action.kind === 'ack' && frame.action.proposalSequence === unfinishedProposal) {
+                        unfinishedAcknowledged = true;
+                    }
+                    server.send(message);
+                });
+                disconnect = async () => {
+                    await Promise.all([socket.close(), server.close()]);
+                };
+            });
+            alice.on('websocket', (socket) =>
+                socket.on('framesent', ({ payload }) => {
+                    const frame = decodeMatchWire(payload);
+                    if (frame?.action.kind === 'proposal') {
+                        const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                        expiredSeatProposed ||= snapshot?.seats.some((seat) => seat.status === 'observer') === true;
+                        const absent = snapshot?.seats.find((seat) => seat.status === 'away');
+                        if (absent) {
+                            retainedX = snapshot?.players.find((player) => player.id === absent.id)?.x;
+                        }
+                    }
+                }));
+            pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
             await startTownMatch(pages);
             const matchId = await carol.locator('#online-game').getAttribute('data-match-id');
             const dashes = await carol.locator('#online-game').getAttribute('data-dashes');
@@ -275,8 +296,12 @@ for (const outcome of ['active', 'observer', 'solo', 'interrupted-solo'] as cons
             await expect(alice.locator('#round-results')).toBeHidden();
         }
         finally {
-            await writeMatchTraffic(traffic);
-            await Promise.allSettled(contexts.map((context) => context.close()));
+            try {
+                await writeMatchTraffic(traffic);
+            }
+            finally {
+                await Promise.allSettled(isolatedBrowsers.map((instance) => instance.close()));
+            }
         }
     });
 }
@@ -377,7 +402,7 @@ test('a lost prepared graphics context revokes readiness and leaves a usable exi
 });
 
 test('a silent backup pauses confirmed play and resumes without replaying controls', async ({ browser }) => {
-    test.setTimeout(60000);
+    test.setTimeout(90000);
     const first = await browser.newContext();
     const second = await browser.newContext();
     let dropMatchMessages = false;
@@ -439,6 +464,17 @@ test('a silent backup pauses confirmed play and resumes without replaying contro
         await expect(bob.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible();
         await alice.getByRole('button', { name: 'New round', exact: true }).click();
         await expect(bob.getByRole('button', { name: 'Ready', exact: true })).toBeVisible();
+        await alice.getByRole('button', { name: 'Ready', exact: true }).click();
+        await bob.getByRole('button', { name: 'Ready', exact: true }).click();
+        await alice.getByRole('button', { name: 'Start round', exact: true }).click();
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-phase', 'playing');
+        await expect(bob.locator('#online-game')).toHaveAttribute('data-phase', 'playing');
+        dropMatchMessages = true;
+        for (const player of [alice, bob]) {
+            await expect(player.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
+                timeout: 12000
+            });
+        }
     }
     finally {
         await Promise.allSettled([first.close(), second.close()]);
@@ -506,8 +542,9 @@ for (const fault of ['silent network loss', 'browser suspension'] as const) {
                     timeout: 12000
                 });
             }
-            await expect(alice.getByRole('button', { name: 'New round', exact: true })).toBeEnabled();
-            await alice.getByRole('button', { name: 'New round', exact: true }).click();
+            await expect(alice.getByRole('button', { name: 'New round', exact: true })).toBeHidden();
+            await expect(bob.getByRole('button', { name: 'New round', exact: true })).toBeEnabled();
+            await bob.getByRole('button', { name: 'New round', exact: true }).click();
             for (const page of pages) {
                 await expect(page.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled();
             }
@@ -757,6 +794,56 @@ for (const roomRead of ['stalled', 'missing'] as const) {
         }
     });
 }
+
+test('a stalled recovery read does not prevent live peers from confirming the same round', async ({ browser }) => {
+    test.setTimeout(60000);
+    const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+    const [alice, bob] = await Promise.all(contexts.map((context) => context.newPage()));
+    let withholdFrames = false;
+    let stalledReads = 0;
+    await contexts[1].routeWebSocket(/\/api\/ws\//, (socket) => {
+        const server = socket.connectToServer();
+        server.onMessage((message) => {
+            if (!withholdFrames || !decodeMatchWire(message)) {
+                socket.send(message);
+            }
+        });
+    });
+    try {
+        await startTownMatch([alice, bob]);
+        const matchId = await bob.locator('#online-game').getAttribute('data-match-id');
+        await bob.route(
+            /\/api\/state\/apps\/cca-2d\/workspaces\/default\/groups\/[^/?]+(?:\?.*)?$/,
+            async (route) => {
+                if (route.request().method() === 'GET') {
+                    stalledReads += 1;
+                    return;
+                }
+                await route.continue();
+            }
+        );
+        withholdFrames = true;
+        await expect(bob.locator('#round-status')).toContainText('Waiting for confirmed match state');
+        await expect.poll(() => stalledReads).toBeGreaterThan(0);
+        const tick = Number(await bob.locator('#online-game').getAttribute('data-tick'));
+        withholdFrames = false;
+        for (const page of [alice, bob]) {
+            await expect(page.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 5000 });
+            await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+            await expect.poll(async () => Number(await page.locator('#online-game').getAttribute('data-tick')))
+                .toBeGreaterThan(tick + 30);
+            await expect(page.locator('#round-results')).toBeHidden();
+        }
+        const beforeX = Number(await bob.locator('#online-game').getAttribute('data-x'));
+        await bob.keyboard.down('KeyD');
+        await expect.poll(async () => Number(await bob.locator('#online-game').getAttribute('data-x')))
+            .toBeGreaterThan(beforeX + 1);
+        await bob.keyboard.up('KeyD');
+    }
+    finally {
+        await Promise.allSettled(contexts.map((context) => context.close()));
+    }
+});
 
 test('a missed commit settles when a newcomer arrives before the next checkpoint is ready', async ({ browser }) => {
     test.setTimeout(60000);

@@ -10,6 +10,8 @@ import type { QuickJoinGroupRequest, QuickJoinGroupResult } from '@shared/api/mu
 import { Command } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+
+import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 import type { RallarRoomJoinPartialFailureError } from './rallar-room-contracts.ts';
 import { readRoomMembershipRevocation } from './read-room-membership-revocation.ts';
 
@@ -29,12 +31,17 @@ import {
 export type StateGroupWorkflowValue = GroupSnapshot | undefined;
 
 export interface CreateAndJoinStateGroupInput extends Omit<ConnectStateGroupPresenceInput, 'groupId'> {
+    readonly newGroupId: () => string;
     readonly displayName: string;
     readonly requestedGroupId?: string;
     readonly options?: Omit<RoomCreateGroupStateFields, 'displayName'>;
 }
 
 export interface ConnectStateGroupPresenceInput {
+    readonly nowMs: () => number;
+    readonly groupPresence?: RallarGroupPresencePolicy;
+    /** A recovery attempt can retain this exact lease until its request outcome is resolved. */
+    readonly expiresAtEpochMs?: number;
     readonly groupId: string;
     readonly principalId: string;
     readonly sessionId: string;
@@ -74,7 +81,7 @@ export async function createAndJoinStateGroup(
     input: CreateAndJoinStateGroupInput
 ): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
-    const groupId = input.requestedGroupId?.trim() || crypto.randomUUID();
+    const groupId = input.requestedGroupId?.trim() || input.newGroupId();
     const requestId = toApiMutationWorkflowRequestId();
     const request = toCreateGroupStateRequest({
         groupId,
@@ -158,7 +165,8 @@ export function createStateGroupPresenceCommand(
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
         publicationKey: input.publicationKey,
-        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
+        expiresAtEpochMs: input.expiresAtEpochMs ??
+            toRoomPresenceLeaseExpiresAtEpochMs(input.nowMs(), input.groupPresence?.leaseMs),
         actorPrincipalId: input.principalId,
         actorSessionId: input.sessionId
     });
