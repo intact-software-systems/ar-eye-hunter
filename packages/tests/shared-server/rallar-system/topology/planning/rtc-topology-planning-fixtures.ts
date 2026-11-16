@@ -72,22 +72,31 @@ function createRtcTopologyLedFixtureGroup(memberCount: number): GroupSnapshot {
     return toRtcTopologyGroupWithDirector(createRtcTopologyFixtureGroup(memberCount), 'peer-1');
 }
 
-/** Plans a first layout of the members, then plans the room again without the one session that `matches` picks. */
-export function computeRtcTopologyFixtureLeave(
-    options: RallarRtcTopologyServiceOptions,
-    memberCount: number,
-    matches: (nextHopCount: number) => boolean
-): RtcTopologyFixtureLeave {
-    const memberSessionIds = createRtcTopologyMemberIds(memberCount);
+/** A leaver named by its session id, or the first session of the formed layout whose next-hop count matches. */
+export type RtcTopologyFixtureLeaver = string | ((nextHopCount: number) => boolean);
+
+export interface RtcTopologyFixtureLeaveInput {
+    readonly options: RallarRtcTopologyServiceOptions;
+    readonly memberCount: number;
+    readonly leaver: RtcTopologyFixtureLeaver;
+    /** Members that join in the same plan as the leave, after the formed members. */
+    readonly joinerCount: number;
+}
+
+/** Plans a first layout of the members, then plans the room again without the leaver and with the joiners. */
+export function computeRtcTopologyFixtureLeave(input: RtcTopologyFixtureLeaveInput): RtcTopologyFixtureLeave {
+    const sessionIds = createRtcTopologyMemberIds(input.memberCount + input.joinerCount);
     const previous = computeRtcTopologyFixturePlan({
-        options,
-        group: createRtcTopologyFixtureGroup(memberCount),
+        options: input.options,
+        group: createRtcTopologyFixtureGroup(input.memberCount),
         previous: undefined
     }).snapshot;
-    const leaverSessionId = resolveRtcTopologyFixtureSessionId(previous, matches);
+    const leaverSessionId = typeof input.leaver === 'string'
+        ? input.leaver
+        : resolveRtcTopologyFixtureSessionId(previous, input.leaver);
     const planned = computeRtcTopologyFixturePlan({
-        options,
-        group: createRtcTopologyFixtureGroupOf(memberSessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
+        options: input.options,
+        group: createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
         previous
     });
     return { previous, planned, leaverSessionId };

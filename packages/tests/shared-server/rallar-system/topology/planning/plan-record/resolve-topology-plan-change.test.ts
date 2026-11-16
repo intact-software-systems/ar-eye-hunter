@@ -3,20 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
 import { resolveTopologyPlanChange } from '@shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.ts';
 import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/topology/planning/plan-record/rtc-topology-plan-derivation.ts';
-import type { ComputedRtcTopologyPlan } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
-import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
 
-import { createRtcTopologyMemberIds } from '../../rtc-topology-test-fixtures.ts';
 import {
     computeRtcTopologyFixtureLeave,
     computeRtcTopologyFixturePlan,
     computeRtcTopologyFixtureRebuild,
     createRtcTopologyFixtureGroup,
-    createRtcTopologyFixtureGroupOf,
     RTC_TOPOLOGY_MESH_OPTIONS,
     RTC_TOPOLOGY_TREE_OPTIONS,
+    type RtcTopologyFixtureLeaveInput,
     type RtcTopologyFixtureReplan
 } from '../rtc-topology-planning-fixtures.ts';
 
@@ -36,6 +33,9 @@ const JOIN_DELTA: TopologyLayoutDelta = {
     maxJoinerEdgesPerSession: 1
 };
 const LEAVE_DELTA: TopologyLayoutDelta = { ...EMPTY_DELTA, leftSessionCount: 1, changedSessionCount: 1 };
+const MESH_OF_TWENTY = { options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20, joinerCount: 0 };
+const TREE_OF_EIGHT = { options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8, joinerCount: 0 };
+const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
 
 describe('resolveTopologyPlanChange', () => {
     it.each<RtcTopologyPlanDerivation>([
@@ -58,6 +58,12 @@ describe('resolveTopologyPlanChange', () => {
 
     it('an incremental plan that a member left is a repair', () => {
         expect(resolveTopologyPlanChange({ method: 'incremental' }, LEAVE_DELTA)).toEqual({ kind: 'repair' });
+    });
+
+    it('an incremental plan in which a member left and another joined is a repair', () => {
+        const delta: TopologyLayoutDelta = { ...JOIN_DELTA, leftSessionCount: 1, changedSessionCount: 2 };
+
+        expect(resolveTopologyPlanChange({ method: 'incremental' }, delta)).toEqual({ kind: 'repair' });
     });
 
     it('an incremental plan that nobody left is an attach', () => {
@@ -85,7 +91,12 @@ describe('the kind of the planner\'s own plans', () => {
     });
 
     it('a leaf\'s leave is a repair that changes nobody else', () => {
-        const left = computeRtcTopologyFixtureLeave(RTC_TOPOLOGY_TREE_OPTIONS, 8, (nextHopCount) => nextHopCount === 1);
+        const left = computeRtcTopologyFixtureLeave({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            memberCount: 8,
+            leaver: (nextHopCount) => nextHopCount === 1,
+            joinerCount: 0
+        });
 
         const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
 
@@ -95,14 +106,21 @@ describe('the kind of the planner\'s own plans', () => {
     });
 
     it('a relay\'s leave is a repair that changes only its dependants', () => {
-        const left = computeRtcTopologyFixtureLeave(RTC_TOPOLOGY_TREE_OPTIONS, 8, (nextHopCount) => nextHopCount > 1);
+        const left = computeRtcTopologyFixtureLeave({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            memberCount: 8,
+            leaver: (nextHopCount) => nextHopCount > 1,
+            joinerCount: 0
+        });
         const dependantSessionIds = left.previous.nextHopsBySessionId[left.leaverSessionId] ?? [];
 
         const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
 
         expect(resolveTopologyPlanChange(left.planned.derivation, delta)).toEqual({ kind: 'repair' });
         expect(delta.reroutedSessionCount).toBe(0);
-        expect(readChangedStayerSessionIds(left).every((sessionId) => dependantSessionIds.includes(sessionId))).toBe(true);
+        const changedSessionIds = readChangedStayerSessionIds(left);
+        expect(changedSessionIds.length).toBeGreaterThan(0);
+        expect(changedSessionIds.every((sessionId) => dependantSessionIds.includes(sessionId))).toBe(true);
     });
 
     describe.each(TOPOLOGY_RESHAPE_REASONS)('each rebuild reason is a reshape: %s', (reason) => {
@@ -139,9 +157,6 @@ describe('the kind of the planner\'s own plans', () => {
 });
 
 describe('what a single join or leave in a mesh of twenty reroutes today', () => {
-    // The rule names every incremental plan an attach or a repair whatever it reroutes; these pin that the
-    // planner's incremental mesh plans reroute nobody, and that a leave which does reroute is a rebuild.
-    const memberSessionIds = createRtcTopologyMemberIds(20);
     const formed = computeRtcTopologyFixturePlan({
         options: RTC_TOPOLOGY_MESH_OPTIONS,
         group: createRtcTopologyFixtureGroup(20),
@@ -163,37 +178,100 @@ describe('what a single join or leave in a mesh of twenty reroutes today', () =>
     });
 
     it('an incremental leave from a mesh is a repair that reroutes nobody', () => {
-        const left = computeLeave(formed, memberSessionIds, 'peer-7');
+        const left = computeRtcTopologyFixtureLeave({ ...MESH_OF_TWENTY, leaver: 'peer-7' });
 
-        const delta = computeTopologyLayoutDelta(formed, left.snapshot);
+        const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
 
-        expect(left.derivation).toEqual({ method: 'incremental' });
-        expect(resolveTopologyPlanChange(left.derivation, delta)).toEqual({ kind: 'repair' });
+        expect(left.planned.derivation).toEqual({ method: 'incremental' });
+        expect(resolveTopologyPlanChange(left.planned.derivation, delta)).toEqual({ kind: 'repair' });
         expect(delta.reroutedSessionCount).toBe(0);
     });
 
     it('a leave from a mesh that reroutes members it did not involve is rebuilt, so it is a reshape', () => {
         // The evolved mesh breaks an invariant, and the rebuild moves edges between members peer-4 never touched.
-        const left = computeLeave(formed, memberSessionIds, 'peer-4');
+        const left = computeRtcTopologyFixtureLeave({ ...MESH_OF_TWENTY, leaver: 'peer-4' });
 
-        const delta = computeTopologyLayoutDelta(formed, left.snapshot);
+        const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
 
-        expect(left.derivation).toEqual({ method: 'rebuilt', reason: 'invariant-violation' });
-        expect(resolveTopologyPlanChange(left.derivation, delta)).toEqual({ kind: 'reshape', reason: 'invariant-violation' });
+        expect(left.planned.derivation).toEqual({ method: 'rebuilt', reason: 'invariant-violation' });
+        expect(resolveTopologyPlanChange(left.planned.derivation, delta))
+            .toEqual({ kind: 'reshape', reason: 'invariant-violation' });
         expect(delta.reroutedSessionCount).toBe(3);
     });
 });
 
-function computeLeave(
-    formed: RallarOverlayTopologySnapshot,
-    memberSessionIds: readonly string[],
-    leaverSessionId: string
-): ComputedRtcTopologyPlan {
-    return computeRtcTopologyFixturePlan({
-        options: RTC_TOPOLOGY_MESH_OPTIONS,
-        group: createRtcTopologyFixtureGroupOf(memberSessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
+describe('the planner\'s plans over every single leave of a mesh of twenty and a tree of eight', () => {
+    const meshSweep = computeRoomSweep(MESH_OF_TWENTY);
+    const treeSweep = computeRoomSweep(TREE_OF_EIGHT);
+
+    it.each([
+        { room: 'a mesh of twenty', sweep: meshSweep },
+        { room: 'a tree of eight', sweep: treeSweep }
+    ])('no incremental plan reroutes a member it did not involve ($room)', ({ sweep }) => {
+        const incrementalPlans = sweep.filter((plan) => plan.derivation.method === 'incremental');
+
+        expect(new Set(incrementalPlans.map((plan) => plan.event))).toEqual(new Set(SWEEP_EVENTS));
+        expect(incrementalPlans.filter((plan) => plan.delta.reroutedSessionCount > 0)).toEqual([]);
+    });
+
+    // These pin the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
+    // and each leave counted here will be a reshape once reshapes are gated.
+    it('today 9 of the 20 single leaves from a 20-member mesh cannot be repaired incrementally and are rebuilt', () => {
+        expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({ 'invariant-violation': 9 });
+    });
+
+    it('today 1 of the 8 single leaves from an 8-member tree cannot be repaired incrementally and are rebuilt', () => {
+        expect(countSingleLeaveRebuildReasons(treeSweep)).toEqual({ 'invariant-violation': 1 });
+    });
+});
+
+type SweepEvent = (typeof SWEEP_EVENTS)[number];
+
+interface SweptPlan {
+    readonly event: SweepEvent;
+    readonly leaverSessionId: string | null;
+    readonly derivation: RtcTopologyPlanDerivation;
+    readonly delta: TopologyLayoutDelta;
+}
+
+/** Every single leave, one join, and every single leave with one join in the same plan, from the formed room. */
+function computeRoomSweep(room: Omit<RtcTopologyFixtureLeaveInput, 'leaver'>): readonly SweptPlan[] {
+    const formed = computeRtcTopologyFixturePlan({
+        options: room.options,
+        group: createRtcTopologyFixtureGroup(room.memberCount),
+        previous: undefined
+    }).snapshot;
+    const joined = computeRtcTopologyFixturePlan({
+        options: room.options,
+        group: createRtcTopologyFixtureGroup(room.memberCount + 1),
         previous: formed
     });
+    const leaves = formed.activeSessionIds.flatMap((leaverSessionId) =>
+        ([0, 1] as const).map((joinerCount) => {
+            const left = computeRtcTopologyFixtureLeave({ ...room, leaver: leaverSessionId, joinerCount });
+            return toSweptPlan(joinerCount === 0 ? 'leave' : 'leave-and-join', leaverSessionId, left);
+        })
+    );
+    return [toSweptPlan('join', null, { previous: formed, planned: joined }), ...leaves];
+}
+
+function toSweptPlan(event: SweepEvent, leaverSessionId: string | null, replan: RtcTopologyFixtureReplan): SweptPlan {
+    return {
+        event,
+        leaverSessionId,
+        derivation: replan.planned.derivation,
+        delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot)
+    };
+}
+
+function countSingleLeaveRebuildReasons(sweep: readonly SweptPlan[]): Partial<Record<TopologyReshapeReason, number>> {
+    const counts: Partial<Record<TopologyReshapeReason, number>> = {};
+    for (const plan of sweep) {
+        if (plan.event === 'leave' && plan.derivation.method === 'rebuilt') {
+            counts[plan.derivation.reason] = (counts[plan.derivation.reason] ?? 0) + 1;
+        }
+    }
+    return counts;
 }
 
 /** The staying members whose next hops the plan changed, in the planner's member order. */

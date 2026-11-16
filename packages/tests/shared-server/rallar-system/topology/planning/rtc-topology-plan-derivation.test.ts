@@ -43,14 +43,24 @@ describe('the derivation of a planned layout', () => {
 
     it('a leaf\'s leave from a tree is incremental', () => {
         // A leaf holds one edge, so its leave removes that edge and leaves a valid tree of the rest.
-        const left = computeRtcTopologyFixtureLeave(RTC_TOPOLOGY_TREE_OPTIONS, 8, (nextHopCount) => nextHopCount === 1);
+        const left = computeRtcTopologyFixtureLeave({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            memberCount: 8,
+            leaver: (nextHopCount) => nextHopCount === 1,
+            joinerCount: 0
+        });
 
         expect(left.planned.derivation).toEqual({ method: 'incremental' });
     });
 
     it('a relay\'s leave from a tree is incremental', () => {
         // A relay's leave is one change within the delta budget; the tree update reconnects its children validly.
-        const left = computeRtcTopologyFixtureLeave(RTC_TOPOLOGY_TREE_OPTIONS, 8, (nextHopCount) => nextHopCount > 1);
+        const left = computeRtcTopologyFixtureLeave({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            memberCount: 8,
+            leaver: (nextHopCount) => nextHopCount > 1,
+            joinerCount: 0
+        });
 
         expect(left.planned.derivation).toEqual({ method: 'incremental' });
     });
