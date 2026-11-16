@@ -25,7 +25,7 @@ describe('resolveTopologyChurnOutcome', () => {
     });
 
     it('ignores a removal without a record and has not converged on a room with no plan', () => {
-        const removal = createTopologyChurnRemoval(4, 4_000);
+        const removal = createTopologyChurnRemoval(4, 4_000, 'star');
 
         expect(resolveTopologyChurnOutcome({ plans: [...PLANS, removal], acceptedLayout: toTopologyChurnLayout(3) })).toEqual({
             converged: true,

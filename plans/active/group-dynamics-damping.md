@@ -251,10 +251,10 @@ fresh no-RTT plan after the 30 churn plans.
 | mesh 20, auto      | 30          | 20.0      | 30       | 1.00           | 15 / 10 / 5               | 0.17                                             | 16 / 18                                  | 5                     | undetermined |
 | mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.20                                             | 13 / 18                                  | 5                     | undetermined |
 
-The table is run 3. Among the cells shown, run 2 differed in the tree's longest hop path (5 for `auto`, 6 for `debounced`,
-where run 3 reads 6 and 5), in the tree's drift (0 extra hops, where run 3 reads 1: accepted 4, fresh
-plan 3) and in the share of join and leave plans that rerouted an uninvolved member (tree 0.07 and
-0.10, mesh 0.17 and 0.17).
+The table is run 3. Among the cells shown, run 2 differed in the tree's longest hop path (5 for
+`auto`, 6 for `debounced`, where run 3 reads 6 and 5), in the tree's drift (0 extra hops, where run
+3 reads 1: accepted 4, fresh plan 3) and in the share of join and leave plans that rerouted an
+uninvolved member (tree 0.07 and 0.10, mesh 0.17 and 0.17).
 
 - Every reshape the measurement produced was a leave the planner could not repair incrementally
   (`invariant-violation`): 3 or 4 of the 15 leaves in the 8-member tree, 5 or 6 of the 15 in the
@@ -367,7 +367,7 @@ browsers.
   entry, as the room directory read does (`status: 'invalid'`, `completeness: 'partial'`). Today it
   answers 500 "Room inspection is unavailable" for the whole room while one such row is retained;
   on a store not wiped at deploy that is every room that published in the previous 24 h, until those
-  rows expire. Topology work and replay are not affected (D653).
+  rows expire and are evicted. Topology work and replay are not affected (D653).
 - A typed read for the mesh parameter, which mesh drift needs.
 - What the reshape gate does with a leave the planner cannot repair incrementally, which is every
   reshape the measurement produced.

@@ -11,7 +11,7 @@ import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan
 
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 
-export interface TopologyChurnTestPlanInput {
+interface TopologyChurnTestPlanInput {
     readonly version: number;
     readonly plannedAtEpochMs: number;
     readonly topology?: RallarRtcTopologyKind;
@@ -48,8 +48,12 @@ export function createTopologyChurnPlan(input: TopologyChurnTestPlanInput): Admi
     };
 }
 
-export function createTopologyChurnRemoval(version: number, requestedAtEpochMs: number): AdminRoomTopologyPlan {
-    return { ...createTopologyChurnPlan({ version, plannedAtEpochMs: requestedAtEpochMs }), plan: null };
+export function createTopologyChurnRemoval(
+    version: number,
+    requestedAtEpochMs: number,
+    topology: RallarRtcTopologyKind = 'mesh'
+): AdminRoomTopologyPlan {
+    return { ...createTopologyChurnPlan({ version, plannedAtEpochMs: requestedAtEpochMs, topology }), plan: null };
 }
 
 function toReplaced(version: number, ageMs: number | null): ReplacedTopologyLayout | null {

@@ -1,4 +1,4 @@
-export interface NumberExtrema {
+interface NumberExtrema {
     readonly min: number;
     readonly max: number;
 }
