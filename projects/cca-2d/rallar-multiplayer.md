@@ -559,6 +559,70 @@ One remaining lifecycle case is a three-player silent outage or suspension follo
 by takeover and return without a delivered socket-close callback. The observed-close
 return test does not establish that transition; retain it in reliability qualification.
 
+### Silent host-loss reproduction and presence policy
+
+The three-browser silent-loss regression now reproduces a missing capability.
+It drops the host's application WebSocket traffic and HTTP requests without closing
+its socket. In the recorded trial, 850 outgoing messages were discarded, no close
+callback reached the host and neither survivor proposed a replacement epoch.
+All three browsers showed bounded interruption with their last confirmed state.
+The test remains failing; this is evidence of the gap, not successful takeover.
+
+The current director heartbeat is a peer freshness signal, not a server lease.
+Rallar correctly refuses fallback appointment while an owner session remains
+authoritatively present. Browser room presence currently starts with a two-minute
+lease and renews on a twenty-second heartbeat schedule. Presence renewal takes the
+maximum of old and requested expiry, so merely renewing more frequently cannot
+shorten a lease that was initially issued for two minutes.
+
+The proposed next implementation is an opt-in browser group-presence policy shared by
+initial room admission, invitation entry, reconnection and heartbeat renewal.
+Normalize a complete policy at the connection boundary and retain it for that
+connection. Keep existing general-purpose defaults; CCA can select a shorter lease
+and renewal/request bounds that leave time for authoritative expiry and appointment
+inside its recovery deadline. Six-second leases and roughly 1.5-second renewal are
+initial test candidates, not qualified production timing guarantees. Do not weaken
+owner/admin appointment checks, promote players to admin, lengthen the game deadline
+to mask the gap, or let the app declare another session absent by itself.
+
+Acceptance must cover every admission/reconnect path, timely healthy renewals,
+bounded stalled renewals, expiry under silent network loss and suspended JavaScript,
+server-authorized successor appointment, committed-state recovery and old-host
+return without dual authority. Short leases also require clock-skew and background
+qualification. Preserve the existing default-policy regressions and the fallback
+interruption when authoritative recovery cannot be completed. The new fault test
+uses real accounts and normal room/start controls; network hooks only introduce
+loss and observe resulting state.
+
+Feasibility review confirmed that authoritative room reads already filter expired
+group-session leases without waiting for a cleanup sweep. The client authentication
+session has a separate, longer lease; the proposed setting must not promise to
+shorten that lease. This approach preserves server appointment authorization.
+
+Implementation must cap the first renewal by the selected cadence, capture initial
+presence expiry after admission completes, and bound the entire renewal path,
+including socket-generation lookup. Preserve an immutable request body for each
+retry identity; an expired reconnect command must be resolved before issuing a new
+one, rather than silently changing its expiry. Capture the normalized policy once
+per connection, including the runtime-default cloning path, so live changes to
+defaults cannot split admission and renewal behavior.
+
+Two prerequisites are now implemented: create/join/invitation workflows capture
+their presence lease after admission completes, while each request keeps its body
+and identity across retries; heartbeat socket-generation lookup now has a timeout
+and passes cancellation to its HTTP read. Regression coverage includes recovery
+with the actual socket generation and stop/replacement during a pending lookup.
+These changes retain the existing presence duration and cadence. They do not yet
+provide the proposed short policy or make the silent-loss takeover test pass.
+
+Returning without a close event needs explicit qualification: once authoritative
+refresh removes the expired local session, the normal heartbeat no longer targets
+that room, and current selected-room recovery arms on socket close. Exercise both
+refresh-before-renewal and renewal-before-refresh returns. Restore only an existing,
+still-authorized selected room, respecting departure and revocation; do not invent
+membership from cached selection. The fault test requires timely return to a playable
+active seat under the replacement director, not only receipt of spectator snapshots.
+
 ### Readable names and shared-round acceptance
 
 Each Ready intent carries the local authenticated session's username as its display

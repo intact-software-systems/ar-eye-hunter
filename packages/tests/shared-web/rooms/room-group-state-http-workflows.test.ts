@@ -1,3 +1,4 @@
+import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     archiveStateGroup,
@@ -11,12 +12,18 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
+// Diagnostic traces do not determine the mutation identities exercised here.
+vi.mock('@shared/al-contracts/trace/al-trace-id.ts', async (importOriginal) => ({
+    ...await importOriginal<typeof import('@shared/al-contracts/trace/al-trace-id.ts')>(),
+    newALTraceId: () => 'trace-room-workflow-request'
+}));
+
 interface FetchCall {
     readonly url: string;
     readonly physicalUrl: string;
     readonly method: string;
     readonly headers: Record<string, string>;
-    readonly body: object | undefined;
+    readonly body: JsonWireValue | undefined;
     readonly signal: AbortSignal | null | undefined;
 }
 
@@ -641,7 +648,7 @@ describe('room group-state HTTP workflows', () => {
                     physicalUrl,
                     method: init?.method ?? 'GET',
                     headers: Object.fromEntries(new Headers(init?.headers).entries()),
-                    body: init?.body ? JSON.parse(String(init.body)) : undefined,
+                    body: init?.body ? decodeJsonWireText(String(init.body)) : undefined,
                     signal: init?.signal
                 };
                 fetchCalls.push(call);
@@ -711,7 +718,7 @@ function readMutationRequestId(url: string): string | undefined {
     return url.match(/\/requests\/([A-Za-z0-9_-]+)$/u)?.[1];
 }
 
-function hasRequestId<Value>(value: Value): boolean {
+function hasRequestId(value: JsonWireValue | undefined): boolean {
     return typeof value === 'object' && value !== null && 'requestId' in value;
 }
 

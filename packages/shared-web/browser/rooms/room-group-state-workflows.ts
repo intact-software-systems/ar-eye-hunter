@@ -76,7 +76,6 @@ export async function createAndJoinStateGroup(
     const scope = input.scope ?? defaultStateScope();
     const groupId = input.requestedGroupId?.trim() || crypto.randomUUID();
     const requestId = toApiMutationWorkflowRequestId();
-    const presence = createStateGroupPresenceCommand({ ...input, groupId, scope });
     const request = toCreateGroupStateRequest({
         groupId,
         room: { displayName: input.displayName, ...input.options },
@@ -94,13 +93,12 @@ export async function createAndJoinStateGroup(
         },
         input.policies?.command
     ).run();
-    return await connectAdmittedRoomPresence(createdRoom, presence, input.assertCurrent);
+    return await connectAdmittedRoomPresence(createdRoom, { ...input, groupId, scope });
 }
 
 export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const requestId = toApiMutationWorkflowRequestId();
-    const presence = createStateGroupPresenceCommand({ ...input, scope });
     const request = toJoinGroupStateRequest({
         room: input.intent ?? {},
         actorPrincipalId: input.principalId,
@@ -118,21 +116,21 @@ export async function joinStateGroup(input: JoinStateGroupInput): Promise<GroupS
         },
         input.policies?.command
     ).run();
-    return await connectAdmittedRoomPresence(joinedRoom, presence, input.assertCurrent);
+    return await connectAdmittedRoomPresence(joinedRoom, { ...input, scope });
 }
 
 async function connectAdmittedRoomPresence(
     joinedRoom: StateGroupWorkflowValue,
-    presence: Command<StateGroupWorkflowValue>,
-    assertCurrent: (() => void) | undefined
+    input: ConnectStateGroupPresenceInput
 ): Promise<GroupSnapshot> {
     if (!joinedRoom) {
         throw new Error('Room admission did not produce a snapshot.');
     }
     try {
-        assertCurrent?.();
+        input.assertCurrent?.();
+        const presence = createStateGroupPresenceCommand(input);
         const snapshot = requireConnectedPresence(await presence.run());
-        assertCurrent?.();
+        input.assertCurrent?.();
         return snapshot;
     }
     catch (cause) {

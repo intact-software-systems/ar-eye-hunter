@@ -159,7 +159,13 @@ class BrowserStateHeartbeatRuntime {
     }
 
     private async refreshHeartbeat(): Promise<void> {
-        const wsConnectionGeneration = await this.#options.ownWsConnectionGeneration?.read();
+        const wsConnectionGeneration = await new Command(
+            (signal) => this.#options.ownWsConnectionGeneration?.read(signal),
+            {
+                timeoutMs: this.#options.policies?.command?.timeoutMs ?? SESSION_HEARTBEAT_RETRY_MS,
+                errorOnNull: false
+            }
+        ).run();
         if (!this.isCurrent()) {
             return;
         }

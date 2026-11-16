@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { decodeJsonWireText, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { initHeartbeat, stopHeartbeat } from '@shared-web/browser/session/browser-session-heartbeat.ts';
@@ -15,7 +16,12 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import * as groupSnapshots from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
-import { createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import {
+    createActiveClientInstanceFixture,
+    createActiveClientSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from '../authoritative-group-fixtures.ts';
 
 const START = 1_000_000;
 const scope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
@@ -38,6 +44,7 @@ interface RequestObservation {
 /** HTTP is the only substituted boundary; scheduling, cache expiry and renewal adoption stay real. */
 class HeartbeatServer {
     readonly requests: RequestObservation[] = [];
+    readonly clientHeartbeats: JsonWireValue[] = [];
     groups: GroupSnapshot[] = [createJoinedRoomFixture()];
     readGroups: () => Response | Promise<Response> = () => Response.json(this.groups);
 
@@ -50,6 +57,7 @@ class HeartbeatServer {
                 return await this.readGroups();
             }
             if (method === 'POST' && path.includes('/clients/alice/')) {
+                this.clientHeartbeats.push(decodeJsonWireText(String(init?.body)));
                 return Response.json(createClientSnapshotFixture({ ...scope, principalId: 'alice' }));
             }
             const group = this.groups.find((snapshot) => path.includes(`/groups/${snapshot.group.groupId}/`));
@@ -223,6 +231,67 @@ describe('heartbeat group recovery', () => {
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
         expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)?.activeSessions[0])
             .toMatchObject({ lastHeartbeatAtEpochMs: START + 115_000 });
+    });
+
+    it('bounds a stalled socket-generation read and renews presence on the next attempt', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        const stalled = Promise.withResolvers<ReturnType<typeof createClientSnapshotFixture>>();
+        let lookupSignal: AbortSignal | undefined;
+        let unavailable = true;
+        const ownWsConnectionGeneration = new BrowserOwnWsConnectionGeneration({
+            socket: { ws: { readyState: WebSocket.OPEN } },
+            sessionId: session.sessionId,
+            readOwnClientSnapshot: (signal) => {
+                lookupSignal = signal;
+                return unavailable ? stalled.promise : Promise.resolve(createSocketClientSnapshot());
+            }
+        });
+        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
+        await vi.advanceTimersByTimeAsync(55_000);
+        expect(lookupSignal?.aborted).toBe(true);
+        unavailable = false;
+        await vi.advanceTimersByTimeAsync(5_000);
+        const renewed = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group);
+        expect(renewed?.activeSessions[0]).toMatchObject({ lastHeartbeatAtEpochMs: START + 60_000 });
+        expect(server.clientHeartbeats).toEqual([expect.objectContaining({ generationId: 'socket-alice' })]);
+        stalled.resolve(createSocketClientSnapshot());
+        await vi.advanceTimersByTimeAsync(0);
+        expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)).toBe(renewed);
+        expect(server.clientHeartbeats).toHaveLength(1);
+    });
+
+    it.each(['stop', 'replace'] as const)('prevents old heartbeat effects after %s during a socket-generation lookup', async (action) => {
+        const server = new HeartbeatServer();
+        server.install();
+        groupSnapshots.setGroupStateSnapshots(server.groups);
+        const stalled = Promise.withResolvers<ReturnType<typeof createSocketClientSnapshot>>();
+        const ownWsConnectionGeneration = new BrowserOwnWsConnectionGeneration({
+            socket: { ws: { readyState: WebSocket.OPEN } },
+            sessionId: session.sessionId,
+            readOwnClientSnapshot: () => stalled.promise
+        });
+        const onAuthInvalid = vi.fn();
+        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration, onAuthInvalid });
+        await vi.advanceTimersByTimeAsync(50_000);
+        if (action === 'stop') {
+            stopHeartbeat();
+        }
+        else {
+            await initHeartbeat({ clientId: 'bob', sessionId: 'bob', isOnline: true }, {
+                publicationKey: null,
+                authSession: { ...session, clientId: 'bob', sessionId: 'bob', accessToken: 'replacement-token' },
+                scope
+            });
+        }
+        const observed = groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group);
+        stalled.resolve(createSocketClientSnapshot());
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(server.requests).toEqual([]);
+        expect(groupSnapshots.findGroupStateSnapshotByRef(server.groups[0].group)).toBe(observed);
+        expect(onAuthInvalid).not.toHaveBeenCalled();
     });
 
     it.each(['removed', 'lease-expired'] as const)('does not rejoin a room whose server presence is %s', async (reason) => {
@@ -403,6 +472,22 @@ describe('heartbeat group recovery', () => {
         expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
     });
 });
+
+function createSocketClientSnapshot() {
+    const identity = { ...scope, principalId: 'alice', clientInstanceId: 'alice', sessionId: 'alice' };
+    return {
+        ...createClientSnapshotFixture(identity),
+        instances: [createActiveClientInstanceFixture(identity)],
+        activeSessions: [{
+            ...createActiveClientSessionFixture(identity),
+            generationId: 'socket-alice',
+            connectionId: 'socket-alice',
+            expiresAtEpochMs: START + 120_000
+        }],
+        isOnline: true,
+        activeSessionCount: 1
+    };
+}
 
 function createJoinedRoomFixture(): GroupSnapshot {
     const snapshot = createGroupSnapshotFixture({ ...scope, groupId: 'private-room', sessionIds: ['alice'] });
