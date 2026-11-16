@@ -51,6 +51,21 @@ export const MATCH_SNAPSHOT_SCHEMA = {
             },
             maxItems: 4
         },
+        seats: {
+            type: 'array',
+            maxItems: 4,
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['id', 'sessionId', 'status', 'expiresAtEpochMs'],
+                properties: {
+                    id: { type: 'string', minLength: 1, maxLength: 128 },
+                    sessionId: { type: 'string', minLength: 1, maxLength: 128 },
+                    status: { enum: ['active', 'away', 'observer'] },
+                    expiresAtEpochMs: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER }
+                }
+            }
+        },
         players: {
             type: 'array',
             items: {
@@ -81,6 +96,7 @@ export const MATCH_SNAPSHOT_SCHEMA = {
         'remainingTicks',
         'members',
         'participants',
+        'seats',
         'players',
         'town',
         'results'

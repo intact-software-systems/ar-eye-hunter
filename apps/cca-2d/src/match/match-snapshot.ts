@@ -134,7 +134,41 @@ function validateTownSnapshotRelations(state: TownMatchState): readonly string[]
     ) {
         issues.push('Snapshot results do not describe the players.');
     }
-    return [...issues, ...validateTownSnapshotClock(state), ...validateTownSnapshotMap(state)];
+    return [
+        ...issues,
+        ...validateTownSnapshotSeats(state),
+        ...validateTownSnapshotClock(state),
+        ...validateTownSnapshotMap(state)
+    ];
+}
+
+function validateTownSnapshotSeats(state: TownMatchState): readonly string[] {
+    const issues: string[] = [];
+    if (
+        state.seats.length !== state.participants.length ||
+        new Set(state.seats.map((seat) => seat.id)).size !== state.seats.length ||
+        new Set(state.seats.map((seat) => seat.sessionId)).size !== state.seats.length ||
+        state.seats.some((seat) => !state.participants.some((participant) => participant.id === seat.id))
+    ) {
+        issues.push('Round seats must uniquely identify the retained participants and their controllers.');
+    }
+    const activeRound = state.phase === 'lobby' || state.phase === 'countdown' || state.phase === 'playing';
+    for (const seat of state.seats) {
+        if ((seat.status === 'away') !== (seat.expiresAtEpochMs > 0)) {
+            issues.push('Only an away seat may have a grace deadline.');
+        }
+        const controller = state.members.find((member) => member.id === seat.id);
+        if (activeRound && seat.status === 'active' && controller?.sessionId !== seat.sessionId) {
+            issues.push('An active seat must name its current controller.');
+        }
+        if (activeRound && seat.status === 'away' && controller) {
+            issues.push('An away seat cannot have a current controller.');
+        }
+        if (state.phase === 'lobby' && seat.status !== 'active') {
+            issues.push('A fresh lobby resets all round seats.');
+        }
+    }
+    return issues;
 }
 
 function validateTownSnapshotClock(state: TownMatchState): readonly string[] {

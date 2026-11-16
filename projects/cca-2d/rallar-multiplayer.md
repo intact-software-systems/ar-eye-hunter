@@ -275,11 +275,12 @@ must bound recovery/retransmission, preserve authenticated source identities,
 recheck authority after asynchronous hashing, and retain input/message sequence
 watermarks. The agreement owner alone does not implement those network effects.
 
-Requiring all selected controller acknowledgements is an initial conservative
+Requiring all selected session acknowledgements is an initial conservative
 choice: a slow peer can delay confirmation. Retained round participants/results
-are now separate from active controllers. The host-close trial below proves one
-continued three-client recovery path; the seat-grace behavior described in
-architecture.md remains required and is not established by that trial.
+are separate from connected transport members and active controller seats.
+An observer remains a checkpoint recipient and backup but cannot send controls
+or participate in town interactions. The host-close trial proves one continued
+three-client recovery path; the separate seat-grace trial below covers reopening.
 
 The live integration below now supplies appointed-director/channel wiring and
 shared gameplay UI. Remaining outcomes are loss/reordering/recovery with real
@@ -323,9 +324,11 @@ or visibility loss clears the runtime's input directly rather than waiting for a
 render frame. Speculative simulation stops two seconds beyond confirmed progress.
 
 A same-director newcomer produces an explicit interruption from committed state,
-never speculative scores. An outstanding checkpoint settles with the original
-controllers before the newcomer is admitted to the checkpoint agreement. The new
-roster must acknowledge the interruption. Scene preparation is invalidated by match/participant changes and resizing.
+never speculative scores. Current roster adoption discards the outstanding
+proposal into the bounded recovery candidate; it does not wait for peers that
+may already have adopted the new roster. Surviving prior holders reconcile the
+selected checkpoint, then the new roster acknowledges the interruption.
+Scene preparation is invalidated by match/participant changes and resizing.
 Gameplay input listeners exist only while the game is visible, so the lobby remains
 typeable. Graphics-context loss revokes readiness and offers a leave/rejoin path.
 A late joiner sees the interruption and can leave;
@@ -429,10 +432,44 @@ same-epoch committed-identity retransmission makes that regression fail. Resendi
 the identity lets a lagging peer settle its pending checkpoint even after the host
 has changed roster and discarded the old proposal bytes.
 
-These checks do not implement the ten-second seat-grace/observer policy. A returning
-original participant can currently rebind without that expiry rule. Same/new-session
-reconnect, stale host return, physical backgrounding, shared rescue/full-round
-browser results and secure phone access remain required before release.
+### Confirmed seat grace and browser reopening
+
+Round state now carries mandatory seats alongside retained participants and
+connected members. A missing controller becomes away with an absolute ten-second
+deadline; repeated observations and handovers retain that deadline. Returning
+before it expires rebinds the authenticated session and retains points. Expiry,
+or an observed voluntary departure, makes the seat an observer until rematch.
+Absent and observer characters do not move, collect, rescue or attract NPCs.
+Their confirmed scores remain available for results. A fresh round resets seats.
+
+Recovery agreement comes from at least two current sessions that belonged to the
+selected checkpoint, including the appointed director. A returning browser cannot
+claim to have held state from its absence. It receives the new proposal and must
+acknowledge it alongside the surviving sessions before that state is committed.
+Observers still acknowledge checkpoints; application availability independent of
+room presence remains necessary for backgrounded or silently disconnected tabs.
+
+The full reconnect run exposed an obsolete roster-adoption delay: a host could
+wait for an old-roster proposal while a peer had already adopted the new roster
+and rejected it. Immediate roster adoption now uses retained-candidate recovery.
+The same recovery rule handles genuine newcomers from the selected checkpoint,
+so a newer recovery source cannot leave an older interruption waiting to publish.
+Both the browser deadlock and selected-source rule have regression coverage.
+
+Three real-browser scenarios now cover close/reopen/rejoin within grace, return
+after expiry, and immediate return after the visible Leave town action. They
+verify the same round continues, active movement returns only within grace, and
+observers see the live clock with controls hidden and their position unchanged.
+Phone-sized active and observer screenshots were inspected. Rule and snapshot
+tests cover retained nonzero scores, stale-session input rejection, exact deadline
+expiry, rematch reset and invalid seat records. The trial wire build is now
+`grumpy-town-v3`; all players must refresh together.
+
+Deadlines use the appointed host's epoch clock, preserved in confirmed state;
+cross-device clock skew is not yet qualified. These tests establish fresh-page
+reopening, not same-page transport recovery. Same/new-session network reconnect,
+stale host return, physical backgrounding, shared rescue/full-round browser results
+and secure phone access remain required before release.
 
 The next two useful outcomes remain concrete:
 

@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
 import { decodeTownMatchFrame, type TownMatchFrame } from '../../../apps/cca-2d/src/match/match-protocol.ts';
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
 import { decodeALMessage } from '../../../packages/shared/al-contracts/al-message-persistence-validation.ts';
 
 interface MatchTrafficFrame {
@@ -82,6 +83,72 @@ async function registerPlayer(page: Page, username: string): Promise<void> {
     await page.getByLabel('Password', { exact: true }).fill('Local-trial-only-48!');
     await page.getByRole('button', { name: 'Create account' }).click();
     await expect(page.getByRole('button', { name: 'Create town', exact: true })).toBeVisible({ timeout: 15000 });
+}
+
+for (const departure of ['temporary', 'expired', 'voluntary']) {
+    test(`a reopened player browser respects a ${departure} departure`, async ({ browser }) => {
+        test.setTimeout(90000);
+        const contexts = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
+        const [alice, bob, carol] = await Promise.all(contexts.map((context) => context.newPage()));
+        const traffic: string[] = [];
+        [alice, bob, carol].forEach((page, index) => recordMatchTraffic(page, index, traffic));
+        try {
+            await startTownMatch([alice, bob, carol]);
+            const roomCode = await alice.getByLabel('Room code').inputValue();
+            const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
+            if (departure === 'voluntary') {
+                await carol.getByRole('button', { name: 'Leave town', exact: true }).click();
+                await expect(carol.getByRole('button', { name: 'Create town', exact: true })).toBeVisible();
+            }
+            await carol.close();
+            await expect(alice.locator('#round-status')).toContainText('2 friends in town', { timeout: 10000 });
+            const clock = await alice.locator('#round-clock').textContent();
+            await expect.poll(() => alice.locator('#round-clock').textContent()).not.toBe(clock);
+            if (departure === 'expired') {
+                const remaining = Number((await alice.locator('#round-clock').textContent())?.replace('s', ''));
+                await expect.poll(
+                    async () => Number((await alice.locator('#round-clock').textContent())?.replace('s', '')),
+                    { timeout: 16000 }
+                )
+                    .toBeLessThanOrEqual(remaining - 11);
+            }
+            const returned = await contexts[2].newPage();
+            recordMatchTraffic(returned, 2, traffic);
+            await returned.goto('/');
+            await returned.getByRole('button', { name: 'Play with friends' }).click();
+            await expect(returned.getByLabel('Town code')).toBeVisible({ timeout: 10000 });
+            await returned.getByLabel('Town code').fill(roomCode);
+            await returned.getByRole('button', { name: 'Join town', exact: true }).click();
+            await expect(returned.locator('#online-game')).toHaveAttribute('data-match-id', matchId!, {
+                timeout: 15000
+            });
+            await expect(returned.locator('#online-game')).toHaveAttribute(
+                'data-seat',
+                departure === 'temporary' ? 'active' : 'observer'
+            );
+            await expect(alice.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 10000 });
+            const initialX = Number(await returned.locator('#online-game').getAttribute('data-x'));
+            await returned.keyboard.down('KeyD');
+            if (departure !== 'temporary') {
+                await expect(returned.locator('#round-status')).toContainText('Watching until the next round');
+                await expect(returned.getByLabel('Movement joystick')).toBeHidden();
+                const before = await returned.locator('#round-clock').textContent();
+                await expect.poll(() => returned.locator('#round-clock').textContent()).not.toBe(before);
+                expect(Number(await returned.locator('#online-game').getAttribute('data-x'))).toBe(initialX);
+            }
+            else {
+                await expect.poll(async () => Number(await returned.locator('#online-game').getAttribute('data-x')))
+                    .toBeGreaterThan(initialX + 1);
+            }
+            await returned.keyboard.up('KeyD');
+            await returned.screenshot({ path: test.info().outputPath('returned-player-phone.png') });
+            await expect(bob.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+        }
+        finally {
+            await writeMatchTraffic(traffic);
+            await Promise.allSettled(contexts.map((context) => context.close()));
+        }
+    });
 }
 
 test('a lost prepared graphics context revokes readiness and leaves a usable exit', async ({ page }) => {
@@ -463,8 +530,17 @@ function recordMatchFrame(input: MatchTrafficFrame, traffic: string[]): void {
     if (!frame || frame.action.kind === 'controls') {
         return;
     }
+    const snapshot = frame.action.kind === 'proposal' ? decodeTownMatchSnapshot(frame.action.snapshot) : undefined;
     const action = frame.action.kind === 'proposal'
-        ? { kind: frame.action.kind, digest: frame.action.digest }
+        ? {
+            kind: frame.action.kind,
+            digest: frame.action.digest,
+            phase: snapshot?.right?.phase,
+            tick: snapshot?.right?.tick,
+            members: snapshot?.right?.members,
+            seats: snapshot?.right?.seats,
+            issues: snapshot?.left
+        }
         : frame.action;
     traffic.push(
         JSON.stringify({

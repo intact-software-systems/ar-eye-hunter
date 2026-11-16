@@ -45,6 +45,7 @@ export namespace TownMatchSession {
         readonly isDirector: boolean;
         readonly available: boolean;
         readonly recovering: boolean;
+        readonly observing: boolean;
         readonly interruption: string | undefined;
         readonly inputGeneration: number;
         readonly error: string;
@@ -123,6 +124,12 @@ export class TownMatchSession {
             localId: this.dependencies.browser.session()?.clientId,
             isDirector: director.isDirector,
             available,
+            observing: Boolean(
+                match &&
+                    !match.seats.some((seat) =>
+                        seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'active'
+                    )
+            ),
             recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
                 (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
                     this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500),
@@ -152,7 +159,7 @@ export class TownMatchSession {
     async act(action: TownMatchAction): Promise<void> {
         const state = this.checkpoints?.getState().committed?.state;
         const view = this.getView();
-        if (!state || !view.available || (action.kind === 'controls' && view.recovering)) {
+        if (!state || !view.available || (action.kind === 'controls' && (view.recovering || view.observing))) {
             return;
         }
         const frame = this.createFrame(state.matchId, action);
@@ -215,7 +222,7 @@ export class TownMatchSession {
         if (this.lifetime.signal.aborted) {
             return;
         }
-        const { director, members } = this.room.getView();
+        const { director, members, departedIds } = this.room.getView();
         if (!director.appointment) {
             return;
         }
@@ -233,23 +240,11 @@ export class TownMatchSession {
             return;
         }
         const previous = this.checkpoints?.getState();
-        const sameDirector = previous?.authority.epoch === authority.epoch &&
-            previous.authority.sessionId === authority.sessionId;
         const source = previous?.committed?.state;
-        const newParticipant = members.some((member) =>
-            !source?.participants.some((participant) => participant.id === member.id)
-        );
-        if (
-            sameDirector && previous?.pending && newParticipant &&
-            previous.authority.members.every((member) =>
-                members.some((current) => current.id === member.id && current.sessionId === member.sessionId)
-            )
-        ) {
-            return;
-        }
         const active = source?.phase === 'playing' || source?.phase === 'countdown';
-        const working = active && !newParticipant
-            ? computeTownMatchRecovery(source, members).right ?? source
+        const working = active
+            ? computeTownMatchRecovery({ state: source, members, departedIds, now: this.dependencies.timers.nowMs() })
+                .right ?? source
             : source
             ? computeTownMatchRoster(source, members).right
             : createTownMatch(this.dependencies.newMatchId(), members).right;
@@ -394,7 +389,12 @@ export class TownMatchSession {
             return;
         }
         const working = source.phase === 'playing' || source.phase === 'countdown'
-            ? computeTownMatchRecovery(source, this.members).right
+            ? computeTownMatchRecovery({
+                state: source,
+                members: this.members,
+                departedIds: this.room.getView().departedIds,
+                now: this.dependencies.timers.nowMs()
+            }).right
             : computeTownMatchRoster(source, this.members).right;
         if (working) {
             this.simulation?.stop();

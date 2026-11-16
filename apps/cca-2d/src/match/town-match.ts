@@ -5,6 +5,7 @@ import type { TownRoutes } from '../town/routes.ts';
 import { computeTownWorld } from '../town/rules.ts';
 import { createTownState, type TownState, type TownWorldPlayer } from '../town/state.ts';
 import type { TownMatchInput } from './match-input.ts';
+import { computeTownMatchSeats, createTownMatchSeats, type TownMatchSeat } from './match-seats.ts';
 
 export const TOWN_MATCH_RATE = 30;
 export const TOWN_MATCH_DURATION = 180;
@@ -36,6 +37,7 @@ export interface TownMatchState {
     readonly remainingTicks: number;
     readonly members: readonly TownMatchMember[];
     readonly participants: readonly TownMatchParticipant[];
+    readonly seats: readonly TownMatchSeat[];
     readonly players: readonly TownMatchPlayer[];
     readonly town: TownState;
     readonly results: readonly TownMatchResult[];
@@ -50,6 +52,12 @@ export interface TownMatchTick {
     readonly state: TownMatchState;
     readonly routes: TownRoutes;
     readonly inputs: readonly TownMatchInput[];
+    readonly now: number;
+}
+export interface TownMatchRecovery {
+    readonly state: TownMatchState;
+    readonly members: readonly TownMatchIdentity[];
+    readonly departedIds: readonly string[];
     readonly now: number;
 }
 
@@ -73,6 +81,7 @@ export function createTownMatch(
         remainingTicks: TOWN_MATCH_RATE * TOWN_MATCH_DURATION,
         members: ordered.map((member) => ({ ...member, ready: false })),
         participants: ordered.map(({ id, displayName }) => ({ id, displayName })),
+        seats: createTownMatchSeats(ordered),
         players: ordered.map(createTownMatchPlayer),
         town: { ...createTownState(), companion: undefined },
         results: [],
@@ -123,6 +132,7 @@ export function computeTownMatchRoster(
             )
         })),
         players: state.phase === 'lobby' ? ordered.map(createTownMatchPlayer) : state.players,
+        seats: state.phase === 'lobby' ? createTownMatchSeats(ordered) : state.seats,
         participants: state.phase === 'lobby'
             ? ordered.map(({ id, displayName }) => ({ id, displayName }))
             : state.participants,
@@ -131,13 +141,11 @@ export function computeTownMatchRoster(
     });
 }
 
-export function computeTownMatchRecovery(
-    state: TownMatchState,
-    members: readonly TownMatchIdentity[]
-): Either<readonly string[], TownMatchState> {
+export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<readonly string[], TownMatchState> {
+    const { state, members } = recovery;
     const issues = [...validateTownMatchMembers(members, 1)];
-    if (members.length < 2 || members.some((member) => !state.participants.some((player) => player.id === member.id))) {
-        issues.push('Recovery requires at least two original round participants.');
+    if (!Number.isSafeInteger(recovery.now) || recovery.now < 0) {
+        issues.push('Recovery requires a non-negative epoch time in milliseconds.');
     }
     if (state.phase !== 'playing' && state.phase !== 'countdown') {
         issues.push('Only an active round can resume from a checkpoint.');
@@ -145,8 +153,20 @@ export function computeTownMatchRecovery(
     if (issues.length > 0) {
         return Either.ofLeft(issues);
     }
+    if (members.some((member) => !state.participants.some((player) => player.id === member.id))) {
+        return computeTownMatchRoster(state, members);
+    }
+    if (members.length < 2) {
+        return Either.ofLeft(['Recovery requires at least two original round participants.']);
+    }
     return Either.ofRight({
         ...state,
+        seats: computeTownMatchSeats({
+            seats: state.seats,
+            available: members,
+            departedIds: recovery.departedIds,
+            now: recovery.now
+        }),
         members: members.toSorted((left, right) => left.id.localeCompare(right.id)).map((member) => ({
             ...member,
             ready: true
@@ -174,16 +194,24 @@ export function computeTownMatchRematch(
 
 export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
     const { state } = input;
+    const seats = computeTownMatchSeats({
+        seats: state.seats,
+        available: state.members,
+        departedIds: [],
+        now: input.now
+    });
     if (state.phase === 'countdown') {
         const countdownTicks = Math.max(0, state.countdownTicks - 1);
-        return { ...state, countdownTicks, phase: countdownTicks === 0 ? 'playing' : 'countdown' };
+        return { ...state, seats, countdownTicks, phase: countdownTicks === 0 ? 'playing' : 'countdown' };
     }
     if (state.phase !== 'playing') {
         return state;
     }
     const tick = state.tick + 1;
     const elapsed = tick / TOWN_MATCH_RATE;
-    const moved = state.players.filter((player) => state.members.some((member) => member.id === player.id))
+    const moved = state.players.filter((player) =>
+        seats.some((seat) => seat.id === player.id && seat.status === 'active')
+    )
         .map((player) => advanceTownMatchPlayer(input, player));
     const world = computeTownWorld({
         town: state.town,
@@ -201,6 +229,7 @@ export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
     return {
         ...state,
         tick,
+        seats,
         players,
         town: world.town,
         remainingTicks,

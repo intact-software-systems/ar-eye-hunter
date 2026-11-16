@@ -38,6 +38,74 @@ function playingMatch(): TownMatchState {
 }
 
 describe('Grumpy Town match rules', () => {
+    it('interrupts from the selected recovery checkpoint when a genuine newcomer arrives', () => {
+        const lobby = createTownMatch('newcomer-recovery', members).right!;
+        const selected: TownMatchState = {
+            ...lobby,
+            phase: 'playing',
+            tick: 42,
+            remainingTicks: 5358,
+            players: lobby.players.map((player) => ({ ...player, score: 110 }))
+        };
+        const recovered = computeTownMatchRecovery({
+            state: selected,
+            members: [...members, { id: 'newcomer', sessionId: 'newcomer-session', displayName: 'Newcomer' }],
+            departedIds: [],
+            now: 2000
+        });
+        expect(recovered.left).toBeUndefined();
+        expect(recovered.right?.phase).toBe('interrupted');
+        expect(recovered.right?.tick).toBe(42);
+        expect(recovered.right?.town).toBe(selected.town);
+        expect(recovered.right?.players).toEqual(selected.players);
+        expect(recovered.right?.interruption).toContain('roster changed');
+    });
+
+    it('resumes a seat only within grace, excludes expired players from play and restores them on rematch', () => {
+        const lobby = createTownMatch('seats', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
+        const state: TownMatchState = {
+            ...lobby,
+            phase: 'playing',
+            players: lobby.players.map((player) => ({ ...player, score: 110, rescueTarget: 'bob', rescueProgress: 0.5 }))
+        };
+        const survivors = lobby.members.slice(1);
+        const away = computeTownMatchRecovery({ state, members: survivors, departedIds: [], now: 1000 }).right!;
+        expect(away.seats[0]).toEqual({ id: 'alice', sessionId: 'alice-session', status: 'away', expiresAtEpochMs: 11000 });
+        const reconnected = [{ ...members[0], sessionId: 'new-alice' }, ...survivors];
+        const returned = computeTownMatchRecovery({ state: away, members: reconnected, departedIds: [], now: 10999 }).right!;
+        expect(returned.seats[0].status).toBe('active');
+        expect(returned.players[0].score).toBe(110);
+        const input = {
+            state: returned,
+            previous: undefined,
+            playerId: 'alice',
+            sessionId: 'new-alice',
+            sequence: 1,
+            controls: { x: 1, z: 0, dash: 1 },
+            now: 11000
+        };
+        expect(computeTownMatchInput(input).right).toBeDefined();
+        expect(computeTownMatchInput({ ...input, sessionId: 'alice-session' }).left).toBeDefined();
+        const expired = computeTownMatchTick({ state: away, routes: new TownRoutes(), inputs: [], now: 11000 });
+        expect(expired.seats[0].status).toBe('observer');
+        const late = computeTownMatchRecovery({ state: expired, members: reconnected, departedIds: [], now: 11001 }).right!;
+        expect(late.seats[0].status).toBe('observer');
+        expect(computeTownMatchInput({ ...input, state: late }).left).toBeDefined();
+        const finished = computeTownMatchTick({
+            state: { ...late, tick: 5399, remainingTicks: 1 },
+            routes: new TownRoutes(),
+            inputs: [computeTownMatchInput(input).right!],
+            now: 11002
+        });
+        expect(finished.players[0]).toEqual(late.players[0]);
+        expect(finished.results[0]).toMatchObject({ id: 'alice', score: 110, qualified: true });
+        const rematch = computeTownMatchRematch(finished, 'new-seats').right!;
+        expect(rematch.seats[0]).toEqual({ id: 'alice', sessionId: 'new-alice', status: 'active', expiresAtEpochMs: 0 });
+        expect(rematch.players[0].score).toBe(0);
+        const left = computeTownMatchRecovery({ state, members: survivors, departedIds: ['alice'], now: 1000 }).right!;
+        expect(left.seats[0].status).toBe('observer');
+    });
+
     it('recovers surviving controllers while retaining departed scores and excluding absent actors', () => {
         const original = createTownMatch('recovering', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
         const state: TownMatchState = {
@@ -47,7 +115,7 @@ describe('Grumpy Town match rules', () => {
             remainingTicks: 1,
             players: original.players.map((player) => ({ ...player, score: 120, vx: 4, rescueTarget: 'bob', rescueProgress: 0.5 }))
         };
-        const recovered = computeTownMatchRecovery(state, original.members.slice(1)).right!;
+        const recovered = computeTownMatchRecovery({ state, members: original.members.slice(1), departedIds: [], now: 1000 }).right!;
         expect(recovered.phase).toBe('playing');
         expect(recovered.matchId).toBe('recovering');
         expect(recovered.players[0].score).toBe(120);
@@ -58,8 +126,15 @@ describe('Grumpy Town match rules', () => {
         expect(finished.players[0]).toEqual(recovered.players[0]);
         expect(finished.results.map((result) => result.displayName)).toEqual(['Alice', 'Bob', 'Carol']);
         expect(finished.results.map((result) => result.score)).toEqual([120, 120, 120]);
-        expect(computeTownMatchRecovery(state, [members[1]]).left).toBeDefined();
-        expect(computeTownMatchRecovery(state, [members[1], { id: 'outsider', sessionId: 'outsider', displayName: 'Outsider' }]).left).toBeDefined();
+        expect(computeTownMatchRecovery({ state, members: [members[1]], departedIds: [], now: 1000 }).left).toBeDefined();
+        expect(
+            computeTownMatchRecovery({
+                state,
+                members: [members[1], { id: 'outsider', sessionId: 'outsider', displayName: 'Outsider' }],
+                departedIds: [],
+                now: 1000
+            }).right?.phase
+        ).toBe('interrupted');
     });
 
     it('requires two to four distinct ready members and counts down without advancing the town', () => {

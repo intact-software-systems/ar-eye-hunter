@@ -9,7 +9,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export const TOWN_MATCH_PROTOCOL = 'cca.match.v1';
-export const TOWN_MATCH_BUILD = 'grumpy-town-v2';
+export const TOWN_MATCH_BUILD = 'grumpy-town-v3';
 export type TownMatchAction =
     | { readonly kind: 'controls'; readonly x: number; readonly z: number; readonly dash: number; }
     | { readonly kind: 'ready'; readonly ready: boolean; }

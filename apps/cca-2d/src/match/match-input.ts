@@ -47,6 +47,13 @@ export function validateTownMatchInput(request: TownMatchInputRequest): readonly
         issues.push('The input does not belong to a current player session.');
     }
     if (
+        !state.seats.some((seat) =>
+            seat.id === request.playerId && seat.sessionId === request.sessionId && seat.status === 'active'
+        )
+    ) {
+        issues.push('Only an active round seat may control a player.');
+    }
+    if (
         !Number.isSafeInteger(request.sequence) || request.sequence < 0 ||
         (previous?.matchId === state.matchId && previous.playerId === request.playerId &&
             previous.sessionId === request.sessionId && request.sequence <= previous.sequence)

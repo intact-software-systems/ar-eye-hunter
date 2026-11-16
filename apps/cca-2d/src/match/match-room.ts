@@ -18,6 +18,7 @@ export namespace TownMatchRoom {
     export interface View {
         readonly director: RallarDirectorStatus;
         readonly members: readonly TownMatchIdentity[];
+        readonly departedIds: readonly string[];
     }
 }
 
@@ -61,7 +62,10 @@ export class TownMatchRoom {
                     session.principalId
             })).sort((left, right) => left.id.localeCompare(right.id))
             : [];
-        return { director: browser.director.status(this.roomRef), members };
+        const departedIds = snapshot && isSameGroupRef(snapshot.group, this.roomRef)
+            ? snapshot.members.filter((member) => member.status !== 'active').map((member) => member.principalId)
+            : [];
+        return { director: browser.director.status(this.roomRef), members, departedIds };
     }
 
     async appoint(): Promise<void> {

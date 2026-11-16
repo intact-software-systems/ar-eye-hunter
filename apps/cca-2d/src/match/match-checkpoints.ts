@@ -49,6 +49,11 @@ export class TownMatchCheckpoints {
     }
 
     getState(): TownMatchCheckpoints.State {
+        const recoveryMembers = this.authority.members.filter((member) =>
+            this.recoveryCheckpoint?.state.members.some((previous) =>
+                previous.sessionId === member.sessionId && previous.id === member.id
+            )
+        );
         return {
             authority: this.authority,
             pending: this.pending,
@@ -56,8 +61,9 @@ export class TownMatchCheckpoints {
             recoveryRequired: this.recoveryRequired,
             recoveryCheckpoint: this.recoveryCheckpoint,
             retainedProposal: this.retainedProposal,
-            recovered: this.recoveryCommitWitness && this.authority.members.length >= 2 &&
-                this.authority.members.every((member) => this.recoverySessions.has(member.sessionId))
+            recovered: this.recoveryCommitWitness && recoveryMembers.length >= 2 &&
+                recoveryMembers.some((member) => member.sessionId === this.authority.sessionId) &&
+                recoveryMembers.every((member) => this.recoverySessions.has(member.sessionId))
         };
     }
 
@@ -154,9 +160,13 @@ export class TownMatchCheckpoints {
     recover(senderId: string, checkpoint: TownCheckpointIdentity, committed: boolean): Either<string, boolean> {
         if (
             this.authority.members.length < 2 ||
-            !this.authority.members.some((member) => member.sessionId === senderId)
+            !this.authority.members.some((member) => member.sessionId === senderId) ||
+            ![this.recoveryCheckpoint, this.retainedProposal].some((candidate) =>
+                sameCheckpoint(candidate, checkpoint) &&
+                candidate?.state.members.some((member) => member.sessionId === senderId)
+            )
         ) {
-            return Either.ofLeft('Recovery needs an appointed director and another current player.');
+            return Either.ofLeft('Recovery reports must come from current sessions that held the named checkpoint.');
         }
         if (!sameCheckpoint(this.recoveryCheckpoint, checkpoint)) {
             if (!committed || !sameCheckpoint(this.retainedProposal, checkpoint)) {

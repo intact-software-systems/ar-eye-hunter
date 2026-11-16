@@ -5,7 +5,8 @@ import {
 } from 'vitest';
 
 import { TownMatchCheckpoints } from '../../../apps/cca-2d/src/match/match-checkpoints.ts';
-import { createTownMatch } from '../../../apps/cca-2d/src/match/town-match.ts';
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
+import { computeTownMatchRecovery, computeTownMatchRoster, createTownMatch } from '../../../apps/cca-2d/src/match/town-match.ts';
 
 const members = [
     { id: 'alice', sessionId: 'alice-session', displayName: 'Alice' },
@@ -18,6 +19,40 @@ const proposal = { epoch: 1, sequence: 1, digest: 'a'.repeat(64), state };
 
 // These values have already passed the wire decoder and SHA-256 check.
 describe('match checkpoint agreement', () => {
+    it('lets surviving backups admit a returning browser, which must acknowledge the new checkpoint before play', () => {
+        const continuing = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
+        const checkpoints = new TownMatchCheckpoints(continuing);
+        const saved = {
+            ...proposal,
+            epoch: 2,
+            state: computeTownMatchRecovery({ state: { ...state, phase: 'playing' }, members: members.slice(1), departedIds: [], now: 1000 }).right!
+        };
+        expect(decodeTownMatchSnapshot(JSON.stringify(saved.state)).left).toBeUndefined();
+        checkpoints.propose(saved, 'bob-session');
+        checkpoints.acknowledge(saved, 'bob-session');
+        checkpoints.acknowledge(saved, 'carol-session');
+        checkpoints.commit(saved, 'bob-session');
+        const returning = { ...members[0], sessionId: 'alice-returned' };
+        checkpoints.changeAuthority({ ...continuing, members: [returning, ...continuing.members] });
+        expect(checkpoints.recover('alice-returned', saved, true).left).toBeDefined();
+        expect(checkpoints.recover('bob-session', saved, true).right).toBe(false);
+        expect(checkpoints.recover('carol-session', saved, true).right).toBe(true);
+        const resumed = {
+            ...saved,
+            sequence: 2,
+            digest: 'b'.repeat(64),
+            state: computeTownMatchRecovery({ state: saved.state, members: [returning, ...continuing.members], departedIds: [], now: 2000 }).right!
+        };
+        expect(decodeTownMatchSnapshot(JSON.stringify(resumed.state)).left).toBeUndefined();
+        expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
+        checkpoints.acknowledge(resumed, 'bob-session');
+        checkpoints.acknowledge(resumed, 'carol-session');
+        checkpoints.commit(resumed, 'bob-session');
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        expect(checkpoints.acknowledge(resumed, 'alice-returned').right).toBe(true);
+        expect(checkpoints.getState().committed?.sequence).toBe(2);
+    });
+
     it('requires every frozen recipient acknowledgement plus the director commit before confirming', () => {
         const checkpoints = new TownMatchCheckpoints(authority);
         expect(checkpoints.propose(proposal, 'alice-session').right).toBe(true);
@@ -151,7 +186,12 @@ describe('match checkpoint agreement', () => {
         expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(2);
         expect(checkpoints.getState().committed?.sequence).toBe(1);
         expect(checkpoints.recover('bob-session', latest, false).right).toBe(true);
-        const resumed = { ...latest, epoch: 2, sequence: 1, state: { ...latest.state, members: state.members.slice(1) } };
+        const resumed = {
+            ...latest,
+            epoch: 2,
+            sequence: 1,
+            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], now: 1000 }).right!
+        };
         expect(checkpoints.propose({ ...resumed, state: { ...resumed.state, tick: 0 } }, 'bob-session').left).toBeDefined();
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
         checkpoints.acknowledge(resumed, 'bob-session');
@@ -193,7 +233,13 @@ describe('match checkpoint agreement', () => {
         checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
         checkpoints.recover('carol-session', latest, true);
         checkpoints.recover('bob-session', latest, false);
-        const resumed = { ...latest, epoch: 2, sequence: 1, digest: 'c'.repeat(64), state: { ...latest.state, members: state.members.slice(1) } };
+        const resumed = {
+            ...latest,
+            epoch: 2,
+            sequence: 1,
+            digest: 'c'.repeat(64),
+            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], now: 1000 }).right!
+        };
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
         checkpoints.changeAuthority({ epoch: 3, sessionId: 'carol-session', members: members.slice(1) });
         expect(checkpoints.recover('bob-session', resumed, true).right).toBe(false);
@@ -216,7 +262,9 @@ describe('match checkpoint agreement', () => {
         expect(checkpoints.recover('carol-session', lobby, true).right).toBe(false);
         expect(checkpoints.recover('bob-session', lobby, false).right).toBe(true);
         expect(checkpoints.getState().committed?.state.matchId).toBe('round');
-        expect(checkpoints.propose({ ...lobby, epoch: 2, sequence: 1, state: { ...lobby.state, members: lobby.state.members.slice(1) } }, 'bob-session').right)
+        expect(
+            checkpoints.propose({ ...lobby, epoch: 2, sequence: 1, state: computeTownMatchRoster(lobby.state, members.slice(1)).right! }, 'bob-session').right
+        )
             .toBe(true);
     });
 });

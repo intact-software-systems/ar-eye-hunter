@@ -7,7 +7,7 @@ import { PracticeScene } from '../practice-scene.ts';
 import { createTownIce } from '../town/raid-presentation.ts';
 import { TownMatchControls } from './match-controls.ts';
 import type { TownMatchSession } from './match-session.ts';
-import { TOWN_MATCH_RATE, type TownMatchState } from './town-match.ts';
+import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
 
 interface TownMatchPeer {
     readonly actor: CutoutActor;
@@ -144,7 +144,8 @@ export class TownMatchGame {
 
     private publishControls(): void {
         const view = this.session.getView();
-        if (view.recovering) {
+        const blocked = view.recovering || view.observing;
+        if (blocked) {
             this.controls?.clear();
         }
         const controls = this.controls?.getInput();
@@ -157,14 +158,15 @@ export class TownMatchGame {
                 this.session.setControls({ x: 0, z: 0, dash: consumed });
                 return;
             }
-            this.session.setControls(this.matchControls.sample(controls, consumed, view.recovering));
+            this.session.setControls(this.matchControls.sample(controls, consumed, blocked));
         }
     }
 
     private admitControlKey(event: KeyboardEvent): void {
+        const view = this.session.getView();
         if (
             this.visible &&
-            !this.matchControls.acceptKeyDown(event.code, event.repeat, this.session.getView().recovering)
+            !this.matchControls.acceptKeyDown(event.code, event.repeat, view.recovering || view.observing)
         ) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -182,7 +184,7 @@ export class TownMatchGame {
             return;
         }
         this.renderResults(view);
-        const player = match?.players.find((player) => player.id === view.localId) ?? match?.players[0];
+        const player = resolveTownMatchViewPlayer(view);
         if (!match || !player) {
             return;
         }
@@ -224,10 +226,13 @@ export class TownMatchGame {
         this.root.dataset.matchId = match.matchId;
         this.root.dataset.tick = String(match.tick);
         this.root.dataset.director = String(view.isDirector);
+        this.root.dataset.seat = match.seats.find((seat) => seat.id === view.localId)?.status ?? 'observer';
         this.root.dataset.x = String(player.x);
         this.root.dataset.speed = String(Math.hypot(player.vx, player.vz));
         this.root.dataset.peerX = String(
-            match.players.find((peer) => peer.id !== player.id && match.members.some((member) => member.id === peer.id))
+            match.players.find((peer) =>
+                peer.id !== player.id && match.seats.some((seat) => seat.id === peer.id && seat.status === 'active')
+            )
                 ?.x ?? 0
         );
         this.root.dataset.dashes = String(player.consumedDash);
@@ -235,16 +240,22 @@ export class TownMatchGame {
             Math.ceil(match.remainingTicks / TOWN_MATCH_RATE)
         }s`;
         requirePracticeElement(this.root, '#round-score').textContent = `${player.score} / 100 POINTS`;
-        requirePracticeElement<HTMLButtonElement>(this.root, '#dash').disabled = view.recovering;
+        requirePracticeElement<HTMLButtonElement>(this.root, '#dash').disabled = view.recovering || view.observing;
+        requirePracticeElement(this.root, '.controls').style.display = view.observing ? 'none' : '';
+        requirePracticeElement(this.root, '.you').textContent = view.observing
+            ? 'WATCHING THE TOWN'
+            : 'YOU / TEAL HOODIE';
         requirePracticeElement(this.root, '#round-status').textContent = view.recovering
             ? 'Connection paused. Waiting for confirmed match state…'
+            : view.observing
+            ? 'Watching until the next round. Your confirmed points are preserved.'
             : match.phase === 'countdown'
             ? `Ready… ${Math.ceil(match.countdownTicks / TOWN_MATCH_RATE)}`
             : player.frozenUntil > player.elapsed
             ? `FROZEN ${Math.ceil(player.frozenUntil - player.elapsed)}s — a friend can rescue you!`
-            : `Dash to make trouble. ${match.members.length} friends in town. ${
-                view.isDirector ? 'You host this round.' : ''
-            }`;
+            : `Dash to make trouble. ${
+                match.seats.filter((seat) => seat.status === 'active').length
+            } friends in town. ${view.isDirector ? 'You host this round.' : ''}`;
     }
 
     private renderResults(view: TownMatchSession.View): void {
@@ -269,10 +280,11 @@ export class TownMatchGame {
     }
 
     private renderPeers(view: TownMatchSession.View): void {
-        const players =
-            view.match?.players.filter((player) =>
-                player.id !== view.localId && view.match?.members.some((member) => member.id === player.id)
-            ) ?? [];
+        const focus = resolveTownMatchViewPlayer(view);
+        const players = view.match?.players.filter((player) =>
+            player.id !== focus?.id &&
+            view.match?.seats.some((seat) => seat.id === player.id && seat.status === 'active')
+        ) ?? [];
         for (const [id, peer] of this.peers) {
             if (!players.some((player) => player.id === id)) {
                 peer.actor.root.dispose();
@@ -313,6 +325,14 @@ export class TownMatchGame {
             });
         }
     }
+}
+
+function resolveTownMatchViewPlayer(view: TownMatchSession.View): TownMatchPlayer | undefined {
+    const match = view.match;
+    const active = match?.players.filter((player) =>
+        match.seats.some((seat) => seat.id === player.id && seat.status === 'active')
+    );
+    return active?.find((player) => player.id === view.localId) ?? active?.[0] ?? match?.players[0];
 }
 
 function toPreparationKey(match: TownMatchState | undefined): string {

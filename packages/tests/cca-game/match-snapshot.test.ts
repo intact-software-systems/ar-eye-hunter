@@ -27,9 +27,31 @@ const members = [
 ];
 
 describe('network match snapshot boundary', () => {
+    it('requires complete seat state and rejects contradictory deadlines and controller identities', () => {
+        const lobby = createTownMatch('seats', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
+        const away = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], now: 2000 }).right!;
+        expect(decodeTownMatchSnapshot(JSON.stringify(away)).right?.seats[0].expiresAtEpochMs).toBe(12000);
+        for (
+            const seats of [
+                undefined,
+                away.seats.slice(1),
+                [away.seats[0], away.seats[0], away.seats[2]],
+                [{ ...away.seats[0], expiresAtEpochMs: 0 }, ...away.seats.slice(1)],
+                [{ ...away.seats[0], expiresAtEpochMs: Infinity }, ...away.seats.slice(1)],
+                [{ ...away.seats[0], status: 'active', expiresAtEpochMs: 0 }, ...away.seats.slice(1)],
+                [away.seats[0], { ...away.seats[1], sessionId: 'forged' }, away.seats[2]],
+                [away.seats[0], { ...away.seats[1], status: 'observer', expiresAtEpochMs: 5000 }, away.seats[2]]
+            ]
+        ) {
+            expect(decodeTownMatchSnapshot(JSON.stringify({ ...away, seats })).left).toBeDefined();
+        }
+        expect(decodeTownMatchSnapshot(JSON.stringify({ ...away, members: lobby.members })).left).toBeDefined();
+    });
+
     it('preserves retired participants in a resumed checkpoint and rejects altered identities', () => {
         const lobby = createTownMatch('recovery', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
-        const recovered = computeTownMatchRecovery({ ...lobby, phase: 'playing' }, lobby.members.slice(1)).right!;
+        const recovered = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], now: 1000 })
+            .right!;
         expect(decodeTownMatchSnapshot(JSON.stringify(recovered)).right).toEqual(recovered);
         expect(decodeTownMatchSnapshot(JSON.stringify({ ...recovered, participants: recovered.participants.slice(1) })).left).toBeDefined();
         expect(

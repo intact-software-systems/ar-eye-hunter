@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'cca.match.v1',
-    build: 'grumpy-town-v2',
+    build: 'grumpy-town-v3',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -52,6 +52,7 @@ describe('Rallar match protocol admission', () => {
                 { ...frame, protocol: 'old' },
                 { ...frame, build: 'old' },
                 { ...frame, build: 'grumpy-town-v1' },
+                { ...frame, build: 'grumpy-town-v2' },
                 { ...frame, epoch: -1 },
                 { ...frame, sequence: 1.5 },
                 { ...frame, roomRef: { groupId: 'town' } },

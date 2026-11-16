@@ -111,8 +111,12 @@ the host can appoint an eligible survivor and continue the same confirmed round 
 a backup. Losing either member of a two-player match pauses, then interrupts after
 the ten-second recovery window. Confirmed points remain visible and every player can
 leave. After agreement returns, the director can open a fresh ready cycle.
-A newcomer during play interrupts the round. Reconnect seat grace, background-host
-behavior and complete-round browser qualification remain in
+A newcomer during play interrupts the round. In a continuing three-player round,
+an original player can close and reopen their browser and rejoin within a ten-second
+seat grace period. A later return, or an explicit departure, watches until the next
+round with confirmed points preserved. The other two sessions agree on recovery;
+the returning browser must acknowledge the new state before confirmation resumes.
+Same-page network loss, background-host behavior and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests
@@ -129,6 +133,7 @@ localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
 - `match/match-room.ts`: current room sessions, authority relay, bounded refresh and eligible appointment.
 - `match/match-session.ts`: authenticated room traffic, checkpoint exchange and recovery lifecycle.
 - `match/match-simulation.ts`: director clock, expiring inputs and speculative canonical town state.
+- `match/match-seats.ts`: confirmed controller seats, absolute grace deadlines and observer eligibility.
 - `match/match-game.ts`: committed-state canvas, human peers, timer, results and input lifecycle.
 - `match/match-checkpoints.ts`, `match-protocol.ts`, `match-snapshot.ts`: agreement and exact wire validation.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
