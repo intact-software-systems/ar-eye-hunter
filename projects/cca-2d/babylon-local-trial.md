@@ -3,7 +3,93 @@
 Implemented 15 November 2026 in [the SPA](../../apps/cca-2d/README.md), using pinned
 Babylon.js 9.36.0. The local trial now includes the
 [Grumpy Town interaction slice](grumpy-town.md) before multiplayer. Working scene
-title: **Grumpy Town**.
+title: **Grumpy Town**. The sections below the physical-device report preserve
+the original solo trial; their original limitations do not describe the later
+multiplayer implementation.
+
+## Physical two-player trial — 16 November 2026
+
+Tested the HTTPS LAN build on port 5184 at revision `74e87470b`, with Bob hosting
+on a physical iPhone and Alice joining through the Codex in-app browser on the
+development computer. The phone's exact model, iOS version and render frame rate
+were not captured. Deferred AL-builder edits were present in the local working
+tree; this is local device evidence, not qualification of the clean PR revision.
+
+**Functional result:** the full three-minute round completed without an observed
+disconnect. Alice received Bob's movement, sent her own keyboard movement and
+three accepted dashes, zoomed, and earned points. Alice's result screen showed
+Bob at 120 points (winner) and Alice at 60. The user confirmed the phone reached
+the end and restarted, but missed its exact scores. A new match ID and a running
+second round were observed on Alice, confirming rematch propagation. That round
+also completed: Alice's screen showed Bob at 157 points and Alice at 57, and the
+user confirmed those numbers on the phone. The user also confirmed both players
+were visible on the phone. Alice's browser reported
+no captured console warnings or errors at the end; the earlier appointment
+rejection was rendered in the lobby rather than logged to the console.
+
+![Actual desktop observer result from the iPhone-hosted rematch](visual-concepts/iphone-host-rematch-observer.jpg)
+
+This capture is Alice's in-app browser, not a recording of the iPhone display.
+
+**Responsiveness result: not accepted.** The user reported movement or dash lag
+on the iPhone. Receiving state and finishing a round do not establish a good
+game experience.
+
+### Measurements and limits
+
+Read-only sampling of Alice's rendered DOM diagnostics during the rematch
+recorded 150 observations over 4.988 seconds. The simulation advanced 146 ticks
+(about 29.3 ticks/second). There were 31 observed state changes; the 30 intervals
+between them had a median gap of 122 ms and a maximum gap of 244 ms. The initial
+sample-to-first-change wait was 306 ms and is excluded from those intervals.
+Browser reads took a median 21 ms, with
+10 ms requested between reads; this samples visible update cadence, not the
+phone's frame rate or raw network latency. An earlier 5.845-second sample showed
+176 ticks of simulation progress, providing a second near-30-Hz observation.
+
+Three further dash presses were accepted. Their automated action-to-observation
+times were 271–372 ms, but the click tool itself occupied about 268 ms, so those
+values cannot establish actual touch latency. Short alternating movement probes
+were also inconclusive because residual sliding could move the character before
+the newly requested direction took effect. Do not quote either as a measured
+phone input latency.
+
+Raw local observations are under ignored `tmp/perf/cca-iphone-host-*.json`.
+The first finer-cadence attempt ran after the round finished and is not a
+gameplay performance sample. No CPU/GPU profile, allocation measurement or
+phone touch-to-frame measurement was collected.
+
+### Likely cause and next two slices
+
+**Proven from code:** `TownMatchSession.advance` samples controls at 50 ms and
+exchanges checkpoints at 100 ms. `TownMatchSession.getView` exposes committed
+checkpoint state, and `TownMatchGame.frame` renders that state for the local
+player as well as peers. Even the phone host waits for checkpoint confirmation
+before displaying its simulated movement. This adds confirmation delay to the
+visible control path. The observation of near-30-Hz simulation with substantially
+less frequent displayed state supports investigating this path first; it does
+not rule out phone rendering cost or network scheduling.
+
+1. Measure input sampling, host acceptance, checkpoint confirmation and visible
+   presentation separately using monotonic clocks on each device. Capture phone
+   render cadence and snapshot payload/serialization cost. Compare phone-host
+   and desktop-host runs, plus offline solo, without subtracting unsynchronized
+   device clocks. Preserve the current completed-round baseline and recovery
+   tests. A smoother solo run alone does not identify the exact multiplayer cost.
+2. Based on that trace, make the smallest presentation change that removes
+   confirmed input delay: assess local movement prediction/reconciliation and
+   peer interpolation, while keeping points, hits, hazards, winners and recovery
+   checkpoints authoritative. Do not merely increase full-checkpoint traffic or
+   weaken acknowledgments. Require measured before/after response, a full round,
+   rematch and host-loss regression checks before accepting the change.
+
+The trial also exposed a lobby issue: a non-owner is offered **Host match** while
+an owner is online. Rallar correctly rejects it, but the raw rejection remains
+visible after the owner hosts and Ready succeeds. Follow-up should use the
+existing director-appointment eligibility policy for the button and clear the
+superseded appointment error when hosting is successfully established. No Rallar
+authorization policy change is needed. The PR remains draft while responsiveness
+and this lobby feedback are unresolved.
 
 ## Actual gameplay
 
