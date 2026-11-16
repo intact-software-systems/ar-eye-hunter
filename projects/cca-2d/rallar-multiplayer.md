@@ -471,6 +471,36 @@ reopening, not same-page transport recovery. Same/new-session network reconnect,
 stale host return, physical backgrounding, shared rescue/full-round browser results
 and secure phone access remain required before release.
 
+### Same-page recovery investigation
+
+Additional browser trials close both socket endpoints, wait for the surviving
+players to confirm absence, block replacement sockets, and then disable HTTP.
+Chromium's offline toggle alone did not close the existing socket; applying it
+before socket closure also prevented prompt server close observation. These
+trials therefore distinguish an observed disconnect from silent network loss.
+
+Individual active and observer returns succeeded, but repeated runs exposed a
+lifecycle gap: `OnlineMatch.reconcile` disposes the match when presence temporarily
+removes `currentRoomRef`, losing the paused screen and its confirmed points.
+Simply retaining that session is insufficient: its local interruption marker can
+keep an accepted observer paused, and Leave town currently relies on the missing
+current room. Missing snapshots can also represent authoritative revocation, so
+they cannot automatically count as temporary outages. The first retention change
+was withdrawn after this review; same-page recovery is not qualified yet.
+
+The next repair must keep confirmed results accessible, distinguish recoverable
+selection from departure/revocation, make explicit leave work for the retained
+room, and reconcile local interruption with newly committed observer state.
+Rallar's selected-room recovery remains the presence owner; do not add a parallel
+app rejoin loop. Browser assertions compare returned position with the host's
+retained absent-player position and retain a pre-disconnect dash baseline.
+
+Transport retry backoff is independent of the ten-second seat grace. A successful
+expired-return trace took about twenty-one seconds after restoring access; the
+test permits forty seconds to cover the configured reconnect backoff and request.
+Neither those individual passes nor emulation establish reliable repeated
+recovery, silent-loss behavior or physical-phone performance.
+
 The next two useful outcomes remain concrete:
 
 1. Complete match reliability: delayed/dropped checkpoint traffic across rematch,
