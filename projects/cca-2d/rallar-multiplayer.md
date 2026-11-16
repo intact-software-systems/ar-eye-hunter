@@ -19,6 +19,15 @@ Playwright. Use the existing worktree and PR; no separate CCA server.
 **Spec:** [architecture](architecture.md), [Grumpy Town](grumpy-town.md), and the
 user's request to make multiplayer and social features optional to solo play.
 
+The local-trial implementation below is complete. Current normal-clock browser
+acceptance covers optional social entry, appointed hosting, shared play and
+bounded recovery. The maintainer deferred remaining clock integration to
+[issue #836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
+Physical-phone trust, touch comfort and background hosting remain device
+qualification work; browser emulation does not establish those properties.
+The PR owns release-gate and review status. Earlier implementation evidence below
+records the limits at each stage; it is not a list of current missing features.
+
 ## Global constraints
 
 - Solo opens without authentication or a server dependency; online code loads on demand.
@@ -99,15 +108,15 @@ rules to a human roster without duplicating their single-player implementation.
       and room-scoped channels. Validate protocol/build, scope, match, epoch and sequence.
 - [x] Render each player with a distinct identity; show lobby readiness, director,
       countdown, round timer, individual scores, shared danger and multiple qualifiers.
-- [ ] Implement acknowledged checkpoint commitment and bounded recovery with
+- [x] Implement acknowledged checkpoint commitment and bounded recovery with
       current server authority. Clear old controls on a new epoch. Missing agreement
       or eligibility produces an explicit interruption and a fresh ready cycle.
-- [ ] Add real two-/three-browser tests for movement, shared interaction, rescue,
+- [x] Add real two-/three-browser tests for movement, shared interaction, rescue,
       timer/results, rematch, disconnect/reconnect and old-host rejection. Keep solo
       and touch controls covered. Inspect phone/tablet/desktop layouts.
-- [ ] Run CCA tests/build/typecheck, applicable shared API tests and structure/style
+- [x] Run CCA tests/build/typecheck, applicable shared API tests and structure/style
       review. Obtain fresh independent review and fix substantive findings.
-- [ ] Update project/app docs and PR; leave local services running with a verified
+- [x] Update project/app docs and PR; leave local services running with a verified
       phone URL and explain restart, accounts and remaining physical-device limits.
 
 ## Acceptance evidence
@@ -683,7 +692,9 @@ The new real-server browser cases set one clock two seconds behind and another
 two seconds ahead. They require healthy shared play beyond the eight-second
 presence lease, propagated controls, bounded interruption after losing the only
 partner, and a three-player host handover with one surviving director. All three
-currently fail before Ready appears; this is a release blocker, not a skipped test.
+failed before Ready appeared at their last run. The maintainer has deferred this
+known limitation to issue #836; it is not a skipped or passing test and the local
+trial must not be described as fully clock-skew safe.
 Fixed offsets do not cover clock jumps or drift.
 
 A bounded wire probe confirmed fresh, active director status in both browsers.
@@ -936,15 +947,17 @@ The maintainer has moved the remaining clock work to [issue #836](https://github
 Do not make that broad platform follow-up a prerequisite for gameplay iteration.
 Keep the known cross-clock limitation visible when reporting multiplayer readiness.
 
-The next two useful outcomes are now game-facing:
+The game-facing acceptance outcomes are now verified in browser trials:
 
-1. Verify the actual phone trial: boot the town, move, dash-and-drop, slip and zoom
-   through the existing floating controls. Capture rendered gameplay and review
-   playfield visibility, controls, feedback and responsive layout. Keep the secure
-   LAN preview available; distinguish browser emulation from physical-phone evidence.
-2. Play a shared match through social entry, Ready/start, mischief, rescue, results
-   and rematch using real controls. Prioritize actionable game-flow and readability
-   problems. Preserve normal-clock host-loss/recovery behavior; track deferred clock
-   failures in the follow-up instead of expanding into general Rallar work.
+1. The town boots, moves, dashes, slips and zooms through floating controls. Actual
+   phone-sized captures and phone/tablet/desktop control checks cover playfield
+   visibility and responsive layout. Secure LAN game and API endpoints are live.
+2. Real accounts complete social entry, Ready/start, mischief, rescue, results and
+   rematch. The final normal-clock acceptance passes all 27 social/host/recovery
+   scenarios on the published runtime, excluding the deferred AL-builder edits.
+   The 133 game-rule tests and production build pass. Separate unaccelerated
+   rounds verify shared fruit/cleanup/rematch and human rescue/multiple winners.
 
-Keep the PR draft until its claimed scope has appropriate release evidence.
+Remaining game-facing follow-up is physical-device testing and play-feel feedback.
+Keep clock work in #836 and distinguish local-trial acceptance from production
+release qualification. The PR must complete its release gate and review process.

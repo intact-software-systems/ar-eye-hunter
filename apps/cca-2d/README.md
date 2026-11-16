@@ -135,13 +135,18 @@ An old host can return as an observer after two survivors appoint a replacement;
 it cannot preempt the current host merely because its local heartbeat is stale.
 Real two-account browser trials now cover shared fruit/cleanup, a full three-minute
 round and rematch, human rescue before auto-release, and two named 110-point winners.
-Physical backgrounding, silent-outage takeover and secure phone qualification remain in
-[the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
+Normal-clock browser trials also verify silent-outage takeover and old-host
+return without a socket-close callback. Physical backgrounding and device
+qualification remain in [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
+Remaining cross-clock integration is deferred to
+[issue #836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836);
+the trial does not claim fully clock-skew-safe multiplayer.
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests
-real independent accounts alongside the solo controls. Physical phone online
-access still needs the local public URL and secure browser setup qualified;
-localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
+real independent accounts alongside the solo controls. The HTTPS phone setup
+below has a verified certificate chain and live game/API origin. Each physical
+phone still needs to trust that certificate; localhost testing is not evidence
+of phone WebCrypto support over LAN HTTP.
 
 ### HTTPS phone trial
 
@@ -221,8 +226,9 @@ This entry replaces the earlier Phaser practice. That entry's collection,
 banking and online UI are removed from this trial. The separate historical
 `cca-server` / `packages/cca-game` prototype is outside the local renderer and is
 not a dependency. The local chase/freeze/rescue slice is implemented with a labelled bot companion.
-The optional Rallar player-hosted match now runs alongside solo. Host recovery and
-physical phone qualification remain required before release.
+The optional Rallar player-hosted match now runs alongside solo, with normal-clock
+host recovery verified through real browser trials. Physical-phone qualification
+and the deferred clock work remain outside the completed local-trial scope.
 
 ## Checks and evidence
 
