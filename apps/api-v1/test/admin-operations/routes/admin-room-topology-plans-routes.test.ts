@@ -148,40 +148,45 @@ test('the OpenAPI document describes the path and every field the route serves',
     const limit = operation.parameters.find((parameter: { name?: string; }) => parameter.name === 'limit');
     assert.deepEqual(limit.schema, { type: 'integer', minimum: 1, maximum: 100, default: 50 });
     const { schemas } = schema.components;
-    assert.deepEqual(schemas.AdminRoomTopologyPlansResponse.required, [
-        'roomRef',
-        'observedAtEpochMs',
-        'plans',
-        'nextAfterPublicationId'
-    ]);
-    assert.deepEqual(schemas.AdminRoomTopologyPlan.required, [
-        'publicationId',
-        'requestedAtEpochMs',
-        'layout',
-        'topology',
-        'memberCount',
-        'degreeLimit',
-        'plan'
-    ]);
-    assert.deepEqual(schemas.RtcTopologyPlanRecord.required, [
-        'plannedAtEpochMs',
-        'replaced',
-        'causes',
-        'delta',
-        'longestPathHops'
-    ]);
-    assert.deepEqual(schemas.ReplacedTopologyLayout.required, ['layout', 'ageMs']);
-    assert.deepEqual(schemas.TopologyLayoutDelta.required, [
-        'joinedSessionCount',
-        'leftSessionCount',
-        'changedSessionCount',
-        'reroutedSessionCount',
-        'acceptingSessionCount',
-        'maxJoinerEdgesPerSession'
-    ]);
-    assert.deepEqual(schemas.RtcTopologyPlanRecord.properties.causes.items.enum, ['join', 'leave', 'leader-change', 'config', 'rtt']);
-    for (const name of ['AdminRoomTopologyPlansResponse', 'AdminRoomTopologyPlan', 'RtcTopologyPlanRecord', 'ReplacedTopologyLayout', 'TopologyLayoutDelta']) {
+    const count = { type: 'integer', minimum: 0 };
+    const layout = { $ref: '#/components/schemas/GroupLayoutIdentity' };
+    const expectedProperties: Record<string, Record<string, object>> = {
+        AdminRoomTopologyPlansResponse: {
+            roomRef: { $ref: '#/components/schemas/GroupRef' },
+            observedAtEpochMs: count,
+            plans: { type: 'array', maxItems: 100, items: { $ref: '#/components/schemas/AdminRoomTopologyPlan' } },
+            nextAfterPublicationId: { type: ['string', 'null'], minLength: 1, maxLength: 256 }
+        },
+        AdminRoomTopologyPlan: {
+            publicationId: { type: 'string', minLength: 1, maxLength: 256 },
+            requestedAtEpochMs: count,
+            layout,
+            topology: { type: 'string', enum: ['star', 'tree', 'mesh'] },
+            memberCount: count,
+            degreeLimit: count,
+            plan: { oneOf: [{ $ref: '#/components/schemas/RtcTopologyPlanRecord' }, { type: 'null' }] }
+        },
+        RtcTopologyPlanRecord: {
+            plannedAtEpochMs: count,
+            replaced: { oneOf: [{ $ref: '#/components/schemas/ReplacedTopologyLayout' }, { type: 'null' }] },
+            causes: { type: 'array', items: { type: 'string', enum: ['join', 'leave', 'leader-change', 'config', 'rtt'] } },
+            delta: { $ref: '#/components/schemas/TopologyLayoutDelta' },
+            longestPathHops: count
+        },
+        ReplacedTopologyLayout: { layout, ageMs: count },
+        TopologyLayoutDelta: {
+            joinedSessionCount: count,
+            leftSessionCount: count,
+            changedSessionCount: count,
+            reroutedSessionCount: count,
+            acceptingSessionCount: count,
+            maxJoinerEdgesPerSession: count
+        }
+    };
+    for (const [name, properties] of Object.entries(expectedProperties)) {
+        assert.equal(schemas[name].type, 'object', name);
         assert.equal(schemas[name].additionalProperties, false, name);
-        assert.deepEqual(Object.keys(schemas[name].properties).sort(), [...schemas[name].required].sort(), name);
+        assert.deepEqual(schemas[name].properties, properties, name);
+        assert.deepEqual([...schemas[name].required].sort(), Object.keys(properties).sort(), name);
     }
 });

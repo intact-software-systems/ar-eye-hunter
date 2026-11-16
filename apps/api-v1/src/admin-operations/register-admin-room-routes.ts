@@ -77,10 +77,9 @@ async function readAuthorizedRoomEvidence<Request, Result>(
 
 function toDirectoryRequest(request: Context['req']): Either<string, AdminRoomDirectoryRequest> {
     try {
-        const rawLimit = request.query('limit') ?? '50';
-        const limit = Number(rawLimit);
-        if (!/^[1-9]\d*$/.test(rawLimit) || limit > 100 || (request.queries('limit')?.length ?? 0) > 1) {
-            return Either.ofLeft('Room directory limit must be an integer from 1 through 100');
+        const limit = decodePageLimit(request, DIRECTORY_PAGE_LIMIT);
+        if (limit.left !== undefined) {
+            return Either.ofLeft(limit.left);
         }
         const afterGroupId = request.query('afterGroupId');
         if ((request.queries('afterGroupId')?.length ?? 0) > 1) {
@@ -91,7 +90,7 @@ function toDirectoryRequest(request: Context['req']): Either<string, AdminRoomDi
                 applicationId: assertValidRallarRouteId(request.param('applicationId')),
                 workspaceId: assertValidRallarRouteId(request.param('workspaceId'))
             },
-            limit,
+            limit: limit.right!,
             afterGroupId: afterGroupId === undefined ? null : assertValidRallarRouteId(afterGroupId)
         });
     }
@@ -116,14 +115,36 @@ function toTopologyWorkRequest(request: Context['req']): Either<string, AdminRoo
     }
 }
 
-const DEFAULT_TOPOLOGY_PLANS_LIMIT = 50;
+interface PageLimitRule {
+    readonly defaultLimit: number;
+    readonly maxLimit: number;
+    readonly refusal: string;
+}
+
+const DIRECTORY_PAGE_LIMIT: PageLimitRule = {
+    defaultLimit: 50,
+    maxLimit: 100,
+    refusal: 'Room directory limit must be an integer from 1 through 100'
+};
+
+const TOPOLOGY_PLANS_PAGE_LIMIT: PageLimitRule = {
+    defaultLimit: 50,
+    maxLimit: ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,
+    refusal: `Topology plans limit must be an integer from 1 through ${ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT}`
+};
+
+function decodePageLimit(request: Context['req'], rule: PageLimitRule): Either<string, number> {
+    const rawLimit = request.query('limit') ?? String(rule.defaultLimit);
+    const limit = Number(rawLimit);
+    return /^[1-9]\d*$/.test(rawLimit) && limit <= rule.maxLimit && (request.queries('limit')?.length ?? 0) <= 1
+        ? Either.ofRight(limit)
+        : Either.ofLeft(rule.refusal);
+}
 
 function toTopologyPlansRequest(request: Context['req']): Either<string, AdminRoomTopologyPlansRequest> {
-    const limit = toTopologyPlansLimit(request);
-    if (limit === undefined) {
-        return Either.ofLeft(
-            `Topology plans limit must be an integer from 1 through ${ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT}`
-        );
+    const limit = decodePageLimit(request, TOPOLOGY_PLANS_PAGE_LIMIT);
+    if (limit.left !== undefined) {
+        return Either.ofLeft(limit.left);
     }
     const afterPublicationId = request.query('afterPublicationId');
     if ((request.queries('afterPublicationId')?.length ?? 0) > 1 || afterPublicationId === '') {
@@ -136,7 +157,7 @@ function toTopologyPlansRequest(request: Context['req']): Either<string, AdminRo
                 workspaceId: assertValidRallarRouteId(request.param('workspaceId')),
                 groupId: assertValidRallarRouteId(request.param('groupId'))
             },
-            limit,
+            limit: limit.right!,
             afterPublicationId: afterPublicationId === undefined
                 ? null
                 : decodeAdminTopologyOutboxId(afterPublicationId)
@@ -145,13 +166,4 @@ function toTopologyPlansRequest(request: Context['req']): Either<string, AdminRo
     catch {
         return Either.ofLeft('Topology plans scope or cursor is invalid');
     }
-}
-
-function toTopologyPlansLimit(request: Context['req']): number | undefined {
-    if ((request.queries('limit')?.length ?? 0) > 1) {
-        return undefined;
-    }
-    const rawLimit = request.query('limit') ?? String(DEFAULT_TOPOLOGY_PLANS_LIMIT);
-    const limit = Number(rawLimit);
-    return /^[1-9]\d*$/.test(rawLimit) && limit <= ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT ? limit : undefined;
 }
