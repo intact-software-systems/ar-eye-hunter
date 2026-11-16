@@ -388,12 +388,11 @@ function decodeActiveSessionIds(snapshot: unknown): string[] {
     ) {
         throw new Error('Expected a group snapshot with active sessions');
     }
-    return snapshot.activeSessions.flatMap((session: unknown) =>
-        typeof session === 'object' && session !== null && 'sessionId' in session &&
-            typeof session.sessionId === 'string'
-            ? [session.sessionId]
-            : []
-    );
+    return snapshot.activeSessions.filter(isSessionPresence).map((session) => session.sessionId);
+}
+
+function isSessionPresence(value: unknown): value is { readonly sessionId: string; } {
+    return typeof value === 'object' && value !== null && 'sessionId' in value && typeof value.sessionId === 'string';
 }
 
 function readRoomId(link: string): string {
