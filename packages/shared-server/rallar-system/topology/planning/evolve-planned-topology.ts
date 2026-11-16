@@ -200,7 +200,7 @@ function applyMembershipChange(
             globalArgs: {
                 diameterBound: Number.POSITIVE_INFINITY,
                 reconfigAlgo: ReconfigAlgo.NO_RECONFIG_ALGO,
-                removeAlgo: 'REMOVE_TRY_REPLACE_MDDL_NAIVE'
+                removeAlgo: 'REMOVE_MINIMUM_COST_EDGE'
             }
         }).tree;
     }

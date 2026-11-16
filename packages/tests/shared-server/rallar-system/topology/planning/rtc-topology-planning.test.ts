@@ -301,36 +301,38 @@ describe('RTC topology planning options and revisions', () => {
         });
     });
 
-    it('records a direct invariant fallback when a tree removal cannot validate', () => {
+    it('records a direct invariant fallback when an evolved layout cannot validate', () => {
+        // The six-member tree formed under a degree limit of five has a hub of more than two links; evolved at
+        // unchanged membership under a limit of two it is that same tree, which the validator rejects.
         const metrics = new RtcTopologyMetrics();
-        const planner = new RtcTopologyPlanner({}, { metrics, durationNowMs: () => 0 });
-        const memberSessionIds = createRtcTopologyMemberIds(8);
-        const formed = planner.plan({
-            group: createRtcTopologyGroupSnapshot('planner-invariant', memberSessionIds),
+        const group = createRtcTopologyGroupSnapshot('planner-invariant', createRtcTopologyMemberIds(6));
+        const formed = new RtcTopologyPlanner(
+            { topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 5 },
+            { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 }
+        ).plan({
+            group,
             rttMeasurements: [],
             previous: undefined,
             updateOptions: { planningIntent: 'membership-delta' },
             nowEpochMs: 100
         });
 
-        for (const sessionId of memberSessionIds) {
-            planner.plan({
-                group: createRtcTopologyGroupSnapshot(
-                    'planner-invariant',
-                    memberSessionIds.filter((candidate) => candidate !== sessionId)
-                ),
-                rttMeasurements: [],
-                previous: formed.snapshot,
-                updateOptions: { planningIntent: 'membership-delta' },
-                nowEpochMs: 200
-            });
-        }
+        new RtcTopologyPlanner(
+            { topologyKind: 'tree', degreeLimit: 2, rttReportingDegreeLimit: 2 },
+            { metrics, durationNowMs: () => 0 }
+        ).plan({
+            group,
+            rttMeasurements: [],
+            previous: formed.snapshot,
+            updateOptions: { planningIntent: 'membership-delta' },
+            nowEpochMs: 200
+        });
 
         expect(metrics.read(0)).toMatchObject({
-            incrementalPlanInvariantFallbackCount: expect.any(Number),
-            incrementalPlanFallbackFullCount: expect.any(Number)
+            incrementalPlanCount: 0,
+            incrementalPlanInvariantFallbackCount: 1,
+            incrementalPlanFallbackFullCount: 1
         });
-        expect(metrics.read(0).incrementalPlanInvariantFallbackCount).toBeGreaterThan(0);
     });
 
     it('honors request topology kind override for star topology', () => {

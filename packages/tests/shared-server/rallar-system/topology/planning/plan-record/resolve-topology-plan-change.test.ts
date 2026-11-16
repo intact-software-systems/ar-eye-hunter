@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
 import { resolveTopologyPlanChange } from '@shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.ts';
 import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/topology/planning/plan-record/rtc-topology-plan-derivation.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
-import { TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import {
@@ -27,7 +28,13 @@ const JOIN_DELTA: TopologyLayoutDelta = {
 };
 const LEAVE_DELTA: TopologyLayoutDelta = { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, leftSessionCount: 1, changedSessionCount: 1 };
 const MESH_OF_TWENTY = { options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20, joinerCount: 0 };
-const TREE_OF_EIGHT = { options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8, joinerCount: 0 };
+const SWEEP_ROOMS = [
+    { room: 'a mesh of twenty', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20 },
+    { room: 'a tree of eight', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8 },
+    { room: 'a tree of twelve', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 12 },
+    { room: 'a tree of thirty', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 30 },
+    { room: 'a mesh of thirty', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30 }
+];
 const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
 
 describe('resolveTopologyPlanChange', () => {
@@ -149,7 +156,7 @@ describe('the kind of the planner\'s own plans', () => {
     });
 });
 
-describe('what a single join or leave in a mesh of twenty reroutes today', () => {
+describe('what a single join or leave in a mesh of twenty reroutes', () => {
     const formed = computeRtcTopologyFixturePlan({
         options: RTC_TOPOLOGY_MESH_OPTIONS,
         group: createRtcTopologyFixtureGroup(20),
@@ -181,43 +188,83 @@ describe('what a single join or leave in a mesh of twenty reroutes today', () =>
     });
 });
 
-describe('the planner\'s plans over every single leave of a mesh of twenty and a tree of eight', () => {
+describe.each(SWEEP_ROOMS)('the planner\'s plans over every single leave of $room', ({ options, memberCount }) => {
     // The limit of this sweep: the fixture rooms have no director, so no leader's leave is covered.
-    const meshSweep = computeRoomSweep(MESH_OF_TWENTY);
-    const treeSweep = computeRoomSweep(TREE_OF_EIGHT);
+    const sweep = computeRoomSweep({ options, memberCount });
+    const leaves = sweep.filter((plan) => plan.event === 'leave');
 
-    it.each([
-        { room: 'a mesh of twenty', sweep: meshSweep },
-        { room: 'a tree of eight', sweep: treeSweep }
-    ])('no incremental plan reroutes a member it did not involve ($room)', ({ sweep }) => {
+    it('no incremental plan reroutes a member the change did not involve', () => {
         const incrementalPlans = sweep.filter((plan) => plan.derivation.method === 'incremental');
 
         expect(new Set(incrementalPlans.map((plan) => plan.event))).toEqual(new Set(SWEEP_EVENTS));
         expect(incrementalPlans.filter((plan) => plan.delta.reroutedSessionCount > 0)).toEqual([]);
     });
 
-    it('every single leave from a 20-member mesh is repaired incrementally', () => {
-        expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({});
+    it('every single leave is repaired in place and none is rebuilt', () => {
+        expect(leaves).toHaveLength(memberCount);
+        expect(leaves.filter((plan) => plan.derivation.method !== 'incremental').map(toRebuiltLeave)).toEqual([]);
     });
 
-    // This pins the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
-    // and each leave counted here will be a reshape once reshapes are gated.
-    it('today 1 of the 8 single leaves from an 8-member tree cannot be repaired incrementally and are rebuilt', () => {
-        expect(countSingleLeaveRebuildReasons(treeSweep)).toEqual({ 'invariant-violation': 1 });
+    it('every single leave leaves the leaver gone and the rest connected inside the degree limit', () => {
+        expect(leaves.filter((plan) => !isValidLeaveLayout(plan.planned, plan.leaverSessionId)).map((plan) => plan.leaverSessionId))
+            .toEqual([]);
+    });
+});
+
+describe('the leave layout check of the sweep', () => {
+    // Each layout breaks exactly one clause of the check, with peer-4 as the leaver.
+    it.each<{ readonly layout: string; readonly planned: LeaveLayout; }>([
+        {
+            layout: 'still links the leaver',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1', 'peer-3'], 'peer-3': ['peer-2', 'peer-4'], 'peer-4': ['peer-3'] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'gives a member more links than the degree limit',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2', 'peer-3'], 'peer-2': ['peer-1'], 'peer-3': ['peer-1'] },
+                degreeLimit: 1
+            }
+        },
+        {
+            layout: 'links a pair one way only',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2', 'peer-3'], 'peer-2': ['peer-1'], 'peer-3': [] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'leaves a member unreachable',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1'], 'peer-3': [] },
+                degreeLimit: 2
+            }
+        }
+    ])('rejects a layout that $layout', ({ planned }) => {
+        expect(isValidLeaveLayout(planned, 'peer-4')).toBe(false);
     });
 });
 
 type SweepEvent = (typeof SWEEP_EVENTS)[number];
+
+type LeaveLayout = Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'>;
 
 interface SweptPlan {
     readonly event: SweepEvent;
     readonly leaverSessionId: string | null;
     readonly derivation: RtcTopologyPlanDerivation;
     readonly delta: TopologyLayoutDelta;
+    readonly planned: RallarOverlayTopologySnapshot;
 }
 
 /** Every single leave, one join, and every single leave with one join in the same plan, from the formed room. */
-function computeRoomSweep(room: Omit<RtcTopologyFixtureLeaveInput, 'leaver'>): readonly SweptPlan[] {
+function computeRoomSweep(room: Pick<RtcTopologyFixtureLeaveInput, 'options' | 'memberCount'>): readonly SweptPlan[] {
     const formed = computeRtcTopologyFixturePlan({
         options: room.options,
         group: createRtcTopologyFixtureGroup(room.memberCount),
@@ -242,18 +289,41 @@ function toSweptPlan(event: SweepEvent, leaverSessionId: string | null, replan: 
         event,
         leaverSessionId,
         derivation: replan.planned.derivation,
-        delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot)
+        delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot),
+        planned: replan.planned.snapshot
     };
 }
 
-function countSingleLeaveRebuildReasons(sweep: readonly SweptPlan[]): Partial<Record<TopologyReshapeReason, number>> {
-    const counts: Partial<Record<TopologyReshapeReason, number>> = {};
-    for (const plan of sweep) {
-        if (plan.event === 'leave' && plan.derivation.method === 'rebuilt') {
-            counts[plan.derivation.reason] = (counts[plan.derivation.reason] ?? 0) + 1;
+/** A rebuilt leave named by its leaver and the planner's reason, so a failure says which leave and why. */
+function toRebuiltLeave(plan: SweptPlan): string {
+    const reason = plan.derivation.method === 'rebuilt' ? plan.derivation.reason : plan.derivation.method;
+    return `${plan.leaverSessionId}: ${reason}`;
+}
+
+/** The leaver is in no member list and no next-hop list; every link is two-way, inside the limit, and all connect. */
+function isValidLeaveLayout(planned: LeaveLayout, leaverSessionId: string | null): boolean {
+    const { activeSessionIds, nextHopsBySessionId, degreeLimit } = planned;
+    const readNextHops = (sessionId: string) => nextHopsBySessionId[sessionId] ?? [];
+    const reachedSessionIds = computeReachedSessionIds(planned);
+    return leaverSessionId !== null &&
+        !activeSessionIds.includes(leaverSessionId) &&
+        Object.values(nextHopsBySessionId).every((nextHops) => !nextHops.includes(leaverSessionId)) &&
+        activeSessionIds.every((sessionId) =>
+            readNextHops(sessionId).length <= degreeLimit &&
+            readNextHops(sessionId).every((nextHop) => readNextHops(nextHop).includes(sessionId)) &&
+            reachedSessionIds.has(sessionId)
+        );
+}
+
+/** The members a walk over next hops reaches from the first member. */
+function computeReachedSessionIds(planned: LeaveLayout): ReadonlySet<string> {
+    const reachedSessionIds = new Set(planned.activeSessionIds.slice(0, 1));
+    for (const sessionId of reachedSessionIds) {
+        for (const nextHop of planned.nextHopsBySessionId[sessionId] ?? []) {
+            reachedSessionIds.add(nextHop);
         }
     }
-    return counts;
+    return reachedSessionIds;
 }
 
 /** The staying members whose next hops the plan changed, in the planner's member order. */
