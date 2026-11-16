@@ -256,11 +256,20 @@ The table is run 3. Among the cells shown, run 2 differed in the tree's longest 
 3 reads 1: accepted 4, fresh plan 3) and in the share of join and leave plans that rerouted an
 uninvolved member (tree 0.07 and 0.10, mesh 0.17 and 0.17).
 
+Run 4, on the final code, read the kinds differently: attach / repair / reshape star 15 / 15 / 0 under
+both policies, tree `auto` 15 / 10 / 5 and `debounced` 15 / 12 / 3, mesh 15 / 7 / 8 under both. Every
+reshape was again `invariant-violation`. One reshape in each tree room rerouted nobody; no attach and
+no repair rerouted an uninvolved member.
+
 - Every reshape the measurement produced was a leave the planner could not repair incrementally
-  (`invariant-violation`): 3 or 4 of the 15 leaves in the 8-member tree, 5 or 6 of the 15 in the
-  20-member mesh. The planner sweep finds the same from a formed layout: 9 of the 20 single leaves
-  from a mesh and 1 of the 8 from a tree. Only those plans rerouted members they did not involve;
-  no attach and no repair did.
+  (`invariant-violation`): across runs 3 and 4, 3 to 5 of the 15 leaves in the 8-member tree and 5 to
+  8 of the 15 in the 20-member mesh. The count varies from run to run. The scenario seeds nothing:
+  each leaver is the creator-excluded member present longest by the time its presence was recorded
+  (`resolveTopologyChurnEvent`), and the formation members are admitted ten at a time, so their order
+  follows request timing. That this is the cause of the variation is not established. The planner
+  sweep finds the same from a formed layout: 9 of the 20 single leaves from a mesh and 1 of the 8
+  from a tree. Only reshapes rerouted members they did not involve (in run 3 every reshape did, in
+  run 4 all but one in each tree room); no attach and no repair did.
 - These are the plans that follow a leave the planner cannot repair incrementally: they rebuild the
   layout and reroute members the leave did not involve. A gate that holds reshapes would hold them,
   which, where the leaver was a relay, is the failure named above (a departed relay's dependants stay
