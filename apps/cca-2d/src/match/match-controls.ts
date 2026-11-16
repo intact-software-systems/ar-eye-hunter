@@ -6,6 +6,14 @@ export class TownMatchControls {
     private publishedDash = 0;
     private readonly keys = new Map<string, boolean>();
 
+    rebase(controls: PracticeInput, confirmedDash: number): void {
+        this.observedDash = controls.dash;
+        this.publishedDash = confirmedDash;
+        for (const key of this.keys.keys()) {
+            this.keys.set(key, false);
+        }
+    }
+
     sample(controls: PracticeInput, confirmedDash: number, paused: boolean): PracticeInput {
         if (paused) {
             for (const key of this.keys.keys()) {

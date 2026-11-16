@@ -9,7 +9,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export const TOWN_MATCH_PROTOCOL = 'cca.match.v1';
-export const TOWN_MATCH_BUILD = 'grumpy-town-v1';
+export const TOWN_MATCH_BUILD = 'grumpy-town-v2';
 export type TownMatchAction =
     | { readonly kind: 'controls'; readonly x: number; readonly z: number; readonly dash: number; }
     | { readonly kind: 'ready'; readonly ready: boolean; }
@@ -22,6 +22,7 @@ export type TownMatchAction =
         readonly digest: string;
         readonly proposalSequence: number;
         readonly checkpointEpoch: number;
+        readonly committed: boolean;
     };
 export interface TownMatchFrame {
     readonly protocol: typeof TOWN_MATCH_PROTOCOL;
@@ -110,12 +111,13 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
                 {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['kind', 'digest', 'proposalSequence', 'checkpointEpoch'],
+                    required: ['kind', 'digest', 'proposalSequence', 'checkpointEpoch', 'committed'],
                     properties: {
                         kind: { const: 'recover' },
                         digest,
                         proposalSequence: sequence,
-                        checkpointEpoch: sequence
+                        checkpointEpoch: sequence,
+                        committed: { type: 'boolean' }
                     }
                 }
             ]

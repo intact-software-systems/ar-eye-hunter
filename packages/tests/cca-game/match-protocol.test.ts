@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'cca.match.v1',
-    build: 'grumpy-town-v1',
+    build: 'grumpy-town-v2',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -51,6 +51,7 @@ describe('Rallar match protocol admission', () => {
             const invalid of [
                 { ...frame, protocol: 'old' },
                 { ...frame, build: 'old' },
+                { ...frame, build: 'grumpy-town-v1' },
                 { ...frame, epoch: -1 },
                 { ...frame, sequence: 1.5 },
                 { ...frame, roomRef: { groupId: 'town' } },
@@ -63,6 +64,12 @@ describe('Rallar match protocol admission', () => {
         }
         expect(decodeTownMatchFrame('x'.repeat(300_000)).left).toBeDefined();
         expect(decodeTownMatchFrame(frame).left).toBeDefined();
+        const recovery = { kind: 'recover', digest: 'a'.repeat(64), checkpointEpoch: 2, proposalSequence: 10 };
+        expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: recovery })).left).toBeDefined();
+        for (const committed of [false, true]) {
+            const action = { ...recovery, committed };
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right?.action).toEqual(action);
+        }
     });
 
     it('binds messages to authenticated sender, complete room scope and fresh server appointment', () => {

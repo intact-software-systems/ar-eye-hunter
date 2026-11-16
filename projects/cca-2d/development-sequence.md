@@ -12,7 +12,9 @@ powder, mini-zappers, birds/dogs/cats, bins/fish/toilet/hydrant, stains/washing,
 a +50 bonus and ten-officer raids, plus a clearly labelled local bot companion.
 It includes real browser captures and focused rule/browser tests. The historical
 server prototype remains outside the app. Optional Rallar social entry and the first
-shared player-hosted match are now implemented; recovery remains under development.
+shared player-hosted match are now implemented. Real-browser tests cover three-player
+host-close succession and two-player recovery timeout; reconnect seat grace,
+background-host behavior and full-round qualification remain under development.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,
@@ -53,8 +55,9 @@ Use Rallar WS room transport first, bounded input/snapshot publication, accepted
 appointment/epoch validation and client reconciliation. Establish the checkpoint
 commit protocol before promising retained scores across host loss.
 
-First reproduce the existing appointment-permission constraints. Prove a valid
-successor path for an owner host that backgrounds while still appearing online.
+Socket-close cleanup now permits a verified eligible successor under the existing
+appointment policy. Still reproduce an owner host that backgrounds while appearing online
+and prove authorized recovery or a bounded interruption.
 Any generic missing capability belongs in Rallar and its focused tests; do not
 bypass authorization or promote everyone to room admin.
 

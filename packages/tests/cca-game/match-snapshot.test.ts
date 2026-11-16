@@ -11,6 +11,7 @@ import {
 } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
 import {
     computeTownMatchReady,
+    computeTownMatchRecovery,
     computeTownMatchRoster,
     computeTownMatchStart,
     computeTownMatchTick,
@@ -26,6 +27,17 @@ const members = [
 ];
 
 describe('network match snapshot boundary', () => {
+    it('preserves retired participants in a resumed checkpoint and rejects altered identities', () => {
+        const lobby = createTownMatch('recovery', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
+        const recovered = computeTownMatchRecovery({ ...lobby, phase: 'playing' }, lobby.members.slice(1)).right!;
+        expect(decodeTownMatchSnapshot(JSON.stringify(recovered)).right).toEqual(recovered);
+        expect(decodeTownMatchSnapshot(JSON.stringify({ ...recovered, participants: recovered.participants.slice(1) })).left).toBeDefined();
+        expect(
+            decodeTownMatchSnapshot(
+                JSON.stringify({ ...recovered, participants: [recovered.participants[0], recovered.participants[0], recovered.participants[2]] })
+            ).left
+        ).toBeDefined();
+    });
     it('restores a complete round without losing optional state or simulation values', () => {
         let state = createTownMatch('round', members).right!;
         for (const member of members) {

@@ -31,6 +31,7 @@ export class TownMatchGame {
     private renderedMatchId = '';
     private renderedZoom = 0;
     private matchControls = new TownMatchControls();
+    private inputGeneration = -1;
 
     private readonly root: HTMLElement;
     private readonly session: TownMatchSession;
@@ -50,7 +51,7 @@ export class TownMatchGame {
           <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
           <div class="play-hint"><span class="you">YOU / TEAL HOODIE</span><p id="round-status" role="status"></p></div>
           <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><strong>DASH<br>+ DROP</strong></button></div>
-          <section id="round-results" class="pause-overlay" hidden><div><h2>Round complete</h2><p id="round-winners"></p><button id="rematch">New round</button><button id="leave-results">Leave match</button></div></section>
+          <section id="round-results" class="pause-overlay" hidden><div><h2 id="round-result-title">Round complete</h2><p id="round-winners"></p><button id="rematch">New round</button><button id="leave-results">Leave match</button></div></section>
         </main>`;
         const canvas = requirePracticeElement<HTMLCanvasElement>(root, 'canvas');
         this.scene = new PracticeScene(canvas);
@@ -149,6 +150,13 @@ export class TownMatchGame {
         const controls = this.controls?.getInput();
         if (controls) {
             const consumed = view.match?.players.find((player) => player.id === view.localId)?.consumedDash ?? 0;
+            if (this.inputGeneration !== view.inputGeneration) {
+                this.controls?.clear();
+                this.matchControls.rebase(controls, consumed);
+                this.inputGeneration = view.inputGeneration;
+                this.session.setControls({ x: 0, z: 0, dash: consumed });
+                return;
+            }
             this.session.setControls(this.matchControls.sample(controls, consumed, view.recovering));
         }
     }
@@ -213,9 +221,15 @@ export class TownMatchGame {
             return;
         }
         this.root.dataset.phase = match.phase;
+        this.root.dataset.matchId = match.matchId;
+        this.root.dataset.tick = String(match.tick);
+        this.root.dataset.director = String(view.isDirector);
         this.root.dataset.x = String(player.x);
         this.root.dataset.speed = String(Math.hypot(player.vx, player.vz));
-        this.root.dataset.peerX = String(match.players.find((peer) => peer.id !== player.id)?.x ?? 0);
+        this.root.dataset.peerX = String(
+            match.players.find((peer) => peer.id !== player.id && match.members.some((member) => member.id === peer.id))
+                ?.x ?? 0
+        );
         this.root.dataset.dashes = String(player.consumedDash);
         requirePracticeElement(this.root, '#round-clock').textContent = `${
             Math.ceil(match.remainingTicks / TOWN_MATCH_RATE)
@@ -228,22 +242,37 @@ export class TownMatchGame {
             ? `Ready… ${Math.ceil(match.countdownTicks / TOWN_MATCH_RATE)}`
             : player.frozenUntil > player.elapsed
             ? `FROZEN ${Math.ceil(player.frozenUntil - player.elapsed)}s — a friend can rescue you!`
-            : `Dash to make trouble. ${match.players.length} friends in town.`;
+            : `Dash to make trouble. ${match.members.length} friends in town. ${
+                view.isDirector ? 'You host this round.' : ''
+            }`;
     }
 
     private renderResults(view: TownMatchSession.View): void {
         const match = view.match;
-        const finished = match?.phase === 'finished' || match?.phase === 'interrupted';
+        const interrupted = Boolean(view.interruption) || match?.phase === 'interrupted';
+        const finished = match?.phase === 'finished' || interrupted;
         requirePracticeElement(this.root, '#round-results').hidden = !finished;
+        requirePracticeElement(this.root, '#round-result-title').textContent = interrupted
+            ? 'Round interrupted'
+            : 'Round complete';
         requirePracticeElement(this.root, '#rematch').hidden = !view.isDirector;
-        requirePracticeElement(this.root, '#round-winners').textContent = match?.interruption ??
-            match?.results.map((result) =>
+        requirePracticeElement<HTMLButtonElement>(this.root, '#rematch').disabled = !view.available ||
+            (match?.phase !== 'interrupted' && match?.phase !== 'finished');
+        const points = match?.participants.map((participant) =>
+            `${participant.displayName}: ${match.players.find((player) => player.id === participant.id)?.score ?? 0}`
+        ).join(' · ');
+        requirePracticeElement(this.root, '#round-winners').textContent = interrupted
+            ? `${view.interruption ?? match?.interruption} Confirmed points: ${points}`
+            : match?.results.map((result) =>
                 `${result.displayName}: ${result.score}${result.qualified ? ' — WINNER!' : ''}`
             ).join(' · ') ?? '';
     }
 
     private renderPeers(view: TownMatchSession.View): void {
-        const players = view.match?.players.filter((player) => player.id !== view.localId) ?? [];
+        const players =
+            view.match?.players.filter((player) =>
+                player.id !== view.localId && view.match?.members.some((member) => member.id === player.id)
+            ) ?? [];
         for (const [id, peer] of this.peers) {
             if (!players.some((player) => player.id === id)) {
                 peer.actor.root.dispose();

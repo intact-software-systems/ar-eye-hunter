@@ -3,6 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { TownMatchControls } from '../../../apps/cca-2d/src/match/match-controls.ts';
 
 describe('match input across a confirmation pause', () => {
+    it('drops unconfirmed actions when a successor restores an older committed input position', () => {
+        const controls = new TownMatchControls();
+        expect(controls.sample({ x: 1, z: 0, dash: 1 }, 0, false).dash).toBe(1);
+        controls.acceptKeyDown('KeyD', false, false);
+        controls.rebase({ x: 1, z: 0, dash: 1 }, 0);
+        expect(controls.acceptKeyDown('KeyD', true, false)).toBe(false);
+        expect(controls.sample({ x: 0, z: 0, dash: 1 }, 0, false).dash).toBe(0);
+        expect(controls.sample({ x: 0, z: 0, dash: 2 }, 0, false).dash).toBe(1);
+    });
     it('discards paused presses without reusing a previously published dash identity', () => {
         const controls = new TownMatchControls();
         expect(controls.sample({ x: 1, z: 0, dash: 1 }, 0, false)).toEqual({ x: 1, z: 0, dash: 1 });

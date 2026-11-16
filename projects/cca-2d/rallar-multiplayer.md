@@ -207,10 +207,11 @@ score is the aggregate; match results use each player's score.
 `src/match/town-match.ts` owns the pure lifecycle: a one-to-four-member lobby,
 session-specific readiness, two-to-four ready players to start, a three-second
 countdown, 30 Hz fixed steps for three minutes, a 100-point qualification target,
-multiple qualifiers, and a fresh identity/readiness/world on rematch. Membership
-or session changes during countdown/play interrupt the round explicitly and
-preserve the last world. Empty membership also interrupts; empty creation and
-rematch remain invalid.
+multiple qualifiers, and a fresh identity/readiness/world on rematch. The default
+roster transition interrupts countdown/play explicitly. Recovery now has a separate
+transition for at least two original participants: it preserves the confirmed town,
+clock and all round scores while rebinding the active controller sessions. Empty
+membership interrupts; empty creation and rematch remain invalid.
 
 `src/match/match-input.ts` validates the current member/session, advancing input
 sequence and bounded movement/dash values. Input expires 250 ms after the
@@ -231,11 +232,9 @@ must be reviewed together, and the match rules consume that same implementation.
 The removed phase wrappers have no remaining production consumers. No public
 Rallar package contract changed.
 
-The lobby does not yet expose these match rules. Appointed director authority,
-room/protocol validation, network runtime, checkpoint agreement/recovery, shared
-player rendering and real multiplayer browser tests remain required. Domain
-checks and solo browser regressions do not prove those integrations or physical
-phone networking.
+The live integration below exposes these rules through the lobby, appointed
+director, room channel and shared rendering. Domain checks and solo browser
+regressions alone do not prove those integrations or physical phone networking.
 
 Current local evidence: 84 CCA rules tests pass, including a full 5,400-tick round;
 the CCA build and all 12 affected gameplay browser tests pass. Independent world
@@ -249,8 +248,8 @@ The match protocol now has explicit build/version, complete room scope, current
 server appointment epoch and authenticated sender checks. A player cannot name a
 different controller in a controls message. Proposal, commit, start and rematch
 messages require the appointed session; readiness and acknowledgements require a
-current player session. This is a reusable app boundary awaiting the actual Rallar
-channel subscription, not evidence that networked matches run already.
+current player session. The live runtime consumes this app boundary through the
+Rallar channel subscription; the boundary's unit tests alone do not prove networking.
 
 Snapshots have an exact bounded schema for every town/player state variant,
 fixed-map identity checks, phase/clock consistency and result consistency. SHA-256
@@ -267,20 +266,20 @@ commit. A commit arriving before the final acknowledgement remains provisional.
 Duplicates cannot reopen committed work; an outstanding proposal cannot be
 silently overwritten. Match phases and confirmed time cannot move backward.
 
-On a new appointment or participant set, provisional work is discarded while the
-committed checkpoint remains available. Current surviving sessions must agree on
-that recovery identity before new countdown, gameplay or winner confirmation.
+On a new appointment or participant set, the current pending agreement is discarded
+while committed presentation remains available. One verified old-director proposal
+is retained separately as a bounded recovery candidate. Current surviving sessions
+must agree on the selected recovery identity before new countdown, gameplay or winner confirmation.
 Without agreement, an explicit interrupted outcome remains possible. The runtime
 must bound recovery/retransmission, preserve authenticated source identities,
 recheck authority after asynchronous hashing, and retain input/message sequence
 watermarks. The agreement owner alone does not implement those network effects.
 
-Requiring all selected participant acknowledgements is an initial conservative
-choice: a slow peer can delay confirmation. Before continued three-client host
-recovery can be claimed, the runtime and match rules must distinguish retained
-round participants/results from currently active controllers. The existing pure
-roster-change interruption is not evidence of continued host-loss play or of the
-seat-grace behavior described in architecture.md.
+Requiring all selected controller acknowledgements is an initial conservative
+choice: a slow peer can delay confirmation. Retained round participants/results
+are now separate from active controllers. The host-close trial below proves one
+continued three-client recovery path; the seat-grace behavior described in
+architecture.md remains required and is not established by that trial.
 
 The live integration below now supplies appointed-director/channel wiring and
 shared gameplay UI. Remaining outcomes are loss/reordering/recovery with real
@@ -323,13 +322,14 @@ retry until committed state confirms them. Input sequences survive expiry, and b
 or visibility loss clears the runtime's input directly rather than waiting for another
 render frame. Speculative simulation stops two seconds beyond confirmed progress.
 
-A same-director roster change carries the latest simulation into an explicit
-interruption instead of rewinding to an older locally committed tick. The new roster
-must acknowledge that interruption. Scene preparation is invalidated by match/participant changes and resizing.
+A same-director newcomer produces an explicit interruption from committed state,
+never speculative scores. An outstanding checkpoint settles with the original
+controllers before the newcomer is admitted to the checkpoint agreement. The new
+roster must acknowledge the interruption. Scene preparation is invalidated by match/participant changes and resizing.
 Gameplay input listeners exist only while the game is visible, so the lobby remains
 typeable. Graphics-context loss revokes readiness and offers a leave/rejoin path.
 A late joiner sees the interruption and can leave;
-the director can create a new lobby. This is not host-succession recovery.
+the director can create a new lobby. Host-succession evidence is recorded below.
 
 Real browser evidence now covers separate accounts, create/join, server appointment,
 ready/start, a wall-time countdown, shared movement, dash, neutral input on blur, a
@@ -347,9 +347,9 @@ without a new committed checkpoint, both clients show a confirmation pause and
 the director pauses speculative time. Checkpoint retransmission continues; restoring
 the missing acknowledgements resumes the same round. Device input during the pause
 is discarded, held keys require release and a fresh press, and published dash
-identities never rewind. `TownMatchControls` owns that input translation independently
-of scene rendering. This is temporary confirmation-loss recovery, not host succession
-or the required ten-second terminal interruption.
+identities do not rewind during a temporary pause. An authority generation change
+instead rebases the dash counter to the restored checkpoint, discarding unconfirmed
+pre-loss actions. `TownMatchControls` owns that translation independently of rendering.
 
 Static inspection also found that the browser's default room-presence lease is
 120 seconds. The appointment policy refuses fallback while an owner/admin session
@@ -357,7 +357,82 @@ remains active. A socket-close cleanup may remove that presence sooner; a suspen
 page with a live socket is a different failure. Do not substitute the four-second
 director heartbeat timeout for server authorization, shorten leases through an
 app-local heartbeat loop, or claim background-host recovery from the temporary
-message-loss test. Reproduce both lifecycle paths before selecting the Rallar change.
+message-loss test. The socket-close path is now verified below; the live-socket
+background path still needs a real lifecycle trial.
+
+## Host succession and bounded interruption
+
+`TownMatchRoom` owns exact room refresh, the authority relay and eligible appointment.
+It uses Rallar's existing server eligibility policy and bounded operation options;
+it never appoints by local election alone or grants room-admin privileges. A room
+read has a one-second timeout so a hung request cannot indefinitely hold the local
+ten-second recovery deadline.
+
+The match snapshot now retains original participants separately from currently
+active controller sessions. Departed players stop moving and interacting while
+their confirmed score and result identity remain. This changes the trial wire build
+to `grumpy-town-v2`; older trial clients must reload. Rallar's public contracts do
+not change.
+
+Unscheduled host closure can leave one survivor with checkpoint S committed and
+another with S verified but still pending. Recovery reports therefore distinguish
+committed checkpoints from supported candidates. A current peer's commit witness
+can select only an exact locally verified retained proposal (epoch, sequence and
+digest); arbitrary newer states are refused. All current controllers must then
+support that source, with at least one commit witness, before a new-epoch proposal
+can resume play. Presentation does not promote the candidate until the new director
+and all current controllers complete ordinary checkpoint commitment. This is an
+authenticated crash-recovery protocol for the unranked game, not protection against
+colluding players or a dishonest appointed host.
+
+Selecting a newer candidate invalidates an incompatible pending interruption.
+Timeout results derive from the selected source rather than rewinding its clock or
+score. A second appointment retains a newer verified proposal only when it advances
+valid state; an older terminal proposal cannot replace the better candidate. Exact retained rematch identities can reconcile
+across the old terminal/new-lobby boundary. An old round's local deadline cannot
+interrupt the next lobby. Authority mismatch immediately keeps the UI paused, and
+asynchronous proposal work is retained for retransmission only if it actually
+became the pending checkpoint.
+
+Real three-browser coverage closes the original host, verifies one surviving
+appointed director and backup, and continues the same match identity with shared
+movement and advancing time. Earlier repeated trials exposed divergent checkpoints
+and motivated the witnessed-candidate protocol above. The strengthened test now
+deliberately drops one survivor's commit and holds the next host digest, verifies
+that the survivors display different confirmed ticks, then closes the host. Both
+survivors agree and continue; this passes with the final candidate-selection rules.
+Two-player coverage separately loses the host and
+the only backup: both cases pause, then show an interrupted round with unchanged
+confirmed score/time and a working exit. A prolonged message outage followed by
+restored traffic permits an explicit rematch, never automatic resumption of the
+interrupted round. Another test holds the authoritative room GET and verifies that
+the local deadline still expires.
+
+All eight match browser scenarios passed before the final repeated-appointment
+selection refinement. The strengthened host-loss case and newcomer race pass after
+that refinement. Focused checkpoint regressions verify late witnesses, invalidation
+of old interruption proposals, repeated appointments in both progression directions,
+rematch agreement and preservation of committed presentation until new agreement.
+CPU-contended timing failures were inspected separately; a passing retry alone was
+not treated as resolution of the earlier checkpoint divergence.
+
+Final focused validation for this increment: 112 CCA rules and 28 shared Rallar
+appointment/relay checks pass, along with the production build, changed-test
+typecheck and scoped structure/style review. A rules timeout during competing
+browser work passed when the suites were run without that contention. These
+results qualify this recovery increment, not the remaining release requirements.
+
+A missed-commit/newcomer regression holds the next browser digest, drops one
+checkpoint commit, joins a third player, then restores traffic. All players must
+agree on the roster interruption and enter a new ready cycle. Removing periodic
+same-epoch committed-identity retransmission makes that regression fail. Resending
+the identity lets a lagging peer settle its pending checkpoint even after the host
+has changed roster and discarded the old proposal bytes.
+
+These checks do not implement the ten-second seat-grace/observer policy. A returning
+original participant can currently rebind without that expiry rule. Same/new-session
+reconnect, stale host return, physical backgrounding, shared rescue/full-round
+browser results and secure phone access remain required before release.
 
 The next two useful outcomes remain concrete:
 

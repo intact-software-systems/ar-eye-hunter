@@ -106,9 +106,13 @@ its search; online re-entry waits for that cleanup. If the network stays unavail
 cancellation cannot be confirmed and the search status must be checked after reconnecting.
 The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
 If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;
-movement and dash pressed during that pause are discarded. Roster changes interrupt
-the round and the director can open a fresh ready cycle. Host replacement, prolonged
-outage interruption and complete-round browser qualification remain in
+movement and dash pressed during that pause are discarded. With three players, closing
+the host can appoint an eligible survivor and continue the same confirmed round with
+a backup. Losing either member of a two-player match pauses, then interrupts after
+the ten-second recovery window. Confirmed points remain visible and every player can
+leave. After agreement returns, the director can open a fresh ready cycle.
+A newcomer during play interrupts the round. Reconnect seat grace, background-host
+behavior and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests
@@ -122,7 +126,8 @@ localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
 - `online/online-session.ts`: optional Rallar account, room, social and matchmaking lifetime.
 - `online/online-lobby.ts`: responsive account and lobby DOM; `online-panels.ts` renders their projections.
 - `online/online-match.ts`: current-room match lifetime, ready/start controls and gameplay mount.
-- `match/match-session.ts`: Rallar appointment, authenticated room traffic and checkpoint exchange.
+- `match/match-room.ts`: current room sessions, authority relay, bounded refresh and eligible appointment.
+- `match/match-session.ts`: authenticated room traffic, checkpoint exchange and recovery lifecycle.
 - `match/match-simulation.ts`: director clock, expiring inputs and speculative canonical town state.
 - `match/match-game.ts`: committed-state canvas, human peers, timer, results and input lifecycle.
 - `match/match-checkpoints.ts`, `match-protocol.ts`, `match-snapshot.ts`: agreement and exact wire validation.
@@ -173,4 +178,5 @@ a full bonus/ten-police/freeze/recovery/return cycle, plus bomb warning/reset, f
 
 See [actual captures and trial limits](../../projects/cca-2d/babylon-local-trial.md).
 Physical iPhone/iPad comfort, Safari behavior and sustained frame pacing still
-need testing on devices. The scene is a visual/feel trial, not a complete match.
+need testing on devices. The solo scene remains a visual/feel trial; the optional
+match still needs the remaining reliability and device qualification in the multiplayer plan.

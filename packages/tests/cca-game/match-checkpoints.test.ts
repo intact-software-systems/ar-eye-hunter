@@ -80,9 +80,9 @@ describe('match checkpoint agreement', () => {
         expect(checkpoints.changeAuthority(successor).right).toBe(true);
         expect(checkpoints.getState().pending).toBeUndefined();
         expect(checkpoints.getState().committed?.sequence).toBe(1);
-        expect(checkpoints.recover('bob-session', proposal).right).toBe(false);
-        expect(checkpoints.recover('carol-session', { ...proposal, digest: 'f'.repeat(64) }).left).toBeDefined();
-        expect(checkpoints.recover('carol-session', proposal).right).toBe(true);
+        expect(checkpoints.recover('bob-session', proposal, true).right).toBe(false);
+        expect(checkpoints.recover('carol-session', { ...proposal, digest: 'f'.repeat(64) }, true).left).toBeDefined();
+        expect(checkpoints.recover('carol-session', proposal, true).right).toBe(true);
         expect(checkpoints.getState().recovered).toBe(true);
         expect(checkpoints.propose({ ...proposal, sequence: 3 }, 'alice-session').left).toBeDefined();
         expect(checkpoints.changeAuthority(authority).left).toBeDefined();
@@ -100,7 +100,7 @@ describe('match checkpoint agreement', () => {
         expect(checkpoints.propose(resumed, 'bob-session').left).toBeDefined();
         expect(checkpoints.propose({ ...resumed, state: { ...resumed.state, phase: 'finished' } }, 'bob-session').left).toBeDefined();
         for (const member of members) {
-            checkpoints.recover(member.sessionId, proposal);
+            checkpoints.recover(member.sessionId, proposal, true);
         }
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
     });
@@ -123,10 +123,100 @@ describe('match checkpoint agreement', () => {
         checkpoints.propose(proposal, 'alice-session');
         const successor = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
         checkpoints.changeAuthority(successor);
-        expect(checkpoints.recover('bob-session', proposal).left).toBeDefined();
+        expect(checkpoints.recover('bob-session', proposal, false).left).toBeDefined();
         expect(checkpoints.getState().recovered).toBe(false);
         const single = new TownMatchCheckpoints({ ...successor, members: [members[1]] });
-        expect(single.recover('bob-session', proposal).left).toBeDefined();
+        expect(single.recover('bob-session', proposal, false).left).toBeDefined();
         expect(single.getState().recovered).toBe(false);
+    });
+
+    it('reconciles a verified pending proposal with a survivor commit without publishing it prematurely', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(proposal, member.sessionId);
+        }
+        checkpoints.commit(proposal, 'alice-session');
+        const latest = { ...proposal, sequence: 2, digest: 'b'.repeat(64), state: { ...state, phase: 'playing' as const, tick: 10, remainingTicks: 5390 } };
+        checkpoints.propose(latest, 'alice-session');
+        const successor = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
+        checkpoints.changeAuthority(successor);
+        const interrupted = { ...proposal, epoch: 2, sequence: 1, state: { ...state, members: state.members.slice(1), phase: 'interrupted' as const } };
+        expect(checkpoints.propose(interrupted, 'bob-session').right).toBe(true);
+        expect(checkpoints.recover('carol-session', latest, false).left).toBeDefined();
+        expect(checkpoints.recover('outsider', latest, true).left).toBeDefined();
+        expect(checkpoints.recover('carol-session', { ...latest, digest: 'c'.repeat(64) }, true).left).toBeDefined();
+        expect(checkpoints.recover('carol-session', latest, true).right).toBe(false);
+        expect(checkpoints.getState().pending).toBeUndefined();
+        expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(2);
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        expect(checkpoints.recover('bob-session', latest, false).right).toBe(true);
+        const resumed = { ...latest, epoch: 2, sequence: 1, state: { ...latest.state, members: state.members.slice(1) } };
+        expect(checkpoints.propose({ ...resumed, state: { ...resumed.state, tick: 0 } }, 'bob-session').left).toBeDefined();
+        expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
+        checkpoints.acknowledge(resumed, 'bob-session');
+        checkpoints.commit(resumed, 'bob-session');
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        expect(checkpoints.getState().committed?.epoch).toBe(1);
+        expect(checkpoints.acknowledge(resumed, 'carol-session').right).toBe(true);
+        expect(checkpoints.getState().committed?.state.tick).toBe(10);
+        expect(checkpoints.getState().committed?.epoch).toBe(2);
+    });
+
+    it('keeps the verified source across a second appointment while an older interruption is pending', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(proposal, member.sessionId);
+        }
+        checkpoints.commit(proposal, 'alice-session');
+        const latest = { ...proposal, sequence: 2, digest: 'b'.repeat(64), state: { ...state, phase: 'playing' as const, tick: 10, remainingTicks: 5390 } };
+        checkpoints.propose(latest, 'alice-session');
+        checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
+        checkpoints.propose({ ...proposal, epoch: 2, sequence: 1, state: { ...state, members: state.members.slice(1), phase: 'interrupted' } }, 'bob-session');
+        checkpoints.changeAuthority({ epoch: 3, sessionId: 'carol-session', members: members.slice(1) });
+        expect(checkpoints.recover('bob-session', latest, true).right).toBe(false);
+        expect(checkpoints.recover('carol-session', latest, false).right).toBe(true);
+        expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(2);
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+    });
+
+    it('retains a newer recovery proposal when a second host disappears during partial commitment', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(proposal, member.sessionId);
+        }
+        checkpoints.commit(proposal, 'alice-session');
+        const latest = { ...proposal, sequence: 2, digest: 'b'.repeat(64), state: { ...state, phase: 'playing' as const, tick: 10, remainingTicks: 5390 } };
+        checkpoints.propose(latest, 'alice-session');
+        checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
+        checkpoints.recover('carol-session', latest, true);
+        checkpoints.recover('bob-session', latest, false);
+        const resumed = { ...latest, epoch: 2, sequence: 1, digest: 'c'.repeat(64), state: { ...latest.state, members: state.members.slice(1) } };
+        expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
+        checkpoints.changeAuthority({ epoch: 3, sessionId: 'carol-session', members: members.slice(1) });
+        expect(checkpoints.recover('bob-session', resumed, true).right).toBe(false);
+        expect(checkpoints.recover('carol-session', resumed, false).right).toBe(true);
+        expect(checkpoints.getState().recoveryCheckpoint?.epoch).toBe(2);
+        expect(checkpoints.getState().committed?.epoch).toBe(1);
+    });
+
+    it('can agree on a retained rematch lobby without replacing the old terminal result before commitment', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        const terminal = { ...proposal, state: { ...state, phase: 'interrupted' as const } };
+        checkpoints.propose(terminal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(terminal, member.sessionId);
+        }
+        checkpoints.commit(terminal, 'alice-session');
+        const lobby = { ...proposal, sequence: 2, digest: 'b'.repeat(64), state: createTownMatch('rematch', members).right! };
+        checkpoints.propose(lobby, 'alice-session');
+        checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
+        expect(checkpoints.recover('carol-session', lobby, true).right).toBe(false);
+        expect(checkpoints.recover('bob-session', lobby, false).right).toBe(true);
+        expect(checkpoints.getState().committed?.state.matchId).toBe('round');
+        expect(checkpoints.propose({ ...lobby, epoch: 2, sequence: 1, state: { ...lobby.state, members: lobby.state.members.slice(1) } }, 'bob-session').right)
+            .toBe(true);
     });
 });

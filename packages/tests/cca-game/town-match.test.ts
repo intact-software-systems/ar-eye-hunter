@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeTownMatchInput } from '../../../apps/cca-2d/src/match/match-input.ts';
 import {
     computeTownMatchReady,
+    computeTownMatchRecovery,
     computeTownMatchRematch,
     computeTownMatchRoster,
     computeTownMatchStart,
@@ -37,6 +38,30 @@ function playingMatch(): TownMatchState {
 }
 
 describe('Grumpy Town match rules', () => {
+    it('recovers surviving controllers while retaining departed scores and excluding absent actors', () => {
+        const original = createTownMatch('recovering', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
+        const state: TownMatchState = {
+            ...original,
+            phase: 'playing',
+            tick: 5399,
+            remainingTicks: 1,
+            players: original.players.map((player) => ({ ...player, score: 120, vx: 4, rescueTarget: 'bob', rescueProgress: 0.5 }))
+        };
+        const recovered = computeTownMatchRecovery(state, original.members.slice(1)).right!;
+        expect(recovered.phase).toBe('playing');
+        expect(recovered.matchId).toBe('recovering');
+        expect(recovered.players[0].score).toBe(120);
+        expect(recovered.players[0].vx).toBe(0);
+        expect(recovered.players.every((player) => player.rescueTarget === undefined && player.rescueProgress === 0)).toBe(true);
+        const finished = computeTownMatchTick({ state: recovered, routes: new TownRoutes(), inputs: [], now: 0 });
+        expect(finished.phase).toBe('finished');
+        expect(finished.players[0]).toEqual(recovered.players[0]);
+        expect(finished.results.map((result) => result.displayName)).toEqual(['Alice', 'Bob', 'Carol']);
+        expect(finished.results.map((result) => result.score)).toEqual([120, 120, 120]);
+        expect(computeTownMatchRecovery(state, [members[1]]).left).toBeDefined();
+        expect(computeTownMatchRecovery(state, [members[1], { id: 'outsider', sessionId: 'outsider', displayName: 'Outsider' }]).left).toBeDefined();
+    });
+
     it('requires two to four distinct ready members and counts down without advancing the town', () => {
         expect(createTownMatch('invalid', [members[0], members[0]]).left).toBeDefined();
         expect(
@@ -92,7 +117,7 @@ describe('Grumpy Town match rules', () => {
 
     it('ends on the final tick with several qualifiers and rematches under a new identity', () => {
         const playing = playingMatch();
-        let state = { ...playing, players: playing.players.map((player) => ({ ...player, score: 100 })) };
+        let state: TownMatchState = { ...playing, players: playing.players.map((player) => ({ ...player, score: 100 })) };
         const routes = new TownRoutes();
         for (let tick = 0; tick < 5399; tick++) {
             state = computeTownMatchTick({ state, routes, inputs: [], now: 1000 + tick * 1000 / 30 });

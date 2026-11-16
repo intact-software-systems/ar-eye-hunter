@@ -1,11 +1,9 @@
-import type { RallarDirectorRelayHandle } from '@shared-web/browser/director/rallar-director-facade.ts';
 import type {
     RallarMessage,
     RallarTypedMessageChannel
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
@@ -14,7 +12,7 @@ import type { Timers } from '@shared/resilience/timers.ts';
 import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 import type { PracticeInput } from '../practice-rules.ts';
-import { TownMatchCheckpoints } from './match-checkpoints.ts';
+import { TownMatchCheckpoints, type TownMatchAuthority } from './match-checkpoints.ts';
 import {
     decodeTownMatchFrame,
     TOWN_MATCH_BUILD,
@@ -23,9 +21,11 @@ import {
     type TownMatchAction,
     type TownMatchFrame
 } from './match-protocol.ts';
+import { TownMatchRoom } from './match-room.ts';
 import { TownMatchSimulation } from './match-simulation.ts';
 import { createTownMatchSnapshot, decodeTownCheckpoint } from './match-snapshot.ts';
 import {
+    computeTownMatchRecovery,
     computeTownMatchRoster,
     createTownMatch,
     type TownMatchIdentity,
@@ -45,6 +45,8 @@ export namespace TownMatchSession {
         readonly isDirector: boolean;
         readonly available: boolean;
         readonly recovering: boolean;
+        readonly interruption: string | undefined;
+        readonly inputGeneration: number;
         readonly error: string;
     }
 }
@@ -58,7 +60,7 @@ export class TownMatchSession {
     );
     private readonly lifetime = new AbortController();
     private readonly channel: RallarTypedMessageChannel<string>;
-    private readonly relay: RallarDirectorRelayHandle<null, null>;
+    private readonly room: TownMatchRoom;
     private checkpoints: TownMatchCheckpoints | undefined;
     private simulation: TownMatchSimulation | undefined;
     private members: readonly TownMatchIdentity[] = [];
@@ -70,6 +72,8 @@ export class TownMatchSession {
     private lastInput = 0;
     private lastExchange = 0;
     private lastCommitAt = 0;
+    private recoveryStartedAt: number | undefined;
+    private interruptedMatchId: string | undefined;
     private intent: TownMatchFrame | undefined;
     private lastProposal: TownMatchFrame | undefined;
     private committedProposal: TownMatchFrame | undefined;
@@ -87,14 +91,7 @@ export class TownMatchSession {
             purpose: 'notification',
             access: 'members'
         });
-        this.relay = dependencies.browser.director.createRelay<null, null>({
-            roomRef,
-            topicId: 'app.cca.authority',
-            intentTypeId: 'cca.authority.intent',
-            outputTypeId: 'cca.authority.output',
-            heartbeatIntervalMs: 750,
-            snapshotIntervalMs: false
-        });
+        this.room = new TownMatchRoom(dependencies, roomRef);
     }
 
     start(): void {
@@ -114,14 +111,23 @@ export class TownMatchSession {
     getView(): TownMatchSession.View {
         const director = this.dependencies.browser.director.status(this.roomRef);
         const available = !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() && director.isFresh;
-        const match = this.checkpoints?.getState().committed?.state;
+        const checkpoint = this.checkpoints?.getState();
+        const match = checkpoint?.committed?.state;
+        const authorityAligned = checkpoint?.authority.epoch === director.appointment?.epoch &&
+            checkpoint?.authority.sessionId === director.appointment?.sessionId;
+        const interruption = match && this.interruptedMatchId === match.matchId
+            ? 'Round interrupted: recovery could not be confirmed. Your last confirmed points are preserved.'
+            : undefined;
         return {
             match,
             localId: this.dependencies.browser.session()?.clientId,
             isDirector: director.isDirector,
             available,
             recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
-                (!available || this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500),
+                (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
+                    this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500),
+            interruption,
+            inputGeneration: this.generation,
             error: this.error
         };
     }
@@ -132,10 +138,7 @@ export class TownMatchSession {
 
     async appoint(): Promise<void> {
         try {
-            await this.dependencies.browser.director.appoint(this.roomRef, {
-                heartbeatTtlMs: 4000,
-                signal: this.lifetime.signal
-            });
+            await this.room.appoint();
             if (!this.lifetime.signal.aborted) {
                 this.error = '';
                 this.reconcileAuthority();
@@ -166,13 +169,17 @@ export class TownMatchSession {
         this.lifetime.abort();
         this.generation += 1;
         this.subscriptions.unsubscribe();
-        this.relay.stop();
+        this.room.stop();
         this.simulation?.stop();
     }
 
     private async advance(): Promise<void> {
         try {
             this.reconcileAuthority();
+            await this.recoverConnection();
+            if (this.lifetime.signal.aborted) {
+                return;
+            }
             if (!this.getView().available || !this.checkpoints) {
                 this.simulation?.pause(this.dependencies.timers.nowMs());
                 this.controls = { x: 0, z: 0, dash: this.controls.dash };
@@ -205,42 +212,52 @@ export class TownMatchSession {
     }
 
     private reconcileAuthority(): void {
-        const browser = this.dependencies.browser;
-        const snapshot = browser.rooms.current();
-        const director = browser.director.status(this.roomRef);
-        if (!snapshot || !isSameGroupRef(snapshot.group, this.roomRef) || !director.appointment) {
+        if (this.lifetime.signal.aborted) {
             return;
         }
-        const now = this.dependencies.timers.nowMs();
-        const names = browser.rooms.state().members;
-        this.members = snapshot.activeSessions.filter((session) =>
-            session.status === 'active' && session.expiresAtEpochMs > now &&
-            snapshot.members.some((member) => member.principalId === session.principalId && member.status === 'active')
-        ).map((session) => ({
-            id: session.principalId,
-            sessionId: session.sessionId,
-            displayName: names.find((member) => member.principalId === session.principalId)?.displayName ||
-                session.principalId
-        })).sort((left, right) => left.id.localeCompare(right.id));
+        const { director, members } = this.room.getView();
+        if (!director.appointment) {
+            return;
+        }
         const authority = {
             epoch: director.appointment.epoch,
             sessionId: director.appointment.sessionId,
-            members: this.members
+            members
         };
         const key = JSON.stringify([
             authority.epoch,
             authority.sessionId,
-            this.members.map((member) => [member.id, member.sessionId])
+            members.map((member) => [member.id, member.sessionId])
         ]);
-        if (key === this.authorityKey || !director.isFresh || this.members.length === 0) {
+        if (key === this.authorityKey || !director.isFresh || members.length === 0) {
             return;
         }
         const previous = this.checkpoints?.getState();
         const sameDirector = previous?.authority.epoch === authority.epoch &&
             previous.authority.sessionId === authority.sessionId;
-        const source = sameDirector && director.isDirector
-            ? this.simulation?.getState() ?? previous?.committed?.state
-            : previous?.committed?.state;
+        const source = previous?.committed?.state;
+        const newParticipant = members.some((member) =>
+            !source?.participants.some((participant) => participant.id === member.id)
+        );
+        if (
+            sameDirector && previous?.pending && newParticipant &&
+            previous.authority.members.every((member) =>
+                members.some((current) => current.id === member.id && current.sessionId === member.sessionId)
+            )
+        ) {
+            return;
+        }
+        const active = source?.phase === 'playing' || source?.phase === 'countdown';
+        const working = active && !newParticipant
+            ? computeTownMatchRecovery(source, members).right ?? source
+            : source
+            ? computeTownMatchRoster(source, members).right
+            : createTownMatch(this.dependencies.newMatchId(), members).right;
+        this.changeAuthority(authority, key, working);
+    }
+
+    private changeAuthority(authority: TownMatchAuthority, key: string, working: TownMatchState | undefined): void {
+        this.members = authority.members;
         this.authorityKey = key;
         this.generation += 1;
         if (this.checkpoints) {
@@ -249,14 +266,64 @@ export class TownMatchSession {
         else {
             this.checkpoints = new TownMatchCheckpoints(authority);
         }
-        const working = source
-            ? computeTownMatchRoster(source, this.members).right
-            : createTownMatch(this.dependencies.newMatchId(), this.members).right;
         this.simulation?.stop();
-        this.simulation = working ? new TownMatchSimulation(working, now) : undefined;
+        this.simulation = working ? new TownMatchSimulation(working, this.dependencies.timers.nowMs()) : undefined;
+        this.controls = {
+            x: 0,
+            z: 0,
+            dash: working?.players.find((player) => player.id === this.dependencies.browser.session()?.clientId)
+                ?.consumedDash ?? 0
+        };
         this.intent = undefined;
         this.lastProposal = undefined;
         this.committedProposal = undefined;
+    }
+
+    private async recoverConnection(): Promise<void> {
+        const view = this.getView();
+        if (!view.recovering) {
+            this.recoveryStartedAt = undefined;
+            if (view.match && !view.available) {
+                await this.room.refreshForRecovery();
+                this.reconcileAuthority();
+            }
+            return;
+        }
+        const now = this.dependencies.timers.nowMs();
+        this.recoveryStartedAt ??= now;
+        this.simulation?.pause(now);
+        if (now - this.recoveryStartedAt >= 10000 && view.match) {
+            this.interruptedMatchId = view.match.matchId;
+        }
+        await this.room.refreshForRecovery();
+        this.reconcileAuthority();
+        this.interruptSimulation();
+    }
+
+    private interruptSimulation(): void {
+        const view = this.getView();
+        if (this.lifetime.signal.aborted || !view.interruption || !view.isDirector || !view.match) {
+            return;
+        }
+        const source = this.checkpoints?.getState().recoveryCheckpoint?.state ?? view.match;
+        if (source.matchId !== view.match.matchId) {
+            return;
+        }
+        const state = computeTownMatchRoster(source, this.members).right;
+        const working = this.simulation?.getState();
+        const phase = source.phase === 'finished' ? 'finished' : 'interrupted';
+        if (
+            state &&
+            (working?.phase !== phase || working.tick !== state.tick ||
+                working.countdownTicks !== state.countdownTicks)
+        ) {
+            this.simulation?.stop();
+            this.simulation = new TownMatchSimulation({
+                ...state,
+                phase,
+                interruption: source.phase === 'finished' ? undefined : view.interruption
+            }, this.dependencies.timers.nowMs());
+        }
     }
 
     private async exchangeCheckpoints(): Promise<void> {
@@ -264,11 +331,34 @@ export class TownMatchSession {
             return;
         }
         const state = this.checkpoints.getState();
+        if (state.recoveryRequired && state.recoveryCheckpoint) {
+            const recovery = state.recoveryCheckpoint;
+            await this.write(this.createFrame(recovery.state.matchId, {
+                kind: 'recover',
+                digest: recovery.digest,
+                proposalSequence: recovery.sequence,
+                checkpointEpoch: recovery.epoch,
+                committed: recovery === state.committed
+            }));
+        }
         if (this.intent) {
             await this.write(this.intent);
         }
         if (this.getView().isDirector) {
-            if (!state.pending && this.simulation) {
+            if (state.committed?.epoch === state.authority.epoch) {
+                await this.write(this.createFrame(state.committed.state.matchId, {
+                    kind: 'commit',
+                    digest: state.committed.digest,
+                    proposalSequence: state.committed.sequence
+                }));
+            }
+            const recovery = this.checkpoints.getState();
+            const phase = this.simulation?.getState().phase;
+            if (
+                !state.pending && this.simulation &&
+                (!recovery.recoveryRequired || recovery.recovered || phase === 'lobby' || phase === 'interrupted')
+            ) {
+                this.restoreRecovery(recovery);
                 await this.propose();
             }
             const committedProposal = this.committedProposal;
@@ -294,6 +384,24 @@ export class TownMatchSession {
         }
     }
 
+    private restoreRecovery(recovery: TownMatchCheckpoints.State): void {
+        const source = recovery.recoveryCheckpoint?.state;
+        const view = this.getView();
+        if (
+            !recovery.recoveryRequired || !recovery.recovered || !source ||
+            (view.interruption && source.matchId === view.match?.matchId)
+        ) {
+            return;
+        }
+        const working = source.phase === 'playing' || source.phase === 'countdown'
+            ? computeTownMatchRecovery(source, this.members).right
+            : computeTownMatchRoster(source, this.members).right;
+        if (working) {
+            this.simulation?.stop();
+            this.simulation = new TownMatchSimulation(working, this.dependencies.timers.nowMs());
+        }
+    }
+
     private async propose(): Promise<void> {
         const working = this.simulation?.getState();
         if (!working) {
@@ -310,7 +418,8 @@ export class TownMatchSession {
         }
         const frame = this.createFrame(working.matchId, { kind: 'proposal', ...snapshot.right! });
         await this.receiveProposal(frame, this.dependencies.browser.session()!.sessionId);
-        if (this.isCurrent(generation)) {
+        const pending = this.checkpoints?.getState().pending?.checkpoint;
+        if (this.isCurrent(generation) && pending?.epoch === frame.epoch && pending.sequence === frame.sequence) {
             this.lastProposal = frame;
         }
     }
@@ -381,6 +490,11 @@ export class TownMatchSession {
         const current = checkpointState?.pending?.checkpoint.state ?? checkpointState?.committed?.state;
         const retained = checkpointState?.committed;
         const action = frame.action;
+        const recoveryIdentity = action.kind === 'recover' &&
+            [retained, checkpointState?.retainedProposal].some((checkpoint) =>
+                checkpoint?.state.matchId === frame.matchId && checkpoint.epoch === action.checkpointEpoch &&
+                checkpoint.sequence === action.proposalSequence && checkpoint.digest === action.digest
+            );
         const retainedIdentity = retained && frame.epoch === retained.epoch &&
             frame.matchId === retained.state.matchId &&
             ((action.kind === 'proposal' && frame.sequence === retained.sequence &&
@@ -395,7 +509,13 @@ export class TownMatchSession {
                     director: this.dependencies.browser.director.status(this.roomRef),
                     members: this.members,
                     senderId,
-                    matchId: retainedIdentity ? retained.state.matchId : nextLobby ? undefined : current?.matchId
+                    matchId: recoveryIdentity
+                        ? frame.matchId
+                        : retainedIdentity
+                        ? retained.state.matchId
+                        : nextLobby
+                        ? undefined
+                        : current?.matchId
                 }).length === 0;
     }
 
@@ -409,6 +529,14 @@ export class TownMatchSession {
             return;
         }
         const action = frame.action;
+        if (action.kind === 'recover') {
+            this.checkpoints.recover(senderId, {
+                epoch: action.checkpointEpoch,
+                sequence: action.proposalSequence,
+                digest: action.digest
+            }, action.committed);
+            return;
+        }
         if (action.kind === 'ack' || action.kind === 'commit') {
             const identity = { epoch: frame.epoch, sequence: action.proposalSequence, digest: action.digest };
             const result = action.kind === 'ack'
@@ -459,6 +587,7 @@ export class TownMatchSession {
     private publishCommit(): void {
         const committed = this.checkpoints?.getState().committed;
         this.lastCommitAt = this.dependencies.timers.nowMs();
+        this.interruptSimulation();
         if (committed && this.lastProposal?.sequence === committed.sequence) {
             this.committedProposal = this.lastProposal;
             this.lastProposal = undefined;

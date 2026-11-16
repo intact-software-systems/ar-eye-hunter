@@ -38,6 +38,19 @@ export const MATCH_SNAPSHOT_SCHEMA = {
             },
             maxItems: 4
         },
+        participants: {
+            type: 'array',
+            items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['id', 'displayName'],
+                properties: {
+                    id: { type: 'string', minLength: 1, maxLength: 128 },
+                    displayName: { type: 'string', minLength: 1, maxLength: 128 }
+                }
+            },
+            maxItems: 4
+        },
         players: {
             type: 'array',
             items: {
@@ -67,6 +80,7 @@ export const MATCH_SNAPSHOT_SCHEMA = {
         'countdownTicks',
         'remainingTicks',
         'members',
+        'participants',
         'players',
         'town',
         'results'

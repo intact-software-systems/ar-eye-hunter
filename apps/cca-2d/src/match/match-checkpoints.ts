@@ -27,6 +27,9 @@ export namespace TownMatchCheckpoints {
         readonly pending: Pending | undefined;
         readonly committed: TownCheckpoint | undefined;
         readonly recovered: boolean;
+        readonly recoveryRequired: boolean;
+        readonly recoveryCheckpoint: TownCheckpoint | undefined;
+        readonly retainedProposal: TownCheckpoint | undefined;
     }
 }
 
@@ -37,6 +40,9 @@ export class TownMatchCheckpoints {
     private committed: TownCheckpoint | undefined;
     private recoverySessions = new Set<string>();
     private recoveryRequired = false;
+    private retainedProposal: TownCheckpoint | undefined;
+    private recoveryCheckpoint: TownCheckpoint | undefined;
+    private recoveryCommitWitness = false;
 
     constructor(authority: TownMatchAuthority) {
         this.authority = authority;
@@ -47,7 +53,10 @@ export class TownMatchCheckpoints {
             authority: this.authority,
             pending: this.pending,
             committed: this.committed,
-            recovered: this.authority.members.length >= 2 &&
+            recoveryRequired: this.recoveryRequired,
+            recoveryCheckpoint: this.recoveryCheckpoint,
+            retainedProposal: this.retainedProposal,
+            recovered: this.recoveryCommitWitness && this.authority.members.length >= 2 &&
                 this.authority.members.every((member) => this.recoverySessions.has(member.sessionId))
         };
     }
@@ -77,7 +86,10 @@ export class TownMatchCheckpoints {
         ) {
             return Either.ofLeft('Checkpoint sequence must advance within the appointment.');
         }
-        const transition = validateCheckpointTransition(this.committed?.state, checkpoint.state);
+        const transition = validateCheckpointTransition(
+            (this.recoveryCheckpoint ?? this.committed)?.state,
+            checkpoint.state
+        );
         if (transition.length > 0) {
             return Either.ofLeft(transition.join(' '));
         }
@@ -127,23 +139,38 @@ export class TownMatchCheckpoints {
             return Either.ofRight(false);
         }
         this.authority = authority;
+        const pending = this.pending?.checkpoint;
+        if (pending && validateCheckpointTransition(this.retainedProposal?.state, pending.state).length === 0) {
+            this.retainedProposal = pending;
+        }
         this.pending = undefined;
         this.recoverySessions.clear();
+        this.recoveryCheckpoint = this.recoveryCheckpoint ?? this.committed;
+        this.recoveryCommitWitness = false;
         this.recoveryRequired = true;
         return Either.ofRight(true);
     }
 
-    recover(senderId: string, checkpoint: TownCheckpointIdentity): Either<string, boolean> {
+    recover(senderId: string, checkpoint: TownCheckpointIdentity, committed: boolean): Either<string, boolean> {
         if (
             this.authority.members.length < 2 ||
             !this.authority.members.some((member) => member.sessionId === senderId)
         ) {
             return Either.ofLeft('Recovery needs an appointed director and another current player.');
         }
-        if (!sameCheckpoint(this.committed, checkpoint)) {
-            return Either.ofLeft('The peer has not confirmed the locally committed recovery point.');
+        if (!sameCheckpoint(this.recoveryCheckpoint, checkpoint)) {
+            if (!committed || !sameCheckpoint(this.retainedProposal, checkpoint)) {
+                return Either.ofLeft(
+                    'Recovery must name committed state or a locally verified proposal with a commit witness.'
+                );
+            }
+            this.recoveryCheckpoint = this.retainedProposal;
+            this.pending = undefined;
+            this.recoverySessions.clear();
+            this.recoveryCommitWitness = false;
         }
         this.recoverySessions.add(senderId);
+        this.recoveryCommitWitness ||= committed;
         return Either.ofRight(this.getState().recovered);
     }
 
@@ -156,9 +183,10 @@ export class TownMatchCheckpoints {
             return false;
         }
         this.committed = pending.checkpoint;
-        if (this.committed.state.phase === 'lobby') {
-            this.recoveryRequired = false;
-        }
+        this.retainedProposal = undefined;
+        this.recoveryCheckpoint = undefined;
+        this.recoveryCommitWitness = false;
+        this.recoveryRequired = false;
         this.pending = undefined;
         return true;
     }

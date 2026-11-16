@@ -99,12 +99,20 @@ function validateTownSnapshotRelations(state: TownMatchState): readonly string[]
         ...validateTownMatchMembers(state.members, state.phase === 'interrupted' || state.phase === 'finished' ? 0 : 1)
     ];
     const playerIds = state.players.map((player) => player.id);
+    const participantIds = state.participants.map((participant) => participant.id);
+    if (
+        new Set(participantIds).size !== participantIds.length || participantIds.length !== playerIds.length ||
+        participantIds.some((id) => !playerIds.includes(id))
+    ) {
+        issues.push('Snapshot participants must match the retained round players.');
+    }
     if (new Set(playerIds).size !== playerIds.length || (playerIds.length === 0 && state.phase !== 'interrupted')) {
         issues.push('Snapshot players must have distinct identities.');
     }
     if (
         state.phase !== 'interrupted' && state.phase !== 'finished' &&
-        (state.members.length !== playerIds.length || state.members.some((member) => !playerIds.includes(member.id)))
+        ((state.phase === 'lobby' && state.members.length !== playerIds.length) ||
+            state.members.some((member) => !playerIds.includes(member.id)))
     ) {
         issues.push('Snapshot players do not match the round roster.');
     }

@@ -10,10 +10,12 @@ export const TOWN_MATCH_RATE = 30;
 export const TOWN_MATCH_DURATION = 180;
 export const TOWN_MATCH_TARGET = 100;
 
-export interface TownMatchIdentity {
+export interface TownMatchParticipant {
     readonly id: string;
-    readonly sessionId: string;
     readonly displayName: string;
+}
+export interface TownMatchIdentity extends TownMatchParticipant {
+    readonly sessionId: string;
 }
 export interface TownMatchMember extends TownMatchIdentity {
     readonly ready: boolean;
@@ -33,6 +35,7 @@ export interface TownMatchState {
     readonly countdownTicks: number;
     readonly remainingTicks: number;
     readonly members: readonly TownMatchMember[];
+    readonly participants: readonly TownMatchParticipant[];
     readonly players: readonly TownMatchPlayer[];
     readonly town: TownState;
     readonly results: readonly TownMatchResult[];
@@ -69,6 +72,7 @@ export function createTownMatch(
         countdownTicks: 0,
         remainingTicks: TOWN_MATCH_RATE * TOWN_MATCH_DURATION,
         members: ordered.map((member) => ({ ...member, ready: false })),
+        participants: ordered.map(({ id, displayName }) => ({ id, displayName })),
         players: ordered.map(createTownMatchPlayer),
         town: { ...createTownState(), companion: undefined },
         results: [],
@@ -119,8 +123,42 @@ export function computeTownMatchRoster(
             )
         })),
         players: state.phase === 'lobby' ? ordered.map(createTownMatchPlayer) : state.players,
+        participants: state.phase === 'lobby'
+            ? ordered.map(({ id, displayName }) => ({ id, displayName }))
+            : state.participants,
         phase: interrupted ? 'interrupted' : state.phase,
         interruption: interrupted ? 'The match roster changed. Ready up for a new round.' : state.interruption
+    });
+}
+
+export function computeTownMatchRecovery(
+    state: TownMatchState,
+    members: readonly TownMatchIdentity[]
+): Either<readonly string[], TownMatchState> {
+    const issues = [...validateTownMatchMembers(members, 1)];
+    if (members.length < 2 || members.some((member) => !state.participants.some((player) => player.id === member.id))) {
+        issues.push('Recovery requires at least two original round participants.');
+    }
+    if (state.phase !== 'playing' && state.phase !== 'countdown') {
+        issues.push('Only an active round can resume from a checkpoint.');
+    }
+    if (issues.length > 0) {
+        return Either.ofLeft(issues);
+    }
+    return Either.ofRight({
+        ...state,
+        members: members.toSorted((left, right) => left.id.localeCompare(right.id)).map((member) => ({
+            ...member,
+            ready: true
+        })),
+        players: state.players.map((player) => ({
+            ...player,
+            vx: 0,
+            vz: 0,
+            dash: false,
+            rescueTarget: undefined,
+            rescueProgress: 0
+        }))
     });
 }
 
@@ -145,7 +183,8 @@ export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
     }
     const tick = state.tick + 1;
     const elapsed = tick / TOWN_MATCH_RATE;
-    const moved = state.players.map((player) => advanceTownMatchPlayer(input, player));
+    const moved = state.players.filter((player) => state.members.some((member) => member.id === player.id))
+        .map((player) => advanceTownMatchPlayer(input, player));
     const world = computeTownWorld({
         town: state.town,
         players: moved,
@@ -153,11 +192,10 @@ export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
         now: elapsed,
         step: 1 / TOWN_MATCH_RATE
     });
-    const players = moved.map((player) => ({
-        ...player,
-        ...world.players.find((actor) => actor.id === player.id)!,
-        elapsed
-    }));
+    const players = state.players.map((player) => {
+        const active = moved.find((actor) => actor.id === player.id);
+        return active ? { ...active, ...world.players.find((actor) => actor.id === player.id)!, elapsed } : player;
+    });
     const remainingTicks = Math.max(0, state.remainingTicks - 1);
     const finished = remainingTicks === 0;
     return {
@@ -170,7 +208,7 @@ export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
         results: finished
             ? players.map((player) => ({
                 id: player.id,
-                displayName: state.members.find((member) => member.id === player.id)!.displayName,
+                displayName: state.participants.find((participant) => participant.id === player.id)!.displayName,
                 score: player.score,
                 rescues: player.rescues,
                 qualified: player.score >= TOWN_MATCH_TARGET
