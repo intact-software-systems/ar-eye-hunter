@@ -61,11 +61,10 @@ changes and nonterminal state resume the same owned loop when the scene remains
 mounted. Input, pointer capture, motion history and frame timing reset at that
 transition; room, bracket and React subscriptions stay live.
 
-`scene/start-capped-render-loop.ts` is the Babylon driver adapter for gameplay. Through
-`scene/gpu-frame-pacer.ts` it draws a frame only after the GPU has executed the previous one, so at most
+`scene/start-capped-render-loop.ts` is the Babylon driver adapter for gameplay. It
+draws a frame only after the GPU has executed the previous one, so at most
 one frame waits in the GPU process. Without that bound a software-rendered (SwiftShader) scene queues
-several frames there, and the synchronous WebGL calls of a page unload or of another tab's scene start
-wait for the whole queue. The opening is a static project-rendered image with no graphics lifetime. The framework-independent mechanism lives in
+several frames there, and the context teardown of a page unload waits for the whole queue. The opening is a static project-rendered image with no graphics lifetime. The framework-independent mechanism lives in
 `packages/shared/resilience/timing/capped-frame-loop.ts`; it never imports Babylon
 or React. `read-relic-frame-readiness.ts` checks the active visible mesh materials,
 applicable glow passes/composition, camera and pending data before and after drawing.

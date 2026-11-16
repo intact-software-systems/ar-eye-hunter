@@ -20,23 +20,42 @@ class FakeGpu {
     readonly SYNC_STATUS = 0x9114;
     readonly SIGNALED = 0x9119;
     executed = false;
+    lost = false;
+    liveFences = 0;
 
     fenceSync(): WebGLSync {
         this.executed = false;
+        this.liveFences += 1;
         return {};
     }
 
-    getSyncParameter(): number {
+    getSyncParameter(): number | null {
+        if (this.lost) {
+            return null;
+        }
         return this.executed ? this.SIGNALED : 0x9118;
     }
 
-    deleteSync(): void {}
+    deleteSync(): void {
+        this.liveFences -= 1;
+    }
 
     flush(): void {}
 
     isContextLost(): boolean {
-        return false;
+        return this.lost;
     }
+}
+
+function countDraws(): { readonly draws: () => number; readonly renderFrame: () => 'ready'; } {
+    let draws = 0;
+    return {
+        draws: () => draws,
+        renderFrame: () => {
+            draws += 1;
+            return 'ready';
+        }
+    };
 }
 
 describe('Relic gameplay render loop', () => {
@@ -52,46 +71,44 @@ describe('Relic gameplay render loop', () => {
     it('draws the next frame only once the GPU has executed the previous one', () => {
         const engine = new FakeEngine();
         const gpu = new FakeGpu();
-        let draws = 0;
-        const loop = startCappedRenderLoop({
-            engine,
-            gpu,
-            frameIntervalMs: 10,
-            renderFrame: () => {
-                draws += 1;
-                return 'ready';
-            }
-        });
-        expect(draws).toBe(1);
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+        expect(frame.draws()).toBe(1);
 
         nowMs = 20;
         engine.frame?.();
         nowMs = 40;
         engine.frame?.();
-        expect(draws).toBe(1);
+        expect(frame.draws()).toBe(1);
 
         gpu.executed = true;
         nowMs = 60;
         engine.frame?.();
-        expect(draws).toBe(2);
+        expect(frame.draws()).toBe(2);
+        expect(gpu.liveFences).toBe(1);
+        loop.dispose();
+    });
+
+    it('does not wait on the fence of a lost context', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+
+        gpu.lost = true;
+        nowMs = 20;
+        engine.frame?.();
+        expect(frame.draws()).toBe(2);
         loop.dispose();
     });
 
     it('keeps drawing every capped frame where the browser offers no GPU fences', () => {
         const engine = new FakeEngine();
-        let draws = 0;
-        const loop = startCappedRenderLoop({
-            engine,
-            gpu: null,
-            frameIntervalMs: 10,
-            renderFrame: () => {
-                draws += 1;
-                return 'ready';
-            }
-        });
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu: null, frameIntervalMs: 10, renderFrame: frame.renderFrame });
         nowMs = 20;
         engine.frame?.();
-        expect(draws).toBe(2);
+        expect(frame.draws()).toBe(2);
         loop.dispose();
     });
 });
