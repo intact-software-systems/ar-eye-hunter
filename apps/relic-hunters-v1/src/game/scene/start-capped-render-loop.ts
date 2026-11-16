@@ -9,10 +9,10 @@ type GpuFenceContext = Pick<
     | 'fenceSync'
     | 'flush'
     | 'getSyncParameter'
-    | 'isContextLost'
     | 'SIGNALED'
     | 'SYNC_GPU_COMMANDS_COMPLETE'
     | 'SYNC_STATUS'
+    | 'UNSIGNALED'
 >;
 
 export interface StartCappedRenderLoopInput {
@@ -68,12 +68,15 @@ class GpuFramePacer {
         if (this.previousFrame === null) {
             return true;
         }
-        const executed = this.context.isContextLost() ||
-            this.context.getSyncParameter(this.previousFrame, this.context.SYNC_STATUS) === this.context.SIGNALED;
-        if (executed) {
-            this.context.deleteSync(this.previousFrame);
-            this.previousFrame = null;
+        const status = this.context.getSyncParameter(this.previousFrame, this.context.SYNC_STATUS);
+        if (status === this.context.UNSIGNALED) {
+            return false;
         }
-        return executed;
+        // A sync of a lost context reads null, also after a restore, and has nothing left to delete.
+        if (status === this.context.SIGNALED) {
+            this.context.deleteSync(this.previousFrame);
+        }
+        this.previousFrame = null;
+        return true;
     }
 }
