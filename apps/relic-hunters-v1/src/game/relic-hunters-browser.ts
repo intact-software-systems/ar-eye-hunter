@@ -53,7 +53,7 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         sendRestCommand: sendRelicCommand,
         fetchSnapshot: fetchRelicSnapshot
     });
-    const roomChange = createRelicRoomChangeDependencies(expeditionParticipation);
+    const roomChange = createDefaultRelicRoomChangeDependencies(expeditionParticipation);
     const authority = createRelicAuthorityClientBridge(rallar);
     return {
         createRequestId: () => crypto.randomUUID(),
@@ -185,7 +185,7 @@ function withRelicParticipationLock<T>(roomId: string, sessionId: string, run: (
     return navigator.locks.request(`relic-expedition:${JSON.stringify([roomId, sessionId])}`, run);
 }
 
-function createRelicRoomChangeDependencies(
+function createDefaultRelicRoomChangeDependencies(
     participation: RelicExpeditionParticipation
 ): RelicRoomChangeDependencies {
     return {
