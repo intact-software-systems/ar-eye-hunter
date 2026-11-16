@@ -25,6 +25,11 @@ const COLUMNS = [
     'rerouting membership share',
     'max joiner edges',
     'degree limit',
+    'kinds attach/repair/reshape',
+    'promoted kinds attach/repair/reshape',
+    'rerouting kinds attach/repair/reshape',
+    'reshape reasons',
+    'rerouted per reshape min/p50/p90/max',
     'causes join/leave/leader-change/config/rtt',
     'uncaused',
     'longest path hops first/last/max'
@@ -50,6 +55,18 @@ const CHURN: TopologyChurnPhaseReport = {
     reroutingMembershipPlanShare: 0.36363636363636365,
     maxJoinerEdgesPerSession: 2,
     degreeLimit: 3,
+    plansByKind: { attach: 6, repair: 2, reshape: 3 },
+    promotedPlansByKind: { attach: 5, repair: 2, reshape: 2 },
+    reroutingPlansByKind: { attach: 0, repair: 0, reshape: 3 },
+    reshapesByReason: {
+        'leader-rooting': 0,
+        'delta-too-large': 1,
+        'update-failed': 0,
+        'invariant-violation': 0,
+        'kind-change': 0,
+        refinement: 2
+    },
+    reroutedSessionsPerReshape: { min: 1, median: 2, p90: 3, max: 3 },
     plansByCause: { join: 7, leave: 5, 'leader-change': 0, config: 0, rtt: 1 },
     uncausedPlanCount: 0,
     longestPathHops: { first: 2, last: 3, max: 4 }
@@ -77,6 +94,18 @@ const EMPTY_FORMATION: TopologyChurnPhaseReport = {
     reroutingMembershipPlanShare: null,
     maxJoinerEdgesPerSession: 0,
     degreeLimit: null,
+    plansByKind: { attach: 0, repair: 0, reshape: 0 },
+    promotedPlansByKind: { attach: 0, repair: 0, reshape: 0 },
+    reroutingPlansByKind: { attach: 0, repair: 0, reshape: 0 },
+    reshapesByReason: {
+        'leader-rooting': 0,
+        'delta-too-large': 0,
+        'update-failed': 0,
+        'invariant-violation': 0,
+        'kind-change': 0,
+        refinement: 0
+    },
+    reroutedSessionsPerReshape: null,
     plansByCause: { join: 0, leave: 0, 'leader-change': 0, config: 0, rtt: 0 },
     longestPathHops: null
 };
@@ -128,6 +157,11 @@ describe('toTopologyChurnMarkdownTable', () => {
             '0.36',
             '2',
             '3',
+            '6 / 2 / 3',
+            '5 / 2 / 2',
+            '0 / 0 / 3',
+            'delta-too-large: 1, refinement: 2',
+            '1 / 2 / 3 / 3',
             '7 / 5 / 0 / 0 / 1',
             '0',
             '2 / 3 / 4'
@@ -156,6 +190,11 @@ describe('toTopologyChurnMarkdownTable', () => {
             '0',
             '—',
             '0',
+            '—',
+            '0 / 0 / 0',
+            '0 / 0 / 0',
+            '0 / 0 / 0',
+            '—',
             '—',
             '0 / 0 / 0 / 0 / 0',
             '0',

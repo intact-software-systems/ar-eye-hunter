@@ -12,6 +12,10 @@ import type {
     TopologyLayoutDelta,
     TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+import {
+    TOPOLOGY_RESHAPE_REASONS,
+    type TopologyPlanChange
+} from '@shared/api/topology-plan/topology-plan-change.ts';
 import { describe, expect, it } from 'vitest';
 
 const OVERLAP_MS = 7_500;
@@ -30,6 +34,7 @@ interface TestPlanInput {
     readonly replacedAgeMs?: number | null;
     readonly causes?: readonly TopologyReplanCause[];
     readonly delta?: Partial<TopologyLayoutDelta>;
+    readonly change?: TopologyPlanChange;
     readonly longestPathHops?: number;
     readonly degreeLimit?: number;
 }
@@ -65,7 +70,7 @@ function createPlan(input: TestPlanInput): AdminRoomTopologyPlan {
             causes: input.causes ?? ['join'],
             delta,
             longestPathHops: input.longestPathHops ?? 1,
-            change: isEmptyTopologyLayoutDelta(delta) ? null : { kind: 'attach' }
+            change: isEmptyTopologyLayoutDelta(delta) ? null : input.change ?? { kind: 'attach' }
         }
     };
 }
@@ -294,5 +299,95 @@ describe('computeTopologyChurnReport', () => {
         expect(phase.insideOverlapShare).toBeNull();
         expect(phase.reroutingMembershipPlanShare).toBeNull();
         expect(phase.maxJoinerEdgesPerSession).toBe(0);
+    });
+
+    it('counts plans and promoted plans by kind', () => {
+        const phase = computeFormation(
+            [
+                createPlan({ version: 1, plannedAtEpochMs: 1_000 }),
+                createPlan({ version: 2, plannedAtEpochMs: 2_000 }),
+                createPlan({ version: 3, plannedAtEpochMs: 3_000 }),
+                createPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' } }),
+                createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
+                createPlan({ version: 6, plannedAtEpochMs: 6_000, change: { kind: 'reshape', reason: 'refinement' } })
+            ],
+            [
+                { layout: toLayout(1), firstSeenAtEpochMs: 1_100 },
+                { layout: toLayout(3), firstSeenAtEpochMs: 3_100 },
+                { layout: toLayout(5), firstSeenAtEpochMs: 5_100 }
+            ]
+        );
+
+        expect(phase.plansByKind).toEqual({ attach: 3, repair: 2, reshape: 1 });
+        // Promoted: versions 1 and 3 (attaches) and 5 (a repair); the reshape was never seen.
+        expect(phase.promotedPlansByKind).toEqual({ attach: 2, repair: 1, reshape: 0 });
+        expect(phase.promotedPlanCount).toBe(3);
+    });
+
+    it('counts reshapes by reason, with every reason present at zero', () => {
+        const phase = computeFormation([
+            createPlan({ version: 1, plannedAtEpochMs: 1_000, change: { kind: 'reshape', reason: 'refinement' } }),
+            createPlan({ version: 2, plannedAtEpochMs: 2_000, change: { kind: 'reshape', reason: 'refinement' } }),
+            createPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+            createPlan({ version: 4, plannedAtEpochMs: 4_000 })
+        ]);
+
+        expect(Object.keys(phase.reshapesByReason).sort()).toEqual([...TOPOLOGY_RESHAPE_REASONS].sort());
+        expect(phase.reshapesByReason.refinement).toBe(2);
+        expect(phase.reshapesByReason['kind-change']).toBe(1);
+        expect(Object.values(phase.reshapesByReason).reduce((sum, count) => sum + count, 0)).toBe(3);
+    });
+
+    it('an identity-only plan belongs to no kind', () => {
+        const phase = computeFormation([
+            createPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, causes: ['rtt'] }),
+            createPlan({ version: 2, plannedAtEpochMs: 2_000 })
+        ]);
+
+        expect(phase.planCount).toBe(2);
+        expect(phase.identityOnlyPlanCount).toBe(1);
+        expect(phase.plansByKind).toEqual({ attach: 1, repair: 0, reshape: 0 });
+    });
+
+    it('reports what a reshape rerouted against what an attach or a repair did', () => {
+        const reshape = (version: number, reroutedSessionCount: number): AdminRoomTopologyPlan =>
+            createPlan({
+                version,
+                plannedAtEpochMs: version * 1_000,
+                delta: { reroutedSessionCount },
+                change: { kind: 'reshape', reason: 'leader-rooting' }
+            });
+        const phase = computeFormation([
+            reshape(1, 2),
+            reshape(2, 5),
+            reshape(3, 8),
+            createPlan({ version: 4, plannedAtEpochMs: 4_000 }),
+            createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } })
+        ]);
+        const withoutReshape = computeFormation([createPlan({ version: 1, plannedAtEpochMs: 1_000 })]);
+
+        // Reroutes over the three reshapes, ascending [2, 5, 8]: median rank 2 → 5, p90 rank 3 → 8.
+        expect(phase.reroutedSessionsPerReshape).toEqual({ min: 2, median: 5, p90: 8, max: 8 });
+        expect(phase.reroutingPlansByKind).toEqual({ attach: 0, repair: 0, reshape: 3 });
+        expect(withoutReshape.reroutedSessionsPerReshape).toBeNull();
+    });
+
+    it('counts, per kind, the plans that rerouted a member they did not involve', () => {
+        const phase = computeFormation([
+            createPlan({ version: 1, plannedAtEpochMs: 1_000, delta: { reroutedSessionCount: 1 } }),
+            createPlan({ version: 2, plannedAtEpochMs: 2_000 }),
+            createPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 2 } }),
+            createPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 4 } }),
+            createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
+            createPlan({
+                version: 6,
+                plannedAtEpochMs: 6_000,
+                change: { kind: 'reshape', reason: 'delta-too-large' },
+                delta: { reroutedSessionCount: 3 }
+            })
+        ]);
+
+        expect(phase.plansByKind).toEqual({ attach: 2, repair: 3, reshape: 1 });
+        expect(phase.reroutingPlansByKind).toEqual({ attach: 1, repair: 2, reshape: 1 });
     });
 });

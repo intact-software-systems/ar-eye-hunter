@@ -3,12 +3,19 @@ import {
     isSameGroupLayoutIdentity,
     type GroupLayoutIdentity
 } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import type {
-    RtcTopologyPlanRecord,
-    TopologyReplanCause
+import { isEmptyTopologyLayoutDelta } from '@shared/api/topology-plan/is-empty-topology-layout-delta.ts';
+import {
+    TOPOLOGY_REPLAN_CAUSES,
+    type RtcTopologyPlanRecord,
+    type TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 
+import {
+    computeCountsByKey,
+    computeTopologyChurnKindFigures,
+    type TopologyChurnKindFigures
+} from './compute-topology-churn-kind-figures.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 
 export interface TopologyChurnPhaseWindow {
@@ -45,7 +52,7 @@ export interface TopologyChurnLongestPathHops {
 }
 
 /** Rates and shares are null when their denominator is 0; distributions are null over no values. */
-export interface TopologyChurnPhaseReport {
+export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly phase: TopologyChurnPhaseWindow['name'];
     readonly durationMs: number;
     readonly joinCount: number;
@@ -67,6 +74,8 @@ export interface TopologyChurnPhaseReport {
     readonly degreeLimit: number | null;
     readonly plansByCause: Record<TopologyReplanCause, number>;
     readonly uncausedPlanCount: number;
+    /** The reroutes of the reshape plans alone; null when the phase has none. */
+    readonly reroutedSessionsPerReshape: TopologyChurnDistribution | null;
     readonly longestPathHops: TopologyChurnLongestPathHops | null;
 }
 
@@ -106,7 +115,8 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 ...computePromotionFigures(figures),
                 ...computeOverlapFigures(figures),
                 ...computeEdgeFigures(figures.plans),
-                ...computeCauseFigures(figures.plans)
+                ...computeCauseFigures(figures.plans),
+                ...computeKindFigures(figures)
             };
         }),
         outsidePhasesPlanCount: plans.filter((plan) => !input.phases.some((phase) => isWithinPhase(plan, phase))).length
@@ -121,14 +131,42 @@ function isWithinPhase(plan: PlannedTopologyPlan, phase: TopologyChurnPhaseWindo
 function computePromotionFigures(
     input: ComputePhaseFiguresInput
 ): Pick<TopologyChurnPhaseReport, 'promotedPlanCount' | 'promotionsPerMinute' | 'promotionLagMs'> {
-    const lagsMs = input.plans.flatMap((plan) => {
-        const sighting = input.sightings.find((candidate) => isSameGroupLayoutIdentity(candidate.layout, plan.layout));
-        return sighting === undefined ? [] : [Math.max(0, sighting.firstSeenAtEpochMs - plan.plan.plannedAtEpochMs)];
-    });
+    const lagsMs = selectPromotedPlans(input).map((promoted) => promoted.lagMs);
     return {
         promotedPlanCount: lagsMs.length,
         promotionsPerMinute: computePerMinute(lagsMs.length, input.durationMs),
         promotionLagMs: computeDistribution(lagsMs)
+    };
+}
+
+interface PromotedPlan {
+    readonly plan: PlannedTopologyPlan;
+    readonly lagMs: number;
+}
+
+function selectPromotedPlans(input: ComputePhaseFiguresInput): readonly PromotedPlan[] {
+    return input.plans.flatMap((plan) => {
+        const sighting = input.sightings.find((candidate) => isSameGroupLayoutIdentity(candidate.layout, plan.layout));
+        return sighting === undefined
+            ? []
+            : [{ plan, lagMs: Math.max(0, sighting.firstSeenAtEpochMs - plan.plan.plannedAtEpochMs) }];
+    });
+}
+
+function computeKindFigures(
+    input: ComputePhaseFiguresInput
+): TopologyChurnKindFigures & Pick<TopologyChurnPhaseReport, 'reroutedSessionsPerReshape'> {
+    const records = input.plans.map((plan) => plan.plan);
+    return {
+        ...computeTopologyChurnKindFigures({
+            records,
+            promotedRecords: selectPromotedPlans(input).map((promoted) => promoted.plan.plan)
+        }),
+        reroutedSessionsPerReshape: computeDistribution(
+            records.filter((record) => record.change?.kind === 'reshape').map((record) =>
+                record.delta.reroutedSessionCount
+            )
+        )
     };
 }
 
@@ -153,7 +191,7 @@ function computeEdgeFigures(plans: readonly PlannedTopologyPlan[]): Pick<
     | 'degreeLimit'
     | 'longestPathHops'
 > {
-    const edgeChanging = plans.map((plan) => plan.plan).filter((record) => !isIdentityOnly(record));
+    const edgeChanging = plans.map((plan) => plan.plan).filter((record) => !isEmptyTopologyLayoutDelta(record.delta));
     return {
         identityOnlyPlanCount: plans.length - edgeChanging.length,
         changedSessionsPerPlan: computeDistribution(edgeChanging.map((record) => record.delta.changedSessionCount)),
@@ -163,10 +201,6 @@ function computeEdgeFigures(plans: readonly PlannedTopologyPlan[]): Pick<
         degreeLimit: plans.length === 0 ? null : Math.max(...plans.map((plan) => plan.degreeLimit)),
         longestPathHops: computeLongestPathHops(edgeChanging)
     };
-}
-
-function isIdentityOnly(record: RtcTopologyPlanRecord): boolean {
-    return Object.values(record.delta).every((count) => count === 0);
 }
 
 function computeLongestPathHops(
@@ -202,13 +236,7 @@ function computeCauseFigures(
 function computePlansByCause(records: readonly RtcTopologyPlanRecord[]): Record<TopologyReplanCause, number> {
     const countPlans = (cause: TopologyReplanCause): number =>
         records.filter((record) => record.causes.includes(cause)).length;
-    return {
-        join: countPlans('join'),
-        leave: countPlans('leave'),
-        'leader-change': countPlans('leader-change'),
-        config: countPlans('config'),
-        rtt: countPlans('rtt')
-    };
+    return computeCountsByKey(TOPOLOGY_REPLAN_CAUSES, countPlans);
 }
 
 function computePerMinute(count: number, durationMs: number): number | null {

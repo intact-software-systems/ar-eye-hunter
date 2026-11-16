@@ -38,6 +38,11 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['rerouting membership share', (phase) => toFixedFigure(phase.reroutingMembershipPlanShare, 2)],
     ['max joiner edges', (phase) => String(phase.maxJoinerEdgesPerSession)],
     ['degree limit', (phase) => phase.degreeLimit === null ? NO_FIGURE : String(phase.degreeLimit)],
+    ['kinds attach/repair/reshape', (phase) => toKindFigure(phase.plansByKind)],
+    ['promoted kinds attach/repair/reshape', (phase) => toKindFigure(phase.promotedPlansByKind)],
+    ['rerouting kinds attach/repair/reshape', (phase) => toKindFigure(phase.reroutingPlansByKind)],
+    ['reshape reasons', (phase) => toReshapeReasonFigure(phase.reshapesByReason)],
+    ['rerouted per reshape min/p50/p90/max', (phase) => toDistributionFigure(phase.reroutedSessionsPerReshape)],
     ['causes join/leave/leader-change/config/rtt', (phase) => toCauseFigure(phase.plansByCause)],
     ['uncaused', (phase) => String(phase.uncausedPlanCount)],
     ['longest path hops first/last/max', (phase) => toLongestPathFigure(phase.longestPathHops)]
@@ -73,6 +78,15 @@ function toDistributionFigure(distribution: TopologyChurnDistribution | null): s
 function toCauseFigure(plansByCause: TopologyChurnPhaseReport['plansByCause']): string {
     return [plansByCause.join, plansByCause.leave, plansByCause['leader-change'], plansByCause.config, plansByCause.rtt]
         .join(' / ');
+}
+
+function toKindFigure(counts: TopologyChurnPhaseReport['plansByKind']): string {
+    return [counts.attach, counts.repair, counts.reshape].join(' / ');
+}
+
+function toReshapeReasonFigure(reshapesByReason: TopologyChurnPhaseReport['reshapesByReason']): string {
+    const reasons = Object.entries(reshapesByReason).filter(([, count]) => count > 0);
+    return reasons.length === 0 ? NO_FIGURE : reasons.map(([reason, count]) => `${reason}: ${count}`).join(', ');
 }
 
 function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']): string {
