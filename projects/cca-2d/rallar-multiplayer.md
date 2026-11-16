@@ -97,7 +97,7 @@ rules to a human roster without duplicating their single-player implementation.
       preserve the full existing prank, creature, cleanup and authority behavior.
 - [x] Use dedicated Rallar director appointment, current roster/session identity
       and room-scoped channels. Validate protocol/build, scope, match, epoch and sequence.
-- [ ] Render each player with a distinct identity; show lobby readiness, director,
+- [x] Render each player with a distinct identity; show lobby readiness, director,
       countdown, round timer, individual scores, shared danger and multiple qualifiers.
 - [ ] Implement acknowledged checkpoint commitment and bounded recovery with
       current server authority. Clear old controls on a new epoch. Missing agreement
@@ -466,12 +466,13 @@ observers see the live clock with controls hidden and their position unchanged.
 Phone-sized active and observer screenshots were inspected. Rule and snapshot
 tests cover retained nonzero scores, stale-session input rejection, exact deadline
 expiry, rematch reset and invalid seat records. The trial wire build is now
-`grumpy-town-v3`; all players must refresh together.
+`grumpy-town-v4`; all players must refresh together. The current revision adds
+the bounded display name to each authenticated Ready message.
 
 Deadlines use the appointed host's epoch clock, preserved in confirmed state;
 cross-device clock skew is not yet qualified. The later lifecycle trials below
-cover silent loss and old-host return. Physical backgrounding, shared rescue/full-round
-browser results and secure phone access remain required before release.
+cover silent loss and old-host return. Physical backgrounding, shared human rescue,
+multiple-qualifier browser results and secure phone access remain required before release.
 
 ### Same-page recovery and local exit
 
@@ -558,15 +559,46 @@ One remaining lifecycle case is a three-player silent outage or suspension follo
 by takeover and return without a delivered socket-close callback. The observed-close
 return test does not establish that transition; retain it in reliability qualification.
 
-The phone-sized observer and offline-exit captures keep controls and exits visible.
-The interrupted-results capture also exposes raw principal-ID fallbacks for some
-peers. Preserve readable participant names through recovery before release; the
-current score/identity checks do not establish that presentation quality.
+### Readable names and shared-round acceptance
+
+Each Ready intent carries the local authenticated session's username as its display
+name. The host binds it to the authenticated sender's existing seat and accepts
+updates only in the lobby. The participant name then stays with the round through
+recovery and results. A lobby roster refresh preserves already submitted names
+for the same session; readiness from a replacement session must be submitted again.
+Names are presentation data, not authorization or score identity.
+
+Rallar's strict client-state collection intentionally exposes only the caller's
+private state. Refreshing people therefore cannot populate every peer's profile.
+CCA exchanges the small display label through its existing authenticated room
+messages; no server permissions or private-profile reads are widened. Old trial
+tabs must reload for the mandatory Ready field in `grumpy-town-v4`.
+
+The new browser acceptance uses two independent accounts and normal controls to
+tip the apple stall, credit the initiating player, observe shared fruit and owner
+cleanup, complete the real three-minute clock and enter a fresh ready/start cycle.
+World assertions select observed snapshots using each page's rendered committed
+match identity, phase and tick; a commit message alone is not evidence of acceptance.
+The test never injects world state or advances the test clock. Shared rescue and multiple
+qualifiers still need their own browser evidence; this scenario does not prove them.
+
+The [shared fruit-prank capture](visual-concepts/rallar-shared-fruit-phone.png)
+and [round results](visual-concepts/rallar-shared-results-phone.png) show actual
+phone-sized multiplayer gameplay and named results, including the initiating
+player's ten-point reward. This is browser evidence, not physical-device qualification.
+
+The combined 21-scenario match/recovery browser run passes, including the full
+three-minute round with committed-state observations and a clean rematch. All
+128 CCA domain tests, focused typecheck and production build pass. Review corrected
+both premature test observation of commit messages and names lost during recovery;
+regressions protect those cases. CCA browser tests are explicitly owned as manual
+trials in `tests/manual-suites.json`; test reachability passes. These results do
+not close the remaining human-rescue, multiple-qualifier or physical-phone checks.
 
 The next two useful outcomes remain concrete:
 
 1. Complete match reliability: delayed/dropped checkpoint traffic across rematch,
-   shared prank/freeze/rescue and full results, stale authority, two-player interruption,
+   shared human freeze/rescue and multiple qualifiers, stale authority, two-player interruption,
    and three-player host succession with a surviving committed backup. Preserve the
    original acceptance criteria above; retained participants and active controllers
    must be separated when continuing after a departure.

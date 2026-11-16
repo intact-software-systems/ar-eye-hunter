@@ -43,9 +43,7 @@ export interface TownMatchState {
     readonly results: readonly TownMatchResult[];
     readonly interruption: string | undefined;
 }
-export interface TownMatchReady {
-    readonly id: string;
-    readonly sessionId: string;
+export interface TownMatchReady extends TownMatchIdentity {
     readonly ready: boolean;
 }
 export interface TownMatchTick {
@@ -90,13 +88,21 @@ export function createTownMatch(
 }
 
 export function computeTownMatchReady(state: TownMatchState, ready: TownMatchReady): TownMatchState {
-    if (state.phase !== 'lobby') {
+    if (
+        state.phase !== 'lobby' || !ready.displayName.trim() || ready.displayName.length > 128 ||
+        !state.members.some((member) => member.id === ready.id && member.sessionId === ready.sessionId)
+    ) {
         return state;
     }
     return {
         ...state,
         members: state.members.map((member) =>
-            member.id === ready.id && member.sessionId === ready.sessionId ? { ...member, ready: ready.ready } : member
+            member.id === ready.id && member.sessionId === ready.sessionId
+                ? { ...member, ready: ready.ready, displayName: ready.displayName }
+                : member
+        ),
+        participants: state.participants.map((participant) =>
+            participant.id === ready.id ? { ...participant, displayName: ready.displayName } : participant
         )
     };
 }
@@ -123,18 +129,17 @@ export function computeTownMatchRoster(
         );
     const interrupted = changed && (state.phase === 'countdown' || state.phase === 'playing' ||
         (state.phase === 'lobby' && ordered.length === 0));
+    const roster = ordered.map((member) => {
+        const previous = state.members.find((entry) => entry.id === member.id && entry.sessionId === member.sessionId);
+        return { ...member, displayName: previous?.displayName ?? member.displayName, ready: previous?.ready ?? false };
+    });
     return Either.ofRight({
         ...state,
-        members: ordered.map((member) => ({
-            ...member,
-            ready: state.members.some((previous) =>
-                previous.id === member.id && previous.sessionId === member.sessionId && previous.ready
-            )
-        })),
+        members: roster,
         players: state.phase === 'lobby' ? ordered.map(createTownMatchPlayer) : state.players,
         seats: state.phase === 'lobby' ? createTownMatchSeats(ordered) : state.seats,
         participants: state.phase === 'lobby'
-            ? ordered.map(({ id, displayName }) => ({ id, displayName }))
+            ? roster.map(({ id, displayName }) => ({ id, displayName }))
             : state.participants,
         phase: interrupted ? 'interrupted' : state.phase,
         interruption: interrupted ? 'The match roster changed. Ready up for a new round.' : state.interruption
@@ -169,6 +174,8 @@ export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<re
         }),
         members: members.toSorted((left, right) => left.id.localeCompare(right.id)).map((member) => ({
             ...member,
+            displayName: state.participants.find((participant) => participant.id === member.id)?.displayName ??
+                member.displayName,
             ready: true
         })),
         players: state.players.map((player) => ({

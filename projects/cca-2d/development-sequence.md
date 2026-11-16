@@ -21,8 +21,10 @@ Back to solo exit. Checkpoint recovery must cover delayed proposals at a returni
 follower and exact outstanding-proposal retransmission by a briefly disconnected
 host. Focused browser trials now cover a silent host network outage, suspended
 host JavaScript and an old host returning as an observer after replacement.
-Physical Safari backgrounding, silent-outage takeover with three players and
-full-round qualification remain open.
+The shared-round acceptance now exercises a fruit prank, individual credit,
+owner cleanup, the real three-minute clock, named results and a clean rematch.
+Physical Safari backgrounding, silent-outage takeover with three players,
+human rescue and multiple-qualifier browser evidence remain open.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,
@@ -48,8 +50,9 @@ remove the Rallar-only host/recovery requirements or claim networking is complet
 The [multiplayer plan](rallar-multiplayer.md#first-live-shared-match-integration)
 records the real ready/start/shared-movement flow. The next two concrete outcomes are:
 
-1. Complete checkpoint/reconnect/host-succession reliability and full-round shared
-   interaction, rescue, results and rematch browser evidence.
+1. Complete checkpoint/reconnect/host-succession reliability and shared human
+   rescue/multiple-qualifier browser evidence, retaining the full-round results
+   and rematch acceptance.
 2. Qualify secure phone access, mixed viewport controls and phone hosting, then
    complete the existing draft PR's release validation.
 

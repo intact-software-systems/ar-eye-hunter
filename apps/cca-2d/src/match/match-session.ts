@@ -33,6 +33,9 @@ import {
 } from './town-match.ts';
 
 export namespace TownMatchSession {
+    export type Intent =
+        | Exclude<TownMatchAction, { readonly kind: 'ready'; }>
+        | { readonly kind: 'ready'; readonly ready: boolean; };
     export interface Dependencies {
         readonly browser: Pick<RallarFacade, 'director' | 'messages' | 'rooms' | 'session' | 'isConnected' | 'ws'>;
         readonly timers: Timers;
@@ -162,13 +165,18 @@ export class TownMatchSession {
         }
     }
 
-    async act(action: TownMatchAction): Promise<void> {
+    async act(action: TownMatchSession.Intent): Promise<void> {
         const state = this.checkpoints?.getState().committed?.state;
         const view = this.getView();
         if (!state || !view.available || (action.kind === 'controls' && (view.recovering || view.observing))) {
             return;
         }
-        const frame = this.createFrame(state.matchId, action);
+        const frame = this.createFrame(
+            state.matchId,
+            action.kind === 'ready'
+                ? { ...action, displayName: this.dependencies.browser.session()?.username ?? '' }
+                : action
+        );
         if (action.kind === 'ready' || action.kind === 'start' || action.kind === 'rematch') {
             this.intent = frame;
         }

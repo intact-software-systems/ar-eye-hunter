@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'cca.match.v1',
-    build: 'grumpy-town-v3',
+    build: 'grumpy-town-v4',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -53,6 +53,7 @@ describe('Rallar match protocol admission', () => {
                 { ...frame, build: 'old' },
                 { ...frame, build: 'grumpy-town-v1' },
                 { ...frame, build: 'grumpy-town-v2' },
+                { ...frame, build: 'grumpy-town-v3' },
                 { ...frame, epoch: -1 },
                 { ...frame, sequence: 1.5 },
                 { ...frame, roomRef: { groupId: 'town' } },
@@ -65,6 +66,18 @@ describe('Rallar match protocol admission', () => {
         }
         expect(decodeTownMatchFrame('x'.repeat(300_000)).left).toBeDefined();
         expect(decodeTownMatchFrame(frame).left).toBeDefined();
+        const ready = { kind: 'ready', ready: true, displayName: 'Bob' };
+        expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: ready })).right?.action).toEqual(ready);
+        for (
+            const action of [
+                { kind: 'ready', ready: true },
+                { ...ready, displayName: '' },
+                { ...ready, displayName: 'x'.repeat(129) },
+                { ...ready, playerId: 'alice' }
+            ]
+        ) {
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).left).toBeDefined();
+        }
         const recovery = { kind: 'recover', digest: 'a'.repeat(64), checkpointEpoch: 2, proposalSequence: 10 };
         expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: recovery })).left).toBeDefined();
         for (const committed of [false, true]) {

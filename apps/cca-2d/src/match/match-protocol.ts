@@ -9,10 +9,10 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { TownMatchIdentity } from './town-match.ts';
 
 export const TOWN_MATCH_PROTOCOL = 'cca.match.v1';
-export const TOWN_MATCH_BUILD = 'grumpy-town-v3';
+export const TOWN_MATCH_BUILD = 'grumpy-town-v4';
 export type TownMatchAction =
     | { readonly kind: 'controls'; readonly x: number; readonly z: number; readonly dash: number; }
-    | { readonly kind: 'ready'; readonly ready: boolean; }
+    | { readonly kind: 'ready'; readonly ready: boolean; readonly displayName: string; }
     | { readonly kind: 'start'; }
     | { readonly kind: 'rematch'; readonly nextMatchId: string; }
     | { readonly kind: 'proposal'; readonly digest: string; readonly snapshot: string; }
@@ -77,8 +77,8 @@ const matchesFrame = new Ajv({ strict: true }).compile<TownMatchFrame>({
                 {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['kind', 'ready'],
-                    properties: { kind: { const: 'ready' }, ready: { type: 'boolean' } }
+                    required: ['kind', 'ready', 'displayName'],
+                    properties: { kind: { const: 'ready' }, ready: { type: 'boolean' }, displayName: identity }
                 },
                 {
                     type: 'object',

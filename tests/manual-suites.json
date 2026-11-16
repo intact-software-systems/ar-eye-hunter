@@ -41,10 +41,10 @@
   },
   {
     "paths": [
-      "tests/playwright/cca-2d/practice.spec.ts"
+      "tests/playwright/cca-2d"
     ],
     "owner": "Knut-Helge Vik",
     "command": "npx playwright test --config apps/cca-2d/playwright.config.ts",
-    "reason": "Local Babylon visual and input trial before multiplayer. Run the visible control journeys manually while the cutout scene is under user evaluation."
+    "reason": "Local Babylon gameplay, Rallar social entry, shared rounds and recovery trials. Run these visible-control journeys against the isolated local Rallar server while the game is under evaluation; the current CI game lanes do not select CCA."
   }
 ]

@@ -227,6 +227,32 @@ describe('Grumpy Town match rules', () => {
         expect(reconnected.members[0].sessionId).toBe('new-session');
     });
 
+    it('keeps a confirmed ready name when a later lobby arrival brings incomplete profile data', () => {
+        const lobby = createTownMatch('named-lobby', members).right!;
+        const ready = computeTownMatchReady(lobby, { ...members[0], displayName: 'Al', ready: true });
+        const refreshed = computeTownMatchRoster(ready, [
+            ...members.map((member) => ({ ...member, displayName: member.id })),
+            { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }
+        ]).right!;
+        expect(refreshed.members.find((member) => member.id === 'alice')).toMatchObject({ displayName: 'Al', ready: true });
+        expect(refreshed.participants.find((participant) => participant.id === 'alice')?.displayName).toBe('Al');
+    });
+
+    it('retains participant names through recovery and the next unready lobby', () => {
+        const state = playingMatch();
+        const recovered = computeTownMatchRecovery({
+            state,
+            members: members.map((member) => ({ ...member, displayName: member.id })),
+            departedIds: [],
+            now: 1000
+        }).right!;
+        expect(recovered.members.map((member) => member.displayName)).toEqual(['Alice', 'Bob']);
+        const interrupted = computeTownMatchRoster(recovered, [recovered.members[0]]).right!;
+        const next = computeTownMatchRematch(interrupted, 'next-named-round').right!;
+        expect(next.participants).toEqual([{ id: 'alice', displayName: 'Alice' }]);
+        expect(next.members[0].ready).toBe(false);
+    });
+
     it('interrupts countdown and play when the room becomes empty, preserving the last world', () => {
         for (const state of [readyMatch(), playingMatch()]) {
             const empty = computeTownMatchRoster(state, []);

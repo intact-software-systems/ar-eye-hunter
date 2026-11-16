@@ -55,7 +55,11 @@ export class TownMatchSimulation {
         this.commands.set(senderId, frame.sequence);
         switch (frame.action.kind) {
             case 'ready':
-                this.state = computeTownMatchReady(this.state, { ...member, ready: frame.action.ready });
+                this.state = computeTownMatchReady(this.state, {
+                    ...member,
+                    ready: frame.action.ready,
+                    displayName: frame.action.displayName
+                });
                 break;
             case 'start':
                 this.state = computeTownMatchStart(this.state);

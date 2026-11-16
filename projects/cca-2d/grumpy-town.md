@@ -332,6 +332,9 @@ implementation commitment or a change to the multiplayer delivery sequence.
 | Post office | A clerk sorts parcels into absurdly precise piles | A disturbed trolley creates a short cleanup diversion and a route choice, without closing the street |
 | Fire station and service lane | Firefighters polish equipment beside a tiny barbecue | A small flame earns its bonus once and summons an excessive hose response; players can use the washing water to remove stains |
 | Public toilets and flower stalls | An attendant demands spotless paving | A rare Big Stink warning makes players choose cover, escape or a risky lure; the cleanup crew restores the site afterward |
+| Barber and upstairs flat | The barber displays a magnificent wig while a neighbour beats a rug | A warned gust launches the wig; the barber follows it, briefly abandoning their lookout position |
+| Laundrette and clothesline alley | A resident sorts identical white shirts with exaggerated care | A splash stains the washing; a turning clothesline briefly reveals a shortcut while the resident rescues the laundry |
+| Bus stop and newspaper booth | Commuters queue under a NEVER LATE sign for an absent bus | A disturbance scatters newspapers; the queue leader reorganizes everybody facing the wrong way, briefly opening a route |
 
 The strongest comic pattern is setup, visible warning, disproportionate reaction,
 then a short recovery. A resident should sometimes be smug or content with their
@@ -367,6 +370,28 @@ faces, furious gestures and absurd signs deliver jokes. Proposed extra character
 details include a municipal clerk protecting wet forms, a barber guarding an
 elaborate hairdo, and a bus-stop queue that solemnly reforms after every disruption.
 Do not make every decorative house or booth another mandatory interaction.
+
+Give residents different priorities during the same incident. The baker protects
+the cake, the barber catches the wig, the clerk shields paperwork and the cleaner
+attacks the stain. A witnessed prank earns a visible recognition reaction, but
+an urgent cleanup or rescue of a prized object can interrupt pursuit. These are
+proposed extensions to existing duties, not verified new NPC behaviors.
+
+One possible playable story: a player drops Big Stink beside a ceremony; the mayor
+uses a ribbon as an inadequate shield while friends duck behind the fountain.
+A previously summoned fire crew washes the area, accidentally soaking the clerk's
+forms. The player follows the cleared route to rescue a frozen friend. The comedy
+and tactical payoff come from the same readable events. Test the splash-to-washing
+connection first; the ceremony and paperwork are later staging possibilities.
+
+Keep each spectacle's identity distinct: fire is a deliberate reward-versus-response
+choice, the bomb is a warned area disruption that can catch its own user, and the
+café stream is a moving hazard to redirect. A small fire should dispatch firefighters
+even without a witness; police suspicion still follows the separate raid rules.
+For the café, favour impossible volume and dignified reactions: the inspector
+tries to keep stamping an inspection form while the waiter protects one cake.
+An eventual drain gulp or tiny-bucket cleanup supplies the ending. The original
+scene remains playable throughout, with no camera takeover or recursive vomiting.
 
 An open design choice is whether the largest incidents are rare opportunities
 players discover or deliberate plans they prepare. Recommend discoverable,
