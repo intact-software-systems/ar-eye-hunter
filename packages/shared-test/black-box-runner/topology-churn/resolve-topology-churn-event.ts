@@ -3,7 +3,7 @@ export interface TopologyChurnPresentMember {
     readonly presentSinceEpochMs: number;
 }
 
-export interface ResolveTopologyChurnEventInput {
+interface ResolveTopologyChurnEventInput {
     readonly presentMembers: readonly TopologyChurnPresentMember[];
     readonly creatorMemberId: string;
     readonly eventIndex: number;

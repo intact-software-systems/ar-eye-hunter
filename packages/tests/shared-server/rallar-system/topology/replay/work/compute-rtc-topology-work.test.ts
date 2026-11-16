@@ -41,6 +41,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import {
     computeRtcTopologyFixtureLeave,
     computeRtcTopologyFixturePlan,
@@ -158,14 +159,7 @@ describe('RTC topology work publication record', () => {
         );
 
         expect(publication.plan?.causes).toEqual([]);
-        expect(publication.plan?.delta).toEqual({
-            joinedSessionCount: 0,
-            leftSessionCount: 0,
-            changedSessionCount: 0,
-            reroutedSessionCount: 0,
-            acceptingSessionCount: 0,
-            maxJoinerEdgesPerSession: 0
-        });
+        expect(publication.plan?.delta).toEqual(EMPTY_TOPOLOGY_LAYOUT_DELTA);
     });
 
     it('validateRtcTopologyWork accepts the computed work and refuses one whose accepted record differs', () => {

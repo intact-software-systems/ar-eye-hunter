@@ -32,7 +32,7 @@ export const RTC_TOPOLOGY_STAR_OPTIONS: RallarRtcTopologyServiceOptions = {
 };
 const SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
 
-export interface RtcTopologyFixturePlanInput {
+interface RtcTopologyFixturePlanInput {
     readonly options: RallarRtcTopologyServiceOptions;
     readonly group: GroupSnapshot;
     readonly previous: RallarOverlayTopologySnapshot | undefined;
@@ -51,7 +51,7 @@ export interface RtcTopologyFixtureReplanned extends RtcTopologyFixtureReplan {
     readonly replanInput: RtcTopologyFixturePlanInput;
 }
 
-export interface RtcTopologyFixtureLeave extends RtcTopologyFixtureReplanned {
+interface RtcTopologyFixtureLeave extends RtcTopologyFixtureReplanned {
     readonly leaverSessionId: string;
 }
 
@@ -69,7 +69,7 @@ export function createRtcTopologyFixtureGroup(memberCount: number): GroupSnapsho
     return createRtcTopologyFixtureGroupOf(createRtcTopologyMemberIds(memberCount));
 }
 
-export function createRtcTopologyFixtureGroupOf(memberSessionIds: readonly string[]): GroupSnapshot {
+function createRtcTopologyFixtureGroupOf(memberSessionIds: readonly string[]): GroupSnapshot {
     return createRtcTopologyGroupSnapshot('derivation-group', memberSessionIds);
 }
 
@@ -78,7 +78,7 @@ function createRtcTopologyLedFixtureGroup(memberCount: number): GroupSnapshot {
 }
 
 /** A leaver named by its session id, or the first session of the formed layout whose next-hop count matches. */
-export type RtcTopologyFixtureLeaver = string | ((nextHopCount: number) => boolean);
+type RtcTopologyFixtureLeaver = string | ((nextHopCount: number) => boolean);
 
 export interface RtcTopologyFixtureLeaveInput {
     readonly options: RallarRtcTopologyServiceOptions;

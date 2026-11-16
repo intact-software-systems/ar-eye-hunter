@@ -2,7 +2,7 @@ import { computeNoRttTopologyNextHops } from '@shared-server/rallar-system/topol
 import { computeLongestHopPath } from '@shared-server/rallar-system/topology/planning/plan-record/compute-longest-hop-path.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-export interface ComputeTopologyChurnDriftInput {
+interface ComputeTopologyChurnDriftInput {
     readonly layout: Pick<
         RallarOverlayTopologySnapshot,
         'topology' | 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'

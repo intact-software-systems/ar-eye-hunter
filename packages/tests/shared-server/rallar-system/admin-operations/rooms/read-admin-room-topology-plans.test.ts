@@ -13,11 +13,19 @@ import {
 
 const NOW = 5_000;
 
+interface StoreInput {
+    readonly ref: GroupRef;
+    readonly workId: string;
+    readonly version: number;
+    readonly state?: 'active' | 'removed';
+    readonly live?: boolean;
+}
+
 async function createReader() {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const reader = new ReadAdminRoomTopologyPlans({ publications, nowEpochMs: () => NOW });
-    async function store(ref: GroupRef, workId: string, version: number, state: 'active' | 'removed' = 'active', live = true) {
+    async function store({ ref, workId, version, state = 'active', live = true }: StoreInput) {
         const snapshot = state === 'active'
             ? createTopologySnapshot(ref, version)
             : { ...createTopologySnapshot(ref, version), state, nextHopsBySessionId: { 'session-a': [], 'session-b': [] } };
@@ -36,8 +44,8 @@ async function createReader() {
 it('lists only the room\'s own publications, never a room whose id extends it', async () => {
     const { reader, store } = await createReader();
     const roomRef = createGroupRef();
-    const own = await store(roomRef, 'work-own', 1);
-    await store({ ...roomRef, groupId: `${roomRef.groupId}-2` }, 'work-extending', 1);
+    const own = await store({ ref: roomRef, workId: 'work-own', version: 1 });
+    await store({ ref: { ...roomRef, groupId: `${roomRef.groupId}-2` }, workId: 'work-extending', version: 1 });
 
     const response = await reader.read({ roomRef, limit: 10, afterPublicationId: null });
 
@@ -49,7 +57,7 @@ it('pages with a cursor and names the next cursor only when more remain', async 
     const roomRef = createGroupRef();
     const ids: string[] = [];
     for (const workId of ['work-a', 'work-b', 'work-c']) {
-        ids.push((await store(roomRef, workId, 1)).publicationId);
+        ids.push((await store({ ref: roomRef, workId, version: 1 })).publicationId);
     }
     ids.sort();
 
@@ -65,7 +73,7 @@ it('pages with a cursor and names the next cursor only when more remain', async 
 it('serves the layout\'s identity, kind, size and record, not its edges', async () => {
     const { reader, store } = await createReader();
     const roomRef = createGroupRef();
-    const publication = await store(roomRef, 'work-one', 3);
+    const publication = await store({ ref: roomRef, workId: 'work-one', version: 3 });
 
     const response = await reader.read({ roomRef, limit: 10, afterPublicationId: null });
 
@@ -89,7 +97,7 @@ it('serves the layout\'s identity, kind, size and record, not its edges', async 
 it('serves a removal with a null plan', async () => {
     const { reader, store } = await createReader();
     const roomRef = createGroupRef();
-    await store(roomRef, 'work-removed', 4, 'removed');
+    await store({ ref: roomRef, workId: 'work-removed', version: 4, state: 'removed' });
 
     const response = await reader.read({ roomRef, limit: 10, afterPublicationId: null });
 
@@ -102,7 +110,7 @@ it('a walk that follows the cursor sees every live publication once when expired
     const roomRef = createGroupRef();
     const expectedIds: string[] = [];
     for (const [workId, live] of [['work-1', true], ['work-2', false], ['work-3', false], ['work-4', true], ['work-5', true]] as const) {
-        const publication = await store(roomRef, workId, 1, 'active', live);
+        const publication = await store({ ref: roomRef, workId, version: 1, state: 'active', live });
         if (live) {
             expectedIds.push(publication.publicationId);
         }
@@ -124,8 +132,8 @@ it('a walk that follows the cursor sees every live publication once when expired
 it('returns no plans and no cursor for a room whose publications are all expired', async () => {
     const { reader, store } = await createReader();
     const roomRef = createGroupRef();
-    await store(roomRef, 'work-1', 1, 'active', false);
-    await store(roomRef, 'work-2', 1, 'active', false);
+    await store({ ref: roomRef, workId: 'work-1', version: 1, state: 'active', live: false });
+    await store({ ref: roomRef, workId: 'work-2', version: 1, state: 'active', live: false });
 
     const response = await reader.read({ roomRef, limit: 1, afterPublicationId: null });
 
@@ -136,9 +144,9 @@ it('returns no plans and no cursor for a room whose publications are all expired
 it('ends the walk with a null cursor when only expired rows follow the last live one', async () => {
     const { reader, store } = await createReader();
     const roomRef = createGroupRef();
-    const live = await store(roomRef, 'work-1', 1);
-    await store(roomRef, 'work-2', 1, 'active', false);
-    await store(roomRef, 'work-3', 1, 'active', false);
+    const live = await store({ ref: roomRef, workId: 'work-1', version: 1 });
+    await store({ ref: roomRef, workId: 'work-2', version: 1, state: 'active', live: false });
+    await store({ ref: roomRef, workId: 'work-3', version: 1, state: 'active', live: false });
 
     const response = await reader.read({ roomRef, limit: 1, afterPublicationId: null });
 

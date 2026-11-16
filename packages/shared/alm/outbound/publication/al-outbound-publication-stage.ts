@@ -495,8 +495,15 @@ export class ALOutboundPublicationStage<TContext> {
 function computeOldestStagedAtMs<TContext>(
     selection: ALPublicationSelection<ALOutboundStagedPublication<TContext>>
 ): number | undefined {
-    const held = [...selection.selected, ...selection.remaining.flat()];
-    return held.length === 0 ? undefined : Math.min(...held.map((publication) => publication.stagedAtMs));
+    let oldest: number | undefined;
+    for (const held of [selection.selected, ...selection.remaining]) {
+        for (const publication of held) {
+            if (oldest === undefined || publication.stagedAtMs < oldest) {
+                oldest = publication.stagedAtMs;
+            }
+        }
+    }
+    return oldest;
 }
 
 function computeBytes<TContext>(publications: readonly ALOutboundStagedPublication<TContext>[]): number {

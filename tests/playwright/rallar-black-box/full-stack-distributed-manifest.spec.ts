@@ -495,11 +495,15 @@ function readHostReading(disk: StatsFs): DistributedRunHostReading {
     };
 }
 
+interface ReadRunEnvironmentInput {
+    readonly artifactDir: string;
+    readonly source: Buffer;
+    readonly participantCount: number;
+    readonly configuration: ApiV1Configuration;
+}
+
 async function readRunEnvironment(
-    artifactDir: string,
-    source: Buffer,
-    participantCount: number,
-    configuration: ApiV1Configuration
+    { artifactDir, source, participantCount, configuration }: ReadRunEnvironmentInput
 ): Promise<DistributedRunEnvironment> {
     const disk = await statfs(artifactDir);
     const read = readDistributedRunEnvironment({
@@ -552,7 +556,7 @@ function toProvenanceLimits(environment: DistributedRunEnvironment): readonly st
 
 async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
     const configuration = await readLocalApiConfiguration();
-    const environment = await readRunEnvironment(artifactDir, source, participantCount, configuration);
+    const environment = await readRunEnvironment({ artifactDir, source, participantCount, configuration });
     await writeFile(
         path.join(artifactDir, 'provenance.json'),
         JSON.stringify(

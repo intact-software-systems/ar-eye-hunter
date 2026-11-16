@@ -5,7 +5,7 @@ import {
 
 import type { TopologyChurnPromotionSighting } from './compute-topology-churn-report.ts';
 
-export interface ResolveNewPromotionSightingInput {
+interface ResolveNewPromotionSightingInput {
     readonly sightings: readonly TopologyChurnPromotionSighting[];
     readonly acceptedLayout: GroupLayoutIdentity | null;
     readonly seenAtEpochMs: number;

@@ -109,7 +109,9 @@ async function createReplayPage(secondRow: 'expired-retention' | 'malformed-v4')
         result: {
             status: 'page',
             expectedCursorSequence: 0,
-            entries: rows.map((publication, index) => toLogEntry(publication, outbox, index + 1, index === 1 && secondRow === 'expired-retention')),
+            entries: rows.map((publication, index) =>
+                toLogEntry({ publication, outbox, sequence: index + 1, expired: index === 1 && secondRow === 'expired-retention' })
+            ),
             hasMore: false,
             capturedHeadSequence: 3,
             retainedFromSequence: 1,
@@ -121,12 +123,14 @@ async function createReplayPage(secondRow: 'expired-retention' | 'malformed-v4')
     return { processor, input, sent, timeline, diagnostics };
 }
 
-function toLogEntry(
-    publication: RtcTopologyPublication,
-    outbox: readonly ResourceEntry[],
-    sequence: number,
-    expired: boolean
-): RtcTopologyDeliveryLogEntry {
+interface ToLogEntryInput {
+    readonly publication: RtcTopologyPublication;
+    readonly outbox: readonly ResourceEntry[];
+    readonly sequence: number;
+    readonly expired: boolean;
+}
+
+function toLogEntry({ publication, outbox, sequence, expired }: ToLogEntryInput): RtcTopologyDeliveryLogEntry {
     const firstPage = computeRtcTopologyPublicationOutbox(publication)[0];
     return {
         publisherStreamId: PUBLISHER_STREAM_ID,

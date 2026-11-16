@@ -24,19 +24,19 @@ export function computeTopologyLayoutDelta(
     const leaverSessionIds = [...before.keys()].filter((sessionId) => !after.has(sessionId));
     const stayerSessionIds = [...after.keys()].filter((sessionId) => before.has(sessionId));
     const dependantSessionIds = new Set(
-        leaverSessionIds.flatMap((sessionId) => [...readNeighbours(before, sessionId)])
+        leaverSessionIds.flatMap((sessionId) => [...getNeighbours(before, sessionId)])
             .filter((sessionId) => after.has(sessionId))
     );
     const comparison: TopologyLayoutComparison = { before, after, dependantSessionIds };
     const joinerEdgeCounts = stayerSessionIds.map((sessionId) =>
-        [...readNeighbours(after, sessionId)].filter((neighbour) => joinerSessionIds.has(neighbour)).length
+        [...getNeighbours(after, sessionId)].filter((neighbour) => joinerSessionIds.has(neighbour)).length
     );
     return {
         joinedSessionCount: joinerSessionIds.size,
         leftSessionCount: leaverSessionIds.length,
         changedSessionCount:
             stayerSessionIds.filter((sessionId) =>
-                !hasSameMembers(readNeighbours(before, sessionId), readNeighbours(after, sessionId))
+                !hasSameMembers(getNeighbours(before, sessionId), getNeighbours(after, sessionId))
             ).length,
         reroutedSessionCount: stayerSessionIds.filter((sessionId) => isRerouted(comparison, sessionId)).length,
         acceptingSessionCount: joinerEdgeCounts.filter((count) => count > 0).length,
@@ -59,7 +59,7 @@ function toUndirectedNeighbours(layout: TopologyLayoutEdges): ReadonlyMap<string
     return neighbours;
 }
 
-function readNeighbours(layout: ReadonlyMap<string, ReadonlySet<string>>, sessionId: string): ReadonlySet<string> {
+function getNeighbours(layout: ReadonlyMap<string, ReadonlySet<string>>, sessionId: string): ReadonlySet<string> {
     return layout.get(sessionId) ?? NO_NEIGHBOURS;
 }
 
@@ -70,8 +70,8 @@ function hasSameMembers(left: ReadonlySet<string>, right: ReadonlySet<string>): 
 /** A removed edge between stayers always reroutes; an added one reroutes only when neither end is a dependant. */
 function isRerouted(comparison: TopologyLayoutComparison, sessionId: string): boolean {
     const { before, after, dependantSessionIds } = comparison;
-    const neighboursBefore = readNeighbours(before, sessionId);
-    const neighboursAfter = readNeighbours(after, sessionId);
+    const neighboursBefore = getNeighbours(before, sessionId);
+    const neighboursAfter = getNeighbours(after, sessionId);
     const lostStayerEdge = [...neighboursBefore].some((neighbour) =>
         after.has(neighbour) && !neighboursAfter.has(neighbour)
     );

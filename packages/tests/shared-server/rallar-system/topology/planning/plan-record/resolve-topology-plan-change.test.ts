@@ -6,6 +6,7 @@ import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/top
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
 
+import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import {
     computeRtcTopologyFixtureLeave,
     computeRtcTopologyFixturePlan,
@@ -17,22 +18,14 @@ import {
     type RtcTopologyFixtureReplan
 } from '../rtc-topology-planning-fixtures.ts';
 
-const EMPTY_DELTA: TopologyLayoutDelta = {
-    joinedSessionCount: 0,
-    leftSessionCount: 0,
-    changedSessionCount: 0,
-    reroutedSessionCount: 0,
-    acceptingSessionCount: 0,
-    maxJoinerEdgesPerSession: 0
-};
 const JOIN_DELTA: TopologyLayoutDelta = {
-    ...EMPTY_DELTA,
+    ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
     joinedSessionCount: 1,
     changedSessionCount: 1,
     acceptingSessionCount: 1,
     maxJoinerEdgesPerSession: 1
 };
-const LEAVE_DELTA: TopologyLayoutDelta = { ...EMPTY_DELTA, leftSessionCount: 1, changedSessionCount: 1 };
+const LEAVE_DELTA: TopologyLayoutDelta = { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, leftSessionCount: 1, changedSessionCount: 1 };
 const MESH_OF_TWENTY = { options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20, joinerCount: 0 };
 const TREE_OF_EIGHT = { options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8, joinerCount: 0 };
 const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
@@ -43,7 +36,7 @@ describe('resolveTopologyPlanChange', () => {
         { method: 'incremental' },
         { method: 'rebuilt', reason: 'refinement' }
     ])('a plan that changes no member and no edge is no topology work, however it was derived ($method)', (derivation) => {
-        expect(resolveTopologyPlanChange(derivation, EMPTY_DELTA)).toBeNull();
+        expect(resolveTopologyPlanChange(derivation, EMPTY_TOPOLOGY_LAYOUT_DELTA)).toBeNull();
     });
 
     it('a rebuilt plan is a reshape for the rebuild\'s reason', () => {
@@ -52,7 +45,7 @@ describe('resolveTopologyPlanChange', () => {
     });
 
     it('an established plan is an attach, since nobody had a place to lose', () => {
-        expect(resolveTopologyPlanChange({ method: 'established' }, { ...EMPTY_DELTA, joinedSessionCount: 3 }))
+        expect(resolveTopologyPlanChange({ method: 'established' }, { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, joinedSessionCount: 3 }))
             .toEqual({ kind: 'attach' });
     });
 

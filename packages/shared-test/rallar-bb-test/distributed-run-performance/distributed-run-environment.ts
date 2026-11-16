@@ -1,10 +1,11 @@
 import { decodePlainRecord, hasExactKeys } from '../../../shared/api/exact-object-decoding.ts';
+import { RALLAR_RTC_TOPOLOGY_KINDS, type RallarRtcTopologyKind } from '../../../shared/api/overlay-topology.ts';
 import { getOwnCount, getOwnField } from '../../../shared/encoding/get-own-field.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 /** Every field of the API's topology planning configuration: they decide the planned layout and the re-plan cadence. */
-export interface DistributedRunTopologyEnvironment {
-    readonly topologyKind: 'auto' | 'star' | 'tree' | 'mesh';
+interface DistributedRunTopologyEnvironment {
+    readonly topologyKind: 'auto' | RallarRtcTopologyKind;
     readonly degreeLimit: number;
     readonly rttReportingDegreeLimit: number;
     readonly treeMinSize: number;
@@ -186,26 +187,30 @@ const HOST_POSITIVE_KEYS = ['cpuCount', 'availableParallelism', 'memoryBytes', '
 const HOST_COUNT_KEYS = ['diskAvailableBytes'] as const;
 const HOST_KEYS = [...HOST_TEXT_KEYS, ...HOST_POSITIVE_KEYS, ...HOST_COUNT_KEYS] as const;
 const LOAD_AVERAGE_KEYS = ['oneMinute', 'atStart'] as const;
-const TOPOLOGY_KINDS = ['auto', 'star', 'tree', 'mesh'];
+const TOPOLOGY_KINDS = ['auto', ...RALLAR_RTC_TOPOLOGY_KINDS] as const;
 
-function findTextIssues(source: object, path: string, names: readonly string[]): string[] {
+function validateTextFields(source: object, path: string, names: readonly string[]): string[] {
     return names.flatMap((name) => {
         const value = getOwnField(source, name);
         return typeof value === 'string' && value.length > 0 ? [] : [`${path}${name} must be a non-empty string`];
     });
 }
 
-function findCountIssues(source: object, path: string, names: readonly string[]): string[] {
+function validateCountFields(source: object, path: string, names: readonly string[]): string[] {
     return names.flatMap((name) =>
         getOwnCount(source, name) === null ? [`${path}${name} must be a whole number of at least 0`] : []
     );
 }
 
-function findPositiveCountIssues(source: object, path: string, names: readonly string[]): string[] {
+function validatePositiveCountFields(source: object, path: string, names: readonly string[]): string[] {
     return names.flatMap((name) => {
         const count = getOwnCount(source, name);
         return count !== null && count >= 1 ? [] : [`${path}${name} must be a whole number of at least 1`];
     });
+}
+
+function keepIssues(issues: readonly string[]): readonly string[] {
+    return issues;
 }
 
 function decodeNestedRecord(value: unknown, path: string, keys: readonly string[]): Either<readonly string[], object> {
@@ -215,62 +220,45 @@ function decodeNestedRecord(value: unknown, path: string, keys: readonly string[
         : Either.ofLeft([`${path} must hold exactly ${keys.join(', ')}`]);
 }
 
-function decodeTopology(value: unknown): readonly string[] {
-    return decodeNestedRecord(value, 'topology', TOPOLOGY_KEYS).fold(
-        (issues) => issues,
-        (topology) => [
-            ...(TOPOLOGY_KINDS.includes(getOwnField(topology, 'topologyKind'))
-                ? []
-                : [`topology.topologyKind must be one of ${TOPOLOGY_KINDS.join(', ')}`]),
-            ...findCountIssues(topology, 'topology.', TOPOLOGY_COUNT_KEYS)
-        ]
-    );
-}
-
-function decodeRetention(value: unknown): readonly string[] {
-    return decodeNestedRecord(value, 'retention', RETENTION_KEYS).fold(
-        (issues) => issues,
-        (retention) => findTextIssues(retention, 'retention.', RETENTION_KEYS)
-    );
-}
-
-function decodeRuntime(value: unknown): readonly string[] {
-    return decodeNestedRecord(value, 'runtime', RUNTIME_KEYS).fold(
-        (issues) => issues,
-        (runtime) => findTextIssues(runtime, 'runtime.', RUNTIME_KEYS)
-    );
-}
-
-function decodeHost(value: unknown): readonly string[] {
-    return decodeNestedRecord(value, 'host', HOST_KEYS).fold(
-        (issues) => issues,
-        (host) => [
-            ...findTextIssues(host, 'host.', HOST_TEXT_KEYS),
-            ...findPositiveCountIssues(host, 'host.', HOST_POSITIVE_KEYS),
-            ...findCountIssues(host, 'host.', HOST_COUNT_KEYS)
-        ]
-    );
-}
-
-function decodeLoadAverage(value: unknown): readonly string[] {
-    return decodeNestedRecord(value, 'loadAverage', LOAD_AVERAGE_KEYS).fold(
-        (issues) => issues,
-        (loadAverage) => {
-            const oneMinute = getOwnField(loadAverage, 'oneMinute');
-            return [
-                ...(typeof oneMinute === 'number' && Number.isFinite(oneMinute) && oneMinute >= 0
-                    ? []
-                    : ['loadAverage.oneMinute must be a finite number of at least 0']),
-                ...(getOwnField(loadAverage, 'atStart') === true ? [] : ['loadAverage.atStart must be true'])
-            ];
-        }
-    );
-}
-
-function findScalarIssues(source: object): string[] {
+function validateTopology(topology: object): readonly string[] {
     return [
-        ...findTextIssues(source, '', ['sourceCommit', 'profile', 'pubSub', 'ice', 'manifestSha256']),
-        ...findPositiveCountIssues(source, '', ['agentCount']),
+        ...(TOPOLOGY_KINDS.includes(getOwnField(topology, 'topologyKind'))
+            ? []
+            : [`topology.topologyKind must be one of ${TOPOLOGY_KINDS.join(', ')}`]),
+        ...validateCountFields(topology, 'topology.', TOPOLOGY_COUNT_KEYS)
+    ];
+}
+
+function validateRetention(retention: object): readonly string[] {
+    return validateTextFields(retention, 'retention.', RETENTION_KEYS);
+}
+
+function validateRuntime(runtime: object): readonly string[] {
+    return validateTextFields(runtime, 'runtime.', RUNTIME_KEYS);
+}
+
+function validateHost(host: object): readonly string[] {
+    return [
+        ...validateTextFields(host, 'host.', HOST_TEXT_KEYS),
+        ...validatePositiveCountFields(host, 'host.', HOST_POSITIVE_KEYS),
+        ...validateCountFields(host, 'host.', HOST_COUNT_KEYS)
+    ];
+}
+
+function validateLoadAverage(loadAverage: object): readonly string[] {
+    const oneMinute = getOwnField(loadAverage, 'oneMinute');
+    return [
+        ...(typeof oneMinute === 'number' && Number.isFinite(oneMinute) && oneMinute >= 0
+            ? []
+            : ['loadAverage.oneMinute must be a finite number of at least 0']),
+        ...(getOwnField(loadAverage, 'atStart') === true ? [] : ['loadAverage.atStart must be true'])
+    ];
+}
+
+function validateScalarFields(source: object): string[] {
+    return [
+        ...validateTextFields(source, '', ['sourceCommit', 'profile', 'pubSub', 'ice', 'manifestSha256']),
+        ...validatePositiveCountFields(source, '', ['agentCount']),
         ...(typeof getOwnField(source, 'worktreeDirty') === 'boolean' ? [] : ['worktreeDirty must be a boolean']),
         ...(['memory', 'postgres'].includes(getOwnField(source, 'apiMode'))
             ? []
@@ -291,12 +279,24 @@ export function decodeDistributedRunEnvironment(value: unknown): Either<readonly
         ...(hasExactKeys(source, ENVIRONMENT_KEYS)
             ? []
             : [`environment must hold exactly ${ENVIRONMENT_KEYS.join(', ')}`]),
-        ...findScalarIssues(source),
-        ...decodeTopology(getOwnField(source, 'topology')),
-        ...decodeRetention(getOwnField(source, 'retention')),
-        ...decodeRuntime(getOwnField(source, 'runtime')),
-        ...decodeHost(getOwnField(source, 'host')),
-        ...decodeLoadAverage(getOwnField(source, 'loadAverage'))
+        ...validateScalarFields(source),
+        ...decodeNestedRecord(getOwnField(source, 'topology'), 'topology', TOPOLOGY_KEYS).fold(
+            keepIssues,
+            validateTopology
+        ),
+        ...decodeNestedRecord(getOwnField(source, 'retention'), 'retention', RETENTION_KEYS).fold(
+            keepIssues,
+            validateRetention
+        ),
+        ...decodeNestedRecord(getOwnField(source, 'runtime'), 'runtime', RUNTIME_KEYS).fold(
+            keepIssues,
+            validateRuntime
+        ),
+        ...decodeNestedRecord(getOwnField(source, 'host'), 'host', HOST_KEYS).fold(keepIssues, validateHost),
+        ...decodeNestedRecord(getOwnField(source, 'loadAverage'), 'loadAverage', LOAD_AVERAGE_KEYS).fold(
+            keepIssues,
+            validateLoadAverage
+        )
     ];
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(source as DistributedRunEnvironment);
 }

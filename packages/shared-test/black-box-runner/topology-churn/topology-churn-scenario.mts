@@ -19,15 +19,15 @@ import { toTopologyChurnMember } from './to-topology-churn-member.ts';
 import { toTopologyChurnPolicy } from './to-topology-churn-policy.ts';
 import type { TopologyChurnApi, TopologyChurnMember, TopologyChurnSession } from './topology-churn-api.mts';
 
-export const TOPOLOGY_CHURN_MEMBER_COUNTS = [3, 8, 20] as const;
-export const TOPOLOGY_CHURN_REPLANNING_MODES = [
+const TOPOLOGY_CHURN_MEMBER_COUNTS = [3, 8, 20] as const;
+const TOPOLOGY_CHURN_REPLANNING_MODES = [
     'auto',
     'debounced'
 ] as const satisfies readonly GroupTopologyReplanningMode[];
-export const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
-export const TOPOLOGY_CHURN_DURATION_MS = 90_000;
-export const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
-export const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
+const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
+const TOPOLOGY_CHURN_DURATION_MS = 90_000;
+const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
+const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
 export const TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS = 30_000;
 export const TOPOLOGY_CHURN_REPORT_FILE = 'topology-churn-report.json';
 

@@ -25,7 +25,7 @@ import {
 } from '../rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology publication repository', () => {
-    it('validates publication and work claim rows, direct and by room page, before expiry', async () => {
+    it('refuses a corrupt publication row direct and by room page, and a corrupt work claim row direct, before judging their expiry', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {

@@ -50,13 +50,13 @@ export interface TopologyChurnSession {
     readonly accessToken: string;
 }
 
-export interface CreateTopologyChurnRoomInput {
+interface CreateTopologyChurnRoomInput {
     readonly creator: TopologyChurnSession;
     readonly roomRef: GroupRef;
     readonly topology: Partial<GroupTopologyPolicy>;
 }
 
-export interface TopologyChurnPresenceInput {
+interface TopologyChurnPresenceInput {
     readonly session: TopologyChurnSession;
     readonly roomRef: GroupRef;
     readonly leaseExpiresAtEpochMs: number;

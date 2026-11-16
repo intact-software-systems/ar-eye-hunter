@@ -32,14 +32,14 @@ const RUN_FILES = {
     distributedRun: 'distributed-run.json'
 } as const;
 
-export interface LocalBaselineRunTexts {
+interface LocalBaselineRunTexts {
     readonly recorderDirectory: string;
     readonly provenance: string;
     readonly controlRun: string;
     readonly distributedRun: string;
 }
 
-export interface LocalBaselineReport {
+interface LocalBaselineReport {
     readonly lines: readonly string[];
     readonly exitCode: 0 | 1;
 }

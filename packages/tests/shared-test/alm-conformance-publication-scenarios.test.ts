@@ -46,7 +46,7 @@ const FIGURE_ASSERTS = [
 const FIGURE_COMMANDS = [FIGURE_READ, ...FIGURE_ASSERTS] as const;
 const FIGURES_PATH = 'rallar.alm.publication.figures';
 
-type PacedScenarioId = (typeof PACED_SCENARIO_IDS)[number];
+type PacedScenarioId = (typeof ALL_PACED_SCENARIO_IDS)[number];
 
 function findScenario(carrier: AlmConformanceCarrier, scenarioId: PacedScenarioId): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -717,19 +717,10 @@ describe('paced-isolation-lists', () => {
 describe('the paced cells\' publication figures', () => {
     const ROLE_CELLS = ALL_PACED_SCENARIO_IDS.flatMap((scenarioId) => ALM_CONFORMANCE_CARRIERS.map((carrier) => [scenarioId, carrier] as const));
 
-    function findAnyScenario(carrier: AlmConformanceCarrier, scenarioId: (typeof ALL_PACED_SCENARIO_IDS)[number]): AlmConformanceScenario {
-        const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
-            .find((candidate) => candidate.scenarioId === scenarioId);
-        if (scenario === undefined) {
-            throw new Error(`Missing ${scenarioId} over ${carrier}.`);
-        }
-        return scenario;
-    }
-
     it.each(ROLE_CELLS)(
         'every paced cell ends its publishing roles with one stats read and the figure invariants: %s over %s',
         (scenarioId, carrier) => {
-            const scenario = findAnyScenario(carrier, scenarioId);
+            const scenario = findScenario(carrier, scenarioId);
             const names = toCommandNames(scenario.sender);
             const read = names.indexOf(FIGURE_READ);
             const verdictIndexes = names.flatMap((name, index) =>
@@ -786,7 +777,7 @@ describe('the paced cells\' publication figures', () => {
     it.each(ROLE_CELLS)(
         'no paced cell asserts a figure against a latency, a lateness or a drain percent: %s over %s',
         (scenarioId, carrier) => {
-            const scenario = findAnyScenario(carrier, scenarioId);
+            const scenario = findScenario(carrier, scenarioId);
             const figureSources = scenario.sender.commands.flatMap((command) =>
                 command.kind === 'assert'
                     ? [command.source, ...('comparisonSource' in command && command.comparisonSource !== undefined ? [command.comparisonSource] : [])]
@@ -805,7 +796,7 @@ describe('the paced cells\' publication figures', () => {
 
     it('gives a receiving-only recipient no figure read in the three-agent cell', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
-            const scenario = findAnyScenario(carrier, 'paced-isolation-lists');
+            const scenario = findScenario(carrier, 'paced-isolation-lists');
             expect(toCommandNames(scenario.recipientB!)).not.toContain(FIGURE_READ);
         }
     });

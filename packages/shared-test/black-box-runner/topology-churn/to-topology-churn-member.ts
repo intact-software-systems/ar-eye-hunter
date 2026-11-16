@@ -1,6 +1,6 @@
 import type { TopologyChurnMember } from './topology-churn-api.mts';
 
-export interface ToTopologyChurnMemberInput {
+interface ToTopologyChurnMemberInput {
     readonly runToken: string;
     readonly roomIndex: number;
     /** Unique across the run, so each member has its own username and client address. */

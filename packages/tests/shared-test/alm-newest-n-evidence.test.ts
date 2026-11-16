@@ -72,9 +72,9 @@ it.each([
         payload: { data: { kind: 'publication-opportunity', laneKey: 'room.alm-conformance/alm.conformance.rtc.paced-newest-n', selected, deferred, expired } }
     });
     const burstIndex = scenario.sender.commands.findIndex((command) => command.kind === 'loop');
-    // The stage evidence ends at the last verdict; the figure invariants after it read the runtime's own stats, which a
-    // runtime with no connected browser cannot fill, and the lane proves them.
-    const figuresIndex = scenario.sender.commands.findIndex((command) => command.commandId?.endsWith('-stats-publication-figures'));
+    // The stage evidence ends at the last verdict. The figure invariants after it are proven against a real stage by
+    // apps/rallar-black-box-control-server/test/control-alm-reload-publication-lane.test.ts and by the lane.
+    const figuresIndex = scenario.sender.commands.findIndex((command, index) => index > burstIndex && command.kind === 'stats');
     expect(figuresIndex).toBeGreaterThan(burstIndex);
     const commands = scenario.sender.commands.slice(burstIndex + 1, figuresIndex);
     const result = runtime.execute({ kind: 'recipe.run', recipe: { ...scenario.sender, commands } });

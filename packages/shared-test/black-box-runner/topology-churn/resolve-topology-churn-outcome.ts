@@ -7,7 +7,7 @@ import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
 import { toPlannedTopologyPlans } from './to-planned-topology-plans.ts';
 
-export interface ResolveTopologyChurnOutcomeInput {
+interface ResolveTopologyChurnOutcomeInput {
     readonly plans: readonly AdminRoomTopologyPlan[];
     readonly acceptedLayout: GroupLayoutIdentity | null;
 }

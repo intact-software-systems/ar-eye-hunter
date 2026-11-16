@@ -5,7 +5,9 @@ import {
     type TopologyReshapeReason
 } from '@shared/api/topology-plan/topology-plan-change.ts';
 
-export interface TopologyChurnKindCounts {
+import { computeCountsByKey } from './compute-counts-by-key.ts';
+
+interface TopologyChurnKindCounts {
     readonly attach: number;
     readonly repair: number;
     readonly reshape: number;
@@ -18,7 +20,7 @@ export interface TopologyChurnKindFigures {
     readonly reshapesByReason: Readonly<Record<TopologyReshapeReason, number>>;
 }
 
-export interface ComputeTopologyChurnKindFiguresInput {
+interface ComputeTopologyChurnKindFiguresInput {
     readonly records: readonly RtcTopologyPlanRecord[];
     readonly promotedRecords: readonly RtcTopologyPlanRecord[];
 }
@@ -44,11 +46,4 @@ function computeKindCounts(records: readonly RtcTopologyPlanRecord[]): TopologyC
     const countKind = (kind: TopologyPlanChange['kind']): number =>
         records.filter((record) => record.change?.kind === kind).length;
     return { attach: countKind('attach'), repair: countKind('repair'), reshape: countKind('reshape') };
-}
-
-export function computeCountsByKey<Key extends string>(
-    keys: readonly Key[],
-    countKey: (key: Key) => number
-): Record<Key, number> {
-    return Object.fromEntries(keys.map((key) => [key, countKey(key)])) as Record<Key, number>;
 }

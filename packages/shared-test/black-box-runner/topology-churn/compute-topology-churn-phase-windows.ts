@@ -1,7 +1,7 @@
 import type { TopologyChurnPhaseWindow } from './compute-topology-churn-report.ts';
 import type { TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 
-export interface ComputeTopologyChurnPhaseWindowsInput {
+interface ComputeTopologyChurnPhaseWindowsInput {
     readonly formationStartedAtEpochMs: number;
     readonly lastPresenceAnsweredAtEpochMs: number;
     /** Every member joins during formation, the creator included. */

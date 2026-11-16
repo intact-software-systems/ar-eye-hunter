@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { decodeRtcTopologyPlanRecord } from '@shared/api/topology-plan/decode-rtc-topology-plan-record.ts';
 import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from './empty-topology-layout-delta.ts';
 
 const FIRST_LAYOUT_RECORD: RtcTopologyPlanRecord = {
     plannedAtEpochMs: 1_700_000_000_000,
@@ -28,15 +29,6 @@ const REPLACING_RECORD: RtcTopologyPlanRecord = {
     },
     causes: ['join', 'leave', 'rtt'],
     change: { kind: 'reshape', reason: 'refinement' }
-};
-
-const EMPTY_DELTA: RtcTopologyPlanRecord['delta'] = {
-    joinedSessionCount: 0,
-    leftSessionCount: 0,
-    changedSessionCount: 0,
-    reroutedSessionCount: 0,
-    acceptingSessionCount: 0,
-    maxJoinerEdgesPerSession: 0
 };
 
 describe('decodeRtcTopologyPlanRecord', () => {
@@ -94,7 +86,7 @@ describe('decodeRtcTopologyPlanRecord', () => {
         const records: RtcTopologyPlanRecord[] = [
             { ...REPLACING_RECORD, change: { kind: 'repair' } },
             ...TOPOLOGY_RESHAPE_REASONS.map((reason) => ({ ...REPLACING_RECORD, change: { kind: 'reshape', reason } } as const)),
-            { ...REPLACING_RECORD, delta: EMPTY_DELTA, change: null }
+            { ...REPLACING_RECORD, delta: EMPTY_TOPOLOGY_LAYOUT_DELTA, change: null }
         ];
 
         for (const record of records) {
@@ -104,7 +96,7 @@ describe('decodeRtcTopologyPlanRecord', () => {
 
     it('refuses a change that is null while the delta is not empty, or set while the delta is empty', () => {
         expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, change: null }).left).toBeTypeOf('string');
-        expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, delta: EMPTY_DELTA }).left).toBeTypeOf('string');
+        expect(decodeRtcTopologyPlanRecord({ ...REPLACING_RECORD, delta: EMPTY_TOPOLOGY_LAYOUT_DELTA }).left).toBeTypeOf('string');
     });
 
     it('refuses an unknown kind, an unknown or missing reshape reason, and a reason on another kind', () => {

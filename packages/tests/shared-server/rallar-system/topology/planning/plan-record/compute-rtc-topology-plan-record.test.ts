@@ -6,18 +6,10 @@ import {
 } from '@shared-server/rallar-system/topology/planning/plan-record/compute-rtc-topology-plan-record.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
+import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import { createGroupRef, createTopologySnapshot } from '../../rtc-topology-repository-test-fixtures.ts';
 
 const NOW_EPOCH_MS = 10_000;
-
-const EMPTY_DELTA = {
-    joinedSessionCount: 0,
-    leftSessionCount: 0,
-    changedSessionCount: 0,
-    reroutedSessionCount: 0,
-    acceptingSessionCount: 0,
-    maxJoinerEdgesPerSession: 0
-};
 
 /** A path over the given members, listed from both ends as the planner publishes next hops. */
 function createLayout(
@@ -63,7 +55,7 @@ describe('computeRtcTopologyPlanRecord', () => {
             plannedAtEpochMs: NOW_EPOCH_MS,
             replaced: null,
             causes: ['join'],
-            delta: { ...EMPTY_DELTA, joinedSessionCount: 3 },
+            delta: { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, joinedSessionCount: 3 },
             longestPathHops: 2,
             change: { kind: 'attach' }
         };
@@ -178,7 +170,7 @@ describe('computeRtcTopologyPlanRecord', () => {
         const record = computeRtcTopologyPlanRecord(createInput(stored, planned));
 
         expect(record.causes).toEqual([]);
-        expect(record.delta).toEqual(EMPTY_DELTA);
+        expect(record.delta).toEqual(EMPTY_TOPOLOGY_LAYOUT_DELTA);
         expect(record.change).toBeNull();
     });
 });

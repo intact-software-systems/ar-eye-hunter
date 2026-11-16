@@ -228,25 +228,19 @@ const FIGURES_PATH = 'rallar.alm.publication.figures';
 export function toPublicationFigureInvariantCommands(
     step: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
-    const equalsSubmitted = (name: string, field: string): RallarBlackBoxTestCommand =>
+    const equalsField = (name: string, field: string, comparedField: string): RallarBlackBoxTestCommand =>
         toResultComparisonAssertion({
             step,
             name: `assert-figure-${name}`,
             resultName: FIGURES_READ,
-            field: `${FIGURES_PATH}.${field}.count`,
+            field: `${FIGURES_PATH}.${field}`,
             operator: 'equals',
-            comparedField: `${FIGURES_PATH}.submittedOpportunities`
+            comparedField
         });
+    const submitted = `${FIGURES_PATH}.submittedOpportunities`;
     return [
         toStatsCommand(step, FIGURES_READ),
-        toResultComparisonAssertion({
-            step,
-            name: 'assert-figure-selection-age-count',
-            resultName: FIGURES_READ,
-            field: `${FIGURES_PATH}.selectionAgeMs.count`,
-            operator: 'equals',
-            comparedField: 'rallar.alm.publication.counters.admitted'
-        }),
+        equalsField('selection-age-count', 'selectionAgeMs.count', 'rallar.alm.publication.counters.admitted'),
         toResultAssertion({
             step,
             name: 'assert-figure-unrecorded-samples',
@@ -255,9 +249,9 @@ export function toPublicationFigureInvariantCommands(
             operator: 'equals',
             expected: 0
         }),
-        equalsSubmitted('selection-to-admission-count', 'selectionToAdmissionMs'),
-        equalsSubmitted('drain-messages-count', 'drainMessagesPercent'),
-        equalsSubmitted('drain-bytes-count', 'drainBytesPercent'),
+        equalsField('selection-to-admission-count', 'selectionToAdmissionMs.count', submitted),
+        equalsField('drain-messages-count', 'drainMessagesPercent.count', submitted),
+        equalsField('drain-bytes-count', 'drainBytesPercent.count', submitted),
         toResultAssertion({
             step,
             name: 'assert-figure-submitted-opportunities',

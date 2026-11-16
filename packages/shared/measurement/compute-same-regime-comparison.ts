@@ -30,7 +30,7 @@ export interface SameRegimeComparison {
     readonly figures: readonly SameRegimeComparison.Figure[];
 }
 
-export interface SameRegimeComparisonInput {
+interface SameRegimeComparisonInput {
     readonly baseline: SameRegimeComparison.Run;
     readonly candidate: SameRegimeComparison.Run;
     readonly band: SameRegimeComparison.Band;

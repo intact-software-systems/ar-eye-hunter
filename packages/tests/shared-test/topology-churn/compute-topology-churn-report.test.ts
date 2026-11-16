@@ -6,17 +6,15 @@ import {
 } from '@shared-test/black-box-runner/topology-churn/compute-topology-churn-report.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
-import { isEmptyTopologyLayoutDelta } from '@shared/api/topology-plan/is-empty-topology-layout-delta.ts';
-import type {
-    ReplacedTopologyLayout,
-    TopologyLayoutDelta,
-    TopologyReplanCause
-} from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
-import {
-    TOPOLOGY_RESHAPE_REASONS,
-    type TopologyPlanChange
-} from '@shared/api/topology-plan/topology-plan-change.ts';
+import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 import { describe, expect, it } from 'vitest';
+
+import {
+    createTopologyChurnPlan,
+    createTopologyChurnRemoval,
+    toTopologyChurnLayout
+} from './topology-churn-plan-fixtures.ts';
 
 const OVERLAP_MS = 7_500;
 
@@ -27,57 +25,6 @@ const FORMATION: TopologyChurnPhaseWindow = {
     joinCount: 4,
     leaveCount: 0
 };
-
-interface TestPlanInput {
-    readonly version: number;
-    readonly plannedAtEpochMs: number;
-    readonly replacedAgeMs?: number | null;
-    readonly causes?: readonly TopologyReplanCause[];
-    readonly delta?: Partial<TopologyLayoutDelta>;
-    readonly change?: TopologyPlanChange;
-    readonly longestPathHops?: number;
-    readonly degreeLimit?: number;
-}
-
-function toLayout(version: number): GroupLayoutIdentity {
-    return { groupRevision: version, presenceRevision: 0, version, state: 'active' };
-}
-
-function toReplaced(version: number, ageMs: number | null): ReplacedTopologyLayout | null {
-    return ageMs === null ? null : { layout: toLayout(version - 1), ageMs };
-}
-
-function createPlan(input: TestPlanInput): AdminRoomTopologyPlan {
-    const delta: TopologyLayoutDelta = {
-        joinedSessionCount: 0,
-        leftSessionCount: 0,
-        changedSessionCount: 1,
-        reroutedSessionCount: 0,
-        acceptingSessionCount: 0,
-        maxJoinerEdgesPerSession: 0,
-        ...input.delta
-    };
-    return {
-        publicationId: `publication-${input.version}`,
-        requestedAtEpochMs: input.plannedAtEpochMs,
-        layout: toLayout(input.version),
-        topology: 'mesh',
-        memberCount: 4,
-        degreeLimit: input.degreeLimit ?? 3,
-        plan: {
-            plannedAtEpochMs: input.plannedAtEpochMs,
-            replaced: toReplaced(input.version, input.replacedAgeMs === undefined ? 60_000 : input.replacedAgeMs),
-            causes: input.causes ?? ['join'],
-            delta,
-            longestPathHops: input.longestPathHops ?? 1,
-            change: isEmptyTopologyLayoutDelta(delta) ? null : input.change ?? { kind: 'attach' }
-        }
-    };
-}
-
-function createRemoval(version: number, requestedAtEpochMs: number): AdminRoomTopologyPlan {
-    return { ...createPlan({ version, plannedAtEpochMs: requestedAtEpochMs }), plan: null };
-}
 
 function computeFormation(
     plans: readonly AdminRoomTopologyPlan[],
@@ -106,13 +53,13 @@ describe('computeTopologyChurnReport', () => {
         const emptyChurn: TopologyChurnPhaseWindow = { ...churn, startedAtEpochMs: 180_000 };
         const report = computeTopologyChurnReport({
             plans: [
-                createPlan({ version: 1, plannedAtEpochMs: 0 }),
-                createRemoval(2, 10_000),
-                createPlan({ version: 3, plannedAtEpochMs: 30_000 }),
-                createPlan({ version: 4, plannedAtEpochMs: 59_999 }),
-                createPlan({ version: 5, plannedAtEpochMs: 60_000 }),
-                createPlan({ version: 6, plannedAtEpochMs: 120_000 }),
-                createPlan({ version: 7, plannedAtEpochMs: 180_000 })
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 0 }),
+                createTopologyChurnRemoval(2, 10_000),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 30_000 }),
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 59_999 }),
+                createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 60_000 }),
+                createTopologyChurnPlan({ version: 6, plannedAtEpochMs: 120_000 }),
+                createTopologyChurnPlan({ version: 7, plannedAtEpochMs: 180_000 })
             ],
             sightings: [],
             phases: [FORMATION, churn, emptyChurn],
@@ -142,11 +89,11 @@ describe('computeTopologyChurnReport', () => {
     it('counts the plans planned before the first phase or after the last, and no removal', () => {
         const report = computeTopologyChurnReport({
             plans: [
-                createPlan({ version: 1, plannedAtEpochMs: -1 }),
-                createPlan({ version: 2, plannedAtEpochMs: 0 }),
-                createPlan({ version: 3, plannedAtEpochMs: 59_999 }),
-                createPlan({ version: 4, plannedAtEpochMs: 60_000 }),
-                createRemoval(5, 90_000)
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: -1 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 0 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 59_999 }),
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 60_000 }),
+                createTopologyChurnRemoval(5, 90_000)
             ],
             sightings: [],
             phases: [FORMATION],
@@ -159,10 +106,10 @@ describe('computeTopologyChurnReport', () => {
 
     it('counts a plan inside the overlap when the layout it replaced was younger than the served overlap', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: 1_000 }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: 7_499 }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, replacedAgeMs: 7_500 }),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000, replacedAgeMs: 20_000 })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: 1_000 }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: 7_499 }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, replacedAgeMs: 7_500 }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, replacedAgeMs: 20_000 })
         ]);
 
         // Ages 1 000 and 7 499 are below the 7 500 ms overlap; 7 500 is not below it.
@@ -173,11 +120,11 @@ describe('computeTopologyChurnReport', () => {
 
     it('does not count a first layout towards the overlap share', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: 1_000 }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, replacedAgeMs: 9_000 })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: 1_000 }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, replacedAgeMs: 9_000 })
         ]);
-        const firstOnly = computeFormation([createPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null })]);
+        const firstOnly = computeFormation([createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null })]);
 
         // The first layout replaced nothing: 1 inside of 2 replacing plans = 0.5, not 1 of 3.
         expect(phase.planCount).toBe(3);
@@ -191,21 +138,21 @@ describe('computeTopologyChurnReport', () => {
     it('separates identity-only plans from edge-changing ones', () => {
         // Input in storage order, not time order: the hop figures read plannedAtEpochMs order.
         const phase = computeFormation([
-            createPlan({
+            createTopologyChurnPlan({
                 version: 4,
                 plannedAtEpochMs: 4_000,
                 delta: { changedSessionCount: 6, reroutedSessionCount: 3, joinedSessionCount: 2, maxJoinerEdgesPerSession: 2 },
                 longestPathHops: 4,
                 degreeLimit: 4
             }),
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, longestPathHops: 9 }),
-            createPlan({
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, longestPathHops: 9 }),
+            createTopologyChurnPlan({
                 version: 2,
                 plannedAtEpochMs: 2_000,
                 delta: { changedSessionCount: 2, reroutedSessionCount: 1, joinedSessionCount: 1, maxJoinerEdgesPerSession: 1 },
                 longestPathHops: 3
             }),
-            createPlan({
+            createTopologyChurnPlan({
                 version: 3,
                 plannedAtEpochMs: 3_000,
                 delta: { changedSessionCount: 4, leftSessionCount: 1 },
@@ -231,11 +178,11 @@ describe('computeTopologyChurnReport', () => {
 
     it('reports the share of joins and leaves that rerouted a member they did not involve', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, causes: ['join'], delta: { reroutedSessionCount: 2 } }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, causes: ['join'], delta: { reroutedSessionCount: 0 } }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, causes: ['leave'], delta: { reroutedSessionCount: 1 } }),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000, causes: ['rtt'], delta: { reroutedSessionCount: 5 } }),
-            createPlan({ version: 5, plannedAtEpochMs: 5_000, causes: ['join', 'rtt'], delta: { reroutedSessionCount: 0 } })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, causes: ['join'], delta: { reroutedSessionCount: 2 } }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, causes: ['join'], delta: { reroutedSessionCount: 0 } }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, causes: ['leave'], delta: { reroutedSessionCount: 1 } }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, causes: ['rtt'], delta: { reroutedSessionCount: 5 } }),
+            createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 5_000, causes: ['join', 'rtt'], delta: { reroutedSessionCount: 0 } })
         ]);
 
         // Membership plans: versions 1, 2, 3 and 5. Rerouting among them: versions 1 and 3.
@@ -244,19 +191,19 @@ describe('computeTopologyChurnReport', () => {
         expect(phase.reroutingMembershipPlanShare).toBe(0.5);
     });
 
-    it('matches sightings to plans by layout identity and reports the lag', () => {
-        const removedTwin: GroupLayoutIdentity = { ...toLayout(3), state: 'removed' };
+    it('matches sightings to plans by layout identity and reports the lag, a negative one as it was measured', () => {
+        const removedTwin: GroupLayoutIdentity = { ...toTopologyChurnLayout(3), state: 'removed' };
         const phase = computeFormation(
             [
-                createPlan({ version: 1, plannedAtEpochMs: 1_000 }),
-                createPlan({ version: 2, plannedAtEpochMs: 2_000 }),
-                createPlan({ version: 3, plannedAtEpochMs: 3_000 })
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000 })
             ],
             [
-                { layout: toLayout(1), firstSeenAtEpochMs: 1_250 },
-                { layout: toLayout(2), firstSeenAtEpochMs: 1_900 },
+                { layout: toTopologyChurnLayout(1), firstSeenAtEpochMs: 1_250 },
+                { layout: toTopologyChurnLayout(2), firstSeenAtEpochMs: 1_900 },
                 { layout: removedTwin, firstSeenAtEpochMs: 3_100 },
-                { layout: toLayout(9), firstSeenAtEpochMs: 4_000 }
+                { layout: toTopologyChurnLayout(9), firstSeenAtEpochMs: 4_000 }
             ]
         );
 
@@ -264,17 +211,17 @@ describe('computeTopologyChurnReport', () => {
         // 2 × 60 000 / 60 000 ms = 2 per minute.
         expect(phase.promotedPlanCount).toBe(2);
         expect(phase.promotionsPerMinute).toBe(2);
-        // Lags: 1 250 − 1 000 = 250; 1 900 − 2 000 = −100, clamped to 0. Ascending [0, 250]:
-        // median = rank ceil(0.5 × 2) = 1 → 0; p90 = rank ceil(0.9 × 2) = 2 → 250.
-        expect(phase.promotionLagMs).toEqual({ min: 0, median: 0, p90: 250, max: 250 });
+        // Lags: 1 250 − 1 000 = 250; 1 900 − 2 000 = −100, a sighting before its plan: the clocks disagree, and the
+        // report shows it. Ascending [−100, 250]: median = rank ceil(0.5 × 2) = 1 → −100; p90 = rank ceil(0.9 × 2) = 2 → 250.
+        expect(phase.promotionLagMs).toEqual({ min: -100, median: -100, p90: 250, max: 250 });
     });
 
     it('counts plans by cause, and a plan with two causes under both', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, causes: ['join'] }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, causes: ['join', 'leave'] }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, causes: ['rtt'] }),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000, causes: [] })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, causes: ['join'] }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, causes: ['join', 'leave'] }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, causes: ['rtt'] }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, causes: [] })
         ]);
 
         // join: versions 1 and 2; leave: version 2; rtt: version 3; version 4 names no cause.
@@ -284,8 +231,8 @@ describe('computeTopologyChurnReport', () => {
 
     it('reports null distributions for a phase without an edge-changing plan', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null, causes: ['rtt'], delta: IDENTITY_ONLY }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: null, causes: ['config'], delta: IDENTITY_ONLY })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, replacedAgeMs: null, causes: ['rtt'], delta: IDENTITY_ONLY }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, replacedAgeMs: null, causes: ['config'], delta: IDENTITY_ONLY })
         ]);
 
         expect(phase.planCount).toBe(2);
@@ -304,17 +251,17 @@ describe('computeTopologyChurnReport', () => {
     it('counts plans and promoted plans by kind', () => {
         const phase = computeFormation(
             [
-                createPlan({ version: 1, plannedAtEpochMs: 1_000 }),
-                createPlan({ version: 2, plannedAtEpochMs: 2_000 }),
-                createPlan({ version: 3, plannedAtEpochMs: 3_000 }),
-                createPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' } }),
-                createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
-                createPlan({ version: 6, plannedAtEpochMs: 6_000, change: { kind: 'reshape', reason: 'refinement' } })
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000 }),
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' } }),
+                createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
+                createTopologyChurnPlan({ version: 6, plannedAtEpochMs: 6_000, change: { kind: 'reshape', reason: 'refinement' } })
             ],
             [
-                { layout: toLayout(1), firstSeenAtEpochMs: 1_100 },
-                { layout: toLayout(3), firstSeenAtEpochMs: 3_100 },
-                { layout: toLayout(5), firstSeenAtEpochMs: 5_100 }
+                { layout: toTopologyChurnLayout(1), firstSeenAtEpochMs: 1_100 },
+                { layout: toTopologyChurnLayout(3), firstSeenAtEpochMs: 3_100 },
+                { layout: toTopologyChurnLayout(5), firstSeenAtEpochMs: 5_100 }
             ]
         );
 
@@ -324,12 +271,40 @@ describe('computeTopologyChurnReport', () => {
         expect(phase.promotedPlanCount).toBe(3);
     });
 
+    it('names every plan once: a kind or identity-only, in all and among the promoted', () => {
+        const phase = computeFormation(
+            [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, change: { kind: 'repair' } }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, delta: IDENTITY_ONLY, causes: ['rtt'] }),
+                createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 5_000, delta: IDENTITY_ONLY, causes: ['rtt'] })
+            ],
+            [
+                { layout: toTopologyChurnLayout(2), firstSeenAtEpochMs: 2_100 },
+                { layout: toTopologyChurnLayout(3), firstSeenAtEpochMs: 3_100 },
+                { layout: toTopologyChurnLayout(4), firstSeenAtEpochMs: 4_100 }
+            ]
+        );
+        const { attach, repair, reshape } = phase.plansByKind;
+        const promoted = phase.promotedPlansByKind;
+        const promotedIdentityOnlyPlanCount = 1;
+
+        expect(attach + repair + reshape + phase.identityOnlyPlanCount).toBe(phase.planCount);
+        expect(phase.planCount).toBe(5);
+        // Promoted: the repair, the reshape and version 4, an identity-only plan that belongs to no kind.
+        expect(promoted.attach + promoted.repair + promoted.reshape + promotedIdentityOnlyPlanCount).toBe(
+            phase.promotedPlanCount
+        );
+        expect(phase.promotedPlanCount).toBe(3);
+    });
+
     it('counts reshapes by reason, with every reason present at zero', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, change: { kind: 'reshape', reason: 'refinement' } }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000, change: { kind: 'reshape', reason: 'refinement' } }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'reshape', reason: 'kind-change' } }),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000 })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, change: { kind: 'reshape', reason: 'refinement' } }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, change: { kind: 'reshape', reason: 'refinement' } }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000 })
         ]);
 
         expect(Object.keys(phase.reshapesByReason).sort()).toEqual([...TOPOLOGY_RESHAPE_REASONS].sort());
@@ -340,8 +315,8 @@ describe('computeTopologyChurnReport', () => {
 
     it('an identity-only plan belongs to no kind', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, causes: ['rtt'] }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000 })
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, causes: ['rtt'] }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000 })
         ]);
 
         expect(phase.planCount).toBe(2);
@@ -351,7 +326,7 @@ describe('computeTopologyChurnReport', () => {
 
     it('reports what a reshape rerouted against what an attach or a repair did', () => {
         const reshape = (version: number, reroutedSessionCount: number): AdminRoomTopologyPlan =>
-            createPlan({
+            createTopologyChurnPlan({
                 version,
                 plannedAtEpochMs: version * 1_000,
                 delta: { reroutedSessionCount },
@@ -361,10 +336,10 @@ describe('computeTopologyChurnReport', () => {
             reshape(1, 2),
             reshape(2, 5),
             reshape(3, 8),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000 }),
-            createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } })
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000 }),
+            createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } })
         ]);
-        const withoutReshape = computeFormation([createPlan({ version: 1, plannedAtEpochMs: 1_000 })]);
+        const withoutReshape = computeFormation([createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000 })]);
 
         // Reroutes over the three reshapes, ascending [2, 5, 8]: median rank 2 → 5, p90 rank 3 → 8.
         expect(phase.reroutedSessionsPerReshape).toEqual({ min: 2, median: 5, p90: 8, max: 8 });
@@ -374,12 +349,12 @@ describe('computeTopologyChurnReport', () => {
 
     it('counts, per kind, the plans that rerouted a member they did not involve', () => {
         const phase = computeFormation([
-            createPlan({ version: 1, plannedAtEpochMs: 1_000, delta: { reroutedSessionCount: 1 } }),
-            createPlan({ version: 2, plannedAtEpochMs: 2_000 }),
-            createPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 2 } }),
-            createPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 4 } }),
-            createPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
-            createPlan({
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, delta: { reroutedSessionCount: 1 } }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000 }),
+            createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 3_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 2 } }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, change: { kind: 'repair' }, delta: { reroutedSessionCount: 4 } }),
+            createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 5_000, change: { kind: 'repair' } }),
+            createTopologyChurnPlan({
                 version: 6,
                 plannedAtEpochMs: 6_000,
                 change: { kind: 'reshape', reason: 'delta-too-large' },

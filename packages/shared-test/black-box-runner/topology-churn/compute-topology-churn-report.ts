@@ -12,8 +12,8 @@ import {
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
+import { computeCountsByKey } from './compute-counts-by-key.ts';
 import {
-    computeCountsByKey,
     computeTopologyChurnKindFigures,
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
@@ -32,7 +32,7 @@ export interface TopologyChurnPromotionSighting {
     readonly firstSeenAtEpochMs: number;
 }
 
-export interface ComputeTopologyChurnReportInput {
+interface ComputeTopologyChurnReportInput {
     readonly plans: readonly AdminRoomTopologyPlan[];
     readonly sightings: readonly TopologyChurnPromotionSighting[];
     readonly phases: readonly TopologyChurnPhaseWindow[];
@@ -46,7 +46,7 @@ export interface TopologyChurnDistribution {
     readonly max: number;
 }
 
-export interface TopologyChurnLongestPathHops {
+interface TopologyChurnLongestPathHops {
     readonly first: number;
     readonly last: number;
     readonly max: number;
@@ -150,7 +150,7 @@ function selectPromotedPlans(input: ComputePhaseFiguresInput): readonly Promoted
         const sighting = input.sightings.find((candidate) => isSameGroupLayoutIdentity(candidate.layout, plan.layout));
         return sighting === undefined
             ? []
-            : [{ plan, lagMs: Math.max(0, sighting.firstSeenAtEpochMs - plan.plan.plannedAtEpochMs) }];
+            : [{ plan, lagMs: sighting.firstSeenAtEpochMs - plan.plan.plannedAtEpochMs }];
     });
 }
 

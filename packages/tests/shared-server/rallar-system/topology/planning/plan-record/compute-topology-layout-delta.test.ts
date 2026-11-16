@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
 import type { TopologyLayoutEdges } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
+import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 
 /** Lists every edge from both ends, as the planner publishes next hops. */
 function createLayout(sessionIds: readonly string[], edges: readonly (readonly [string, string])[]): TopologyLayoutEdges {
@@ -13,20 +14,11 @@ function createLayout(sessionIds: readonly string[], edges: readonly (readonly [
     return { activeSessionIds: sessionIds, nextHopsBySessionId };
 }
 
-const EMPTY_DELTA = {
-    joinedSessionCount: 0,
-    leftSessionCount: 0,
-    changedSessionCount: 0,
-    reroutedSessionCount: 0,
-    acceptingSessionCount: 0,
-    maxJoinerEdgesPerSession: 0
-};
-
 describe('computeTopologyLayoutDelta', () => {
     it('counts every member of a first layout as joined and none as changed', () => {
         const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
-        expect(computeTopologyLayoutDelta(null, next)).toEqual({ ...EMPTY_DELTA, joinedSessionCount: 3 });
+        expect(computeTopologyLayoutDelta(null, next)).toEqual({ ...EMPTY_TOPOLOGY_LAYOUT_DELTA, joinedSessionCount: 3 });
     });
 
     it('a joiner\'s edges change the members that accept it and reroute nobody', () => {
@@ -34,7 +26,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c', 'd'], [['a', 'b'], ['b', 'c'], ['c', 'd']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             joinedSessionCount: 1,
             changedSessionCount: 1,
             acceptingSessionCount: 1,
@@ -47,7 +39,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             leftSessionCount: 1,
             changedSessionCount: 1
         });
@@ -59,7 +51,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             leftSessionCount: 1,
             changedSessionCount: 3
         });
@@ -71,7 +63,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c'], ['c', 'a']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             leftSessionCount: 1,
             changedSessionCount: 2
         });
@@ -83,7 +75,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c', 'd'], [['a', 'b'], ['b', 'c'], ['c', 'd'], ['a', 'c']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             leftSessionCount: 1,
             changedSessionCount: 3,
             reroutedSessionCount: 2
@@ -95,7 +87,7 @@ describe('computeTopologyLayoutDelta', () => {
         const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             changedSessionCount: 2,
             reroutedSessionCount: 2
         });
@@ -113,7 +105,7 @@ describe('computeTopologyLayoutDelta', () => {
         ]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             joinedSessionCount: 3,
             changedSessionCount: 2,
             acceptingSessionCount: 2,
@@ -124,7 +116,7 @@ describe('computeTopologyLayoutDelta', () => {
     it('an identical layout has an empty delta', () => {
         const layout = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
-        expect(computeTopologyLayoutDelta(layout, layout)).toEqual(EMPTY_DELTA);
+        expect(computeTopologyLayoutDelta(layout, layout)).toEqual(EMPTY_TOPOLOGY_LAYOUT_DELTA);
     });
 
     it('a join into a complete graph reroutes nobody', () => {
@@ -140,7 +132,7 @@ describe('computeTopologyLayoutDelta', () => {
         ]);
 
         expect(computeTopologyLayoutDelta(previous, next)).toEqual({
-            ...EMPTY_DELTA,
+            ...EMPTY_TOPOLOGY_LAYOUT_DELTA,
             joinedSessionCount: 1,
             changedSessionCount: 3,
             acceptingSessionCount: 3,
