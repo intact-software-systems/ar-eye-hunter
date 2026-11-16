@@ -203,53 +203,53 @@ roomBrowserTest(
         await registerRelicHunter(host, 'shared-session');
         // interaction: signing in does not allocate graphics for decorative opening artwork.
         expect(await host.locator('html').getAttribute('data-test-webgl-contexts')).toBeNull();
-        await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
-        await waitForExpeditionScene(host);
-        const link = await host.getByLabel('Room link', { exact: true }).inputValue();
-        const other = await host.context().newPage();
-        await other.addInitScript(observeBrowserWebGlContexts);
-        await other.goto(link);
-        await waitForExpeditionScene(other, 'shared-context');
-        // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
-        await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
-        const committed = Promise.withResolvers<void>();
-        const response = Promise.withResolvers<void>();
-        await host.route('**/commands/requests/*', async (route) => {
-            if (route.request().postDataJSON()?.kind !== 'join-expedition') {
-                await route.continue();
-                return;
-            }
-            const result = await route.fetch();
-            expect(result.ok()).toBe(true);
-            committed.resolve();
-            await response.promise;
-            await route.fulfill({ response: result });
-        });
+        const { link, other } = await withdrawAcrossSharedSessionTabs(host);
         try {
-            await host.getByRole('button', { name: /Join as/ }).click();
-            await committed.promise;
-            const membershipRemoval = other.waitForResponse((result) =>
-                result.request().method() === 'PUT' && result.url().includes('/members/')
-            );
-            await other.getByRole('button', { name: 'Leave room', exact: true }).click();
-            await expect(other.getByRole('button', { name: 'Leave room', exact: true })).toBeDisabled();
-            response.resolve();
-            await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeVisible();
-            await expect(other.locator('.lobby-party-row')).toHaveCount(0);
-            // Leaving disconnects this session; the account remains because it is the room's last owner.
-            expect((await membershipRemoval).status()).toBe(403);
             // Open the link in a new document to verify withdrawal independently of either tab's cache.
-            // A fragment-only navigation retains the departed runtime instead of loading the saved state.
             await other.goto('about:blank');
             await other.goto(link);
             await waitForExpeditionScene(other, 'shared-context');
             await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
-            await expect(other.getByLabel('Room link', { exact: true })).toHaveValue(link);
-            await expect(other.locator('.lobby-party-row')).toHaveCount(0);
-            await expect(other.getByRole('button', { name: /Join as/ })).toBeEnabled();
+            await expectWithdrawnInRoom(other, link);
         }
         finally {
-            response.resolve();
+            await other.close();
+        }
+    }
+);
+
+roomBrowserTest(
+    're-enters the room in the same document after a shared-session withdrawal',
+    async ({ page: host }) => {
+        await registerRelicHunter(host, 'shared-reentry');
+        const { link, other } = await withdrawAcrossSharedSessionTabs(host);
+        const roomId = readRoomId(link);
+        const sessionRemoved = other.waitForEvent(
+            'requestfinished',
+            (request) => request.method() === 'GET' && new URL(request.url()).pathname.endsWith(`/groups/${roomId}`)
+        );
+        const joinRequested = other.waitForRequest((request) =>
+            request.method() === 'POST' && request.url().includes(`/groups/${roomId}/join/requests/`)
+        );
+        let held = false;
+        await other.route(`**/api/relic/games/${roomId}`, async (route) => {
+            if (held || route.request().method() !== 'GET') {
+                await route.continue();
+                return;
+            }
+            held = true;
+            // The committed disconnect reaches this tab's room cache only with a later group read; the
+            // participation check must survive the current room changing under it (#783).
+            await sessionRemoved;
+            await route.continue();
+        });
+        try {
+            await other.goto(link);
+            await joinRequested;
+            await waitForExpeditionScene(other, 'shared-context');
+            await expectWithdrawnInRoom(other, link);
+        }
+        finally {
             await other.close();
         }
     }
@@ -293,15 +293,74 @@ roomBrowserTest(
     }
 );
 
+/** Withdraws the shared hunter from a second tab whose Leave room is refused for the room's last owner. */
+async function withdrawAcrossSharedSessionTabs(host: Page): Promise<{ readonly link: string; readonly other: Page; }> {
+    await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
+    await waitForExpeditionScene(host);
+    const link = await host.getByLabel('Room link', { exact: true }).inputValue();
+    const other = await host.context().newPage();
+    await other.addInitScript(observeBrowserWebGlContexts);
+    await other.goto(link);
+    await waitForExpeditionScene(other, 'shared-context');
+    // interaction: direct room recovery allocates only the destination renderer, not a discarded opening context.
+    await expect(other.locator('html')).toHaveAttribute('data-test-webgl-contexts', '1');
+    const committed = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<void>();
+    await host.route('**/commands/requests/*', async (route) => {
+        if (route.request().postDataJSON()?.kind !== 'join-expedition') {
+            await route.continue();
+            return;
+        }
+        const result = await route.fetch();
+        expect(result.ok()).toBe(true);
+        committed.resolve();
+        await response.promise;
+        await route.fulfill({ response: result });
+    });
+    try {
+        await host.getByRole('button', { name: /Join as/ }).click();
+        await committed.promise;
+        const membershipRemoval = other.waitForResponse((result) =>
+            result.request().method() === 'PUT' && result.url().includes('/members/')
+        );
+        await other.getByRole('button', { name: 'Leave room', exact: true }).click();
+        await expect(other.getByRole('button', { name: 'Leave room', exact: true })).toBeDisabled();
+        response.resolve();
+        await expect(host.getByRole('button', { name: 'Leave expedition', exact: true })).toBeVisible();
+        await expect(other.locator('.lobby-party-row')).toHaveCount(0);
+        // Leaving disconnects this session; the account remains because it is the room's last owner.
+        expect((await membershipRemoval).status()).toBe(403);
+        return { link, other };
+    }
+    catch (error) {
+        await other.close();
+        throw error;
+    }
+    finally {
+        response.resolve();
+    }
+}
+
+async function expectWithdrawnInRoom(page: Page, link: string): Promise<void> {
+    await expect(page.getByLabel('Room link', { exact: true })).toHaveValue(link);
+    await expect(page.locator('.lobby-party-row')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
+}
+
+function readRoomId(link: string): string {
+    const roomId = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
+    if (!roomId) {
+        throw new Error('Expected the created expedition room reference');
+    }
+    return roomId;
+}
+
 async function joinTwoHunters(host: Page, guest: Page): Promise<string> {
     await registerRelicHunter(host, 'continuity-keeper');
     await host.getByRole('button', { name: 'New unlisted room', exact: true }).click();
     await waitForExpeditionScene(host);
     const link = await host.getByLabel('Room link', { exact: true }).inputValue();
-    const roomId = new URLSearchParams(new URL(link).hash.slice('#rallar-room?'.length)).get('groupId');
-    if (!roomId) {
-        throw new Error('Expected the created expedition room reference');
-    }
+    const roomId = readRoomId(link);
     await registerRelicHunter(guest, 'continuity-hunter');
     await guest.getByLabel('Room reference', { exact: true }).fill(roomId);
     await guest.getByRole('button', { name: 'Enter room', exact: true }).click();
