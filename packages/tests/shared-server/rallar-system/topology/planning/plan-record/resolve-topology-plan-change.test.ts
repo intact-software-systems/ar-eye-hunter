@@ -14,8 +14,10 @@ import {
     computeRtcTopologyFixturePlan,
     computeRtcTopologyFixtureRebuild,
     createRtcTopologyFixtureGroup,
+    isConnectedRtcTopologyFixtureLayout,
     RTC_TOPOLOGY_MESH_OPTIONS,
     RTC_TOPOLOGY_TREE_OPTIONS,
+    type RtcTopologyFixtureLayout,
     type RtcTopologyFixtureLeaveInput,
     type RtcTopologyFixtureReplan
 } from '../rtc-topology-planning-fixtures.ts';
@@ -238,7 +240,7 @@ describe.each(MEASURED_ROOMS)('a single leave from $room is planned without hang
 
 describe('the leave layout check of the sweep', () => {
     // Each layout breaks exactly one clause of the check, with peer-4 as the leaver.
-    it.each<{ readonly layout: string; readonly planned: LeaveLayout; }>([
+    it.each<{ readonly layout: string; readonly planned: RtcTopologyFixtureLayout; }>([
         {
             layout: 'still links the leaver',
             planned: {
@@ -277,8 +279,6 @@ describe('the leave layout check of the sweep', () => {
 });
 
 type SweepEvent = (typeof SWEEP_EVENTS)[number];
-
-type LeaveLayout = Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'>;
 
 interface SweptPlan {
     readonly event: SweepEvent;
@@ -326,29 +326,11 @@ function toRebuiltLeave(plan: SweptPlan): string {
 }
 
 /** The leaver is in no member list and no next-hop list; every link is two-way, inside the limit, and all connect. */
-function isValidLeaveLayout(planned: LeaveLayout, leaverSessionId: string | null): boolean {
-    const { activeSessionIds, nextHopsBySessionId, degreeLimit } = planned;
-    const readNextHops = (sessionId: string) => nextHopsBySessionId[sessionId] ?? [];
-    const reachedSessionIds = computeReachedSessionIds(planned);
+function isValidLeaveLayout(planned: RtcTopologyFixtureLayout, leaverSessionId: string | null): boolean {
     return leaverSessionId !== null &&
-        !activeSessionIds.includes(leaverSessionId) &&
-        Object.values(nextHopsBySessionId).every((nextHops) => !nextHops.includes(leaverSessionId)) &&
-        activeSessionIds.every((sessionId) =>
-            readNextHops(sessionId).length <= degreeLimit &&
-            readNextHops(sessionId).every((nextHop) => readNextHops(nextHop).includes(sessionId)) &&
-            reachedSessionIds.has(sessionId)
-        );
-}
-
-/** The members a walk over next hops reaches from the first member. */
-function computeReachedSessionIds(planned: LeaveLayout): ReadonlySet<string> {
-    const reachedSessionIds = new Set(planned.activeSessionIds.slice(0, 1));
-    for (const sessionId of reachedSessionIds) {
-        for (const nextHop of planned.nextHopsBySessionId[sessionId] ?? []) {
-            reachedSessionIds.add(nextHop);
-        }
-    }
-    return reachedSessionIds;
+        !planned.activeSessionIds.includes(leaverSessionId) &&
+        Object.values(planned.nextHopsBySessionId).every((nextHops) => !nextHops.includes(leaverSessionId)) &&
+        isConnectedRtcTopologyFixtureLayout(planned);
 }
 
 /** The staying members whose next hops the plan changed, in the planner's member order. */

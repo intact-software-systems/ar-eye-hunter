@@ -19,7 +19,11 @@ import {
     computeRtcTopologyFixturePlan,
     createRtcTopologyFixtureGroup,
     createRtcTopologyFixtureReportedRttMeasurements,
-    RTC_TOPOLOGY_TREE_OPTIONS
+    isConnectedRtcTopologyFixtureLayout,
+    RTC_TOPOLOGY_MESH_OPTIONS,
+    RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+    RTC_TOPOLOGY_TREE_OPTIONS,
+    type RtcTopologyFixtureLayout
 } from './rtc-topology-planning-fixtures.ts';
 
 describe('RTC topology weighted room graph planning', () => {
@@ -492,6 +496,87 @@ describe('the weighted rebuild still plans over the sparse measured graph', () =
         });
     });
 });
+
+describe('a measured mesh plans over the complete room graph', () => {
+    // The browsers measured the formed layout's links and their rendezvous peers, so the measured graph is capped at the
+    // reporting limit; a mesh built over that graph lacked the pairs K_INSERT_MC weighs, and most members had no link.
+    it.each([16, 20, 30])('a measured mesh is rebuilt into a connected layout (%i members)', (memberCount) => {
+        const group = createRtcTopologyFixtureGroup(memberCount);
+        const formed = computeRtcTopologyFixturePlan({ options: RTC_TOPOLOGY_MESH_OPTIONS, group, previous: undefined }).snapshot;
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group,
+            previous: formed,
+            planningIntent: 'full-rebuild',
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
+        expect(readUnlinkedSessionIds(planned.snapshot)).toEqual([]);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+
+    it('a measured tree that reaches the mesh size changes kind into a connected mesh', () => {
+        const formed = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+            group: createRtcTopologyFixtureGroup(15),
+            previous: undefined
+        }).snapshot;
+        const group = createRtcTopologyFixtureGroup(16);
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+            group,
+            previous: formed,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(formed.topology).toBe('tree');
+        expect(planned.snapshot.topology).toBe('mesh');
+        expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'kind-change' });
+        expect(readUnlinkedSessionIds(planned.snapshot)).toEqual([]);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+
+    it('a join into a measured mesh of twenty is planned in place, the joiner holding its two links', () => {
+        // Pins the measured mesh join the complete graph made incremental; over the measured graph it was rebuilt.
+        const formed = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group: createRtcTopologyFixtureGroup(20),
+            previous: undefined
+        }).snapshot;
+        const group = createRtcTopologyFixtureGroup(21);
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group,
+            previous: formed,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.derivation).toEqual({ method: 'incremental' });
+        expect(planned.snapshot.nextHopsBySessionId['peer-21']).toHaveLength(2);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+});
+
+/** The members the plan gave no link, which a connected layout of two or more members never has. */
+function readUnlinkedSessionIds(planned: RtcTopologyFixtureLayout): readonly string[] {
+    return planned.activeSessionIds.filter((sessionId) => (planned.nextHopsBySessionId[sessionId] ?? []).length === 0);
+}
 
 function edgeWeight(graph: ReturnType<RallarRtcTopologyService['createRoomGraph']>, from: string, to: string): number | undefined {
     const edge = graph.edge(from, to);

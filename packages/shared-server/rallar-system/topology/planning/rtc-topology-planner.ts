@@ -319,13 +319,12 @@ export class RtcTopologyPlanner {
         rebuildDerivation: RtcTopologyPlanDerivation,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
     ): DerivedRtcTopologyNextHops {
-        const globalGraph = this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch);
         const rebuiltNextHopsBySessionId = this.createNextHopMap({
             topology: plan.topology,
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph,
+            globalGraph: this.createRebuildRoomGraph(plan, publicDispatch),
             options: plan.topologyOptions
         });
         if (
@@ -435,6 +434,17 @@ export class RtcTopologyPlanner {
         return result.outcome === 'ready'
             ? result.graph
             : materializeSparseRtcRoomGraphFallback(result);
+    }
+
+    private createRebuildRoomGraph(
+        plan: RtcTopologyPlanInput,
+        publicDispatch: RtcTopologyPlanner.PublicDispatch
+    ): WeightedGraph {
+        // K_INSERT_MC weighs a link from each inserted member to every mesh member with a free link, so it needs
+        // every pair; the measured graph, capped at the reporting limit, lacks most of them.
+        return plan.topology === 'mesh'
+            ? this.createCompleteRoomGraph(plan)
+            : this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch);
     }
 
     private createCompleteRoomGraph(plan: RtcTopologyPlanInput): WeightedGraph {

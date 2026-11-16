@@ -33,7 +33,8 @@ export const RTC_TOPOLOGY_STAR_OPTIONS: RallarRtcTopologyServiceOptions = {
     degreeLimit: 5,
     rttReportingDegreeLimit: 5
 };
-const SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
+/** No fixed kind: the planner selects star, tree or mesh by the room's size, a mesh from 16 members. */
+export const RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
 
 interface RtcTopologyFixturePlanInput {
     readonly options: RallarRtcTopologyServiceOptions;
@@ -202,6 +203,34 @@ export function computeRtcTopologyFixtureMeasuredLeave(input: RtcTopologyFixture
     });
 }
 
+/** The part of a planned layout the connectivity check reads. */
+export type RtcTopologyFixtureLayout = Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'>;
+
+/**
+ * Every link is two-way and inside the degree limit, and a walk over next hops from the first member reaches every
+ * member, so in a room of two or more every member holds at least one link.
+ */
+export function isConnectedRtcTopologyFixtureLayout(planned: RtcTopologyFixtureLayout): boolean {
+    const readNextHops = (sessionId: string) => planned.nextHopsBySessionId[sessionId] ?? [];
+    const reachedSessionIds = computeRtcTopologyFixtureReachedSessionIds(planned);
+    return planned.activeSessionIds.every((sessionId) =>
+        readNextHops(sessionId).length <= planned.degreeLimit &&
+        readNextHops(sessionId).every((nextHop) => readNextHops(nextHop).includes(sessionId)) &&
+        reachedSessionIds.has(sessionId)
+    );
+}
+
+/** The members a walk over next hops reaches from the first member. */
+function computeRtcTopologyFixtureReachedSessionIds(planned: RtcTopologyFixtureLayout): ReadonlySet<string> {
+    const reachedSessionIds = new Set(planned.activeSessionIds.slice(0, 1));
+    for (const sessionId of reachedSessionIds) {
+        for (const nextHop of planned.nextHopsBySessionId[sessionId] ?? []) {
+            reachedSessionIds.add(nextHop);
+        }
+    }
+    return reachedSessionIds;
+}
+
 function toRtcTopologyFixtureEdgeSet(nextHopsBySessionId: Readonly<Record<string, readonly string[]>>): Set<string> {
     return new Set(
         Object.entries(nextHopsBySessionId).flatMap(([from, nextHops]) => nextHops.map((to) => toRtcTopologyFixtureEdge(from, to)))
@@ -222,8 +251,8 @@ const ONE_LINK_TREE_OPTIONS: RallarRtcTopologyServiceOptions = { ...RTC_TOPOLOGY
 const REBUILD_SCENARIOS: Readonly<Record<TopologyReshapeReason, () => RtcTopologyFixtureReplanned>> = {
     // Four members are below the default tree entry size of five; the fifth member selects a tree.
     'kind-change': () =>
-        computeReplan({ options: SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
-            options: SIZE_SELECTED_OPTIONS,
+        computeReplan({ options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
             group: createRtcTopologyFixtureGroup(5),
             previous
         })),
