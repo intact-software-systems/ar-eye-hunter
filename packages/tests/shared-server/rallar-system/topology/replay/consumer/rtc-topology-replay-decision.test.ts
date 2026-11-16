@@ -75,12 +75,12 @@ describe('decideRtcTopologyReplayEntry', () => {
 
     it('distinguishes missing unexpired references from a retention gap', () => {
         const fixture = createRtcTopologyReplayFixture();
-        expect(() => decideRtcTopologyReplayEntry({ ...toDecisionInput(fixture), publication: { status: 'absent' } }))
+        expect(() => decideRtcTopologyReplayEntry({ ...toDecisionInput(fixture), publication: undefined }))
             .toThrow(RtcTopologyDeliveryCorruptionError);
         expect(
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: { status: 'absent' },
+                publication: undefined,
                 databaseNowEpochMs: fixture.entry.retainUntilEpochMs
             })
         ).toEqual({ status: 'gap' });
@@ -99,7 +99,7 @@ describe('decideRtcTopologyReplayEntry', () => {
         expect(() =>
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: { status: 'found', publication: publicationWithoutTrace as RtcTopologyPublication }
+                publication: publicationWithoutTrace as RtcTopologyPublication
             })
         ).toThrow(RtcTopologyDeliveryCorruptionError);
     });
@@ -110,7 +110,7 @@ describe('decideRtcTopologyReplayEntry', () => {
         expect(() =>
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: { status: 'found', publication: { ...fixture.publication, traceId: 'not a trace' } }
+                publication: { ...fixture.publication, traceId: 'not a trace' }
             })
         ).toThrow(RtcTopologyDeliveryCorruptionError);
     });
@@ -119,7 +119,7 @@ describe('decideRtcTopologyReplayEntry', () => {
 function toDecisionInput(fixture: RtcTopologyReplayFixture): RtcTopologyReplayEntryDecisionInput {
     return {
         entry: fixture.entry,
-        publication: { status: 'found', publication: fixture.publication },
+        publication: fixture.publication,
         outbox: fixture.outbox,
         currentSnapshot: fixture.currentSnapshot,
         databaseNowEpochMs: fixture.databaseNowEpochMs

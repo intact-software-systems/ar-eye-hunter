@@ -37,11 +37,6 @@ export type RtcTopologyClaimedPublication = Readonly<{
     publication: RtcTopologyPublication;
 }>;
 
-/** One stored publication as a direct read sees it. */
-export type RtcTopologyPublicationRead =
-    | Readonly<{ status: 'found'; publication: RtcTopologyPublication; }>
-    | Readonly<{ status: 'absent'; }>;
-
 export function computeRtcTopologyExecutionCommandDigest(
     publication: RtcTopologyPublication
 ): string {

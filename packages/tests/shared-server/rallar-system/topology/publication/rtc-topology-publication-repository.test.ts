@@ -188,7 +188,7 @@ describe('RTC topology publication repository', () => {
         }
     });
 
-    it.each(['direct', 'read', 'page'] as const)(
+    it.each(['direct', 'page'] as const)(
         'keeps a malformed v4 publication trace as corruption on the %s surface',
         async (surface) => {
             const runtimeRepository = new FakeRuntimeStateRepository();
@@ -206,8 +206,6 @@ describe('RTC topology publication repository', () => {
 
             const read = surface === 'direct'
                 ? repository.findPublication(groupRef, publication.publicationId)
-                : surface === 'read'
-                ? repository.readPublication(groupRef, publication.publicationId)
                 : repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
             await expect(read).rejects.toMatchObject({ code: 'rtc-topology-repository-invariant-corruption' });
         }

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -169,7 +168,7 @@ describe('RTC topology work publication record', () => {
         });
     });
 
-    it('validateRtcTopologyWork accepts the computed work and refuses one whose accepted record or carried kind differs', () => {
+    it('validateRtcTopologyWork accepts the computed work and refuses one whose accepted record differs', () => {
         const stored = acceptPlannedLayout(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6)));
         const current = toLaterGroupRevision(createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(7)));
         const workInput = toPublishingWorkInput(
@@ -183,7 +182,7 @@ describe('RTC topology work publication record', () => {
         ) {
             throw new Error('The join must publish a planned layout');
         }
-        // Validation compares the whole recomputed projection, so altering one copy of the record is enough to refuse.
+        // Validation compares the whole recomputed projection, so altering the record is enough to refuse.
         const alteredRecord: typeof computed = Either.ofRight({
             ...computed.right,
             accepted: {
@@ -191,61 +190,52 @@ describe('RTC topology work publication record', () => {
                 publication: { ...accepted.publication, plan: { ...accepted.publication.plan, causes: ['rtt'] } }
             }
         });
-        const alteredKind: typeof computed = Either.ofRight({
-            ...computed.right,
-            accepted: { ...accepted, planChange: { kind: 'reshape', reason: 'refinement' } }
-        });
 
         expect(validateRtcTopologyWork(workInput, computed)).toEqual([]);
         expect(validateRtcTopologyWork(workInput, alteredRecord)).not.toEqual([]);
-        expect(validateRtcTopologyWork(workInput, alteredKind)).not.toEqual([]);
     });
 });
 
 describe('RTC topology work plan change', () => {
-    it('a join on a tree is carried as an attach and recorded with the publication', () => {
+    it('a join on a tree is recorded with the publication as an attach', () => {
         const accepted = computeFixtureReplanWork(toTreeJoinReplan());
 
-        expect(accepted.planChange).toEqual({ kind: 'attach' });
         expect(accepted.publication?.plan?.change).toEqual({ kind: 'attach' });
     });
 
-    it('a leaf\'s leave is carried as a repair', () => {
+    it('a leaf\'s leave is recorded as a repair', () => {
         const left = computeRtcTopologyFixtureLeave({ ...TREE_OF_EIGHT, leaver: (nextHopCount) => nextHopCount === 1 });
 
         const accepted = computeFixtureReplanWork(left);
 
-        expect(accepted.planChange).toEqual({ kind: 'repair' });
         expect(accepted.publication?.plan?.change).toEqual({ kind: 'repair' });
     });
 
-    it('a relay\'s leave is carried as a repair whose delta reroutes nobody', () => {
+    it('a relay\'s leave is recorded as a repair whose delta reroutes nobody', () => {
         const left = computeRtcTopologyFixtureLeave({ ...TREE_OF_EIGHT, leaver: (nextHopCount) => nextHopCount > 1 });
 
         const accepted = computeFixtureReplanWork(left);
 
-        expect(accepted.planChange).toEqual({ kind: 'repair' });
+        expect(accepted.publication?.plan?.change).toEqual({ kind: 'repair' });
         expect(accepted.publication?.plan?.delta.reroutedSessionCount).toBe(0);
     });
 
-    it('a change of kind is carried as a reshape for kind-change', () => {
+    it('a change of kind is recorded as a reshape for kind-change', () => {
         const accepted = computeFixtureReplanWork(computeRtcTopologyFixtureRebuild('kind-change'));
 
-        expect(accepted.planChange).toEqual({ kind: 'reshape', reason: 'kind-change' });
         expect(accepted.publication?.plan?.change).toEqual({ kind: 'reshape', reason: 'kind-change' });
     });
 
-    it('an RTT refresh that rebuilds is carried as a reshape for refinement', () => {
+    it('an RTT refresh that rebuilds is recorded as a reshape for refinement', () => {
         const replanned = computeRtcTopologyFixtureRebuild('refinement');
 
         const accepted = computeFixtureReplanWork(replanned);
 
         expect(accepted.work.kind).toBe('rtt-refresh');
-        expect(accepted.planChange).toEqual({ kind: 'reshape', reason: 'refinement' });
         expect(accepted.publication?.plan?.change).toEqual({ kind: 'reshape', reason: 'refinement' });
     });
 
-    it('a plan that only advances presence coverage carries no change', () => {
+    it('a plan that only advances presence coverage records no change', () => {
         const group = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6));
         const present = {
             ...group,
@@ -260,34 +250,7 @@ describe('RTC topology work plan change', () => {
 
         const accepted = computeAcceptedWork(toPublishingWorkInput(workInput));
 
-        expect(accepted.planChange).toBeNull();
         expect(accepted.publication?.plan?.change).toBeNull();
-    });
-
-    it('the promotion request, the connect writes, the fingerprint, the mutation and the reservation finish are the same with and without the kind', () => {
-        // Formation automation on, so the transaction carries the connect write its layout wakes.
-        const workInput = { ...toFixtureReplanWorkInput(toTreeJoinReplan()), formationAutomationEnabled: true };
-        const computed = computeRtcTopologyWork(workInput).right;
-        if (computed?.write.kind !== 'transaction' || computed.write.transaction.mutation?.outcome !== 'write') {
-            throw new Error('The join must write its layout in one transaction');
-        }
-        const { promotionWrite, connectWrites, fingerprint, mutation, delivery, reservationFinish } = computed.write.transaction;
-        const { persistence, publication, observation, snapshotGuard } = mutation;
-
-        // Pinned at 92ce31247, before a plan's kind was carried. The publication row and its receipt store the record, so
-        // they are compared without it; the snapshot row and every WS payload are compared whole.
-        expect(connectWrites).toHaveLength(1);
-        expect(toPinnedDigest(connectWrites)).toBe('b962e8b969116cd63635962aa899ed01b7c303cf29f46193412966a9d50135f8');
-        expect(toPinnedDigest(reservationFinish)).toBe('f20d0d000ceabaf4eb095a808b69e34a2629b768a627bed3a9b1d6725868e048');
-        expect(toPinnedDigest(promotionWrite)).toBe('c34ba5b7f5c009817df3e54e265be4ef226f1e5a92df69ecc21e8785f0421222');
-        expect(toPinnedDigest(fingerprint)).toBe('dee7489f1a814c1348ee85833f6a5ca4f14c89123464f96c27f23a24277677f2');
-        expect(toPinnedDigest({ observation, snapshotGuard, snapshotRow: persistence.snapshot })).toBe(
-            '28806cc4e7670e0960b2d407fb0015687e8fd778b9b529ac43022a5a9044a5f9'
-        );
-        expect(toPinnedDigest(publication === null ? null : { ...publication, plan: null })).toBe(
-            'b76af08693e99698ca438e0de9aa06c1977f537ba4d96abe3be209685e75f008'
-        );
-        expect(toPinnedDigest(delivery)).toBe('9fc77de43fc9997b00396e8c09f87e0d5fac63b5d435ab36a3ba68264740d9a2');
     });
 
     it('the recompute line names the plan\'s kind and a reshape\'s reason', () => {
@@ -346,7 +309,6 @@ describe('RTC topology work plan change', () => {
         expect(accepted.work.kind).toBe('rtt-refresh');
         expect(accepted.publication?.plan?.causes).toEqual(['leader-change', 'rtt']);
         expect(accepted.publication?.plan?.change).toEqual({ kind: 'reshape', reason: 'leader-rooting' });
-        expect(accepted.planChange).toEqual(accepted.publication?.plan?.change);
     });
 
     it('a commanded group revision is not change-gated, so it is caused by config', () => {
@@ -690,10 +652,6 @@ function computeFixtureReplanWork(replan: FixtureReplan & Partial<Pick<RtcTopolo
         expect(accepted.mutationInput.candidate?.nextHopsBySessionId).toEqual(replan.planned.snapshot.nextHopsBySessionId);
     }
     return accepted;
-}
-
-function toPinnedDigest(value: object | null): string {
-    return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
 interface ToWorkInput {

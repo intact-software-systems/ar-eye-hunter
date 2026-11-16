@@ -63,7 +63,7 @@ function readRttReplanPromotion(accepted: TimedRtcTopologyWork): RttReplanPromot
 }
 
 function readPlanChange(accepted: TimedRtcTopologyWork): TopologyPlanChange | null {
-    return accepted.decision === 'accepted' ? accepted.planChange : null;
+    return accepted.decision === 'accepted' ? accepted.publication?.plan?.change ?? null : null;
 }
 
 /** The layout version the decision left stored; a superseded attempt committed none of its own. */

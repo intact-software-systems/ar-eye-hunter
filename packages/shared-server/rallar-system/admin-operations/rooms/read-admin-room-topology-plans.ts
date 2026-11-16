@@ -45,7 +45,7 @@ export class ReadAdminRoomTopologyPlans {
             roomRef,
             observedAtEpochMs: this.dependencies.nowEpochMs(),
             plans: page,
-            nextAfterPublicationId: entries.length > limit ? page.at(-1)?.publicationId ?? null : null
+            nextAfterPublicationId: entries.length > limit ? page.at(-1)!.publicationId : null
         };
     }
 }

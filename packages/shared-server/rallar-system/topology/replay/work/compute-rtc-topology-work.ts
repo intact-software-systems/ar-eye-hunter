@@ -383,8 +383,7 @@ function computeAcceptedTopologyMutation(
         promotionRead,
         criterionPetition: { authority, planned: planned.snapshot },
         planningObservation: planned.planningObservation,
-        rttReplanPromotion: input.rttReplanPromotion,
-        planChange: mutationInput.publication?.plan?.change ?? null
+        rttReplanPromotion: input.rttReplanPromotion
     });
 }
 

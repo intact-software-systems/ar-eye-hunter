@@ -606,8 +606,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         promotionRead: { group: group.group, policy: { status: 'absent' } },
         criterionPetition: null,
         planningObservation: null,
-        rttReplanPromotion: null,
-        planChange: null
+        rttReplanPromotion: null
     };
     return {
         traceId: 'trace-compute-rtc-topology-work-write',

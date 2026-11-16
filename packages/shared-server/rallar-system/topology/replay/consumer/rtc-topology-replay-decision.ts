@@ -7,7 +7,6 @@ import { decodeRtcTopologySnapshot } from '../../persistence/decode-rtc-topology
 import { rtcTopologySemanticEqual } from '../../persistence/rtc-topology-semantic-equal.ts';
 import { compareTopologyTuple } from '../../persistence/rtc-topology-snapshot-contract.ts';
 import { decodeRtcTopologyPublication } from '../../publication/decode-rtc-topology-publication.ts';
-import type { RtcTopologyPublicationRead } from '../../publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
     assertRtcTopologyPublicationOutbox,
@@ -21,7 +20,7 @@ import {
 
 export interface RtcTopologyReplayEntryDecisionInput {
     readonly entry: RtcTopologyDeliveryLogEntry;
-    readonly publication: RtcTopologyPublicationRead;
+    readonly publication: RtcTopologyPublication | undefined;
     readonly outbox?: readonly (ResourceEntry | undefined)[];
     readonly currentSnapshot?: RallarOverlayTopologySnapshot;
     readonly databaseNowEpochMs: number;
@@ -73,12 +72,12 @@ function decidePublicationDelivery(
 
 function readReferencedPublication(
     entry: RtcTopologyDeliveryLogEntry,
-    read: RtcTopologyPublicationRead
+    stored: RtcTopologyPublication | undefined
 ): RtcTopologyPublication {
-    if (read.status === 'absent') {
+    if (!stored) {
         throw corruption(entry, 'an unexpired durable reference is missing');
     }
-    return decodeRtcTopologyPublication(read.publication, entry.groupRef).fold<RtcTopologyPublication>(() => {
+    return decodeRtcTopologyPublication(stored, entry.groupRef).fold<RtcTopologyPublication>(() => {
         throw corruption(entry, 'the referenced publication is invalid');
     }, (publication) => {
         if (publication.publicationId !== entry.publicationId) {
