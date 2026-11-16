@@ -24,7 +24,6 @@ export * from './group-topology-validation.ts';
 export * from './mesh/group-dynamics-mesh-types.ts';
 export * from './mesh/insert-mesh-algs.ts';
 export * from './mesh/k-mddl-ottc.ts';
-export * from './mesh/remove-mesh-algs.ts';
 export * from './remove/remove-dynamics-facade.ts';
 export * from './remove/remove-dynamics-service.ts';
 export * from './remove/remove-dynamics-types.ts';

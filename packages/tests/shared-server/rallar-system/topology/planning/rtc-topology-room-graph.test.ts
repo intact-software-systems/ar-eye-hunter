@@ -342,7 +342,27 @@ describe('RTC topology weighted room graph planning', () => {
         expect(graph.hasEdge('peer-1', 'peer-8')).toBe(true);
     });
 
-    it('builds a sparse weighted candidate graph when RTT reporting is degree bounded', () => {
+    it('builds a sparse weighted candidate graph for a tree when RTT reporting is degree bounded', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(32);
+        const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
+            now: () => 100,
+            topologyKind: 'tree',
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5
+        });
+        const measurements = createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1')
+            .filter((rtt) => rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1')
+            .slice(0, 5);
+
+        const graph = service.createRoomGraph(group, measurements);
+
+        expect(graph.order).toBe(32);
+        expect(graph.size).toBeLessThanOrEqual((32 * 5) / 2);
+    });
+
+    it('builds the complete graph the mesh rebuild plans over for a room its size makes a mesh', () => {
         const memberSessionIds = createRtcTopologyMemberIds(32);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
@@ -358,15 +378,16 @@ describe('RTC topology weighted room graph planning', () => {
         const graph = service.createRoomGraph(group, measurements);
 
         expect(graph.order).toBe(32);
-        expect(graph.size).toBeLessThanOrEqual((32 * 5) / 2);
+        expect(graph.size).toBe((32 * 31) / 2);
     });
 
-    it('keeps RTT-weighted candidate graph edge count linear in room size', () => {
+    it('keeps the RTT-weighted candidate graph of a tree linear in room size', () => {
         const memberSessionIds = createRtcTopologyMemberIds(200);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
             rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
+            topologyKind: 'tree',
             degreeLimit: 5,
             rttReportingDegreeLimit: 5
         });

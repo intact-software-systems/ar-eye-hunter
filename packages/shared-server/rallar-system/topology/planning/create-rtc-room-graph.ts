@@ -133,9 +133,10 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
 }
 
 /**
- * Every pair of the sessions is an edge, with no degree or edge cap: the in-place evolution of a layout links only
- * pairs that are edges of its graph, so on a sparse graph a leave's repair can find no candidate and never end. With
- * nothing measured, every pair carries its canonical weight alone.
+ * Every pair of the sessions is an edge, with no degree or edge cap. Two plans use it: the in-place evolution of a
+ * layout, which links only pairs that are edges of its graph, so on a sparse graph a leave's repair can find no
+ * candidate and never end; and the weighted rebuild of a mesh, whose insert weighs a link from each member to every
+ * mesh member with a free link. With nothing measured, every pair carries its canonical weight alone.
  */
 export function createCompleteRtcRoomGraph(input: CreateCompleteRtcRoomGraphInput): WeightedGraph {
     const graph = createRoomGraph(input.group, input.sessionIds, input.degreeLimit);
