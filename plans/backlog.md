@@ -769,6 +769,11 @@ and it has no status list.
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
   rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+- What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
+  established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
+  rate, the only read of "absorbed".
+- Mesh drift: the churn measurement cannot compare an accepted mesh with the planner's fresh plan, because no typed
+  read serves the mesh parameter. RTT drift is unmeasured too: the scenario sends no RTT reports.
 - Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
   forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
   forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`

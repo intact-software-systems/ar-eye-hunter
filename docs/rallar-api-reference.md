@@ -3013,6 +3013,10 @@ Room inspection routes also require current API admin authority and return `Cach
   (default 50, maximum 100) and optional `afterGroupId`. It returns scope, observation time,
   `complete`/`partial` completeness, bounded valid or redacted invalid entries, and a nullable next cursor.
   Deleted/expired records are absent. Private, unlisted, scheduled and archived rooms remain eligible.
+- `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-plans`
+  returns the live retained topology publications of one room with the plan record each was computed from
+  (`plan`, null for a removal): `limit` (maximum 100) and `afterPublicationId`, pages in storage-key order, not time
+  order. It carries no member identities and no routing edges.
 - `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-work/:outboxId`
   observes the exact receipt's retained queue work. Its mandatory fields are `roomRef`, `outboxId`,
   `observedAtEpochMs`, `status`, `attempts` and `settledAtEpochMs`. Status is `unknown`, `pending`,

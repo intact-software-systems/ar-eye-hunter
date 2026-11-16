@@ -6,8 +6,10 @@ holds back the reshaping of a room's distribution graph while the room is restle
 cheap, necessary changes through at once, and bounds how long anyone waits. In the maintainer's
 words it is back pressure on the joiners, and its strength must follow what the room is doing.
 
-Nothing in it is built. The maintainer decided its shape on 2026-11-14 (see "Decisions"). What the
-measuring slice still has to establish is listed after them.
+Slices 1 and 2 are built (pull request #827): the server records each plan and names it an attach, a
+repair or a reshape, and nothing acts on that yet. The gates are not built. The maintainer decided the
+plan's shape on 2026-11-14 (see "Decisions"). What the measurement answered and what it left open
+is listed at the end.
 
 ## Why
 
@@ -19,7 +21,7 @@ measuring slice still has to establish is listed after them.
 - a relay that changes its children re-plans its forwards, and an origin's receipts wait on hops
   that no longer carry its frames.
 
-The overlap and the early dial are in pull request #823 (make-before-break), not on `main` yet.
+The overlap and the early dial are in pull request #823 (make-before-break), which is merged.
 
 **What the server does today** (on `main`):
 
@@ -34,7 +36,7 @@ The overlap and the early dial are in pull request #823 (make-before-break), not
 | RTT-only re-plans     | Held until the layout is 15 s old; refinement at most every 30 s; a tree is kept unless 25 % and 10 ms better                                                                                                                                                                                                                                                                     | `rttReplanMinimumLayoutAgeMs`, `rttRefinement.minIntervalMs`, `resolve-rtt-refinement-next-hops.ts` |
 | Promotion             | An active room's plan is promoted at once; there is no cooldown                                                                                                                                                                                                                                                                                                                   | `topology-promotion-request.ts`                                                                     |
 | Incremental evolution | A membership change evolves the accepted graph: an unchanged member keeps its edges, so browsers change O(delta) connections. The whole graph is rebuilt only when a tree's leader must be re-rooted, when more than max(2, a quarter of the room) changed at once (joins alone never count on a tree), when the incremental update fails, or when the result breaks an invariant | `computeEvolvedTopologyNextHops`, `topology/planning/evolve-planned-topology.ts`                    |
-| Topology kind         | Under `auto` a room is a star below 5 members, a tree from 5 and a mesh from 16, with exit widths against flapping                                                                                                                                                                                                                                                                | `topology.planning` in `defaults-config.json`                                                       |
+| Topology kind         | Under `auto` a room is a star (the complete graph) below 5 members, a tree from 5 and a mesh from 16, with exit widths against flapping                                                                                                                                                                                                                                           | `topology.planning` in `defaults-config.json`                                                       |
 
 **A burst is not only the first fill.** The expected-members rule covers one burst: the first,
 up to the room's capacity or its admission limit. The same burst of arrivals can come at any
@@ -189,39 +191,89 @@ The plan keeps two slices in view; later ones are decided by what these find.
 
 ### Slice 1 — measure before deciding
 
-Nothing here changes behaviour.
+Built. Nothing here changes behaviour.
 
-- Record, per room, each accepted layout's lifetime and the cause of the re-plan that replaced it
-  (join, leave, leader change, config, RTT), where the server already writes its topology replay
-  facts. No new store.
-- One black-box recipe that drives a room through a formation burst and through steady churn (a
-  member joins or leaves every few seconds) and reports: promotions per minute, the share of
-  promotions that landed inside the previous overlap, and how many members' edges each one
-  changed.
-- From that, the numbers the rule needs: how often a join or a leave changes edges of members it
-  does not involve today, and what a reshape costs against what it gains.
-
-Done when the recipe's report exists for `auto` and `debounced` rooms of three sizes and the
-figures are in the pull request.
+- Every published RTC topology plan carries a record, `RtcTopologyPlanRecord`
+  (`packages/shared/api/topology-plan/rtc-topology-plan-record.ts`): when it was planned, the layout
+  it replaced and that layout's age, the causes of the re-plan (`TOPOLOGY_REPLAN_CAUSES`: join,
+  leave, leader-change, config, rtt), the layout delta's counts, the longest hop path, and the
+  plan's change (Slice 2). `computeRtcTopologyPlanRecord`
+  (`packages/shared-server/rallar-system/topology/planning/plan-record/`) computes it inside the
+  topology work, so `validateRtcTopologyWork` recomputes and compares it. It is stored as `plan` on
+  the immutable `RtcTopologyPublication` row (retained 24 h, null exactly when the layout is
+  removed); no browser receives it (D653).
+- The operator reads the records with
+  `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-plans`
+  (`apps/api-v1/src/admin-operations/register-admin-room-routes.ts`), paged by a cursor over
+  `listGroupPublicationEntriesPage`. OpenAPI and a step of `api-v1-admin-operations.json` cover it.
+- `npm run perf:api-v1:topology-churn`
+  (`packages/shared-test/black-box-runner/topology-churn/`) is the measurement. It starts a managed
+  API on Postgres and drives six rooms (3, 8 and 20 members, as star, tree and mesh, each under the
+  `auto` and the `debounced` replanning policy) through formation, 90 s of one join or leave every
+  3 s, and convergence. It reads the records through the operator read and writes
+  `topology-churn-report.json` and a Markdown table. It is run by hand; it is not in CI.
 
 ### Slice 2 — the kind of each plan is a fact the timing reads
 
-- The planner's result already says whether it evolved the graph or rebuilt it, and why. That
-  fact is carried to the work that times and promotes the plan, and recorded with the layout, so
-  the measurement of slice 1 can count rebuilds by reason.
-- A change of kind and a quality or RTT refinement are named as reshapes beside the four rebuild
-  reasons, so "reshape" has one definition.
-- Pinned by tests at the planner and at the work that times it: a join on a tree is an attach; a
-  leaf's leave is a repair that changes nobody else; a relay's leave changes only its dependants;
-  each rebuild reason is a reshape.
-- No timing changes yet. This slice only makes the distinction visible where the gates will read
-  it.
+Built. No timing, promotion or delivery behaviour changed.
 
-Done when the recipe of slice 1 reports, per run, how many promotions were attaches, repairs and
-reshapes, and the reshapes by reason.
+- The planner returns a `derivation` with each plan (`RtcTopologyPlanDerivation`): `established` (a
+  first layout), `incremental` (evolved from the previous layout) or `rebuilt` with a reason. The
+  reasons have one owner, `TOPOLOGY_RESHAPE_REASONS`
+  (`packages/shared/api/topology-plan/topology-plan-change.ts`): `leader-rooting`,
+  `delta-too-large`, `update-failed`, `invariant-violation`, `kind-change` and `refinement`.
+- `resolveTopologyPlanChange` is the one rule (D654): a plan that changes no member and no edge has
+  no kind; a rebuilt plan is a reshape with its reason; an established plan is an attach; an
+  incremental plan whose delta has a leave is a repair, any other an attach.
+- The kind is stored as `change` on the record and carried as `planChange` on the accepted work and
+  on the work's timing line. Nothing branches on it.
+- The churn report counts plans by kind (`plansByKind`, `promotedPlansByKind`,
+  `reroutingPlansByKind`), reshapes by reason (`reshapesByReason`) and what a reshape rerouted
+  (`reroutedSessionsPerReshape`).
+- Pinned at the planner and the work, with a sweep of 58 real-planner plans
+  (`packages/tests/shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.test.ts`)
+  that finds no incremental plan rerouting a member the change did not involve.
+
+### What the measurement found
+
+Six rooms, 30 churn plans each (one join or leave every 3 s for 90 s), one formation plan each. Every
+churn plan was promoted and landed inside the previous layout's 15 s overlap. Run 3 supplies the
+kinds, the reshape figures and the drift; run 2 supplies the rerouted share and the hop paths; the
+other columns are the same in both. Drift is extra hops of the accepted layout over the planner's own
+fresh no-RTT plan after the 30 churn plans.
+
+| Room               | Churn plans | Plans/min | Promoted | Inside overlap | Attach / repair / reshape | Rerouted an uninvolved member (join/leave plans) | Sessions rerouted per reshape, p50 / max | Longest hop path, max | Drift        |
+| ------------------ | ----------- | --------- | -------- | -------------- | ------------------------- | ------------------------------------------------ | ---------------------------------------- | --------------------- | ------------ |
+| star 3, auto       | 30          | 20.0      | 30       | 1.00           | 15 / 15 / 0               | 0.00                                             | none                                     | 1                     | 0            |
+| star 3, debounced  | 30          | 20.0      | 30       | 1.00           | 15 / 15 / 0               | 0.00                                             | none                                     | 1                     | 0            |
+| tree 8, auto       | 30          | 20.0      | 30       | 1.00           | 15 / 12 / 3               | 0.07                                             | 2 / 3                                    | 5-6                   | 0-1          |
+| tree 8, debounced  | 30          | 20.0      | 30       | 1.00           | 15 / 11 / 4               | 0.10                                             | 5 / 6                                    | 5-6                   | 0-1          |
+| mesh 20, auto      | 30          | 20.0      | 30       | 1.00           | 15 / 10 / 5               | 0.17                                             | 16 / 18                                  | 5                     | undetermined |
+| mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.17                                             | 13 / 18                                  | 5                     | undetermined |
+
+Kinds, reshape figures and drift are from run 3; the rerouted share and the hop paths are from run 2.
+The tree's drift read 1 extra hop in run 3 (accepted 4, fresh plan 3) and 0 in run 2.
+
+- Every reshape the measurement produced was a leave the planner could not repair incrementally
+  (`invariant-violation`): 3 or 4 of the 15 leaves in the 8-member tree, 5 or 6 of the 15 in the
+  20-member mesh. The planner sweep finds the same from a formed layout: 9 of the 20 single leaves
+  from a mesh and 1 of the 8 from a tree. Only those plans rerouted members they did not involve;
+  no attach and no repair did.
+- A gate that holds reshapes would therefore hold exactly the plans that reconnect a departed
+  relay's dependants, which is the failure named above. The gate slices must first answer it: a
+  rule for a rebuild a leave forces, or mesh and tree evolution that repairs those leaves.
+- What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
+  occurred, so the reshapes this plan was written to hold back are unmeasured in rate. `auto` and
+  `debounced` do not differ at this cadence: events are 3 s apart and the debounce window is 500 ms.
+
+Done when the report exists for `auto` and `debounced` rooms of three sizes, and per run counts the
+plans as attaches, repairs and reshapes and the reshapes by reason: both are met by the runs above.
 
 ### Later, decided after slice 2
 
+- Before either gate: what a leave that forces a rebuild does under the reshape gate. The
+  measurement shows every reshape at the scenario's cadence was such a leave (see "What the
+  measurement found").
 - The two gates of "Mechanism": one pure function over stored state, with the lifecycle policy's
   `topology` section carrying the reshape gate's two bounds.
 - The forced edge for a joiner that cannot be attached cheaply while the reshape gate is far from
@@ -233,9 +285,9 @@ reshapes, and the reshapes by reason.
 ## Validation
 
 - Planner and rule: unit tests under `packages/tests/shared-server/rallar-system/topology/`.
-- Mutation paths change in slice 2 (a plan is written differently): AppInbox doctrine applies,
-  and `test:api-v1:black-box:postgres:medium-scale` runs unweakened.
-- The churn recipe of slice 1 is the before-and-after measure for every later slice.
+- Mutation paths changed in slices 1 and 2 (a plan is written differently): AppInbox doctrine
+  applies, and `test:api-v1:black-box:postgres:medium-scale` runs unweakened.
+- `npm run perf:api-v1:topology-churn` is the before-and-after measure for every later slice.
 - A hosted run is guidance, not a gate, and needs the maintainer's go-ahead each time.
 
 ## Decisions
@@ -280,17 +332,29 @@ answers; they are not the maintainer's decisions and can be overturned.
   inside the previous overlap" is only meaningful once the overlap exists, which is one reason the
   work starts after #823 merges (decision 13).
 
-## For the measuring slice to establish
+## What the measuring slice established
 
-Nothing here waits on the maintainer. These are facts the plan needs and does not have.
+These are the three facts the plan needed. Slice 1 answered what a server can answer; the rest needs
+browsers.
 
-1. **What the server can see of "absorbed".** Decision 10 names how long new edges took and
-   whether the layout survived. The server knows when a layout was accepted and replaced. Whether
-   it learns that the edges of a layout came up, and when, is not established: candidates are the
-   activation status's readiness coverage, presence, and the RTT reports members send once an edge
-   is measured. Slice 1 names the signal or says what would have to be reported.
-2. **How far a patched graph drifts.** Decision 11 needs the measures a fresh plan is compared on
-   (longest path, slowest path by RTT) and a bound. Slice 1 reports the drift after runs of
-   attaches and repairs, so the bound is chosen from it.
-3. **What an attach batch is worth.** How many joiners one batch may carry, and what a batch costs
-   the members that accept the new edges, against their connection cap.
+1. **What the server can see of "absorbed".** Not measured. The server knows when a layout was
+   accepted and replaced, but not when its edges came up: that needs a browser to report, per
+   accepted layout, the instant its coverage first reached the success rate.
+2. **How far a patched graph drifts.** The accepted layout against the planner's own fresh no-RTT
+   plan after 30 attaches and repairs: a star 0 extra hops, a tree 0 or 1 (0 in one run, 1 in the
+   other: accepted 4, fresh plan 3). A mesh is undetermined, because no typed read serves the mesh
+   parameter the fresh plan needs. RTT drift is unmeasured: the scenario sends no RTT reports.
+3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
+   3, 8 and 20 in the formation plan. What a batch costs the members that accept the new edges
+   needs browsers (edge setup time).
+
+## Open for the maintainer
+
+- Whether the churn measurement belongs in CI; today it is run by hand.
+- Whether "promotion" in this plan means the published plan (what the record counts) or the
+  accepted-slot write.
+- Whether a deployed store is wiped or pruned at deploy: the record has one stored shape (D653), and
+  a store that is not refuses the previous build's publication rows until they expire, up to 24 h.
+- A typed read for the mesh parameter, which mesh drift needs.
+- What the reshape gate does with a leave the planner cannot repair incrementally, which is every
+  reshape the measurement produced.
