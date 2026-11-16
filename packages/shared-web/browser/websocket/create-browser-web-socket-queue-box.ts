@@ -40,6 +40,8 @@ import {
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
+        readonly nowEpochMs: () => number;
+        readonly workNowEpochMs: () => number;
         readonly qosProvider: ALQosInputProvider;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly outboundSettlements: ALDeliverySettlementSink;
@@ -91,6 +93,8 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         readAuthenticatedPrincipalId: () => {
             const session = readSession();
             return session?.sessionId === clientData.sessionId && session.clientId === clientData.clientId
@@ -107,7 +111,7 @@ function createBrowserWebSocketQueueBoxService(
                 client: clientData,
                 currentSession: readSession(),
                 snapshot: ref ? findGroupStateSnapshotByRef(ref) : undefined,
-                nowMs: Date.now()
+                nowMs: input.nowEpochMs()
             });
         },
         qosProvider: input.qosProvider,
@@ -122,7 +126,8 @@ function createBrowserWebSocketQueueBoxService(
         outboundStores,
         outboundVolatileStores: createBrowserALVolatileOutboundRuntimeStores(
             toBrowserWsClientALRuntimeStoreId(clientData.sessionId),
-            input.volatileBudget
+            input.volatileBudget,
+            { nowMs: input.nowEpochMs, workNowMs: input.workNowEpochMs }
         ),
         outboundCheckpointStores: input.checkpointStores,
         outboundDiagnostics: input.outboundDiagnostics,

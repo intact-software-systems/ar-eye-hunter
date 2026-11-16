@@ -468,6 +468,11 @@ export class ALWorkHandler {
             runDurationMs: 0,
             releaseDurationMs: 0
         };
+        // Reading work time may retire the connection synchronously when calibration expires.
+        // No reservation may start after that callback disposed this handler.
+        if (this.shutdown.signal.aborted) {
+            return { progress, run: undefined, startedAtMs, completedKeys: new Set() };
+        }
         const releases: ALWorkRelease[] = [...await this.finalizeExhaustedWork(progress)];
         let run: ALWorkClaimedRun | undefined;
         try {
@@ -504,23 +509,33 @@ export class ALWorkHandler {
         progress.claimedCount = queued.length;
         const runStartedAtMs = clock.nowMs();
         const run = { selection, runStartedAtMs, deferObservation };
-        const grouped = this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
-        // A grouped attempt the batch never reaches, because disposal ended it, must not surface unhandled.
+        const grouped = this.shutdown.signal.aborted
+            ? undefined
+            : this.dependencies.runClaimGroup?.(queued, runStartedAtMs, deferObservation);
+        // Groups start together; a later rejection must be observed while an earlier attempt settles.
         grouped?.forEach((attempt) => void attempt.catch(() => undefined));
         for (let claim = queued.shift(); claim !== undefined; claim = queued.shift()) {
-            if (this.shutdown.signal.aborted) {
-                return undefined;
+            const attempt = grouped?.get(claim);
+            if (this.shutdown.signal.aborted && attempt === undefined) {
+                // Selection or successor reservation may finish after disposal. Release unstarted
+                // work without spending an attempt; already started group members still settle below.
+                releases.push({ claim, outcome: { status: 'not-ready', readyAtMs: clock.nowMs() } });
+                progress.rescheduledCount += 1;
+                continue;
             }
-            const release = await this.runOne(claim, progress, { ...run, attempt: grouped?.get(claim) });
+            const release = await this.runOne(claim, progress, { ...run, attempt });
             if (release === undefined) {
                 continue;
             }
             releases.push(release);
+            if (this.shutdown.signal.aborted) {
+                continue;
+            }
             const successors = await this.claimSuccessors(release, progress.claimedCount);
             queued.push(...successors);
             progress.claimedCount += successors.length;
         }
-        return run;
+        return this.shutdown.signal.aborted ? undefined : run;
     }
 
     /**
@@ -569,9 +584,7 @@ export class ALWorkHandler {
         const { port, pageSize } = this.dependencies;
         const releases: ALWorkRelease[] = [];
         for (const claim of await port.finalizeExhausted(pageSize)) {
-            if (this.shutdown.signal.aborted) {
-                return releases;
-            }
+            // These rows were already reserved for finalization, even if disposal began during the read.
             releases.push({ claim, outcome: { status: 'non-retryable' } });
             progress.rejectedCount += 1;
         }

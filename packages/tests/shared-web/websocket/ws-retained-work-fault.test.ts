@@ -71,6 +71,8 @@ describe('WS retained-work faults', () => {
         const drain = captureOutboundWorkRunnable(engine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const connecting = createBrowserWebSocketQueueBox({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
             submissionReadinessFaultPort: faults,
@@ -84,7 +86,7 @@ describe('WS retained-work faults', () => {
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(sessionId),
                 createDefaultVolatileSessionBudget(),
-                createPassThroughALStorageEventSink()
+                { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,
@@ -163,6 +165,8 @@ describe('WS retained-work faults', () => {
         const drain = captureOutboundWorkRunnable(engine);
         const settlements: ALDeliverySettlement[] = [];
         const connecting = createBrowserWebSocketQueueBox({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
             qosProvider: {},
             submissionReadinessFaultPort: faults,
@@ -176,7 +180,7 @@ describe('WS retained-work faults', () => {
             inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
                 toBrowserSessionALInboundRuntimeStoreId(sessionId),
                 createDefaultVolatileSessionBudget(),
-                createPassThroughALStorageEventSink()
+                { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
             ),
             volatileBudget: createDefaultVolatileSessionBudget(),
             checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

@@ -81,9 +81,8 @@ import {
 } from '@shared/services/inbox-outbox-engine.ts';
 import { toWsQueueBoxClientDispatchPlan } from '@shared/services/ws-queue-box-client/to-ws-queue-box-client-dispatch-plan.ts';
 
-import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
-
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
+import { decodeOutboundTestPayload, type OutboundTestPayload } from './outbound-test-payload.ts';
 
 /**
  * How long after its lease end an outbound lane recovers a crashed lease or an exhausted row at worst, a
@@ -109,6 +108,7 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly carrier?: ALDeliveryCarrier;
     readonly settlements?: ALDeliverySettlementSink;
     readonly nowMs?: () => number;
+    readonly workNowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
     /** The hops the composition sends every frame through; absent, as for every carrier but the WS client. */
@@ -224,6 +224,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             recipientAuthentication: { kind: 'carrier' },
             settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
+            workNowMs: options.workNowMs,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox', Temporal.Now.instant()),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,

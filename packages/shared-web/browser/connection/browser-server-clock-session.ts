@@ -12,6 +12,8 @@ export namespace BrowserServerClockSession {
     export interface Port {
         readonly signal: AbortSignal;
         readWindow(): Either<BrowserServerClock.Failure, RemoteClockWindow>;
+        /** Work bookkeeping only; freezes at the last calibrated bound when authority ends. */
+        readWorkEpochMs(): number;
         close(reason?: Error): Promise<void>;
     }
 
@@ -28,6 +30,7 @@ export class BrowserServerClockSession {
     readonly #lifetime = new AbortController();
     readonly #startup = new SingleFlight<number, Either<BrowserServerClock.Failure, RemoteClockWindow>>();
     #stopRefresh: (() => void) | undefined;
+    #lastWorkEpochMs: number | undefined;
 
     constructor(input: BrowserServerClockSession.Input) {
         if (!Number.isFinite(input.refreshIntervalMs) || input.refreshIntervalMs <= 0) {
@@ -49,10 +52,27 @@ export class BrowserServerClockSession {
             return Either.ofLeft({ code: 'closed', cause: new Error('Server clock connection lifetime ended.') });
         }
         const available = this.#input.clock.readWindow();
+        if (available.right !== undefined) {
+            this.#lastWorkEpochMs = available.right.latestEpochMs;
+        }
         if (available.left !== undefined && this.#stopRefresh !== undefined) {
             void this.close(available.left.cause);
         }
         return available;
+    }
+
+    /** Never authorizes a message. Retirement keeps the last observation so already-owned work can release. */
+    readWorkEpochMs(): number {
+        if (!this.signal.aborted) {
+            const available = this.readWindow();
+            if (available.left !== undefined && this.#lastWorkEpochMs === undefined) {
+                throw available.left.cause;
+            }
+        }
+        if (this.#lastWorkEpochMs === undefined) {
+            throw new Error('Work timing requires an acquired server clock.');
+        }
+        return this.#lastWorkEpochMs;
     }
 
     async close(reason = new Error('Server clock connection lifetime ended.')): Promise<void> {
@@ -79,6 +99,7 @@ export class BrowserServerClockSession {
         if (this.signal.aborted) {
             return this.#input.clock.readWindow();
         }
+        this.#lastWorkEpochMs = acquired.right!.latestEpochMs;
         this.#stopRefresh = startRepeating({
             timers: this.#input.timers,
             intervalMs: this.#input.refreshIntervalMs,
@@ -108,9 +129,19 @@ export class BrowserServerClockSession {
             return;
         }
         await this.#input.clock.refresh();
-        const available = this.#input.clock.readWindow();
+        const available = this.readWindow();
         if (available.left !== undefined) {
             await this.close(available.left.cause);
         }
     }
+}
+
+/** Expiry decisions use the latest possible server time; unavailable calibration cannot authorize work. */
+export function readBrowserServerExpiryEpochMs(clock: Pick<BrowserServerClockSession.Port, 'readWindow'>): number {
+    return clock.readWindow().fold(
+        (failure) => {
+            throw failure.cause;
+        },
+        (window) => window.latestEpochMs
+    );
 }

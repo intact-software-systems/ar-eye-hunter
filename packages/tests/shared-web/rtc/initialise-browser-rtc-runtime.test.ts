@@ -10,7 +10,12 @@ import {
 
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { resolveBrowserALCheckpointStores } from '@shared-web/browser/al-runtime/browser-al-checkpoint-stores.ts';
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { toBrowserSessionALInboundRuntimeStoreId } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import {
+    configureBrowserALRuntimeStores,
+    createBrowserALVolatileInboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import {
     createBrowserRtcHeldOfferReleases,
@@ -21,6 +26,7 @@ import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/brow
 import {
     initialiseRtcConnectionService,
     initialiseRtcOverlayMulticastManager,
+    initialiseRtcRxStreamer,
     type BrowserRtcConnectionInitialization
 } from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import {
@@ -236,6 +242,8 @@ describe('browser RTC runtime composition', () => {
         const drain = captureOutboundWorkRunnable(qboxEngine);
         const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
         const manager = initialiseRtcOverlayMulticastManager({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             faultPort: createPassThroughTransportFaultPort(),
             replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -322,6 +330,8 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             faultPort: createPassThroughTransportFaultPort(),
             replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -372,6 +382,107 @@ describe('browser RTC runtime composition', () => {
         expect(message.forwarding?.nextHopPeerIds).toEqual(['accepted-peer']);
     });
 
+    it.each([-20_000, 20_000])('uses server time for RTC admission and native delivery with device offset %i', async (offsetMs) => {
+        const createdAt = Date.now();
+        let serverNow = createdAt;
+        const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(
+            toScopedOverlayId(group.group),
+            createAcceptedOverlayFixture(group, 1, ['accepted-peer'])
+        );
+        const fixture = openConnectedPeer('accepted-peer');
+        const engine = new InboxOutboxEngine();
+        const drain = captureOutboundWorkRunnable(engine);
+        onTestFinished(() => engine.stop());
+        vi.spyOn(Date, 'now').mockImplementation(() => serverNow + offsetMs);
+        const manager = initialiseRtcOverlayMulticastManager({
+            nowEpochMs: () => serverNow,
+            workNowEpochMs: () => serverNow,
+            faultPort: createPassThroughTransportFaultPort(),
+            replacedLayoutOverlapMs: 15_000,
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            qosProvider: {},
+            volatileBudget: createDefaultVolatileSessionBudget(),
+            checkpointStores: resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay,
+            outboundSettlements: () => {},
+            webRtcConnectionService: fixture.service,
+            qboxEngine: engine,
+            grantedTopics: NO_RTC_GRANTED_TOPICS,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            publicationVerifier: KEYLESS_PUBLICATION_VERIFIER,
+            topicSubscriptions: NO_RTC_TOPIC_SUBSCRIPTIONS,
+            selfPrincipalId: 'self'
+        });
+        onTestFinished(() => manager.dispose());
+        const message: ALMessage = {
+            id: { v: 4, msgId: crypto.randomUUID(), ts: createdAt, senderId: 'self', traceId: 'clock-test' },
+            route: { topicId: 'chat', resourceId: 'clock', contextId: group.group.groupId },
+            targets: {
+                mode: 'multicast',
+                groupRef: {
+                    applicationId: group.group.applicationId,
+                    workspaceId: group.group.workspaceId,
+                    groupId: group.group.groupId
+                }
+            },
+            constraints: { expiresAtMs: createdAt + 100 },
+            payload: { typeId: 'chat.message.v1', contentType: 'application/json', resource: '{}' }
+        };
+        const admission = await manager.enqueueIfAbsent(message);
+        expect(admission.verdict).toMatchObject({ kind: 'admitted' });
+        await drain();
+        const sent = fixture.nativePeer('accepted-peer').channels.flatMap((channel) => channel.sent);
+        expect(sent).toHaveLength(1);
+        expect(typeof sent[0] === 'string' && decodePersistedALMessage(sent[0]).id.msgId).toBe(message.id.msgId);
+
+        const received: string[] = [];
+        const events: ALInboundRuntimeDiagnosticsEvent[] = [];
+        const receiver = initialiseRtcRxStreamer({
+            nowEpochMs: () => serverNow,
+            workNowEpochMs: () => serverNow,
+            webRtcOverlayMulticastManager: manager,
+            publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
+            qboxEngine: engine,
+            clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
+            inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
+                toBrowserSessionALInboundRuntimeStoreId('self'),
+                createDefaultVolatileSessionBudget(),
+                { storage: diagnosticsPorts.storage, nowMs: () => serverNow, workNowMs: () => serverNow }
+            ),
+            durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
+            inboundDiagnostics: (event) => events.push(event)
+        });
+        onTestFinished(() => receiver.dispose());
+        receiver.onInboxMessageDo('chat.message.v1', {
+            onMessage: async (receivedMessage) => {
+                received.push(receivedMessage.id.msgId);
+            }
+        });
+        receiver.setRttReportingPeerIds([]);
+        receiver.addPeer(fixture.service.readPeer('accepted-peer')!);
+        const incoming: ALMessage = {
+            ...message,
+            id: { ...message.id, msgId: 'incoming-clock-live', senderId: 'accepted-peer' },
+            targets: { mode: 'unicast', toPeerId: 'self' }
+        };
+        const native = fixture.nativePeer('accepted-peer').channels[0]!;
+        await native.receive(JSON.stringify(incoming));
+        await expect.poll(() => received).toEqual(['incoming-clock-live']);
+
+        serverNow = createdAt + 100;
+        expect((await manager.enqueueIfAbsent({ ...message, id: { ...message.id, msgId: crypto.randomUUID() } })).verdict)
+            .toMatchObject({ kind: 'expired' });
+        await native.receive(JSON.stringify({ ...incoming, id: { ...incoming.id, msgId: 'incoming-clock-expired' } }));
+        await expect.poll(() => events).toContainEqual(expect.objectContaining({
+            msgId: 'incoming-clock-expired',
+            outcome: 'rejected',
+            reason: 'expired'
+        }));
+        expect(received).toEqual(['incoming-clock-live']);
+    });
+
     it('counts a volatile send against the session budget the overlay is handed (C3)', async () => {
         const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
@@ -407,6 +518,8 @@ describe('browser RTC runtime composition', () => {
         }
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const manager = initialiseRtcOverlayMulticastManager({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             faultPort: createPassThroughTransportFaultPort(),
             replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -450,6 +563,8 @@ describe('browser RTC runtime composition', () => {
         const budget = createDefaultVolatileSessionBudget();
         const checkpointStores = resolveBrowserALCheckpointStores('self', ALWAYS_OWNED_AL_DURABLE_WORK).rtcOverlay;
         const manager = initialiseRtcOverlayMulticastManager({
+            nowEpochMs: Date.now,
+            workNowEpochMs: Date.now,
             faultPort: createPassThroughTransportFaultPort(),
             replacedLayoutOverlapMs: 15_000,
             durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,

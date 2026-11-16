@@ -132,6 +132,7 @@ export namespace WsQueueBoxClientService {
         readonly creationNow?: QueueBoxUtilities.CreationClock;
         /** Epoch domain used for inbound and outbound expiry; supplied stores must use the same domain. */
         readonly nowEpochMs?: () => number;
+        readonly workNowEpochMs?: () => number;
         /** Current authenticated account only while it still owns this service's session; absent for anonymous transports. */
         readonly readAuthenticatedPrincipalId?: () => string | undefined;
         /** Standalone transports may have no domain prerequisite; browser composition supplies room readiness. */
@@ -653,7 +654,7 @@ export class WsQueueBoxClientService {
         entry: ResourceEntry,
         selected: OnInboxMessageCallback | undefined
     ): Promise<void | 'retry'> {
-        const nowMs = this.dependencies.inboundRuntime.clock.nowMs();
+        const nowMs = this.dependencies.inboundRuntime.workClock.nowMs();
         this.recordConsumerInvocation(message, nowMs, { selection: 'absent', outcome: 'not-invoked' });
         return await selected?.onMessage(message, entry);
     }
@@ -663,7 +664,7 @@ export class WsQueueBoxClientService {
         entry: ResourceEntry,
         selected: OnInboxMessageCallback
     ): Promise<void | 'retry'> {
-        const beganAtMs = this.dependencies.inboundRuntime.clock.nowMs();
+        const beganAtMs = this.dependencies.inboundRuntime.workClock.nowMs();
         let result: void | 'retry';
         try {
             result = await selected.onMessage(message, entry);
@@ -691,7 +692,7 @@ export class WsQueueBoxClientService {
             carrier: 'ws',
             ...result,
             beganAtMs,
-            settledAtMs: this.dependencies.inboundRuntime.clock.nowMs(),
+            settledAtMs: this.dependencies.inboundRuntime.workClock.nowMs(),
             ...toALMessageTrace(message)
         });
     }
@@ -806,6 +807,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         qosProvider: toALCarrierQosInputProvider(AL_WS_CLIENT_CAPABILITIES, input.qosProvider),
         inboundRuntime: createDefaultALInboundRuntimeResources({
             nowMs: input.nowEpochMs,
+            workNowMs: input.workNowEpochMs,
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,
@@ -816,6 +818,7 @@ export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientServ
         }),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
             nowMs: input.nowEpochMs,
+            workNowMs: input.workNowEpochMs,
             decodePrepared: decodeALOutboundTransportMessage,
             canonicalQueue: input.outbox,
             stores: input.outboundStores,

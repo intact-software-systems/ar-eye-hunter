@@ -1,14 +1,14 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { describe, expect, it } from 'vitest';
 
 import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browser-al-durable-work-claim.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     createBrowserTransportInput,
     type BrowserConnectOptions,
-    type BrowserTransportPublication
+    type BrowserTransportDependencies
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toBrowserHeartbeatOptions } from '@shared-web/browser/connection/to-browser-heartbeat-options.ts';
@@ -33,7 +33,9 @@ const SESSION: AuthSession = {
     expiresAtEpochMs: 60_000
 };
 
-const KEYLESS_PUBLICATION: BrowserTransportPublication = {
+const TRANSPORT_DEPENDENCIES: BrowserTransportDependencies = {
+    nowEpochMs: Date.now,
+    workNowEpochMs: Date.now,
     publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
     publicationVerifier: KEYLESS_PUBLICATION_VERIFIER
 };
@@ -80,7 +82,7 @@ describe('the heartbeat options a connect hands its group heartbeats', () => {
 
 function readHeartbeatPublicationKey(publicationCrypto: PublicationCrypto): GroupPresencePublicationKey | null {
     configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-    const input = createBrowserTransportInput(SESSION, OPTIONS, { ...KEYLESS_PUBLICATION, publicationCrypto });
+    const input = createBrowserTransportInput(SESSION, OPTIONS, { ...TRANSPORT_DEPENDENCIES, publicationCrypto });
     const { ownWsConnectionGeneration } = createDefaultApiMiddlewareTestDouble().middleware;
     return toBrowserHeartbeatOptions(input, ownWsConnectionGeneration).publicationKey;
 }

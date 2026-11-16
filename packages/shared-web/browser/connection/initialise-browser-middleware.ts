@@ -103,7 +103,7 @@ import {
     type StateCacheScopeOptions
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
-import type { BrowserServerClockSession } from './browser-server-clock-session.ts';
+import { readBrowserServerExpiryEpochMs, type BrowserServerClockSession } from './browser-server-clock-session.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserConnectionCleanupFailure
@@ -183,6 +183,8 @@ export interface BrowserRttEgressInput {
 }
 
 export interface InitialiseBrowserTransportInput {
+    readonly nowEpochMs: () => number;
+    readonly workNowEpochMs: () => number;
     readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
     readonly creation: BrowserMiddlewareCreation;
     readonly session: AuthSession;
@@ -201,10 +203,10 @@ export interface InitialiseBrowserTransportInput {
     readonly options: BrowserConnectOptions;
 }
 
-/** The connect's publication capabilities: its session's key, awaited once, and the page's verifier. */
-export type BrowserTransportPublication = Pick<
+/** Dependencies acquired before transport construction: calibrated time, the session key and page verifier. */
+export type BrowserTransportDependencies = Pick<
     InitialiseBrowserTransportInput,
-    'publicationCrypto' | 'publicationVerifier'
+    'publicationCrypto' | 'publicationVerifier' | 'nowEpochMs' | 'workNowEpochMs'
 >;
 
 interface BrowserWebSocketTransport {
@@ -304,6 +306,8 @@ export async function initialiseMiddleware(
             { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
         );
         const transportInput = createBrowserTransportInput(session, { ...options, signal: serverClock.signal }, {
+            nowEpochMs: () => readBrowserServerExpiryEpochMs(serverClock),
+            workNowEpochMs: () => serverClock.readWorkEpochMs(),
             publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
@@ -364,7 +368,7 @@ async function initialiseBrowserTransports(
 export function createBrowserTransportInput(
     session: AuthSession,
     options: BrowserConnectOptions,
-    publication: BrowserTransportPublication
+    dependencies: BrowserTransportDependencies
 ): InitialiseBrowserTransportInput {
     const clientData: ClientInfo = {
         clientId: session.clientId,
@@ -374,7 +378,7 @@ export function createBrowserTransportInput(
     const volatileBound = createBrowserSessionVolatileBound({
         readVolatileSessionLimits: options.readVolatileSessionLimits,
         qosProvider: options.qosProvider,
-        nowMs: Date.now
+        nowMs: dependencies.nowEpochMs
     });
     return {
         connectionId: readBrowserConnectionIdentity(),
@@ -384,13 +388,17 @@ export function createBrowserTransportInput(
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
             volatileBound.budget,
-            options.diagnosticsPorts.storage
+            {
+                storage: options.diagnosticsPorts.storage,
+                nowMs: dependencies.nowEpochMs,
+                workNowMs: dependencies.workNowEpochMs
+            }
         ),
         volatileBound,
         inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
         publicationStageLimits: options.readPublicationStageLimits(),
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
-        ...publication,
+        ...dependencies,
         options,
         creation: {
             createMessage: newALUntargetedMessage,
@@ -477,6 +485,8 @@ export function toBrowserWebSocketQueueBoxInput(
 ): CreateBrowserWebSocketQueueBox.Input {
     return {
         ...carrier,
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
         checkpointStores: input.checkpointStores.wsClient,
@@ -502,6 +512,8 @@ export function toRtcOverlayMulticastManagerInput(
 ): rtcEngine.InitialiseRtcOverlayMulticastManagerInput {
     return {
         ...carrier,
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         qosProvider: input.volatileBound.qosProvider,
         volatileBudget: input.volatileBound.budget,
         checkpointStores: input.checkpointStores.rtcOverlay,
@@ -560,7 +572,7 @@ async function initialiseBrowserWebSocketTransport(
     apiConfig: ApiConfigResponse
 ): Promise<BrowserWebSocketTransport> {
     const socket = createBrowserWebSocketClient(input, apiConfig);
-    const qboxEngine = createBrowserQueueBoxEngine();
+    const qboxEngine = createBrowserQueueBoxEngine(input.workNowEpochMs);
     let webSocketQueueBox: WsQueueBoxClientService;
     try {
         webSocketQueueBox = await createBrowserWebSocketQueueBox(
@@ -637,6 +649,8 @@ async function initialiseBrowserRtcTransport(
         const rtcRxStreamer = rtcEngine.initialiseRtcRxStreamer(
             {
                 webRtcOverlayMulticastManager,
+                nowEpochMs: input.nowEpochMs,
+                workNowEpochMs: input.workNowEpochMs,
                 publicationCrypto: input.publicationCrypto,
                 qboxEngine: input.webSocketTransport.qboxEngine,
                 clientData: input.clientData,

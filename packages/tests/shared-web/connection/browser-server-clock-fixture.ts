@@ -7,9 +7,11 @@ import type { RemoteClockWindow } from '@shared/resilience/remote-clock.ts';
 class BrowserServerClockFixture implements BrowserServerClockSession.Port {
     readonly #lifetime = new AbortController();
     readonly #nowMs: () => number;
+    #lastWorkEpochMs: number;
 
-    constructor(nowMs: () => number) {
+    constructor(nowMs: () => number, initialEpochMs: number) {
         this.#nowMs = nowMs;
+        this.#lastWorkEpochMs = initialEpochMs;
     }
 
     get signal(): AbortSignal {
@@ -20,8 +22,15 @@ class BrowserServerClockFixture implements BrowserServerClockSession.Port {
         if (this.signal.aborted) {
             return Either.ofLeft({ code: 'closed', cause: new Error('Test connection clock ended.') });
         }
-        const nowMs = this.#nowMs();
+        const nowMs = this.readWorkEpochMs();
         return Either.ofRight({ earliestEpochMs: nowMs, latestEpochMs: nowMs });
+    }
+
+    readWorkEpochMs(): number {
+        if (!this.signal.aborted) {
+            this.#lastWorkEpochMs = this.#nowMs();
+        }
+        return this.#lastWorkEpochMs;
     }
 
     async close(reason = new Error('Test connection clock ended.')): Promise<void> {
@@ -30,5 +39,5 @@ class BrowserServerClockFixture implements BrowserServerClockSession.Port {
 }
 
 export function createDefaultBrowserServerClockFixture(): BrowserServerClockSession.Port {
-    return new BrowserServerClockFixture(Date.now);
+    return new BrowserServerClockFixture(Date.now, Date.now());
 }

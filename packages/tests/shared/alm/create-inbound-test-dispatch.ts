@@ -39,6 +39,7 @@ export function createInboundTestDispatch(
             dispatched.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
         clock: { nowMs },
+        workClock: { nowMs },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION
     });
     onTestFinished(() => delivery.dispose());

@@ -13,6 +13,35 @@ const clockConfig = {
 };
 
 describe('browser server clock connection lifetime', () => {
+    it('keeps work time aligned with tighter active calibration and freezes it only for retirement', async () => {
+        const timers = createManualTimers(0);
+        let monotonicNow = 0;
+        const clock = new BrowserServerClock(clockConfig, {
+            nowMonotonicMs: () => monotonicNow,
+            fetch: async () => {
+                monotonicNow = 20;
+                return Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000 });
+            }
+        });
+        const session = new BrowserServerClockSession({
+            clock,
+            timers,
+            page: { document: undefined, window: undefined },
+            refreshIntervalMs: 50
+        });
+        expect(() => session.readWorkEpochMs()).toThrow('No server clock observation.');
+        await session.start();
+        expect(session.readWorkEpochMs()).toBe(10_021);
+        await clock.refresh();
+        expect(session.readWindow().right?.latestEpochMs).toBe(10_001);
+        expect(session.readWorkEpochMs()).toBe(10_001);
+
+        await session.close();
+        monotonicNow = 500;
+        expect(session.readWindow().left?.code).toBe('closed');
+        expect(session.readWorkEpochMs()).toBe(10_001);
+    });
+
     it('acquires before returning and refreshes beyond the first sample lifetime', async () => {
         const timers = createManualTimers(0);
         const clock = new BrowserServerClock(clockConfig, {

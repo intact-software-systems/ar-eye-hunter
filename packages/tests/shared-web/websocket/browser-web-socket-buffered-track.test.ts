@@ -99,6 +99,8 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
     const admitted: string[] = [];
     const budget = createDefaultVolatileSessionBudget();
     const initialized = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
@@ -112,7 +114,7 @@ async function openBufferedTrackReceiver(): Promise<BufferedTrackReceiver> {
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(clientData.sessionId),
             budget,
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: budget,
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

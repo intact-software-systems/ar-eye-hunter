@@ -80,6 +80,7 @@ export namespace WebRtcRxStreamerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
+        readonly workNowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
         readonly inboundDiagnostics?: ALInboundRuntimeDiagnosticsSink;
@@ -600,6 +601,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         sessionId: input.sessionId,
         inboundRuntime: createDefaultALInboundRuntimeResources({
             nowMs: input.nowEpochMs,
+            workNowMs: input.workNowEpochMs,
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,

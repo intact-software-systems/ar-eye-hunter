@@ -608,6 +608,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
         effectPreparation: createPreparationDependencies(),
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },
+        workClock: { nowMs: () => Date.now() },
         random: () => 0.5,
         queueEngine: new InboxOutboxEngine(),
         ownsQueueEngine: true,

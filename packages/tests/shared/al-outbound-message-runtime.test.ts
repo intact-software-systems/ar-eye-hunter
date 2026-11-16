@@ -28,6 +28,7 @@ import {
 } from '@shared/mod.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 import {
     createDefaultOutboundTestRuntime,
     createDefaultOutboundTestStores,
@@ -38,8 +39,6 @@ import {
     waitUntil
 } from './alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from './alm/outbound-test-payload.ts';
-
-import { toTestALAckPayload, toTestALNackPayload } from '../al-control-test-payloads.ts';
 
 describe('ALOutboundMessageRuntime', () => {
     beforeEach(() =>
@@ -73,6 +72,7 @@ describe('ALOutboundMessageRuntime', () => {
             dequeue: { types: new Set<string>(), resilience: createDefaultALOutboundDequeueResilience() },
             effectWorkerId: 'injected-outbound-worker',
             clock: { nowMs: () => nowMs },
+            workClock: { nowMs: () => nowMs },
             queueEngine,
             ownsQueueEngine: false,
             browserLocks: undefined,

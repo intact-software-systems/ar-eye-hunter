@@ -797,11 +797,45 @@ round trip, 30-second sample age, 1,000 ppm relative drift and 2 ms monotonic ti
 error, with refresh every five seconds. These are explicit operational assumptions,
 not physical-device qualification. New browser connections require the updated
 server's `/api/time` endpoint; they do not fall back to device wall time when it
-is absent. Including calibration raises the full Rallar entry's Brotli budget
-from 305 to 307 KiB; the narrower entry budgets remain unchanged.
+is absent. Calibration and carrier retirement bring the full Rallar entry to about 307.1 KiB
+Brotli; its budget is 308 KiB (previously 305 before calibration and 307 before
+carrier retirement). The narrower entry budgets remain unchanged.
 
-The dependent clock consumers below remain integration work. Passing startup,
-cleanup and lifecycle tests does not qualify clock-skew gameplay or physical phones.
+Browser carrier admission now reads the calibrated latest server-time bound.
+The WebSocket client uses it for inbound and outbound admission, final delivery,
+and room-presence submission checks. RTC uses it for inbound admission/delivery
+and the overlay's outbound admission, routing and publication verification. The
+volatile inbound/outbound stores and the session's QoS budget use the same clock,
+so a valid admission cannot be delayed or evicted by a device-clock queue. Direct
+wire and native-channel regressions exercise clocks twenty seconds ahead and
+behind and preserve exact-deadline rejection. An expired calibration refuses
+further clock reads instead of falling back to local wall time.
+
+Carrier retirement separates strict authority time from work timing. Admission,
+expiry and delivery still require a valid calibrated clock. Work scheduling,
+queue release and settlement observations use a second clock that follows the
+same latest bound while active, including a tighter refreshed bound, then freezes
+at the last valid bound after retirement. The frozen value cannot authorize a
+new message. The browser queue engine uses this work epoch for scheduled wakes,
+so ahead/behind device clocks neither spin retries nor postpone server deadlines.
+A clock read that synchronously retires the engine cannot start another timer or
+work pass. This lets an already running consumer or transport attempt finish
+and release its claim after calibration ends, without a device-time fallback.
+
+Shared work disposal also releases claims returned by pending selection or
+successor reservations, completes already reserved exhaustion finalizations,
+and joins group attempts that started before disposal. Unstarted claims return
+as not-ready without consuming an attempt. Held inbound/outbound regressions and
+pending-selection/group/successor tests cover these shutdown boundaries; final
+outbound settlement events remain observable after authority time ends.
+
+Message creation, durable/checkpoint store timing and expiry maintenance,
+page-level delivery/proof composition, remaining presence comparisons and ICE
+expiry still need clock integration. In particular, checkpoint retirement must
+flush dirty state even after the calibrated connection ends: settlement and
+cleanup timing must not depend on a clock that correctly refuses new authority.
+Passing carrier, startup and lifecycle tests does not qualify complete clock-skew
+gameplay or physical phones.
 
 Browser integration must distinguish creation from expiry: construct a new
 message from the conservative earliest server bound before publication signing,

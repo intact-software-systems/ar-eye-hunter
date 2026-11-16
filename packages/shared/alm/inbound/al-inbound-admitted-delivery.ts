@@ -62,6 +62,7 @@ export namespace ALInboundAdmittedDelivery {
             | 'forwardMessage'
             | 'forwardRetriedCopy'
             | 'clock'
+            | 'workClock'
             | 'effectPreparation'
             | 'onResyncRequired'
             | 'receiptProofs'
@@ -359,7 +360,7 @@ export class ALInboundAdmittedDelivery {
             typeId: observed?.msg.payload.typeId ?? null,
             carrier: effect.carrier,
             attempts: effect.attempts,
-            atEpochMs: this.dependencies.clock.nowMs(),
+            atEpochMs: this.dependencies.workClock.nowMs(),
             disposition,
             ...toALMessageTraceOrNull(observed?.msg)
         });
