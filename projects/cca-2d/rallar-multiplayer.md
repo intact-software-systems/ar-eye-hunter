@@ -47,8 +47,8 @@ user's request to make multiplayer and social features optional to solo play.
 - `practice-rules.ts` owns player-local movement. `town/rules.ts#computeTownWorld`
   advances one shared town for a human roster; `computeTownTick` is the solo
   projection. A companion exists only when the caller supplies one.
-- `practice-scene.ts` owns Babylon resources; online rendering will reuse its
-  town presentation and render distinct human actors instead of a fake peer.
+- `practice-scene.ts` owns Babylon resources; online rendering reuses its
+  town presentation and renders human actors with peer ice overlays.
 - `packages/shared-web/browser/{matchmaking,friends,rooms/entry}` own optional
   authenticated workflows; inspect their focused tests when wiring them.
 - `examples/director-relay`, `examples/room-live-channel`, and
@@ -95,7 +95,7 @@ rules to a human roster without duplicating their single-player implementation.
       controls/scores, rescues, timer/qualification, ready/start/rematch and stale input.
 - [x] Implement canonical roster/town state and fixed-step match simulation;
       preserve the full existing prank, creature, cleanup and authority behavior.
-- [ ] Use dedicated Rallar director appointment, current roster/session identity
+- [x] Use dedicated Rallar director appointment, current roster/session identity
       and room-scoped channels. Validate protocol/build, scope, match, epoch and sequence.
 - [ ] Render each player with a distinct identity; show lobby readiness, director,
       countdown, round timer, individual scores, shared danger and multiple qualifiers.
@@ -282,9 +282,9 @@ round participants/results from currently active controllers. The existing pure
 roster-change interruption is not evidence of continued host-loss play or of the
 seat-grace behavior described in architecture.md.
 
-Next implementation outcomes remain: wire the appointed director, room channel,
-shared gameplay and match UI; then prove loss/reordering/recovery with real browsers
-and finish secure phone serving. Do not broaden into another content expansion.
+The live integration below now supplies appointed-director/channel wiring and
+shared gameplay UI. Remaining outcomes are loss/reordering/recovery with real
+browsers and secure phone serving. Do not broaden into another content expansion.
 
 Validation for this boundary covers complete-round snapshot round trips including
 fire, bomb, vomit and police, malformed snapshots, scope/session/epoch rejection,
@@ -298,3 +298,56 @@ phase clocks, premature successor winner confirmation and a fresh committed lobb
 starting after authority changes. The parallel police-cycle timeout passed in
 isolation and serially. The local API and preview are reachable; secure physical
 phone multiplayer remains unverified.
+
+
+## First live shared-match integration
+
+The optional lobby now creates a room-owned `TownMatchSession`. **Host match** uses
+Rallar's dedicated appointment endpoint; **Ready** and **Start round** drive the
+canonical lobby and countdown. The Babylon scene renders a ready first frame in
+the lobby before enabling Ready, and remains mounted through the round/rematch.
+This keeps scene loading off the countdown/checkpoint critical path. The unchanged
+countdown scene redraws only for preparation, a new match or zoom changes; live
+play renders normally. In the same profiled software-WebGL test, this reduced
+start-to-playing from 9.684 seconds to 3.465 seconds without changing the eight-second
+acceptance limit. This is a local test-host comparison, not a phone frame-rate claim. `TownMatchSimulation` owns the director's fixed-step
+clock and expiring input. `TownMatchGame` renders committed town snapshots and human
+peers through the existing Babylon scene, including visible peer ice and a terminal
+screen with an exit for every player. Solo remains independent.
+
+The WS channel uses the `app.cca.match` topic with complete room scope and authenticated
+session identity. An authority relay provides heartbeats. Proposal hashing is fenced
+after asynchronous work; repeated known proposals avoid redundant hashing. Pending
+and committed checkpoints are retained for retransmission. Ready/start/rematch intents
+retry until committed state confirms them. Input sequences survive expiry, and blur
+or visibility loss clears the runtime's input directly rather than waiting for another
+render frame. Speculative simulation stops two seconds beyond confirmed progress.
+
+A same-director roster change carries the latest simulation into an explicit
+interruption instead of rewinding to an older locally committed tick. The new roster
+must acknowledge that interruption. Scene preparation is invalidated by match/participant changes and resizing.
+Gameplay input listeners exist only while the game is visible, so the lobby remains
+typeable. Graphics-context loss revokes readiness and offers a leave/rejoin path.
+A late joiner sees the interruption and can leave;
+the director can create a new lobby. This is not host-succession recovery.
+
+Real browser evidence now covers separate accounts, create/join, server appointment,
+ready/start, a wall-time countdown, shared movement, dash, neutral input on blur, a
+third player's late join, terminal exits and a new ready cycle. Two final repeats
+pass with host-first scene preparation and actual typing in the lobby. A real WebGL
+context-loss test verifies readiness revocation, room exit and return to solo. The phone-size
+[capture](visual-concepts/rallar-match-phone.png) is actual gameplay. Focused simulation
+regressions cover fractional clock accumulation, bounded unconfirmed progress, input
+expiry under replay and foreign-session/old-round refusal. These checks do not prove
+physical-phone performance, three-minute results or impaired-network recovery.
+
+The next two useful outcomes remain concrete:
+
+1. Complete match reliability: delayed/dropped checkpoint traffic across rematch,
+   shared prank/freeze/rescue and full results, stale authority, two-player interruption,
+   and three-player host succession with a surviving committed backup. Preserve the
+   original acceptance criteria above; retained participants and active controllers
+   must be separated when continuing after a departure.
+2. Deliver and qualify the phone trial: secure LAN access with matching Rallar public
+   origins, responsive phone/tablet/desktop controls, lifecycle cleanup and an actual
+   phone hosting check. Keep the PR draft until release evidence supports readiness.

@@ -3,6 +3,7 @@ import './online.css';
 import { rallar } from '@shared-web/browser/rallar.ts';
 
 import { requirePracticeElement } from '../practice-controls.ts';
+import { OnlineMatch } from './online-match.ts';
 import { renderFriends, renderMatchmaking, renderRoom } from './online-panels.ts';
 import { OnlineSession } from './online-session.ts';
 
@@ -15,6 +16,7 @@ export class OnlineLobby {
     private readonly lifetime = new AbortController();
     private readonly unsubscribe: () => void;
     private signedIn = false;
+    private readonly match: OnlineMatch;
 
     constructor(root: HTMLElement, onSolo: () => void) {
         this.root = root;
@@ -23,11 +25,15 @@ export class OnlineLobby {
         requirePracticeElement(root, '#solo').addEventListener('click', onSolo, { signal: this.lifetime.signal });
         root.addEventListener('submit', (event) => this.submit(event), { signal: this.lifetime.signal });
         root.addEventListener('click', (event) => this.click(event), { signal: this.lifetime.signal });
+        this.match = new OnlineMatch(root, rallar, () => {
+            void this.session.leaveTown();
+        });
         this.unsubscribe = this.session.onChange(() => this.render());
         void this.session.start();
     }
 
     async stop(): Promise<void> {
+        this.match.stop();
         this.lifetime.abort();
         this.unsubscribe();
         await this.session.stop();
@@ -58,6 +64,10 @@ export class OnlineLobby {
             renderRoom(requirePracticeElement(this.root, '#room-panel'), state);
             renderMatchmaking(requirePracticeElement(this.root, '#matchmaking-panel'), state.matchmaking);
             renderFriends(requirePracticeElement(this.root, '#friends-panel'), state);
+            this.match.reconcile();
+        }
+        else {
+            this.match.stop();
         }
     }
 

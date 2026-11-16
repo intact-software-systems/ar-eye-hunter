@@ -31,7 +31,7 @@ export class TownRaidPresentation {
     constructor(scene: Scene, art: CutoutArt) {
         this.companion = createRaidActor({ scene, art, guard: false });
         this.guards = Array.from({ length: TOWN_POLICE_COUNT }, () => createRaidActor({ scene, art, guard: true }));
-        this.playerIce = createIce(scene, art);
+        this.playerIce = createTownIce(scene, art);
         this.alarm = CreatePlane('calling-authorities', { width: 2.2, height: 0.8 }, scene);
         this.alarm.rotation.x = 0.55;
         this.alarm.material = art.texture(
@@ -92,7 +92,7 @@ function createRaidActor(input: { scene: Scene; art: CutoutArt; guard: boolean; 
             guard ? '#b64f46' : '#68bfc6'
         }"/>`
     );
-    const ice = createIce(scene, art);
+    const ice = createTownIce(scene, art);
     const label = guard ? undefined : createCompanionLabel(scene, art);
     return { actor, ring, ice, label };
 }
@@ -107,7 +107,7 @@ function createCompanionLabel(scene: Scene, art: CutoutArt): Mesh {
     return label;
 }
 
-function createIce(scene: Scene, art: CutoutArt): Mesh {
+export function createTownIce(scene: Scene, art: CutoutArt): Mesh {
     const ice = CreatePlane('frozen-in-ice', { width: 1.9, height: 2.3 }, scene);
     ice.rotation.x = 0.55;
     ice.material = art.texture(

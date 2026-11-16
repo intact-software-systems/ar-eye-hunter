@@ -93,13 +93,20 @@ weaken Rallar's WebSocket host validation to work around a mismatch.
 The online lobby supports account registration/login, private-by-discovery open
 rooms (anyone with their code may join), two-sided friend requests, visibility,
 blocking and room invitations. Matchmaking requires both players to confirm,
-then explicitly enter their matched town. Admission does not yet start gameplay.
+then explicitly enter their matched town. In the town lobby, the owner chooses
+**Host match**, everyone chooses **Ready** after the town finishes preparing, and
+the director chooses **Start round**.
+The shared town uses the same movement, dash/drop and zoom controls. The three-minute
+round targets 100 individual points and permits several qualifiers. Online players
+are real human sessions; BOT PAL remains only in solo.
 Leaving hands ownership to another active member, or closes the town when its
 last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling
 its search; online re-entry waits for that cleanup. If the network stays unavailable,
 cancellation cannot be confirmed and the search status must be checked after reconnecting.
-The shared-town match and appointed director are the next implementation slice in
+The healthy shared-match flow is implemented. Roster changes interrupt the round
+and the director can open a fresh ready cycle. Host replacement, impaired-network
+recovery and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests
@@ -112,6 +119,11 @@ localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
 - `main.ts`: lazy solo/online entry and page lifetime.
 - `online/online-session.ts`: optional Rallar account, room, social and matchmaking lifetime.
 - `online/online-lobby.ts`: responsive account and lobby DOM; `online-panels.ts` renders their projections.
+- `online/online-match.ts`: current-room match lifetime, ready/start controls and gameplay mount.
+- `match/match-session.ts`: Rallar appointment, authenticated room traffic and checkpoint exchange.
+- `match/match-simulation.ts`: director clock, expiring inputs and speculative canonical town state.
+- `match/match-game.ts`: committed-state canvas, human peers, timer, results and input lifecycle.
+- `match/match-checkpoints.ts`, `match-protocol.ts`, `match-snapshot.ts`: agreement and exact wire validation.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
 - `practice-controls.ts`: keyboard, independent pointer capture and pinch input.
 - `practice-rules.ts`: independent player movement, dash, traction, cloud lifetime and collision; solo composes this with one town tick.
@@ -141,8 +153,8 @@ This entry replaces the earlier Phaser practice. That entry's collection,
 banking and online UI are removed from this trial. The separate historical
 `cca-server` / `packages/cca-game` prototype is outside the local renderer and is
 not a dependency. The local chase/freeze/rescue slice is implemented with a labelled bot companion.
-Rallar-only player-hosted multiplayer and recovery follow phone feedback. They are
-not yet capabilities of this app.
+The optional Rallar player-hosted match now runs alongside solo. Host recovery and
+physical phone qualification remain required before release.
 
 ## Checks and evidence
 

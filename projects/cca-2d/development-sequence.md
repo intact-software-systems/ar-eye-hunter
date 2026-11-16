@@ -11,14 +11,15 @@ plus six interactive owners, fruit spills, fountain spray, a rolling cart, clean
 powder, mini-zappers, birds/dogs/cats, bins/fish/toilet/hydrant, stains/washing,
 a +50 bonus and ten-officer raids, plus a clearly labelled local bot companion.
 It includes real browser captures and focused rule/browser tests. The historical
-server prototype remains outside the app; no new multiplayer is implemented.
+server prototype remains outside the app. Optional Rallar social entry and the first
+shared player-hosted match are now implemented; recovery remains under development.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,
 pixel-grid asset rules and separate Bank input in the trial. Carry forward useful
 pure rules and input lessons, not the old authority boundary.
 
-## Current two slices: town square and major incidents
+## Completed foundation: town square and major incidents
 
 The user requested: **plan it in docs, implement it and provide a playable trial**.
 The [town-square expansion plan](town-square-expansion.md) records the two implemented slices, with final acceptance and publication below:
@@ -32,7 +33,17 @@ The earlier living-square/ten-police slice is implemented and remains the baseli
 The expanded request moves networking after this content iteration; it does not
 remove the Rallar-only host/recovery requirements or claim networking is complete.
 
-## Later technical gate: Rallar-only hosting and recovery
+## Current next outcomes
+
+The [multiplayer plan](rallar-multiplayer.md#first-live-shared-match-integration)
+records the real ready/start/shared-movement flow. The next two concrete outcomes are:
+
+1. Complete checkpoint/reconnect/host-succession reliability and full-round shared
+   interaction, rescue, results and rematch browser evidence.
+2. Qualify secure phone access, mixed viewport controls and phone hosting, then
+   complete the existing draft PR's release validation.
+
+## Release gate: Rallar-only hosting and recovery
 
 **Outcome:** two authenticated players share the scene using only Rallar as
 multiplayer backend, with one appointed browser running the rules.
