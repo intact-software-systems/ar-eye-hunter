@@ -11,7 +11,8 @@
     "test:browser": "playwright test --config playwright.config.ts"
   },
   "dependencies": {
-    "@babylonjs/core": "9.36.0"
+    "@babylonjs/core": "9.36.0",
+    "ajv": "8.20.0"
   },
   "devDependencies": {
     "typescript": "7.0.2",

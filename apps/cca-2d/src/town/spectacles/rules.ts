@@ -32,7 +32,10 @@ export function requestTownSpectacle(town: TownState, request: TownSpectacleRequ
     }
     return {
         ...rewardTownMischief(town, 20),
-        spectacles: { ...town.spectacles, queue: [...town.spectacles.queue, request] }
+        spectacles: {
+            ...town.spectacles,
+            queue: [...town.spectacles.queue, { ...request, origin: { x: request.origin.x, z: request.origin.z } }]
+        }
     };
 }
 

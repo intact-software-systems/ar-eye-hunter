@@ -1,6 +1,11 @@
 import { rewardTownMischief } from '../mischief.ts';
 import { hasTownSight } from '../navigation.ts';
-import type { TownState, TownStepInput, TownTickInput, TownWorldPlayer } from '../state.ts';
+import type {
+    TownState,
+    TownStepInput,
+    TownTickInput,
+    TownWorldPlayer
+} from '../state.ts';
 import type { TownPersonality } from './state.ts';
 
 export interface TownPersonalitiesInput extends TownStepInput {
@@ -169,7 +174,7 @@ function cleanSquare(input: ResidentTick): ResidentResult {
     }
     const position = input.routes.travel({ town, from: resident, target: patch, speed: 2, step });
     if (Math.hypot(position.x - patch.x, position.z - patch.z) > 0.8) {
-        return { town, resident: { ...resident, ...position, target: patch } };
+        return { town, resident: { ...resident, ...position, target: { x: patch.x, z: patch.z } } };
     }
     const cleaned = {
         ...town,

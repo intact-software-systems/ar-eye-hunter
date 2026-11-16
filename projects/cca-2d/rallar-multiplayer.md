@@ -242,3 +242,59 @@ the CCA build and all 12 affected gameplay browser tests pass. Independent world
 and match review is closed after the empty-roster interruption fix. The new
 regression failed before that fix and passes afterward. This does not establish
 networked match authority or recovery.
+
+## Checkpoint protocol boundary
+
+The match protocol now has explicit build/version, complete room scope, current
+server appointment epoch and authenticated sender checks. A player cannot name a
+different controller in a controls message. Proposal, commit, start and rematch
+messages require the appointed session; readiness and acknowledgements require a
+current player session. This is a reusable app boundary awaiting the actual Rallar
+channel subscription, not evidence that networked matches run already.
+
+Snapshots have an exact bounded schema for every town/player state variant,
+fixed-map identity checks, phase/clock consistency and result consistency. SHA-256
+binds acknowledgement identities to the exact serialized snapshot bytes. Parsing
+restores semantically absent fields without inventing a solo companion. Finished
+results survive the last current member departing. Position-only projections at
+the cleaner target and spectacle origin prevent local structural subtype fields
+from leaking into the wire contract.
+
+`TownMatchCheckpoints` retains one pending proposal and one committed checkpoint.
+The current participant sessions are the frozen acknowledgement set. Every session
+must acknowledge the same digest and sequence, and the director must publish a
+commit. A commit arriving before the final acknowledgement remains provisional.
+Duplicates cannot reopen committed work; an outstanding proposal cannot be
+silently overwritten. Match phases and confirmed time cannot move backward.
+
+On a new appointment or participant set, provisional work is discarded while the
+committed checkpoint remains available. Current surviving sessions must agree on
+that recovery identity before new countdown, gameplay or winner confirmation.
+Without agreement, an explicit interrupted outcome remains possible. The runtime
+must bound recovery/retransmission, preserve authenticated source identities,
+recheck authority after asynchronous hashing, and retain input/message sequence
+watermarks. The agreement owner alone does not implement those network effects.
+
+Requiring all selected participant acknowledgements is an initial conservative
+choice: a slow peer can delay confirmation. Before continued three-client host
+recovery can be claimed, the runtime and match rules must distinguish retained
+round participants/results from currently active controllers. The existing pure
+roster-change interruption is not evidence of continued host-loss play or of the
+seat-grace behavior described in architecture.md.
+
+Next implementation outcomes remain: wire the appointed director, room channel,
+shared gameplay and match UI; then prove loss/reordering/recovery with real browsers
+and finish secure phone serving. Do not broaden into another content expansion.
+
+Validation for this boundary covers complete-round snapshot round trips including
+fire, bomb, vomit and police, malformed snapshots, scope/session/epoch rejection,
+digest changes, delayed/duplicate commitment, terminal departure and recovery
+agreement. No multiplayer browser claim follows from these domain tests.
+
+Current boundary evidence: 100 CCA domain tests pass serially; the app build,
+focused test typecheck at the app's ES2024 target, and the real touch fire-response
+browser test pass. Review regressions cover empty finished membership, invalid
+phase clocks, premature successor winner confirmation and a fresh committed lobby
+starting after authority changes. The parallel police-cycle timeout passed in
+isolation and serially. The local API and preview are reachable; secure physical
+phone multiplayer remains unverified.
