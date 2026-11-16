@@ -67,9 +67,17 @@ frame waits in the GPU process. Without that bound a software-rendered
 (SwiftShader) scene queues several frames there, and the context teardown of a
 page unload waits for the whole queue. An animation frame held back for the GPU
 never reaches the 45 fps cap: on a GPU slower than the cap the scene draws at the
-GPU's own rate, and the held frame's time goes to the next drawn frame, so the
-wait does not slow motion (within the scene's 45 ms motion step limit). Frames
-the cap itself skips still lose their time. Only a fence that is still pending on
+GPU's own rate. A drawn frame's motion receives its own animation frame's time
+plus the time of every animation frame held back for the GPU since the previous
+draw. The time of a frame the cap itself skips is lost. Motion speed therefore
+lies between the cap's rate and real time, depending on how many frames the GPU
+holds. On a 60 Hz display a GPU faster than the cap draws every second animation
+frame and credits 16.7 ms per 33.3 ms, so motion runs at half its configured
+speed, as without the pacer. A GPU that takes 17–33 ms per frame holds the
+in-between frame and credits the whole 33.3 ms, so motion runs at its configured
+speed; a slower GPU also credits real time. Motion never receives more than real
+time. Pulse, roam and relic spin each advance by at most 45 ms per drawn frame,
+so a longer GPU stall moves them by 45 ms. Only a fence that is still pending on
 a live context holds a frame back: Babylon calls no render callback while the
 context is lost, and a fence from before a loss releases the first frame after
 the restore. Stopping or disposing the loop deletes a pending fence. The opening

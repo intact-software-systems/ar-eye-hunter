@@ -52,8 +52,9 @@ export function startCappedRenderLoop(input: StartCappedRenderLoopInput): Capped
  * Keeps at most one drawn frame waiting in the GPU process. Animation frames do not wait for the GPU, so a
  * software-rendered scene otherwise queues several frames there, and a synchronous WebGL call such as the context
  * teardown when the page unloads waits for that whole queue. An animation frame held back for the GPU never reaches
- * the loop, so the wait costs one animation frame and leaves the cap's timing alone, and its time goes to the next
- * drawn frame instead of being lost to scene motion.
+ * the loop, so the wait costs one animation frame and leaves the cap's timing alone. Its time goes to the next drawn
+ * frame's motion, while a frame the cap skips still loses its time, so motion runs between the cap's rate and real
+ * time depending on how many frames the GPU holds.
  */
 class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
     private readonly engine: RenderLoopEngine;

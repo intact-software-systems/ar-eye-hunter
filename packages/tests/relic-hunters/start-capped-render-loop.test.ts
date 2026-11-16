@@ -143,6 +143,16 @@ function runDriverFrames(engine: FakeEngine, count: number): void {
     }
 }
 
+function creditMotionOverRun(gpu: FakeGpu | null): number {
+    nowMs = 0;
+    const engine = new FakeEngine();
+    const frame = countDraws();
+    const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: CAP_INTERVAL_MS, renderFrame: frame.renderFrame });
+    runDriverFrames(engine, 240);
+    loop.dispose();
+    return frame.frameTimeMs();
+}
+
 describe('Relic gameplay render loop', () => {
     beforeEach(() => {
         nowMs = 0;
@@ -191,7 +201,7 @@ describe('Relic gameplay render loop', () => {
         loop.dispose();
     });
 
-    it('follows the frame rate of a GPU slightly slower than the cap instead of a fraction of the cap', () => {
+    it('follows the frame rate of a GPU slightly slower than the cap and credits motion with real time', () => {
         const engine = new FakeEngine();
         const frame = countDraws();
         const loop = startCappedRenderLoop({
@@ -202,11 +212,12 @@ describe('Relic gameplay render loop', () => {
         });
         runDriverFrames(engine, 240);
         expect(frame.draws(), 'one draw per 28 ms: the 25 ms GPU frame rounded up to a driver frame').toBe(35);
-        expect(frame.frameTimeMs(), 'every animation frame after the first, up to the last draw at 952 ms').toBe(948);
+        expect(frame.frameTimeMs(), 'every animation frame after the first, held or drawn, up to the last draw at 952 ms')
+            .toBe(948);
         loop.dispose();
     });
 
-    it('draws every capped frame on a GPU faster than the cap', () => {
+    it('draws every capped frame on a GPU faster than the cap and credits motion only at the cap\'s rate', () => {
         const engine = new FakeEngine();
         const frame = countDraws();
         const loop = startCappedRenderLoop({
@@ -217,9 +228,19 @@ describe('Relic gameplay render loop', () => {
         });
         runDriverFrames(engine, 240);
         expect(frame.draws(), 'one draw per 24 ms: the cap rounded up to a driver frame').toBe(41);
-        expect(frame.frameTimeMs(), 'as without fences: the cap still drops its skipped frames\' time').toBe(160);
+        expect(frame.frameTimeMs(), 'only the drawn frames\' own time: the frames the cap skips lose theirs').toBe(160);
         loop.dispose();
     });
+
+    it.each([1, 10, 20, 22, 23, 25, 30, 44, 60, 100, 250])(
+        'credits motion between the cap\'s rate and real time with a GPU frame of %i ms',
+        (gpuFrameMs) => {
+            const capOnlyMs = creditMotionOverRun(null);
+            const creditedMs = creditMotionOverRun(new FakeGpu(gpuFrameMs));
+            expect(creditedMs, 'never more than the run\'s elapsed time').toBeLessThanOrEqual(nowMs);
+            expect(creditedMs, 'never less than the cap alone credits').toBeGreaterThanOrEqual(capOnlyMs);
+        }
+    );
 
     it('keeps drawing every capped frame where the browser offers no GPU fences', () => {
         const engine = new FakeEngine();
