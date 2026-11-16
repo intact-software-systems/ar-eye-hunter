@@ -71,11 +71,13 @@ GPU's own rate. A drawn frame's motion receives its own animation frame's time
 plus the time of every animation frame held back for the GPU since the previous
 draw. The time of a frame the cap itself skips is lost. Motion speed therefore
 lies between the cap's rate and real time, depending on how many frames the GPU
-holds. On a 60 Hz display a GPU faster than the cap draws every second animation
-frame and credits 16.7 ms per 33.3 ms, so motion runs at half its configured
-speed, as without the pacer. A GPU that takes 17–33 ms per frame holds the
-in-between frame and credits the whole 33.3 ms, so motion runs at its configured
-speed; a slower GPU also credits real time. Motion never receives more than real
+holds. On a 60 Hz display a GPU that finishes a frame within one animation frame
+(under about 16.7 ms) holds no frame back, so the scene draws every second
+animation frame and credits 16.7 ms per 33.3 ms: motion runs at half its
+configured speed, as without the pacer. A GPU that takes 17–33 ms per frame,
+including one a little faster than the cap, holds the in-between frame and
+credits the whole 33.3 ms, so motion runs at its configured speed; a slower GPU
+also credits real time. Motion never receives more than real
 time. Pulse, roam and relic spin each advance by at most 45 ms per drawn frame,
 so a longer GPU stall moves them by 45 ms. Only a fence that is still pending on
 a live context holds a frame back: Babylon calls no render callback while the
