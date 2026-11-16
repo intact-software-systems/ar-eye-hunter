@@ -9,6 +9,7 @@ import {
     type ChildProcess
 } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
+import type { StatsFs } from 'node:fs';
 import {
     mkdir,
     readdir,
@@ -48,7 +49,9 @@ import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-te
 import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
 import {
     decodeDistributedRunEnvironment,
-    readDistributedRunEnvironment
+    readDistributedRunEnvironment,
+    type DistributedRunEnvironment,
+    type DistributedRunHostReading
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -479,12 +482,28 @@ function readEffectiveApiMode(configuration: ApiV1Configuration): 'memory' | 'po
     return effective;
 }
 
-async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
-    const configuration = await readLocalApiConfiguration();
-    const apiMode = readEffectiveApiMode(configuration);
+function readHostReading(disk: StatsFs): DistributedRunHostReading {
+    return {
+        platform: platform(),
+        release: release(),
+        cpuCount: cpus().length,
+        availableParallelism: availableParallelism(),
+        memoryBytes: totalmem(),
+        diskBytes: disk.blocks * disk.bsize,
+        diskAvailableBytes: disk.bavail * disk.bsize,
+        oneMinuteLoadAverage: loadavg()[0]
+    };
+}
+
+async function readRunEnvironment(
+    artifactDir: string,
+    source: Buffer,
+    participantCount: number,
+    configuration: ApiV1Configuration
+): Promise<DistributedRunEnvironment> {
     const disk = await statfs(artifactDir);
     const read = readDistributedRunEnvironment({
-        apiMode,
+        apiMode: readEffectiveApiMode(configuration),
         profile: configuration.profile.name,
         pubSub: configuration.database.pubSub,
         ice: configuration.ice.mode,
@@ -499,45 +518,49 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
         nodeVersion: process.version,
         chromiumExecutablePath: chromium.executablePath(),
         readCommandOutput,
-        readHost: () => ({
-            platform: platform(),
-            release: release(),
-            cpuCount: cpus().length,
-            availableParallelism: availableParallelism(),
-            memoryBytes: totalmem(),
-            diskBytes: disk.blocks * disk.bsize,
-            diskAvailableBytes: disk.bavail * disk.bsize,
-            oneMinuteLoadAverage: loadavg()[0]
-        })
+        readHost: () => readHostReading(disk)
     });
-    const environment = read.flatMap((issues) => Either.ofLeft(issues), decodeDistributedRunEnvironment).fold(
+    return read.flatMap((issues) => Either.ofLeft(issues), decodeDistributedRunEnvironment).fold(
         (issues) => {
             throw new Error(`The run environment could not be read: ${issues.join('; ')}`);
         },
         (value) => value
     );
+}
+
+function readMeasuredFiles(): Promise<readonly { file: string; sha256: string; }[]> {
+    return Promise.all([
+        '.github/workflows/github-free-distributed-recipe.yml',
+        'apps/rallar-black-box/playwright.full-stack.config.ts',
+        'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
+        'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts'
+    ].map(async (file) => ({
+        file,
+        sha256: createHash('sha256').update(await readFile(file)).digest('hex')
+    })));
+}
+
+function toProvenanceLimits(environment: DistributedRunEnvironment): readonly string[] {
+    return [
+        environment.apiMode === 'postgres' ? 'Ephemeral Postgres service container' : 'Fresh ephemeral PGlite',
+        environment.apiMode === 'postgres' ? 'Postgres pubsub' : 'Local pubsub and ICE',
+        'Loopback transport',
+        `${environment.agentCount} co-located browser contexts`,
+        'Runtime versions differ from hosted runs; CPU-only causality is not established'
+    ];
+}
+
+async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
+    const configuration = await readLocalApiConfiguration();
+    const environment = await readRunEnvironment(artifactDir, source, participantCount, configuration);
     await writeFile(
         path.join(artifactDir, 'provenance.json'),
         JSON.stringify(
             {
                 environment,
-                measuredFiles: await Promise.all([
-                    '.github/workflows/github-free-distributed-recipe.yml',
-                    'apps/rallar-black-box/playwright.full-stack.config.ts',
-                    'apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts',
-                    'tests/playwright/rallar-black-box/full-stack-distributed-manifest.spec.ts'
-                ].map(async (file) => ({
-                    file,
-                    sha256: createHash('sha256').update(await readFile(file)).digest('hex')
-                }))),
+                measuredFiles: await readMeasuredFiles(),
                 recorderDirectory: process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
-                limits: [
-                    apiMode === 'postgres' ? 'Ephemeral Postgres service container' : 'Fresh ephemeral PGlite',
-                    apiMode === 'postgres' ? 'Postgres pubsub' : 'Local pubsub and ICE',
-                    'Loopback transport',
-                    `${participantCount} co-located browser contexts`,
-                    'Runtime versions differ from hosted runs; CPU-only causality is not established'
-                ]
+                limits: toProvenanceLimits(environment)
             },
             null,
             2

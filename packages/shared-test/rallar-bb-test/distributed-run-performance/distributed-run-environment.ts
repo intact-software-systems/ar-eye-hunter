@@ -82,6 +82,46 @@ function readCommandValue(
     );
 }
 
+interface DistributedRunReadings {
+    readonly commit: string;
+    readonly status: string;
+    readonly bun: string;
+    readonly chromium: string;
+    readonly host: DistributedRunHostReading;
+}
+
+function toDistributedRunEnvironment(
+    input: ReadDistributedRunEnvironmentInput,
+    readings: DistributedRunReadings
+): DistributedRunEnvironment {
+    const { host } = readings;
+    return {
+        sourceCommit: readings.commit,
+        worktreeDirty: readings.status.length > 0,
+        apiMode: input.apiMode,
+        databaseFreshness: 'fresh-ephemeral',
+        profile: input.profile,
+        pubSub: input.pubSub,
+        ice: input.ice,
+        topology: input.topology,
+        retention: input.retention,
+        rtcCaptureMode: input.rtcCaptureMode,
+        manifestSha256: input.manifestSha256,
+        agentCount: input.agentCount,
+        runtime: { node: input.nodeVersion, bun: readings.bun, chromium: readings.chromium },
+        host: {
+            platform: host.platform,
+            release: host.release,
+            cpuCount: host.cpuCount,
+            availableParallelism: host.availableParallelism,
+            memoryBytes: host.memoryBytes,
+            diskBytes: host.diskBytes,
+            diskAvailableBytes: host.diskAvailableBytes
+        },
+        loadAverage: { oneMinute: host.oneMinuteLoadAverage, atStart: true }
+    };
+}
+
 /** Called once as the run starts, so the load reading is the load the run began under. */
 export function readDistributedRunEnvironment(
     input: ReadDistributedRunEnvironmentInput
@@ -102,32 +142,13 @@ export function readDistributedRunEnvironment(
     ) {
         return Either.ofLeft(issues);
     }
-    const host = input.readHost();
-    return Either.ofRight({
-        sourceCommit: commit.right,
-        worktreeDirty: status.right.length > 0,
-        apiMode: input.apiMode,
-        databaseFreshness: 'fresh-ephemeral',
-        profile: input.profile,
-        pubSub: input.pubSub,
-        ice: input.ice,
-        topology: input.topology,
-        retention: input.retention,
-        rtcCaptureMode: input.rtcCaptureMode,
-        manifestSha256: input.manifestSha256,
-        agentCount: input.agentCount,
-        runtime: { node: input.nodeVersion, bun: bun.right, chromium: chromium.right },
-        host: {
-            platform: host.platform,
-            release: host.release,
-            cpuCount: host.cpuCount,
-            availableParallelism: host.availableParallelism,
-            memoryBytes: host.memoryBytes,
-            diskBytes: host.diskBytes,
-            diskAvailableBytes: host.diskAvailableBytes
-        },
-        loadAverage: { oneMinute: host.oneMinuteLoadAverage, atStart: true }
-    });
+    return Either.ofRight(toDistributedRunEnvironment(input, {
+        commit: commit.right,
+        status: status.right,
+        bun: bun.right,
+        chromium: chromium.right,
+        host: input.readHost()
+    }));
 }
 
 const ENVIRONMENT_KEYS = [

@@ -86,6 +86,11 @@ function toRecord(value: DistributedRunEnvironment): DistributedRunEnvironment {
     return JSON.parse(JSON.stringify(value));
 }
 
+function toHostFields(): Omit<DistributedRunHostReading, 'oneMinuteLoadAverage'> {
+    const { oneMinuteLoadAverage: _load, ...host } = HOST;
+    return host;
+}
+
 describe('distributed run environment', () => {
     it('names the commit, runtime, API mode, database freshness, carrier set, agent count, host and concurrent load of a run', () => {
         expect(readEnvironment()).toEqual({
@@ -151,10 +156,10 @@ describe('distributed run environment', () => {
 
     it.each([
         ['runtime.bun', { runtime: { node: 'v24.1.0', bun: 1, chromium: 'Chromium 140.0.1' } }, ['runtime.bun must be a non-empty string']],
-        ['host.cpuCount', { host: { ...HOST_FIELDS(), cpuCount: 0 } }, ['host.cpuCount must be a whole number of at least 1']],
+        ['host.cpuCount', { host: { ...toHostFields(), cpuCount: 0 } }, ['host.cpuCount must be a whole number of at least 1']],
         [
             'host.diskAvailableBytes',
-            { host: { ...HOST_FIELDS(), diskAvailableBytes: 'lots' } },
+            { host: { ...toHostFields(), diskAvailableBytes: 'lots' } },
             ['host.diskAvailableBytes must be a whole number of at least 0']
         ],
         ['loadAverage.atStart', { loadAverage: { oneMinute: 2.5, atStart: 'yes' } }, ['loadAverage.atStart must be true']],
@@ -243,8 +248,3 @@ describe('distributed run environment', () => {
         expect(toDistributedRunRegimeKey(readEnvironment(change))).not.toEqual(toDistributedRunRegimeKey(readEnvironment()));
     });
 });
-
-function HOST_FIELDS(): Omit<DistributedRunHostReading, 'oneMinuteLoadAverage'> {
-    const { oneMinuteLoadAverage: _load, ...host } = HOST;
-    return host;
-}
