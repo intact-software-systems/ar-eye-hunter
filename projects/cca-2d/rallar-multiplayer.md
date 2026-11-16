@@ -339,7 +339,25 @@ context-loss test verifies readiness revocation, room exit and return to solo. T
 [capture](visual-concepts/rallar-match-phone.png) is actual gameplay. Focused simulation
 regressions cover fractional clock accumulation, bounded unconfirmed progress, input
 expiry under replay and foreign-session/old-round refusal. These checks do not prove
-physical-phone performance, three-minute results or impaired-network recovery.
+physical-phone performance or three-minute results.
+
+A focused impaired-network trial now drops one peer's outgoing match messages
+while leaving its Rallar connection and authority traffic alive. After 1.5 seconds
+without a new committed checkpoint, both clients show a confirmation pause and
+the director pauses speculative time. Checkpoint retransmission continues; restoring
+the missing acknowledgements resumes the same round. Device input during the pause
+is discarded, held keys require release and a fresh press, and published dash
+identities never rewind. `TownMatchControls` owns that input translation independently
+of scene rendering. This is temporary confirmation-loss recovery, not host succession
+or the required ten-second terminal interruption.
+
+Static inspection also found that the browser's default room-presence lease is
+120 seconds. The appointment policy refuses fallback while an owner/admin session
+remains active. A socket-close cleanup may remove that presence sooner; a suspended
+page with a live socket is a different failure. Do not substitute the four-second
+director heartbeat timeout for server authorization, shorten leases through an
+app-local heartbeat loop, or claim background-host recovery from the temporary
+message-loss test. Reproduce both lifecycle paths before selecting the Rallar change.
 
 The next two useful outcomes remain concrete:
 

@@ -44,6 +44,7 @@ export namespace TownMatchSession {
         readonly localId: string | undefined;
         readonly isDirector: boolean;
         readonly available: boolean;
+        readonly recovering: boolean;
         readonly error: string;
     }
 }
@@ -68,6 +69,7 @@ export class TownMatchSession {
     private error = '';
     private lastInput = 0;
     private lastExchange = 0;
+    private lastCommitAt = 0;
     private intent: TownMatchFrame | undefined;
     private lastProposal: TownMatchFrame | undefined;
     private committedProposal: TownMatchFrame | undefined;
@@ -111,11 +113,15 @@ export class TownMatchSession {
 
     getView(): TownMatchSession.View {
         const director = this.dependencies.browser.director.status(this.roomRef);
+        const available = !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() && director.isFresh;
+        const match = this.checkpoints?.getState().committed?.state;
         return {
-            match: this.checkpoints?.getState().committed?.state,
+            match,
             localId: this.dependencies.browser.session()?.clientId,
             isDirector: director.isDirector,
-            available: !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() && director.isFresh,
+            available,
+            recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
+                (!available || this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500),
             error: this.error
         };
     }
@@ -142,7 +148,8 @@ export class TownMatchSession {
 
     async act(action: TownMatchAction): Promise<void> {
         const state = this.checkpoints?.getState().committed?.state;
-        if (!state || !this.getView().available) {
+        const view = this.getView();
+        if (!state || !view.available || (action.kind === 'controls' && view.recovering)) {
             return;
         }
         const frame = this.createFrame(state.matchId, action);
@@ -173,7 +180,12 @@ export class TownMatchSession {
                 return;
             }
             const now = this.dependencies.timers.nowMs();
-            if (this.getView().isDirector) {
+            const view = this.getView();
+            if (view.recovering) {
+                this.simulation?.pause(now);
+                this.controls = { x: 0, z: 0, dash: this.controls.dash };
+            }
+            else if (view.isDirector) {
                 this.simulation?.advance(now, this.checkpoints.getState().committed?.state);
             }
             const match = this.checkpoints.getState().committed?.state;
@@ -446,6 +458,7 @@ export class TownMatchSession {
 
     private publishCommit(): void {
         const committed = this.checkpoints?.getState().committed;
+        this.lastCommitAt = this.dependencies.timers.nowMs();
         if (committed && this.lastProposal?.sequence === committed.sequence) {
             this.committedProposal = this.lastProposal;
             this.lastProposal = undefined;

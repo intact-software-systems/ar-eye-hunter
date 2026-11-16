@@ -98,3 +98,77 @@ test('a lost prepared graphics context revokes readiness and leaves a usable exi
     await page.getByRole('button', { name: 'Back to solo' }).click();
     await expect(page.getByLabel('Movement joystick')).toBeVisible();
 });
+
+test('a silent backup pauses confirmed play and resumes without replaying controls', async ({ browser }) => {
+    test.setTimeout(60000);
+    const first = await browser.newContext();
+    const second = await browser.newContext();
+    let dropMatchMessages = false;
+    let dropped = 0;
+    await second.routeWebSocket(/\/api\/ws\//, (socket) => {
+        const server = socket.connectToServer();
+        socket.onMessage((message) => {
+            if (dropMatchMessages && String(message).includes('cca.match.frame')) {
+                dropped += 1;
+                return;
+            }
+            server.send(message);
+        });
+    });
+    const alice = await first.newPage();
+    const bob = await second.newPage();
+    try {
+        await startTwoPlayerMatch(alice, bob);
+        dropMatchMessages = true;
+        await expect.poll(() => dropped).toBeGreaterThan(0);
+        await expect(alice.locator('#round-status')).toContainText('Waiting for confirmed match state', {
+            timeout: 5000
+        });
+        await expect(bob.locator('#round-status')).toContainText('Waiting for confirmed match state', {
+            timeout: 5000
+        });
+        const clock = await alice.locator('#round-clock').textContent();
+        const dashes = await bob.locator('#online-game').getAttribute('data-dashes');
+        await bob.keyboard.down('KeyD');
+        await bob.keyboard.press('Space');
+        await expect(bob.locator('#round-clock')).toHaveText(clock!);
+        dropMatchMessages = false;
+        await expect(alice.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 5000 });
+        await expect(bob.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 5000 });
+        const resumedClock = await alice.locator('#round-clock').textContent();
+        const resumedX = Number(await bob.locator('#online-game').getAttribute('data-x'));
+        await bob.keyboard.down('KeyD');
+        await expect.poll(async () => await alice.locator('#round-clock').textContent()).not.toBe(resumedClock);
+        expect(Number(await bob.locator('#online-game').getAttribute('data-x'))).toBeCloseTo(resumedX, 1);
+        await expect(bob.locator('#online-game')).toHaveAttribute('data-dashes', dashes!);
+        await expect.poll(async () => Number(await bob.locator('#online-game').getAttribute('data-speed')))
+            .toBeLessThan(0.1);
+        await bob.keyboard.up('KeyD');
+        await bob.keyboard.down('KeyD');
+        await expect.poll(async () => Number(await bob.locator('#online-game').getAttribute('data-speed')))
+            .toBeGreaterThan(1);
+        await bob.keyboard.up('KeyD');
+    }
+    finally {
+        await Promise.allSettled([first.close(), second.close()]);
+    }
+});
+
+async function startTwoPlayerMatch(alice: Page, bob: Page): Promise<void> {
+    await registerPlayer(alice, `cca-host-${Date.now()}`);
+    await registerPlayer(bob, `cca-backup-${Date.now()}`);
+    await alice.getByRole('button', { name: 'Create town', exact: true }).click();
+    const roomCode = await alice.getByLabel('Room code').inputValue();
+    await bob.getByLabel('Town code').fill(roomCode);
+    await bob.getByRole('button', { name: 'Join town', exact: true }).click();
+    await expect(alice.locator('#roster li')).toHaveCount(2);
+    await alice.getByRole('button', { name: 'Host match', exact: true }).click();
+    for (const page of [alice, bob]) {
+        await expect(page.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled({ timeout: 15000 });
+        await page.getByRole('button', { name: 'Ready', exact: true }).click();
+    }
+    await alice.getByRole('button', { name: 'Start round', exact: true }).click();
+    for (const page of [alice, bob]) {
+        await expect(page.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 15000 });
+    }
+}

@@ -104,9 +104,11 @@ last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling
 its search; online re-entry waits for that cleanup. If the network stays unavailable,
 cancellation cannot be confirmed and the search status must be checked after reconnecting.
-The healthy shared-match flow is implemented. Roster changes interrupt the round
-and the director can open a fresh ready cycle. Host replacement, impaired-network
-recovery and complete-round browser qualification remain in
+The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
+If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;
+movement and dash pressed during that pause are discarded. Roster changes interrupt
+the round and the director can open a fresh ready cycle. Host replacement, prolonged
+outage interruption and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests

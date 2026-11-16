@@ -5,6 +5,7 @@ import { CutoutArt } from '../cutout-art.ts';
 import { PracticeControls, requirePracticeElement } from '../practice-controls.ts';
 import { PracticeScene } from '../practice-scene.ts';
 import { createTownIce } from '../town/raid-presentation.ts';
+import { TownMatchControls } from './match-controls.ts';
 import type { TownMatchSession } from './match-session.ts';
 import { TOWN_MATCH_RATE, type TownMatchState } from './town-match.ts';
 
@@ -29,6 +30,7 @@ export class TownMatchGame {
     private error = '';
     private renderedMatchId = '';
     private renderedZoom = 0;
+    private matchControls = new TownMatchControls();
 
     private readonly root: HTMLElement;
     private readonly session: TownMatchSession;
@@ -62,6 +64,8 @@ export class TownMatchGame {
         }, options);
         window.addEventListener('resize', () => this.resize(), options);
         window.addEventListener('blur', () => this.clearControls(), options);
+        window.addEventListener('keydown', (event) => this.admitControlKey(event), { ...options, capture: true });
+        window.addEventListener('keyup', (event) => this.matchControls.releaseKey(event.code), options);
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) {
                 this.clearControls();
@@ -96,6 +100,7 @@ export class TownMatchGame {
         this.clearControls();
         this.controls?.stop();
         this.controls = visible ? new PracticeControls(this.root, this.canvas) : undefined;
+        this.matchControls = new TownMatchControls();
         if (visible) {
             this.resize();
             this.previousTime = performance.now();
@@ -131,14 +136,30 @@ export class TownMatchGame {
     }
 
     private clearControls(): void {
+        this.matchControls.clearKeys();
         this.controls?.clear();
         this.publishControls();
     }
 
     private publishControls(): void {
+        const view = this.session.getView();
+        if (view.recovering) {
+            this.controls?.clear();
+        }
         const controls = this.controls?.getInput();
         if (controls) {
-            this.session.setControls(controls);
+            const consumed = view.match?.players.find((player) => player.id === view.localId)?.consumedDash ?? 0;
+            this.session.setControls(this.matchControls.sample(controls, consumed, view.recovering));
+        }
+    }
+
+    private admitControlKey(event: KeyboardEvent): void {
+        if (
+            this.visible &&
+            !this.matchControls.acceptKeyDown(event.code, event.repeat, this.session.getView().recovering)
+        ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
         }
     }
 
@@ -200,8 +221,9 @@ export class TownMatchGame {
             Math.ceil(match.remainingTicks / TOWN_MATCH_RATE)
         }s`;
         requirePracticeElement(this.root, '#round-score').textContent = `${player.score} / 100 POINTS`;
-        requirePracticeElement(this.root, '#round-status').textContent = !view.available
-            ? 'Connection paused. Waiting for the director…'
+        requirePracticeElement<HTMLButtonElement>(this.root, '#dash').disabled = view.recovering;
+        requirePracticeElement(this.root, '#round-status').textContent = view.recovering
+            ? 'Connection paused. Waiting for confirmed match state…'
             : match.phase === 'countdown'
             ? `Ready… ${Math.ceil(match.countdownTicks / TOWN_MATCH_RATE)}`
             : player.frozenUntil > player.elapsed

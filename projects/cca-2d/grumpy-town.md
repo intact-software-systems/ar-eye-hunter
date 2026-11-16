@@ -352,3 +352,25 @@ Only add the flying hat, queue argument or café interruption if players can sti
 read and deliberately exploit that first connection. Town density should come
 from varied facades and routines around broad streets, with useful alleys and
 clear landmarks, rather than filling every free patch with collisions.
+
+Give the three incidents distinct tactical purposes in the next design discussion:
+fire summons mobile water and changes pursuit routes; Big Stink creates a warned
+choice between cover and escape and occupies cleaners; the café stream creates a
+moving obstacle that players can redirect. Their shared reward structure must not
+make them feel like three differently colored explosions. These are intended play
+experiences to evaluate, not newly verified capabilities.
+
+Make the ordinary square readable at three distances. Zoomed out, the clock/council
+frontage, fountain, striped market and fire station identify routes. At playing
+distance, awnings, doorsteps, queues and props explain what can react. Close up,
+faces, furious gestures and absurd signs deliver jokes. Proposed extra character
+details include a municipal clerk protecting wet forms, a barber guarding an
+elaborate hairdo, and a bus-stop queue that solemnly reforms after every disruption.
+Do not make every decorative house or booth another mandatory interaction.
+
+An open design choice is whether the largest incidents are rare opportunities
+players discover or deliberate plans they prepare. Recommend discoverable,
+well-marked opportunities first: they preserve immediate play for younger players
+and the existing controls. Later, test whether experienced friends enjoy arranging
+two compatible incidents together. Keep the current implementation sequence;
+this brainstorm does not authorize another content slice ahead of reliability.
