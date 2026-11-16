@@ -1,3 +1,4 @@
+import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { Hono } from 'hono';
 import { upgradeWebSocket } from 'hono/bun';
@@ -90,6 +91,7 @@ export interface ApiV1RouteInstallerTopology {
 export interface ApiV1RouteInstallerAdminServices {
     readonly rooms: Pick<ReadAdminRoomDirectory, 'read'>;
     readonly topologyWork: Pick<ReadAdminRoomTopologyWork, 'read'>;
+    readonly topologyPlans: Pick<ReadAdminRoomTopologyPlans, 'read'>;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
@@ -304,6 +306,7 @@ function registerApiV1AdministrationRoutes<
     registerAdminRoomRoutes(app, {
         directory: input.admin.rooms,
         topologyWork: input.admin.topologyWork,
+        topologyPlans: input.admin.topologyPlans,
         adminClientIds: input.topology.adminClientIds,
         requireApiAuthSession: requireSession
     });

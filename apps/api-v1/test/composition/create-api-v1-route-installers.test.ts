@@ -229,6 +229,7 @@ function createAdmin(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
     return {
         rooms: { read: rejectUnusedOperation },
         topologyWork: { read: rejectUnusedOperation },
+        topologyPlans: { read: rejectUnusedOperation },
         operations: {
             overview: { execute: rejectUnusedOperation },
             queues: { execute: rejectUnusedOperation },

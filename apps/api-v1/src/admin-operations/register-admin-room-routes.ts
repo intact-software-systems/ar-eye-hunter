@@ -2,8 +2,13 @@ import type { Context, Hono } from 'hono';
 
 import { RequestAuthFailure, toAuthErrorResponse } from '@shared-server/http/request-auth-service.ts';
 import type { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';
+import type { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import type { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type { AdminRoomDirectoryRequest } from '@shared/api/admin-rooms/admin-room-directory.ts';
+import {
+    ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,
+    type AdminRoomTopologyPlansRequest
+} from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { AdminRoomTopologyWorkRequest } from '@shared/api/admin-rooms/admin-room-topology-work.ts';
 import { decodeAdminTopologyOutboxId } from '@shared/api/admin-rooms/decode-admin-room-topology-work.ts';
 import { assertValidRallarRouteId } from '@shared/api/rallar-validation.ts';
@@ -14,6 +19,7 @@ import { requireApiAdminSession, type ApiAdminAuthDependencies } from '../servic
 export interface AdminRoomRouteDependencies extends ApiAdminAuthDependencies {
     readonly directory: Pick<ReadAdminRoomDirectory, 'read'>;
     readonly topologyWork: Pick<ReadAdminRoomTopologyWork, 'read'>;
+    readonly topologyPlans: Pick<ReadAdminRoomTopologyPlans, 'read'>;
 }
 
 export function registerAdminRoomRoutes(app: Hono, dependencies: AdminRoomRouteDependencies): void {
@@ -31,6 +37,14 @@ export function registerAdminRoomRoutes(app: Hono, dependencies: AdminRoomRouteD
             readAuthorizedRoomEvidence(context, dependencies, {
                 parse: toTopologyWorkRequest,
                 read: (request) => dependencies.topologyWork.read(request)
+            })
+    );
+    app.get(
+        '/api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-plans',
+        (context) =>
+            readAuthorizedRoomEvidence(context, dependencies, {
+                parse: toTopologyPlansRequest,
+                read: (request) => dependencies.topologyPlans.read(request)
             })
     );
 }
@@ -100,4 +114,44 @@ function toTopologyWorkRequest(request: Context['req']): Either<string, AdminRoo
     catch {
         return Either.ofLeft('Topology work scope or receipt identity is invalid');
     }
+}
+
+const DEFAULT_TOPOLOGY_PLANS_LIMIT = 50;
+
+function toTopologyPlansRequest(request: Context['req']): Either<string, AdminRoomTopologyPlansRequest> {
+    const limit = toTopologyPlansLimit(request);
+    if (limit === undefined) {
+        return Either.ofLeft(
+            `Topology plans limit must be an integer from 1 through ${ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT}`
+        );
+    }
+    const afterPublicationId = request.query('afterPublicationId');
+    if ((request.queries('afterPublicationId')?.length ?? 0) > 1 || afterPublicationId === '') {
+        return Either.ofLeft('Topology plans cursor must occur once and not be empty');
+    }
+    try {
+        return Either.ofRight({
+            roomRef: {
+                applicationId: assertValidRallarRouteId(request.param('applicationId')),
+                workspaceId: assertValidRallarRouteId(request.param('workspaceId')),
+                groupId: assertValidRallarRouteId(request.param('groupId'))
+            },
+            limit,
+            afterPublicationId: afterPublicationId === undefined
+                ? null
+                : decodeAdminTopologyOutboxId(afterPublicationId)
+        });
+    }
+    catch {
+        return Either.ofLeft('Topology plans scope or cursor is invalid');
+    }
+}
+
+function toTopologyPlansLimit(request: Context['req']): number | undefined {
+    if ((request.queries('limit')?.length ?? 0) > 1) {
+        return undefined;
+    }
+    const rawLimit = request.query('limit') ?? String(DEFAULT_TOPOLOGY_PLANS_LIMIT);
+    const limit = Number(rawLimit);
+    return /^[1-9]\d*$/.test(rawLimit) && limit <= ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT ? limit : undefined;
 }
