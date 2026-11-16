@@ -671,7 +671,7 @@ describe('Rallar typed message channel', () => {
         });
     });
 
-    it('stages a live room send and admits it at its lane\'s opportunity on the connect\'s queue engine', async () => {
+    it('admits a live room send that finds its lane idle on the connect\'s queue engine without waiting for a pass', async () => {
         const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
         const engine = new InboxOutboxEngine({ nowEpochMs: () => Date.now(), random: () => 0.5, reportTaskFailure: () => undefined });
         mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({ middleware: { qboxEngine: engine } });
@@ -695,16 +695,12 @@ describe('Rallar typed message channel', () => {
             publication: LIVE_PUBLICATION
         });
 
-        // The facade's delivery clock is the page's own; a deadline no runner stall reaches keeps the value staged.
+        // The facade's delivery clock is the page's own; a deadline no runner stall reaches keeps the value live.
         const handle = await channel.sendRtc({ text: 'pose' }, { resourceId: 'entity-1', ttlMs: 60_000 });
-        expect(handle.lifecycle().state).toBe('staged');
-        expect(admitted).toEqual([]);
 
-        await engine.executeOnce();
-        await engine.stop();
-
+        await vi.waitFor(() => expect(handle.lifecycle().state).toBe('queued'));
         expect(admitted.map((message) => message.id.msgId)).toEqual([handle.msgId]);
-        expect(handle.lifecycle().state).toBe('queued');
+        await engine.stop();
     });
 
     it('refuses a durable send storage cannot hold unless the channel chose to send it without storage', async () => {

@@ -82,9 +82,20 @@ async function runEnginePass(engine: InboxOutboxEngine): Promise<void> {
     await engine.stop();
 }
 
+/**
+ * A lane admits the value that finds it idle at once (D469); a lead value of another stream opens it, so the value a
+ * test sends next stays staged until the lane's next boundary.
+ */
+async function openLaneWithLead(fixture: LiveCancelFixture): Promise<string> {
+    const lead = await fixture.sender.sendRtc(toPoseSend('lead'), LIVE_CHANNEL);
+    await vi.waitFor(() => expect(fixture.admitted.map((message) => message.id.msgId)).toEqual([lead.msgId]));
+    return lead.msgId;
+}
+
 describe('cancelling a live channel send', () => {
     it('settles a staged value cancelled at its stage, reaches no carrier, and never admits it', async () => {
         const fixture = createLiveCancelFixture(async (message) => await Promise.resolve(toQueuedMessageAdmission(message)));
+        const lead = await openLaneWithLead(fixture);
         const handle = await fixture.sender.sendRtc(toPoseSend('entity-1'), LIVE_CHANNEL);
         const transitions = recordTransitions(handle);
 
@@ -93,7 +104,7 @@ describe('cancelling a live channel send', () => {
 
         expect(transitions).toEqual(['cancelled']);
         expect(fixture.carrierCancels).toEqual([]);
-        expect(fixture.admitted).toEqual([]);
+        expect(fixture.admitted.map((message) => message.id.msgId)).toEqual([lead]);
     });
 
     it('asks both carriers to cancel a send no stage holds', async () => {
