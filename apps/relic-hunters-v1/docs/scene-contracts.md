@@ -62,9 +62,19 @@ mounted. Input, pointer capture, motion history and frame timing reset at that
 transition; room, bracket and React subscriptions stay live.
 
 `scene/start-capped-render-loop.ts` is the Babylon driver adapter for gameplay. It
-draws a frame only after the GPU has executed the previous one, so at most
-one frame waits in the GPU process. Without that bound a software-rendered (SwiftShader) scene queues
-several frames there, and the context teardown of a page unload waits for the whole queue. The opening is a static project-rendered image with no graphics lifetime. The framework-independent mechanism lives in
+draws a frame only after the GPU has executed the previous one, so at most one
+frame waits in the GPU process. Without that bound a software-rendered
+(SwiftShader) scene queues several frames there, and the context teardown of a
+page unload waits for the whole queue. An animation frame held back for the GPU
+never reaches the 45 fps cap: on a GPU slower than the cap the scene draws at the
+GPU's own rate, and the held frame's time goes to the next drawn frame, so the
+wait does not slow motion (within the scene's 45 ms motion step limit). Frames
+the cap itself skips still lose their time. Only a fence that is still pending on
+a live context holds a frame back: Babylon calls no render callback while the
+context is lost, and a fence from before a loss releases the first frame after
+the restore. Stopping or disposing the loop deletes a pending fence. The opening
+is a static project-rendered image with no graphics lifetime. The
+framework-independent mechanism lives in
 `packages/shared/resilience/timing/capped-frame-loop.ts`; it never imports Babylon
 or React. `read-relic-frame-readiness.ts` checks the active visible mesh materials,
 applicable glow passes/composition, camera and pending data before and after drawing.
