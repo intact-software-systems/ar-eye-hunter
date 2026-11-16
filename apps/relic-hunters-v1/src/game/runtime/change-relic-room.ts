@@ -4,7 +4,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { RelicExpeditionParticipation } from './relic-expedition-participation.ts';
 
-/** A session's moves that land during one entry are R to none or R to S to none; more means the room is churning. */
+/** One entry checks at most three rooms, R to S to T, before the session has none; a further move is churning. */
 const MAX_FOLLOWED_ROOM_MOVES = 2;
 const ROOM_ENTRY_CHANGED = 'Room entry changed while checking expedition participation.';
 
