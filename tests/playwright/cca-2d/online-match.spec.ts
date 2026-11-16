@@ -131,6 +131,10 @@ for (const departure of ['temporary', 'expired', 'voluntary']) {
                 departure === 'temporary' ? 'active' : 'observer'
             );
             await expect(alice.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 10000 });
+            if (departure === 'temporary') {
+                await expect(returned.locator('#round-status')).toContainText('Dash to make trouble');
+                await expect(returned.getByRole('button', { name: 'Dash and drop', exact: true })).toBeEnabled();
+            }
             const initialX = Number(await returned.locator('#online-game').getAttribute('data-x'));
             await returned.keyboard.down('KeyD');
             if (departure !== 'temporary') {
@@ -447,6 +451,151 @@ test('a silent backup pauses confirmed play and resumes without replaying contro
     }
     finally {
         await Promise.allSettled([first.close(), second.close()]);
+    }
+});
+
+for (const fault of ['silent network loss', 'browser suspension'] as const) {
+    test(`a host returning from ${fault} preserves a shared interrupted outcome`, async ({ browser }) => {
+        test.setTimeout(70000);
+        const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+        const pages = await Promise.all(contexts.map((context) => context.newPage()));
+        const [alice, bob] = pages;
+        const traffic: string[] = [];
+        let blackhole = false;
+        let discarded = 0;
+        await contexts[0].routeWebSocket(/\/api\/ws\//, (socket) => {
+            const server = socket.connectToServer();
+            socket.onMessage((message) => {
+                if (blackhole) {
+                    discarded += 1;
+                    return;
+                }
+                server.send(message);
+            });
+            server.onMessage((message) => {
+                if (!blackhole) {
+                    socket.send(message);
+                }
+            });
+        });
+        await contexts[0].route('**/api/**', (route) => blackhole ? route.abort() : route.continue());
+        const lifecycle = await contexts[0].newCDPSession(alice);
+        await lifecycle.send('Debugger.enable');
+        pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
+        try {
+            await startTownMatch(pages);
+            const matchId = await bob.locator('#online-game').getAttribute('data-match-id');
+            if (fault === 'browser suspension') {
+                await lifecycle.send('Debugger.pause');
+            }
+            else {
+                blackhole = true;
+                await expect.poll(() => discarded).toBeGreaterThan(0);
+            }
+            await expect(bob.locator('#round-status')).toContainText('Waiting for confirmed match state', {
+                timeout: 6000
+            });
+            const confirmedScore = await bob.locator('#round-score').textContent();
+            const confirmedTick = Number(await bob.locator('#online-game').getAttribute('data-tick'));
+            await expect(bob.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
+                timeout: 12000
+            });
+            await expect(bob.locator('#round-score')).toHaveText(confirmedScore!);
+            await expect(bob.locator('#online-game')).toHaveAttribute('data-tick', String(confirmedTick));
+            blackhole = false;
+            if (fault === 'browser suspension') {
+                await lifecycle.send('Debugger.resume');
+            }
+            for (const page of pages) {
+                await expect(page.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
+                    timeout: 12000
+                });
+                await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+                await expect(page.locator('#online-game')).toHaveAttribute('data-phase', 'interrupted', {
+                    timeout: 12000
+                });
+            }
+            await expect(alice.getByRole('button', { name: 'New round', exact: true })).toBeEnabled();
+            await alice.getByRole('button', { name: 'New round', exact: true }).click();
+            for (const page of pages) {
+                await expect(page.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled();
+            }
+        }
+        finally {
+            blackhole = false;
+            await lifecycle.send('Debugger.resume').catch(() => {});
+            await writeMatchTraffic(traffic);
+            await Promise.allSettled(contexts.map((context) => context.close()));
+        }
+    });
+}
+
+test('an old host returns as an observer after two survivors appoint a replacement', async ({ browser }) => {
+    test.setTimeout(90000);
+    const contexts = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
+    const pages = await Promise.all(contexts.map((context) => context.newPage()));
+    const [alice, bob, carol] = pages;
+    const traffic: string[] = [];
+    let offline = false;
+    let disconnect: (() => Promise<void>) | undefined;
+    let observerProposed = false;
+    await contexts[0].routeWebSocket(/\/api\/ws\//, async (socket) => {
+        if (offline) {
+            await socket.close();
+            return;
+        }
+        const server = socket.connectToServer();
+        disconnect = async () => {
+            await Promise.all([socket.close(), server.close()]);
+        };
+    });
+    for (const survivor of [bob, carol]) {
+        survivor.on('websocket', (socket) =>
+            socket.on('framesent', ({ payload }) => {
+                const frame = decodeMatchWire(payload);
+                if (frame?.action.kind === 'proposal') {
+                    const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                    observerProposed ||= frame.epoch > 1 &&
+                        snapshot?.seats.some((seat) => seat.status === 'observer') === true;
+                }
+            }));
+    }
+    pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
+    try {
+        await startTownMatch(pages);
+        const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
+        offline = true;
+        expect(disconnect).toBeDefined();
+        await disconnect!();
+        await expect.poll(() => observerProposed, { timeout: 20000 }).toBe(true);
+        for (const survivor of [bob, carol]) {
+            await expect(survivor.locator('#round-status')).toContainText('Dash to make trouble');
+        }
+        offline = false;
+        await expect(alice.locator('#round-status')).toContainText('Watching until the next round', { timeout: 40000 });
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-director', 'false');
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-seat', 'observer');
+        const returningX = await alice.locator('#online-game').getAttribute('data-x');
+        const returningDashes = await alice.locator('#online-game').getAttribute('data-dashes');
+        const clock = await bob.locator('#round-clock').textContent();
+        await alice.keyboard.down('KeyD');
+        await alice.keyboard.press('Space');
+        await expect.poll(() => bob.locator('#round-clock').textContent()).not.toBe(clock);
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-x', returningX!);
+        await expect(alice.locator('#online-game')).toHaveAttribute('data-dashes', returningDashes!);
+        await alice.keyboard.up('KeyD');
+        for (const page of pages) {
+            await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+            await expect(page.locator('#round-results')).toBeHidden();
+        }
+        await expect.poll(async () =>
+            (await Promise.all(pages.map((page) => page.locator('#online-game').getAttribute('data-director'))))
+                .filter((value) => value === 'true').length
+        ).toBe(1);
+    }
+    finally {
+        await writeMatchTraffic(traffic);
+        await Promise.allSettled(contexts.map((context) => context.close()));
     }
 });
 

@@ -469,9 +469,9 @@ expiry, rematch reset and invalid seat records. The trial wire build is now
 `grumpy-town-v3`; all players must refresh together.
 
 Deadlines use the appointed host's epoch clock, preserved in confirmed state;
-cross-device clock skew is not yet qualified. Stale host return, silent network
-loss, physical backgrounding, shared rescue/full-round browser results and secure
-phone access remain required before release.
+cross-device clock skew is not yet qualified. The later lifecycle trials below
+cover silent loss and old-host return. Physical backgrounding, shared rescue/full-round
+browser results and secure phone access remain required before release.
 
 ### Same-page recovery and local exit
 
@@ -523,8 +523,40 @@ snapshot, even when the active-presence projection has no current room.
 Transport retry backoff is independent of the ten-second seat grace. A successful
 expired-return trace took about twenty-one seconds after restoring access; the
 test permits forty seconds to cover the configured reconnect backoff and request.
-This observed-disconnect coverage does not establish silent-loss behavior,
-background-host availability or physical-phone performance.
+This observed-disconnect coverage is separate from the silent-loss and suspended
+JavaScript trials below; none establishes physical-phone performance.
+
+### Host suspension and return to a replacement
+
+Two-player browser trials blackhole both host socket directions and HTTP without
+closing the socket, or pause the host's JavaScript through the debugger while the
+guest continues running. The guest retains its confirmed tick and score, then
+interrupts. Restoring the host produces the same authoritative interrupted phase
+and permits a fresh ready cycle. The recovery deadline accounts for time since
+the last confirmed checkpoint before a resumed commit can refresh that timestamp.
+An uninitialized confirmation timestamp is distinct from an old one: a reopened
+browser accepts its first current checkpoint without inventing an expired recovery
+window. Rejoin acceptance waits for that browser's own playable status and controls,
+not just the host's status.
+The debugger pause proves stalled event-loop recovery, not Safari background behavior.
+
+A three-player trial disconnects the original host until its seat expires, lets
+two survivors continue under a replacement, then restores the original page.
+The returning player watches the same match with controls disabled and only one
+appointed director. Recovery refresh does not preempt an appointed session still
+present in refreshed membership merely because the local heartbeat is stale.
+
+Checkpoint recovery retains the local authenticated session identity. A returning
+recipient can catch up to the current director's newer proposal without pretending
+to have witnessed historical state. Becoming the appointed director disables that
+exception: it must still establish recovery agreement. Current epoch, roster,
+forward-state checks, all acknowledgements and the director's commit remain required.
+Socket interruption survives an intervening authority change, while the continuing
+host keeps its outstanding proposal for exact retransmission.
+
+One remaining lifecycle case is a three-player silent outage or suspension followed
+by takeover and return without a delivered socket-close callback. The observed-close
+return test does not establish that transition; retain it in reliability qualification.
 
 The phone-sized observer and offline-exit captures keep controls and exits visible.
 The interrupted-results capture also exposes raw principal-ID fallbacks for some

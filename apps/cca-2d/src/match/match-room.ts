@@ -94,7 +94,9 @@ export class TownMatchRoom {
         }
         const view = this.getView();
         const snapshot = browser.rooms.current();
-        if (view.director.isFresh || !snapshot || !isSameGroupRef(snapshot.group, this.roomRef)) {
+        if (
+            view.director.isFresh || view.director.active || !snapshot || !isSameGroupRef(snapshot.group, this.roomRef)
+        ) {
             return;
         }
         const candidate = view.members.find((member) =>

@@ -72,7 +72,7 @@ export class TownMatchSession {
     private error = '';
     private lastInput = 0;
     private lastExchange = 0;
-    private lastCommitAt = 0;
+    private lastCommitAt: number | undefined;
     private recoveryStartedAt: number | undefined;
     private interruptedMatchId: string | undefined;
     private intent: TownMatchFrame | undefined;
@@ -137,7 +137,8 @@ export class TownMatchSession {
             ),
             recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
                 (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
-                    this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500),
+                    (this.lastCommitAt !== undefined &&
+                        this.dependencies.timers.nowMs() - this.lastCommitAt >= 1500)),
             interruption,
             inputGeneration: this.generation,
             error: this.error
@@ -226,8 +227,8 @@ export class TownMatchSession {
     private interruptTransport(): void {
         this.generation += 1;
         const authority = this.checkpoints?.getState().authority;
+        this.checkpoints?.interruptTransport();
         if (authority?.sessionId !== this.dependencies.browser.session()?.sessionId) {
-            this.checkpoints?.interruptTransport();
             this.lastProposal = undefined;
             this.committedProposal = undefined;
         }
@@ -271,6 +272,10 @@ export class TownMatchSession {
     }
 
     private changeAuthority(authority: TownMatchAuthority, key: string, working: TownMatchState | undefined): void {
+        const session = this.dependencies.browser.session();
+        if (!session) {
+            return;
+        }
         this.members = authority.members;
         this.authorityKey = key;
         this.generation += 1;
@@ -278,7 +283,7 @@ export class TownMatchSession {
             this.checkpoints.changeAuthority(authority);
         }
         else {
-            this.checkpoints = new TownMatchCheckpoints(authority);
+            this.checkpoints = new TownMatchCheckpoints(authority, session.sessionId);
         }
         this.simulation?.stop();
         this.simulation = working ? new TownMatchSimulation(working, this.dependencies.timers.nowMs()) : undefined;
@@ -304,14 +309,21 @@ export class TownMatchSession {
             return;
         }
         const now = this.dependencies.timers.nowMs();
-        this.recoveryStartedAt ??= now;
+        this.expireRecovery(view, now);
         this.simulation?.pause(now);
-        if (now - this.recoveryStartedAt >= 10000 && view.match) {
-            this.interruptedMatchId = view.match.matchId;
-        }
         await this.room.refreshForRecovery();
         this.reconcileAuthority();
         this.interruptSimulation();
+    }
+
+    private expireRecovery(view: TownMatchSession.View, now: number): void {
+        if (!view.recovering || !view.match || this.lastCommitAt === undefined) {
+            return;
+        }
+        this.recoveryStartedAt ??= Math.min(now, this.lastCommitAt + 1500);
+        if (now - this.recoveryStartedAt >= 10000) {
+            this.interruptedMatchId = view.match.matchId;
+        }
     }
 
     private interruptSimulation(): void {
@@ -611,7 +623,9 @@ export class TownMatchSession {
 
     private publishCommit(): void {
         const committed = this.checkpoints?.getState().committed;
-        this.lastCommitAt = this.dependencies.timers.nowMs();
+        const now = this.dependencies.timers.nowMs();
+        this.expireRecovery(this.getView(), now);
+        this.lastCommitAt = now;
         if (
             committed?.state.seats.some((seat) =>
                 seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'observer'

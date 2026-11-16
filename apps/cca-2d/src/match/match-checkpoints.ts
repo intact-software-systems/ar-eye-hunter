@@ -35,6 +35,7 @@ export namespace TownMatchCheckpoints {
 
 /** Receives decoded values after transport authentication and digest verification. */
 export class TownMatchCheckpoints {
+    private readonly localSessionId: string;
     private authority: TownMatchAuthority;
     private pending: TownMatchCheckpoints.Pending | undefined;
     private committed: TownCheckpoint | undefined;
@@ -45,8 +46,9 @@ export class TownMatchCheckpoints {
     private recoveryCommitWitness = false;
     private resynchronizing = false;
 
-    constructor(authority: TownMatchAuthority) {
+    constructor(authority: TownMatchAuthority, localSessionId: string) {
         this.authority = authority;
+        this.localSessionId = localSessionId;
     }
 
     getState(): TownMatchCheckpoints.State {
@@ -69,11 +71,12 @@ export class TownMatchCheckpoints {
     }
 
     propose(checkpoint: TownCheckpoint, senderId: string): Either<string, boolean> {
+        const catchingUp = this.resynchronizing && this.localSessionId !== this.authority.sessionId;
         if (senderId !== this.authority.sessionId || checkpoint.epoch !== this.authority.epoch) {
             return Either.ofLeft('Only the current appointed director may propose a checkpoint.');
         }
         if (
-            this.recoveryRequired && !this.getState().recovered &&
+            this.recoveryRequired && !this.getState().recovered && !catchingUp &&
             checkpoint.state.phase !== 'lobby' && checkpoint.state.phase !== 'interrupted'
         ) {
             return Either.ofLeft('Current players must agree on committed recovery state before gameplay resumes.');
@@ -84,7 +87,7 @@ export class TownMatchCheckpoints {
         if (sameCheckpoint(this.committed, checkpoint) || sameCheckpoint(this.pending?.checkpoint, checkpoint)) {
             return Either.ofRight(false);
         }
-        if (this.pending && (!this.resynchronizing || checkpoint.sequence <= this.pending.checkpoint.sequence)) {
+        if (this.pending && (!catchingUp || checkpoint.sequence <= this.pending.checkpoint.sequence)) {
             return Either.ofLeft('The outstanding checkpoint must settle before it can be replaced.');
         }
         if (
@@ -148,7 +151,6 @@ export class TownMatchCheckpoints {
         }
         this.authority = authority;
         this.retainPendingProposal();
-        this.resynchronizing = false;
         this.recoverySessions.clear();
         this.recoveryCheckpoint = this.recoveryCheckpoint ?? this.committed;
         this.recoveryCommitWitness = false;
@@ -157,7 +159,9 @@ export class TownMatchCheckpoints {
     }
 
     interruptTransport(): void {
-        this.retainPendingProposal();
+        if (this.localSessionId !== this.authority.sessionId) {
+            this.retainPendingProposal();
+        }
         this.resynchronizing = true;
     }
 

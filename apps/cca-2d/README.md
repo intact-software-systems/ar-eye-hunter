@@ -126,7 +126,11 @@ cleanup settles separately; it does not claim server-confirmed departure.
 Checkpoint recovery distinguishes a returning follower, which must catch up past
 abandoned proposals, from a briefly disconnected host, which must retransmit its
 exact outstanding proposal while its appointment and roster remain unchanged.
-Silent connection loss, background-host behavior and complete-round browser qualification remain in
+Silent host connection loss and suspended host JavaScript now produce a shared
+interrupted outcome after the recovery deadline, including when the host resumes.
+An old host can return as an observer after two survivors appoint a replacement;
+it cannot preempt the current host merely because its local heartbeat is stale.
+Physical backgrounding, silent-outage takeover and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests

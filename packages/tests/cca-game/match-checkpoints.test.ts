@@ -19,8 +19,41 @@ const proposal = { epoch: 1, sequence: 1, digest: 'a'.repeat(64), state };
 
 // These values have already passed the wire decoder and SHA-256 check.
 describe('match checkpoint agreement', () => {
+    it.each(['alice-session', 'bob-session'])('keeps recovery authority separate from returning recipient %s', (localSessionId) => {
+        const checkpoints = new TownMatchCheckpoints(authority, localSessionId);
+        const playing = { ...proposal, state: { ...state, phase: 'playing' as const, tick: 10, remainingTicks: 5390 } };
+        checkpoints.propose(playing, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(playing, member.sessionId);
+        }
+        checkpoints.commit(playing, 'alice-session');
+        checkpoints.interruptTransport();
+        checkpoints.changeAuthority({ ...authority, epoch: 2, sessionId: 'bob-session' });
+        const current = {
+            ...playing,
+            epoch: 2,
+            sequence: 8,
+            digest: 'b'.repeat(64),
+            state: { ...playing.state, tick: 20, remainingTicks: 5380 }
+        };
+        expect(checkpoints.propose(current, 'alice-session').left).toBeDefined();
+        if (localSessionId === 'bob-session') {
+            expect(checkpoints.propose(current, 'bob-session').left).toBeDefined();
+            for (const member of members) {
+                checkpoints.recover(member.sessionId, playing, true);
+            }
+        }
+        expect(checkpoints.propose(current, 'bob-session').right).toBe(true);
+        checkpoints.commit(current, 'bob-session');
+        checkpoints.acknowledge(current, 'bob-session');
+        checkpoints.acknowledge(current, 'carol-session');
+        expect(checkpoints.getState().committed?.state.tick).toBe(10);
+        expect(checkpoints.acknowledge(current, 'alice-session').right).toBe(true);
+        expect(checkpoints.getState().committed?.state.tick).toBe(20);
+    });
+
     it('accepts current director progress after a socket interruption without confirming abandoned work', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -50,7 +83,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('retains a verified proposal across socket loss for a surviving commit witness', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         checkpoints.interruptTransport();
         checkpoints.interruptTransport();
@@ -64,7 +97,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it.each([8, 9])('recovers witnessed proposal %s after superseding uncommitted resynchronization work', (sequence) => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -91,7 +124,7 @@ describe('match checkpoint agreement', () => {
 
     it('lets surviving backups admit a returning browser, which must acknowledge the new checkpoint before play', () => {
         const continuing = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
-        const checkpoints = new TownMatchCheckpoints(continuing);
+        const checkpoints = new TownMatchCheckpoints(continuing, 'bob-session');
         const saved = {
             ...proposal,
             epoch: 2,
@@ -124,7 +157,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('requires every frozen recipient acknowledgement plus the director commit before confirming', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         expect(checkpoints.propose(proposal, 'alice-session').right).toBe(true);
         expect(checkpoints.getState().committed).toBeUndefined();
         expect(checkpoints.commit(proposal, 'alice-session').right).toBe(false);
@@ -141,7 +174,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('rejects a forged director, wrong digest, missing member, stale sequence and premature replacement', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         expect(checkpoints.propose(proposal, 'bob-session').left).toBeDefined();
         expect(checkpoints.propose({ ...proposal, epoch: 0 }, 'alice-session').left).toBeDefined();
         expect(checkpoints.propose({ ...proposal, state: { ...state, members: state.members.slice(1) } }, 'alice-session').left).toBeDefined();
@@ -160,7 +193,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('cannot replace a running round or rewind its countdown under the same appointment', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         const playing = { ...proposal, state: { ...state, phase: 'playing' as const, tick: 10, remainingTicks: 5390 } };
         checkpoints.propose(playing, 'alice-session');
         for (const member of members) {
@@ -174,7 +207,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('drops provisional progress at a new authority and recovers only a matching committed checkpoint', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -194,7 +227,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('refuses new-epoch gameplay until surviving peers agree on the committed recovery point', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -211,7 +244,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('allows a fresh ready cycle after all current players commit their new lobby', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.changeAuthority({ ...authority, epoch: 2, sessionId: 'bob-session' });
         const lobby = { ...proposal, epoch: 2 };
         checkpoints.propose(lobby, 'bob-session');
@@ -224,19 +257,19 @@ describe('match checkpoint agreement', () => {
     });
 
     it('cannot recover from a merely received proposal or with only one remaining player', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         const successor = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
         checkpoints.changeAuthority(successor);
         expect(checkpoints.recover('bob-session', proposal, false).left).toBeDefined();
         expect(checkpoints.getState().recovered).toBe(false);
-        const single = new TownMatchCheckpoints({ ...successor, members: [members[1]] });
+        const single = new TownMatchCheckpoints({ ...successor, members: [members[1]] }, 'bob-session');
         expect(single.recover('bob-session', proposal, false).left).toBeDefined();
         expect(single.getState().recovered).toBe(false);
     });
 
     it('reconciles a verified pending proposal with a survivor commit without publishing it prematurely', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -274,7 +307,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('keeps the verified source across a second appointment while an older interruption is pending', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -292,7 +325,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('retains a newer recovery proposal when a second host disappears during partial commitment', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');
         for (const member of members) {
             checkpoints.acknowledge(proposal, member.sessionId);
@@ -319,7 +352,7 @@ describe('match checkpoint agreement', () => {
     });
 
     it('can agree on a retained rematch lobby without replacing the old terminal result before commitment', () => {
-        const checkpoints = new TownMatchCheckpoints(authority);
+        const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         const terminal = { ...proposal, state: { ...state, phase: 'interrupted' as const } };
         checkpoints.propose(terminal, 'alice-session');
         for (const member of members) {

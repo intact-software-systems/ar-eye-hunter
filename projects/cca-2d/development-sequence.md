@@ -19,8 +19,10 @@ Same-page recovery after an observed socket disconnect retains the paused scene,
 returns active players or observers according to seat grace, and offers a local
 Back to solo exit. Checkpoint recovery must cover delayed proposals at a returning
 follower and exact outstanding-proposal retransmission by a briefly disconnected
-host. Silent network loss, background-host behavior and full-round
-qualification remain under development.
+host. Focused browser trials now cover a silent host network outage, suspended
+host JavaScript and an old host returning as an observer after replacement.
+Physical Safari backgrounding, silent-outage takeover with three players and
+full-round qualification remain open.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,
@@ -62,8 +64,9 @@ appointment/epoch validation and client reconciliation. Establish the checkpoint
 commit protocol before promising retained scores across host loss.
 
 Socket-close cleanup now permits a verified eligible successor under the existing
-appointment policy. Still reproduce an owner host that backgrounds while appearing online
-and prove authorized recovery or a bounded interruption.
+appointment policy. Suspending the owner host's JavaScript while its socket remains
+open now produces a bounded interruption that persists when it resumes. Physical
+device backgrounding still needs qualification; a debugger pause is not that evidence.
 Any generic missing capability belongs in Rallar and its focused tests; do not
 bypass authorization or promote everyone to room admin.
 
