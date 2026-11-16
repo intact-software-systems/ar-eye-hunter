@@ -106,6 +106,50 @@ describe('shared-graph low-level remove dynamics', () => {
         expect(searchDiameter.graph.size).toBe(2);
     });
 
+    it('removes a vertex whose neighbours are already linked without linking them twice', () => {
+        // The planner's global graph holds only the remaining members, so x is absent from it.
+        const globalGraph = createGraph(
+            [
+                ['a', VertexState.MEMBER, 4],
+                ['b', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4]
+            ],
+            [
+                ['a', 'b', 1],
+                ['a', 'c', 5],
+                ['b', 'c', 2]
+            ]
+        );
+        const groupGraph = createGraph(
+            [
+                ['a', VertexState.MEMBER, 4],
+                ['b', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
+            ],
+            [
+                ['x', 'a', 1],
+                ['x', 'b', 1],
+                ['x', 'c', 1],
+                ['a', 'b', 1]
+            ]
+        );
+        const ctx = createRemoveCtx(globalGraph, groupGraph, 'x');
+
+        for (const removed of [rvMCEdge(ctx), rvSearchMCEdge(ctx), rvSearchMDEdge(ctx)]) {
+            expect(removed.graph.hasNode('x')).toBe(false);
+            expect(removed.graph.size).toBe(2);
+            expect(removed.graph.hasEdge('a', 'b')).toBe(true);
+            expect(removed.graph.hasEdge('b', 'c')).toBe(true);
+        }
+
+        const byDiameter = rvMDEdge(ctx);
+        expect(byDiameter.graph.hasNode('x')).toBe(false);
+        expect(byDiameter.graph.size).toBe(2);
+        expect(byDiameter.graph.hasEdge('a', 'b')).toBe(true);
+        expect(byDiameter.graph.hasEdge('a', 'c')).toBe(true);
+    });
+
     it('fails fast when neighbors do not have enough spare degree to reconnect', () => {
         const globalGraph = createGraph(
             [

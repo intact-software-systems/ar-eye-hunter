@@ -181,15 +181,16 @@ describe('what a single join or leave in a mesh of twenty reroutes today', () =>
     });
 
     it('a leave from a mesh that reroutes members it did not involve is rebuilt, so it is a reshape', () => {
-        // The evolved mesh breaks an invariant, and the rebuild moves edges between members peer-4 never touched.
-        const left = computeRtcTopologyFixtureLeave({ ...MESH_OF_TWENTY, leaver: 'peer-4' });
+        // The cheapest-links remove refuses peer-15's leave for lack of spare degree, the fallback keeps peer-15 as a
+        // forwarder, the validator rejects that, and the rebuild moves edges between members peer-15 never touched.
+        const left = computeRtcTopologyFixtureLeave({ ...MESH_OF_TWENTY, leaver: 'peer-15' });
 
         const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
 
         expect(left.planned.derivation).toEqual({ method: 'rebuilt', reason: 'invariant-violation' });
         expect(resolveTopologyPlanChange(left.planned.derivation, delta))
             .toEqual({ kind: 'reshape', reason: 'invariant-violation' });
-        expect(delta.reroutedSessionCount).toBe(3);
+        expect(delta.reroutedSessionCount).toBe(4);
     });
 });
 
@@ -210,8 +211,8 @@ describe('the planner\'s plans over every single leave of a mesh of twenty and a
 
     // These pin the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
     // and each leave counted here will be a reshape once reshapes are gated.
-    it('today 9 of the 20 single leaves from a 20-member mesh cannot be repaired incrementally and are rebuilt', () => {
-        expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({ 'invariant-violation': 9 });
+    it('today 1 of the 20 single leaves from a 20-member mesh cannot be repaired incrementally and is rebuilt', () => {
+        expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({ 'invariant-violation': 1 });
     });
 
     it('today 1 of the 8 single leaves from an 8-member tree cannot be repaired incrementally and are rebuilt', () => {
