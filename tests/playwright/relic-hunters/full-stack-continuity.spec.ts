@@ -235,10 +235,11 @@ roomBrowserTest(
         let navigated = false;
         let held = false;
         other.on('response', async (response) => {
-            if (
-                releasedRoomReads.has(response.request()) && response.ok() &&
-                !decodeActiveSessionIds(await response.json()).includes(sessionId)
-            ) {
+            if (!releasedRoomReads.has(response.request()) || !response.ok()) {
+                return;
+            }
+            const activeSessionIds = decodeActiveSessionIds(await response.json().catch(() => undefined));
+            if (activeSessionIds !== undefined && !activeSessionIds.includes(sessionId)) {
                 await response.finished();
                 sessionRemoved.resolve();
             }
@@ -381,12 +382,13 @@ function readDisconnectedSessionId(request: Request): string {
     return sessionId;
 }
 
-function decodeActiveSessionIds(snapshot: unknown): string[] {
+/** A body that is not a group snapshot with active sessions has no active session ids to read. */
+function decodeActiveSessionIds(snapshot: unknown): string[] | undefined {
     if (
         typeof snapshot !== 'object' || snapshot === null || !('activeSessions' in snapshot) ||
         !Array.isArray(snapshot.activeSessions)
     ) {
-        throw new Error('Expected a group snapshot with active sessions');
+        return undefined;
     }
     return snapshot.activeSessions.filter(isSessionPresence).map((session) => session.sessionId);
 }
