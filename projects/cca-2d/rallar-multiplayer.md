@@ -697,6 +697,48 @@ or narrow the skew test to hide the failure. The probe also emitted an RTC RTT
 measurement-guard error; its relationship to skew needs separate classification
 before claiming that all realtime timing paths are qualified.
 
+### Server clock foundation
+
+The next correction starts at the shared timing boundary. `GET /api/time`
+returns the configured Rallar server identity and a freshly captured epoch in
+milliseconds, with `Cache-Control: no-store`. It requires no account and changes
+no persisted state. The browser reader disables caching, captures request start
+and complete body receipt with an injected monotonic clock, validates the expected
+server identity, and returns explicit HTTP, invalid-response, cancellation or
+network failure. It never substitutes the local wall clock after failure.
+
+`packages/shared/resilience/remote-clock.ts` calculates a conservative current
+server-time interval from that observation. The policy explicitly bounds sample
+age, request duration, relative clock-rate drift and absolute error per monotonic
+reading. The full round trip remains uncertainty; the calculation does not assume
+symmetric network latency. Millisecond epoch rounding and both endpoint errors
+expand the interval. Invalid, stale or excessively uncertain observations are
+refused rather than treated as exact current time.
+
+This foundation is not yet connected to message creation, expiry or presence.
+The existing clock-skew browser failures therefore remain open. Integration must
+use the same server clock domain throughout publication and expiry validation,
+refresh before observations expire, and refuse freshness when no valid bound is
+available. Expiry validation needs the conservative latest-time bound; publication
+must not grant a longer lifetime by using that upper bound as its creation time.
+Suspension and server clock steps require invalidation/recalibration rather than
+assuming that the rate bound still holds. Multi-server deployments also need a
+verified shared clock-domain assumption; matching configured peer names alone
+does not prove synchronized node clocks.
+
+Foundation checks cover asymmetric latency, monotonic progression, timer
+quantization, invalid/expired samples, wrong server identity, HTTP/body failures
+and cancellation. A streamed-response regression proves body-consumption delay
+is included; moving the stamp before body receipt makes it fail. The focused
+server-time black-box recipe verifies the live route, identity and no-store
+response, and is registered in the normal and externally managed API matrices.
+
+Draft CI also exposed seven type errors in the older solo Grumpy-loop tests after
+the town companion became optional for shared matches. Those fixtures now assert
+the required companion before use; rescue and route assertions retain their
+original meaning. This is a test correction, not a change to the solo or online
+companion rules.
+
 ### Secure LAN serving
 
 Vite now accepts paired certificate/key paths and a configurable local API proxy

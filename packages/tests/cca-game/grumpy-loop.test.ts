@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import {
+    beforeEach,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import {
     computePracticeTick,
     createPracticeState,
@@ -44,6 +51,7 @@ describe('grumpy town chase and rescue loop', () => {
     });
     it('freezing blocks movement and dash, then automatically releases with protection', () => {
         const initial = createPracticeState();
+        assert(initial.town.companion);
         const frozen = { ...initial, frozenUntil: 6, town: { ...initial.town, companion: { ...initial.town.companion, x: -22, z: 22, frozenUntil: 20 } } };
         const held = computePracticeTick(frozen, { x: 1, z: 0, dash: 1 }, { seconds: 1 / 60, routes });
         expect(held.x).toBe(0);
@@ -54,9 +62,10 @@ describe('grumpy town chase and rescue loop', () => {
     });
     it('standing beside a frozen companion rescues once without a separate action', () => {
         const initial = createPracticeState();
+        assert(initial.town.companion);
         const state = { ...initial, town: { ...initial.town, companion: { ...initial.town.companion, x: 0.5, z: -2, frozenUntil: 6 } } };
         const rescued = advance(state, 1.2);
-        expect(rescued.town.companion.frozenUntil).toBe(0);
+        expect(rescued.town.companion?.frozenUntil).toBe(0);
         expect(rescued.town.rescues).toBe(1);
         expect(advance(rescued, 2).town.rescues).toBe(1);
     });
@@ -82,6 +91,7 @@ describe('grumpy town chase and rescue loop', () => {
 describe('raid fairness', () => {
     it('a warned shot can be dodged, freezes on a hit and does not remove points', () => {
         const initial = createPracticeState();
+        assert(initial.town.companion);
         const state: PracticeState = {
             ...initial,
             town: {
@@ -107,6 +117,7 @@ describe('raid fairness', () => {
     });
     it('a nearby companion thaws the player before the automatic timeout', () => {
         const initial = createPracticeState();
+        assert(initial.town.companion);
         const state = { ...initial, frozenUntil: 6, town: { ...initial.town, companion: { ...initial.town.companion, x: 0.5, z: -2 } } };
         const rescued = advance(state, 1.2);
         expect(rescued.frozenUntil).toBe(0);
@@ -129,6 +140,7 @@ describe('companion routes', () => {
     it('gets around a stall instead of oscillating at its corner and can rescue behind it', () => {
         const initial = createPracticeState();
         const arrived = advance({ ...initial, x: 8.5, z: 7.5 }, 12);
+        assert(arrived.town.companion);
         expect(Math.hypot(arrived.town.companion.x - 6, arrived.town.companion.z - 6)).toBeLessThan(0.4);
         const rescued = advance({ ...arrived, frozenUntil: arrived.elapsed + 6 }, 3);
         expect(rescued.frozenUntil).toBe(0);
