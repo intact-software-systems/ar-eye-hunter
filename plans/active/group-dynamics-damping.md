@@ -225,8 +225,9 @@ Built. No timing, promotion or delivery behaviour changed.
 - `resolveTopologyPlanChange` is the one rule (D654): a plan that changes no member and no edge has
   no kind; a rebuilt plan is a reshape with its reason; an established plan is an attach; an
   incremental plan whose delta has a leave is a repair, any other an attach.
-- The kind is stored as `change` on the record and carried as `planChange` on the accepted work and
-  on the work's timing line. Nothing branches on it.
+- The kind is stored once, as `change` on the record. The work's timing line prints it from the
+  record (`planChange`, and `reshapeReason` for a reshape); nothing carries a second copy, and
+  nothing branches on it.
 - The churn report counts plans by kind (`plansByKind`, `promotedPlansByKind`,
   `reroutingPlansByKind`), reshapes by reason (`reshapesByReason`) and what a reshape rerouted
   (`reroutedSessionsPerReshape`).
@@ -250,7 +251,7 @@ fresh no-RTT plan after the 30 churn plans.
 | mesh 20, auto      | 30          | 20.0      | 30       | 1.00           | 15 / 10 / 5               | 0.17                                             | 16 / 18                                  | 5                     | undetermined |
 | mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.20                                             | 13 / 18                                  | 5                     | undetermined |
 
-The table is run 3. Run 2 differed in the tree's longest hop path (5 for `auto`, 6 for `debounced`,
+The table is run 3. Among the cells shown, run 2 differed in the tree's longest hop path (5 for `auto`, 6 for `debounced`,
 where run 3 reads 6 and 5), in the tree's drift (0 extra hops, where run 3 reads 1: accepted 4, fresh
 plan 3) and in the share of join and leave plans that rerouted an uninvolved member (tree 0.07 and
 0.10, mesh 0.17 and 0.17).
@@ -263,8 +264,9 @@ plan 3) and in the share of join and leave plans that rerouted an uninvolved mem
 - These are the plans that follow a leave the planner cannot repair incrementally: they rebuild the
   layout and reroute members the leave did not involve. A gate that holds reshapes would hold them,
   which, where the leaver was a relay, is the failure named above (a departed relay's dependants stay
-  cut off while the server waits). The measurement does not say which leavers were relays. The gate slices must first answer it: a
-  rule for a rebuild a leave forces, or mesh and tree evolution that repairs those leaves.
+  cut off while the server waits). The measurement does not say which leavers were relays. The gate
+  slices must first answer it: a rule for a rebuild a leave forces, or mesh and tree evolution that
+  repairs those leaves.
 - What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
   occurred, so the reshapes this plan was written to hold back are unmeasured in rate. `auto` and
   `debounced` do not differ at this cadence: events are 3 s apart and the debounce window is 500 ms.
@@ -356,9 +358,16 @@ browsers.
 - Whether the churn measurement belongs in CI; today it is run by hand.
 - Whether "promotion" in this plan means the published plan (what the record counts) or the
   accepted-slot write.
-- Whether a deployed store is wiped (or its publication rows pruned) at deploy, or left for the
-  previous build's rows to be refused until the runtime-state expiry worker evicts them within 24 h:
-  the record has one stored shape (D653).
+- Whether a deployed store is wiped at deploy, or left for the previous build's publication rows to
+  be refused until they expire (up to 24 h) and the runtime-state expiry worker evicts them: the
+  record has one stored shape (D653). The operator's prune removes only expired rows, which that
+  worker already evicts every 60 s; only a wipe, or deleting the publication rows by hand, removes a
+  live row of the previous build.
+- Whether the plans read should report a stored publication row that does not decode as an invalid
+  entry, as the room directory read does (`status: 'invalid'`, `completeness: 'partial'`). Today it
+  answers 500 "Room inspection is unavailable" for the whole room while one such row is retained;
+  on a store not wiped at deploy that is every room that published in the previous 24 h, until those
+  rows expire. Topology work and replay are not affected (D653).
 - A typed read for the mesh parameter, which mesh drift needs.
 - What the reshape gate does with a leave the planner cannot repair incrementally, which is every
   reshape the measurement produced.

@@ -122,7 +122,8 @@ through a formation burst and 90 s of join/leave churn with presence over HTTP.
 It reads each room's retained plans through the operator route and writes
 `topology-churn-report.json` under
 `tmp/api-v1-black-box/postgres-topology-churn/<run token>/`; figures are recorded, never
-judged:
+judged. `promotedPlanCount` counts the plans whose layout the 250 ms sampler saw accepted, so a
+layout promoted and replaced between two samples reads as unpromoted:
 
 ```bash
 npm run perf:api-v1:topology-churn
