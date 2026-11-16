@@ -291,7 +291,7 @@ type RequestOptions = Readonly<{
     expectedStatus?: number;
 }>;
 
-async function requestJson(
+export async function requestJson(
     baseUrl: string,
     path: string,
     options: RequestOptions
