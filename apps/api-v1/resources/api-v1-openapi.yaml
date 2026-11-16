@@ -9652,6 +9652,12 @@ components:
       type: integer
       minimum: 1
 
+    GroupTopologyDegreeLimit:
+      type: integer
+      minimum: 2
+      description: >-
+        The most links a member may hold; a limit below 2 is refused with 422 (degree-limit-below-two).
+
     GroupTopologyConfigPatch:
       type: object
       description: >-
@@ -9664,7 +9670,7 @@ components:
             - { type: 'null' }
         degreeLimit:
           anyOf:
-            - { $ref: '#/components/schemas/GroupTopologyPositiveInteger' }
+            - { $ref: '#/components/schemas/GroupTopologyDegreeLimit' }
             - { type: 'null' }
         treeMinSize:
           anyOf:
@@ -9693,7 +9699,7 @@ components:
         topologyKind:
           $ref: '#/components/schemas/GroupTopologyKindSetting'
         degreeLimit:
-          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+          $ref: '#/components/schemas/GroupTopologyDegreeLimit'
         treeMinSize:
           $ref: '#/components/schemas/GroupTopologyPositiveInteger'
         meshMinSize:

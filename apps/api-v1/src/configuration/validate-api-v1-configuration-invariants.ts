@@ -4,7 +4,7 @@ import {
     BUN_MAX_IDLE_TIMEOUT_SECONDS,
     computeHttpIdleTimeoutSeconds
 } from '@shared-server/http/compute-http-idle-timeout-seconds.ts';
-import { validateEffectiveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { validateEffectiveGroupTopologyConfigRules } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
@@ -108,23 +108,15 @@ function validateTopologyPlanningInvariants(
     topology: ApiV1TopologyConfiguration
 ): void {
     const planning = topology.planning;
-    if (
-        collector.isValid(
-            'topology.planning.degreeLimit',
-            'topology.planning.treeMinSize',
-            'topology.planning.meshMinSize',
-            'topology.planning.meshParamK'
-        )
-    ) {
-        for (
-            const issue of validateEffectiveGroupTopologyConfig({
-                topologyKind: planning.topologyKind,
-                degreeLimit: planning.degreeLimit,
-                treeMinSize: planning.treeMinSize,
-                meshMinSize: planning.meshMinSize,
-                meshParamK: planning.meshParamK
-            })
-        ) {
+    const ruleIssues = validateEffectiveGroupTopologyConfigRules({
+        topologyKind: planning.topologyKind,
+        degreeLimit: planning.degreeLimit,
+        treeMinSize: planning.treeMinSize,
+        meshMinSize: planning.meshMinSize,
+        meshParamK: planning.meshParamK
+    });
+    for (const { fields, issue } of ruleIssues) {
+        if (collector.isValid(...fields.map((field) => `topology.planning.${field}`))) {
             collector.invariant(['topology.planning', ...(issue.path ?? [])].join('.'), issue.code, issue.message);
         }
     }

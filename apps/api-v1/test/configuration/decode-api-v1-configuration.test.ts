@@ -580,7 +580,7 @@ test('configuration decoder aggregates deterministic issues from every source ca
 });
 
 test('configuration decoder requires the mesh parameter below the topology degree limit', () => {
-    for (const [degreeLimit, meshParamK, valid] of [[4, 4, false], [4, 5, false], [4, 3, true], [2, 1, true], [1, 1, false]] as const) {
+    for (const [degreeLimit, meshParamK, valid] of [[4, 4, false], [4, 5, false], [4, 3, true], [2, 1, true]] as const) {
         const input = validDecodeApiV1ConfigurationInput();
         setPath(input.defaultsSource, 'topology.planning.degreeLimit', degreeLimit);
         setPath(input.defaultsSource, 'topology.planning.meshParamK', meshParamK);
@@ -603,6 +603,39 @@ test('configuration decoder requires the mesh parameter below the topology degre
             (issue) => issue.path === 'topology.planning.degreeLimit'
         ),
         true
+    );
+});
+
+test('configuration decoder refuses a topology link limit below 2 with its own message', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    setPath(input.defaultsSource, 'topology.planning.degreeLimit', 1);
+    setPath(input.defaultsSource, 'topology.planning.meshParamK', 1);
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.deepEqual(
+        error.issues.map((issue) => [issue.source, issue.path, issue.code, issue.message]),
+        [
+            ['invariant', 'topology.planning.degreeLimit', 'degree-limit-below-two', 'degreeLimit must be at least 2'],
+            ['invariant', 'topology.planning.meshParamK', 'mesh-param-k-not-below-degree-limit', 'meshParamK must be less than degreeLimit']
+        ]
+    );
+});
+
+test('configuration decoder reports a topology rule whose fields are valid beside an invalid field it does not read', () => {
+    const input = validDecodeApiV1ConfigurationInput();
+    setPath(input.defaultsSource, 'topology.planning.meshParamK', 0);
+    setPath(input.defaultsSource, 'topology.planning.treeMinSize', 10);
+    setPath(input.defaultsSource, 'topology.planning.meshMinSize', 9);
+
+    const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+
+    assert.deepEqual(
+        error.issues.filter((issue) => issue.path.startsWith('topology.planning.')).map((issue) => [issue.path, issue.code]),
+        [
+            ['topology.planning.meshParamK', 'invalid-integer'],
+            ['topology.planning.meshMinSize', 'mesh-min-size-before-tree-min-size']
+        ]
     );
 });
 
