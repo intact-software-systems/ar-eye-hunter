@@ -1,0 +1,207 @@
+import { computeRtcTopologyPlan, type ComputedRtcTopologyPlan } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import type {
+    RallarRtcTopologyServiceOptions,
+    RtcTopologyPlanningIntent
+} from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+
+import {
+    createRtcTopologyGroupSnapshot,
+    createRtcTopologyMemberIds,
+    createRtcTopologyRttMeasurement,
+    toRtcTopologyGroupWithDirector
+} from '../rtc-topology-test-fixtures.ts';
+
+export const RTC_TOPOLOGY_TREE_OPTIONS: RallarRtcTopologyServiceOptions = {
+    topologyKind: 'tree',
+    degreeLimit: 5,
+    rttReportingDegreeLimit: 5
+};
+export const RTC_TOPOLOGY_MESH_OPTIONS: RallarRtcTopologyServiceOptions = {
+    topologyKind: 'mesh',
+    degreeLimit: 5,
+    rttReportingDegreeLimit: 5
+};
+export const RTC_TOPOLOGY_STAR_OPTIONS: RallarRtcTopologyServiceOptions = {
+    topologyKind: 'star',
+    degreeLimit: 5,
+    rttReportingDegreeLimit: 5
+};
+const SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
+
+export interface RtcTopologyFixturePlanInput {
+    readonly options: RallarRtcTopologyServiceOptions;
+    readonly group: GroupSnapshot;
+    readonly previous: RallarOverlayTopologySnapshot | undefined;
+    readonly planningIntent?: RtcTopologyPlanningIntent;
+    readonly rttMeasurements?: readonly RttMeasurementInfo[];
+}
+
+/** A previously accepted layout and the plan the real planner derives from it. */
+export interface RtcTopologyFixtureReplan {
+    readonly previous: RallarOverlayTopologySnapshot;
+    readonly planned: ComputedRtcTopologyPlan;
+}
+
+export interface RtcTopologyFixtureLeave extends RtcTopologyFixtureReplan {
+    readonly leaverSessionId: string;
+}
+
+export function computeRtcTopologyFixturePlan(input: RtcTopologyFixturePlanInput): ComputedRtcTopologyPlan {
+    return computeRtcTopologyPlan(input.options, {
+        group: input.group,
+        rttMeasurements: input.rttMeasurements ?? [],
+        previous: input.previous,
+        updateOptions: { planningIntent: input.planningIntent ?? 'membership-delta' },
+        nowEpochMs: 100
+    });
+}
+
+export function createRtcTopologyFixtureGroup(memberCount: number): GroupSnapshot {
+    return createRtcTopologyFixtureGroupOf(createRtcTopologyMemberIds(memberCount));
+}
+
+export function createRtcTopologyFixtureGroupOf(memberSessionIds: readonly string[]): GroupSnapshot {
+    return createRtcTopologyGroupSnapshot('derivation-group', memberSessionIds);
+}
+
+function createRtcTopologyLedFixtureGroup(memberCount: number): GroupSnapshot {
+    return toRtcTopologyGroupWithDirector(createRtcTopologyFixtureGroup(memberCount), 'peer-1');
+}
+
+/** Plans a first layout of the members, then plans the room again without the one session that `matches` picks. */
+export function computeRtcTopologyFixtureLeave(
+    options: RallarRtcTopologyServiceOptions,
+    memberCount: number,
+    matches: (nextHopCount: number) => boolean
+): RtcTopologyFixtureLeave {
+    const memberSessionIds = createRtcTopologyMemberIds(memberCount);
+    const previous = computeRtcTopologyFixturePlan({
+        options,
+        group: createRtcTopologyFixtureGroup(memberCount),
+        previous: undefined
+    }).snapshot;
+    const leaverSessionId = resolveRtcTopologyFixtureSessionId(previous, matches);
+    const planned = computeRtcTopologyFixturePlan({
+        options,
+        group: createRtcTopologyFixtureGroupOf(memberSessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
+        previous
+    });
+    return { previous, planned, leaverSessionId };
+}
+
+function resolveRtcTopologyFixtureSessionId(
+    snapshot: RallarOverlayTopologySnapshot,
+    matches: (nextHopCount: number) => boolean
+): string {
+    const sessionId = snapshot.activeSessionIds.find((candidate) => matches(snapshot.nextHopsBySessionId[candidate]?.length ?? 0));
+    if (sessionId === undefined) {
+        throw new Error('The formed layout has no session of the wanted shape');
+    }
+    return sessionId;
+}
+
+export function createRtcTopologyFixtureRttMeasurements(
+    sessionIds: readonly string[],
+    toRttMs: (from: string, to: string) => number
+): readonly RttMeasurementInfo[] {
+    return sessionIds.flatMap((sessionIdFrom, fromIndex) =>
+        sessionIds.slice(fromIndex + 1).map((sessionIdTo, toIndex) =>
+            createRtcTopologyRttMeasurement({
+                sessionIdFrom,
+                sessionIdTo,
+                rttMs: toRttMs(sessionIdFrom, sessionIdTo),
+                version: fromIndex * sessionIds.length + toIndex + 1
+            })
+        )
+    );
+}
+
+function toRtcTopologyFixtureEdgeSet(nextHopsBySessionId: Readonly<Record<string, readonly string[]>>): Set<string> {
+    return new Set(
+        Object.entries(nextHopsBySessionId).flatMap(([from, nextHops]) => nextHops.map((to) => toRtcTopologyFixtureEdge(from, to)))
+    );
+}
+
+function toRtcTopologyFixtureEdge(left: string, right: string): string {
+    return left < right ? `${left}|${right}` : `${right}|${left}`;
+}
+
+/** The smallest room whose replan the real planner rebuilds for each reason. */
+export function computeRtcTopologyFixtureRebuild(reason: TopologyReshapeReason): RtcTopologyFixtureReplan {
+    return REBUILD_SCENARIOS[reason]();
+}
+
+const ONE_LINK_TREE_OPTIONS: RallarRtcTopologyServiceOptions = { ...RTC_TOPOLOGY_TREE_OPTIONS, degreeLimit: 1, rttReportingDegreeLimit: 1 };
+
+const REBUILD_SCENARIOS: Readonly<Record<TopologyReshapeReason, () => RtcTopologyFixtureReplan>> = {
+    // Four members are below the default tree entry size of five; the fifth member selects a tree.
+    'kind-change': () =>
+        computeReplan({ options: SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
+            options: SIZE_SELECTED_OPTIONS,
+            group: createRtcTopologyFixtureGroup(5),
+            previous
+        })),
+    // A tree evolves only around a leader it already holds; a joining leader must root a new tree.
+    'leader-rooting': () =>
+        computeReplan({ options: RTC_TOPOLOGY_TREE_OPTIONS, formed: createRtcTopologyFixtureGroup(6) }, (previous) => ({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            group: toRtcTopologyGroupWithDirector(createRtcTopologyFixtureGroup(7), 'peer-7'),
+            previous
+        })),
+    // An eight-member mesh evolves at most max(2, ceil(8 / 4)) = 2 changes at once; three joins exceed it.
+    'delta-too-large': () =>
+        computeReplan({ options: RTC_TOPOLOGY_MESH_OPTIONS, formed: createRtcTopologyFixtureGroup(8) }, (previous) => ({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group: createRtcTopologyFixtureGroup(11),
+            previous
+        })),
+    // Under a degree limit of one, the leader-led pair has no session left with a free link, so the
+    // leader-first attachment of the third member fails before any graph is validated.
+    'update-failed': () =>
+        computeReplan({ options: ONE_LINK_TREE_OPTIONS, formed: createRtcTopologyLedFixtureGroup(2) }, (previous) => ({
+            options: ONE_LINK_TREE_OPTIONS,
+            group: createRtcTopologyLedFixtureGroup(3),
+            previous
+        })),
+    // The six-member tree formed under a degree limit of five has a hub of more than two links; replanned
+    // at unchanged membership under a limit of two, the evolved graph is that tree, which the validator rejects.
+    'invariant-violation': () =>
+        computeReplan({ options: RTC_TOPOLOGY_TREE_OPTIONS, formed: createRtcTopologyFixtureGroup(6) }, (previous) => ({
+            options: { ...RTC_TOPOLOGY_TREE_OPTIONS, degreeLimit: 2, rttReportingDegreeLimit: 2 },
+            group: createRtcTopologyFixtureGroup(6),
+            previous
+        })),
+    // The formed tree's links measure 200 ms and every other link 10 ms: the rebuild's slowest path is at
+    // least 150 ms shorter, past both the quarter and the 10 ms gates.
+    refinement: () =>
+        computeReplan({ options: RTC_TOPOLOGY_TREE_OPTIONS, formed: createRtcTopologyFixtureGroup(6) }, (previous) => {
+            const formedEdges = toRtcTopologyFixtureEdgeSet(previous.nextHopsBySessionId);
+            return {
+                options: RTC_TOPOLOGY_TREE_OPTIONS,
+                group: createRtcTopologyFixtureGroup(6),
+                previous,
+                planningIntent: 'full-rebuild',
+                rttMeasurements: createRtcTopologyFixtureRttMeasurements(
+                    createRtcTopologyMemberIds(6),
+                    (from, to) => formedEdges.has(toRtcTopologyFixtureEdge(from, to)) ? 200 : 10
+                )
+            };
+        })
+};
+
+interface FormedRoom {
+    readonly options: RallarRtcTopologyServiceOptions;
+    readonly formed: GroupSnapshot;
+}
+
+function computeReplan(
+    room: FormedRoom,
+    toReplanInput: (previous: RallarOverlayTopologySnapshot) => RtcTopologyFixturePlanInput
+): RtcTopologyFixtureReplan {
+    const previous = computeRtcTopologyFixturePlan({ options: room.options, group: room.formed, previous: undefined }).snapshot;
+    return { previous, planned: computeRtcTopologyFixturePlan(toReplanInput(previous)) };
+}

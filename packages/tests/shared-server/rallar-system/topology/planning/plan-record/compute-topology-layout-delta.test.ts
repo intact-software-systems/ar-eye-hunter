@@ -65,6 +65,18 @@ describe('computeTopologyLayoutDelta', () => {
         });
     });
 
+    it('an edge added between a leaver\'s neighbour and a member the leaver never touched is a repair, not a reroute', () => {
+        // x leaves from the end of the chain; c depended on it and gains a new upstream in a, which x never touched.
+        const previous = createLayout(['a', 'b', 'c', 'x'], [['a', 'b'], ['b', 'c'], ['c', 'x']]);
+        const next = createLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c'], ['c', 'a']]);
+
+        expect(computeTopologyLayoutDelta(previous, next)).toEqual({
+            ...EMPTY_DELTA,
+            leftSessionCount: 1,
+            changedSessionCount: 2
+        });
+    });
+
     it('an edge added between two members the leaver never touched reroutes both', () => {
         // x leaves from the end of the chain; only d depended on it, yet a and c gain an edge.
         const previous = createLayout(['a', 'b', 'c', 'd', 'x'], [['a', 'b'], ['b', 'c'], ['c', 'd'], ['d', 'x']]);
