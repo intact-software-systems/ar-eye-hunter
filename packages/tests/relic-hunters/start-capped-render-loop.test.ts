@@ -40,9 +40,13 @@ class FakeEngine {
 interface FakeFence {
     readonly generation: number;
     readyAtMs: number;
+    flushed: boolean;
 }
 
-/** Like WebGL2: a sync from before a context loss reads null, also after the context is restored. */
+/**
+ * Like WebGL2: a fence that was never flushed may never signal, and a sync from before a context loss reads null,
+ * also after the context is restored.
+ */
 class FakeGpu {
     readonly SYNC_GPU_COMMANDS_COMPLETE = 0x9117;
     readonly SYNC_STATUS = 0x9114;
@@ -63,7 +67,7 @@ class FakeGpu {
             return null;
         }
         this.busyUntilMs = Math.max(nowMs, this.busyUntilMs) + this.frameMs;
-        const fence = { generation: this.generation, readyAtMs: this.busyUntilMs };
+        const fence = { generation: this.generation, readyAtMs: this.busyUntilMs, flushed: false };
         this.liveFences.add(fence);
         return fence;
     }
@@ -73,14 +77,18 @@ class FakeGpu {
         if (this.lost || fence.generation !== this.generation) {
             return null;
         }
-        return fence.readyAtMs <= nowMs ? this.SIGNALED : this.UNSIGNALED;
+        return fence.flushed && fence.readyAtMs <= nowMs ? this.SIGNALED : this.UNSIGNALED;
     }
 
     deleteSync(sync: WebGLSync | null): void {
         this.liveFences.delete(sync as FakeFence);
     }
 
-    flush(): void {}
+    flush(): void {
+        for (const fence of this.liveFences) {
+            fence.flushed = true;
+        }
+    }
 
     executeQueuedFrames(): void {
         for (const fence of this.liveFences) {
@@ -236,15 +244,22 @@ describe('Relic gameplay render loop', () => {
         loop.dispose();
     });
 
-    it('flushes the fence after placing it behind the drawn frame', () => {
+    it('places and flushes a fence behind each drawn frame', () => {
         const engine = new FakeEngine();
-        const gpu = new FakeGpu();
-        const renderFrame = vi.fn(() => 'ready' as const);
-        const fenceSync = vi.spyOn(gpu, 'fenceSync');
-        const flush = vi.spyOn(gpu, 'flush');
-        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame });
-        expect(renderFrame.mock.invocationCallOrder[0]).toBeLessThan(fenceSync.mock.invocationCallOrder[0] ?? 0);
-        expect(fenceSync.mock.invocationCallOrder[0]).toBeLessThan(flush.mock.invocationCallOrder[0] ?? 0);
+        const gpu = new FakeGpu(2);
+        const fencesSeenByDraws: number[] = [];
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu,
+            frameIntervalMs: 10,
+            renderFrame: () => {
+                fencesSeenByDraws.push(gpu.liveFences.size);
+                return 'ready';
+            }
+        });
+        runDriverFrames(engine, 6);
+        expect(fencesSeenByDraws, 'a draw at 0, 12 and 24 ms, each before its own fence').toEqual([0, 0, 0]);
+        expect(gpu.liveFences.size).toBe(1);
         loop.dispose();
     });
 
