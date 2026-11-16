@@ -748,6 +748,24 @@ the browser still needs to supply calibrated time throughout transport. A real
 authority-refresh callback also advances time to the deadline and proves rejection
 on admission re-entry, replacing a test that mocked the runtime prototype.
 
+The WebSocket client factory likewise accepts an epoch clock for both inbound
+and outbound runtimes. Its final inbound consumer check now reads the inbound
+clock. Explicit creation clocks and supplied stores must use the same epoch
+domain; the factory does not restamp already-created messages. Tests with device
+clocks twenty seconds ahead and behind prove valid inbound delivery, valid wire
+submission and refusal of both directions at the deadline. This supplies another
+required calibration seam without changing transport lifetimes or wire format.
+
+Browser integration must distinguish creation from expiry: construct a new
+message from the conservative earliest server bound before publication signing,
+and compare its deadline against the latest bound at admission, fallback and
+consumer delivery. The delivery registry, RTC proof verifier and room-presence
+checks also compare absolute server epochs and must join that clock domain.
+Local elapsed-time measurements and game ticks should remain monotonic; a clock
+refresh must not rewind them or grant additional message lifetime. Calibration
+belongs to connection lifetime, with cancellation and stale-completion fences
+when the connection/server identity changes.
+
 ### Secure LAN serving
 
 Vite now accepts paired certificate/key paths and a configurable local API proxy
