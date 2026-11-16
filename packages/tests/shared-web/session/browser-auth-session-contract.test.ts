@@ -14,6 +14,7 @@ import {
     installGroupSnapshotRepositoryMocks
 } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
@@ -103,7 +104,12 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             ...mocks.ctx.session,
             expiresAtEpochMs: 1_500
         };
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({
+            middleware: mocks.ctx.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        });
         mocks.readSession.mockImplementation(() =>
             Date.now() >= expiringSession.expiresAtEpochMs
                 ? undefined
@@ -211,7 +217,12 @@ describe('Rallar auth login, expiry, and registration contract', () => {
         };
         let currentSession: typeof oldSession | undefined = oldSession;
         let transportClosed = false;
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
+        mocks.initialiseMiddleware.mockResolvedValue({
+            middleware: mocks.ctx.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        });
         mocks.readSession.mockImplementation(() => currentSession);
         mocks.clearSession.mockImplementation(() => {
             currentSession = undefined;

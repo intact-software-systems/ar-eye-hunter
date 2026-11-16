@@ -3,7 +3,7 @@ import {
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { reportBrowserStartupCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
+import { reportBrowserConnectionCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -75,7 +75,7 @@ export async function createBrowserWebSocketQueueBox(
     }
     catch (caught) {
         await wsQueueBox.close(1000, 'initial-connect-failed')
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
     wsQueueBox

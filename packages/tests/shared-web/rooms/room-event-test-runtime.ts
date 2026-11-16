@@ -11,6 +11,7 @@ import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnInboxMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
 
@@ -107,6 +108,7 @@ export function resetRoomEventTestRuntime(): void {
     roomEventMocks.initialiseMiddleware.mockResolvedValue({
         middleware: roomEventMocks.context.middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     });
     roomEventMocks.listStateGroupEvents.mockRejectedValue(new Error('group events not mocked'));

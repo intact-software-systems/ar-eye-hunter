@@ -8,6 +8,13 @@ import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 import type { BrowserServerClock } from './browser-server-clock.ts';
 
 export namespace BrowserServerClockSession {
+    /** The acquired clock lifetime handed to transport and message consumers. */
+    export interface Port {
+        readonly signal: AbortSignal;
+        readWindow(): Either<BrowserServerClock.Failure, RemoteClockWindow>;
+        close(reason?: Error): Promise<void>;
+    }
+
     export interface Input {
         readonly clock: BrowserServerClock;
         readonly timers: Timers;

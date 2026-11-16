@@ -1,5 +1,5 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
+    beforeEach,
     describe,
     expect,
     expectTypeOf,
@@ -12,6 +12,7 @@ import { BrowserALDurableWorkClaim } from '@shared-web/browser/al-runtime/browse
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { BrowserALSessionChannel } from '@shared-web/browser/al-runtime/browser-al-session-channel.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import {
     createBrowserTransportInput,
@@ -108,6 +109,67 @@ const OPTIONS: BrowserConnectOptions = {
         })
     })
 };
+
+beforeEach(() => {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+        if (String(url).endsWith('/api/time')) {
+            return Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() });
+        }
+        throw new Error(`Unexpected HTTP request: ${url}`);
+    });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+});
+
+describe('server clock startup gate', () => {
+    it('closes a heartbeat acquired after cancellation instead of returning usable middleware', async () => {
+        const controller = new AbortController();
+        const failure = new Error('Connect cancelled during heartbeat acquisition');
+        let heartbeatStopped = false;
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+        });
+        configureFailedStartup('heartbeat', failure, () => {});
+        vi.mocked(heartbeat.initHeartbeat).mockImplementation(async () => {
+            controller.abort(failure);
+            return {
+                sessionId: SESSION.sessionId,
+                generationId: 'late-heartbeat',
+                stop: () => {
+                    heartbeatStopped = true;
+                }
+            };
+        });
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockResolvedValue(
+            createDefaultApiMiddlewareTestDouble().middleware.webSocketQueueBox
+        );
+
+        await expect(initialiseMiddleware(SESSION, 'rtc', { ...OPTIONS, signal: controller.signal })).rejects.toBe(failure);
+        expect(heartbeatStopped).toBe(true);
+    });
+
+    it('refuses an unavailable server clock before starting transports', async () => {
+        onTestFinished(() => {
+            vi.restoreAllMocks();
+            vi.unstubAllGlobals();
+        });
+        vi.spyOn(connectionHttp, 'readApiConfig').mockResolvedValue({
+            serverPeerId: 'server',
+            apiBaseUrl: 'http://test',
+            wsBaseUrl: 'ws://test',
+            endpoints: { createWs: '/ws' },
+            rtcReplacedLayoutOverlapMs: 15_000
+        });
+        vi.stubGlobal('fetch', async () => new Response('', { status: 503 }));
+        vi.spyOn(websocketFactory, 'createBrowserWebSocketQueueBox').mockRejectedValue(
+            new Error('Transport started before calibration')
+        );
+        await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toThrow(
+            'Server clock request returned HTTP 503'
+        );
+    });
+});
 
 describe('native observation handoff cleanup', () => {
     it.each(['rtc-transport', 'middleware'] as const)('disposes the original diagnostic scope on %s handoff failure', async (boundary) => {
@@ -285,6 +347,7 @@ describe('browser RTC layout adoption composition', () => {
         vi.spyOn(heartbeat, 'initHeartbeat').mockResolvedValue(doubles.heartbeat);
 
         const connected = await initialiseMiddleware(SESSION, 'rtc', options);
+        onTestFinished(() => connected.serverClock.close());
         const { webSocketQueueBox, webRtcGroupManager } = connected.middleware;
         await webSocketQueueBox.acceptIncomingMessage(toHeldOfferEnvelope('startup-peer'));
         // The sixth refusal leaves the offer's next retry a second out.

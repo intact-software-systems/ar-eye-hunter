@@ -1,3 +1,12 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import {
     createBrowserRuntimeFoundation,
@@ -14,23 +23,16 @@ import {
     type ALPublicationStageLimits
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_VOLATILE_SESSION_LIMITS,
     type ALVolatileSessionLimits
 } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
-import {
-    afterEach,
-    beforeEach,
-    describe,
-    expect,
-    it,
-    vi
-} from 'vitest';
 
-import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { InMemoryPublicationKeyStore } from '../../shared/signature/publication-key-store-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
 const rtcCaptureReceipt = await vi.hoisted(async () => (await import('../rtc/browser-rtc-capture-fixture.ts')).createBrowserRtcCaptureReceiptFixture());
@@ -74,7 +76,12 @@ describe('browser runtime construction', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         configureTestCacheRepositories();
-        runtime.initialiseMiddleware.mockResolvedValue({ middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] });
+        runtime.initialiseMiddleware.mockImplementation(async () => ({
+            middleware: runtime.middleware.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }));
         runtime.readSession.mockReturnValue(runtime.middleware.session);
     });
 
@@ -127,7 +134,7 @@ describe('browser runtime construction', () => {
                 options.readPublicationStageLimits(),
                 publicationCrypto.kind === 'available' ? publicationCrypto.keyPair.keyId : publicationCrypto.kind
             ]);
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
 
         const core = createBrowserParticipantCore({
@@ -176,7 +183,7 @@ describe('browser runtime construction', () => {
                 normalizeALQosPolicy(message, resolveALQosNormalizationInput(message, { direction: 'outbound' }, options.qosProvider)).effective.supersedence
                     .algo
             );
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const { BlackBoxRallarPublicationLimits } = await import(
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
@@ -204,7 +211,7 @@ describe('browser runtime construction', () => {
         const read: ALVolatileSessionLimits[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             read.push(options.readVolatileSessionLimits());
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const { BlackBoxRallarPublicationLimits } = await import(
             '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-publication-limits.ts'
@@ -245,7 +252,7 @@ describe('browser runtime construction', () => {
         const read: ALPublicationStageLimits[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             read.push(options.readPublicationStageLimits());
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const blackBox = createBlackBoxBrowserRallarRuntimeDependency({
             readVolatileSessionLimits: new BlackBoxRallarVolatileLimits().get,
@@ -269,7 +276,7 @@ describe('browser runtime construction', () => {
         const recorded: [ALVolatileSessionLimits, ALPublicationStageLimits, ALQosInputProvider][] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             recorded.push([options.readVolatileSessionLimits(), options.readPublicationStageLimits(), options.qosProvider]);
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const facade = createRallarFacade();
 
@@ -286,7 +293,7 @@ describe('browser runtime construction', () => {
         const sinks: ALDeliverySettlementSink[] = [];
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             sinks.push(options.deliverySettlements.ws);
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const first = createRallarFacade();
         const second = createRallarFacade();
@@ -358,7 +365,7 @@ describe('browser runtime construction', () => {
                 complete: true,
                 traceId: 'trace-browser-runtime-construction'
             });
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         await second.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -405,7 +412,7 @@ describe('browser runtime construction', () => {
         let oldSink: ALDeliverySettlementSink | undefined;
         runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
             oldSink = options.deliverySettlements.ws;
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const handle = await facade.messages.ws.send({ scope: 'world', typeId: 'app.ready', payload: true, ack: 'receiver' });
         await handle.wait({ until: ['queued'] });
@@ -443,7 +450,7 @@ describe('browser runtime construction', () => {
                 traceId: 'trace-browser-runtime-construction'
             });
             expect(handle.lifecycle().state).toBe('acknowledged');
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['current']);
@@ -493,7 +500,7 @@ describe('browser runtime construction', () => {
                 complete: true,
                 traceId: 'trace-browser-runtime-construction'
             });
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         await first.connect();
         expect(handle.lifecycle().state).toBe('acknowledged');
@@ -545,7 +552,7 @@ describe('browser runtime construction', () => {
                 complete: true,
                 traceId: 'trace-browser-runtime-construction'
             });
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         await facade.connect();
         expect(handle.lifecycle().evidence.confirmedHopPeerIds).toEqual(['retry']);
@@ -597,7 +604,7 @@ describe('browser runtime construction', () => {
             if (!facadeConstructionCompleted) {
                 throw new Error('Transport dependency was used before facade construction completed.');
             }
-            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: runtime.middleware.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();

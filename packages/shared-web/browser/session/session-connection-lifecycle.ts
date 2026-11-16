@@ -5,6 +5,7 @@ import type {
     BrowserTransportRuntime,
     BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { reportBrowserConnectionCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
 import { createBrowserConnectionReservation } from '@shared-web/browser/connection/create-browser-connection-reservation.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -29,6 +30,7 @@ import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import type { RtcGrantedTopicReader } from '@shared/multicast/publication/rtc-granted-topic-reader.ts';
 import type { RtcPublicationProofVerifierPort } from '@shared/multicast/publication/rtc-publication-proof-verifier-port.ts';
 import type { RtcTopicSubscriptionReader } from '@shared/multicast/publication/rtc-topic-subscription-reader.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 export interface RallarSessionConnectionInput {
@@ -78,6 +80,8 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
     private connectionPromise: Promise<BrowserTransportRuntime.Connection> | undefined;
     private disconnectPromise: Promise<void> | undefined;
     private lifecycleIsDisconnected = false;
+    private acceptingConnection = false;
+    private stopClockObservation: (() => void) | undefined;
     private readonly input: BrowserSessionConnectionLifecycle.Input;
 
     public constructor(input: BrowserSessionConnectionLifecycle.Input) {
@@ -212,25 +216,58 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             this.input.connectionRuntime.setConnectState('idle');
             throw new Error('Rallar connection was cancelled because auth ended.');
         }
-        this.input.connectionRuntime.setConnectState('connected');
+        this.acceptingConnection = true;
         try {
+            connected.serverClock.signal.throwIfAborted();
+            this.observeClockLifetime(connected, generation);
+            this.input.connectionRuntime.setConnectState('connected');
+            connected.serverClock.signal.throwIfAborted();
             this.input.lifecycle.attach(middleware);
+            connected.serverClock.signal.throwIfAborted();
             this.input.lifecycle.connected();
+            connected.serverClock.signal.throwIfAborted();
             return connected;
         }
         catch (error) {
-            this.connectionPromise = undefined;
-            try {
-                this.cleanupConnection(middleware);
-            }
-            catch {
-                // Preserve the lifecycle failure that caused this rollback.
+            if (generation === this.connectionGeneration) {
+                this.connectionPromise = undefined;
+                try {
+                    this.cleanupConnection(middleware);
+                }
+                catch (failure) {
+                    reportBrowserConnectionCleanupFailure(toError(failure));
+                }
             }
             throw error;
         }
+        finally {
+            this.acceptingConnection = false;
+        }
+    }
+
+    private observeClockLifetime(connected: BrowserTransportRuntime.Connection, generation: number): void {
+        const end = (): void => {
+            // Acceptance owns rollback until all callbacks in its current notification have returned.
+            if (this.acceptingConnection || generation !== this.connectionGeneration || this.lifecycleIsDisconnected) {
+                return;
+            }
+            this.connectionGeneration += 1;
+            this.connectionPromise = undefined;
+            try {
+                this.cleanupConnection(connected.middleware);
+            }
+            catch (failure) {
+                reportBrowserConnectionCleanupFailure(toError(failure));
+            }
+        };
+        connected.serverClock.signal.addEventListener('abort', end, { once: true });
+        this.stopClockObservation = () => connected.serverClock.signal.removeEventListener('abort', end);
     }
 
     private cleanupConnection(middleware: ApiMiddleware | undefined): void {
+        this.lifecycleIsDisconnected = true;
+        this.stopClockObservation?.();
+        this.stopClockObservation = undefined;
         this.rtcCaptureConfiguration = undefined;
         let failure: Error | undefined;
         const attempt = (cleanup: () => void): void => {
@@ -248,7 +285,6 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         attempt(() => this.input.clearCurrentRoom());
         attempt(() => this.input.connectionRuntime.setConnectState('idle'));
         attempt(() => this.input.lifecycle.disconnected());
-        this.lifecycleIsDisconnected = true;
         if (failure !== undefined) {
             throw failure;
         }

@@ -776,10 +776,32 @@ the lifetime if they discover expiry between refresh attempts. Shared repeating
 and single-flight primitives own scheduling and coalescing. The sampler owns
 observations; the session owns their eligibility for an active browser connection.
 
-These owners are not yet wired into browser middleware. Startup must acquire
-calibration before constructing stores and transports, and shutdown must join its
-closure. The dependent clock consumers below remain integration work. Unit page
-events and timer tests do not qualify clock-skew gameplay or physical phones.
+Browser middleware now acquires calibration before constructing stores and
+transports. Configuration and time requests use the acquisition's captured API
+target. Its clock signal fences subsequent startup, including the final heartbeat
+handoff; rollback closes every acquired owner. The transport owns cancellation
+from synchronous setup through active use, so disconnect cancels a pending time
+request even when fetch ignores abort. A cancelled setup cannot replace a newer
+connection or its cancellation owner.
+
+Clock expiry or page suspension closes the active transport, flushes owned
+checkpoints before removing page listeners, and retires the session's lifecycle
+participants and selected room. The public session returns to idle and the next
+connection acquires a fresh clock. Cancellation during participant startup waits
+for that notification to unwind before cleanup, preventing later participants
+from attaching after an earlier cleanup. The original caller abort reason is
+preserved.
+
+The default policy uses a two-second request deadline, a 500 ms maximum observed
+round trip, 30-second sample age, 1,000 ppm relative drift and 2 ms monotonic timer
+error, with refresh every five seconds. These are explicit operational assumptions,
+not physical-device qualification. New browser connections require the updated
+server's `/api/time` endpoint; they do not fall back to device wall time when it
+is absent. Including calibration raises the full Rallar entry's Brotli budget
+from 305 to 307 KiB; the narrower entry budgets remain unchanged.
+
+The dependent clock consumers below remain integration work. Passing startup,
+cleanup and lifecycle tests does not qualify clock-skew gameplay or physical phones.
 
 Browser integration must distinguish creation from expiry: construct a new
 message from the conservative earliest server bound before publication signing,

@@ -28,6 +28,7 @@ import {
 
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 interface AuthFixture {
     readonly lifecycle: BrowserSessionAuthLifecycle;
@@ -496,6 +497,7 @@ function createDefaultAuthFixture(
     const connect = vi.fn<RallarSessionConnectionLifecycle['connect']>().mockResolvedValue({
         middleware,
         diagnosticsPorts: Object.freeze(toRallarDiagnosticsPorts(undefined)),
+        serverClock: createDefaultBrowserServerClockFixture(),
         rtcCapture: { status: 'unavailable', reason: 'absent' }
     });
     runtime.setConnectState('connected');

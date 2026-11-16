@@ -5,8 +5,10 @@ import { readApiBaseUrl } from '../api-client-config.ts';
 import { sendApiHttpRequest, type ApiRequestOptions } from '../api/send-api-http-request.ts';
 import { decodeApiConfigResponse } from './decode-api-config-response.ts';
 
-export async function readApiConfig(options?: ApiRequestOptions): Promise<ApiConfigResponse> {
-    const apiBaseUrl = readApiBaseUrl();
+export async function readApiConfig(
+    options?: ApiRequestOptions,
+    apiBaseUrl = readApiBaseUrl()
+): Promise<ApiConfigResponse> {
     const apiUrl = URL.parse(`${apiBaseUrl}/api/config`, globalThis.document?.baseURI ?? globalThis.location?.href);
     if (
         apiUrl === null || (apiUrl.protocol !== 'http:' && apiUrl.protocol !== 'https:') ||

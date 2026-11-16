@@ -10,6 +10,7 @@ import {
     resolveBrowserSessionALInboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
+import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
@@ -98,20 +99,21 @@ import { toApiWsUrl } from '@shared/websocket/to-api-ws-url.ts';
 
 import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 import {
+    browserStateCacheLifecycle,
+    type StateCacheScopeOptions
+} from '../state-cache/browser-state-cache-lifecycle.ts';
+import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
+import type { BrowserServerClockSession } from './browser-server-clock-session.ts';
+import {
     closeBrowserTransportResources,
-    reportBrowserStartupCleanupFailure
+    reportBrowserConnectionCleanupFailure
 } from './close-browser-transport-resources.ts';
 import {
     createBrowserRtcHeldOfferReleases,
     createBrowserRtcPeerAdmission
 } from './create-browser-rtc-peer-admission.ts';
+import { startDefaultBrowserServerClockSession } from './start-default-browser-server-clock-session.ts';
 import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
-
-import {
-    browserStateCacheLifecycle,
-    type StateCacheScopeOptions
-} from '../state-cache/browser-state-cache-lifecycle.ts';
-import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface MiddlewareInitOptions {
     readonly groupPresence?: RallarGroupPresencePolicy;
@@ -150,6 +152,7 @@ export interface BrowserConnectOptions extends MiddlewareInitOptions {
 
 /** One connect's middleware, and the checkpoints of its two carriers, which the connect's page lifecycle flushes. */
 export interface BrowserConnectedMiddleware {
+    readonly serverClock: BrowserServerClockSession.Port;
     readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
     readonly middleware: RallarBrowserMiddleware;
     readonly checkpoints: readonly ALCheckpointPort[];
@@ -217,6 +220,11 @@ interface BrowserRtcTransport {
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
 }
 
+interface BrowserSessionPresence {
+    readonly heartbeat: RallarBrowserMiddleware['heartbeat'];
+    readonly ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration;
+}
+
 interface BrowserTransports {
     readonly webSocketTransport: BrowserWebSocketTransport;
     readonly rtcTransport: BrowserRtcTransport;
@@ -278,58 +286,55 @@ export async function initialiseMiddleware(
     rtcSignalingTopicId: string,
     options: BrowserConnectOptions
 ): Promise<BrowserConnectedMiddleware> {
+    const apiBaseUrl = readApiBaseUrl();
+    const publicationCrypto = await options.publicationCrypto;
+    const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }, apiBaseUrl), options);
+    const serverClock = await startDefaultBrowserServerClockSession({
+        baseUrl: apiBaseUrl,
+        serverPeerId: apiConfig.serverPeerId,
+        signal: options.signal
+    });
     const runtimeStorage = new ALRuntimeStorage();
     let transports: BrowserTransports | undefined;
+    let presence: BrowserSessionPresence | undefined;
     try {
         const storageAvailability = initialiseBrowserRuntimeStores(
             session.sessionId,
             options.scope ?? defaultStateScope(),
             { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
         );
-        const transportInput = createBrowserTransportInput(session, options, {
-            publicationCrypto: await options.publicationCrypto,
+        const transportInput = createBrowserTransportInput(session, { ...options, signal: serverClock.signal }, {
+            publicationCrypto,
             publicationVerifier: options.publicationVerifier
         });
-        const apiConfig = await runMiddlewareCommand((signal) => readApiConfig({ signal }), options);
         transports = await initialiseBrowserTransports(transportInput, rtcSignalingTopicId, apiConfig);
-        const { webSocketTransport, rtcTransport } = transports;
-        const bootstrapDegree = resolveBootstrapDegree({
-            bootstrapDegree: options.bootstrapDegree,
-            maxPeerConnections: options.maxPeerConnections
-        });
-        await initialiseBrowserStateTransport({
-            ...transportInput,
-            webSocketQueueBox: webSocketTransport.webSocketQueueBox,
-            webRtcGroupManager: rtcTransport.webRtcGroupManager,
-            bootstrapDegree
-        });
-        const ownWsConnectionGeneration = createBrowserOwnWsConnectionGeneration(
-            session,
-            options.scope ?? defaultStateScope(),
-            webSocketTransport.webSocketQueueBox
-        );
-        const heartbeatHandle = await initialiseBrowserHeartbeat(transportInput, ownWsConnectionGeneration);
-        const { checkpointStores } = transportInput;
+        presence = await initialiseBrowserSessionPresence(transportInput, transports);
+        serverClock.signal.throwIfAborted();
         return {
-            rtcCaptureReceipt: rtcTransport.rtcCaptureReceipt,
+            serverClock,
+            rtcCaptureReceipt: transports.rtcTransport.rtcCaptureReceipt,
             middleware: toBrowserMiddleware(transportInput, {
-                ...webSocketTransport,
-                ...rtcTransport,
-                heartbeat: heartbeatHandle,
-                ownWsConnectionGeneration,
+                ...transports.webSocketTransport,
+                ...transports.rtcTransport,
+                ...presence,
                 runtimeStorage,
                 storageAvailability
             }),
-            checkpoints: [checkpointStores.wsClient.checkpoint, checkpointStores.rtcOverlay.checkpoint]
+            checkpoints: [
+                transportInput.checkpointStores.wsClient.checkpoint,
+                transportInput.checkpointStores.rtcOverlay.checkpoint
+            ]
         };
     }
     catch (caught) {
         await closeBrowserTransportResources({
             ...transports?.webSocketTransport,
             ...transports?.rtcTransport,
-            runtimeStorage
+            runtimeStorage,
+            serverClock,
+            heartbeat: presence?.heartbeat
         })
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -351,7 +356,7 @@ async function initialiseBrowserTransports(
     }
     catch (caught) {
         await closeBrowserTransportResources(webSocketTransport)
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }
@@ -421,11 +426,27 @@ function createBrowserOwnWsConnectionGeneration(
     });
 }
 
-function initialiseBrowserHeartbeat(
+async function initialiseBrowserSessionPresence(
     input: InitialiseBrowserTransportInput,
-    ownWsConnectionGeneration: BrowserOwnWsConnectionGeneration
-): ReturnType<typeof heartbeat.initHeartbeat> {
-    return heartbeat.initHeartbeat(input.clientData, toBrowserHeartbeatOptions(input, ownWsConnectionGeneration));
+    transports: BrowserTransports
+): Promise<BrowserSessionPresence> {
+    const { webSocketTransport, rtcTransport } = transports;
+    await initialiseBrowserStateTransport({
+        ...input,
+        webSocketQueueBox: webSocketTransport.webSocketQueueBox,
+        webRtcGroupManager: rtcTransport.webRtcGroupManager,
+        bootstrapDegree: resolveBootstrapDegree(input.options)
+    });
+    const ownWsConnectionGeneration = createBrowserOwnWsConnectionGeneration(
+        input.session,
+        input.options.scope ?? defaultStateScope(),
+        webSocketTransport.webSocketQueueBox
+    );
+    const heartbeatHandle = await heartbeat.initHeartbeat(
+        input.clientData,
+        toBrowserHeartbeatOptions(input, ownWsConnectionGeneration)
+    );
+    return { heartbeat: heartbeatHandle, ownWsConnectionGeneration };
 }
 
 /** The facade reads the one ledger the connect's carriers count against, never one of its own. */
@@ -554,7 +575,7 @@ async function initialiseBrowserWebSocketTransport(
         });
     }
     catch (caught) {
-        await qboxEngine.stop().catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+        await qboxEngine.stop().catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
     return { qboxEngine, webSocketQueueBox };
@@ -646,7 +667,7 @@ async function initialiseBrowserRtcTransport(
     }
     catch (caught) {
         await closeBrowserTransportResources(acquired)
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
 }

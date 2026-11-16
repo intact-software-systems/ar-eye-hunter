@@ -1,4 +1,3 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
     afterEach,
     beforeEach,
@@ -8,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import type { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
@@ -297,6 +297,9 @@ async function readResponse(url: RequestInfo | URL, init?: RequestInit): Promise
     requests.push({ url: String(url), authorization: new Headers(init?.headers).get('authorization') });
     if (String(url).endsWith('/api/config')) {
         return configResponse(new URL(String(url)));
+    }
+    if (String(url).endsWith('/api/time')) {
+        return Response.json({ serverPeerId: 'ice-fixture-server', serverNowEpochMs: Date.now() });
     }
     if (String(url).endsWith('/api/webrtc/ice')) {
         return iceResponse();

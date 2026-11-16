@@ -1,11 +1,10 @@
 import { vi } from 'vitest';
 
+import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as RoomGroupStateMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type * as RoomMembershipGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-membership-group-state-workflows.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
-
-import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { StateCacheChangeListener } from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
@@ -21,6 +20,7 @@ import {
 } from '@shared/repository/group-state-snapshots-repository.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 interface RoomSnapshotScopeFixture {
     readonly applicationId?: string;
@@ -76,6 +76,7 @@ vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'
     initialiseMiddleware: createInitialiseMiddlewareDouble(async (): Promise<BrowserConnectedMiddleware> => ({
         middleware: roomWorkflowMocks.context.middleware,
         rtcCaptureReceipt,
+        serverClock: createDefaultBrowserServerClockFixture(),
         checkpoints: []
     }))
 }));
