@@ -108,7 +108,7 @@ Each of these is recorded with every run. None can fail a run until a level is s
 | When a rung passes      | Both runs of every point pass and agree within a band declared from those two runs. A red run is reported, not dropped, and the point is rerun as a new pair.                                                        |
 | Runs for the first rung | The full rung: 3 carriers x 2 = 6 steady-state runs, plus fault 1 on 2 carriers x 2 = 4, plus fault 2 on 2 carriers x 2 = 4. Total 14.                                                                               |
 | Approval                | The campaign needs its own go-ahead before its first run. The standing approval covers exactly two hosted guidance runs (D642).                                                                                      |
-| Baseline                | The local half of a same-regime baseline is built first (D642; D31), then a hosted same-build-twice pair.                                                                                                            |
+| Baseline                | The local half of a same-regime baseline is built (D642, D652; D31), then a hosted same-build-twice pair.                                                                                                            |
 | Database between runs   | No reset; a unique group per run (the operations rule in section 1). The row counts in section 2.4 let a reader tell drift from change.                                                                              |
 | Scheduling              | A campaign run starts only while no push to `main` is pending. Merges to `main` are held until a compared pair has finished. The shared concurrency group queues every run behind the main-push manifests otherwise. |
 
@@ -192,10 +192,12 @@ From D642 and the addendum's "After Slice 9":
 1. **Lane determinism.** Every lane cell starts from a declared, settled room.
 2. **Make-before-break routing in the browser** (D644, built in D645). A re-plan landing in a stream drops
    sends and refuses frames without it (section 4), at any room size; the build has no hosted read yet.
-3. **Publication figures.** Selection age, missed windows, drain usage, congestion duration in the stage, and one
-   bounded histogram with a nearest-rank percentile in `packages/shared/measurement`. Without them the reported figures
-   in section 2.4 have no numbers to read.
-4. **A local same-regime baseline.** An environment record and a comparator whose band is declared from two runs.
+3. **Publication figures.** Built (D650, D651): selection age, selection to admission, missed windows and drain usage
+   in the stage, on one bounded histogram with a nearest-rank percentile in `packages/shared/measurement`. Congestion
+   duration and admission-to-native-submission age are not built (`plans/backlog.md`).
+4. **A same-regime baseline.** The local half is built (D652): an environment record and a comparator whose band is
+   declared before any run. The hosted half is not, and the median command time is not stable inside the band between
+   two runs of one commit on the maintainer's machine; what the band or the figure should be for it is open.
 5. **Delivered sample age from payload timestamps.** The workload carries a timestamp; no envelope field (D642).
 6. **Platform fault steps**, locally first: the runner `SERVER` step, the database-session cut, seeded loss and
    jittered delay.

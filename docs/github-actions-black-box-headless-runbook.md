@@ -63,7 +63,9 @@ writes `observation/analysis/{summary,fix-proposal,performance}.md` beside it.
 Two retained recorder directories of the same manifest compare with
 `node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts <baseline-recorder-dir> <candidate-recorder-dir>`:
 it reads each directory's `observation/` snapshots and the `environment` of `provenance.json`, refuses runs of
-different regimes, and reports the median command time and the run duration against a declared band (D652).
+different regimes, and reports the median command time and the run duration against a declared band (D652). The median is not stable
+inside that band between two runs of one commit, so a verdict on it is not evidence of a regression; the evidence is in
+`playground/alm/alm-publication-qos-addendum.md`, §9, "As applied (publication figures)".
 
 Retain the recorder directory after every attempt. GitHub always uploads
 `all-local-alm-<run_id>-<run_attempt>` with runner resources/runtime versions,

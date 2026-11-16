@@ -1583,7 +1583,9 @@ owners and a first campaign on the three-replica fleet.
   ordered sends are measured by the 6b probe on room rows (counts in the Release 14
   record; the principal path is unmeasured). The path to it, as outcomes in
   order: a full-scope lane green on every carrier; publication figures in the
-  stage with one shared histogram; a same-regime baseline protocol; a
+  stage with one shared histogram (built, D650 to D652; congestion duration and
+  admission-to-native-submission age remain); the local half of a same-regime
+  baseline (built, D652; the hosted half and the median's band remain); a
   fault-step vocabulary for the platform; a publication workload family on the scale
   builder; bottleneck probes at the owners; and a first campaign on the
   three-replica fleet.
@@ -1775,7 +1777,10 @@ to 67 as a regression, and as noise in 67 to 66 and 71 to 66; the first and the
 last runs agree, so it is not a warm-up effect. On this machine and this workload
 the median command time is not stable inside the declared band between two runs
 of the same commit, so one pair cannot tell a regression from noise on that
-figure; the run duration can. The band was not widened and no figure dropped
+figure. The run duration read as noise in every one of the four pairs
+compared; the largest spread among the four runs is 8.9 % (38 401 to 41 825 ms,
+a pair not compared) against the 10 % band, and its sensitivity to a real
+regression is untested. The band was not widened and no figure dropped
 after the result; what the band or the figure should be for the median is open
 (D652). The local baseline is therefore not a regression gate for the median.
 
