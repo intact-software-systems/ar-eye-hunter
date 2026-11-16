@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BrowserServerClockSession } from '@shared-web/browser/connection/browser-server-clock-session.ts';
+import { BrowserServerClockSession, readBrowserServerCreationEpochMs } from '@shared-web/browser/connection/browser-server-clock-session.ts';
 import { BrowserServerClock } from '@shared-web/browser/connection/browser-server-clock.ts';
 
 import { createManualTimers } from '../../shared/resilience/manual-timers.ts';
@@ -32,6 +32,7 @@ describe('browser server clock connection lifetime', () => {
         expect(() => session.readWorkEpochMs()).toThrow('No server clock observation.');
         await session.start();
         expect(session.readWorkEpochMs()).toBe(10_021);
+        expect(readBrowserServerCreationEpochMs(session)).toBe(9_999);
         await clock.refresh();
         expect(session.readWindow().right?.latestEpochMs).toBe(10_001);
         expect(session.readWorkEpochMs()).toBe(10_001);
@@ -39,6 +40,7 @@ describe('browser server clock connection lifetime', () => {
         await session.close();
         monotonicNow = 500;
         expect(session.readWindow().left?.code).toBe('closed');
+        expect(() => readBrowserServerCreationEpochMs(session)).toThrow('Server clock connection lifetime ended.');
         expect(session.readWorkEpochMs()).toBe(10_001);
     });
 

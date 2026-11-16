@@ -147,6 +147,7 @@ export function initialiseRtcOverlayMulticastManager(
 
 export interface InitialiseRtcRxStreamerInput {
     readonly nowEpochMs: () => number;
+    readonly rttCreationNowEpochMs: () => number;
     readonly workNowEpochMs: () => number;
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     /** The session's one key, which signs the receipts its inbound runtime sends for it, never through the manager. */
@@ -176,6 +177,7 @@ export function initialiseRtcRxStreamer(
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
         nowEpochMs: input.nowEpochMs,
+        rttCreationNowEpochMs: input.rttCreationNowEpochMs,
         workNowEpochMs: input.workNowEpochMs,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,

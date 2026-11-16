@@ -439,6 +439,7 @@ describe('browser RTC runtime composition', () => {
         const received: string[] = [];
         const events: ALInboundRuntimeDiagnosticsEvent[] = [];
         const receiver = initialiseRtcRxStreamer({
+            rttCreationNowEpochMs: () => serverNow,
             nowEpochMs: () => serverNow,
             workNowEpochMs: () => serverNow,
             webRtcOverlayMulticastManager: manager,

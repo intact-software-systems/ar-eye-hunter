@@ -829,9 +829,16 @@ as not-ready without consuming an attempt. Held inbound/outbound regressions and
 pending-selection/group/successor tests cover these shutdown boundaries; final
 outbound settlement events remain observable after authority time ends.
 
-Message creation, durable/checkpoint store timing and expiry maintenance,
-page-level delivery/proof composition, remaining presence comparisons and ICE
-expiry still need clock integration. In particular, checkpoint retirement must
+RTT reports now use the earliest calibrated bound for creation, while admission
+and expiry retain the latest bound. This prevents the expiry margin from
+future-dating an RTT fact relative to the server receiving it; measured RTT
+duration remains monotonic.
+
+The remaining clock integration is deferred to [issue #836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836)
+at the maintainer's request so gameplay iteration resumes after this timing fix.
+That follow-up covers message creation, durable/checkpoint timing and expiry
+maintenance, page-level delivery/proof composition, remaining presence comparisons
+and ICE/signaling clocks. This deferral does not establish skew-safe multiplayer. In particular, checkpoint retirement must
 flush dirty state even after the calibrated connection ends: settlement and
 cleanup timing must not depend on a clock that correctly refuses new authority.
 Passing carrier, startup and lifecycle tests does not qualify complete clock-skew
@@ -919,15 +926,19 @@ test-route assumptions: water displaced the rendezvous and a longer low-value
 prank route ran out of round time. No production scoring, timer or rescue rule was
 changed to satisfy the tests. Physical-device qualification remains separate.
 
-The next two useful outcomes remain concrete:
+The maintainer has moved the remaining clock work to [issue #836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
+Do not make that broad platform follow-up a prerequisite for gameplay iteration.
+Keep the known cross-clock limitation visible when reporting multiplayer readiness.
 
-1. Complete match reliability by resolving cross-clock publication expiry, then
-   rerun the skew and normal-clock recovery cases. Preserve silent-outage takeover
-   and return without a delivered close callback, plus the established shared
-   rescue, multiple qualifiers, rematch and recovery regressions, including
-   host succession with a surviving committed backup. Preserve the
-   original acceptance criteria above; retained participants and active controllers
-   must be separated when continuing after a departure.
-2. Deliver and qualify the phone trial: secure LAN access with matching Rallar public
-   origins, responsive phone/tablet/desktop controls, lifecycle cleanup and an actual
-   phone hosting check. Keep the PR draft until release evidence supports readiness.
+The next two useful outcomes are now game-facing:
+
+1. Verify the actual phone trial: boot the town, move, dash-and-drop, slip and zoom
+   through the existing floating controls. Capture rendered gameplay and review
+   playfield visibility, controls, feedback and responsive layout. Keep the secure
+   LAN preview available; distinguish browser emulation from physical-phone evidence.
+2. Play a shared match through social entry, Ready/start, mischief, rescue, results
+   and rematch using real controls. Prioritize actionable game-flow and readability
+   problems. Preserve normal-clock host-loss/recovery behavior; track deferred clock
+   failures in the follow-up instead of expanding into general Rallar work.
+
+Keep the PR draft until its claimed scope has appropriate release evidence.

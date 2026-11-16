@@ -80,6 +80,7 @@ const SESSION: AuthSession = {
 };
 
 const TRANSPORT_DEPENDENCIES: BrowserTransportDependencies = {
+    rttCreationNowEpochMs: Date.now,
     nowEpochMs: Date.now,
     workNowEpochMs: Date.now,
     publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
@@ -289,6 +290,10 @@ describe('the inbound stores a connect hands its two carriers', () => {
         const middleware = createDefaultApiMiddlewareTestDouble({
             middleware: { rtcRxStreamer: { onRttMeasurementDo: () => {}, setRttReportingPeerIds: () => {} } }
         });
+        vi.spyOn(Date, 'now').mockReturnValue(10_020_000);
+        vi.spyOn(performance, 'now').mockReturnValue(0);
+        vi.stubGlobal('fetch', async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000_000 }));
+        const epochs: number[] = [];
         const carriers: Partial<Record<'ws' | 'rtc', readonly [ALInboundRuntimeStores, ALVolatileInboundRuntimeStores]>> = {};
         const sinks: Partial<Record<'ws' | 'rtc', ALInboundRuntimeDiagnosticsSink | undefined>> = {};
         const stop = new Error('the stores were handed over');
@@ -308,6 +313,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
         vi.spyOn(rtcEngine, 'initialiseRtcConnectionService').mockResolvedValue({ webRtcConnectionService: service, rtcCaptureReceipt: capture.receipt });
         vi.spyOn(rtcEngine, 'initialiseRtcOverlayMulticastManager').mockReturnValue(middleware.middleware.webRtcOverlayMulticastManager);
         vi.spyOn(rtcEngine, 'initialiseRtcRxStreamer').mockImplementation((input) => {
+            epochs.push(input.rttCreationNowEpochMs(), input.nowEpochMs());
             carriers.rtc = [input.inboundStores, input.inboundVolatileStores];
             sinks.rtc = input.inboundDiagnostics;
             throw stop;
@@ -315,6 +321,7 @@ describe('the inbound stores a connect hands its two carriers', () => {
 
         await expect(initialiseMiddleware(SESSION, 'rtc', OPTIONS)).rejects.toBe(stop);
 
+        expect(epochs).toEqual([9_999_999, 10_000_006]);
         expect(carriers.ws).toHaveLength(2);
         expect(carriers.rtc?.[0]).toBe(carriers.ws?.[0]);
         expect(carriers.rtc?.[1]).toBe(carriers.ws?.[1]);

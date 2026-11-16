@@ -303,6 +303,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         selfPrincipalId: service.input.sessionId
     });
     const streamer = initialiseRtcRxStreamer({
+        rttCreationNowEpochMs: Date.now,
         nowEpochMs: Date.now,
         workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,

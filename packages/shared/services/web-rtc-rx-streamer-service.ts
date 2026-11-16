@@ -80,6 +80,8 @@ export namespace WebRtcRxStreamerService {
         readonly inboundStores?: ALInboundRuntimeStores;
         readonly inboundVolatileStores?: ALVolatileInboundRuntimeStores;
         readonly nowEpochMs?: () => number;
+        /** Conservative creation time for RTT facts; expiry continues to use nowEpochMs. */
+        readonly rttCreationNowEpochMs?: () => number;
         readonly workNowEpochMs?: () => number;
         readonly heartbeat?: Pick<WebRtcHeartbeatService.InputDto, 'maxMissedPings' | 'pingFrequencyMsecs'>;
         readonly roomAuthorityRefresh?: RoomAuthorityRefresh;
@@ -97,6 +99,7 @@ export namespace WebRtcRxStreamerService {
         readonly sessionId: string;
         readonly inboundRuntime: ALInboundMessageRuntime.Resources;
         readonly epochNow: () => number;
+        readonly rttCreationNowEpochMs: () => number;
         readonly heartbeat: {
             readonly maxMissedPings: number;
             readonly pingFrequencyMsecs: number;
@@ -436,7 +439,7 @@ export class WebRtcRxStreamerService {
             sessionIdFrom: this.sessionId,
             sessionIdTo: peerId,
             rttMs: result.rttMsecs,
-            createdAtEpochMs: this.dependencies.epochNow(),
+            createdAtEpochMs: this.dependencies.rttCreationNowEpochMs(),
             version
         };
         for (const callback of this.onRttMeasurementCallbacks.values()) {
@@ -611,6 +614,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
             durableWorkOwnership: input.durableWorkOwnership
         }),
         epochNow: input.nowEpochMs ?? Date.now,
+        rttCreationNowEpochMs: input.rttCreationNowEpochMs ?? input.nowEpochMs ?? Date.now,
         heartbeat: input.heartbeat ?? {
             maxMissedPings: defaultMaxMissedPings,
             pingFrequencyMsecs: defaultPingFrequencyMsecs

@@ -34,6 +34,7 @@ const SESSION: AuthSession = {
 };
 
 const TRANSPORT_DEPENDENCIES: BrowserTransportDependencies = {
+    rttCreationNowEpochMs: Date.now,
     nowEpochMs: Date.now,
     workNowEpochMs: Date.now,
     publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,

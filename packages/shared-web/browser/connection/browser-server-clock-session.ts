@@ -145,3 +145,13 @@ export function readBrowserServerExpiryEpochMs(clock: Pick<BrowserServerClockSes
         (window) => window.latestEpochMs
     );
 }
+
+/** Creation cannot be future-dated relative to the server receiving the new fact. */
+export function readBrowserServerCreationEpochMs(clock: Pick<BrowserServerClockSession.Port, 'readWindow'>): number {
+    return clock.readWindow().fold(
+        (failure) => {
+            throw failure.cause;
+        },
+        (window) => window.earliestEpochMs
+    );
+}

@@ -103,7 +103,11 @@ import {
     type StateCacheScopeOptions
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
-import { readBrowserServerExpiryEpochMs, type BrowserServerClockSession } from './browser-server-clock-session.ts';
+import {
+    readBrowserServerCreationEpochMs,
+    readBrowserServerExpiryEpochMs,
+    type BrowserServerClockSession
+} from './browser-server-clock-session.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserConnectionCleanupFailure
@@ -184,6 +188,7 @@ export interface BrowserRttEgressInput {
 
 export interface InitialiseBrowserTransportInput {
     readonly nowEpochMs: () => number;
+    readonly rttCreationNowEpochMs: () => number;
     readonly workNowEpochMs: () => number;
     readonly connectionId: RtcSignalingDiagnostics.Readout<string>;
     readonly creation: BrowserMiddlewareCreation;
@@ -206,7 +211,7 @@ export interface InitialiseBrowserTransportInput {
 /** Dependencies acquired before transport construction: calibrated time, the session key and page verifier. */
 export type BrowserTransportDependencies = Pick<
     InitialiseBrowserTransportInput,
-    'publicationCrypto' | 'publicationVerifier' | 'nowEpochMs' | 'workNowEpochMs'
+    'publicationCrypto' | 'publicationVerifier' | 'nowEpochMs' | 'workNowEpochMs' | 'rttCreationNowEpochMs'
 >;
 
 interface BrowserWebSocketTransport {
@@ -307,6 +312,7 @@ export async function initialiseMiddleware(
         );
         const transportInput = createBrowserTransportInput(session, { ...options, signal: serverClock.signal }, {
             nowEpochMs: () => readBrowserServerExpiryEpochMs(serverClock),
+            rttCreationNowEpochMs: () => readBrowserServerCreationEpochMs(serverClock),
             workNowEpochMs: () => serverClock.readWorkEpochMs(),
             publicationCrypto,
             publicationVerifier: options.publicationVerifier
@@ -650,6 +656,7 @@ async function initialiseBrowserRtcTransport(
             {
                 webRtcOverlayMulticastManager,
                 nowEpochMs: input.nowEpochMs,
+                rttCreationNowEpochMs: input.rttCreationNowEpochMs,
                 workNowEpochMs: input.workNowEpochMs,
                 publicationCrypto: input.publicationCrypto,
                 qboxEngine: input.webSocketTransport.qboxEngine,
