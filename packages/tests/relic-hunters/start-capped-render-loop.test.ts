@@ -112,18 +112,22 @@ let nowMs = 0;
 interface DrawCounter {
     readonly draws: () => number;
     readonly frameTimeMs: () => number;
+    readonly lastFrameTimeMs: () => number;
     readonly renderFrame: (frameTimeMs: number) => 'ready';
 }
 
 function countDraws(): DrawCounter {
     let draws = 0;
     let totalFrameTimeMs = 0;
+    let lastFrameTimeMs = 0;
     return {
         draws: () => draws,
         frameTimeMs: () => totalFrameTimeMs,
+        lastFrameTimeMs: () => lastFrameTimeMs,
         renderFrame: (frameTimeMs) => {
             draws += 1;
             totalFrameTimeMs += frameTimeMs;
+            lastFrameTimeMs = frameTimeMs;
             return 'ready';
         }
     };
@@ -317,6 +321,29 @@ describe('Relic gameplay render loop', () => {
         runDriverFrames(engine, 1);
         expect(frame.draws()).toBe(4);
         expect(engine.loops.size).toBe(0);
+        loop.dispose();
+    });
+
+    it('does not give the time held for the GPU before a resume to the first frame drawn after it', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+        loop.pauseWhenReady();
+        gpu.executeQueuedFrames();
+        runDriverFrames(engine, 3);
+        expect(engine.loops.size, 'the terminal pause has stopped').toBe(0);
+
+        loop.invalidate();
+        loop.invalidate();
+        runDriverFrames(engine, 5);
+        expect(frame.draws(), 'the second redraw waits for the GPU').toBe(3);
+
+        loop.resume();
+        gpu.executeQueuedFrames();
+        runDriverFrames(engine, 1);
+        expect(frame.draws()).toBe(4);
+        expect(frame.lastFrameTimeMs(), 'the 16 ms held before the resume is dropped with the reset timing').toBe(0);
         loop.dispose();
     });
 
