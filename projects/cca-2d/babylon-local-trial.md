@@ -64,14 +64,23 @@ follow-up issue was created. The phone trial then identified a separate appearan
 bug: each client colored itself teal and assigned remote colors by local insertion
 order. Colors now follow the shared retained participant roster on both screens;
 the torso, sleeves and local YOU label update together. Reconnect/host changes
-within the same round preserve those assignments. The next bounded tasks are
-verifying this visual correction on the phone, then reproducing the stale lobby
-observation. The color correction passed the CCA build/final typecheck and a real
+within the same round preserve those assignments. The subsequent phone color
+check was accepted: **"I am playing now and it looks good."** Keep the current
+movement, Dash and appearance settings. The color correction passed the CCA build/final typecheck and a real
 two-account browser test. Both screenshots were inspected: the same left player
 is teal and the same right player copper, with the correct local ground marker
 and YOU hint. Captures are under ignored `tmp/perf/cca-player-colors`. Full-file
 review included actor material caching/disposal and the recursively affected scene
 and renderer; independent untouched code stayed outside closure.
+
+During that check, Alice also showed two-second state-heartbeat timeouts,
+then a connection pause and an interrupted round with 91 seconds remaining.
+The preserved result showed Alice 0 / Bob 34. Re-entering through solo restored
+Alice's connection, but she was no longer host. The user's subsequent positive
+play report does not establish the interruption's cause or resolution. Next:
+reproduce that interruption with foreground/lifecycle and connection evidence,
+then investigate the separately reported stale lobby roster. No game server was
+restarted and no broad clock fix is claimed.
 
 ## Phone retest and remote-player smoothing — 16 November 2026
 
@@ -200,16 +209,14 @@ Full-file and recursive support review found no blocker or retained affected leg
 
 ### Next two useful slices
 
-1. Qualify the v6 local-prediction correction under delayed checkpoints and
-   short pose gaps, including successful Dash effects immediately after readiness.
-   Repeat phone starts, stops, reversals and dash. Keep the accepted remote
-   smoothing and RTC-first/WS-fallback policy; desktop samples alone cannot
-   establish physical-phone smoothness.
+1. Reproduce the observed heartbeat-timeout / interrupted-round sequence while
+   preserving the accepted movement and colors. Capture foreground/background
+   transitions and connection/authority state; do not assume a clock cause.
 2. Reproduce the stale lobby-membership observation: Bob showed the correct room
    code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
    Alice through solo and online refreshed the roster, then both became ready and
-   the round started. Root cause is unconfirmed; do not attribute it to device clocks
-   or claim that the host-button fix resolves missing roster updates.
+   the round started. Root cause is unconfirmed; the host-button fix does not claim
+   to resolve missing roster updates.
 
 ## Responsiveness correction — 16 November 2026
 
