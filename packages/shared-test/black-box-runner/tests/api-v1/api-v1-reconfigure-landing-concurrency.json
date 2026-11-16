@@ -386,7 +386,8 @@
                 "body": {
                   "publish": true,
                   "options": {
-                    "degreeLimit": 2
+                    "degreeLimit": 2,
+                    "meshParamK": 1
                   }
                 }
               },

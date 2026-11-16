@@ -591,7 +591,7 @@ test('configuration decoder requires the mesh parameter below the topology degre
             const error = captureConfigurationError(() => decodeApiV1Configuration(input));
             assert.deepEqual(
                 error.issues.map((issue) => [issue.source, issue.path, issue.code]),
-                [['invariant', 'topology.planning.meshParamK', 'mesh-param-not-below-degree']]
+                [['invariant', 'topology.planning.meshParamK', 'mesh-param-k-not-below-degree-limit']]
             );
         }
     }

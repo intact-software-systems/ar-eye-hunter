@@ -4,6 +4,7 @@ import {
     BUN_MAX_IDLE_TIMEOUT_SECONDS,
     computeHttpIdleTimeoutSeconds
 } from '@shared-server/http/compute-http-idle-timeout-seconds.ts';
+import { validateEffectiveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1AuthenticationConfiguration,
@@ -109,27 +110,23 @@ function validateTopologyPlanningInvariants(
     const planning = topology.planning;
     if (
         collector.isValid(
+            'topology.planning.degreeLimit',
+            'topology.planning.treeMinSize',
             'topology.planning.meshMinSize',
-            'topology.planning.treeMinSize'
-        ) && planning.meshMinSize < planning.treeMinSize
+            'topology.planning.meshParamK'
+        )
     ) {
-        collector.invariant(
-            'topology.planning.meshMinSize',
-            'mesh-before-tree',
-            'Mesh minimum size must be greater than or equal to tree minimum size.'
-        );
-    }
-    if (
-        collector.isValid(
-            'topology.planning.meshParamK',
-            'topology.planning.degreeLimit'
-        ) && planning.meshParamK >= planning.degreeLimit
-    ) {
-        collector.invariant(
-            'topology.planning.meshParamK',
-            'mesh-param-not-below-degree',
-            'Mesh parameter K must be less than the topology degree limit.'
-        );
+        for (
+            const issue of validateEffectiveGroupTopologyConfig({
+                topologyKind: planning.topologyKind,
+                degreeLimit: planning.degreeLimit,
+                treeMinSize: planning.treeMinSize,
+                meshMinSize: planning.meshMinSize,
+                meshParamK: planning.meshParamK
+            })
+        ) {
+            collector.invariant(['topology.planning', ...(issue.path ?? [])].join('.'), issue.code, issue.message);
+        }
     }
     const recompute = topology.recompute;
     if (

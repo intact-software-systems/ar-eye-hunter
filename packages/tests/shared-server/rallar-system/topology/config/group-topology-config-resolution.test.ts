@@ -92,14 +92,15 @@ describe('group topology config resolution', () => {
 
     it.each([
         { degreeLimit: 4, meshParamK: 4, valid: false },
+        { degreeLimit: 4, meshParamK: 4, valid: false, topologyKind: 'tree' as const },
         { degreeLimit: 4, meshParamK: 5, valid: false },
         { degreeLimit: 4, meshParamK: 3, valid: true },
         { degreeLimit: 5, meshParamK: 2, valid: true }
     ])(
         'requires the mesh parameter below the degree limit (limit $degreeLimit, k $meshParamK)',
-        ({ degreeLimit, meshParamK, valid }) => {
+        ({ degreeLimit, meshParamK, valid, topologyKind = 'mesh' as const }) => {
             const issues = validateEffectiveGroupTopologyConfig({
-                topologyKind: 'mesh',
+                topologyKind,
                 degreeLimit,
                 treeMinSize: 4,
                 meshMinSize: 4,

@@ -37,7 +37,7 @@ describe('API-v1 reconfigure landing causal prerequisite', () => {
         expect(commands).toHaveLength(2);
         expect(commands.map(({ body }) => JSON.parse(body ?? ''))).toEqual([
             { publish: true, options: { degreeLimit: 5 } },
-            { publish: true, options: { degreeLimit: 2 } }
+            { publish: true, options: { degreeLimit: 2, meshParamK: 1 } }
         ]);
         expect(http.requests.filter(({ method }) => method === 'GET').map(({ atEpochMs }) => atEpochMs)).toEqual([0, 150]);
     });

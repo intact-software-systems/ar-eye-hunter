@@ -225,6 +225,7 @@ test(
                 now: () => nowEpochMs,
                 topologyKind: 'tree',
                 degreeLimit: 2,
+                meshParamK: 1,
                 rttReportingDegreeLimit: 2
             });
             const service = createGroupTopologyRuntimeOwners({
@@ -239,6 +240,7 @@ test(
                 serverDefaults: {
                     topologyKind: 'tree',
                     degreeLimit: 2,
+                    meshParamK: 1,
                     rttReportingDegreeLimit: 2
                 }
             });
