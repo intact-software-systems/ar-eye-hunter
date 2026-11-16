@@ -1,0 +1,141 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+    decodeLocalBaselineRun,
+    toLocalBaselineReport
+} from '../../../apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts';
+import type { DistributedRunEnvironment } from '../../shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
+import { Either } from '../../shared/resilience/Either.ts';
+import { createControlRunSnapshot, createDistributedRunSnapshot } from '../shared-test/distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
+
+const ENVIRONMENT: DistributedRunEnvironment = {
+    sourceCommit: 'c'.repeat(40),
+    worktreeDirty: false,
+    apiMode: 'memory',
+    databaseFreshness: 'fresh-ephemeral',
+    profile: 'prod-in-memory',
+    pubSub: 'local',
+    ice: 'local',
+    topology: {
+        topologyKind: 'auto',
+        degreeLimit: 5,
+        rttReportingDegreeLimit: 5,
+        treeMinSize: 5,
+        meshMinSize: 16,
+        meshParamK: 2,
+        meshExitWidth: 4,
+        treeExitWidth: 0,
+        rttReplanMinimumLayoutAgeMs: 15_000
+    },
+    retention: { events: 'unbounded', results: 'unbounded' },
+    rtcCaptureMode: '',
+    manifestSha256: 'a'.repeat(64),
+    agentCount: 2,
+    runtime: { node: 'v26.13.0', bun: '1.4.4', chromium: 'Chromium 158' },
+    host: {
+        platform: 'darwin',
+        release: '27.2.0',
+        cpuCount: 12,
+        availableParallelism: 12,
+        memoryBytes: 103_079_215_104,
+        diskBytes: 1_995_218_165_760,
+        diskAvailableBytes: 1_420_588_363_776
+    },
+    loadAverage: { oneMinute: 4.4, atStart: true }
+};
+
+function createRecorderTexts() {
+    return {
+        recorderDirectory: '/runs/a',
+        provenance: JSON.stringify({ environment: ENVIRONMENT, measuredFiles: [], recorderDirectory: '/runs/a', limits: {} }),
+        controlRun: JSON.stringify(createControlRunSnapshot({ runId: 'run-a' })),
+        distributedRun: JSON.stringify(createDistributedRunSnapshot({
+            distributedRunId: 'dist-a',
+            controlRunId: 'run-a',
+            state: 'passed',
+            agentIds: ['agent-1', 'agent-2'],
+            startedAtEpochMs: 1_000,
+            completedAtEpochMs: 61_000
+        }))
+    };
+}
+
+describe('decodeLocalBaselineRun', () => {
+    it('reads a recorder directory\'s environment as the regime and its snapshots\' performance as the figures', () => {
+        const run = decodeLocalBaselineRun(createRecorderTexts()).right;
+
+        expect(run?.figures).toEqual({ runDurationMs: 60_000 });
+        expect(run?.regime).toMatchObject({ apiMode: 'memory', agentCount: 2, 'topology.degreeLimit': 5 });
+        expect(run?.regime).not.toHaveProperty('sourceCommit');
+    });
+
+    it('names the directory and the file of every part it cannot decode', () => {
+        const issues = decodeLocalBaselineRun({
+            ...createRecorderTexts(),
+            provenance: JSON.stringify({ environment: { ...ENVIRONMENT, agentCount: 0 } }),
+            controlRun: '[]',
+            distributedRun: JSON.stringify({ distributedRunId: '' })
+        }).left;
+
+        expect(issues).toEqual([
+            '/runs/a/observation/provenance.json: environment: agentCount must be a whole number of at least 1',
+            '/runs/a/observation/control-run.json: the snapshot must be a JSON object',
+            '/runs/a/observation/distributed-run.json: distributedRunId must be a non-empty string'
+        ]);
+    });
+
+    it('names a provenance file that holds no environment, and a file that is not JSON', () => {
+        const issues = decodeLocalBaselineRun({ ...createRecorderTexts(), provenance: '"x"', controlRun: '{' }).left;
+
+        expect(issues?.[0]).toBe(
+            '/runs/a/observation/provenance.json: environment: environment must be an exact object'
+        );
+        expect(issues?.[1]).toMatch(/^\/runs\/a\/observation\/control-run\.json: is not JSON: /u);
+        expect(issues).toHaveLength(2);
+    });
+});
+
+describe('toLocalBaselineReport', () => {
+    it('prints one line per figure and exits 0 when every figure is noise or an improvement', () => {
+        expect(toLocalBaselineReport(Either.ofRight({
+            figures: [
+                { name: 'commandTiming.p50Ms', baseline: 12, candidate: 13, verdict: 'noise' },
+                { name: 'runDurationMs', baseline: 60_000, candidate: 50_000, verdict: 'improvement' }
+            ]
+        }))).toEqual({
+            lines: [
+                'commandTiming.p50Ms baseline 12 candidate 13 noise',
+                'runDurationMs baseline 60000 candidate 50000 improvement'
+            ],
+            exitCode: 0
+        });
+    });
+
+    it('exits 1 on a regression, naming the regressed figures', () => {
+        expect(toLocalBaselineReport(Either.ofRight({
+            figures: [
+                { name: 'commandTiming.p95Ms', baseline: 40, candidate: 90, verdict: 'regression' },
+                { name: 'runDurationMs', baseline: 60_000, candidate: 60_100, verdict: 'noise' }
+            ]
+        }))).toEqual({
+            lines: [
+                'commandTiming.p95Ms baseline 40 candidate 90 regression',
+                'runDurationMs baseline 60000 candidate 60100 noise',
+                'regression in commandTiming.p95Ms'
+            ],
+            exitCode: 1
+        });
+    });
+
+    it('exits 1 on a refusal, naming every key that made the runs not comparable', () => {
+        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-regime', keys: ['agentCount', 'apiMode'] })))
+            .toEqual({ lines: ['not comparable: the regimes differ in agentCount, apiMode'], exitCode: 1 });
+        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-figures', keys: ['commandTiming.p99Ms'] })))
+            .toEqual({ lines: ['not comparable: only one run reports commandTiming.p99Ms'], exitCode: 1 });
+    });
+
+    it('exits 1 when the runs share no figure, as nothing was compared', () => {
+        expect(toLocalBaselineReport(Either.ofRight({ figures: [] })))
+            .toEqual({ lines: ['not comparable: neither run reports a figure'], exitCode: 1 });
+    });
+});
