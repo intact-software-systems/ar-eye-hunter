@@ -61,7 +61,8 @@ import { readDistributedRunSeedFromUrl, writeDistributedRunSeedToUrl } from './d
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
 import { readAvailableControlValue } from './read-available-control-value.ts';
 import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
-import { RUNNER_DISTRIBUTED_POLL_MS } from './runner-runs-constants.ts';
+
+const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
 
 export type UseRunnerRunsControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
