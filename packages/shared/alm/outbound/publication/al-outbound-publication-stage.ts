@@ -1,7 +1,10 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import type { ALDeliveryCarrier } from '../../../al-contracts/al-control-value-codec.ts';
 import { resolveALMessageExpireAtMs } from '../../../al-contracts/al-policy.ts';
-import type { ALPublicationPolicy } from '../../../al-contracts/publication/al-publication-policy.ts';
+import type {
+    ALPublicationDrainBudget,
+    ALPublicationPolicy
+} from '../../../al-contracts/publication/al-publication-policy.ts';
 import type {
     ALPublicationStageLimit,
     ALPublicationStageLimits
@@ -11,7 +14,7 @@ import {
     toALPublicationStreamKey
 } from '../../../al-contracts/publication/to-al-publication-stream-key.ts';
 import { retainNewest } from '../../../cache/retain-newest.ts';
-import { computeNextCadenceAtMs } from '../../../resilience/timing/cadence.ts';
+import { computeMissedCadenceCount, computeNextCadenceAtMs } from '../../../resilience/timing/cadence.ts';
 import { toError } from '../../../resilience/to-error.ts';
 import type { InboxOutboxEngine } from '../../../services/inbox-outbox-engine.ts';
 import type {
@@ -84,6 +87,12 @@ interface ALOutboundPublicationLane<TContext> {
     cursor: number;
     lastOpportunityAtMs: number | undefined;
     nextOpportunityAtMs: number | undefined;
+}
+
+interface ALPublicationOpportunity<TContext> {
+    readonly dueAtMs: number | undefined;
+    readonly atMs: number;
+    readonly selected: readonly ALOutboundStagedPublication<TContext>[];
 }
 
 export namespace ALOutboundPublicationStage {
@@ -361,6 +370,7 @@ export class ALOutboundPublicationStage<TContext> {
             lane.nextOpportunityAtMs = undefined;
             return;
         }
+        const dueAtMs = lane.nextOpportunityAtMs;
         const atMs = this.input.clock.nowMs();
         const streamKeys = [...lane.streams.keys()];
         const selection = computeALPublicationSelection({
@@ -374,9 +384,10 @@ export class ALOutboundPublicationStage<TContext> {
         selection.expired.forEach((publication) => this.settleExpired(publication, atMs));
         const deferred = selection.remaining.reduce((count, stream) => count + stream.length, 0);
         this.ledger.count('deferred', deferred);
+        this.recordSelection(lane, { dueAtMs, atMs, selected: selection.selected });
         lane.lastOpportunityAtMs = atMs;
         this.scheduleLane(lane, atMs);
-        await this.submitSelected(selection.selected);
+        await this.submitSelected(selection.selected, atMs, lane.policy.drain);
         if (this.disposed) {
             return;
         }
@@ -387,23 +398,57 @@ export class ALOutboundPublicationStage<TContext> {
             selected: selection.selected.length,
             deferred,
             expired: selection.expired.length,
-            bytes: selection.selected.reduce((bytes, publication) => bytes + publication.bytes, 0)
+            bytes: computeBytes(selection.selected)
         });
     }
 
-    private async submitSelected(selected: readonly ALOutboundStagedPublication<TContext>[]): Promise<void> {
+    /** An opportunity that runs after its lane's boundary missed every later boundary at or before it. */
+    private recordSelection(
+        lane: ALOutboundPublicationLane<TContext>,
+        opportunity: ALPublicationOpportunity<TContext>
+    ): void {
+        const { dueAtMs, atMs, selected } = opportunity;
+        this.ledger.recordSelection({
+            atMs,
+            stagedAtMs: selected.map((publication) => publication.stagedAtMs),
+            missedOpportunities: dueAtMs === undefined
+                ? 0
+                : computeMissedCadenceCount({ boundaryAtMs: dueAtMs, cadenceMs: lane.policy.cadenceMs, nowMs: atMs })
+        });
+    }
+
+    /** The submission figures time the selection to its admission settling: a submit settles at carrier admission. */
+    private async submitSelected(
+        selected: readonly ALOutboundStagedPublication<TContext>[],
+        atMs: number,
+        drain: ALPublicationDrainBudget
+    ): Promise<void> {
         if (selected.length === 0) {
             return;
         }
         this.ledger.count('admitted', selected.length);
+        let failure: Error | undefined;
         try {
             await this.input.submit(selected);
         }
         catch (error) {
-            const atMs = this.input.clock.nowMs();
-            const verdict: ALDeliveryAdmissionVerdict = { kind: 'failed', detail: toError(error).message };
-            selected.forEach((publication) => this.settleAdmission(publication, atMs, verdict));
+            failure = toError(error);
         }
+        const settledAtMs = this.input.clock.nowMs();
+        if (failure !== undefined) {
+            const verdict: ALDeliveryAdmissionVerdict = { kind: 'failed', detail: failure.message };
+            selected.forEach((publication) => this.settleAdmission(publication, settledAtMs, verdict));
+        }
+        if (this.disposed) {
+            return;
+        }
+        this.ledger.recordSubmission({
+            atMs,
+            settledAtMs,
+            selected: selected.length,
+            selectedBytes: computeBytes(selected),
+            drain
+        });
     }
 
     private scheduleLane(lane: ALOutboundPublicationLane<TContext>, nowMs: number): void {
@@ -441,6 +486,10 @@ export class ALOutboundPublicationStage<TContext> {
             traceId: publication.traceId
         });
     }
+}
+
+function computeBytes<TContext>(publications: readonly ALOutboundStagedPublication<TContext>[]): number {
+    return publications.reduce((bytes, publication) => bytes + publication.bytes, 0);
 }
 
 function createIdleLane<TContext>(laneKey: string, policy: ALPublicationPolicy): ALOutboundPublicationLane<TContext> {

@@ -8,6 +8,11 @@ import {
 } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    computeALOutboundPublicationFiguresAfterSelection,
+    computeALOutboundPublicationFiguresAfterSubmission,
+    toIdleALOutboundPublicationFigures
+} from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import { toIdleALOutboundPublicationLedgerReport } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
 import {
     ALOutboundPublicationStage,
@@ -272,24 +277,6 @@ describe('ALOutboundPublicationStage', () => {
         expect(wakeAt).toHaveBeenLastCalledWith(TASK_ID, undefined);
     });
 
-    it('runs one opportunity, not a catch-up burst, when the engine reaches a lane ten cadences late', async () => {
-        const fixture = createStageFixture();
-        stageValue(fixture, 'v1');
-        await runEnginePass(fixture.engine);
-        fixture.clock.atMs += 10;
-        stageValue(fixture, 'v2');
-
-        fixture.clock.atMs = START_MS + 10 * LATEST_POLICY.cadenceMs;
-        await runEnginePass(fixture.engine);
-        await runEnginePass(fixture.engine);
-
-        expect(fixture.submitted).toEqual([['v1'], ['v2']]);
-        expect(opportunitiesOf(fixture.diagnostics)).toHaveLength(2);
-        expect(fixture.stage.readLane('arena/arena.pose.v1')?.nextOpportunityAtMs).toBe(
-            START_MS + 11 * LATEST_POLICY.cadenceMs
-        );
-    });
-
     it('settles a value whose deadline passed before its opportunity expired and never submits it', async () => {
         const fixture = createStageFixture();
         const staged = stageValue(fixture, 'v1', { ttlMs: 0 });
@@ -423,7 +410,8 @@ describe('ALOutboundPublicationStage', () => {
             staged: 3,
             stagedBytes: 3 * VALUE_BYTES,
             limits,
-            counters: { staged: 4, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 0, deferred: 0 }
+            counters: { staged: 4, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 0, deferred: 0 },
+            figures: toIdleALOutboundPublicationFigures()
         });
 
         await runEnginePass(fixture.engine);
@@ -435,7 +423,15 @@ describe('ALOutboundPublicationStage', () => {
             staged: 1,
             stagedBytes: VALUE_BYTES,
             limits,
-            counters: { staged: 4, superseded: 1, expired: 1, refused: 1, cancelled: 0, admitted: 1, deferred: 1 }
+            counters: { staged: 4, superseded: 1, expired: 1, refused: 1, cancelled: 0, admitted: 1, deferred: 1 },
+            figures: computeALOutboundPublicationFiguresAfterSubmission(
+                computeALOutboundPublicationFiguresAfterSelection(toIdleALOutboundPublicationFigures(), {
+                    atMs: START_MS,
+                    stagedAtMs: [START_MS],
+                    missedOpportunities: 0
+                }),
+                { atMs: START_MS, settledAtMs: START_MS, selected: 1, selectedBytes: VALUE_BYTES, drain: policy.drain }
+            )
         });
     });
 
@@ -760,6 +756,177 @@ describe('ALOutboundPublicationStage', () => {
     });
 });
 
+interface HeldSubmitFixture extends StageFixture {
+    /** Settles the held submit: it resolves, or rejects as a carrier that admitted none of the selection. */
+    readonly release: (outcome: 'resolve' | 'reject') => void;
+}
+
+/** A stage whose first submit is held until `release`, entered once `submitted` holds its selection. */
+function createHeldSubmitFixture(): HeldSubmitFixture {
+    const held = Promise.withResolvers<void>();
+    const submitted: string[][] = [];
+    const fixture = createStageFixture({
+        submit: async (selected) => {
+            submitted.push(selected.map((publication) => publication.context));
+            await held.promise;
+        }
+    });
+    return {
+        ...fixture,
+        submitted,
+        release: (outcome) => outcome === 'resolve' ? held.resolve() : held.reject(new Error('leg write failed'))
+    };
+}
+
+describe('ALOutboundPublicationStage figures', () => {
+    it('records each selected value\'s age from its staging to its opportunity', async () => {
+        const fixture = createStageFixture();
+        stageValue(fixture, 'v1');
+
+        fixture.clock.atMs = START_MS + 150;
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.submitted).toEqual([['v1']]);
+        expect(fixture.stage.readReport().figures.selectionAgeMs).toMatchObject({
+            count: 1,
+            sum: 150,
+            min: 150,
+            max: 150
+        });
+    });
+
+    it('counts the boundaries a lane missed when its opportunity runs late, and sends one window', async () => {
+        const fixture = createStageFixture();
+        stageValue(fixture, 'v1');
+        await runEnginePass(fixture.engine);
+        fixture.clock.atMs += 10;
+        stageValue(fixture, 'v2');
+
+        fixture.clock.atMs = START_MS + 10 * LATEST_POLICY.cadenceMs;
+        await runEnginePass(fixture.engine);
+        await runEnginePass(fixture.engine);
+
+        // v2's opportunity was due at START + 100 and runs at START + 1000: it serves the boundary at START + 100,
+        // and the nine boundaries START + 200 … START + 1000 passed without one.
+        expect(fixture.submitted).toEqual([['v1'], ['v2']]);
+        expect(opportunitiesOf(fixture.diagnostics)).toHaveLength(2);
+        expect(fixture.stage.readLane('arena/arena.pose.v1')?.nextOpportunityAtMs).toBe(
+            START_MS + 11 * LATEST_POLICY.cadenceMs
+        );
+        expect(fixture.stage.readReport().figures).toMatchObject({
+            missedOpportunities: 9,
+            submittedOpportunities: 2,
+            unrecordedSamples: 0
+        });
+    });
+
+    it('counts nothing for an idle lane, however late its wake', async () => {
+        const fixture = createStageFixture();
+        stageValue(fixture, 'v1');
+        await runEnginePass(fixture.engine);
+        const afterSend = fixture.stage.readReport().figures;
+
+        fixture.clock.atMs = START_MS + 10 * LATEST_POLICY.cadenceMs;
+        await runEnginePass(fixture.engine);
+
+        expect(fixture.stage.readLane('arena/arena.pose.v1')?.nextOpportunityAtMs).toBeUndefined();
+        expect(fixture.stage.readReport().figures).toEqual(afterSend);
+        expect(afterSend).toMatchObject({ missedOpportunities: 0, submittedOpportunities: 1 });
+    });
+
+    it('records the time to admission and the drain usage once per opportunity, after its submit settles', async () => {
+        const fixture = createHeldSubmitFixture();
+        stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+        stageValue(fixture, 'v2', { resourceId: 'entity-2' });
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(fixture.submitted).toEqual([['v1', 'v2']]));
+
+        fixture.clock.atMs += 40;
+        fixture.release('resolve');
+        await pass;
+        await fixture.engine.stop();
+
+        expect(fixture.stage.readReport().figures).toMatchObject({
+            selectionToAdmissionMs: { count: 1, sum: 40 },
+            drainMessagesPercent: { count: 1, sum: 25 },
+            drainBytesPercent: { count: 1, sum: (100 * 2 * VALUE_BYTES) / LATEST_POLICY.drain.bytes },
+            submittedOpportunities: 1,
+            unrecordedSamples: 0
+        });
+    });
+
+    it('records the time to admission of a submit that rejects, as its values settle failed', async () => {
+        const fixture = createHeldSubmitFixture();
+        stageValue(fixture, 'v1');
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(fixture.submitted).toEqual([['v1']]));
+
+        fixture.clock.atMs += 30;
+        fixture.release('reject');
+        await pass;
+        await fixture.engine.stop();
+
+        expect(fixture.settlements.at(-1)).toMatchObject({ kind: 'admission', verdict: { kind: 'failed' } });
+        expect(fixture.stage.readReport().figures).toMatchObject({
+            selectionToAdmissionMs: { count: 1, sum: 30 },
+            submittedOpportunities: 1
+        });
+    });
+
+    it('records no submission figures for a submit that settles after dispose', async () => {
+        const fixture = createHeldSubmitFixture();
+        stageValue(fixture, 'v1');
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(fixture.submitted).toEqual([['v1']]));
+
+        fixture.stage.dispose();
+        fixture.clock.atMs += 40;
+        fixture.release('resolve');
+        await pass;
+        await fixture.engine.stop();
+
+        expect(fixture.stage.readReport().figures).toMatchObject({
+            selectionAgeMs: { count: 1 },
+            selectionToAdmissionMs: { count: 0 },
+            drainMessagesPercent: { count: 0 },
+            drainBytesPercent: { count: 0 },
+            submittedOpportunities: 0
+        });
+    });
+
+    it('keeps the selection ages equal to the admitted count, and the submission figures equal to the submitted opportunities, while a submit is in flight', async () => {
+        const fixture = createHeldSubmitFixture();
+        stageValue(fixture, 'v1', { resourceId: 'entity-1' });
+        stageValue(fixture, 'v2', { resourceId: 'entity-2' });
+        const pass = fixture.engine.executeOnce();
+        await vi.waitFor(() => expect(fixture.submitted).toEqual([['v1', 'v2']]));
+
+        const inFlight = fixture.stage.readReport();
+        fixture.release('resolve');
+        await pass;
+        await fixture.engine.stop();
+        const settled = fixture.stage.readReport();
+
+        expect(inFlight.counters.admitted).toBe(2);
+        expect(inFlight.figures).toMatchObject({
+            selectionAgeMs: { count: 2 },
+            selectionToAdmissionMs: { count: 0 },
+            drainMessagesPercent: { count: 0 },
+            drainBytesPercent: { count: 0 },
+            submittedOpportunities: 0,
+            unrecordedSamples: 0
+        });
+        expect(settled.figures).toMatchObject({
+            selectionAgeMs: { count: settled.counters.admitted },
+            selectionToAdmissionMs: { count: 1 },
+            drainMessagesPercent: { count: 1 },
+            drainBytesPercent: { count: 1 },
+            submittedOpportunities: 1,
+            unrecordedSamples: 0
+        });
+    });
+});
+
 describe('toIdleALOutboundPublicationStageReport', () => {
     const limits: ALPublicationStageLimits = { maxStreams: 3, maxStagedValues: 5, maxStagedBytes: 7 };
 
@@ -769,7 +936,8 @@ describe('toIdleALOutboundPublicationStageReport', () => {
             staged: 0,
             stagedBytes: 0,
             limits,
-            counters: { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 }
+            counters: { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 },
+            figures: toIdleALOutboundPublicationFigures()
         });
     });
 

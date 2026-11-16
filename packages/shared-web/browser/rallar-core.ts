@@ -159,6 +159,7 @@ export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/del
 export type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
 export type { ALStorageResetEvent } from '@shared/alm/open-indexed-db-admission-database.ts';
+export type { ALOutboundPublicationFigures } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 export type { ALOutboundPublicationCounters } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
 export type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 export type {
@@ -170,6 +171,7 @@ export type {
 } from '@shared/alm/storage/al-storage-event.ts';
 export type { ALStorageUnavailable, ALStorageUnavailableCause } from '@shared/alm/storage/al-storage-unavailable.ts';
 export type { ALVolatileSessionReport } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
+export type { BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 
 export { RallarRtcCaptureConnectionRequiredError } from '@shared-web/browser/connection/rallar-rtc-capture-connection-required-error.ts';
 export { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
+import { toIdleALOutboundPublicationFigures } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import {
     ALVolatileSessionBudget,
     type ALVolatileSessionLimits
@@ -30,18 +31,20 @@ installFakeBroadcastChannelPerTest();
 describe('rallar.messages.readUsage', () => {
     let budget: ALVolatileSessionBudget;
     let orderingCounters: BrowserInboundOrderingCountersSink;
+    let qboxEngine: InboxOutboxEngine;
 
     beforeEach(() => {
         resetRallarFacadeTestRuntime();
         budget = new ALVolatileSessionBudget(LIMITS);
         orderingCounters = new BrowserInboundOrderingCountersSink(() => {});
+        qboxEngine = new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined });
         mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
             middleware: {
                 volatileBudget: budget,
                 orderingCounters,
                 publicationStageLimits: STAGE_LIMITS,
-                // Never started: a staged value waits for an engine pass no test runs.
-                qboxEngine: new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined })
+                // Never started: a staged value waits for an engine pass the test runs itself.
+                qboxEngine
             }
         });
     });
@@ -154,7 +157,8 @@ describe('rallar.messages.readUsage', () => {
             staged: 0,
             stagedBytes: 0,
             limits: STAGE_LIMITS,
-            counters: NO_PUBLICATION_COUNTERS
+            counters: NO_PUBLICATION_COUNTERS,
+            figures: toIdleALOutboundPublicationFigures()
         });
 
         const channel = facade.messages.channel<{ readonly x: number; }>({
@@ -175,6 +179,35 @@ describe('rallar.messages.readUsage', () => {
             counters: { ...NO_PUBLICATION_COUNTERS, staged: 1 }
         });
         expect(staged.stagedBytes).toBeGreaterThan(0);
+    });
+
+    it('reads the connect\'s publication figures in its usage', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+        expect(facade.messages.readUsage().publication.figures).toEqual(toIdleALOutboundPublicationFigures());
+        const channel = facade.messages.channel<{ readonly x: number; }>({
+            topicId: 'app.pose',
+            typeId: 'app.pose.v1',
+            purpose: 'live',
+            access: 'members',
+            publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
+        });
+        await channel.sendWs({ x: 1 }, { scope: 'world', resourceId: 'entity-1', ttlMs: 60_000 });
+
+        await qboxEngine.executeOnce();
+        await qboxEngine.stop();
+
+        const { counters, figures } = facade.messages.readUsage().publication;
+        expect(counters.admitted).toBe(1);
+        expect(figures).toMatchObject({
+            selectionAgeMs: { count: 1 },
+            selectionToAdmissionMs: { count: 1 },
+            drainMessagesPercent: { count: 1 },
+            drainBytesPercent: { count: 1 },
+            submittedOpportunities: 1,
+            missedOpportunities: 0,
+            unrecordedSamples: 0
+        });
     });
 
     it('reads the ordering positions the connect\'s carriers stated, by status, counting each event', async () => {
