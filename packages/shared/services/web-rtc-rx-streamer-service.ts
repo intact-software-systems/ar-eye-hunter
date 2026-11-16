@@ -599,6 +599,7 @@ export function createDefaultWebRtcRxStreamerService(input: WebRtcRxStreamerServ
         publicationCrypto: input.publicationCrypto,
         sessionId: input.sessionId,
         inboundRuntime: createDefaultALInboundRuntimeResources({
+            nowMs: input.nowEpochMs,
             stores: input.inboundStores,
             volatileStores: input.inboundVolatileStores,
             queueEngine: input.queueEngine,

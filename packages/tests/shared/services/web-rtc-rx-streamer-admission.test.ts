@@ -10,7 +10,6 @@ import {
 
 import { AL_RTC_OVERLAY_CAPABILITIES, toALCarrierQosInputProvider } from '@shared/al-contracts/al-carrier-capabilities.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { decodeALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 import {
@@ -20,10 +19,9 @@ import {
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { toRateLimiter } from '@shared/resilience/rate-limiter.ts';
 import type { WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
-import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
+import { createDefaultWebRtcRxStreamerService, type WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { QRtcDataChannel } from '@shared/webrtc/qrtc-data-channel.ts';
 import { QRtcMediaChannel } from '@shared/webrtc/qrtc-media-channel.ts';
@@ -38,6 +36,7 @@ import { DeterministicRtcOfferIds } from '../webrtc/deterministic-rtc-offer-ids.
 interface ReceivingEndpoint {
     readonly wire: RecordingDataChannel;
     readonly admissionEvents: ALInboundRuntimeDiagnosticsEvent[];
+    readonly delivered: string[];
 }
 
 const ADMISSION_EVENT_KINDS: ReadonlySet<ALInboundRuntimeDiagnosticsEvent['kind']> = new Set([
@@ -60,7 +59,7 @@ describe('RTC receiver admission of data-channel messages', () => {
     });
 
     it('answers a heartbeat ping without admitting it as an AL message', async () => {
-        const endpoint = createReceivingEndpoint(undefined);
+        const endpoint = createReceivingEndpoint();
         const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         await endpoint.wire.receive({ type: 'ping', pingType: 'ping', ts: 1 });
@@ -71,7 +70,7 @@ describe('RTC receiver admission of data-channel messages', () => {
     });
 
     it('records a value that is no AL envelope as one undecoded rejection instead of warning about it', async () => {
-        const endpoint = createReceivingEndpoint(undefined);
+        const endpoint = createReceivingEndpoint();
         const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         await endpoint.wire.receive({ id: { msgId: 'not-an-envelope' } });
@@ -83,7 +82,7 @@ describe('RTC receiver admission of data-channel messages', () => {
     });
 
     it('records an AL message rejected on its initial admission instead of warning about it', async () => {
-        const endpoint = createReceivingEndpoint(undefined);
+        const endpoint = createReceivingEndpoint();
         const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
         await endpoint.wire.receive(MESSAGE_TO_ANOTHER_PEER);
@@ -100,29 +99,64 @@ describe('RTC receiver admission of data-channel messages', () => {
         ]);
     });
 
-    it('records an AL message rejected after authority refresh instead of warning about it', async () => {
-        const endpoint = createReceivingEndpoint({ afterInboundAdmission: async () => true, dispose: () => {} });
+    it('records expiry after authority refresh advances the supplied clock', async () => {
+        let serverNow = 10_000_000;
+        const endpoint = createReceivingEndpoint(() => serverNow, {
+            afterInboundAdmission: async () => {
+                serverNow = 10_000_100;
+                return true;
+            },
+            dispose: () => {}
+        });
+        const message = {
+            ...newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'refresh', contextId: 'inbound' }, 'self', 'received', {}),
+            constraints: { expiresAtMs: 10_000_100 }
+        };
         const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        vi.spyOn(ALInboundMessageRuntime.prototype, 'admitIncomingMessage').mockResolvedValueOnce(
-            Either.ofRight({ kind: 'pending-admission' })
-        );
 
-        await endpoint.wire.receive(MESSAGE_TO_ANOTHER_PEER);
+        await endpoint.wire.receive(message);
 
-        expect(warnings).not.toHaveBeenCalled();
         expect(endpoint.admissionEvents).toEqual([
-            expect.objectContaining({
-                kind: 'admission-outcome',
-                msgId: MESSAGE_TO_ANOTHER_PEER.id.msgId,
-                outcome: 'unauthorized',
-                reason: 'unauthorized'
-            })
+            expect.objectContaining({ msgId: message.id.msgId, outcome: 'committed', reason: 'admitted' }),
+            expect.objectContaining({ msgId: message.id.msgId, outcome: 'rejected', reason: 'expired' })
         ]);
+        expect(warnings).not.toHaveBeenCalled();
+    });
+
+    it.each([-20_000, 20_000])('uses its supplied epoch for admission and delivery with local offset %i', async (offsetMs) => {
+        let serverNow = 10_000_000;
+        vi.spyOn(Date, 'now').mockImplementation(() => serverNow + offsetMs);
+        const endpoint = createReceivingEndpoint(() => serverNow);
+        const live = {
+            ...newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'live', contextId: 'inbound' }, 'self', 'received', {}),
+            constraints: { expiresAtMs: 10_000_100 }
+        };
+
+        await endpoint.wire.receive(live);
+
+        await expect.poll(() => endpoint.delivered).toEqual([live.id.msgId]);
+        expect(endpoint.admissionEvents).toContainEqual(expect.objectContaining({
+            msgId: live.id.msgId,
+            outcome: 'committed',
+            reason: 'admitted'
+        }));
+        serverNow = 10_000_100;
+        const expired = { ...live, id: { ...live.id, msgId: 'expired-at-boundary' } };
+
+        await endpoint.wire.receive(expired);
+
+        expect(endpoint.admissionEvents).toContainEqual(expect.objectContaining({
+            msgId: expired.id.msgId,
+            outcome: 'rejected',
+            reason: 'expired'
+        }));
+        expect(endpoint.delivered).toEqual([live.id.msgId]);
     });
 });
 
 function createReceivingEndpoint(
-    roomAuthorityRefresh: WebRtcRxStreamerService.RoomAuthorityRefresh | undefined
+    nowEpochMs: () => number = Date.now,
+    roomAuthorityRefresh?: WebRtcRxStreamerService.RoomAuthorityRefresh
 ): ReceivingEndpoint {
     const connection = new QRtcPeerConnection(
         { send: async () => undefined },
@@ -150,11 +184,14 @@ function createReceivingEndpoint(
         media: new QRtcMediaChannel(connection, { peerId: 'peer-1' })
     };
     const admissionEvents: ALInboundRuntimeDiagnosticsEvent[] = [];
+    const delivered: string[] = [];
     const streamer = createDefaultWebRtcRxStreamerService({
         multicast: createMulticast(),
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
         sessionId: 'self',
+        nowEpochMs,
         roomAuthorityRefresh,
+        creationNow: () => Temporal.Instant.fromEpochMilliseconds(nowEpochMs()),
         inboundDiagnostics: (event) => {
             if (ADMISSION_EVENT_KINDS.has(event.kind)) {
                 admissionEvents.push(event);
@@ -162,11 +199,16 @@ function createReceivingEndpoint(
         }
     });
     onTestFinished(() => streamer.dispose());
+    streamer.onInboxMessageDo('received', {
+        onMessage: async (message) => {
+            delivered.push(message.id.msgId);
+        }
+    });
     streamer.setRttReportingPeerIds([]);
     streamer.addPeer(peer);
     channel.connect(true);
     wire.open();
-    return { wire, admissionEvents };
+    return { wire, admissionEvents, delivered };
 }
 
 function createMulticast(): WebRtcOverlayMulticastManager {

@@ -739,6 +739,15 @@ the required companion before use; rescue and route assertions retain their
 original meaning. This is a test correction, not a change to the solo or online
 companion rules.
 
+Tracing the transport found a second clock boundary: the RTC receiver factory
+passed its supplied epoch clock to final delivery, but not to inbound admission.
+Both now use that supplied clock. A real data-channel regression runs with the
+local clock twenty seconds ahead and behind, proves delivery before the supplied
+deadline and rejection at the deadline. This closes the receiver wiring gap;
+the browser still needs to supply calibrated time throughout transport. A real
+authority-refresh callback also advances time to the deadline and proves rejection
+on admission re-entry, replacing a test that mocked the runtime prototype.
+
 ### Secure LAN serving
 
 Vite now accepts paired certificate/key paths and a configurable local API proxy
