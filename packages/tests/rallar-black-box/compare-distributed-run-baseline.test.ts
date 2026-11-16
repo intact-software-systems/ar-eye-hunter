@@ -114,14 +114,14 @@ describe('toLocalBaselineReport', () => {
     it('exits 1 on a regression, naming the regressed figures', () => {
         expect(toLocalBaselineReport(Either.ofRight({
             figures: [
-                { name: 'commandTiming.p95Ms', baseline: 40, candidate: 90, verdict: 'regression' },
+                { name: 'commandTiming.p50Ms', baseline: 40, candidate: 90, verdict: 'regression' },
                 { name: 'runDurationMs', baseline: 60_000, candidate: 60_100, verdict: 'noise' }
             ]
         }))).toEqual({
             lines: [
-                'commandTiming.p95Ms baseline 40 candidate 90 regression',
+                'commandTiming.p50Ms baseline 40 candidate 90 regression',
                 'runDurationMs baseline 60000 candidate 60100 noise',
-                'regression in commandTiming.p95Ms'
+                'regression in commandTiming.p50Ms'
             ],
             exitCode: 1
         });
@@ -130,8 +130,16 @@ describe('toLocalBaselineReport', () => {
     it('exits 1 on a refusal, naming every key that made the runs not comparable', () => {
         expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-regime', keys: ['agentCount', 'apiMode'] })))
             .toEqual({ lines: ['not comparable: the regimes differ in agentCount, apiMode'], exitCode: 1 });
-        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-figures', keys: ['commandTiming.p99Ms'] })))
-            .toEqual({ lines: ['not comparable: only one run reports commandTiming.p99Ms'], exitCode: 1 });
+        expect(toLocalBaselineReport(Either.ofLeft({ kind: 'different-figures', keys: ['commandTiming.p50Ms'] })))
+            .toEqual({ lines: ['not comparable: only one run reports commandTiming.p50Ms'], exitCode: 1 });
+        expect(
+            toLocalBaselineReport(
+                Either.ofLeft({ kind: 'non-finite-figures', keys: ['commandTiming.p50Ms', 'runDurationMs'] })
+            )
+        ).toEqual({
+            lines: ['not comparable: a run reports a figure that is not a finite number: commandTiming.p50Ms, runDurationMs'],
+            exitCode: 1
+        });
     });
 
     it('exits 1 when the runs share no figure, as nothing was compared', () => {

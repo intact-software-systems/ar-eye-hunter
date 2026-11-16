@@ -92,11 +92,14 @@ export function decodeLocalBaselineRun(
     });
 }
 
+const REFUSAL_REASONS: Readonly<Record<SameRegimeComparison.Refusal['kind'], string>> = {
+    'different-regime': 'the regimes differ in',
+    'different-figures': 'only one run reports',
+    'non-finite-figures': 'a run reports a figure that is not a finite number:'
+};
+
 function toRefusalLine(refusal: SameRegimeComparison.Refusal): string {
-    const keys = refusal.keys.join(', ');
-    return refusal.kind === 'different-regime'
-        ? `not comparable: the regimes differ in ${keys}`
-        : `not comparable: only one run reports ${keys}`;
+    return `not comparable: ${REFUSAL_REASONS[refusal.kind]} ${refusal.keys.join(', ')}`;
 }
 
 function toComparisonReport(comparison: SameRegimeComparison): LocalBaselineReport {

@@ -10,8 +10,6 @@ export function toDistributedRunBaselineFigures(
     const { commandTiming, runDurationMs } = analysis;
     const figures: Readonly<Record<string, number | undefined>> = {
         'commandTiming.p50Ms': commandTiming.p50Ms,
-        'commandTiming.p95Ms': commandTiming.p95Ms,
-        'commandTiming.p99Ms': commandTiming.p99Ms,
         runDurationMs
     };
     return Object.fromEntries(

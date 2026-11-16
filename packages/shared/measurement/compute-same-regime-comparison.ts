@@ -21,7 +21,7 @@ export namespace SameRegimeComparison {
     }
 
     export interface Refusal {
-        readonly kind: 'different-regime' | 'different-figures';
+        readonly kind: 'different-regime' | 'different-figures' | 'non-finite-figures';
         readonly keys: readonly string[];
     }
 }
@@ -53,7 +53,7 @@ function computeDifferingRegimeKeys(
     return [...computeOneSidedKeys(baseline, candidate), ...differing].sort();
 }
 
-/** Every figure is lower-is-better; a figure that cannot be shown to sit inside the band is a regression. */
+/** Every figure is lower-is-better. */
 function computeVerdict(
     baseline: number,
     candidate: number,
@@ -76,6 +76,12 @@ export function computeSameRegimeComparison(
     const figureKeys = computeOneSidedKeys(baseline.figures, candidate.figures).sort();
     if (figureKeys.length > 0) {
         return Either.ofLeft({ kind: 'different-figures', keys: figureKeys });
+    }
+    const nonFiniteKeys = Object.keys(baseline.figures)
+        .filter((name) => !Number.isFinite(baseline.figures[name]) || !Number.isFinite(candidate.figures[name]))
+        .sort();
+    if (nonFiniteKeys.length > 0) {
+        return Either.ofLeft({ kind: 'non-finite-figures', keys: nonFiniteKeys });
     }
     return Either.ofRight({
         figures: Object.keys(baseline.figures).sort().map((name) => ({

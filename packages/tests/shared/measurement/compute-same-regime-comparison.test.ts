@@ -79,14 +79,34 @@ describe('computeSameRegimeComparison', () => {
         ]);
     });
 
-    it('calls a figure that is not a number a regression, as it cannot be shown to be noise', () => {
+    it('refuses figures that are not finite numbers, naming each', () => {
         const compared = computeSameRegimeComparison({
-            baseline: createRun({ unread: 100, unbounded: 100 }),
-            candidate: createRun({ unread: Number.NaN, unbounded: Number.POSITIVE_INFINITY }),
+            baseline: createRun({ unread: Number.NaN, unbounded: 100, steady: 100 }),
+            candidate: createRun({ unread: 100, unbounded: Number.POSITIVE_INFINITY, steady: 100 }),
             band: BAND
         });
 
-        expect(compared.right?.figures.map((figure) => figure.verdict)).toEqual(['regression', 'regression']);
+        expect(compared.left).toEqual({ kind: 'non-finite-figures', keys: ['unbounded', 'unread'] });
+    });
+
+    it('reports a regime difference before a non-finite figure', () => {
+        const compared = computeSameRegimeComparison({
+            baseline: createRun({ unread: Number.NaN }),
+            candidate: createRun({ unread: 100 }, { ...REGIME, apiMode: 'postgres' }),
+            band: BAND
+        });
+
+        expect(compared.left).toEqual({ kind: 'different-regime', keys: ['apiMode'] });
+    });
+
+    it('reports a missing figure before a non-finite figure', () => {
+        const compared = computeSameRegimeComparison({
+            baseline: createRun({ unread: Number.NaN, p95: 100 }),
+            candidate: createRun({ unread: 100 }),
+            band: BAND
+        });
+
+        expect(compared.left).toEqual({ kind: 'different-figures', keys: ['p95'] });
     });
 
     it('compares two runs of one regime with no figures as an empty comparison', () => {
