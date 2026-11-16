@@ -1,5 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test('online entry explains an insecure connection and keeps solo available', async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(window, 'isSecureContext', { value: false }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Play with friends' }).click();
+    await expect(page.getByRole('alert')).toContainText('trusted HTTPS connection');
+    await page.getByRole('link', { name: 'Back to solo' }).click();
+    await expect(page.getByLabel('Movement joystick')).toBeVisible();
+});
+
+test('online entry explains a missing browser crypto API before loading Rallar', async ({ page }) => {
+    await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Play with friends' }).click();
+    await expect(page.getByRole('alert')).toContainText('Update your browser');
+    await page.getByRole('link', { name: 'Back to solo' }).click();
+    await expect(page.getByLabel('Movement joystick')).toBeVisible();
+});
+
 test('a signed-out visitor can open and reopen online play without a startup error', async ({ page }) => {
     await page.goto('/');
     for (let visit = 0; visit < 2; visit += 1) {

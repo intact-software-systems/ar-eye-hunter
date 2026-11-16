@@ -27,6 +27,18 @@ async function openMode(element: HTMLElement, mode: 'solo' | 'online'): Promise<
         }
         else {
             await teardown;
+            if (!window.isSecureContext || !window.crypto?.subtle) {
+                throw new Error(
+                    'Play with friends needs a trusted HTTPS connection. Open the HTTPS phone-trial address. ' +
+                    'On iPhone, its certificate must also be trusted. Solo play is still available.'
+                );
+            }
+            if (typeof window.crypto.randomUUID !== 'function') {
+                throw new Error(
+                    'Update your browser or iOS to play with friends. This browser is missing a required ' +
+                    'security feature. Solo play is still available.'
+                );
+            }
             const { OnlineLobby } = await import('./online/online-lobby.ts');
             if (!lifetime.signal.aborted && revision === generation) {
                 current = new OnlineLobby(element, () => void openMode(element, 'solo'));
@@ -38,7 +50,9 @@ async function openMode(element: HTMLElement, mode: 'solo' | 'online'): Promise<
             return;
         }
         element.innerHTML =
-            '<main class="loading"><h1>Could not open the town.</h1><p id="error" role="alert"></p><a href="">Try again</a></main>';
+            `<main class="loading"><h1>Could not open the town.</h1><p id="error" role="alert"></p><a href="">${
+                mode === 'online' ? 'Back to solo' : 'Try again'
+            }</a></main>`;
         const message = element.querySelector('#error');
         if (message) {
             message.textContent = error instanceof Error ? error.message : 'Please use a browser with WebGL enabled.';

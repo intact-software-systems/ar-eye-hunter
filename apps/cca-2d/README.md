@@ -148,6 +148,12 @@ below has a verified certificate chain and live game/API origin. Each physical
 phone still needs to trust that certificate; localhost testing is not evidence
 of phone WebCrypto support over LAN HTTP.
 
+Online entry checks for a secure context and the required browser crypto APIs
+before loading Rallar. An unsupported connection or browser shows an explanation
+and a **Back to solo** link instead of a `crypto.randomUUID.bind` startup crash.
+The phone trial uses HTTPS on **5184**; an older HTTP preview on **5183** can run
+solo but cannot supply the secure browser features multiplayer requires.
+
 ### HTTPS phone trial
 
 Use a certificate valid for the computer's LAN address and trusted by each device.
