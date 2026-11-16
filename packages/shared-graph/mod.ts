@@ -34,5 +34,4 @@ export * from './repository/vivaldi-repository.ts';
 export * from './shared-graph-types.ts';
 export * from './tree/insert-dynamics-mddl.ts';
 export * from './tree/mddl-ottc.ts';
-export * from './tree/remove-dynamics-mddl.ts';
 export * from './vivaldi-service.ts';

@@ -15,8 +15,8 @@ vi.mock('@shared-graph/tree/insert-dynamics-mddl.ts', () => ({
     insertMinimumDiameterDegreeLimitedEdge: mockState.insert
 }));
 
-vi.mock('@shared-graph/tree/remove-dynamics-mddl.ts', () => ({
-    removeTryReplaceMDDL: mockState.remove
+vi.mock('@shared-graph/remove/remove-dynamics-facade.ts', () => ({
+    removeVertexFromTree: mockState.remove
 }));
 
 vi.mock('@shared-graph/tree/mddl-ottc.ts', () => ({
@@ -78,7 +78,8 @@ describe('shared-graph tree service orchestration', () => {
             globalGraph,
             globalArgs: {
                 diameterBound: 2,
-                reconfigAlgo: ReconfigAlgo.NO_RECONFIG_ALGO
+                reconfigAlgo: ReconfigAlgo.NO_RECONFIG_ALGO,
+                removeAlgo: 'REMOVE_MINIMUM_COST_EDGE'
             }
         });
 
@@ -139,7 +140,12 @@ describe('shared-graph tree service orchestration', () => {
             ]
         );
 
-        mockState.remove.mockReturnValue(removedTree);
+        mockState.remove.mockReturnValue({
+            graph: removedTree,
+            changed: true,
+            attemptedAlgo: 'REMOVE_MINIMUM_COST_EDGE',
+            usedFallback: false
+        });
         mockState.diameter.mockReturnValue(99);
         mockState.mddl.mockReturnValue({
             success: true,
@@ -160,15 +166,11 @@ describe('shared-graph tree service orchestration', () => {
             globalGraph,
             globalArgs: {
                 diameterBound: 2,
-                reconfigAlgo: ReconfigAlgo.TEST_OPTIMAL_PAIR_WISE
+                reconfigAlgo: ReconfigAlgo.TEST_OPTIMAL_PAIR_WISE,
+                removeAlgo: 'REMOVE_MINIMUM_COST_EDGE'
             }
         });
 
-        expect(mockState.remove).toHaveBeenCalledWith(
-            removedTree,
-            globalGraph,
-            'peer-c'
-        );
         expect(mockState.mddl).toHaveBeenCalledWith(
             globalGraph,
             'peer-a',
