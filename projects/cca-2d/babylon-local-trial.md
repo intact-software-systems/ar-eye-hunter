@@ -7,6 +7,64 @@ title: **Grumpy Town**. The sections below the physical-device report preserve
 the original solo trial; their original limitations do not describe the later
 multiplayer implementation.
 
+## Phone retest and remote-player smoothing — 16 November 2026
+
+The user reported **"locally no lag, but remote player looks laggy"** after the
+local-prediction correction. Alice hosted on the desktop and Bob played on the
+iPhone; the round completed with Alice 0 and Bob 40 in Alice's result view.
+This is positive subjective feedback for local controls, not a measured iPhone
+latency or confirmation of the phone's final result display.
+
+A live 5.360-second observation of Alice's view recorded 37 checkpoint states
+and 35 changes in Bob's position. The median checkpoint gap was 122 ms and the
+largest was 272 ms. These DOM observations confirm uneven received presentation
+updates; they do not measure transport latency or phone frame rate. The raw
+sample is retained locally under `tmp/perf/cca-peer-before.json`.
+
+Remote actors now use the existing **Rallar Motion buffer** through an app-owned
+peer presentation adapter. It interpolates with a 150 ms buffer and can extend
+the latest confirmed velocity by at most 100 ms. After that it holds the endpoint,
+rather than moving indefinitely or snapping back to the old snapshot when the
+extrapolation window expires. The app's existing obstacle rules constrain the
+pose. Confirmed freezes, recovery, round/authority changes, large discontinuities
+and suspended rendering discard old pose history immediately. Face/status effects
+still use confirmed player state; animation time and displayed position can advance
+between checkpoints. No package implementation or message format changes.
+
+**Tradeoff:** buffering smooths the remote player's movement at the cost of some
+additional presentation delay. It does not make remote actions arrive earlier.
+The local player's immediate response is unaffected. Long delivery gaps and sharp
+direction changes may still require a visible correction. Phone acceptance of
+this tradeoff is pending.
+
+The browser regression drives one player through visible controls and samples
+the other view each animation frame, recording both confirmed and rendered peer
+positions. It requires more than twice as many rendered changes as confirmed
+changes during steady movement. This compares both paths within one workload;
+it is not a comparison between the physical-phone trial and a desktop benchmark.
+Artifacts are under ignored `tmp/perf/cca-clean-peer-presentation/`.
+
+Two clean-candidate Chromium runs at 390 × 844 measured 52 and 56 rendered peer
+position changes versus five and seven confirmed changes over 1.505 and 1.535
+seconds respectively. This establishes intermediate motion in that workload,
+not a phone frame-rate guarantee. All 169 game/Motion tests, the app build and
+five browser checks passed (peer/local-response checks repeated twice, plus silent
+host-loss recovery). The existing 15-second unit-test budget was retained for the
+long town simulation. Deferred AL-builder edits were excluded and restored with
+hash verification. Review covered all changed files; no shared Motion code was
+modified. Physical-phone smoothing acceptance remains open.
+
+### Next two useful slices
+
+1. Repeat the physical-phone trial with peer smoothing. Compare moving, stopping,
+   dashing and corrections near stalls; judge whether the remote character is
+   smooth enough and whether the extra presentation delay is acceptable.
+2. Reproduce the stale lobby-membership observation: Bob showed the correct room
+   code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
+   Alice through solo and online refreshed the roster, then both became ready and
+   the round started. Root cause is unconfirmed; do not attribute it to device clocks
+   or claim that the host-button fix resolves missing roster updates.
+
 ## Responsiveness correction — 16 November 2026
 
 The online renderer now predicts the local player's movement and dash using the
@@ -17,7 +75,7 @@ is aligned by simulation elapsed time, not by subtracting device wall clocks.
 It is a visual estimate, not an input acknowledgement. During a long delay it
 stops advancing rather than inventing a continuing match.
 
-The town, interactions, points, peer positions and results still come from
+The town, interactions, points and results still come from
 confirmed checkpoints. A local dash/cloud may be corrected if the host rejects
 it. A confirmed freeze cannot be released by prediction. Recovery, observer
 mode, new rounds and authority changes discard the prediction; round-end
@@ -74,14 +132,14 @@ Build chunk-size warnings remain. Independent review covered every changed code
 and test file; no remaining correctness blocker or retained legacy exception was
 identified. Physical-phone acceptance is still pending.
 
-### Next two useful slices
+### Follow-up selected after the local correction
 
 1. Retest the HTTPS build on Bob's iPhone with Alice in the desktop browser.
    Compare immediate movement, releasing movement, dash, sliding and corrections
    near stalls; finish a round and rematch. Compare phone-host and desktop-host
    behavior if lag remains. Record phone model/browser and local render cadence.
 2. Use that feedback to tune correction behavior and peer presentation. Peer
-   interpolation and snapshot/serialization profiling remain follow-up work;
+   interpolation is now implemented above; snapshot/serialization profiling remains follow-up work;
    do not change authoritative scoring or weaken recovery to hide a visual delay.
 
 The original physical trial below describes the committed-only renderer before

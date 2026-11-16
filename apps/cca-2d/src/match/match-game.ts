@@ -7,6 +7,7 @@ import type { PracticeInput } from '../practice-rules.ts';
 import { PracticeScene } from '../practice-scene.ts';
 import { createTownIce } from '../town/raid-presentation.ts';
 import { TownMatchControls } from './match-controls.ts';
+import { TownMatchPeerPresentation } from './match-peer-presentation.ts';
 import { TownMatchPresentation } from './match-presentation.ts';
 import type { TownMatchSession } from './match-session.ts';
 import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
@@ -14,6 +15,7 @@ import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './to
 interface TownMatchPeer {
     readonly actor: CutoutActor;
     readonly ice: Mesh;
+    readonly presentation: TownMatchPeerPresentation;
 }
 
 export namespace TownMatchGame {
@@ -234,7 +236,7 @@ export class TownMatchGame {
             match.phase === 'playing' || !this.prepared || this.renderedMatchId !== match.matchId ||
             this.renderedZoom !== zoom || this.renderedPhase !== match.phase
         ) {
-            this.renderPeers(view);
+            this.renderPeers(view, performance.timeOrigin + now);
             this.scene.render({
                 state: { ...shown, town: match.town },
                 zoom,
@@ -320,22 +322,16 @@ export class TownMatchGame {
             ).join(' · ') ?? '';
     }
 
-    private renderPeers(view: TownMatchSession.View): void {
+    private renderPeers(view: TownMatchSession.View, nowEpochMs: number): void {
         const focus = resolveTownMatchViewPlayer(view);
         const players = view.match?.players.filter((player) =>
             player.id !== focus?.id &&
             view.match?.seats.some((seat) => seat.id === player.id && seat.status === 'active')
         ) ?? [];
-        for (const [id, peer] of this.peers) {
-            if (!players.some((player) => player.id === id)) {
-                peer.actor.root.dispose();
-                peer.ice.dispose();
-                this.peers.delete(id);
-            }
-            else {
-                peer.ice.setEnabled(false);
-            }
+        if (players.length === 0) {
+            delete this.root.dataset.renderPeerX;
         }
+        this.removeAbsentPeers(players);
         for (const player of players) {
             let peer = this.peers.get(player.id);
             if (!peer) {
@@ -345,15 +341,32 @@ export class TownMatchGame {
                     color: ['#bd7047', '#7a659b', '#b1a445'][this.peers.size % 3],
                     guard: false
                 });
-                peer = { actor, ice: createTownIce(this.scene.scene, this.art) };
+                peer = {
+                    actor,
+                    ice: createTownIce(this.scene.scene, this.art),
+                    presentation: new TownMatchPeerPresentation()
+                };
                 this.peers.set(player.id, peer);
             }
+            const pose = peer.presentation.advance({
+                player,
+                town: view.match!.town,
+                matchId: view.match!.matchId,
+                tick: view.match!.tick,
+                inputGeneration: view.inputGeneration,
+                enabled: this.visible && !document.hidden && view.match!.phase === 'playing' &&
+                    view.available && !view.recovering,
+                nowEpochMs
+            });
+            if (player === players[0]) {
+                this.root.dataset.renderPeerX = String(pose.x);
+            }
             peer.ice.setEnabled(player.frozenUntil > player.elapsed);
-            peer.ice.position.set(player.x, 1, player.z - 0.3);
+            peer.ice.position.set(pose.x, 1, pose.z - 0.3);
             peer.actor.render({
-                x: player.x,
-                z: player.z,
-                time: player.frozenUntil > player.elapsed ? 0 : player.elapsed,
+                x: pose.x,
+                z: pose.z,
+                time: player.frozenUntil > player.elapsed ? 0 : pose.animationTime,
                 moving: player.frozenUntil <= player.elapsed && Math.hypot(player.vx, player.vz) > 0.2,
                 slipping: player.slipping,
                 facing: player.facingX,
@@ -364,6 +377,16 @@ export class TownMatchGame {
                 working: false,
                 stain: player.stain
             });
+        }
+    }
+
+    private removeAbsentPeers(players: readonly TownMatchPlayer[]): void {
+        for (const [id, peer] of this.peers) {
+            if (!players.some((player) => player.id === id)) {
+                peer.actor.root.dispose();
+                peer.ice.dispose();
+                this.peers.delete(id);
+            }
         }
     }
 }

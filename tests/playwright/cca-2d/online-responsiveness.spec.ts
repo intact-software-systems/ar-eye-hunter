@@ -8,6 +8,68 @@ interface InputPresentationTiming {
     readonly confirmedMs: number;
 }
 
+interface PeerMotionObservation {
+    readonly at: number;
+    readonly confirmed: number;
+    readonly rendered: number;
+}
+
+test('remote movement is rendered between confirmations', async ({ browser }) => {
+    test.setTimeout(60000);
+    const contexts = await Promise.all([
+        browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true }),
+        browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true })
+    ]);
+    const [host, guest] = await Promise.all(contexts.map((context) => context.newPage()));
+    try {
+        await startTownMatch([host, guest]);
+        await guest.keyboard.down('KeyD');
+        try {
+            await expect.poll(async () => Number(await host.locator('#online-game').getAttribute('data-peer-x')))
+                .toBeGreaterThan(0.3);
+            const observations = await host.locator('#online-game').evaluate((root) =>
+                new Promise<PeerMotionObservation[]>((resolve) => {
+                    const samples: PeerMotionObservation[] = [];
+                    const started = performance.now();
+                    const observe = (): void => {
+                        samples.push({
+                            at: performance.now() - started,
+                            confirmed: Number(root.getAttribute('data-peer-x')),
+                            rendered: Number(root.getAttribute('data-render-peer-x'))
+                        });
+                        if (performance.now() - started >= 1500) {
+                            resolve(samples);
+                        }
+                        else {
+                            requestAnimationFrame(observe);
+                        }
+                    };
+                    requestAnimationFrame(observe);
+                })
+            );
+            const confirmedChanges = observations.filter((sample, index) =>
+                index > 0 && sample.confirmed !== observations[index - 1].confirmed
+            ).length;
+            const renderedChanges = observations.filter((sample, index) =>
+                index > 0 && Math.abs(sample.rendered - observations[index - 1].rendered) > 0.00001
+            ).length;
+            await writeFile(test.info().outputPath('peer-presentation.json'), JSON.stringify({
+                confirmedChanges, renderedChanges, observations
+            }, null, 2));
+            expect(confirmedChanges).toBeGreaterThan(3);
+            expect(renderedChanges).toBeGreaterThan(confirmedChanges * 2);
+            expect(observations.every((sample) => Number.isFinite(sample.rendered))).toBe(true);
+            await host.screenshot({ path: test.info().outputPath('peer-presentation-phone.png') });
+        }
+        finally {
+            await guest.keyboard.up('KeyD');
+        }
+    }
+    finally {
+        await Promise.allSettled(contexts.map((context) => context.close()));
+    }
+});
+
 test('creating a new town clears a failed previous room entry', async ({ page }) => {
     await registerPlayer(page, `new-town-after-failure-${Date.now()}`);
     await page.getByLabel('Town code').fill('missing-town');
