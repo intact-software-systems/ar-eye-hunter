@@ -7,6 +7,83 @@ title: **Grumpy Town**. The sections below the physical-device report preserve
 the original solo trial; their original limitations do not describe the later
 multiplayer implementation.
 
+## Responsiveness correction — 16 November 2026
+
+The online renderer now predicts the local player's movement and dash using the
+same movement, slipping and obstacle rules as the host. It keeps at most 300 ms
+of visual lead over the latest confirmed player state, rebases on each new
+checkpoint and replays only the newer local presentation interval. This interval
+is aligned by simulation elapsed time, not by subtracting device wall clocks.
+It is a visual estimate, not an input acknowledgement. During a long delay it
+stops advancing rather than inventing a continuing match.
+
+The town, interactions, points, peer positions and results still come from
+confirmed checkpoints. A local dash/cloud may be corrected if the host rejects
+it. A confirmed freeze cannot be released by prediction. Recovery, observer
+mode, new rounds and authority changes discard the prediction; round-end
+transitions render the confirmed final pose. No wire format, checkpoint frequency,
+acknowledgement requirement or Rallar package behavior changes in this correction.
+
+**Host match** now follows Rallar's existing appointment eligibility policy and
+is disabled while appointment is pending. Manual and automatic appointments share
+one error lifecycle: a fresh host clears an obsolete appointment failure, while
+unrelated transport/validation failures remain visible. Browser coverage includes
+a guest failing to host while the owner is absent, followed by the returning owner
+hosting successfully and the guest receiving a healthy Ready/status display.
+
+### Response measurement
+
+The browser test records `performance.now()` at the actual key/pointer event,
+then observes the rendered player and the confirmed player each animation frame.
+The confirmed-state timing represents the old renderer's wait in the same trial;
+it is not a separate measurement of an old executable. Movement is measured from
+rest and dash by its action counter, avoiding the earlier sliding/click-tool
+timing ambiguity. Diagnostics for confirmed state remain separate from rendered
+state. Raw run artifacts are under ignored `tmp/perf/cca-clean-responsiveness/`.
+
+Two clean-candidate desktop Chromium trials, each with a host and guest, recorded:
+
+| Event-to-observed-state metric | Confirmed state (old display path) | Local presentation | Samples |
+| --- | ---: | ---: | ---: |
+| Movement median | 364.5 ms | 3.6 ms | 4 |
+| Dash median | 417.0 ms | 6.0 ms | 4 |
+
+Movement presentation ranged from 3.4–45.1 ms; dash presentation ranged from
+5.8–6.3 ms. This confirms removal of the checkpoint wait from the local visual
+path in this small desktop workload, not a general latency guarantee. The tests
+used real local Rallar services, normal device clocks and Chromium's software
+WebGL configuration. Deferred AL-builder edits were excluded and then restored.
+CPU/GPU, allocation and physical display-scanout costs were not profiled.
+
+Final validation is recorded in PR #832. These tests do not establish touch
+latency or sustained frame pacing on a physical iPhone. The first measurement
+harness missed an event before its listener was
+armed; it now waits for listener readiness. A later run was invalidated by a
+development-server reload during editing and was discarded.
+
+The publishable candidate passed 138 game tests, the app typecheck/production
+build, and nine real-service browser checks: the three new scenarios repeated
+twice, independent two-player controls, silent host-loss recovery, and the real
+three-minute fruit-prank round with shared results and a clean rematch. The unit
+command used `--testTimeout=15000` because the existing long police-wave simulation
+exceeded its five-second budget; assertions and simulated duration were unchanged.
+Build chunk-size warnings remain. Independent review covered every changed code
+and test file; no remaining correctness blocker or retained legacy exception was
+identified. Physical-phone acceptance is still pending.
+
+### Next two useful slices
+
+1. Retest the HTTPS build on Bob's iPhone with Alice in the desktop browser.
+   Compare immediate movement, releasing movement, dash, sliding and corrections
+   near stalls; finish a round and rematch. Compare phone-host and desktop-host
+   behavior if lag remains. Record phone model/browser and local render cadence.
+2. Use that feedback to tune correction behavior and peer presentation. Peer
+   interpolation and snapshot/serialization profiling remain follow-up work;
+   do not change authoritative scoring or weaken recovery to hide a visual delay.
+
+The original physical trial below describes the committed-only renderer before
+this correction. The PR remains draft until phone responsiveness is accepted.
+
 ## Physical two-player trial — 16 November 2026
 
 Tested the HTTPS LAN build on port 5184 at revision `74e87470b`, with Bob hosting
@@ -59,9 +136,9 @@ The first finer-cadence attempt ran after the round finished and is not a
 gameplay performance sample. No CPU/GPU profile, allocation measurement or
 phone touch-to-frame measurement was collected.
 
-### Likely cause and next two slices
+### Original diagnosis and proposed slices
 
-**Proven from code:** `TownMatchSession.advance` samples controls at 50 ms and
+**Proven from the trial revision's code:** `TownMatchSession.advance` samples controls at 50 ms and
 exchanges checkpoints at 100 ms. `TownMatchSession.getView` exposes committed
 checkpoint state, and `TownMatchGame.frame` renders that state for the local
 player as well as peers. Even the phone host waits for checkpoint confirmation
@@ -83,13 +160,11 @@ not rule out phone rendering cost or network scheduling.
    weaken acknowledgments. Require measured before/after response, a full round,
    rematch and host-loss regression checks before accepting the change.
 
-The trial also exposed a lobby issue: a non-owner is offered **Host match** while
-an owner is online. Rallar correctly rejects it, but the raw rejection remains
-visible after the owner hosts and Ready succeeds. Follow-up should use the
-existing director-appointment eligibility policy for the button and clear the
-superseded appointment error when hosting is successfully established. No Rallar
-authorization policy change is needed. The PR remains draft while responsiveness
-and this lobby feedback are unresolved.
+The trial also exposed a lobby issue: a non-owner was offered **Host match** while
+an owner was online. Rallar correctly rejected it, but the raw rejection remained
+visible after the owner hosted and Ready succeeded. The correction above uses the
+existing director-appointment eligibility policy and clears superseded appointment
+errors. No Rallar authorization policy change was needed.
 
 ## Actual gameplay
 

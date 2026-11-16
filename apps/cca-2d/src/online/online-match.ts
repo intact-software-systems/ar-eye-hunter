@@ -87,6 +87,8 @@ export class OnlineMatch {
             view.available,
             view.isDirector,
             view.error,
+            view.appointmentEligibility,
+            view.appointing,
             match?.matchId,
             match?.phase,
             match?.members
@@ -108,7 +110,9 @@ export class OnlineMatch {
                 ? `${match.members.filter((member) => member.ready).length}/${match.members.length} ready · ${
                     view.isDirector ? 'You direct this match' : 'Player-hosted match'
                 }`
-                : 'Appoint a player to direct this match.');
+                : view.appointing ? 'Appointing your browser as host…'
+                : view.appointmentEligibility.allowed ? 'Appoint a player to direct this match.'
+                : view.appointmentEligibility.reason ?? 'Waiting for an eligible host.');
         controls.append(status);
         if (!match || !view.available) {
             this.addButton(controls, {
@@ -116,7 +120,7 @@ export class OnlineMatch {
                 action: () => {
                     void session.appoint();
                 },
-                disabled: false
+                disabled: view.appointing || !view.appointmentEligibility.allowed
             });
         }
         if (match?.phase === 'lobby') {

@@ -4,6 +4,7 @@ import type {
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
+import type { RallarGroupDirectorAppointmentEligibility } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
 import { SingleFlight } from '@shared/resilience/single-flight.ts';
@@ -52,6 +53,8 @@ export namespace TownMatchSession {
         readonly interruption: string | undefined;
         readonly inputGeneration: number;
         readonly error: string;
+        readonly appointmentEligibility: RallarGroupDirectorAppointmentEligibility;
+        readonly appointing: boolean;
     }
 }
 
@@ -73,6 +76,8 @@ export class TownMatchSession {
     private generation = 0;
     private authorityKey = '';
     private error = '';
+    private appointmentError = '';
+    private appointing = false;
     private lastInput = 0;
     private lastExchange = 0;
     private lastCommit: { readonly at: number; readonly epoch: number; } | undefined;
@@ -118,7 +123,7 @@ export class TownMatchSession {
     }
 
     getView(): TownMatchSession.View {
-        const { director, members } = this.room.getView();
+        const { director, members, appointmentEligibility } = this.room.getView();
         const localSessionId = this.dependencies.browser.session()?.sessionId;
         const available = !this.lifetime.signal.aborted && this.dependencies.browser.isConnected() &&
             director.isFresh &&
@@ -147,7 +152,9 @@ export class TownMatchSession {
                         this.dependencies.timers.nowMs() - this.lastCommit.at >= 1500)),
             interruption,
             inputGeneration: this.generation,
-            error: this.error
+            error: this.error || (director.isFresh ? '' : this.appointmentError),
+            appointmentEligibility,
+            appointing: this.appointing
         };
     }
 
@@ -156,15 +163,26 @@ export class TownMatchSession {
     }
 
     async appoint(): Promise<void> {
+        if (this.appointing || !this.room.getView().appointmentEligibility.allowed) {
+            return;
+        }
+        this.appointing = true;
+        this.appointmentError = '';
+        this.changes.publishLatest(undefined);
         try {
             await this.room.appoint();
             if (!this.lifetime.signal.aborted) {
-                this.error = '';
                 this.reconcileAuthority();
             }
         }
         catch (error) {
-            this.report(error);
+            if (!this.lifetime.signal.aborted) {
+                this.appointmentError = error instanceof Error ? error.message : 'Could not appoint the host.';
+            }
+        }
+        finally {
+            this.appointing = false;
+            this.changes.publishLatest(undefined);
         }
     }
 
@@ -254,6 +272,9 @@ export class TownMatchSession {
             return;
         }
         const { director, members, departedIds } = this.room.getView();
+        if (director.isFresh) {
+            this.appointmentError = '';
+        }
         const localSessionId = this.dependencies.browser.session()?.sessionId;
         if (localSessionId && !members.some((member) => member.sessionId === localSessionId)) {
             // Presence expiry can fence our transport before the browser receives a socket-close event.
@@ -328,7 +349,10 @@ export class TownMatchSession {
             this.simulation?.pause(now);
         }
         try {
-            await this.room.refreshForRecovery();
+            const shouldAppoint = await this.room.refreshForRecovery();
+            if (shouldAppoint) {
+                await this.appoint();
+            }
         }
         catch (error) {
             // A failed refresh must not starve agreement over a still-authorized live channel.

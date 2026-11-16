@@ -3,9 +3,11 @@ import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { CutoutActor } from '../cutout-actor.ts';
 import { CutoutArt } from '../cutout-art.ts';
 import { PracticeControls, requirePracticeElement } from '../practice-controls.ts';
+import type { PracticeInput } from '../practice-rules.ts';
 import { PracticeScene } from '../practice-scene.ts';
 import { createTownIce } from '../town/raid-presentation.ts';
 import { TownMatchControls } from './match-controls.ts';
+import { TownMatchPresentation } from './match-presentation.ts';
 import type { TownMatchSession } from './match-session.ts';
 import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
 
@@ -23,7 +25,7 @@ export namespace TownMatchGame {
     }
 }
 
-/** The online canvas displays committed match state; it never advances the simulation. */
+/** Renders confirmed world state with bounded local movement prediction; never writes match truth. */
 export class TownMatchGame {
     private readonly scene: PracticeScene;
     private controls: PracticeControls | undefined;
@@ -38,8 +40,10 @@ export class TownMatchGame {
     private preparedKey = '';
     private error = '';
     private renderedMatchId = '';
+    private renderedPhase: TownMatchState['phase'] | undefined;
     private renderedZoom = 0;
     private matchControls = new TownMatchControls();
+    private presentation = new TownMatchPresentation();
     private inputGeneration = -1;
 
     private readonly root: HTMLElement;
@@ -155,29 +159,34 @@ export class TownMatchGame {
     }
 
     private clearControls(): void {
+        this.presentation = new TownMatchPresentation();
         this.matchControls.clearKeys();
         this.controls?.clear();
         this.publishControls();
     }
 
-    private publishControls(): void {
+    private publishControls(): PracticeInput {
         const view = this.session.getView();
         const blocked = view.recovering || view.observing;
+        const consumed = view.match?.players.find((player) => player.id === view.localId)?.consumedDash ?? 0;
+        const idle = { x: 0, z: 0, dash: consumed };
         if (blocked) {
             this.controls?.clear();
         }
         const controls = this.controls?.getInput();
         if (controls) {
-            const consumed = view.match?.players.find((player) => player.id === view.localId)?.consumedDash ?? 0;
             if (this.inputGeneration !== view.inputGeneration) {
                 this.controls?.clear();
                 this.matchControls.rebase(controls, consumed);
                 this.inputGeneration = view.inputGeneration;
-                this.session.setControls({ x: 0, z: 0, dash: consumed });
-                return;
+                this.session.setControls(idle);
+                return idle;
             }
-            this.session.setControls(this.matchControls.sample(controls, consumed, blocked));
+            const sampled = this.matchControls.sample(controls, consumed, blocked);
+            this.session.setControls(sampled);
+            return sampled;
         }
+        return idle;
     }
 
     private admitControlKey(event: KeyboardEvent): void {
@@ -209,17 +218,25 @@ export class TownMatchGame {
         const now = performance.now();
         const seconds = Math.min(0.05, (now - this.previousTime) / 1000);
         this.previousTime = now;
-        if (this.visible) {
-            this.publishControls();
-        }
+        const controls = this.visible ? this.publishControls() : { x: 0, z: 0, dash: player.consumedDash };
+        const shown = this.presentation.advance({
+            player,
+            town: match.town,
+            matchId: match.matchId,
+            inputGeneration: view.inputGeneration,
+            enabled: this.visible && !document.hidden && match.phase === 'playing' && view.available &&
+                !view.recovering && !view.observing,
+            controls,
+            seconds
+        });
         const zoom = this.controls?.getZoom() ?? 13;
         if (
             match.phase === 'playing' || !this.prepared || this.renderedMatchId !== match.matchId ||
-            this.renderedZoom !== zoom
+            this.renderedZoom !== zoom || this.renderedPhase !== match.phase
         ) {
             this.renderPeers(view);
             this.scene.render({
-                state: { ...player, town: match.town },
+                state: { ...shown, town: match.town },
                 zoom,
                 seconds,
                 reducedMotion: match.phase !== 'playing'
@@ -229,7 +246,10 @@ export class TownMatchGame {
                 this.preparedKey = preparationKey;
             }
             this.renderedMatchId = match.matchId;
+            this.renderedPhase = match.phase;
             this.renderedZoom = zoom;
+            this.root.dataset.renderX = String(shown.x);
+            this.root.dataset.renderDashes = String(shown.consumedDash);
         }
         this.updateHud(view);
     }
