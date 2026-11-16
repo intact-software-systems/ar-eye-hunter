@@ -90,7 +90,7 @@ export class OnlineSession {
                 return;
             }
             this.connected = started.connected;
-            this.rooms = this.browser.rooms.state();
+            this.rooms = started.roomState ?? { rooms: [], members: [] };
             if (started.session) {
                 await this.startAccount();
             }

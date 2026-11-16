@@ -1,12 +1,30 @@
 import { expect, test, type Page } from '@playwright/test';
 
-test('solo stays available and online registration creates a real Rallar room', async ({ page }) => {
+test('a signed-out visitor can open and reopen online play without a startup error', async ({ page }) => {
+    await page.goto('/');
+    for (let visit = 0; visit < 2; visit += 1) {
+        await page.getByRole('button', { name: 'Play with friends' }).click();
+        await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
+        await expect(page.locator('#connection')).toHaveText('Solo needs no account. Sign in here to play together.');
+        await expect(page.locator('#online-error')).toBeEmpty();
+        await page.getByRole('button', { name: 'Back to solo' }).click();
+        await expect(page.getByLabel('Movement joystick')).toBeVisible();
+    }
+});
+
+test('short passwords support registration and sign-in before creating a real Rallar room', async ({ page }) => {
+    const username = `cca-${Date.now()}`;
     await page.goto('/');
     await expect(page.getByLabel('Movement joystick')).toBeVisible();
     await page.getByRole('button', { name: 'Play with friends' }).click();
-    await page.getByLabel('Username', { exact: true }).fill(`cca-${Date.now()}`);
-    await page.getByLabel('Password', { exact: true }).fill('Local-trial-only-48!');
+    await page.getByLabel('Username', { exact: true }).fill(username);
+    await page.getByLabel('Password', { exact: true }).fill('x');
     await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(page.getByRole('button', { name: 'Create town' })).toBeVisible({ timeout: 20000 });
+    await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await page.getByLabel('Username', { exact: true }).fill(username);
+    await page.getByLabel('Password', { exact: true }).fill('x');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Create town' })).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: 'Create town' }).click();
     await expect(page.getByRole('heading', { name: 'Your town lobby' })).toBeVisible({ timeout: 15000 });

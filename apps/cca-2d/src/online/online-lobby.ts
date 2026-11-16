@@ -59,7 +59,7 @@ export class OnlineLobby {
             this.signedIn = signedIn;
             account.innerHTML = signedIn
                 ? '<button data-action="logout">Sign out</button>'
-                : `<form id="sign-in"><label>Username<input name="username" autocomplete="username" required maxlength="64"></label><label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8"></label><div class="button-row"><button class="primary" name="intent" value="login">Sign in</button><button name="intent" value="register">Create account</button></div></form>`;
+                : `<form id="sign-in"><label>Username<input name="username" autocomplete="username" required maxlength="64"></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="button-row"><button class="primary" name="intent" value="login">Sign in</button><button name="intent" value="register">Create account</button></div></form>`;
         }
         for (const button of account.querySelectorAll('button')) {
             button.disabled = state.busy;
