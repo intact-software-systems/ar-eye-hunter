@@ -15,7 +15,10 @@ const hosts = [
         )
     )
 ];
-const corsOrigins = hosts.flatMap((host) => [5180, 5182, 5183].map((frontendPort) => `http://${host}:${frontendPort}`));
+const corsOrigins = [
+    publicUrl.origin,
+    ...hosts.flatMap((host) => [5180, 5182, 5183].map((frontendPort) => `http://${host}:${frontendPort}`))
+];
 const server = spawn('bun', ['--no-env-file', 'run', 'apps/api-v1/src/main.ts'], {
     cwd: root,
     stdio: 'inherit',

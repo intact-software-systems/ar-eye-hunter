@@ -143,6 +143,43 @@ real independent accounts alongside the solo controls. Physical phone online
 access still needs the local public URL and secure browser setup qualified;
 localhost testing is not evidence of phone WebCrypto support over LAN HTTP.
 
+### HTTPS phone trial
+
+Use a certificate valid for the computer's LAN address and trusted by each device.
+`CCA_TLS_CERT` and `CCA_TLS_KEY` enable Vite HTTPS; setting only one fails startup.
+Keep private keys outside the repository and the web root. The API and WebSocket
+must advertise the same HTTPS origin the phone opens. Vite forwards `/api` and
+WebSocket requests to the local Rallar process; no additional game backend is used.
+
+For example, with certificates in `/private/tmp/cca-phone-tls` and the computer at
+`192.168.1.247`, run these in two terminals from the repository root:
+
+```sh
+CCA_RALLAR_PORT=8085 CCA_RALLAR_PUBLIC_URL=https://192.168.1.247:5184 \
+  npm --workspace cca-2d run start:rallar
+```
+
+```sh
+CCA_TLS_CERT=/private/tmp/cca-phone-tls/server.crt \
+CCA_TLS_KEY=/private/tmp/cca-phone-tls/server.key \
+CCA_RALLAR_PROXY_TARGET=http://127.0.0.1:8085 \
+VITE_RALLAR_API_BASE_URL=https://192.168.1.247:5184 \
+  npm --workspace cca-2d run dev -- --port 5184
+```
+
+Open `https://192.168.1.247:5184` on the same Wi-Fi. Replace the address and
+certificate together if the computer's LAN address changes. These separate ports
+preserve an existing localhost trial on 5180/8084. The new API has its own temporary
+accounts; its data is lost when it stops.
+
+For a locally issued certificate, transfer only the public CA certificate to the
+phone. After installing it, enable that CA under **Settings → General → About →
+Certificate Trust Settings**, following [Apple's instructions](https://support.apple.com/en-us/102390).
+Remove the trial certificate profile when finished. Browser automation with
+certificate errors ignored verifies app flows but does not prove device trust or
+physical Safari behavior. The development server's HTTPS/proxy options follow
+[Vite's server configuration](https://vite.dev/config/server-options.html#server-https).
+
 ## Construction and owners
 
 - `main.ts`: lazy solo/online entry and page lifetime.
