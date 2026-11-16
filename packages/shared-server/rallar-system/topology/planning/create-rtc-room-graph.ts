@@ -33,7 +33,8 @@ export interface CreateRtcRoomGraphInput {
 
 export interface CreateCompleteRtcRoomGraphInput {
     readonly group: GroupSnapshot;
-    readonly activeSessionIds: readonly string[];
+    /** The room's members, and for an in-place evolution also the members leaving in that plan. */
+    readonly sessionIds: readonly string[];
     readonly rttMeasurements: readonly RttMeasurementInfo[];
     readonly degreeLimit: number;
 }
@@ -91,7 +92,15 @@ interface MeasuredRoomEdges {
 
 export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult {
     if (input.rttMeasurements.length === 0) {
-        return { outcome: 'ready', graph: createCompleteRtcRoomGraph(input) };
+        return {
+            outcome: 'ready',
+            graph: createCompleteRtcRoomGraph({
+                group: input.group,
+                sessionIds: input.activeSessionIds,
+                rttMeasurements: input.rttMeasurements,
+                degreeLimit: input.degreeLimit
+            })
+        };
     }
 
     const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
@@ -124,20 +133,20 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
 }
 
 /**
- * Every pair of members is an edge, with no degree or edge cap: the in-place evolution of a layout links only pairs
- * that are edges of its graph, so on a sparse graph a leave's repair can find no candidate and never end. With nothing
- * measured, every pair carries its canonical weight alone.
+ * Every pair of the sessions is an edge, with no degree or edge cap: the in-place evolution of a layout links only
+ * pairs that are edges of its graph, so on a sparse graph a leave's repair can find no candidate and never end. With
+ * nothing measured, every pair carries its canonical weight alone.
  */
 export function createCompleteRtcRoomGraph(input: CreateCompleteRtcRoomGraphInput): WeightedGraph {
-    const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
-    const measured = createMeasuredRoomEdges(input.rttMeasurements, input.activeSessionIds);
+    const graph = createRoomGraph(input.group, input.sessionIds, input.degreeLimit);
+    const measured = createMeasuredRoomEdges(input.rttMeasurements, input.sessionIds);
     for (const edge of measured.edges) {
         addRoomEdgeIfAbsent({ graph, from: edge.from, to: edge.to, weight: edge.weight });
     }
-    for (let i = 0; i < input.activeSessionIds.length; i++) {
-        for (let j = i + 1; j < input.activeSessionIds.length; j++) {
-            const from = input.activeSessionIds[i];
-            const to = input.activeSessionIds[j];
+    for (let i = 0; i < input.sessionIds.length; i++) {
+        for (let j = i + 1; j < input.sessionIds.length; j++) {
+            const from = input.sessionIds[i];
+            const to = input.sessionIds[j];
             addRoomEdgeIfAbsent({ graph, from, to, weight: computeUnmeasuredRoomEdgeWeight(measured, from, to) });
         }
     }
@@ -163,7 +172,7 @@ export function materializeSparseRtcRoomGraphFallback(
 
 function createRoomGraph(
     group: GroupSnapshot,
-    activeSessionIds: readonly string[],
+    sessionIds: readonly string[],
     degreeLimit: number
 ): WeightedGraph {
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
@@ -174,7 +183,7 @@ function createRoomGraph(
         degreeLimitSteiner: degreeLimit
     });
 
-    for (const sessionId of activeSessionIds) {
+    for (const sessionId of sessionIds) {
         graph.addNode(sessionId, {
             id: sessionId,
             type: VertexType.CLIENT,

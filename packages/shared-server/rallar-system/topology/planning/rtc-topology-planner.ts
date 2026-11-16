@@ -339,7 +339,7 @@ export class RtcTopologyPlanner {
                 group: plan.group,
                 leaderSessionId: plan.leaderSessionId,
                 activeSessionIds: plan.activeSessionIds,
-                globalGraph: this.createCompleteRoomGraph(plan),
+                globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
                 kind: plan.topology,
                 degreeLimit: this.readDegreeLimit(plan.topologyOptions),
                 meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -376,7 +376,7 @@ export class RtcTopologyPlanner {
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph: this.createCompleteRoomGraph(plan),
+            globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
             kind: plan.topology,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -443,16 +443,30 @@ export class RtcTopologyPlanner {
         // K_INSERT_MC weighs a link from each inserted member to every mesh member with a free link, so it needs
         // every pair; the measured graph, capped at the reporting limit, lacks most of them.
         return plan.topology === 'mesh'
-            ? this.createCompleteRoomGraph(plan)
+            ? this.createCompleteRoomGraph(plan, readGroupMemberSessionIds(plan.group))
             : this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch);
     }
 
-    private createCompleteRoomGraph(plan: RtcTopologyPlanInput): WeightedGraph {
+    /**
+     * The previous layout's members leaving in this plan stay vertices, so the repair of one leaver can read the limit
+     * of a neighbour that leaves after it; the repair removes them all, and validation reads the current members only.
+     */
+    private createEvolutionRoomGraph(
+        plan: RtcTopologyPlanInput,
+        previous: RallarOverlayTopologySnapshot
+    ): WeightedGraph {
+        return this.createCompleteRoomGraph(plan, [
+            ...readGroupMemberSessionIds(plan.group),
+            ...previous.activeSessionIds
+        ]);
+    }
+
+    private createCompleteRoomGraph(plan: RtcTopologyPlanInput, sessionIds: readonly string[]): WeightedGraph {
         const startedAtMs = this.dependencies.durationNowMs();
         this.dependencies.metrics.recordWeightedRoomGraphAttempt();
         const graph = createCompleteRtcRoomGraph({
             group: plan.group,
-            activeSessionIds: toCanonicalTopologySessionIds(readGroupMemberSessionIds(plan.group)),
+            sessionIds: toCanonicalTopologySessionIds(sessionIds),
             rttMeasurements: plan.relevantRttMeasurements,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions)
         });

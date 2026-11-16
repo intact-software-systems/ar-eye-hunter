@@ -179,18 +179,29 @@ export function createRtcTopologyFixtureReportedRttMeasurements(input: RtcTopolo
     );
 }
 
-export interface RtcTopologyFixtureMeasuredLeaveInput {
+export interface RtcTopologyFixtureDepartureInput {
     readonly options: RallarRtcTopologyServiceOptions;
     readonly formed: RallarOverlayTopologySnapshot;
-    readonly leaverSessionId: string;
+    /** The members that leave the formed room, all in the same plan. */
+    readonly leaverSessionIds: readonly string[];
+}
+
+/** Plans the formed room again without the leavers, with nothing measured. */
+export function computeRtcTopologyFixtureDeparture(input: RtcTopologyFixtureDepartureInput): ComputedRtcTopologyPlan {
+    return computeRtcTopologyFixturePlan({
+        options: input.options,
+        group: createRtcTopologyFixtureRemainingGroup(input),
+        previous: input.formed
+    });
+}
+
+export interface RtcTopologyFixtureMeasuredLeaveInput extends RtcTopologyFixtureDepartureInput {
     readonly rttReportingDegreeLimit: number;
 }
 
-/** Plans the formed room again without the leaver, with the RTT its remaining members' browsers report. */
+/** Plans the formed room again without the leavers, with the RTT its remaining members' browsers report. */
 export function computeRtcTopologyFixtureMeasuredLeave(input: RtcTopologyFixtureMeasuredLeaveInput): ComputedRtcTopologyPlan {
-    const group = createRtcTopologyFixtureGroupOf(
-        input.formed.activeSessionIds.filter((sessionId) => sessionId !== input.leaverSessionId)
-    );
+    const group = createRtcTopologyFixtureRemainingGroup(input);
     return computeRtcTopologyFixturePlan({
         options: input.options,
         group,
@@ -201,6 +212,12 @@ export function computeRtcTopologyFixtureMeasuredLeave(input: RtcTopologyFixture
             rttReportingDegreeLimit: input.rttReportingDegreeLimit
         })
     });
+}
+
+function createRtcTopologyFixtureRemainingGroup(input: RtcTopologyFixtureDepartureInput): GroupSnapshot {
+    return createRtcTopologyFixtureGroupOf(
+        input.formed.activeSessionIds.filter((sessionId) => !input.leaverSessionIds.includes(sessionId))
+    );
 }
 
 /** The part of a planned layout the connectivity check reads. */

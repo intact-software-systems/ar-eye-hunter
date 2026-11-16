@@ -420,7 +420,7 @@ describe('the complete weighted room graph a leave is repaired over', () => {
 
         const graph = createCompleteRtcRoomGraph({
             group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
-            activeSessionIds: memberSessionIds,
+            sessionIds: memberSessionIds,
             rttMeasurements: [
                 createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-2', sessionIdTo: 'peer-1', rttMs: 30, version: 1 }),
                 createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-3', sessionIdTo: 'peer-4', rttMs: 90, version: 2 }),
@@ -443,7 +443,7 @@ describe('the complete weighted room graph a leave is repaired over', () => {
 
         const graph = createCompleteRtcRoomGraph({
             group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
-            activeSessionIds: memberSessionIds,
+            sessionIds: memberSessionIds,
             rttMeasurements: [],
             degreeLimit: 5
         });

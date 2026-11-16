@@ -293,10 +293,11 @@ describe('RTC topology planning options and revisions', () => {
             nowEpochMs: 400
         });
 
+        // The three leavers include the linked peer-15 and peer-16, whose leaves the held mesh repairs in place.
         expect(heldKind.snapshot.topology).toBe('mesh');
         expect(hysteresisMetrics.read(0)).toMatchObject({
-            incrementalPlanCount: 0,
-            incrementalPlanFallbackFullCount: 1,
+            incrementalPlanCount: 1,
+            incrementalPlanFallbackFullCount: 0,
             hysteresisHeldKindCount: 1
         });
     });
