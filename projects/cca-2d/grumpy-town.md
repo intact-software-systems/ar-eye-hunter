@@ -422,3 +422,31 @@ One proposed ending to the café gag: the inspector finally straightens their ti
 and raises an APPROVED stamp; a tiny final hiccup soils the form. The waiter has
 saved the cake but discovers a pigeon eating it. These are short visual reactions
 alongside continued play, with no extra stun, reward chain or camera takeover.
+
+### Discussion candidates: civic occasions and player responsibility
+
+Use occasional ordinary public occasions to give the square a shared comic setup:
+a ribbon cutting, outdoor café inspection or best-kept flower display. These are
+proposals, not implemented events or additions to the next two delivery slices.
+Residents gather with different priorities, leaving other routes less watched.
+Players can exploit the occasion, ignore it or help a friend escape through it.
+
+- A ribbon cutting gives the mayor an enormous pair of ceremonial scissors and
+  a speech nobody wants to hear. A warned Big Stink makes residents protect their
+  prized objects while the mayor attempts to continue the ceremony.
+- Firefighters can be absurdly bureaucratic: one measures the tiny flame while
+  another unrolls far too much hose. Keep these brief visual jokes within a bounded
+  response; the player must still understand when and where water will sweep.
+- Make witnesses recognizable after the prank: a pointing pose and culprit icon
+  explain who knows what. An unrelated resident should not acquire that knowledge
+  merely because an emergency started elsewhere in the square.
+- Test reward timing before increasing fire bonuses. Immediate points give a clear
+  incentive but may encourage repetitive triggering; splitting a modest initiation
+  reward from a later escape objective could add tension but complicates scoring.
+  Keep the current scoring until playtests justify that extra rule.
+
+The proposed comedy target is self-important people losing control of trivial
+things. Gross-out effects punctuate that setup. The player's own bomb can splash
+them, their summoned hose can spoil their escape, and friends can use the same
+water to recover. These consequences should create stories without long periods
+of lost control or forced participation in another player's spectacle.
