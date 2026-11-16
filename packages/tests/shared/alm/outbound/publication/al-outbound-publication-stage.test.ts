@@ -820,6 +820,26 @@ describe('ALOutboundPublicationStage figures', () => {
         });
     });
 
+    it('charges no boundary that passed while the lane held nothing', async () => {
+        const fixture = createStageFixture();
+        stageValue(fixture, 'v1');
+        await runEnginePass(fixture.engine);
+        const emptiedAtMs = START_MS;
+
+        fixture.clock.atMs = emptiedAtMs + 950;
+        stageValue(fixture, 'v2');
+        fixture.clock.atMs = emptiedAtMs + 1050;
+        await runEnginePass(fixture.engine);
+
+        // The emptied lane stayed scheduled at T + 100, but it held nothing until v2 at T + 950: the opportunity at
+        // T + 1050 is charged from T + 950, floor((1050 − 950) / 100) = 1, not from T + 100 (which would read 9).
+        expect(fixture.submitted).toEqual([['v1'], ['v2']]);
+        expect(fixture.stage.readReport().figures).toMatchObject({
+            missedOpportunities: 1,
+            selectionAgeMs: { count: 2, sum: 100, max: 100 }
+        });
+    });
+
     it('counts nothing for an idle lane, however late its wake', async () => {
         const fixture = createStageFixture();
         stageValue(fixture, 'v1');

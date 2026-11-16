@@ -39,7 +39,10 @@ import {
     isSameALPublicationPolicy,
     type ALPublicationSupersession
 } from './compute-al-publication-reconfiguration.ts';
-import { computeALPublicationSelection } from './compute-al-publication-selection.ts';
+import {
+    computeALPublicationSelection,
+    type ALPublicationSelection
+} from './compute-al-publication-selection.ts';
 
 export interface ALOutboundPublicationLaneReport {
     readonly laneKey: string;
@@ -92,7 +95,7 @@ interface ALOutboundPublicationLane<TContext> {
 interface ALPublicationOpportunity<TContext> {
     readonly dueAtMs: number | undefined;
     readonly atMs: number;
-    readonly selected: readonly ALOutboundStagedPublication<TContext>[];
+    readonly selection: ALPublicationSelection<ALOutboundStagedPublication<TContext>>;
 }
 
 export namespace ALOutboundPublicationStage {
@@ -384,7 +387,7 @@ export class ALOutboundPublicationStage<TContext> {
         selection.expired.forEach((publication) => this.settleExpired(publication, atMs));
         const deferred = selection.remaining.reduce((count, stream) => count + stream.length, 0);
         this.ledger.count('deferred', deferred);
-        this.recordSelection(lane, { dueAtMs, atMs, selected: selection.selected });
+        this.recordSelection(lane, { dueAtMs, atMs, selection });
         lane.lastOpportunityAtMs = atMs;
         this.scheduleLane(lane, atMs);
         await this.submitSelected(selection.selected, atMs, lane.policy.drain);
@@ -402,18 +405,19 @@ export class ALOutboundPublicationStage<TContext> {
         });
     }
 
-    /** An opportunity that runs after its lane's boundary missed every later boundary at or before it. */
     private recordSelection(
         lane: ALOutboundPublicationLane<TContext>,
         opportunity: ALPublicationOpportunity<TContext>
     ): void {
-        const { dueAtMs, atMs, selected } = opportunity;
+        const { dueAtMs, atMs, selection } = opportunity;
         this.ledger.recordSelection({
             atMs,
-            stagedAtMs: selected.map((publication) => publication.stagedAtMs),
-            missedOpportunities: dueAtMs === undefined
-                ? 0
-                : computeMissedCadenceCount({ boundaryAtMs: dueAtMs, cadenceMs: lane.policy.cadenceMs, nowMs: atMs })
+            stagedAtMs: selection.selected.map((publication) => publication.stagedAtMs),
+            missedOpportunities: dueAtMs === undefined ? 0 : computeMissedCadenceCount({
+                boundaryAtMs: Math.max(dueAtMs, computeOldestStagedAtMs(selection) ?? dueAtMs),
+                cadenceMs: lane.policy.cadenceMs,
+                nowMs: atMs
+            })
         });
     }
 
@@ -486,6 +490,13 @@ export class ALOutboundPublicationStage<TContext> {
             traceId: publication.traceId
         });
     }
+}
+
+function computeOldestStagedAtMs<TContext>(
+    selection: ALPublicationSelection<ALOutboundStagedPublication<TContext>>
+): number | undefined {
+    const held = [...selection.selected, ...selection.remaining.flat()];
+    return held.length === 0 ? undefined : Math.min(...held.map((publication) => publication.stagedAtMs));
 }
 
 function computeBytes<TContext>(publications: readonly ALOutboundStagedPublication<TContext>[]): number {
