@@ -4,7 +4,9 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 
 import type { RelicExpeditionParticipation } from './relic-expedition-participation.ts';
 
-const MAX_ROOM_CHECKS = 3;
+/** A session's moves that land during one entry are R to none or R to S to none; more means the room is churning. */
+const MAX_FOLLOWED_ROOM_MOVES = 2;
+const ROOM_ENTRY_CHANGED = 'Room entry changed while checking expedition participation.';
 
 type RelicRoomSession = Pick<AuthSession, 'sessionId' | 'clientId'>;
 
@@ -27,7 +29,7 @@ type RoomCheckState = 'current' | 'current-room-moved' | 'session-changed';
 
 type RoomCheckOutcome<T> =
     | { readonly kind: 'changed'; readonly result: T; }
-    | { readonly kind: 'current-room-moved' | 'session-changed'; };
+    | { readonly kind: 'current-room-moved' | 'session-changed' | 'unfinished-participation'; };
 
 /**
  * A second tab must not implicitly leave a hunter whose Join was committed after this tab's last snapshot.
@@ -43,13 +45,16 @@ export async function changeRelicRoom<T>(
     if (!session) {
         return await change();
     }
-    for (let attempt = 0; attempt < MAX_ROOM_CHECKS; attempt += 1) {
+    for (let followedMoves = 0;; followedMoves += 1) {
         const roomId = dependencies.currentRoomId();
         if (dependencies.session()?.sessionId !== session.sessionId) {
-            break;
+            throw new Error(ROOM_ENTRY_CHANGED);
         }
         if (!roomId) {
             return await change();
+        }
+        if (followedMoves > MAX_FOLLOWED_ROOM_MOVES) {
+            throw new Error(ROOM_ENTRY_CHANGED);
         }
         const check: RoomCheck = { dependencies, session, roomId, destinationRoomId };
         const outcome = await dependencies.withParticipationLock(
@@ -61,10 +66,12 @@ export async function changeRelicRoom<T>(
             return outcome.result;
         }
         if (outcome.kind === 'session-changed') {
-            break;
+            throw new Error(ROOM_ENTRY_CHANGED);
+        }
+        if (outcome.kind === 'unfinished-participation') {
+            throw new Error('Use Leave expedition before entering or watching another expedition.');
         }
     }
-    throw new Error('Room entry changed while checking expedition participation.');
 }
 
 async function changeFromCheckedRoom<T>(check: RoomCheck, change: () => Promise<T>): Promise<RoomCheckOutcome<T>> {
@@ -83,7 +90,7 @@ async function changeFromCheckedRoom<T>(check: RoomCheck, change: () => Promise<
         roomId !== check.destinationRoomId &&
         hasUnfinishedRelicParticipation(snapshot, relicPlayerId(snapshot?.tournament?.binding ?? null, session))
     ) {
-        throw new Error('Use Leave expedition before entering or watching another expedition.');
+        return { kind: 'unfinished-participation' };
     }
     return { kind: 'changed', result: await change() };
 }
