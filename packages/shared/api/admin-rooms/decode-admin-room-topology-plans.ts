@@ -1,9 +1,10 @@
 import { Either } from '../../resilience/Either.ts';
-import { decodePlainRecord, getOwnCount, getOwnField, hasExactKeys } from '../exact-object-decoding.ts';
+import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '../group-types.ts';
 import { RALLAR_RTC_TOPOLOGY_KINDS } from '../overlay-topology.ts';
 import { decodeRtcTopologyPlanRecord } from '../topology-plan/decode-rtc-topology-plan-record.ts';
+import { getOwnCount, getOwnField } from '../topology-plan/get-own-field.ts';
 import type { RtcTopologyPlanRecord } from '../topology-plan/rtc-topology-plan-record.ts';
 import {
     ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,

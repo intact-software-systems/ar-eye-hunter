@@ -1,12 +1,7 @@
 import { Either } from '../../resilience/Either.ts';
-import {
-    decodePlainRecord,
-    getOwnCount,
-    getOwnField,
-    getOwnNumber,
-    hasExactKeys
-} from '../exact-object-decoding.ts';
+import { decodePlainRecord, getOwnNumber, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
+import { getOwnCount, getOwnField } from './get-own-field.ts';
 import {
     TOPOLOGY_REPLAN_CAUSES,
     type ReplacedTopologyLayout,
