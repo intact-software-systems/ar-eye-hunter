@@ -13,6 +13,7 @@ import {
     mkdir,
     readdir,
     readFile,
+    statfs,
     writeFile
 } from 'node:fs/promises';
 import {
@@ -45,9 +46,13 @@ import {
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
-import { readDistributedRunEnvironment } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
+import {
+    decodeDistributedRunEnvironment,
+    readDistributedRunEnvironment
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { Either } from '../../../packages/shared/resilience/Either.ts';
 
 import { expectWorldFleetGroupAssertions, expectWorldFleetManifest } from './expect-world-fleet-manifest.ts';
 
@@ -447,30 +452,70 @@ async function retainAvailableControlSnapshot(
     }
 }
 
+function readCommandOutput(command: string, args: readonly string[]): Either<string, string> {
+    const result = spawnSync(command, [...args], { encoding: 'utf8' });
+    if (result.error !== undefined) {
+        return Either.ofLeft(`could not start: ${result.error.message}`);
+    }
+    if (result.status !== 0 || result.stdout === null) {
+        return Either.ofLeft(
+            `exited with status ${result.status} and ${result.stdout === null ? 'no output' : 'output'}`
+        );
+    }
+    return Either.ofRight(result.stdout);
+}
+
+function readEffectiveApiMode(configuration: ApiV1Configuration): 'memory' | 'postgres' {
+    const effective = configuration.database.mode === 'postgres'
+        ? 'postgres'
+        : configuration.database.mode === 'pglite-memory'
+        ? 'memory'
+        : undefined;
+    if (effective === undefined || effective !== process.env.RALLAR_BLACK_BOX_API_MODE) {
+        throw new Error(
+            `The effective database mode ${configuration.database.mode} does not match RALLAR_BLACK_BOX_API_MODE ${process.env.RALLAR_BLACK_BOX_API_MODE}.`
+        );
+    }
+    return effective;
+}
+
 async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
     const configuration = await readLocalApiConfiguration();
-    const apiMode = process.env.RALLAR_BLACK_BOX_API_MODE;
-    if (apiMode !== 'memory' && apiMode !== 'postgres') {
-        throw new Error('RALLAR_BLACK_BOX_API_MODE must be memory or postgres.');
-    }
-    const environment = readDistributedRunEnvironment({
+    const apiMode = readEffectiveApiMode(configuration);
+    const disk = await statfs(artifactDir);
+    const read = readDistributedRunEnvironment({
         apiMode,
+        profile: configuration.profile.name,
         pubSub: configuration.database.pubSub,
         ice: configuration.ice.mode,
+        topology: configuration.topology.planning,
+        retention: {
+            events: process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS ?? '',
+            results: process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS ?? ''
+        },
+        rtcCaptureMode: process.env.INPUT_RTC_CAPTURE_MODE ?? '',
         manifestSha256: createHash('sha256').update(source).digest('hex'),
         agentCount: participantCount,
         nodeVersion: process.version,
         chromiumExecutablePath: chromium.executablePath(),
-        readCommandOutput: (command, args) => spawnSync(command, [...args], { encoding: 'utf8' }).stdout,
+        readCommandOutput,
         readHost: () => ({
             platform: platform(),
             release: release(),
             cpuCount: cpus().length,
             availableParallelism: availableParallelism(),
             memoryBytes: totalmem(),
+            diskBytes: disk.blocks * disk.bsize,
+            diskAvailableBytes: disk.bavail * disk.bsize,
             oneMinuteLoadAverage: loadavg()[0]
         })
     });
+    const environment = read.flatMap((issues) => Either.ofLeft(issues), decodeDistributedRunEnvironment).fold(
+        (issues) => {
+            throw new Error(`The run environment could not be read: ${issues.join('; ')}`);
+        },
+        (value) => value
+    );
     await writeFile(
         path.join(artifactDir, 'provenance.json'),
         JSON.stringify(
