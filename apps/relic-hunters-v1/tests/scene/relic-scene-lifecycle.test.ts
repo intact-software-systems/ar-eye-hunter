@@ -3,6 +3,7 @@ import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
 import { NullEngine } from '@babylonjs/core/Engines/nullEngine.js';
 import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
@@ -301,6 +302,48 @@ it('rejects a failed render sample when the next attempt has no current evaluati
         fixture.lifecycle.dispose();
     }
 });
+
+it('turns relics and the pulse by at most the 45 ms motion step in a frame that comes after a long GPU stall', () => {
+    const [stepMotion, stallMotion] = [MOTION_STEP_LIMIT_MS, 5000].map((frameTimeMs) => {
+        const fixture = createFixture(() => undefined);
+        try {
+            showPlanningRelic(fixture.runtime);
+            renderRelicFrame(fixture.runtime, frameTimeMs);
+            return {
+                spin: fixture.runtime.relics.get('badge')?.root.rotation.y,
+                pulse: fixture.runtime.pulsePhase.value
+            };
+        }
+        finally {
+            fixture.lifecycle.dispose();
+        }
+    });
+    expect(stepMotion?.spin).toBeGreaterThan(0);
+    expect(stallMotion).toEqual(stepMotion);
+});
+
+const MOTION_STEP_LIMIT_MS = 45;
+
+function showPlanningRelic(runtime: RelicSceneRuntime): void {
+    runtime.terminal = false;
+    runtime.snapshot.value = {
+        ...runtime.snapshot.value,
+        tournament: null,
+        phase: 'planning',
+        map: [{ id: 'vault', name: 'Vault', kind: 'entrance', x: 0, z: 0, neighbors: [] }],
+        relics: [{ id: 'badge', name: 'Visitor Badge', value: 1, roomId: 'vault' }]
+    };
+    runtime.relics.set('badge', {
+        relicId: 'badge',
+        roomId: 'vault',
+        root: new TransformNode('badge', runtime.scene),
+        parts: [],
+        label: MeshBuilder.CreatePlane('badge-label', {}, runtime.scene),
+        labelTexture: new DynamicTexture('badge-label-texture', 8, runtime.scene),
+        labelMaterial: new StandardMaterial('badge-label-material', runtime.scene),
+        baseY: 0
+    });
+}
 
 interface ReadyBox {
     readonly mesh: Mesh;
