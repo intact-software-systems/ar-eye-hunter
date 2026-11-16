@@ -154,8 +154,8 @@ snapshot and inserts its immutable publication and durable delivery entry
 atomically. Publication-null work may update guarded current state without
 creating external fanout. A publication also carries its plan's record (`plan`,
 null for a removal), which no browser receives. The store has one shape: a
-store not wiped or pruned at deploy refuses the previous build's publication
-rows until their 24 hour retention ends.
+store not wiped at deploy refuses the previous build's publication rows until
+they expire and the runtime-state expiry worker evicts them, up to 24 hours.
 
 Queue locks are coordination only. `FOR UPDATE SKIP LOCKED` is confined to
 bounded ResourceInbox reservation, overdue retry, and timed-out reservation

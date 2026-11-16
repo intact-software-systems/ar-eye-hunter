@@ -237,30 +237,33 @@ Built. No timing, promotion or delivery behaviour changed.
 ### What the measurement found
 
 Six rooms, 30 churn plans each (one join or leave every 3 s for 90 s), one formation plan each. Every
-churn plan was promoted and landed inside the previous layout's 15 s overlap. Run 3 supplies the
-kinds, the reshape figures and the drift; run 2 supplies the rerouted share and the hop paths; the
-other columns are the same in both. Drift is extra hops of the accepted layout over the planner's own
+churn plan was promoted and landed inside the previous layout's 15 s overlap. Every figure is
+from one run. Drift is extra hops of the accepted layout over the planner's own
 fresh no-RTT plan after the 30 churn plans.
 
 | Room               | Churn plans | Plans/min | Promoted | Inside overlap | Attach / repair / reshape | Rerouted an uninvolved member (join/leave plans) | Sessions rerouted per reshape, p50 / max | Longest hop path, max | Drift        |
 | ------------------ | ----------- | --------- | -------- | -------------- | ------------------------- | ------------------------------------------------ | ---------------------------------------- | --------------------- | ------------ |
 | star 3, auto       | 30          | 20.0      | 30       | 1.00           | 15 / 15 / 0               | 0.00                                             | none                                     | 1                     | 0            |
 | star 3, debounced  | 30          | 20.0      | 30       | 1.00           | 15 / 15 / 0               | 0.00                                             | none                                     | 1                     | 0            |
-| tree 8, auto       | 30          | 20.0      | 30       | 1.00           | 15 / 12 / 3               | 0.07                                             | 2 / 3                                    | 5-6                   | 0-1          |
-| tree 8, debounced  | 30          | 20.0      | 30       | 1.00           | 15 / 11 / 4               | 0.10                                             | 5 / 6                                    | 5-6                   | 0-1          |
+| tree 8, auto       | 30          | 20.0      | 30       | 1.00           | 15 / 12 / 3               | 0.10                                             | 2 / 3                                    | 6                     | 1            |
+| tree 8, debounced  | 30          | 20.0      | 30       | 1.00           | 15 / 11 / 4               | 0.13                                             | 5 / 6                                    | 5                     | 1            |
 | mesh 20, auto      | 30          | 20.0      | 30       | 1.00           | 15 / 10 / 5               | 0.17                                             | 16 / 18                                  | 5                     | undetermined |
-| mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.17                                             | 13 / 18                                  | 5                     | undetermined |
+| mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.20                                             | 13 / 18                                  | 5                     | undetermined |
 
-Kinds, reshape figures and drift are from run 3; the rerouted share and the hop paths are from run 2.
-The tree's drift read 1 extra hop in run 3 (accepted 4, fresh plan 3) and 0 in run 2.
+The table is run 3. Run 2 differed in the tree's longest hop path (5 for `auto`, 6 for `debounced`,
+where run 3 reads 6 and 5), in the tree's drift (0 extra hops, where run 3 reads 1: accepted 4, fresh
+plan 3) and in the share of join and leave plans that rerouted an uninvolved member (tree 0.07 and
+0.10, mesh 0.17 and 0.17).
 
 - Every reshape the measurement produced was a leave the planner could not repair incrementally
   (`invariant-violation`): 3 or 4 of the 15 leaves in the 8-member tree, 5 or 6 of the 15 in the
   20-member mesh. The planner sweep finds the same from a formed layout: 9 of the 20 single leaves
   from a mesh and 1 of the 8 from a tree. Only those plans rerouted members they did not involve;
   no attach and no repair did.
-- A gate that holds reshapes would therefore hold exactly the plans that reconnect a departed
-  relay's dependants, which is the failure named above. The gate slices must first answer it: a
+- These are the plans that follow a leave the planner cannot repair incrementally: they rebuild the
+  layout and reroute members the leave did not involve. A gate that holds reshapes would hold them,
+  which, where the leaver was a relay, is the failure named above (a departed relay's dependants stay
+  cut off while the server waits). The measurement does not say which leavers were relays. The gate slices must first answer it: a
   rule for a rebuild a leave forces, or mesh and tree evolution that repairs those leaves.
 - What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
   occurred, so the reshapes this plan was written to hold back are unmeasured in rate. `auto` and
@@ -330,7 +333,7 @@ answers; they are not the maintainer's decisions and can be overturned.
   topology configuration changes. There is no migration: the stores are wipeable.
 - **Slice 1 does not need #823's counters** to count promotions and changed edges, but "landed
   inside the previous overlap" is only meaningful once the overlap exists, which is one reason the
-  work starts after #823 merges (decision 13).
+  work started after #823 merged (decision 13).
 
 ## What the measuring slice established
 
@@ -353,8 +356,9 @@ browsers.
 - Whether the churn measurement belongs in CI; today it is run by hand.
 - Whether "promotion" in this plan means the published plan (what the record counts) or the
   accepted-slot write.
-- Whether a deployed store is wiped or pruned at deploy: the record has one stored shape (D653), and
-  a store that is not refuses the previous build's publication rows until they expire, up to 24 h.
+- Whether a deployed store is wiped (or its publication rows pruned) at deploy, or left for the
+  previous build's rows to be refused until the runtime-state expiry worker evicts them within 24 h:
+  the record has one stored shape (D653).
 - A typed read for the mesh parameter, which mesh drift needs.
 - What the reshape gate does with a leave the planner cannot repair incrementally, which is every
   reshape the measurement produced.
