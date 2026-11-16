@@ -186,6 +186,10 @@ describe('shared-graph low-level remove dynamics', () => {
         expect(hasReconnectCapacity(ctx)).toBe(false);
         expect(() => rvMCEdge(ctx)).toThrow('insufficient available out-degree');
         expect(() => rvMDEdge(ctx)).toThrow('insufficient available out-degree');
+
+        // One spare link puts the neighbours exactly at the bound, 1 + 3 = 2 × (3 − 1), which is enough.
+        globalGraph.setNodeAttribute('a', 'degreeLimit', 2);
+        expect(hasReconnectCapacity(ctx)).toBe(true);
     });
 });
 

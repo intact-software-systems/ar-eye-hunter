@@ -200,7 +200,7 @@ describe('the planner\'s plans over every single leave of a mesh of twenty and a
         expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({});
     });
 
-    // These pin the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
+    // This pins the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
     // and each leave counted here will be a reshape once reshapes are gated.
     it('today 1 of the 8 single leaves from an 8-member tree cannot be repaired incrementally and are rebuilt', () => {
         expect(countSingleLeaveRebuildReasons(treeSweep)).toEqual({ 'invariant-violation': 1 });

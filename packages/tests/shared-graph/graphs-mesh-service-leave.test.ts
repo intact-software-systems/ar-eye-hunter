@@ -93,6 +93,53 @@ describe('a mesh leave through updateGroupMesh', () => {
         expect(left.removeUsedFallback).toBe(false);
     });
 
+    it('reconnects by cheapest links, not by dropping, when the neighbours have spare degree and the rest stays connected', () => {
+        // Without x the rest stays connected through d, and each of a, b, c has spare 2: 6 + 3 against 4.
+        // rvMCEdge seeds a (a, b, c tie on degree 2; the lowest id wins), drops x, then links cheapest first:
+        // a–b (1, beside a–c 5), then b–c (2, beside a–c 5). A plain drop would keep only d–a, d–b, d–c.
+        const globalGraph = createGraph(
+            [
+                ['a', VertexState.MEMBER, 4],
+                ['b', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4],
+                ['d', VertexState.MEMBER, 4]
+            ],
+            [
+                ['a', 'b', 1],
+                ['a', 'c', 5],
+                ['b', 'c', 2],
+                ['d', 'a', 3],
+                ['d', 'b', 3],
+                ['d', 'c', 3]
+            ]
+        );
+        const groupGraph = createGraph(
+            [
+                ['a', VertexState.MEMBER, 4],
+                ['b', VertexState.MEMBER, 4],
+                ['c', VertexState.MEMBER, 4],
+                ['d', VertexState.MEMBER, 4],
+                ['x', VertexState.MEMBER, 4]
+            ],
+            [
+                ['x', 'a', 1],
+                ['x', 'b', 1],
+                ['x', 'c', 1],
+                ['d', 'a', 3],
+                ['d', 'b', 3],
+                ['d', 'c', 3]
+            ]
+        );
+
+        const left = computeLeaveOfX(globalGraph, groupGraph, DynamicMeshAlgo.K_REMOVE_MC);
+
+        expect(left.mesh.nodes().sort()).toEqual(['a', 'b', 'c', 'd']);
+        expect(left.mesh.size).toBe(5);
+        expect(left.mesh.hasEdge('a', 'b')).toBe(true);
+        expect(left.mesh.hasEdge('b', 'c')).toBe(true);
+        expect(left.removeUsedFallback).toBe(false);
+    });
+
     it('leaves the minimum-diameter remove\'s fallback as it is', () => {
         const left = computeLeaveOfX(createTriangleGlobal(), createSaturatedMesh(), DynamicMeshAlgo.K_REMOVE_MDDL);
 
