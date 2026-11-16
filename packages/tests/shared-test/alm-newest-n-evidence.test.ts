@@ -72,7 +72,11 @@ it.each([
         payload: { data: { kind: 'publication-opportunity', laneKey: 'room.alm-conformance/alm.conformance.rtc.paced-newest-n', selected, deferred, expired } }
     });
     const burstIndex = scenario.sender.commands.findIndex((command) => command.kind === 'loop');
-    const commands = scenario.sender.commands.slice(burstIndex + 1);
+    // The stage evidence ends at the last verdict; the figure invariants after it read the runtime's own stats, which a
+    // runtime with no connected browser cannot fill, and the lane proves them.
+    const figuresIndex = scenario.sender.commands.findIndex((command) => command.commandId?.endsWith('-stats-publication-figures'));
+    expect(figuresIndex).toBeGreaterThan(burstIndex);
+    const commands = scenario.sender.commands.slice(burstIndex + 1, figuresIndex);
     const result = runtime.execute({ kind: 'recipe.run', recipe: { ...scenario.sender, commands } });
     await vi.runAllTimersAsync();
     expect((await result).ok).toBe(passes);
