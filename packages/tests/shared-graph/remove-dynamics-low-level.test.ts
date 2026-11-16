@@ -1,6 +1,6 @@
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { removeBasic, rvLeaf, rvODTwo, rvUnusedSP } from '@shared-graph/remove/remove-dynamics-basic.ts';
-import { rvMCEdge, rvSearchMCEdge } from '@shared-graph/remove/remove-dynamics-mc.ts';
+import { hasReconnectCapacity, rvMCEdge, rvSearchMCEdge } from '@shared-graph/remove/remove-dynamics-mc.ts';
 import { rvMDEdge, rvSearchMDEdge } from '@shared-graph/remove/remove-dynamics-md.ts';
 import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
@@ -86,6 +86,8 @@ describe('shared-graph low-level remove dynamics', () => {
             ]
         );
         const ctx = createRemoveCtx(globalGraph, groupGraph, 'x');
+
+        expect(hasReconnectCapacity(ctx)).toBe(true);
 
         const byCost = rvMCEdge(ctx);
         expect(byCost.graph.hasNode('x')).toBe(false);
@@ -181,6 +183,7 @@ describe('shared-graph low-level remove dynamics', () => {
         );
         const ctx = createRemoveCtx(globalGraph, groupGraph, 'x');
 
+        expect(hasReconnectCapacity(ctx)).toBe(false);
         expect(() => rvMCEdge(ctx)).toThrow('insufficient available out-degree');
         expect(() => rvMDEdge(ctx)).toThrow('insufficient available out-degree');
     });
