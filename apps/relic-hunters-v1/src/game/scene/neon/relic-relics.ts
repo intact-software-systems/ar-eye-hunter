@@ -209,7 +209,7 @@ export function computeRelicLocalOffset(
     };
 }
 
-export function updateRelicMeshes(runtime: RelicSceneRuntime): void {
+export function updateRelicMeshes(runtime: RelicSceneRuntime, frameTimeMs: number): void {
     const snapshot = runtime.snapshot.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === runtime.localPlayerId.value);
     const localAvatar = localPlayer ? runtime.avatars.get(localPlayer.playerId) : undefined;
@@ -223,7 +223,7 @@ export function updateRelicMeshes(runtime: RelicSceneRuntime): void {
             continue;
         }
         const pulse = 1 + Math.sin(runtime.pulsePhase.value * 4.1 + hashText(relic.id) * 0.01) * 0.06;
-        bundle.root.rotation.y += runtime.engine.getDeltaTime() / 1000 * (0.42 + relic.value * 0.012);
+        bundle.root.rotation.y += frameTimeMs / 1000 * (0.42 + relic.value * 0.012);
         bundle.root.position.y = bundle.baseY + Math.sin(now / 360 + relic.value) * 0.08;
         for (const part of bundle.parts) {
             if (part !== bundle.label) {

@@ -4,9 +4,19 @@ import { startCappedRenderLoop } from '../../../apps/relic-hunters-v1/src/game/s
 
 /** Like Babylon: one delta per animation frame, and no render-loop callback while the context is lost. */
 class FakeEngine {
-    readonly performanceMonitor = { reset: () => undefined };
+    readonly performanceMonitor = {
+        reset: () => {
+            this.previousFrameMs = null;
+        }
+    };
     readonly loops = new Set<() => void>();
     lost = false;
+    private previousFrameMs: number | null = null;
+    private deltaMs = 0;
+
+    getDeltaTime(): number {
+        return this.deltaMs;
+    }
 
     runRenderLoop(frame: () => void): void {
         this.loops.add(frame);
@@ -18,6 +28,8 @@ class FakeEngine {
 
     animationFrame(): void {
         if (!this.lost) {
+            this.deltaMs = this.previousFrameMs === null ? 0 : nowMs - this.previousFrameMs;
+            this.previousFrameMs = nowMs;
             for (const frame of [...this.loops]) {
                 frame();
             }
@@ -89,12 +101,21 @@ class FakeGpu {
 
 let nowMs = 0;
 
-function countDraws(): { readonly draws: () => number; readonly renderFrame: () => 'ready'; } {
+interface DrawCounter {
+    readonly draws: () => number;
+    readonly frameTimeMs: () => number;
+    readonly renderFrame: (frameTimeMs: number) => 'ready';
+}
+
+function countDraws(): DrawCounter {
     let draws = 0;
+    let totalFrameTimeMs = 0;
     return {
         draws: () => draws,
-        renderFrame: () => {
+        frameTimeMs: () => totalFrameTimeMs,
+        renderFrame: (frameTimeMs) => {
             draws += 1;
+            totalFrameTimeMs += frameTimeMs;
             return 'ready';
         }
     };
@@ -169,6 +190,7 @@ describe('Relic gameplay render loop', () => {
         });
         runDriverFrames(engine, 240);
         expect(frame.draws(), 'one draw per 28 ms: the 25 ms GPU frame rounded up to a driver frame').toBe(35);
+        expect(frame.frameTimeMs(), 'every animation frame after the first, up to the last draw at 952 ms').toBe(948);
         loop.dispose();
     });
 
@@ -183,16 +205,22 @@ describe('Relic gameplay render loop', () => {
         });
         runDriverFrames(engine, 240);
         expect(frame.draws(), 'one draw per 24 ms: the cap rounded up to a driver frame').toBe(41);
+        expect(frame.frameTimeMs(), 'as without fences: the cap still drops its skipped frames\' time').toBe(160);
         loop.dispose();
     });
 
     it('keeps drawing every capped frame where the browser offers no GPU fences', () => {
         const engine = new FakeEngine();
         const frame = countDraws();
-        const loop = startCappedRenderLoop({ engine, gpu: null, frameIntervalMs: 10, renderFrame: frame.renderFrame });
-        nowMs = 20;
-        engine.animationFrame();
-        expect(frame.draws()).toBe(2);
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu: null,
+            frameIntervalMs: CAP_INTERVAL_MS,
+            renderFrame: frame.renderFrame
+        });
+        runDriverFrames(engine, 240);
+        expect(frame.draws()).toBe(41);
+        expect(frame.frameTimeMs()).toBe(160);
         loop.dispose();
     });
 });

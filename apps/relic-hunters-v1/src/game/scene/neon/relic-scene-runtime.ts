@@ -273,11 +273,11 @@ export function syncRelicSceneSnapshot(runtime: RelicSceneRuntime): void {
     updatePromptForSelection(runtime, runtime.selectedRoomId.value);
 }
 
-export function updateRelicSceneMotion(runtime: RelicSceneRuntime): void {
-    runtime.pulsePhase.value += Math.min(MAX_DT_SECONDS, runtime.engine.getDeltaTime() / 1000);
-    updateLocalRoam(runtime);
+export function updateRelicSceneMotion(runtime: RelicSceneRuntime, frameTimeMs: number): void {
+    runtime.pulsePhase.value += Math.min(MAX_DT_SECONDS, frameTimeMs / 1000);
+    updateLocalRoam(runtime, frameTimeMs);
     updateAvatarPositions(runtime);
-    updateRelicMeshes(runtime);
+    updateRelicMeshes(runtime, frameTimeMs);
     updateReviewPlayback(runtime);
     updateSceneEffects(runtime);
     updateCamera(runtime);
@@ -286,7 +286,7 @@ export function updateRelicSceneMotion(runtime: RelicSceneRuntime): void {
     }
 }
 
-function updateLocalRoam(runtime: RelicSceneRuntime): void {
+function updateLocalRoam(runtime: RelicSceneRuntime, frameTimeMs: number): void {
     updateCameraYawFromKeys(runtime);
     const snapshot = runtime.snapshot.value;
     const localPlayer = snapshot?.players.find((player) => player.playerId === runtime.localPlayerId.value);
@@ -322,7 +322,7 @@ function updateLocalRoam(runtime: RelicSceneRuntime): void {
     }
     direction.normalize();
     const sprinting = runtime.pressedKeys.has('shift');
-    const dt = Math.min(MAX_DT_SECONDS, runtime.engine.getDeltaTime() / 1000);
+    const dt = Math.min(MAX_DT_SECONDS, frameTimeMs / 1000);
     const speed = sprinting ? ROOM_ROAM_SPRINT_SPEED : ROOM_ROAM_WALK_SPEED;
     runtime.roamOffset.addInPlace(direction.scale(speed * dt));
     runtime.roamOffset.x = clamp(runtime.roamOffset.x, -ROOM_HALF_ROAM, ROOM_HALF_ROAM);

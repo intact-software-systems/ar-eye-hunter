@@ -117,7 +117,7 @@ function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
             engine: runtime.engine,
             gpu: runtime.canvas.getContext('webgl2'),
             frameIntervalMs: 1000 / 45,
-            renderFrame: () => renderRelicFrame(runtime)
+            renderFrame: (frameTimeMs) => renderRelicFrame(runtime, frameTimeMs)
         });
     }
     catch (error) {
@@ -128,7 +128,7 @@ function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
     }
 }
 
-export function renderRelicFrame(runtime: RelicSceneRuntime): 'ready' | 'pending' {
+export function renderRelicFrame(runtime: RelicSceneRuntime, frameTimeMs: number): 'ready' | 'pending' {
     if (runtime.terminal) {
         for (const avatar of runtime.avatars.values()) {
             avatar.root.position.copyFrom(avatar.target);
@@ -137,7 +137,7 @@ export function renderRelicFrame(runtime: RelicSceneRuntime): 'ready' | 'pending
         updateCamera(runtime);
     }
     else {
-        updateRelicSceneMotion(runtime);
+        updateRelicSceneMotion(runtime, frameTimeMs);
     }
     syncRelicAvatarPresentation({
         avatars: runtime.avatars,

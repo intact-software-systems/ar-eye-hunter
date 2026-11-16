@@ -15,7 +15,7 @@ type GpuFenceContext = Pick<
     | 'UNSIGNALED'
 >;
 
-type RenderLoopEngine = Pick<Engine, 'runRenderLoop' | 'stopRenderLoop'> & {
+type RenderLoopEngine = Pick<Engine, 'getDeltaTime' | 'runRenderLoop' | 'stopRenderLoop'> & {
     readonly performanceMonitor: Pick<PerformanceMonitor, 'reset'>;
 };
 
@@ -23,7 +23,7 @@ export interface StartCappedRenderLoopInput {
     readonly engine: RenderLoopEngine;
     readonly gpu: GpuFenceContext | null;
     readonly frameIntervalMs: number;
-    readonly renderFrame: CappedFrameLoop.Dependencies['renderFrame'];
+    readonly renderFrame: (frameTimeMs: number) => 'ready' | 'pending';
 }
 
 /** Babylon owns callback delivery; the shared loop owns capping, invalidation and cancellation. */
@@ -42,12 +42,14 @@ export function startCappedRenderLoop(input: StartCappedRenderLoopInput): Capped
  * Keeps at most one drawn frame waiting in the GPU process. Animation frames do not wait for the GPU, so a
  * software-rendered scene otherwise queues several frames there, and a synchronous WebGL call such as the context
  * teardown when the page unloads waits for that whole queue. An animation frame held back for the GPU never reaches
- * the loop, so the wait costs one animation frame and leaves the cap's timing alone.
+ * the loop, so the wait costs one animation frame and leaves the cap's timing alone, and its time goes to the next
+ * drawn frame instead of being lost to scene motion.
  */
 class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
     private readonly engine: RenderLoopEngine;
     private readonly gpu: GpuFenceContext | null;
     private previousFrame: WebGLSync | null = null;
+    private heldFrameTimeMs = 0;
     private scheduledFrame: (() => void) | null = null;
     private readonly animationFrame = () => this.deliverAnimationFrame();
 
@@ -68,13 +70,16 @@ class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
 
     resetTiming(): void {
         this.engine.performanceMonitor.reset();
+        this.heldFrameTimeMs = 0;
     }
 
-    drawFrame(renderFrame: () => 'ready' | 'pending'): 'ready' | 'pending' {
+    drawFrame(renderFrame: StartCappedRenderLoopInput['renderFrame']): 'ready' | 'pending' {
         if (!this.readPreviousFrameExecuted()) {
             return 'pending';
         }
-        const result = renderFrame();
+        const frameTimeMs = this.heldFrameTimeMs + this.engine.getDeltaTime();
+        this.heldFrameTimeMs = 0;
+        const result = renderFrame(frameTimeMs);
         if (this.gpu !== null) {
             this.previousFrame = this.gpu.fenceSync(this.gpu.SYNC_GPU_COMMANDS_COMPLETE, 0);
             this.gpu.flush();
@@ -85,6 +90,9 @@ class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
     private deliverAnimationFrame(): void {
         if (this.readPreviousFrameExecuted()) {
             this.scheduledFrame?.();
+        }
+        else {
+            this.heldFrameTimeMs += this.engine.getDeltaTime();
         }
     }
 

@@ -20,6 +20,9 @@ import { RelicSceneLifecycle, renderRelicFrame } from '../../src/game/scene/neon
 import { RelicSceneRuntime } from '../../src/game/scene/neon/relic-scene-runtime.ts';
 import { NEON_ROOM_GRID_SCALE } from '../../src/game/scene/neon/relic-scene-space.ts';
 
+/** These frames check image readiness; scene motion does not advance between them. */
+const NO_ELAPSED_TIME_MS = 0;
+
 class FrameDriver implements CappedFrameLoop.Driver {
     nowMs = 0;
     scheduled: (() => void) | undefined;
@@ -127,19 +130,19 @@ it('observes every pending draw and accepts the complete visible image without d
         let visibleMaterialReady = true;
         vi.spyOn(visible, 'isReady').mockImplementation((completeCheck) => !completeCheck || visibleMaterialReady);
         vi.spyOn(disabled, 'isReady').mockImplementation((completeCheck) => !completeCheck);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         expect(visibleDrawn, 'the first complete intended image actually rendered').toBe(true);
         expect(runtime.scene.getActiveMeshes().data).toContain(visible);
         expect(runtime.canvas.dataset.sceneRenderCount).toBe('1');
         const readyStamp = runtime.canvas.dataset.sceneReadyMs;
         visibleMaterialReady = false;
-        expect(renderRelicFrame(runtime)).toBe('pending');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('pending');
         expect(runtime.canvas.dataset.sceneRenderCount).toBe('2');
         expect(runtime.canvas.dataset.sceneReady).toBe('false');
         expect(runtime.canvas.dataset.scenePendingMeshes).toBe('1');
         expect(runtime.canvas.dataset.sceneReadyMs).toBe(readyStamp);
         visibleMaterialReady = true;
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         expect(runtime.canvas.dataset.sceneRenderCount).toBe('3');
         expect(runtime.canvas.dataset.sceneReady).toBe('true');
         expect(runtime.scene.isReady()).toBe(false);
@@ -167,12 +170,12 @@ it('accepts each complete current camera frustum while visible membership change
         right.onAfterRenderObservable.add(() => drawn.add(right.name));
         await Promise.all([material.forceCompilationAsync(left), material.forceCompilationAsync(right)]);
         aimAtRegion(runtime, -20);
-        renderRelicFrame(runtime);
+        renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
         expect(drawn).toEqual(new Set([left.name]));
         for (const roomX of [20, -20, 20]) {
             aimAtRegion(runtime, roomX);
             drawn.clear();
-            const result = renderRelicFrame(runtime);
+            const result = renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
             const visible = roomX < 0 ? left : right;
             const hidden = roomX < 0 ? right : left;
             const active = runtime.scene.getActiveMeshes();
@@ -195,8 +198,8 @@ it('keeps a skipped current material pending when it becomes ready only after dr
     runtime.glow.isEnabled = false;
     try {
         await createReadyBox(runtime.scene, 'previous-image');
-        renderRelicFrame(runtime);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         const readyStamp = runtime.canvas.dataset.sceneReadyMs;
         const count = runtime.renderCount;
         const late = await createReadyBox(runtime.scene, 'late-material');
@@ -211,7 +214,7 @@ it('keeps a skipped current material pending when it becomes ready only after dr
         runtime.scene.onAfterDrawPhaseObservable.add(() => {
             materialAvailable = true;
         });
-        expect(renderRelicFrame(runtime)).toBe('pending');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('pending');
         expect(runtime.scene.getActiveMeshes().data).toContain(late.mesh);
         expect(lateMeshDrawn, 'the unready contributing material skipped its actual draw').toBe(false);
         expect(materialAvailable).toBe(true);
@@ -219,7 +222,7 @@ it('keeps a skipped current material pending when it becomes ready only after dr
         expect(runtime.canvas.dataset.sceneReady).toBe('false');
         expect(runtime.canvas.dataset.sceneReadyMs).toBe(readyStamp);
         expect(runtime.renderCount).toBe(count + 1);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         expect(lateMeshDrawn).toBe(true);
     }
     finally {
@@ -233,11 +236,11 @@ it('does not reuse a successful sample when the next render omits active evaluat
     runtime.glow.isEnabled = false;
     try {
         await createReadyBox(runtime.scene, 'visible');
-        renderRelicFrame(runtime);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         const readyStamp = runtime.canvas.dataset.sceneReadyMs;
         runtime.scene.customRenderFunction = () => undefined;
-        expect(renderRelicFrame(runtime)).toBe('pending');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('pending');
         expect(runtime.canvas.dataset.sceneReady).toBe('false');
         expect(runtime.canvas.dataset.sceneReadyMs).toBe(readyStamp);
     }
@@ -252,15 +255,15 @@ it('rejects readiness sampled for a different camera', async () => {
     runtime.glow.isEnabled = false;
     try {
         await createReadyBox(runtime.scene, 'visible');
-        renderRelicFrame(runtime);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         const otherCamera = new UniversalCamera('other-camera', runtime.camera.position.clone(), runtime.scene);
         otherCamera.setTarget(Vector3.Zero());
         runtime.scene.activeCamera = otherCamera;
-        expect(renderRelicFrame(runtime)).toBe('pending');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('pending');
         expect(runtime.canvas.dataset.sceneReady).toBe('false');
         runtime.scene.activeCamera = runtime.camera;
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
     }
     finally {
         fixture.lifecycle.dispose();
@@ -273,8 +276,8 @@ it('rejects a failed render sample when the next attempt has no current evaluati
     runtime.glow.isEnabled = false;
     try {
         await createReadyBox(runtime.scene, 'visible');
-        renderRelicFrame(runtime);
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        renderRelicFrame(runtime, NO_ELAPSED_TIME_MS);
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         let failDraw = true;
         runtime.scene.onBeforeDrawPhaseObservable.add(() => {
             if (failDraw) {
@@ -283,14 +286,14 @@ it('rejects a failed render sample when the next attempt has no current evaluati
             }
         });
         const count = runtime.renderCount;
-        expect(() => renderRelicFrame(runtime)).toThrow('draw failure');
+        expect(() => renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toThrow('draw failure');
         expect(runtime.renderCount).toBe(count);
         const original = runtime.scene.customRenderFunction;
         runtime.scene.customRenderFunction = () => undefined;
-        expect(renderRelicFrame(runtime)).toBe('pending');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('pending');
         expect(runtime.canvas.dataset.sceneReady).toBe('false');
         runtime.scene.customRenderFunction = original;
-        expect(renderRelicFrame(runtime)).toBe('ready');
+        expect(renderRelicFrame(runtime, NO_ELAPSED_TIME_MS)).toBe('ready');
         fixture.lifecycle.dispose();
         expect(runtime.scene.isDisposed).toBe(true);
     }
