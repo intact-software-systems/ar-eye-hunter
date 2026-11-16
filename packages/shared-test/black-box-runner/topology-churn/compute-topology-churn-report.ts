@@ -18,6 +18,7 @@ import {
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
+import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 
 export interface TopologyChurnPhaseWindow {
     readonly name: 'formation' | 'churn';
@@ -35,6 +36,7 @@ export interface TopologyChurnPromotionSighting {
 interface ComputeTopologyChurnReportInput {
     readonly plans: readonly AdminRoomTopologyPlan[];
     readonly sightings: readonly TopologyChurnPromotionSighting[];
+    readonly linkSamples: readonly TopologyChurnLinkSample[];
     readonly phases: readonly TopologyChurnPhaseWindow[];
     readonly replacedLayoutOverlapMs: number;
 }
@@ -78,6 +80,9 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     /** The reroutes of the reshape plans alone; null when the phase has none. */
     readonly reroutedSessionsPerReshape: TopologyChurnDistribution | null;
     readonly longestPathHops: TopologyChurnLongestPathHops | null;
+    /** The plans of the phase whose layout was sampled as an accepted mesh. */
+    readonly linkSampledPlanCount: number;
+    readonly underLinkedMembersPerPlan: TopologyChurnDistribution | null;
 }
 
 export interface TopologyChurnReport {
@@ -90,6 +95,7 @@ interface ComputePhaseFiguresInput {
     readonly plans: readonly PlannedTopologyPlan[];
     readonly durationMs: number;
     readonly sightings: readonly TopologyChurnPromotionSighting[];
+    readonly linkSamples: readonly TopologyChurnLinkSample[];
     readonly replacedLayoutOverlapMs: number;
 }
 
@@ -104,6 +110,7 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 plans: plans.filter((plan) => isWithinPhase(plan, phase)),
                 durationMs,
                 sightings: input.sightings,
+                linkSamples: input.linkSamples,
                 replacedLayoutOverlapMs: input.replacedLayoutOverlapMs
             };
             return {
@@ -117,7 +124,8 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 ...computeOverlapFigures(figures),
                 ...computeEdgeFigures(figures.plans),
                 ...computeCauseFigures(figures.plans),
-                ...computeKindFigures(figures)
+                ...computeKindFigures(figures),
+                ...computeLinkFigures(figures)
             };
         }),
         outsidePhasesPlanCount: plans.filter((plan) => !input.phases.some((phase) => isWithinPhase(plan, phase))).length
@@ -168,6 +176,19 @@ function computeKindFigures(
                 record.delta.reroutedSessionCount
             )
         )
+    };
+}
+
+function computeLinkFigures(
+    input: ComputePhaseFiguresInput
+): Pick<TopologyChurnPhaseReport, 'linkSampledPlanCount' | 'underLinkedMembersPerPlan'> {
+    const underLinkedMemberCounts = input.plans.flatMap((plan) => {
+        const sample = input.linkSamples.find((candidate) => isSameGroupLayoutIdentity(candidate.layout, plan.layout));
+        return sample === undefined ? [] : [sample.underLinkedMemberCount];
+    });
+    return {
+        linkSampledPlanCount: underLinkedMemberCounts.length,
+        underLinkedMembersPerPlan: computeDistribution(underLinkedMemberCounts)
     };
 }
 
