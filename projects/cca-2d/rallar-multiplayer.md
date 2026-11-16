@@ -768,10 +768,18 @@ because a correct interval calculation alone cannot prevent a suspended or
 cancelled browser from using an obsolete observation.
 
 The lifecycle has direct tests for acquisition, refresh, cancellation, timeout,
-reentrant replacement, shutdown and discontinuity. It is not yet wired into the
-browser transport: periodic refresh, page suspension and the dependent clock
-consumers below remain integration work. These tests do not qualify clock-skew
-gameplay or physical phones.
+reentrant replacement, shutdown and discontinuity. `BrowserServerClockSession`
+composes it with periodic refresh and browser visibility/freeze/pagehide events.
+Its abort signal ends the connection's calibration lifetime on suspension or lost
+clock validity; a new lifetime must acquire a new sample. Consumer reads also end
+the lifetime if they discover expiry between refresh attempts. Shared repeating
+and single-flight primitives own scheduling and coalescing. The sampler owns
+observations; the session owns their eligibility for an active browser connection.
+
+These owners are not yet wired into browser middleware. Startup must acquire
+calibration before constructing stores and transports, and shutdown must join its
+closure. The dependent clock consumers below remain integration work. Unit page
+events and timer tests do not qualify clock-skew gameplay or physical phones.
 
 Browser integration must distinguish creation from expiry: construct a new
 message from the conservative earliest server bound before publication signing,
