@@ -30,6 +30,9 @@ one error lifecycle: a fresh host clears an obsolete appointment failure, while
 unrelated transport/validation failures remain visible. Browser coverage includes
 a guest failing to host while the owner is absent, followed by the returning owner
 hosting successfully and the guest receiving a healthy Ready/status display.
+Creating a new town also cancels the previous room-entry destination and failure;
+a refused old matched-town entry must not remain as an error over a successful
+new lobby. This additional issue was reproduced while preparing the phone retest.
 
 ### Response measurement
 

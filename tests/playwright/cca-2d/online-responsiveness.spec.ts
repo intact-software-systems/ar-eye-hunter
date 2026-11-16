@@ -8,6 +8,18 @@ interface InputPresentationTiming {
     readonly confirmedMs: number;
 }
 
+test('creating a new town clears a failed previous room entry', async ({ page }) => {
+    await registerPlayer(page, `new-town-after-failure-${Date.now()}`);
+    await page.getByLabel('Town code').fill('missing-town');
+    await page.getByRole('button', { name: 'Join town', exact: true }).click();
+    await expect(page.locator('#online-error')).not.toBeEmpty();
+    await page.getByRole('button', { name: 'Create town', exact: true }).click();
+    await expect(page.getByLabel('Room code')).toBeVisible();
+    await expect(page.locator('#online-error')).toBeEmpty();
+    await page.getByRole('button', { name: 'Host match', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Ready', exact: true })).toBeEnabled({ timeout: 15000 });
+});
+
 test('only eligible players can host and a resolved appointment failure leaves the lobby', async ({ browser }) => {
     test.setTimeout(60000);
     const ownerContext = await browser.newContext();

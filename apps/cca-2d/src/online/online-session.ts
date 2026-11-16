@@ -121,6 +121,7 @@ export class OnlineSession {
 
     async createTown(): Promise<void> {
         await this.run(async () => {
+            this.entry.cancel();
             await this.leaveCurrentTown();
             await this.browser.rooms.createAndSwitch({
                 ...CCA_SCOPE,
