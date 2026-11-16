@@ -276,6 +276,8 @@ paths:
                 $ref: '#/components/schemas/ApiConfig'
   /api/time:
     get:
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
       tags: [Config]
       summary: Read a fresh server clock observation
       description: |
@@ -287,6 +289,8 @@ paths:
         '200':
           description: Current server identity and millisecond epoch observation.
           headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
             Cache-Control:
               schema:
                 type: string
