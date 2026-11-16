@@ -258,8 +258,12 @@ tree or a mesh". `packages/shared-graph/tree/remove-dynamics-mddl.ts`, a second 
 nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-mddl.ts` is the one port.
 
 - **What the sweep found.** Single leaves rebuilt before this slice: 9 of 20 (mesh), 1 of 8, 3 of 12 and 7
-  of 30 (trees) and 9 of 30 (mesh). Now 0 of 100. A repair adds at most 4 links (measured by the probe that preceded the slice) and reroutes
-  nobody (pinned by the sweep).
+  of 30 (trees) and 9 of 30 (mesh). Now 0 of 100. A repair adds at most 4 links (measured over every single leave of the five rooms before the slice) and
+  reroutes nobody (pinned by the sweep). The sweep's rooms have no director: no led room and no leader's leave
+  is covered.
+- **A led tree.** In a led tree a repaired layout can exceed the leader's depth bound, so a `leader-rooting`
+  reshape can follow a leave at the next quiet plan: a reviewer measured 2 of 7 non-leader leaves in a led tree
+  of 8 and none in led trees of 12 and 30. The leader's own leave is not covered.
 - **A thin member.** Of the 50 single mesh leaves, one leaves a member with one link: `peer-11` leaving the
   mesh of 20 leaves `peer-13` with one, because all four pairs the remove chose were already linked, so
   nothing was added. The capacity cases leave nobody under 2 links in these rooms.
@@ -271,11 +275,11 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
   spread. The weighted tree rebuild keeps the sparse measured graph. Two defects on `main` are fixed by it.
   With RTT measurements the global graph held only measured pairs, and the reconnect step looped without
   end when a neighbour had no edge to the connected set; the loop is synchronous, so on the server it would
-  block the process. Of the 20 single leaves of a measured mesh of 20, 13 never returned before and none
-  fails to return now. And a measured mesh rebuild was planned empty (`createGroupMesh` fails on the capped
+  stall the whole server process, not only that room. Of the 20 single leaves of a measured mesh of 20, 13 did
+  not return within 45 s before (the loop has no exit) and all return now. And a measured mesh rebuild was planned empty (`createGroupMesh` fails on the capped
   graph, and the planner's `createNextHopMap` turns the failure into empty next hops); validation refused it
   as disconnected, so a measured mesh never took an RTT improvement and a measured tree could not grow into
-  a mesh. Before, 714 of 1 620 measured plans were disconnected, all meshes; after, none. A measured join
+  a mesh. Over a sweep of 1 620 measured plans, 714 were disconnected before, all meshes, and none after. A measured join
   into a mesh is repaired in place now, where it was rebuilt and refused.
 - **The relaxed degree limit stays (D659).** The reconnect step raises the degree limit by one when no pair
   fits; the maintainer holds that relaxation intended, because the change to the layout would otherwise be
@@ -287,7 +291,9 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
   cannot be planned, with or without RTT, so configuration refuses `meshParamK >= degreeLimit`, for the
   server configuration and for a room's topology-config write.
 - **Deploy.** A room's stored configuration is re-validated on every read, so a stored one with k at or
-  above its limit would fail to load: the store is wiped at deploy. An environment that sets a degree limit
+  above its limit would fail to load. The wipe was ruled for pull request 827; this work (#837) is stacked on
+  #827 and may deploy later or separately, so it must deploy together with #827's wipe or be followed by a wipe
+  of its own, or the topology-config records holding k at or above their limit must be removed. An environment that sets a degree limit
   of 2 or below without a mesh parameter below it fails at startup.
 
 Run results, for the code of this slice, are added after the measurement.
@@ -435,4 +441,6 @@ browsers.
 ## Still open
 
 - Restoring a mesh member's k links after a leave, if the measurement shows meshes thinning.
-- Accepting a stated degree excess, if repairs the reconnect step's relaxation produces are rebuilt.
+- A leave in a led room, which the sweep does not cover: whether `leader-rooting` reshapes follow leaves more
+  than the reviewer's measurement suggests, and the leader's own leave.
+- Accepting a stated degree excess, if repairs that the reconnect step's relaxation produces are rebuilt.

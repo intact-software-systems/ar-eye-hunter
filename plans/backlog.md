@@ -793,6 +793,9 @@ and it has no status list.
   (`remove-dynamics-mc.ts`, `remove-dynamics-md.ts`, `tree-dynamics-connect.ts`).
 - `packages/shared-graph/architecture.md` still names files that do not exist: `GroupGraphService.ts`,
   `GroupGraphReadService.ts`, `graph-vivaldi-service.ts`, `crdt-graph.ts`.
+- A leave in a led room is not covered by the planner sweep (its fixture rooms have no director): in a led tree of
+  8 a reviewer measured 2 of 7 non-leader leaves followed by a `leader-rooting` rebuild at the next quiet plan,
+  none in led trees of 12 and 30; the leader's own leave is unmeasured.
 - The planner's `createNextHopMap` ignores the `.success` of `createGroupMesh` and `createGroupTree` and turns a
   failed build into empty next hops. No failing path is known after D659 and D660, but the masking remains.
 - A mesh membership-delta fallback builds the complete room graph twice, once for the evolution and once for the

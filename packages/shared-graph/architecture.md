@@ -35,7 +35,8 @@ member exceeds its degree limit.
 Under which conditions it was tested: every single leave of five formed rooms
 (trees of 8, 12 and 30, meshes of 20 and 30), degree limit 5, mesh parameter 2,
 a complete global graph over the remaining members with the leaver absent from
-it. The planner tests also run every single leave of measured rooms (RTT
+it, in rooms without a director: no led room was tested, and no leader's leave.
+The planner tests also run every single leave of measured rooms (RTT
 measurements held for the pairs the members select), planned over a complete
 graph in which an unmeasured pair is weighted above the slowest measured one.
 The tests are
@@ -61,7 +62,10 @@ given. A sparse global graph can leave a neighbour with no candidate edge, and
 the step then loops without end. The planner therefore gives a leave a complete graph.
 Any other caller of the remove algorithms owes the same.
 
-What is not guaranteed: outside those conditions the remove can refuse (a tree
+What is not guaranteed: in a led room a repaired tree can exceed the leader's
+depth bound, so a leave can still be followed by a `leader-rooting` rebuild at
+the next quiet plan (a reviewer measured 2 of 7 non-leader leaves in a led tree
+of 8, none in led trees of 12 and 30). Outside those conditions the remove can refuse (a tree
 then falls back to try-replace, which may keep the leaver as a forwarding
 vertex; so does a mesh whose removal would cut it apart), and the reconnect
 step relaxes the degree limit by one per round when no pair fits. The
