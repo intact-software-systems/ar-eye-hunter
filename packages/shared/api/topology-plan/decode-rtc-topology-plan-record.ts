@@ -1,5 +1,11 @@
 import { Either } from '../../resilience/Either.ts';
-import { decodePlainRecord, getOwnNumber, hasExactKeys } from '../exact-object-decoding.ts';
+import {
+    decodePlainRecord,
+    getOwnCount,
+    getOwnField,
+    getOwnNumber,
+    hasExactKeys
+} from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import {
     TOPOLOGY_REPLAN_CAUSES,
@@ -25,8 +31,8 @@ export function decodeRtcTopologyPlanRecord(value: unknown): Either<string, RtcT
     if (fields === undefined || !hasExactKeys(fields, RECORD_KEYS)) {
         return Either.ofLeft('Topology plan record must be an exact object with its own fields');
     }
-    const plannedAtEpochMs = getCount(fields, 'plannedAtEpochMs');
-    const longestPathHops = getCount(fields, 'longestPathHops');
+    const plannedAtEpochMs = getOwnCount(fields, 'plannedAtEpochMs');
+    const longestPathHops = getOwnCount(fields, 'longestPathHops');
     if (plannedAtEpochMs === null || longestPathHops === null) {
         return Either.ofLeft('Topology plan record plannedAtEpochMs and longestPathHops must be non-negative integers');
     }
@@ -56,7 +62,7 @@ function decodeReplacedTopologyLayout(value: unknown): Either<string, ReplacedTo
     if (!isGroupLayoutIdentity(layout)) {
         return Either.ofLeft('Replaced topology layout layout is not a layout identity');
     }
-    const ageMs = getCount(fields, 'ageMs');
+    const ageMs = getOwnCount(fields, 'ageMs');
     if (ageMs === null) {
         return Either.ofLeft('Replaced topology layout ageMs must be a non-negative integer');
     }
@@ -79,7 +85,7 @@ function decodeTopologyLayoutDelta(value: unknown): Either<string, TopologyLayou
     if (fields === undefined || !hasExactKeys(fields, DELTA_KEYS)) {
         return Either.ofLeft('Topology layout delta must be an exact object with its own fields');
     }
-    const badField = DELTA_KEYS.find((key) => getCount(fields, key) === null);
+    const badField = DELTA_KEYS.find((key) => getOwnCount(fields, key) === null);
     if (badField !== undefined) {
         return Either.ofLeft(`Topology layout delta ${badField} must be a non-negative integer`);
     }
@@ -91,13 +97,4 @@ function decodeTopologyLayoutDelta(value: unknown): Either<string, TopologyLayou
         acceptingSessionCount: getOwnNumber(fields, ['acceptingSessionCount'], Number.NaN),
         maxJoinerEdgesPerSession: getOwnNumber(fields, ['maxJoinerEdgesPerSession'], Number.NaN)
     });
-}
-
-function getCount(record: object, key: string): number | null {
-    const count = getOwnNumber(record, [key], Number.NaN);
-    return Number.isSafeInteger(count) && count >= 0 ? count : null;
-}
-
-function getOwnField(record: object, key: string) {
-    return Object.getOwnPropertyDescriptor(record, key)?.value;
 }

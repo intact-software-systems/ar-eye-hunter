@@ -1,5 +1,5 @@
 import { Either } from '../../resilience/Either.ts';
-import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
+import { decodePlainRecord, getOwnCount, getOwnField, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '../group-types.ts';
 import type { RallarRtcTopologyKind } from '../overlay-topology.ts';
@@ -31,11 +31,11 @@ export function decodeAdminRoomTopologyPlans(value: unknown): Either<string, Adm
         return Either.ofLeft('Room topology plans must be an exact object with its own fields');
     }
     const roomRef = decodeRoomRef(getOwnField(fields, 'roomRef'));
-    const observedAtEpochMs = getOwnField(fields, 'observedAtEpochMs');
+    const observedAtEpochMs = getOwnCount(fields, 'observedAtEpochMs');
     const nextAfterPublicationId = getOwnField(fields, 'nextAfterPublicationId');
     const entries = getOwnField(fields, 'plans');
     if (
-        roomRef === null || !isCount(observedAtEpochMs) ||
+        roomRef === null || observedAtEpochMs === null ||
         (nextAfterPublicationId !== null && !isPublicationId(nextAfterPublicationId)) ||
         !Array.isArray(entries) || entries.length > ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT
     ) {
@@ -58,14 +58,14 @@ function decodeAdminRoomTopologyPlan(value: unknown): Either<string, AdminRoomTo
         return Either.ofLeft('Room topology plan must be an exact object with its own fields');
     }
     const publicationId = getOwnField(fields, 'publicationId');
-    const requestedAtEpochMs = getOwnField(fields, 'requestedAtEpochMs');
+    const requestedAtEpochMs = getOwnCount(fields, 'requestedAtEpochMs');
     const layout = getOwnField(fields, 'layout');
     const topology = TOPOLOGY_KINDS.find((kind) => kind === getOwnField(fields, 'topology'));
-    const memberCount = getOwnField(fields, 'memberCount');
-    const degreeLimit = getOwnField(fields, 'degreeLimit');
+    const memberCount = getOwnCount(fields, 'memberCount');
+    const degreeLimit = getOwnCount(fields, 'degreeLimit');
     if (
-        !isPublicationId(publicationId) || !isCount(requestedAtEpochMs) || !isGroupLayoutIdentity(layout) ||
-        topology === undefined || !isCount(memberCount) || !isCount(degreeLimit)
+        !isPublicationId(publicationId) || requestedAtEpochMs === null || !isGroupLayoutIdentity(layout) ||
+        topology === undefined || memberCount === null || degreeLimit === null
     ) {
         return Either.ofLeft('Room topology plan names no publication, request time, layout, kind or sizes');
     }
@@ -96,18 +96,10 @@ function decodeRoomRef(value: unknown): GroupRef | null {
         : null;
 }
 
-function isCount(value: unknown): value is number {
-    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-}
-
 function isPublicationId(value: unknown): value is string {
     return isNonEmptyString(value) && value.length <= MAX_PUBLICATION_ID_LENGTH;
 }
 
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0;
-}
-
-function getOwnField(record: object, key: string) {
-    return Object.getOwnPropertyDescriptor(record, key)?.value;
 }
