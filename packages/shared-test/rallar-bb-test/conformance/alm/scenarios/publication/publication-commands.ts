@@ -13,7 +13,9 @@ import { createStableRtcLayoutWait } from '../../../../fixtures/create-stable-rt
 import { CONNECT_READINESS_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
+import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
+import { toResultComparisonAssertion } from '../../to-result-comparison-assertion.ts';
 import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 
 /**
@@ -211,5 +213,58 @@ export function toPublicationVerdictCommands(
                 expected
             })
         )
+    ];
+}
+
+const FIGURES_READ = 'stats-publication-figures';
+const FIGURES_PATH = 'rallar.alm.publication.figures';
+
+/**
+ * One stats read, then the relations that hold between the connect's publication figures and its counters whatever
+ * cells ran on the connect before: the report is cumulative, so a relation between its own fields needs no difference.
+ * A cell's figures read follows its last verdict, so every opportunity it caused has settled. The count equalities hold
+ * only when the stage refused no sample, so the same read asserts none was.
+ */
+export function toPublicationFigureInvariantCommands(
+    step: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    const equalsSubmitted = (name: string, field: string): RallarBlackBoxTestCommand =>
+        toResultComparisonAssertion({
+            step,
+            name: `assert-figure-${name}`,
+            resultName: FIGURES_READ,
+            field: `${FIGURES_PATH}.${field}.count`,
+            operator: 'equals',
+            comparedField: `${FIGURES_PATH}.submittedOpportunities`
+        });
+    return [
+        toStatsCommand(step, FIGURES_READ),
+        toResultComparisonAssertion({
+            step,
+            name: 'assert-figure-selection-age-count',
+            resultName: FIGURES_READ,
+            field: `${FIGURES_PATH}.selectionAgeMs.count`,
+            operator: 'equals',
+            comparedField: 'rallar.alm.publication.counters.admitted'
+        }),
+        toResultAssertion({
+            step,
+            name: 'assert-figure-unrecorded-samples',
+            resultName: FIGURES_READ,
+            field: `${FIGURES_PATH}.unrecordedSamples`,
+            operator: 'equals',
+            expected: 0
+        }),
+        equalsSubmitted('selection-to-admission-count', 'selectionToAdmissionMs'),
+        equalsSubmitted('drain-messages-count', 'drainMessagesPercent'),
+        equalsSubmitted('drain-bytes-count', 'drainBytesPercent'),
+        toResultAssertion({
+            step,
+            name: 'assert-figure-submitted-opportunities',
+            resultName: FIGURES_READ,
+            field: `${FIGURES_PATH}.submittedOpportunities`,
+            operator: 'gte',
+            expected: 1
+        })
     ];
 }

@@ -17,6 +17,7 @@ import {
 import {
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationFigureInvariantCommands,
     toPublicationLeadCommands,
     toPublicationSendCommand,
     toPublicationTtlMs,
@@ -86,6 +87,7 @@ function toPacedIsolationListsSenderCommands(sender: AlmConformanceStepInput): r
         ),
         ...LISTED_SENDS.flatMap(([index]) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
-        )
+        ),
+        ...toPublicationFigureInvariantCommands(sender)
     ];
 }

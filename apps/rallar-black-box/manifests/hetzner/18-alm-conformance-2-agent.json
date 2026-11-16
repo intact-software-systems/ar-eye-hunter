@@ -2945,6 +2945,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-ws-paced-latest-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-latest-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-ws-paced-latest-sender-stats",
             "timeoutMs": 3000
           },
@@ -3166,6 +3219,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-ws-paced-newest-n-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-newest-n-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-ws-paced-newest-n-sender-stats",
             "timeoutMs": 3000
           },
@@ -3294,6 +3400,59 @@
             "source": "resultCache.alm-ws-paced-expiry-sender-observe-expired-1.value.attempts",
             "operator": "equals",
             "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-paced-expiry-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-expiry-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -3492,6 +3651,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-ws-paced-fairness-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-fairness-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-ws-paced-fairness-sender-stats",
             "timeoutMs": 3000
           },
@@ -3641,6 +3853,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-ws-paced-cancel-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-cancel-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-ws-paced-cancel-sender-stats",
             "timeoutMs": 3000
           },
@@ -3771,6 +4036,59 @@
             "source": "resultCache.alm-ws-paced-isolation-resources-sender-observe-transport-accepted-2.value.state",
             "operator": "equals",
             "expected": "transport-accepted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-paced-isolation-resources-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-isolation-resources-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -5758,6 +6076,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-paced-latest-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-latest-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-paced-latest-sender-stats",
             "timeoutMs": 3000
           },
@@ -6023,6 +6394,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-paced-newest-n-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-newest-n-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-paced-newest-n-sender-stats",
             "timeoutMs": 3000
           },
@@ -6195,6 +6619,59 @@
             "source": "resultCache.alm-rtc-paced-expiry-sender-observe-expired-1.value.attempts",
             "operator": "equals",
             "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-paced-expiry-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-expiry-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -6447,6 +6924,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-paced-fairness-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-fairness-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-paced-fairness-sender-stats",
             "timeoutMs": 3000
           },
@@ -6640,6 +7170,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-paced-cancel-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-cancel-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-paced-cancel-sender-stats",
             "timeoutMs": 3000
           },
@@ -6814,6 +7397,59 @@
             "source": "resultCache.alm-rtc-paced-isolation-resources-sender-observe-transport-accepted-2.value.state",
             "operator": "equals",
             "expected": "transport-accepted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-isolation-resources-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -9594,6 +10230,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-latest-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-paced-latest-sender-stats",
             "timeoutMs": 3000
           },
@@ -9859,6 +10548,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-newest-n-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-paced-newest-n-sender-stats",
             "timeoutMs": 3000
           },
@@ -10031,6 +10773,59 @@
             "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-observe-expired-1.value.attempts",
             "operator": "equals",
             "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-expiry-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-expiry-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -10283,6 +11078,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-fairness-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-paced-fairness-sender-stats",
             "timeoutMs": 3000
           },
@@ -10476,6 +11324,59 @@
           },
           {
             "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-cancel-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-paced-cancel-sender-stats",
             "timeoutMs": 3000
           },
@@ -10650,6 +11551,59 @@
             "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-observe-transport-accepted-2.value.state",
             "operator": "equals",
             "expected": "transport-accepted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-isolation-resources-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-isolation-resources-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -11383,6 +12337,59 @@
             "source": "resultCache.alm-ws-paced-capacity-sender-observe-transport-accepted-2.value.state",
             "operator": "equals",
             "expected": "transport-accepted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-paced-capacity-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-paced-capacity-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-ws-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {
@@ -12287,6 +13294,59 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "stats",
+            "commandId": "alm-rtc-paced-capacity-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-paced-capacity-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
+            "timeoutMs": 2000
+          },
+          {
             "kind": "wait",
             "commandId": "alm-rtc-paced-capacity-sender-delivery-settles",
             "match": {
@@ -13185,6 +14245,59 @@
             "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-observe-transport-accepted-2.value.state",
             "operator": "equals",
             "expected": "transport-accepted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-selection-age-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionAgeMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.counters.admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-unrecorded-samples",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.unrecordedSamples",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-selection-to-admission-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.selectionToAdmissionMs.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-drain-messages-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainMessagesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-drain-bytes-count",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.drainBytesPercent.count",
+            "operator": "equals",
+            "comparisonSource": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-paced-capacity-sender-assert-figure-submitted-opportunities",
+            "source": "resultCache.alm-rtc-with-ws-fallback-paced-capacity-sender-stats-publication-figures.value.rallar.alm.publication.figures.submittedOpportunities",
+            "operator": "gte",
+            "expected": 1,
             "timeoutMs": 2000
           },
           {

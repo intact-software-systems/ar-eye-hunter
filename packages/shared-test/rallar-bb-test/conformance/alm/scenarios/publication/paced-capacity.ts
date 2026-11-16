@@ -22,6 +22,7 @@ import {
     NEVER_ATTEMPTED,
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationTtlMs,
     toPublicationVerdictCommands
@@ -91,6 +92,7 @@ function toPacedCapacitySenderCommands(sender: AlmConformanceStepInput): readonl
         ...ADMITTED_INDEXES.flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
         ),
+        ...toPublicationFigureInvariantCommands(sender),
         // A deliberate tradeoff: the pause waits out the relay forwarding the admitted values before the restoring
         // close, since a send without a receipt is `transport-accepted` once its socket takes it (the local WS lane lost
         // the second value to a close 2 ms later). The receiver's arrival of each value proves it, but no event on the

@@ -12,6 +12,7 @@ import {
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
     STAGE_DISPLACED,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationTtlMs,
     toPublicationVerdictCommands
@@ -73,7 +74,8 @@ export const pacedNewestN: AlmConformanceScenarioDefinition = {
         },
         ...[2, 3, LAST_SEND].flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
-        )
+        ),
+        ...toPublicationFigureInvariantCommands(sender)
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1, 2),
