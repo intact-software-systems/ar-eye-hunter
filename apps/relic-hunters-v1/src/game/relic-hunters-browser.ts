@@ -35,6 +35,7 @@ import {
 } from './api.ts';
 import { createRelicAuthorityClientBridge } from './rallar-game-authority-adapter.ts';
 import type { RelicHuntersRuntime } from './relic-hunters-runtime.ts';
+import { changeRelicRoom, type RelicRoomChangeDependencies } from './runtime/change-relic-room.ts';
 import { RelicExpeditionParticipation } from './runtime/relic-expedition-participation.ts';
 import { sendRelicWsCommand } from './send-relic-ws-command.ts';
 import { subscribeRelicHunterEvents } from './subscribe-relic-hunter-events.ts';
@@ -52,12 +53,13 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         sendRestCommand: sendRelicCommand,
         fetchSnapshot: fetchRelicSnapshot
     });
+    const roomChange = createRelicRoomChangeDependencies(expeditionParticipation);
     const authority = createRelicAuthorityClientBridge(rallar);
     return {
         createRequestId: () => crypto.randomUUID(),
         withParticipationLock: withRelicParticipationLock,
         data: rallar.data,
-        ...createRelicRoomCapabilities(expeditionParticipation),
+        ...createRelicRoomCapabilities(roomChange),
         timers: createDefaultTimers(),
         restoreSession: () => rallar.auth.restore(),
         login: (username, password) => rallar.auth.login({ username, password }),
@@ -82,10 +84,10 @@ export function browserRelicRuntimeDeps(): RelicHuntersRuntime.Dependencies {
         publishRtcSnapshot: (snapshot) => authority.publishSnapshotRepair(snapshot),
         createRoomNameSeed: () => createRallarAiRoomNameSeed('relic-hunters'),
         createRoom: (displayName, joinMode, directoryListing) =>
-            changeRelicRoom(expeditionParticipation, () => createRelicRoom(displayName, joinMode, directoryListing)),
+            changeRelicRoom(roomChange, () => createRelicRoom(displayName, joinMode, directoryListing)),
         joinRoom: async (roomId, participation) => {
             await changeRelicRoom(
-                expeditionParticipation,
+                roomChange,
                 () =>
                     joinRelicRoom({ ...RELIC_ROOM_SCOPE, groupId: roomId }, {
                         ...(participation === 'preserve' ? {} : { participation }),
@@ -183,38 +185,20 @@ function withRelicParticipationLock<T>(roomId: string, sessionId: string, run: (
     return navigator.locks.request(`relic-expedition:${JSON.stringify([roomId, sessionId])}`, run);
 }
 
-/** A second tab must not implicitly leave a hunter whose Join was committed after this tab's last snapshot. */
-async function changeRelicRoom<T>(
-    participation: RelicExpeditionParticipation,
-    change: () => Promise<T>,
-    destinationRoomId?: string
-): Promise<T> {
-    const session = rallar.session();
-    const roomId = rallar.rooms.state().currentRoomId;
-    if (!session || !roomId) {
-        return await change();
-    }
-    return await withRelicParticipationLock(roomId, session.sessionId, async () => {
-        if (rallar.session()?.sessionId !== session.sessionId || rallar.rooms.state().currentRoomId !== roomId) {
-            throw new Error('Room entry changed while checking expedition participation.');
-        }
-        await participation.reconcile(roomId, session.sessionId);
-        const snapshot = await fetchRelicSnapshot(roomId);
-        if (rallar.session()?.sessionId !== session.sessionId || rallar.rooms.state().currentRoomId !== roomId) {
-            throw new Error('Room entry changed while checking expedition participation.');
-        }
-        if (
-            roomId !== destinationRoomId &&
-            hasUnfinishedRelicParticipation(snapshot, relicPlayerId(snapshot?.tournament?.binding ?? null, session))
-        ) {
-            throw new Error('Use Leave expedition before entering or watching another expedition.');
-        }
-        return await change();
-    });
+function createRelicRoomChangeDependencies(
+    participation: RelicExpeditionParticipation
+): RelicRoomChangeDependencies {
+    return {
+        session: () => rallar.session(),
+        currentRoomId: () => rallar.rooms.state().currentRoomId,
+        withParticipationLock: withRelicParticipationLock,
+        participation,
+        fetchSnapshot: (roomId) => fetchRelicSnapshot(roomId)
+    };
 }
 
 function createRelicRoomCapabilities(
-    expeditionParticipation: RelicExpeditionParticipation
+    roomChange: RelicRoomChangeDependencies
 ): Pick<RelicHuntersRuntime.Dependencies, 'roomEntry' | 'recentRooms' | 'roomMove' | 'directory'> {
     const roomEntry = RallarRoomEntry.createBrowser({
         auth: rallar.auth,
@@ -222,7 +206,7 @@ function createRelicRoomCapabilities(
         rooms: {
             onChange: (handler, options) => rallar.rooms.onChange(handler, options),
             join: (roomRef, options) =>
-                changeRelicRoom(expeditionParticipation, () => joinRelicRoom(roomRef, options), roomRef.groupId)
+                changeRelicRoom(roomChange, () => joinRelicRoom(roomRef, options), roomRef.groupId)
         }
     }, { scope: RELIC_ROOM_SCOPE });
     const recentRooms = RallarRecentRooms.createBrowser(rallar, roomEntry, { scope: RELIC_ROOM_SCOPE });
@@ -231,7 +215,7 @@ function createRelicRoomCapabilities(
         recentRooms,
         roomMove: RallarRoomMove.createBrowser(
             rallar,
-            (destination, run) => changeRelicRoom(expeditionParticipation, run, destination.groupId),
+            (destination, run) => changeRelicRoom(roomChange, run, destination.groupId),
             { scope: RELIC_ROOM_SCOPE }
         ),
         directory: RallarRoomDirectory.createBrowser(rallar, {
