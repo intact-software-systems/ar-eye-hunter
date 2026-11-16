@@ -676,6 +676,40 @@ and it has no status list.
   workload family, not by ALM (D642): a receiver cannot compute it from the
   envelope, which carries only `expiresAtMs`
   (`packages/shared/al-contracts/al-contract.ts`).
+- Congestion duration has no measurable end (D651): the outbound runtime
+  decides congestion per attempt (`drop`, `defer`, `hand-over`), the
+  `congestion` diagnostic carries no instant and no clear action, and only the
+  RTC channel's own queue flush knows when its backpressure ended. Measuring it
+  needs a defined episode (for example a message's first `defer` to its
+  attempt's settlement) and an instant on the diagnostic.
+- Admission to native submission is not a stage figure (D651); it needs the
+  carriers' `attempt-started` instant beside the stage's admission settlement.
+- The interpolating medians (two middle values averaged) stay in five
+  TypeScript files, outside `packages/shared/measurement` (D650):
+  `apps/api-v1/scripts/perf/state-write/state-write-measurement.ts`,
+  `apps/rallar-black-box/scripts/rallar-recipe-console-scale-bench.ts`,
+  `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-statistics.ts`,
+  `packages/shared-test/rallar-bb-test/alm/growth-proof/growth-series.ts` and
+  `packages/shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-page-regime.ts`.
+  They fold when a shared interpolating median is wanted.
+- `computeTimerLagWindow` (`packages/shared/runtime-health/start-timer-lag-sampling.ts`)
+  keeps a `?? 0` on its median that can never be taken, since a window holds at
+  least one sample (D650).
+- Three records describe a measured run: the RTC bench's
+  `RtcBaselineRuntimeObservationDto`, the distributed run's
+  `DistributedRunEnvironment`, and the workflow's inline "Record runner
+  provenance" step (`.github/workflows/github-free-distributed-recipe.yml`),
+  which duplicates commit, runtime, cpu and memory facts. They converge when the
+  hosted half of the baseline lands (D652).
+- A lane cell cannot assert a difference of two stats reads (no delta
+  operator), so the paced cells assert connect-wide invariants; per-cell figure
+  counts need one (D652).
+- The bounded histogram has no quantile reader and no merge; the workload
+  family adds them with its first reader (D650).
+- The local baseline's median command time is not stable inside its declared
+  band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
+  tell a regression from noise; the band or the figure for the median is the
+  maintainer's to set (D652).
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in

@@ -60,6 +60,11 @@ The verdict is `observation/distributed-run.json` (`state`, `rollup.ok`, `rollup
 with N/N participants and recipes and 231/231 passed group assertions); the analyzer
 writes `observation/analysis/{summary,fix-proposal,performance}.md` beside it.
 
+Two retained recorder directories of the same manifest compare with
+`node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts <baseline-recorder-dir> <candidate-recorder-dir>`:
+it reads each directory's `observation/` snapshots and the `environment` of `provenance.json`, refuses runs of
+different regimes, and reports the median command time and the run duration against a declared band (D652).
+
 Retain the recorder directory after every attempt. GitHub always uploads
 `all-local-alm-<run_id>-<run_attempt>` with runner resources/runtime versions,
 source commit and digest, the source manifest and available native evidence.

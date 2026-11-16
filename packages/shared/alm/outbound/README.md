@@ -1236,7 +1236,12 @@ cadence after the last, never a second dispatch (D479). Each value's outcome (`s
 `refused` with a capacity refusal's `limit`, `cancelled`) writes one payload-free `publication-staging` diagnostic
 (`laneKey`, `msgId`, `traceId`, `atMs`, `outcome`, `limit`) and counts in the ledger; `readReport()` returns the
 stage's `lanes`, the ledger's holdings and limits, and its cumulative counters, with `admitted` and `deferred` from
-the opportunities (D480). A value still staged at `dispose()` settles `skipped`/`disposed` with no event.
+the opportunities (D480), and its `figures` (D651): the bounded histograms `selectionAgeMs`, `selectionToAdmissionMs`,
+`drainMessagesPercent` and `drainBytesPercent`, and the counts `submittedOpportunities`, `missedOpportunities` and
+`unrecordedSamples`. Whenever `unrecordedSamples` is 0, `selectionAgeMs.count` equals the `admitted` counter and the
+other three histogram counts equal `submittedOpportunities`; a sample a histogram refuses is counted in
+`unrecordedSamples`, never thrown or clamped. `selectionToAdmissionMs` ends at carrier admission, because `submit`
+settles there. A value still staged at `dispose()` settles `skipped`/`disposed` with no event.
 
 The stage never sends and never admits: what `submit` hands to a carrier enters today's admission unchanged, so the
 frozen audience, fallback, supersedence and receipts apply to it as to any send.
