@@ -15,11 +15,12 @@ type GpuFenceContext = Pick<
     | 'UNSIGNALED'
 >;
 
+type RenderLoopEngine = Pick<Engine, 'runRenderLoop' | 'stopRenderLoop'> & {
+    readonly performanceMonitor: Pick<PerformanceMonitor, 'reset'>;
+};
+
 export interface StartCappedRenderLoopInput {
-    readonly engine: Pick<Engine, 'runRenderLoop' | 'stopRenderLoop'> & {
-        readonly performanceMonitor: Pick<PerformanceMonitor, 'reset'>;
-    };
-    /** The scene's WebGL2 context; null where the browser offers no fences and frames go unpaced. */
+    readonly engine: RenderLoopEngine;
     readonly gpu: GpuFenceContext | null;
     readonly frameIntervalMs: number;
     readonly renderFrame: CappedFrameLoop.Dependencies['renderFrame'];
@@ -27,15 +28,11 @@ export interface StartCappedRenderLoopInput {
 
 /** Babylon owns callback delivery; the shared loop owns capping, invalidation and cancellation. */
 export function startCappedRenderLoop(input: StartCappedRenderLoopInput): CappedFrameLoop {
-    const pacer = input.gpu === null ? null : new GpuFramePacer(input.gpu);
+    const driver = new GpuPacedFrameDriver(input.engine, input.gpu);
     const loop = new CappedFrameLoop({
-        driver: {
-            start: (frame) => input.engine.runRenderLoop(frame),
-            stop: (frame) => input.engine.stopRenderLoop(frame),
-            resetTiming: () => input.engine.performanceMonitor.reset()
-        },
+        driver,
         nowMs: () => performance.now(),
-        renderFrame: pacer === null ? input.renderFrame : () => pacer.drawFrame(input.renderFrame)
+        renderFrame: () => driver.drawFrame(input.renderFrame)
     }, { frameIntervalMs: input.frameIntervalMs });
     loop.start();
     return loop;
@@ -44,14 +41,33 @@ export function startCappedRenderLoop(input: StartCappedRenderLoopInput): Capped
 /**
  * Keeps at most one drawn frame waiting in the GPU process. Animation frames do not wait for the GPU, so a
  * software-rendered scene otherwise queues several frames there, and a synchronous WebGL call such as the context
- * teardown when the page unloads waits for that whole queue.
+ * teardown when the page unloads waits for that whole queue. An animation frame held back for the GPU never reaches
+ * the loop, so the wait costs one animation frame and leaves the cap's timing alone.
  */
-class GpuFramePacer {
-    private readonly context: GpuFenceContext;
+class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
+    private readonly engine: RenderLoopEngine;
+    private readonly gpu: GpuFenceContext | null;
     private previousFrame: WebGLSync | null = null;
+    private scheduledFrame: (() => void) | null = null;
+    private readonly animationFrame = () => this.deliverAnimationFrame();
 
-    constructor(context: GpuFenceContext) {
-        this.context = context;
+    constructor(engine: RenderLoopEngine, gpu: GpuFenceContext | null) {
+        this.engine = engine;
+        this.gpu = gpu;
+    }
+
+    start(frame: () => void): void {
+        this.scheduledFrame = frame;
+        this.engine.runRenderLoop(this.animationFrame);
+    }
+
+    stop(): void {
+        this.engine.stopRenderLoop(this.animationFrame);
+        this.scheduledFrame = null;
+    }
+
+    resetTiming(): void {
+        this.engine.performanceMonitor.reset();
     }
 
     drawFrame(renderFrame: () => 'ready' | 'pending'): 'ready' | 'pending' {
@@ -59,22 +75,30 @@ class GpuFramePacer {
             return 'pending';
         }
         const result = renderFrame();
-        this.previousFrame = this.context.fenceSync(this.context.SYNC_GPU_COMMANDS_COMPLETE, 0);
-        this.context.flush();
+        if (this.gpu !== null) {
+            this.previousFrame = this.gpu.fenceSync(this.gpu.SYNC_GPU_COMMANDS_COMPLETE, 0);
+            this.gpu.flush();
+        }
         return result;
     }
 
+    private deliverAnimationFrame(): void {
+        if (this.readPreviousFrameExecuted()) {
+            this.scheduledFrame?.();
+        }
+    }
+
     private readPreviousFrameExecuted(): boolean {
-        if (this.previousFrame === null) {
+        if (this.gpu === null || this.previousFrame === null) {
             return true;
         }
-        const status = this.context.getSyncParameter(this.previousFrame, this.context.SYNC_STATUS);
-        if (status === this.context.UNSIGNALED) {
+        const status = this.gpu.getSyncParameter(this.previousFrame, this.gpu.SYNC_STATUS);
+        if (status === this.gpu.UNSIGNALED) {
             return false;
         }
         // A sync of a lost context reads null, also after a restore, and has nothing left to delete.
-        if (status === this.context.SIGNALED) {
-            this.context.deleteSync(this.previousFrame);
+        if (status === this.gpu.SIGNALED) {
+            this.gpu.deleteSync(this.previousFrame);
         }
         this.previousFrame = null;
         return true;

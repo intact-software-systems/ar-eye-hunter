@@ -39,12 +39,19 @@ class FakeGpu {
     readonly liveFences = new Set<FakeFence>();
     generation = 0;
     lost = false;
+    private readonly frameMs: number;
+    private busyUntilMs = 0;
+
+    constructor(frameMs = Number.POSITIVE_INFINITY) {
+        this.frameMs = frameMs;
+    }
 
     fenceSync(): WebGLSync | null {
         if (this.lost) {
             return null;
         }
-        const fence = { generation: this.generation, readyAtMs: Number.POSITIVE_INFINITY };
+        this.busyUntilMs = Math.max(nowMs, this.busyUntilMs) + this.frameMs;
+        const fence = { generation: this.generation, readyAtMs: this.busyUntilMs };
         this.liveFences.add(fence);
         return fence;
     }
@@ -93,6 +100,16 @@ function countDraws(): { readonly draws: () => number; readonly renderFrame: () 
     };
 }
 
+const CAP_INTERVAL_MS = 1000 / 45;
+const DRIVER_FRAME_MS = 4;
+
+function runDriverFrames(engine: FakeEngine, count: number): void {
+    for (let index = 0; index < count; index += 1) {
+        nowMs += DRIVER_FRAME_MS;
+        engine.animationFrame();
+    }
+}
+
 describe('Relic gameplay render loop', () => {
     beforeEach(() => {
         nowMs = 0;
@@ -138,6 +155,34 @@ describe('Relic gameplay render loop', () => {
         nowMs = 40;
         engine.animationFrame();
         expect(frame.draws()).toBe(2);
+        loop.dispose();
+    });
+
+    it('follows the frame rate of a GPU slightly slower than the cap instead of a fraction of the cap', () => {
+        const engine = new FakeEngine();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu: new FakeGpu(CAP_INTERVAL_MS + 3),
+            frameIntervalMs: CAP_INTERVAL_MS,
+            renderFrame: frame.renderFrame
+        });
+        runDriverFrames(engine, 240);
+        expect(frame.draws(), 'one draw per 28 ms: the 25 ms GPU frame rounded up to a driver frame').toBe(35);
+        loop.dispose();
+    });
+
+    it('draws every capped frame on a GPU faster than the cap', () => {
+        const engine = new FakeEngine();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu: new FakeGpu(2),
+            frameIntervalMs: CAP_INTERVAL_MS,
+            renderFrame: frame.renderFrame
+        });
+        runDriverFrames(engine, 240);
+        expect(frame.draws(), 'one draw per 24 ms: the cap rounded up to a driver frame').toBe(41);
         loop.dispose();
     });
 
