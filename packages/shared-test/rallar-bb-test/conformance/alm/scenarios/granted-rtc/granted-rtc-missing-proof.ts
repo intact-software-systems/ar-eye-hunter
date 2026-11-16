@@ -5,6 +5,7 @@ import {
     toRefusedReceiverCommands,
     toRewritingPublisherCommands
 } from './granted-rtc-commands.ts';
+import { LISTENER_AND_PUBLISHER_START_GRANTS } from './granted-rtc-start-grants.ts';
 
 /** The sender's page deletes the proof from each frame it signed; the receiver drops the frame `unauthorized`. */
 export const grantedRtcMissingProof: AlmConformanceScenarioDefinition = {
@@ -16,6 +17,7 @@ export const grantedRtcMissingProof: AlmConformanceScenarioDefinition = {
     laneFamily: 'two-agent',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: LISTENER_AND_PUBLISHER_START_GRANTS,
     toSenderCommands: (sender) => toRewritingPublisherCommands(sender, 'strip-proof'),
     toRecipientCommands: (receiver) => toRefusedReceiverCommands(receiver, 'missing-proof')
 };

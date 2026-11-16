@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 
-import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/observation/alm-observation-snapshot.ts';
 import {
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
     type ALMObservationRegime
-} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+} from '../../shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-regime.ts';
 import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+import { DECLARED_CELL_ORDER } from './alm-conformance-test-input.ts';
 
 const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
 const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
@@ -41,7 +43,7 @@ function toRegime(events: readonly RallarBlackBoxTestRecord[]): ALMObservationRe
         (issues) => {
             throw new Error(`synthetic snapshot did not decode: ${issues.join('; ')}`);
         },
-        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'full', cellOutcome: 'passed' })
+        (snapshot) => computeALMObservationRegime({ snapshot, carrier: 'rtc', scope: 'full', cellOutcome: 'passed', cellOrder: DECLARED_CELL_ORDER })
     );
 }
 
@@ -83,6 +85,7 @@ describe('the ALM observation congestion readings', () => {
             carrier: 'ws',
             scope: 'full',
             cellOutcome: 'failed',
+            cellOrder: DECLARED_CELL_ORDER,
             snapshotIssues: ['snapshot is not an object']
         });
 

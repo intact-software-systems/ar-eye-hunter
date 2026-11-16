@@ -1,9 +1,11 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import {
+    expect,
+    test,
+    type BrowserContext,
+    type Page
+} from '@playwright/test';
 
 import { RELIC_TYPES } from '../../../packages/relic-hunters/src/protocol.ts';
-
-const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
-    process.env.RELIC_HUNTERS_FULL_STACK === 'true';
 
 interface RuntimeHook {
     readonly roomId?: string;
@@ -61,6 +63,20 @@ interface ConvergedSnapshotExpectation {
     readonly minEventCount?: number;
 }
 
+interface RelicCommandHold {
+    hold(): void;
+    release(): void;
+    heldCount(): number;
+}
+
+const fullStackEnabled = process.env.RELIC_HUNTERS_FULL_STACK === '1' ||
+    process.env.RELIC_HUNTERS_FULL_STACK === 'true';
+
+/** One checkpoint interval (1 s, the browser default) and a margin. */
+const CHECKPOINT_SETTLE_MS = 2_000;
+const REPEAT_WINDOW_MS = 3_000;
+const RALLAR_WS_PATH = /\/api\/ws\//;
+
 test.describe('full-stack Relic Hunters two-client propagation', () => {
     test.skip(
         !fullStackEnabled,
@@ -115,7 +131,7 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
             ]);
 
             await pageB.reload();
-            await expect(pageB.getByRole('button', { name: 'Refresh' })).toBeVisible();
+            await expect(pageB.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible();
             await expectConverged(pageA, pageB, {
                 phase: 'planning',
                 round: 2,
@@ -214,28 +230,19 @@ test.describe('full-stack Relic Hunters two-client propagation', () => {
     });
 });
 
-/** One checkpoint interval (1 s, the browser default) and a margin. */
-const CHECKPOINT_SETTLE_MS = 2_000;
-const REPEAT_WINDOW_MS = 3_000;
-const RALLAR_WS_PATH = /\/api\/ws\//;
-
-interface RelicCommandHold {
-    hold(): void;
-    release(): void;
-    heldCount(): number;
-}
-
 /**
- * Withholds the page's Relic command frames from the server while held, as a carrier that accepted them and never
- * delivered. Every other frame, and every frame of a socket opened after the release, goes through.
+ * Once a socket has held a Relic command, it never forwards another command. Release allows replacement sockets
+ * to forward commands, forcing reload recovery through the new page rather than an old-socket retry.
  */
 async function routeRelicCommandHold(context: BrowserContext): Promise<RelicCommandHold> {
     let holding = false;
     let held = 0;
     await context.routeWebSocket(RALLAR_WS_PATH, (socket) => {
         const server = socket.connectToServer();
+        let hasHeldCommand = false;
         socket.onMessage((message) => {
-            if (holding && String(message).includes(RELIC_TYPES.command)) {
+            if ((holding || hasHeldCommand) && String(message).includes(RELIC_TYPES.command)) {
+                hasHeldCommand = true;
                 held += 1;
                 return;
             }
@@ -270,7 +277,7 @@ async function enterLobbyWithTwoHunters(pageA: Page, pageB: Page, suffix: string
     await expect(pageA.getByRole('button', { name: /Join as/ })).toBeVisible();
     const roomId = await waitForRoomId(pageA);
 
-    await pageB.getByRole('button', { name: 'Refresh' }).click();
+    await pageB.getByRole('button', { name: 'Refresh', exact: true }).click();
     const roomButtonB = pageB.locator(`button.room-row[data-room-id="${roomId}"]`);
     await expect(roomButtonB).toBeVisible();
     await roomButtonB.click();
@@ -339,8 +346,8 @@ async function expectConverged(
             return undefined;
         }
 
-        const left = comparableSnapshot(lastA.snapshot);
-        const right = comparableSnapshot(lastB.snapshot);
+        const left = toComparableSnapshot(lastA.snapshot);
+        const right = toComparableSnapshot(lastB.snapshot);
         if (JSON.stringify(left) !== JSON.stringify(right)) {
             return undefined;
         }
@@ -367,7 +374,7 @@ async function expectConverged(
 
     expect(lastA.diagnostics.lastAcceptedSnapshot).toBeTruthy();
     expect(lastB.diagnostics.lastAcceptedSnapshot).toBeTruthy();
-    return comparableSnapshot(lastA.snapshot);
+    return toComparableSnapshot(lastA.snapshot);
 }
 
 /** Both pages cued exactly these round transitions, in this order. */
@@ -413,7 +420,7 @@ async function readRuntime(page: Page): Promise<RuntimeHook | undefined> {
     );
 }
 
-function comparableSnapshot(snapshot: RuntimeSnapshot): ComparableSnapshot {
+function toComparableSnapshot(snapshot: RuntimeSnapshot): ComparableSnapshot {
     return {
         gameId: snapshot.gameId,
         roomId: snapshot.roomId,

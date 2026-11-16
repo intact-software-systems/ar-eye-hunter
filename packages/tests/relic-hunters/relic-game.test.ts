@@ -3,6 +3,10 @@ import {
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
+    decodeRelicSnapshotPayload,
+    isRelicCommand,
+    isRelicHunterEvent,
+    isRelicRoundTransitionEvent,
     isRelicSnapshot,
     RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
@@ -409,27 +413,112 @@ describe('Relic Hunters game rules', () => {
         expect(JSON.stringify(snapshot)).not.toContain(blueprint.seed);
     });
 
-    it('rejects malformed required and nested snapshot fields', () => {
-        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
-        const malformed = [
-            { ...valid, round: Number.NaN },
-            { ...valid, roundTimeLimitMs: undefined },
-            { ...valid, adminPlayerId: 1 },
-            { ...valid, roundStartedAtEpochMs: 'soon' },
-            { ...valid, map: [null] },
-            { ...valid, relics: [null] },
-            { ...valid, roomInvestigations: [null] },
-            { ...valid, players: [null] },
-            { ...valid, submittedPlayerIds: [null] },
-            { ...valid, events: [null] },
-            { ...valid, winnerIds: [null] },
-            { ...valid, setup: { schemaVersion: 2, source: 'procedural' } },
-            { ...valid, setup: { ...valid.setup, seed: 'leaked-seed' } },
-            { ...valid, setup: { ...valid.setup, blueprintId: 'procedural:leaked-seed' } }
-        ];
+    it('accepts a public snapshot', () => {
+        expect(isRelicSnapshot(toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1)))).toBe(true);
+    });
 
-        expect(isRelicSnapshot(valid)).toBe(true);
-        expect(malformed.every((candidate) => !isRelicSnapshot(candidate))).toBe(true);
+    it.each([
+        { label: 'a NaN round', override: { round: Number.NaN } },
+        { label: 'no roundTimeLimitMs', override: { roundTimeLimitMs: undefined } },
+        { label: 'a numeric adminPlayerId', override: { adminPlayerId: 1 } },
+        { label: 'a text roundStartedAtEpochMs', override: { roundStartedAtEpochMs: 'soon' } },
+        { label: 'a null map entry', override: { map: [null] } },
+        { label: 'a null relic', override: { relics: [null] } },
+        { label: 'a null room investigation', override: { roomInvestigations: [null] } },
+        { label: 'a null player', override: { players: [null] } },
+        { label: 'a null submitted player id', override: { submittedPlayerIds: [null] } },
+        { label: 'a null event', override: { events: [null] } },
+        { label: 'a null winner id', override: { winnerIds: [null] } },
+        { label: 'a setup of another schema version', override: { setup: { schemaVersion: 2, source: 'procedural' } } }
+    ])('refuses a snapshot with $label', ({ override }) => {
+        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+
+        expect(isRelicSnapshot({ ...valid, ...override })).toBe(false);
+    });
+
+    it.each([
+        { label: 'a leaked seed', leak: { seed: 'leaked-seed' } },
+        { label: 'a leaked blueprintId', leak: { blueprintId: 'procedural:leaked-seed' } }
+    ])('refuses a snapshot whose setup carries $label', ({ leak }) => {
+        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+
+        expect(isRelicSnapshot({ ...valid, setup: { ...valid.setup, ...leak } })).toBe(false);
+    });
+
+    it('accepts a command', () => {
+        expect(isRelicCommand(submit('Alice', { kind: 'search' }))).toBe(true);
+    });
+
+    const searchCommand = submit('Alice', { kind: 'search' });
+
+    it.each([
+        { label: 'null', candidate: () => null },
+        { label: 'a string', candidate: () => 'submit-action' },
+        { label: 'a number', candidate: () => 42 },
+        { label: 'an empty array', candidate: () => [] },
+        { label: 'an array holding a valid command', candidate: () => [searchCommand] },
+        { label: 'another protocol version', candidate: () => ({ ...searchCommand, protocolVersion: RELIC_PROTOCOL_VERSION + 1 }) },
+        { label: 'no gameId', candidate: () => withoutField(searchCommand, 'gameId') },
+        { label: 'no username', candidate: () => withoutField(searchCommand, 'username') },
+        { label: 'an unknown command kind', candidate: () => ({ ...searchCommand, kind: 'teleport' }) },
+        { label: 'a null action', candidate: () => ({ ...searchCommand, action: null }) },
+        { label: 'an array as the action', candidate: () => ({ ...searchCommand, action: [] }) },
+        { label: 'a string as the action', candidate: () => ({ ...searchCommand, action: 'search' }) },
+        { label: 'an unknown action kind', candidate: () => ({ ...searchCommand, action: { kind: 'teleport' } }) }
+    ])('refuses a command that is $label', ({ candidate }) => {
+        expect(isRelicCommand(candidate())).toBe(false);
+    });
+
+    it('decodes a snapshot bare or inside its publication envelope', () => {
+        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+
+        expect(decodeRelicSnapshotPayload(valid).right).toBe(valid);
+        expect(decodeRelicSnapshotPayload({ snapshot: valid }).right).toBe(valid);
+    });
+
+    it.each([
+        { label: 'null', payload: () => null },
+        { label: 'a string', payload: () => 'snapshot' },
+        { label: 'an empty array', payload: () => [] },
+        { label: 'an array holding a snapshot', payload: () => [toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1))] },
+        { label: 'an envelope holding null', payload: () => ({ snapshot: null }) },
+        { label: 'an envelope holding an array of a snapshot', payload: () => ({ snapshot: [toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1))] }) }
+    ])('refuses a snapshot payload that is $label', ({ payload }) => {
+        expect(decodeRelicSnapshotPayload(payload()).left).toEqual(new TypeError('not a Relic snapshot'));
+    });
+
+    it('accepts a round transition', () => {
+        expect(isRelicRoundTransitionEvent(roundTransition())).toBe(true);
+    });
+
+    it.each([
+        { label: 'null', candidate: () => null },
+        { label: 'an empty array', candidate: () => [] },
+        { label: 'an array holding a valid transition', candidate: () => [roundTransition()] },
+        { label: 'another protocol version', candidate: () => ({ ...roundTransition(), protocolVersion: RELIC_PROTOCOL_VERSION + 1 }) },
+        { label: 'an unknown transition', candidate: () => ({ ...roundTransition(), transition: 'paused' }) },
+        { label: 'no text', candidate: () => withoutField(roundTransition(), 'text') }
+    ])('refuses a round transition that is $label', ({ candidate }) => {
+        expect(isRelicRoundTransitionEvent(candidate())).toBe(false);
+    });
+
+    it('accepts an action-recorded and a command-refused hunter event', () => {
+        expect(isRelicHunterEvent(recordedHunterEvent())).toBe(true);
+        expect(isRelicHunterEvent(refusedHunterEvent())).toBe(true);
+    });
+
+    it.each([
+        { label: 'null', candidate: () => null },
+        { label: 'an empty array', candidate: () => [] },
+        { label: 'an array holding a valid event', candidate: () => [recordedHunterEvent()] },
+        { label: 'another protocol version', candidate: () => ({ ...recordedHunterEvent(), protocolVersion: RELIC_PROTOCOL_VERSION + 1 }) },
+        { label: 'an unknown kind', candidate: () => ({ ...recordedHunterEvent(), kind: 'action-revealed' }) },
+        { label: 'a null action', candidate: () => ({ ...recordedHunterEvent(), action: null }) },
+        { label: 'an array as the action', candidate: () => ({ ...recordedHunterEvent(), action: [] }) },
+        { label: 'a refusal of an unknown command', candidate: () => ({ ...refusedHunterEvent(), command: 'teleport' }) },
+        { label: 'a refusal with no principalId', candidate: () => withoutField(refusedHunterEvent(), 'principalId') }
+    ])('refuses a hunter event that is $label', ({ candidate }) => {
+        expect(isRelicHunterEvent(candidate())).toBe(false);
     });
 
     it('adds room-specific notes to empty investigations', () => {
@@ -628,4 +717,45 @@ function submitAndContinue(
     return submitted.phase === 'review'
         ? continueReview(submitted, now + 0.5)
         : submitted;
+}
+
+function withoutField(value: object, field: string): object {
+    return Object.fromEntries(Object.entries(value).filter(([key]) => key !== field));
+}
+
+function roundTransition(): object {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: 'room-1',
+        createdAtEpochMs: 1,
+        round: 1,
+        phase: 'planning',
+        transition: 'round-started',
+        text: 'Round 1 begins.'
+    };
+}
+
+function recordedHunterEvent(): object {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: 'room-1',
+        principalId: 'alice',
+        playerId: 'alice-session',
+        kind: 'action-recorded',
+        round: 1,
+        action: { kind: 'search' }
+    };
+}
+
+function refusedHunterEvent(): object {
+    return {
+        protocolVersion: RELIC_PROTOCOL_VERSION,
+        gameId: 'room-1',
+        principalId: 'alice',
+        playerId: 'alice-session',
+        kind: 'command-refused',
+        command: 'submit-action',
+        text: 'Not your turn.',
+        completedGameId: null
+    };
 }

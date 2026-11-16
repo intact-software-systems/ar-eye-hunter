@@ -12,9 +12,9 @@ import type {
 import { createStableRtcLayoutWait } from '../../../../fixtures/create-stable-rtc-layout-wait.ts';
 import { CONNECT_READINESS_TIMEOUT_MS, NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../../alm-conformance-ordering-commands.ts';
 import type { AlmConformanceStepInput } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId, toLoopIterationSendHandleId } from '../../alm-conformance-step-identities.ts';
+import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 
 /**
  * Every paced cell's cadence. The ALM observation job of main run 40875760473 (86800bff2, `ws` smoke) measured the lead
@@ -123,7 +123,7 @@ export function toPublicationLeadCommands(
             index: 0,
             publication,
             ttlMs: undefined,
-            resourceId: toResourceId(step, undefined),
+            resourceId: toPublicationResourceId(step, undefined),
             recipientPeers
         }),
         ...toPublicationVerdictCommands({
@@ -148,7 +148,7 @@ export function toPublicationSendCommands(sends: AlmPublicationSendsInput): read
 /** One send `index` with `seq` `index`, for a cell whose sends name their streams one by one. */
 export function toPublicationSendCommand(send: AlmPublicationSendInput): RallarBlackBoxTestMessagesSendCommand {
     const { stream, ...live } = send;
-    return toLiveSendCommand({ ...live, resourceId: toResourceId(send.step, stream) });
+    return toLiveSendCommand({ ...live, resourceId: toPublicationResourceId(send.step, stream) });
 }
 
 function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackBoxTestLoopCommand {
@@ -165,7 +165,7 @@ function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackB
                 index: 0,
                 publication: sends.publication,
                 ttlMs: sends.ttlMs,
-                resourceId: toResourceId(step, stream),
+                resourceId: toPublicationResourceId(step, stream),
                 recipientPeers: undefined
             }),
             commandId: toCommandId(step, 'paced-send'),
@@ -175,7 +175,7 @@ function toPublicationLoopCommand(sends: AlmPublicationSendsInput): RallarBlackB
     };
 }
 
-function toResourceId(step: AlmConformanceStepInput, stream: string | undefined): string {
+function toPublicationResourceId(step: AlmConformanceStepInput, stream: string | undefined): string {
     return stream === undefined ? `alm-${step.scenarioKey}` : `alm-${step.scenarioKey}-${stream}`;
 }
 

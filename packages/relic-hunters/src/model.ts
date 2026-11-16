@@ -1,4 +1,4 @@
-import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+import { isApiJsonObject, type ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isRallarGameRematch, type RallarGameRematch } from '@shared/rallar-game/rematch.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { isRelicTournamentParticipation, type RelicTournamentParticipation } from './relic-tournament-participation.ts';
@@ -467,7 +467,7 @@ function toPublicSetup(
 }
 
 export function isRelicCommand(value: unknown): value is RelicCommand {
-    if (!isRecord(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION) {
+    if (!isApiJsonObject(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION) {
         return false;
     }
 
@@ -498,14 +498,14 @@ export function isRelicCommand(value: unknown): value is RelicCommand {
         case 'pickup-relic':
             return typeof value.relicId === 'string' && value.relicId.length > 0;
         case 'submit-action':
-            return isRecord(value.action) && isRelicActionKind(value.action.kind);
+            return isApiJsonObject(value.action) && isRelicActionKind(value.action.kind);
         default:
             return false;
     }
 }
 
 export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
         typeof value.roomId === 'string' &&
@@ -534,12 +534,12 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
 }
 
 export function decodeRelicSnapshotPayload(value: unknown): Either<TypeError, RelicPublicSnapshot> {
-    const next = isRecord(value) && 'snapshot' in value ? value.snapshot : value;
+    const next = isApiJsonObject(value) && 'snapshot' in value ? value.snapshot : value;
     return isRelicSnapshot(next) ? Either.ofRight(next) : Either.ofLeft(new TypeError('not a Relic snapshot'));
 }
 
 export function isRelicRoundTransitionEvent(value: unknown): value is RelicRoundTransitionEvent {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
         isFiniteNumber(value.createdAtEpochMs) &&
@@ -556,7 +556,8 @@ export function isRelicRoundTransitionEvent(value: unknown): value is RelicRound
 
 export function isRelicHunterEvent(value: unknown): value is RelicHunterEvent {
     if (
-        !isRecord(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION || typeof value.gameId !== 'string' ||
+        !isApiJsonObject(value) || value.protocolVersion !== RELIC_PROTOCOL_VERSION ||
+        typeof value.gameId !== 'string' ||
         typeof value.principalId !== 'string' || typeof value.playerId !== 'string'
     ) {
         return false;
@@ -571,7 +572,7 @@ export function isRelicHunterEvent(value: unknown): value is RelicHunterEvent {
 
 /** As a command's action is read: its kind decides the rest, which the rules validate. */
 function isRelicActionInput(value: unknown): value is RelicActionInput {
-    return isRecord(value) && isRelicActionKind(value.kind);
+    return isApiJsonObject(value) && isRelicActionKind(value.kind);
 }
 
 function isRelicCommandKind(value: unknown): value is RelicCommand['kind'] {
@@ -596,7 +597,7 @@ function isRelicGamePhase(value: unknown): value is RelicGamePhase {
 }
 
 function isRelicRoom(value: unknown): value is RelicRoom {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         typeof value.id === 'string' &&
         typeof value.name === 'string' &&
         isRelicRoomKind(value.kind) &&
@@ -621,7 +622,7 @@ function isRelicRoomKind(value: unknown): value is RelicRoomKind {
 }
 
 function isRelicDefinition(value: unknown): value is RelicDefinition {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         typeof value.id === 'string' &&
         typeof value.name === 'string' &&
         isFiniteNumber(value.value) &&
@@ -634,7 +635,7 @@ function isRelicDefinition(value: unknown): value is RelicDefinition {
 function isRelicRoomInvestigation(
     value: unknown
 ): value is RelicRoomInvestigation {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         typeof value.roomId === 'string' &&
         typeof value.searchedByPlayerId === 'string' &&
         typeof value.searchedByUsername === 'string' &&
@@ -662,7 +663,7 @@ function isRelicRoomInvestigationEffect(value: unknown): value is RelicRoomInves
 }
 
 function isRelicPlayer(value: unknown): value is RelicPlayer {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         typeof value.playerId === 'string' &&
         typeof value.username === 'string' &&
         isRelicCharacterId(value.characterId) &&
@@ -677,7 +678,7 @@ function isRelicPlayer(value: unknown): value is RelicPlayer {
 }
 
 function isRelicEvent(value: unknown): value is RelicEvent {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         typeof value.id === 'string' &&
         isFiniteNumber(value.round) &&
         isRelicEventType(value.type) &&
@@ -715,7 +716,7 @@ function isRelicEventType(value: unknown): value is RelicEventType {
 }
 
 function isRelicAnimationCue(value: unknown): value is RelicAnimationCue {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         isRelicAnimationCueType(value.type) &&
         isOptionalString(value.roomId) &&
         isOptionalString(value.fromRoomId) &&
@@ -745,7 +746,7 @@ function isRelicAnimationCueType(value: unknown): value is RelicAnimationCueType
 function isRelicPublicSetupMetadata(
     value: unknown
 ): value is RelicPublicSetupMetadata {
-    return isRecord(value) &&
+    return isApiJsonObject(value) &&
         value.schemaVersion === 1 &&
         (value.source === 'default' || value.source === 'procedural' ||
             value.source === 'rallar-ai' || value.source === 'mock') &&
@@ -786,10 +787,6 @@ function isOneOf<T extends string>(value: unknown, options: readonly T[]): value
     return typeof value === 'string' && options.some((option) => option === value);
 }
 
-function isRecord(value: unknown): value is ApiJsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isRematchCommandIdentity(value: ApiJsonObject): boolean {
     return typeof value.completedGameId === 'string' && value.completedGameId.length > 0 &&
         typeof value.settingsKey === 'string' && value.settingsKey.length > 0;
@@ -797,7 +794,7 @@ function isRematchCommandIdentity(value: ApiJsonObject): boolean {
 
 function isRelicRematch(value: unknown): value is RelicRematch {
     if (
-        !isRecord(value) || Object.keys(value).length !== 3 ||
+        !isApiJsonObject(value) || Object.keys(value).length !== 3 ||
         !isRallarGameRematch(value.preparation, RELIC_EXPEDITION_CAPACITY) ||
         !Array.isArray(value.hunters) || value.hunters.length !== value.preparation.players.length ||
         typeof value.roundTimeLimitMs !== 'number' || ![60_000, 180_000, 300_000].includes(value.roundTimeLimitMs)
@@ -806,7 +803,7 @@ function isRelicRematch(value: unknown): value is RelicRematch {
     }
     const players = value.preparation.players;
     return value.hunters.every((hunter, index) =>
-        isRecord(hunter) && Object.keys(hunter).length === 3 && typeof hunter.username === 'string' &&
+        isApiJsonObject(hunter) && Object.keys(hunter).length === 3 && typeof hunter.username === 'string' &&
         isRelicCharacterId(hunter.characterId) && hunter.playerId === players[index].sessionId
     );
 }

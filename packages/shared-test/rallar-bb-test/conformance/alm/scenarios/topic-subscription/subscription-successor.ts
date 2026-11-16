@@ -7,21 +7,20 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toCommandId } from '../../alm-conformance-step-identities.ts';
 import {
+    SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toReadPollCommand, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
+import { toGenerationText, toResultTextWait } from './topic-subscription-budgets.ts';
+import {
     TOPIC_SUBSCRIPTION_SELECTOR,
     toSubscribeCommand,
     toSubscriptionRowsCommand,
     toTokenReadCommand,
-    toTopicGrantCommand,
     toUnsubscribeCommands,
     toUnsubscribeRequestCommand
 } from './topic-subscription-commands.ts';
 import { toRowsGenerationPollCommand } from './topic-subscription-generation-polls.ts';
-import {
-    toGenerationText,
-    toReadPollCommand,
-    toResultFact,
-    toResultTextWait
-} from './topic-subscription-polls.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -51,16 +50,21 @@ export const subscriptionSuccessor: AlmConformanceScenarioDefinition = {
     laneFamily: 'same-context',
     principalRoles: ['receiver', 'sender'],
     messageSelector: TOPIC_SUBSCRIPTION_SELECTOR,
+    startGrants: [
+        { grantee: 'receiver', publish: true, subscribe: false },
+        { grantee: 'sender', publish: false, subscribe: true }
+    ],
     successorGate: { role: 'sender', commandName: OWNER_GATE },
     toSenderCommands: (page) => page.role === 'sender' ? toOwnerPageCommands(page) : toSuccessorPageCommands(page),
     toRecipientCommands: toPublisherCommands
 };
 
-/** The receiver owns the room: it grants itself `publish` and the sender's principal `subscribe`. */
+/**
+ * The receiver owns the room, which its start state granted itself `publish` and the sender's principal `subscribe`:
+ * it subscribes to the cues and publishes once the successor subscribed.
+ */
 function toPublisherCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: true, subscribe: false }),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'sender', publish: false, subscribe: true }),
         ...toCueListenCommands(owner),
         toCueWait(owner, 'successor-subscribed'),
         ...toPublishCommands(owner, 'publication')
@@ -80,10 +84,12 @@ function toOwnerPageCommands(owner: AlmConformanceStepInput): readonly RallarBla
         toReadPollCommand({
             step: owner,
             name: 'replaced',
-            read: (readName) => toTokenReadCommand(owner, readName),
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            reads: [{ name: 'read', read: (readName) => toTokenReadCommand(owner, readName) }],
             facts: [{
                 name: 'replaced-lapsed',
-                field: 'subscriptions.0.status',
+                source: { read: 'read', field: 'subscriptions.0.status' },
                 operator: 'equals',
                 expected: 'lapsed'
             }]
@@ -93,6 +99,7 @@ function toOwnerPageCommands(owner: AlmConformanceStepInput): readonly RallarBla
         toRowsGenerationPollCommand({ step: owner, name: 'rows-after-release', tokens: OWNER_GATE, names: false }),
         staleRelease,
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: owner,
             name: 'stale-unsubscribe-not-subscribed',
             source: `resultCache.${staleRelease.commandId}.value.body.outcome`,
@@ -111,6 +118,7 @@ function toSuccessorPageCommands(successor: AlmConformanceStepInput): readonly R
         toTokenReadCommand(successor, 'tokens-successor-generation'),
         toSubscriptionRowsCommand(successor, 'rows-successor'),
         toResultFact({
+            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
             step: successor,
             name: 'rows-successor-count',
             source: `resultCache.${rows}.value.body.subscriptions`,

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { toGroupAdminSupportNarrative } from '@shared-server/rallar-system/admin-support/narratives/to-group-admin-support-narrative.ts';
 import type { AdminSupportJsonValue } from '@shared/api/admin-support/admin-support-types.ts';
+import type {
+    GroupTopologyManagementView,
+    PendingTopologyReplan
+} from '@shared/api/graph-topology-management-types.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -137,6 +141,21 @@ describe('the group narrative reports the lifecycle plane', () => {
         expect(remediation?.certainty).toBe('inferred');
     });
 
+    // The topology view's `pending` also reports a replan parked or commanded behind a settled coalesced head; the
+    // queue will still run it, so the server's move it names is the replan already queued.
+    it.each(
+        [
+            { replan: 'parked', pending: { reconfigureQueued: true, dueAtEpochMs: 4_500, generation: 1 } },
+            { replan: 'commanded', pending: { reconfigureQueued: true, dueAtEpochMs: null, generation: null } }
+        ] as const
+    )('reports a $replan replan behind a settled head as replan-queued', ({ pending }) => {
+        const settled = { lifecycleState: 'active', acceptedLayoutIdentity: null } as const;
+
+        expect(factsFor(settled, undefined, toTopologyView(null))['group.activationRemediation']).toBe('none');
+        expect(factsFor(settled, undefined, toTopologyView(pending))['group.activationRemediation'])
+            .toBe('replan-queued');
+    });
+
     it('degrades the policy-fed facts rather than lying when the policy is unreadable', () => {
         const facts = factsFor({ lifecycleState: 'active' }, null);
 
@@ -178,7 +197,8 @@ describe('the group narrative reports the lifecycle plane', () => {
 
 function narrativeFor(
     overrides: Partial<Parameters<typeof createTestGroup>[0]>,
-    policy: GroupLifecyclePolicy | null = resolveGroupLifecyclePolicyPreset('managed')
+    policy: GroupLifecyclePolicy | null = resolveGroupLifecyclePolicyPreset('managed'),
+    topologyView: GroupTopologyManagementView | undefined = undefined
 ) {
     const snapshot: GroupSnapshot = {
         causalRevision: { groupRevision: 7, presenceRevision: 3 },
@@ -193,7 +213,7 @@ function narrativeFor(
         request: { groupRef: GROUP_REF },
         snapshot,
         recentEvents: [],
-        topologyView: undefined,
+        topologyView,
         hasGroupStateService: true,
         hasTopologyQuery: true,
         policy,
@@ -203,9 +223,23 @@ function narrativeFor(
 
 function factsFor(
     overrides: Partial<Parameters<typeof createTestGroup>[0]>,
-    policy?: GroupLifecyclePolicy | null
+    policy?: GroupLifecyclePolicy | null,
+    topologyView?: GroupTopologyManagementView
 ): Record<string, AdminSupportJsonValue> {
-    return Object.fromEntries(narrativeFor(overrides, policy).facts.map((f) => [f.label, f.value]));
+    return Object.fromEntries(narrativeFor(overrides, policy, topologyView).facts.map((f) => [f.label, f.value]));
+}
+
+/** A view with no planned or accepted layout, so only `pending` bears on the remediation. */
+function toTopologyView(pending: PendingTopologyReplan | null): GroupTopologyManagementView {
+    const effective = { topologyKind: 'mesh', degreeLimit: 4, treeMinSize: 4, meshMinSize: 2, meshParamK: 2 } as const;
+    return {
+        groupRef: GROUP_REF,
+        overlayId: 'overlay-1',
+        config: { serverDefaults: effective, durable: null, temporary: null, requestOptions: null, effective },
+        snapshot: null,
+        acceptedSnapshot: null,
+        pending
+    };
 }
 
 function warningCodesFor(

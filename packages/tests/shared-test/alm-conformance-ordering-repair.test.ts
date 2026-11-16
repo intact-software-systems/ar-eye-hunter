@@ -6,7 +6,11 @@ import {
     ALM_CONFORMANCE_RTC_CARRIERS,
     ALM_CONFORMANCE_SINGLE_HOP_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
-import type { CreateAlmConformanceRecipesInput } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
+import { toOrderingKey } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-ordering-commands.ts';
+import type {
+    AlmConformanceStepInput,
+    CreateAlmConformanceRecipesInput
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-scenario-definition.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -205,7 +209,8 @@ describe('ordering-gap-repair', () => {
                 topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
                 contains: '"typeId":"al.control.nack.v3",' +
-                    `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`
+                    `"targetMsgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-3.value.msgId}","outcome":"committed"`,
+                sinceCommandIdPrefix: `alm-${carrier}-ordering-gap-repair-sender-`
             },
             timeoutMs: 27_000
         });
@@ -224,7 +229,8 @@ describe('ordering-gap-repair', () => {
                     topic: OUTBOUND_DIAGNOSTICS_TOPIC,
                     payloadPath: 'data',
                     contains: `"msgId":"{resultCache.alm-${carrier}-ordering-gap-repair-sender-send-2.value.msgId}",` +
-                        `"typeId":"alm.conformance.${carrier}.ordering-gap-repair","origin":"repair"`
+                        `"typeId":"alm.conformance.${carrier}.ordering-gap-repair","origin":"repair"`,
+                    sinceCommandIdPrefix: `alm-${carrier}-ordering-gap-repair-sender-`
                 },
                 timeoutMs: 27_000
             });
@@ -250,7 +256,8 @@ describe('ordering-gap-repair', () => {
                 kind: 'diagnostic',
                 topic: INBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '"effectId":"release:alm-rtc-ordering-gap-repair%3A'
+                contains: '"effectId":"release:alm-rtc-ordering-gap-repair%3A',
+                sinceCommandIdPrefix: 'alm-rtc-ordering-gap-repair-receiver-'
             },
             timeoutMs: 27_000
         });
@@ -261,7 +268,8 @@ describe('ordering-gap-repair', () => {
                 kind: 'diagnostic',
                 topic: INBOUND_DIAGNOSTICS_TOPIC,
                 payloadPath: 'data',
-                contains: '%3A0:3","msgId":null,"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"'
+                contains: '%3A0:3","msgId":null,"typeId":null,"subjectMsgId":null,"payloadKind":"release-buffered"',
+                sinceCommandIdPrefix: 'alm-rtc-ordering-gap-repair-receiver-'
             },
             timeoutMs: 27_000
         });
@@ -296,16 +304,17 @@ describe('repair-exhausted', () => {
         const { sender, receiver, recipientB } = findScenario(toConformanceInput(carrier), 'repair-exhausted');
 
         const cue = `alm-${carrier}-repair-exhausted-cues-sender-cue`;
-        const firstSend = toHeldSecondSendNames(carrier).slice(0, 5);
+        // The cues of both receivers, not the carrier's acceptance, order the first send before the gap.
+        const firstSend = toHeldSecondSendNames(carrier).slice(0, 3);
         const gap = toHeldSecondSendNames(carrier).slice(5);
 
         expect(toCommandNames(sender)).toEqual([
             'ensure-group',
             'ensure-member',
             'connect',
-            'storage-counters-connected',
             `${cue}-listen`,
             `${cue}-listen-sent`,
+            'storage-counters-connected',
             ...firstSend,
             `${cue}-receiver-delivered-1-received`,
             `${cue}-recipient-b-delivered-1-received`,
@@ -349,8 +358,8 @@ describe('repair-exhausted', () => {
             const senderNames = toCommandNames(sender);
             const cueWaits = ['receiver', 'recipient-b'].map((role) => `alm-${carrier}-repair-exhausted-cues-sender-cue-${role}-delivered-1-received`);
 
-            // The first send left the page before the sender waits, and nothing of the gap is sent before both cues.
-            expect(senderNames.slice(senderNames.indexOf('assert-sent-1') + 1, senderNames.indexOf('assert-sent-1') + 4))
+            // The first send was admitted before the sender waits, and nothing of the gap is sent before both cues.
+            expect(senderNames.slice(senderNames.indexOf('assert-admitted-1') + 1, senderNames.indexOf('assert-admitted-1') + 4))
                 .toEqual([...cueWaits, toHoldNames(carrier, 'hold')[0]]);
             expect(recipientB).toBeDefined();
             for (const [role, recipient] of [['receiver', receiver], ['recipient-b', recipientB!]] as const) {
@@ -441,7 +450,8 @@ describe('ordering-resync observes the recovery owner', () => {
                 kind: 'diagnostic',
                 topic: STORAGE_TOPIC,
                 payloadPath: 'data',
-                contains: `"kind":"recovery-owner-invoked","orderingKey":"alm-${carrier}-ordering-resync",`
+                contains: `"kind":"recovery-owner-invoked","orderingKey":"alm-${carrier}-ordering-resync",`,
+                sinceCommandIdPrefix: `alm-${carrier}-ordering-resync-receiver-`
             },
             timeoutMs: 27_000
         });
@@ -453,7 +463,8 @@ describe('ordering-resync observes the recovery owner', () => {
                 kind: 'diagnostic',
                 topic: STORAGE_TOPIC,
                 payloadPath: 'data',
-                contains: '"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":300,"carrier":"rtc"}'
+                contains: '"lastContiguousSeq":1,"expectedSeq":2,"observedSeq":300,"carrier":"rtc"}',
+                sinceCommandIdPrefix: `alm-${carrier}-ordering-resync-receiver-`
             },
             timeoutMs: 27_000
         });
@@ -548,5 +559,22 @@ describe('ordering-resync authors a real gap over the RTC carriers', () => {
             'relay-resync-nack',
             'stats'
         ]);
+    });
+});
+
+describe('ALM ordering key', () => {
+    it('two scenario keys of one scenario id name two ordering keys', () => {
+        const toStep = (scenarioKey: string): AlmConformanceStepInput => ({
+            input: toConformanceInput('rtc'),
+            scenarioId: 'ordering-resync',
+            scenarioKey,
+            role: 'sender',
+            roles: ['sender', 'receiver'],
+            messages: {},
+            connect: undefined
+        });
+
+        expect(toOrderingKey(toStep('ordering-resync'))).toBe('alm-rtc-ordering-resync');
+        expect(toOrderingKey(toStep('ordering-resync-twin'))).toBe('alm-rtc-ordering-resync-twin');
     });
 });

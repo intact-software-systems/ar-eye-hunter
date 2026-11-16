@@ -21,7 +21,9 @@ import {
     toObserveCommand,
     toReceiptsCommand,
     toResultAssertion,
-    toSendCommand
+    toSendCommand,
+    toVerdictCommands,
+    type AlmConformanceVerdictFact
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceRole } from './alm-conformance-roles.ts';
 import type { AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
@@ -46,6 +48,8 @@ export interface AlmConformanceReceiptWindow {
     readonly ending: AlmConformanceReceiptEnding;
     /** `receiver` for a send that asks for its logical recipients, `leader` for one that asks for the room's leader. */
     readonly mode: Extract<ALReceiptMode, 'receiver' | 'leader'>;
+    /** What the read also asserts on the observe of the ended handle, after the receipt's own assertions; empty for none. */
+    readonly endingFacts: readonly AlmConformanceVerdictFact[];
 }
 
 /**
@@ -141,10 +145,9 @@ export function toServerReceiptCommands(sender: AlmConformanceStepInput): readon
 }
 
 /**
- * D28: the origin reads its receipt only after the scenario window, never by polling `acknowledged`, and spends the
- * window proving it is not its own recipient, since the frozen audience excludes it. Then it pins the state the handle
- * ended in, the receipt mode and the length of each recipient list; which session each list names is joined after the
- * run.
+ * D28: the origin reads its receipt only after the scenario window and spends the window proving it is not its own
+ * recipient, since the frozen audience excludes it. Then it pins the state the handle ended in, the receipt mode and
+ * the length of each recipient list; which session each list names is joined after the run.
  */
 export function toReceiptWindowCommands(
     sender: AlmConformanceStepInput,
@@ -154,12 +157,15 @@ export function toReceiptWindowCommands(
 }
 
 /**
- * The origin reads the receipt of its first send once its own window has passed: the state the handle ended in, the
- * receipt mode and the length of each recipient list.
+ * The origin reads the receipt of its first send once its own window has passed and its handle has ended: the state
+ * the handle ended in, the receipt mode and the length of each recipient list. A window only lets time pass, and an
+ * ending is what settles the lists, so the read follows the observe of the handle on the origin's own page, which
+ * resolves at any terminal state and leaves the assertions to say which. The window's ending facts are read on that
+ * same observe.
  */
 export function toReceiptReadCommands(
     origin: AlmConformanceStepInput,
-    { roles, ending, mode }: AlmConformanceReceiptWindow
+    { roles, ending, mode, endingFacts }: AlmConformanceReceiptWindow
 ): readonly RallarBlackBoxTestCommand[] {
     const lists = [
         ['expectedRecipientPeerIds', roles.confirmed.length + roles.unconfirmed.length + roles.outsideAudience.length],
@@ -167,11 +173,14 @@ export function toReceiptReadCommands(
         ['unconfirmedRecipientPeerIds', roles.unconfirmed.length],
         ['outsideAudienceRecipientPeerIds', roles.outsideAudience.length]
     ] as const;
+    const [endingObserve, ...endingAssertions] = toVerdictCommands(origin, ending, endingFacts);
     return [
+        endingObserve,
         toReceiptsCommand({ ...origin, index: 1 }),
         toReceiptAssertion(origin, 'state', ending),
         toReceiptAssertion(origin, 'receiptMode', mode),
-        ...lists.map(([field, expected]) => toReceiptAssertion(origin, `${field}.length`, expected))
+        ...lists.map(([field, expected]) => toReceiptAssertion(origin, `${field}.length`, expected)),
+        ...endingAssertions
     ];
 }
 

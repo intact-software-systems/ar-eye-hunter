@@ -39,7 +39,12 @@ export const leaderConfirms: AlmConformanceScenarioDefinition = {
         toLeaderActivityWait(sender, true),
         ...toAudienceSendCommands({ sender, ttlMs: NON_EXPIRING_TTL_MS, ack: 'group-leader' }),
         ...toServerReceiptCommands(sender),
-        ...toReceiptWindowCommands(sender, { roles: RECEIVER_CONFIRMED, ending: 'acknowledged', mode: 'leader' })
+        ...toReceiptWindowCommands(sender, {
+            roles: RECEIVER_CONFIRMED,
+            ending: 'acknowledged',
+            mode: 'leader',
+            endingFacts: []
+        })
     ],
     toRecipientCommands: (recipient) =>
         recipient.role === 'receiver'

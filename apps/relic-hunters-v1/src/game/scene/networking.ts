@@ -7,6 +7,7 @@ import {
     type RallarRoomRealtimeSendResult,
     type RallarRoomRealtimeSendStatus
 } from '@shared-web/browser/rallar.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readActiveGroupSessionRole } from '@shared/api/group-spectating.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -252,12 +253,12 @@ export function applyRelicMotionPayload(
 }
 
 export function isRelicMotionPayload(payload: unknown): payload is RelicMotionPayload {
-    if (!isRecord(payload)) {
+    if (!isApiJsonObject(payload)) {
         return false;
     }
     return payload.protocol === RELIC_MOTION_PROTOCOL &&
         payload.version === 2 &&
-        isRecord(payload.roomRef) &&
+        isApiJsonObject(payload.roomRef) &&
         typeof payload.roomRef.applicationId === 'string' &&
         payload.roomRef.applicationId.length > 0 &&
         typeof payload.roomRef.workspaceId === 'string' &&
@@ -506,8 +507,4 @@ function optionalFinite(value: unknown): boolean {
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
 }

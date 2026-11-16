@@ -64,7 +64,7 @@ jobs:
           "${{ steps.changed_review_range.outputs.base }}"
           "${{ steps.changed_review_range.outputs.head }}"
 
-      - name: Check every test file runs somewhere
+      - name: Check test file selection and registered manual ownership
         run: npm run check:test-reachability
 
       - name: Type-check TypeScript 7 workspaces
@@ -296,6 +296,88 @@ jobs:
           name: api-v1-black-box-postgres-${{ matrix.id }}
           path: .artifacts/api-v1-black-box/postgres-${{ matrix.id }}
           if-no-files-found: warn
+
+  e2e-live-recipes:
+    name: Browser tests (live distributed recipes and Console)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+      RALLAR_BLACK_BOX_API_MODE: postgres
+      RALLAR_BLACK_BOX_STORAGE_DIR: ${{ github.workspace }}/.artifacts/live-recipes/control
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      VITE_RALLAR_SPA_BASE_URL: http://localhost:5176
+      VITE_RALLAR_AGENT_A_USERNAME: alice
+      VITE_RALLAR_AGENT_A_PASSWORD: secret
+      VITE_RALLAR_AGENT_B_USERNAME: bob
+      VITE_RALLAR_AGENT_B_PASSWORD: secret
+      VITE_RALLAR_AGENT_C_USERNAME: charlie
+      VITE_RALLAR_AGENT_C_PASSWORD: secret
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Set up the lane
+        uses: ./.github/actions/release-gate-setup
+        with:
+          bun: 'true'
+          playwright: 'true'
+
+      - name: Run Postgres migrations
+        run: npm run db:migrate
+
+      - name: Collect required live browser cases
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: .artifacts/live-recipes/listed.json
+        run: npm run test:rallar:full-stack:postgres:distributed -- --list --reporter=json
+
+      - name: Execute live distributed recipes and Console scenarios
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: .artifacts/live-recipes/executed.json
+        run: >-
+          npm run test:rallar:full-stack:postgres:distributed -- --workers=1 --retries=0
+          --reporter=line,json --trace=retain-on-failure
+          --output=apps/rallar-black-box/test-results/live-recipes
+
+      - name: Require every listed live case to execute successfully
+        if: always()
+        run: >-
+          npm run check:test-reachability:playwright --
+          --listed .artifacts/live-recipes/listed.json
+          --executed .artifacts/live-recipes/executed.json
+          --require-file tests/playwright/rallar-black-box/full-stack-distributed-recipes.spec.ts
+          --require-file tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts
+
+      - name: Upload live browser execution evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-recipes-execution
+          path: |
+            .artifacts/live-recipes
+            apps/rallar-black-box/test-results/live-recipes
+          if-no-files-found: error
+          retention-days: 7
 
   postgres-integration:
     name: Postgres integration

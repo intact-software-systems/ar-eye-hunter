@@ -19,18 +19,11 @@ import {
     toScenarioTypeId
 } from '../../alm-conformance-step-identities.ts';
 import {
-    toSubscribeCommand,
-    toTopicGrantCommand,
-    toUnsubscribeCommands,
-    type TopicGrantInput
-} from '../topic-subscription/topic-subscription-commands.ts';
-import {
     SUBSCRIPTION_COMMAND_TIMEOUT_MS,
-    SUBSCRIPTION_PHASE_MS,
-    toPollCommand,
-    toPollResult,
-    toResultFact
-} from '../topic-subscription/topic-subscription-polls.ts';
+    SUBSCRIPTION_PHASE_MS
+} from '../../granted-topic/subscription-phase-budgets.ts';
+import { toPollCommand, toPollResult, toResultFact } from '../../poll/alm-conformance-poll-commands.ts';
+import { toSubscribeCommand, toUnsubscribeCommands } from '../topic-subscription/topic-subscription-commands.ts';
 import {
     toCueListenCommands,
     toCueSendCommands,
@@ -68,32 +61,12 @@ interface GrantedRtcRefusalPollInput {
     readonly facts: readonly AlmConformanceVerdictFact[];
 }
 
-/** A grant or revoke of a further member's permissions on the granted topic, written before the sender's grant. */
-export type GrantedRtcMemberOperation = Pick<TopicGrantInput, 'operation' | 'grantee' | 'publish' | 'subscribe'>;
-
-/** The sender's permissions; a principal broadcast's sender holds `subscribe` too, which its sibling shares. */
-export type GrantedRtcSenderGrant = Pick<TopicGrantInput, 'publish' | 'subscribe'>;
-
-const PUBLISH_ONLY: GrantedRtcSenderGrant = { publish: true, subscribe: false };
-
 /**
- * The receiver owns the room: it elects itself to receive and writes every further member's grant or revoke before it
- * grants the sender `senderGrant`, so the sender's snapshot names the grant only once the receiver can hear it. A grant
- * only adds permissions (D492): a cell that grants recipient-b `subscribe` alone revokes no `publish`, so recipient-b
- * keeps the `publish` a path cell granted before it; no cell probes it.
+ * The receiver owns the room and hears the cell's cues, then elects itself to receive. Its permissions, and every
+ * other role's, are the cell's declared start state, written before the cell's body starts.
  */
-export function toGrantedRtcOwnerCommands(
-    owner: AlmConformanceStepInput,
-    memberGrants: readonly GrantedRtcMemberOperation[],
-    senderGrant: GrantedRtcSenderGrant = PUBLISH_ONLY
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        ...toCueListenCommands(owner),
-        toTopicGrantCommand({ step: owner, operation: 'grant', grantee: 'receiver', publish: false, subscribe: true }),
-        toSubscribeCommand(owner, 'receiver'),
-        ...memberGrants.map((grant) => toTopicGrantCommand({ ...grant, step: owner })),
-        toTopicGrantCommand({ ...senderGrant, step: owner, operation: 'grant', grantee: 'sender' })
-    ];
+export function toGrantedRtcOwnerCommands(owner: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [...toCueListenCommands(owner), toSubscribeCommand(owner, 'receiver')];
 }
 
 /**
@@ -103,10 +76,16 @@ export function toGrantedRtcOwnerCommands(
  */
 export function toPublishUntilCueCommand(step: AlmConformanceStepInput, cue: string): RallarBlackBoxTestCommand {
     const name = 'publish';
-    return toPollCommand(step, name, [
-        toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
-        { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
-    ]);
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commands: [
+            toGrantedRtcSend(step, name, UNRECEIPTED_DELIVERY),
+            { ...toCueWait(step, cue), timeoutMs: CUE_ATTEMPT_WAIT_MS }
+        ]
+    });
 }
 
 /** The publication reached the page as an RTC copy: only the receiver's own election records one. */
@@ -123,9 +102,15 @@ export function toRewritingPublisherCommands(
     return [
         ...toCueListenCommands(sender),
         // A forged principal resolves only once the page's room snapshot names its live session and key.
-        toPollCommand(sender, 'rewrite-hold', [
-            toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
-        ]),
+        toPollCommand({
+            step: sender,
+            name: 'rewrite-hold',
+            phaseMs: SUBSCRIPTION_PHASE_MS,
+            commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+            commands: [
+                toRtcRewriteFaultCommand(sender, { name: 'rewrite-hold-inject', rewrite, remaining: 'until-cleared' })
+            ]
+        }),
         toPublishUntilCueCommand(sender, 'refused'),
         toRtcRewriteFaultCommand(sender, { name: 'rewrite-release', rewrite, remaining: 0 })
     ];
@@ -140,7 +125,7 @@ export function toRefusedReceiverCommands(
     refusal: GrantedRtcInboundRefusal
 ): readonly RallarBlackBoxTestCommand[] {
     return [
-        ...toGrantedRtcOwnerCommands(receiver, []),
+        ...toGrantedRtcOwnerCommands(receiver),
         toInboundRefusalWait(receiver, refusal),
         ...toCueSendCommands(receiver, 'refused'),
         toPublicationWait(receiver, PUBLICATION, true),
@@ -184,26 +169,39 @@ export function toGrantedRefusalPollCommand(
     const name = 'refusal';
     const send = toCommandId(step, `${name}-send`);
     const verdict = toPollResult({ step, name, index: 1, childId: send });
-    return toPollCommand(step, name, [
-        {
-            kind: 'rtc.send',
-            commandId: send,
-            connection: toConnectionName(step),
-            transport: 'messages.rtc',
-            observe: 'rejected',
-            send: {
-                typeId: toScenarioTypeId(step),
-                topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
-                roomRef: toRoomRef(step.input.group),
-                payload: toPublicationPayload(step, PUBLICATION, 'publication'),
-                ...delivery
+    return toPollCommand({
+        step,
+        name,
+        phaseMs: SUBSCRIPTION_PHASE_MS,
+        commandTimeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+        commands: [
+            {
+                kind: 'rtc.send',
+                commandId: send,
+                connection: toConnectionName(step),
+                transport: 'messages.rtc',
+                observe: 'rejected',
+                send: {
+                    typeId: toScenarioTypeId(step),
+                    topicId: ALM_CONFORMANCE_GRANTED_TOPIC_ID,
+                    roomRef: toRoomRef(step.input.group),
+                    payload: toPublicationPayload(step, PUBLICATION, 'publication'),
+                    ...delivery
+                },
+                timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
             },
-            timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS
-        },
-        ...facts.map(([fact, field, operator, expected]) =>
-            toResultFact({ step, name: `${name}-${fact}`, source: `${verdict}.message.${field}`, operator, expected })
-        )
-    ]);
+            ...facts.map(([fact, field, operator, expected]) =>
+                toResultFact({
+                    timeoutMs: SUBSCRIPTION_COMMAND_TIMEOUT_MS,
+                    step,
+                    name: `${name}-${fact}`,
+                    source: `${verdict}.message.${field}`,
+                    operator,
+                    expected
+                })
+            )
+        ]
+    });
 }
 
 /**

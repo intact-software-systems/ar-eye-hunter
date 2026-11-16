@@ -221,7 +221,10 @@ export function toResultAssertion(
     };
 }
 
-/** The first send's handle reaches `state`, and each fact holds on that observation. */
+/**
+ * The first send's handle reaches `state`, and each fact holds on that observation: the observe first, then one
+ * assertion per fact on its result.
+ */
 export function toVerdictCommands(
     sender: AlmConformanceStepInput,
     state: ALDeliveryState,

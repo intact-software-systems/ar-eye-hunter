@@ -154,6 +154,17 @@ jobs:
           npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
             tests/playwright/relic-hunters/full-stack-continuity.spec.ts --trace=retain-on-failure
 
+      - name: Run Relic propagation and checkpoint replay browser tests
+        if: ${{ matrix.lane == 'relic-continuity' }}
+        env:
+          RELIC_HUNTERS_FULL_STACK: '1'
+          # These assertions read DEV diagnostics; the preceding continuity step tests the built SPA.
+          RELIC_HUNTERS_BUILT_PREVIEW: '0'
+        run: |
+          npx playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts \
+            tests/playwright/relic-hunters/full-stack-propagation.spec.ts \
+            --output=apps/relic-hunters-v1/test-results/propagation --trace=retain-on-failure
+
       - name: Run Move together, scheduling and friends browser tests in both games
         if: ${{ matrix.lane == 'move-together' }}
         env:
@@ -220,6 +231,7 @@ jobs:
           path: |
             apps/ar-eye-hunter-v1/test-results/room-journeys.json
             apps/relic-hunters-v1/test-results/room-journeys.json
+            apps/relic-hunters-v1/test-results/propagation/room-journeys.json
           if-no-files-found: error
           retention-days: 7
 

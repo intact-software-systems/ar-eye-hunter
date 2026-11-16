@@ -1,5 +1,4 @@
 import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
-import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-black-box-test-contracts.ts';
 
@@ -12,6 +11,7 @@ import {
     toSendCommand
 } from './alm-conformance-message-commands.ts';
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
+import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
 /** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
 export function toOrderedSendCommands(
@@ -29,7 +29,30 @@ export function toOrderedSendCommands(
     ];
 }
 
-/** The send of `step.index` left the page: its carrier took it, or its recipients already answered it. */
+/**
+ * The receipted send of `step.index` reached every expected recipient: its handle ended `acknowledged`. A room may give
+ * the sender more than one next hop, and a carrier's acceptance settles at the first, so only the receipt says every
+ * expected recipient holds the send.
+ */
+export function toReachedCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toObserveCommand({ ...step, state: 'acknowledged' }),
+        toResultAssertion({
+            step,
+            name: `assert-reached-${step.index}`,
+            resultName: `observe-acknowledged-${step.index}`,
+            field: 'state',
+            operator: 'equals',
+            expected: 'acknowledged'
+        })
+    ];
+}
+
+/**
+ * The send of `step.index` left the page: its carrier took it, or its recipients already answered it. The carrier's
+ * acceptance settles at its first next hop, so it orders a later step only where the sender has one next hop: a room of
+ * two pages, where the sender's one peer, or over ws the server, is its only next hop.
+ */
 export function toSentCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
     return [
         toObserveCommand({ ...step, state: 'transport-accepted' }),
@@ -44,30 +67,8 @@ export function toSentCommands(step: AlmConformanceMessageStepInput): readonly R
     ];
 }
 
-/**
- * The send of `step.index` settled in exactly `state`, which its observation must name; with no `budgetMs`, the state's
- * own observe budget.
- */
-export function toSettledStateCommands(
-    step: AlmConformanceMessageStepInput,
-    state: ALDeliveryState,
-    budgetMs?: number
-): readonly RallarBlackBoxTestCommand[] {
-    return [
-        toObserveCommand({ ...step, state, ...(budgetMs === undefined ? {} : { budgetMs }) }),
-        toResultAssertion({
-            step,
-            name: `assert-${state}-${step.index}`,
-            resultName: `observe-${state}-${step.index}`,
-            field: 'state',
-            operator: 'equals',
-            expected: state
-        })
-    ];
-}
-
 export function toOrderingKey(sender: AlmConformanceStepInput): string {
-    return `alm-${sender.input.carrier}-${sender.scenarioId}`;
+    return toAlmCellCommandPrefix(sender.input.carrier, sender.scenarioKey);
 }
 
 /**

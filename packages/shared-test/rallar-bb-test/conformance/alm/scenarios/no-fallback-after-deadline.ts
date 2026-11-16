@@ -3,7 +3,6 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 import { EXPIRY_TTL_MS, RESPONSE_MARGIN_MS } from '../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_FALLBACK_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toAckHoldFaultCommand } from '../alm-conformance-receipt-commands.ts';
 import { toAdmissionOutcomeWait, toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
@@ -11,6 +10,7 @@ import {
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
 /**
  * D56's deadline: the receiver withholds its RTC ACKs and the send lives 7 500 ms, less than the ≈8 000 ms

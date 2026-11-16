@@ -12,12 +12,7 @@ import {
     RALLAR_BLACK_BOX_BARRIER_RESOLVED_TOPIC,
     toBarrierArrivedEvent
 } from './control-barrier-protocol.ts';
-
-/**
- * The control server closes the barrier's window on the next envelope any agent sends; the agent listens this much
- * longer, so its own timeout means no control server answered, never a slow verdict.
- */
-export const RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS = 10_000;
+import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from './rallar-black-box-barrier-resolution-grace-ms.ts';
 
 export const RALLAR_BLACK_BOX_BARRIER_FAILED = 'RALLAR_BLACK_BOX_BARRIER_FAILED';
 export const RALLAR_BLACK_BOX_BARRIER_TIMEOUT = 'RALLAR_BLACK_BOX_BARRIER_TIMEOUT';

@@ -159,13 +159,15 @@ describe('storage-unavailable conformance scenario', () => {
                 kind: 'diagnostic',
                 topic: STORAGE_TOPIC,
                 payloadPath: 'data',
-                contains: `"status":"failing",${lastFailure}`
+                contains: `"status":"failing",${lastFailure}`,
+                sinceCommandIdPrefix: 'alm-rtc-with-ws-fallback-storage-unavailable-sender-'
             },
             {
                 kind: 'diagnostic',
                 topic: STORAGE_TOPIC,
                 payloadPath: 'data',
-                contains: `"status":"healthy",${lastFailure}`
+                contains: `"status":"healthy",${lastFailure}`,
+                sinceCommandIdPrefix: 'alm-rtc-with-ws-fallback-storage-unavailable-sender-'
             }
         ]);
     });

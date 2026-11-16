@@ -56,11 +56,12 @@ export interface ALWorkHandlerDependencies {
     readonly pageSize: number;
     /**
      * Decides when the engine should run a batch. A non-negative safe integer (epoch ms) at or before
-     * `clock.nowMs()` starts one; a later value only reschedules; undefined means no work. Owners whose
-     * eligibility rules defer rows pass their own probe so deferred rows never advertise as due. The
-     * handler remembers each answer, so this reads storage far less often than the engine asks.
+     * `nowMs`, the handler's one clock reading for the round, starts one; a later value only
+     * reschedules; undefined means no work. Owners whose eligibility rules defer rows pass their own
+     * probe so deferred rows never advertise as due. The handler remembers each answer, so this reads
+     * storage far less often than the engine asks.
      */
-    readonly readNextReadyAtMs: (port: ALWorkQueuePort) => Promise<number | undefined>;
+    readonly readNextReadyAtMs: (port: ALWorkQueuePort, nowMs: number) => Promise<number | undefined>;
     /**
      * How long one probe's answer stands before storage is read again. An owner whose probe is a pure
      * readiness read passes `AL_WORK_READINESS_MEMORY_MS`; an owner whose probe carries scan state of
@@ -336,7 +337,7 @@ export class ALWorkHandler {
             return standing.readyAtMs;
         }
         const probedAtMs = clock.nowMs();
-        const probe = await this.readiness.readProbe(nowMs, () => readNextReadyAtMs(port));
+        const probe = await this.readiness.readProbe(nowMs, () => readNextReadyAtMs(port, nowMs));
         diagnostics?.({
             kind: 'readiness-probe',
             workerId,

@@ -622,8 +622,8 @@ export class ALInboundStoreLane {
             clock: dependencies.workClock,
             pageSize: AL_INBOUND_WORK_PAGE_SIZE,
             // The rotation answers readiness: work the eligibility rules defer must not report as due.
-            readNextReadyAtMs: (port) =>
-                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port), undefined),
+            readNextReadyAtMs: (port, nowMs) =>
+                this.readiness.readOpenedStore(() => this.workSelector.readNextReadyAtMs(port, nowMs), undefined),
             // The rotation advances one status per probe, so an answer of its own never stands.
             readinessMemoryMs: AL_WORK_PROBE_EVERY_ROUND,
             selectReady: (port, pageSize) => this.selectInboundWork(port, pageSize),

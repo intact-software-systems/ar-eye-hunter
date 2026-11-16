@@ -97,9 +97,8 @@ function toTrackArrivalsCommand(receiver: AlmConformanceStepInput): RallarBlackB
 /**
  * An inbound `effect-drain` whose `promoted` count is above zero. A substring cannot exclude zero, so the loop reads
  * one leading digit per iteration and stops at the first a drain states. Only a release that completed promotes its
- * successor. The wait scans the agent's whole event buffer, so an earlier cell's drain would match too; none states
- * one, because the earlier cells' buffered sequences never complete a release (`repair-exhausted` buffers seq 3 and 4
- * over `rtc` and the repair never arrives). The loop runs after the arrivals and reads that history.
+ * successor. The wait reads its own cell's history, so no earlier cell's drain can match. The loop runs after the
+ * arrivals and reads that history.
  */
 function toPromotionWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     return {
