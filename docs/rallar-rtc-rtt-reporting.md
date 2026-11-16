@@ -182,6 +182,13 @@ The topology service has two broad planning modes:
   configured limit, the service falls back to the no-RTT topology plan and
   increments `weightedRoomGraphSparseFallbackCount`.
 
+Evolving an accepted layout in place (a membership change, or the kept tree an
+RTT refinement weighs against its rebuild) plans over the complete room graph
+instead: every pair of members is a candidate, a measured pair at its RTT and an
+unmeasured pair above the slowest measured RTT. The in-place repair links only
+pairs that are edges of its graph, so a sparse graph could leave it without a
+candidate.
+
 Before a group recompute uses stored latest-pair RTTs, the management layer
 filters those samples through the same server reporting-edge policy for the
 target group. Pair-global storage can retain a sample accepted for another

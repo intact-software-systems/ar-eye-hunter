@@ -10,6 +10,7 @@ import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-pla
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import {
     computeRtcTopologyFixtureLeave,
+    computeRtcTopologyFixtureMeasuredLeave,
     computeRtcTopologyFixturePlan,
     computeRtcTopologyFixtureRebuild,
     createRtcTopologyFixtureGroup,
@@ -36,6 +37,14 @@ const SWEEP_ROOMS = [
     { room: 'a mesh of thirty', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30 }
 ];
 const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
+const MEASURED_ROOMS = [
+    { room: 'a measured 20-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20 },
+    { room: 'a measured 30-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30 },
+    { room: 'a measured 30-member tree', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 30 }
+];
+// A measured leave plans in milliseconds; the timeout fails a slow repair by its leaver. A repair that never
+// returns is a synchronous loop, which no timeout interrupts: the run stalls on that leaver instead of failing.
+const MEASURED_LEAVE_TIMEOUT_MS = 10_000;
 
 describe('resolveTopologyPlanChange', () => {
     it.each<RtcTopologyPlanDerivation>([
@@ -209,6 +218,22 @@ describe.each(SWEEP_ROOMS)('the planner\'s plans over every single leave of $roo
         expect(leaves.filter((plan) => !isValidLeaveLayout(plan.planned, plan.leaverSessionId)).map((plan) => plan.leaverSessionId))
             .toEqual([]);
     });
+});
+
+describe.each(MEASURED_ROOMS)('a single leave from $room is planned without hanging', ({ options, memberCount }) => {
+    // The remaining members' browsers report RTT for the pairs they select, so the planner holds a sparse measured graph.
+    const formed = computeRtcTopologyFixturePlan({
+        options,
+        group: createRtcTopologyFixtureGroup(memberCount),
+        previous: undefined
+    }).snapshot;
+
+    it.each(formed.activeSessionIds)('the leave of %s is repaired in place, the leaver gone and the rest connected inside the limit', (leaverSessionId) => {
+        const planned = computeRtcTopologyFixtureMeasuredLeave({ options, formed, leaverSessionId, rttReportingDegreeLimit: 5 });
+
+        expect(planned.derivation).toEqual({ method: 'incremental' });
+        expect(isValidLeaveLayout(planned.snapshot, leaverSessionId)).toBe(true);
+    }, MEASURED_LEAVE_TIMEOUT_MS);
 });
 
 describe('the leave layout check of the sweep', () => {

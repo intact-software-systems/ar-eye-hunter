@@ -31,6 +31,13 @@ export interface CreateRtcRoomGraphInput {
     readonly meshParamK: number;
 }
 
+export interface CreateCompleteRtcRoomGraphInput {
+    readonly group: GroupSnapshot;
+    readonly activeSessionIds: readonly string[];
+    readonly rttMeasurements: readonly RttMeasurementInfo[];
+    readonly degreeLimit: number;
+}
+
 export interface RtcRoomGraphReady {
     readonly outcome: 'ready';
     readonly graph: WeightedGraph;
@@ -77,14 +84,17 @@ interface WeightedRoomEdge {
     readonly version: number;
 }
 
-export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult {
-    const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
+interface MeasuredRoomEdges {
+    readonly edges: readonly WeightedRoomEdge[];
+    readonly unmeasuredWeightOffset: number;
+}
 
+export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult {
     if (input.rttMeasurements.length === 0) {
-        addCompleteFallbackRoomEdges(graph, input.activeSessionIds);
-        return { outcome: 'ready', graph };
+        return { outcome: 'ready', graph: createCompleteRtcRoomGraph(input) };
     }
 
+    const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
     const fallbackNextHops = computeNoRttTopologyNextHops({
         topology: input.seedTopology,
         activeSessionIds: input.activeSessionIds,
@@ -111,6 +121,27 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
     }
 
     return { outcome: 'ready', graph };
+}
+
+/**
+ * Every pair of members is an edge, with no degree or edge cap: the in-place evolution of a layout links only pairs
+ * that are edges of its graph, so on a sparse graph a leave's repair can find no candidate and never end. With nothing
+ * measured, every pair carries its canonical weight alone.
+ */
+export function createCompleteRtcRoomGraph(input: CreateCompleteRtcRoomGraphInput): WeightedGraph {
+    const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
+    const measured = createMeasuredRoomEdges(input.rttMeasurements, input.activeSessionIds);
+    for (const edge of measured.edges) {
+        addRoomEdgeIfAbsent({ graph, from: edge.from, to: edge.to, weight: edge.weight });
+    }
+    for (let i = 0; i < input.activeSessionIds.length; i++) {
+        for (let j = i + 1; j < input.activeSessionIds.length; j++) {
+            const from = input.activeSessionIds[i];
+            const to = input.activeSessionIds[j];
+            addRoomEdgeIfAbsent({ graph, from, to, weight: computeUnmeasuredRoomEdgeWeight(measured, from, to) });
+        }
+    }
+    return graph;
 }
 
 export function materializeSparseRtcRoomGraphFallback(
@@ -154,35 +185,13 @@ function createRoomGraph(
     return graph;
 }
 
-function addCompleteFallbackRoomEdges(
-    graph: WeightedGraph,
-    activeSessionIds: readonly string[]
-): void {
-    for (let i = 0; i < activeSessionIds.length; i++) {
-        for (let j = i + 1; j < activeSessionIds.length; j++) {
-            const from = activeSessionIds[i];
-            const to = activeSessionIds[j];
-            graph.addEdge(from, to, {
-                from,
-                to,
-                weight: computeCanonicalTopologyPairWeight(from, to)
-            });
-        }
-    }
-}
-
-/**
- * Measured edges first, then the seed and filler pairs nobody measured. An unmeasured pair carries the worst
- * measured RTT plus its hashed canonical spread, so it is never cheaper than a link someone measured and the
- * weighted plan does not trade measured edges for guessed ones.
- */
+/** Measured edges first, then the seed and filler pairs nobody measured, each vertex and the graph capped. */
 function populateSparseRoomGraph(
     input: PopulateSparseRoomGraphInput
 ): Readonly<{ connected: boolean; }> {
     const maxEdges = Math.floor((input.activeSessionIds.length * input.degreeLimit) / 2);
-    const measuredEdges = createSortedRttEdges(input.rttMeasurements, input.activeSessionIds);
-    const unmeasuredWeightOffset = measuredEdges.at(-1)?.weight ?? 0;
-    for (const edge of measuredEdges) {
+    const measured = createMeasuredRoomEdges(input.rttMeasurements, input.activeSessionIds);
+    for (const edge of measured.edges) {
         addBoundedRoomEdge({
             graph: input.graph,
             from: edge.from,
@@ -198,7 +207,7 @@ function populateSparseRoomGraph(
                 graph: input.graph,
                 from,
                 to,
-                weight: unmeasuredWeightOffset + computeCanonicalTopologyPairWeight(from, to),
+                weight: computeUnmeasuredRoomEdgeWeight(measured, from, to),
                 degreeLimit: input.degreeLimit,
                 maxEdges
             });
@@ -218,13 +227,29 @@ function populateSparseRoomGraph(
                 graph: input.graph,
                 from,
                 to,
-                weight: unmeasuredWeightOffset + computeCanonicalTopologyPairWeight(from, to),
+                weight: computeUnmeasuredRoomEdgeWeight(measured, from, to),
                 degreeLimit: input.degreeLimit,
                 maxEdges
             });
         }
     }
     return { connected: true };
+}
+
+function createMeasuredRoomEdges(
+    rttMeasurements: readonly RttMeasurementInfo[],
+    activeSessionIds: readonly string[]
+): MeasuredRoomEdges {
+    const edges = createSortedRttEdges(rttMeasurements, activeSessionIds);
+    return { edges, unmeasuredWeightOffset: edges.at(-1)?.weight ?? 0 };
+}
+
+/**
+ * An unmeasured pair carries the worst measured RTT plus its hashed canonical spread, so it is never cheaper than a
+ * link someone measured and a weighted plan does not trade measured edges for guessed ones.
+ */
+function computeUnmeasuredRoomEdgeWeight(measured: MeasuredRoomEdges, from: string, to: string): number {
+    return measured.unmeasuredWeightOffset + computeCanonicalTopologyPairWeight(from, to);
 }
 
 function createSortedRttEdges(

@@ -25,7 +25,11 @@ import type {
 } from '../runtime/rtc-topology-metrics.ts';
 import { toCanonicalTopologySessionIds } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
-import { createRtcRoomGraph, materializeSparseRtcRoomGraphFallback } from './create-rtc-room-graph.ts';
+import {
+    createCompleteRtcRoomGraph,
+    createRtcRoomGraph,
+    materializeSparseRtcRoomGraphFallback
+} from './create-rtc-room-graph.ts';
 import {
     computeEvolvedTopologyNextHops,
     type EvolvePlannedTopologyFullRebuildReason,
@@ -296,7 +300,7 @@ export class RtcTopologyPlanner {
         if (plan.topology === 'star') {
             return this.computeStarNextHops(plan);
         }
-        const evolved = this.computeEvolvedNextHops(plan, publicDispatch);
+        const evolved = this.computeEvolvedNextHops(plan);
         if (evolved?.outcome === 'planned') {
             return { nextHopsBySessionId: evolved.nextHopsBySessionId, derivation: { method: 'incremental' } };
         }
@@ -336,7 +340,7 @@ export class RtcTopologyPlanner {
                 group: plan.group,
                 leaderSessionId: plan.leaderSessionId,
                 activeSessionIds: plan.activeSessionIds,
-                globalGraph,
+                globalGraph: this.createCompleteRoomGraph(plan),
                 kind: plan.topology,
                 degreeLimit: this.readDegreeLimit(plan.topologyOptions),
                 meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -359,10 +363,7 @@ export class RtcTopologyPlanner {
         return { nextHopsBySessionId, derivation: resolveRtcTopologyPlanDerivation(plan, { method: 'incremental' }) };
     }
 
-    private computeEvolvedNextHops(
-        plan: RtcTopologyPlanInput,
-        publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): EvolvePlannedTopologyResult | undefined {
+    private computeEvolvedNextHops(plan: RtcTopologyPlanInput): EvolvePlannedTopologyResult | undefined {
         if (
             plan.planningIntent !== 'membership-delta' ||
             plan.previous?.state !== 'active' ||
@@ -376,7 +377,7 @@ export class RtcTopologyPlanner {
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph: this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch),
+            globalGraph: this.createCompleteRoomGraph(plan),
             kind: plan.topology,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -434,6 +435,21 @@ export class RtcTopologyPlanner {
         return result.outcome === 'ready'
             ? result.graph
             : materializeSparseRtcRoomGraphFallback(result);
+    }
+
+    private createCompleteRoomGraph(plan: RtcTopologyPlanInput): WeightedGraph {
+        const startedAtMs = this.dependencies.durationNowMs();
+        this.dependencies.metrics.recordWeightedRoomGraphAttempt();
+        const graph = createCompleteRtcRoomGraph({
+            group: plan.group,
+            activeSessionIds: toCanonicalTopologySessionIds(readGroupMemberSessionIds(plan.group)),
+            rttMeasurements: plan.relevantRttMeasurements,
+            degreeLimit: this.readDegreeLimit(plan.topologyOptions)
+        });
+        this.dependencies.metrics.recordWeightedRoomGraphDuration(
+            this.dependencies.durationNowMs() - startedAtMs
+        );
+        return graph;
     }
 
     private createNextHopMap(

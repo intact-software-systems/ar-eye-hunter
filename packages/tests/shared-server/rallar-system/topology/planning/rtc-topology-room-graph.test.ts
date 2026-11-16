@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import {
+    createCompleteRtcRoomGraph,
     createRtcRoomGraph,
     materializeSparseRtcRoomGraphFallback,
     type CreateRtcRoomGraphResult
@@ -14,6 +15,12 @@ import {
     createRtcTopologyMemberIds,
     createRtcTopologyRttMeasurement
 } from '../rtc-topology-test-fixtures.ts';
+import {
+    computeRtcTopologyFixturePlan,
+    createRtcTopologyFixtureGroup,
+    createRtcTopologyFixtureReportedRttMeasurements,
+    RTC_TOPOLOGY_TREE_OPTIONS
+} from './rtc-topology-planning-fixtures.ts';
 
 describe('RTC topology weighted room graph planning', () => {
     it('returns the deterministic complete fallback graph when RTT is absent', () => {
@@ -400,6 +407,89 @@ describe('RTC topology weighted room graph planning', () => {
         expect(service.readMetrics().weightedRoomGraphBuildCount).toBe(1);
         expect(service.readMetrics().weightedPlanCount).toBe(1);
         expect(result.snapshot.topology).toBe('mesh');
+    });
+});
+
+describe('the complete weighted room graph a leave is repaired over', () => {
+    it('links every pair of a room of four, two of them at their measured RTT and the rest above it', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(4);
+
+        const graph = createCompleteRtcRoomGraph({
+            group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
+            activeSessionIds: memberSessionIds,
+            rttMeasurements: [
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-2', sessionIdTo: 'peer-1', rttMs: 30, version: 1 }),
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-3', sessionIdTo: 'peer-4', rttMs: 90, version: 2 }),
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-4', sessionIdTo: 'peer-3', rttMs: 50, version: 3 })
+            ],
+            degreeLimit: 2
+        });
+
+        expect(graph.size).toBe(6);
+        expect(edgeWeight(graph, 'peer-1', 'peer-2')).toBe(30);
+        expect(edgeWeight(graph, 'peer-3', 'peer-4')).toBe(50);
+        // Each unmeasured pair weighs the slowest measured RTT, 50 ms, plus its canonical spread of at least 1.
+        for (const [from, to] of [['peer-1', 'peer-3'], ['peer-1', 'peer-4'], ['peer-2', 'peer-3'], ['peer-2', 'peer-4']]) {
+            expect(edgeWeight(graph, from!, to!)).toBeGreaterThanOrEqual(51);
+        }
+    });
+
+    it('is the complete fallback graph when nothing is measured', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(3);
+
+        const graph = createCompleteRtcRoomGraph({
+            group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
+            activeSessionIds: memberSessionIds,
+            rttMeasurements: [],
+            degreeLimit: 5
+        });
+
+        expect(graph.getAttributes()).toEqual({
+            id: '["app-1","workspace-1","room-graph-owner"]',
+            version: 1,
+            degreeLimitMember: 5,
+            degreeLimitSteiner: 5
+        });
+        expect(graph.edges().map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')])).toEqual([
+            [['peer-1', 'peer-2'], computeCanonicalTopologyPairWeight('peer-1', 'peer-2')],
+            [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
+            [['peer-2', 'peer-3'], computeCanonicalTopologyPairWeight('peer-2', 'peer-3')]
+        ]);
+    });
+});
+
+describe('the weighted rebuild still plans over the sparse measured graph', () => {
+    it('plans the first measured layout of an eleven-member tree as before the leave repair took a complete graph', () => {
+        // The browsers measured the no-RTT layout's links and their rendezvous peers; nothing was accepted before, so
+        // the plan is a weighted rebuild over the room graph capped at the reporting limit. Over the complete graph the
+        // same rebuild links peer-3 to peer-11 and drops peer-4 to peer-5.
+        const group = createRtcTopologyFixtureGroup(11);
+        const formed = computeRtcTopologyFixturePlan({ options: RTC_TOPOLOGY_TREE_OPTIONS, group, previous: undefined }).snapshot;
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            group,
+            previous: undefined,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.snapshot.nextHopsBySessionId).toEqual({
+            'peer-1': ['peer-4'],
+            'peer-2': ['peer-11', 'peer-6', 'peer-7'],
+            'peer-3': ['peer-9'],
+            'peer-4': ['peer-1', 'peer-5', 'peer-6'],
+            'peer-5': ['peer-4', 'peer-9'],
+            'peer-6': ['peer-10', 'peer-2', 'peer-4'],
+            'peer-7': ['peer-2'],
+            'peer-8': ['peer-10'],
+            'peer-9': ['peer-3', 'peer-5'],
+            'peer-10': ['peer-6', 'peer-8'],
+            'peer-11': ['peer-2']
+        });
     });
 });
 
