@@ -33,6 +33,7 @@ import { computeAuthorityTopologyInputFingerprint } from '@shared-server/rallar-
 import { readRtcTopologyWorkEnvelope, toRtcTopologyExecutionId } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { recordRtcTopologyWorkTiming } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-timing.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -263,16 +264,21 @@ describe('RTC topology work plan change', () => {
         expect(accepted.publication?.plan?.change).toBeNull();
     });
 
-    it('the promotion request, the fingerprint and the mutation are the same with and without the kind', () => {
-        const computed = computeRtcTopologyWork(toFixtureReplanWorkInput(toTreeJoinReplan())).right;
+    it('the promotion request, the connect writes, the fingerprint, the mutation and the reservation finish are the same with and without the kind', () => {
+        // Formation automation on, so the transaction carries the connect write its layout wakes.
+        const workInput = { ...toFixtureReplanWorkInput(toTreeJoinReplan()), formationAutomationEnabled: true };
+        const computed = computeRtcTopologyWork(workInput).right;
         if (computed?.write.kind !== 'transaction' || computed.write.transaction.mutation?.outcome !== 'write') {
             throw new Error('The join must write its layout in one transaction');
         }
-        const { promotionWrite, fingerprint, mutation, delivery } = computed.write.transaction;
+        const { promotionWrite, connectWrites, fingerprint, mutation, delivery, reservationFinish } = computed.write.transaction;
         const { persistence, publication, observation, snapshotGuard } = mutation;
 
         // Pinned at 92ce31247, before a plan's kind was carried. The publication row and its receipt store the record, so
         // they are compared without it; the snapshot row and every WS payload are compared whole.
+        expect(connectWrites).toHaveLength(1);
+        expect(toPinnedDigest(connectWrites)).toBe('b962e8b969116cd63635962aa899ed01b7c303cf29f46193412966a9d50135f8');
+        expect(toPinnedDigest(reservationFinish)).toBe('f20d0d000ceabaf4eb095a808b69e34a2629b768a627bed3a9b1d6725868e048');
         expect(toPinnedDigest(promotionWrite)).toBe('c34ba5b7f5c009817df3e54e265be4ef226f1e5a92df69ecc21e8785f0421222');
         expect(toPinnedDigest(fingerprint)).toBe('dee7489f1a814c1348ee85833f6a5ca4f14c89123464f96c27f23a24277677f2');
         expect(toPinnedDigest({ observation, snapshotGuard, snapshotRow: persistence.snapshot })).toBe(
@@ -316,6 +322,31 @@ describe('RTC topology work plan change', () => {
 
         expect(publication.plan?.causes).toContain('leader-change');
         expect(publication.plan?.change).toEqual({ kind: 'reshape', reason: 'leader-rooting' });
+    });
+
+    it('an RTT refresh that re-roots the tree at a newly appointed director is caused by leader-change and rtt, and is a leader-rooting reshape', () => {
+        const members = createRtcTopologyMemberIds(30);
+        const leaderless = createRtcTopologyGroupSnapshot('group-1', members);
+        const workInput = toRttRefreshWorkInput({
+            accepted: acceptPlannedLayout(leaderless),
+            current: toAppointedRevision(leaderless, 'peer-12'),
+            nowEpochMs: ACCEPTED_AT_EPOCH_MS + MINIMUM_LAYOUT_AGE_MS
+        });
+        // Measured RTTs send the refresh down the refinement path, whose evolution of the kept tree asks for the re-root.
+        const measuredWorkInput = toPublishingWorkInput({
+            ...workInput,
+            read: {
+                ...workInput.read,
+                authority: { ...workInput.read.authority, rttMeasurements: toNearIdenticalRttMeasurements(members) }
+            }
+        });
+
+        const accepted = computeAcceptedWork(measuredWorkInput);
+
+        expect(accepted.work.kind).toBe('rtt-refresh');
+        expect(accepted.publication?.plan?.causes).toEqual(['leader-change', 'rtt']);
+        expect(accepted.publication?.plan?.change).toEqual({ kind: 'reshape', reason: 'leader-rooting' });
+        expect(accepted.planChange).toEqual(accepted.publication?.plan?.change);
     });
 
     it('a commanded group revision is not change-gated, so it is caused by config', () => {
@@ -377,16 +408,7 @@ describe('RTC topology RTT-refresh work', () => {
         const members = createRtcTopologyMemberIds(50);
         const group = createRtcTopologyGroupSnapshot('group-1', members);
         const accepted = acceptPlannedLayout(group);
-        const rttMeasurements = members.flatMap((sessionIdFrom, fromIndex) =>
-            members.slice(fromIndex + 1).map((sessionIdTo, toIndex) =>
-                createRtcTopologyRttMeasurement({
-                    sessionIdFrom,
-                    sessionIdTo,
-                    rttMs: 2 + ((fromIndex * 37 + toIndex * 11) % 10) / 10,
-                    version: fromIndex * members.length + toIndex + 1
-                })
-            )
-        );
+        const rttMeasurements = toNearIdenticalRttMeasurements(members);
         const workInput = toRttRefreshWorkInput({
             accepted,
             current: toLaterGroupRevision(group),
@@ -743,6 +765,20 @@ function toRttRefreshWorkInput(input: ComputeRttRefreshDecisionInput): ComputeRt
         stored: input.accepted,
         authority: createPlanningAuthority(input.current, input.nowEpochMs)
     });
+}
+
+/** Every pair measured, at near-identical RTTs between 2 and 3 ms. */
+function toNearIdenticalRttMeasurements(members: readonly string[]): RttMeasurementInfo[] {
+    return members.flatMap((sessionIdFrom, fromIndex) =>
+        members.slice(fromIndex + 1).map((sessionIdTo, toIndex) =>
+            createRtcTopologyRttMeasurement({
+                sessionIdFrom,
+                sessionIdTo,
+                rttMs: 2 + ((fromIndex * 37 + toIndex * 11) % 10) / 10,
+                version: fromIndex * members.length + toIndex + 1
+            })
+        )
+    );
 }
 
 function toReservedRttRefreshEntry(group: GroupSnapshot): ResourceEntry {
