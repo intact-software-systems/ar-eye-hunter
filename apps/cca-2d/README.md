@@ -133,7 +133,9 @@ Silent host connection loss and suspended host JavaScript now produce a shared
 interrupted outcome after the recovery deadline, including when the host resumes.
 An old host can return as an observer after two survivors appoint a replacement;
 it cannot preempt the current host merely because its local heartbeat is stale.
-Physical backgrounding, silent-outage takeover and complete-round browser qualification remain in
+Real two-account browser trials now cover shared fruit/cleanup, a full three-minute
+round and rematch, human rescue before auto-release, and two named 110-point winners.
+Physical backgrounding, silent-outage takeover and secure phone qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests

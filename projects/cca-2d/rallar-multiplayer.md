@@ -579,8 +579,8 @@ tip the apple stall, credit the initiating player, observe shared fruit and owne
 cleanup, complete the real three-minute clock and enter a fresh ready/start cycle.
 World assertions select observed snapshots using each page's rendered committed
 match identity, phase and tick; a commit message alone is not evidence of acceptance.
-The test never injects world state or advances the test clock. Shared rescue and multiple
-qualifiers still need their own browser evidence; this scenario does not prove them.
+The test never injects world state or advances the test clock. The separate rescue
+and multiple-qualifier scenario below supplies evidence beyond this fruit/rematch flow.
 
 The [shared fruit-prank capture](visual-concepts/rallar-shared-fruit-phone.png)
 and [round results](visual-concepts/rallar-shared-results-phone.png) show actual
@@ -593,13 +593,34 @@ three-minute round with committed-state observations and a clean rematch. All
 both premature test observation of commit messages and names lost during recovery;
 regressions protect those cases. CCA browser tests are explicitly owned as manual
 trials in `tests/manual-suites.json`; test reachability passes. These results do
-not close the remaining human-rescue, multiple-qualifier or physical-phone checks.
+not by themselves close human-rescue, multiple-qualifier or physical-phone checks.
+
+A further real two-account browser trial now proves human freeze/rescue and two
+qualifiers in the same unaccelerated round. One player approaches their friend's
+actual position after crossing the fountain's water, rather than assuming a fixed
+rendezvous survived environmental movement. The frozen target thaws before its
+original six-second deadline while both clients record increased human rescues;
+no bot companion exists in the shared town. Players earn points through normal
+dash controls, including Big Stink, barbecue and café interactions. Both finish at
+tick 5,400 with 110 points and matching rendered winner names and scores. The trial
+records seven human rescues; that observed count is not a required gameplay constant.
+
+The [freeze](visual-concepts/rallar-shared-freeze-phone.png),
+[human rescue](visual-concepts/rallar-shared-rescue-phone.png) and
+[two winners](visual-concepts/rallar-shared-winners-phone.png) are inspected actual
+390 × 844 browser captures. The fruit/results/rematch trial and the corrected
+rescue/two-winner trial each pass with the revised movement helper. Focused test
+typecheck, formatting and changed-file style review pass. Earlier attempts exposed
+test-route assumptions: water displaced the rendezvous and a longer low-value
+prank route ran out of round time. No production scoring, timer or rescue rule was
+changed to satisfy the tests. Physical-device qualification remains separate.
 
 The next two useful outcomes remain concrete:
 
-1. Complete match reliability: delayed/dropped checkpoint traffic across rematch,
-   shared human freeze/rescue and multiple qualifiers, stale authority, two-player interruption,
-   and three-player host succession with a surviving committed backup. Preserve the
+1. Complete match reliability, particularly three-player silent-outage takeover
+   and return without a delivered close callback. Preserve the established shared
+   rescue, multiple qualifiers, rematch and recovery regressions, including
+   host succession with a surviving committed backup. Preserve the
    original acceptance criteria above; retained participants and active controllers
    must be separated when continuing after a departure.
 2. Deliver and qualify the phone trial: secure LAN access with matching Rallar public
