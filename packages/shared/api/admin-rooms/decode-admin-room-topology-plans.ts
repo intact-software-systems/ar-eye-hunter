@@ -2,7 +2,7 @@ import { Either } from '../../resilience/Either.ts';
 import { decodePlainRecord, getOwnCount, getOwnField, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '../group-types.ts';
-import type { RallarRtcTopologyKind } from '../overlay-topology.ts';
+import { RALLAR_RTC_TOPOLOGY_KINDS } from '../overlay-topology.ts';
 import { decodeRtcTopologyPlanRecord } from '../topology-plan/decode-rtc-topology-plan-record.ts';
 import type { RtcTopologyPlanRecord } from '../topology-plan/rtc-topology-plan-record.ts';
 import {
@@ -22,7 +22,6 @@ const PLAN_KEYS = [
     'degreeLimit',
     'plan'
 ] as const;
-const TOPOLOGY_KINDS = ['star', 'tree', 'mesh'] as const satisfies readonly RallarRtcTopologyKind[];
 const MAX_PUBLICATION_ID_LENGTH = 256;
 
 export function decodeAdminRoomTopologyPlans(value: unknown): Either<string, AdminRoomTopologyPlansResponse> {
@@ -60,7 +59,7 @@ function decodeAdminRoomTopologyPlan(value: unknown): Either<string, AdminRoomTo
     const publicationId = getOwnField(fields, 'publicationId');
     const requestedAtEpochMs = getOwnCount(fields, 'requestedAtEpochMs');
     const layout = getOwnField(fields, 'layout');
-    const topology = TOPOLOGY_KINDS.find((kind) => kind === getOwnField(fields, 'topology'));
+    const topology = RALLAR_RTC_TOPOLOGY_KINDS.find((kind) => kind === getOwnField(fields, 'topology'));
     const memberCount = getOwnCount(fields, 'memberCount');
     const degreeLimit = getOwnCount(fields, 'degreeLimit');
     if (

@@ -127,6 +127,26 @@ describe('computeTopologyChurnReport', () => {
         expect(emptyPhase.planCount).toBe(0);
         expect(emptyPhase.plansPerMinute).toBeNull();
         expect(emptyPhase.promotionsPerMinute).toBeNull();
+        // The plan at 180 000 lies in no phase's window.
+        expect(report.outsidePhasesPlanCount).toBe(1);
+    });
+
+    it('counts the plans planned before the first phase or after the last, and no removal', () => {
+        const report = computeTopologyChurnReport({
+            plans: [
+                createPlan({ version: 1, plannedAtEpochMs: -1 }),
+                createPlan({ version: 2, plannedAtEpochMs: 0 }),
+                createPlan({ version: 3, plannedAtEpochMs: 59_999 }),
+                createPlan({ version: 4, plannedAtEpochMs: 60_000 }),
+                createRemoval(5, 90_000)
+            ],
+            sightings: [],
+            phases: [FORMATION],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.phases[0].planCount).toBe(2);
+        expect(report.outsidePhasesPlanCount).toBe(2);
     });
 
     it('counts a plan inside the overlap when the layout it replaced was younger than the served overlap', () => {

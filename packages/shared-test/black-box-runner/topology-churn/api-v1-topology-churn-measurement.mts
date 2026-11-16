@@ -4,6 +4,7 @@ import { runManagedClusterProof } from '../cluster-proofs/run-managed-cluster-pr
 import { TopologyChurnApi } from './topology-churn-api.mts';
 import {
     TOPOLOGY_CHURN_REPORT_FILE,
+    TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS,
     TopologyChurnScenario,
     type TopologyChurnClock
 } from './topology-churn-scenario.mts';
@@ -15,7 +16,8 @@ async function runTopologyChurnMeasurement(): Promise<void> {
             new TopologyChurnScenario({
                 api: new TopologyChurnApi({
                     memberPassword: 'topology-churn-password',
-                    administrator: { username: 'admin', password: 'admin' }
+                    administrator: { username: 'admin', password: 'admin' },
+                    requestTimeoutMs: TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS
                 }),
                 clock: createDefaultTopologyChurnClock(),
                 artifactDir: scenario.artifactDir,

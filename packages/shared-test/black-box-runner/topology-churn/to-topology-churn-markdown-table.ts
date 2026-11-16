@@ -1,6 +1,7 @@
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
+import type { TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import type {
     TopologyChurnDistribution,
     TopologyChurnPhaseReport,
@@ -10,11 +11,9 @@ import type {
 export interface TopologyChurnRoomEntry {
     readonly replanning: GroupTopologyReplanningMode;
     readonly memberCount: number;
-    /** Each kind the room's plans used, once, in planned order. */
     readonly topology: readonly RallarRtcTopologyKind[];
     readonly report: TopologyChurnReport;
-    /** No typed read serves the room's mesh parameter, so the no-RTT comparison cannot be computed. */
-    readonly drift: null;
+    readonly drift: TopologyChurnDrift;
 }
 
 const NO_FIGURE = '—';
@@ -51,7 +50,9 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         '',
         toMarkdownRow(COLUMNS.map(([title]) => title)),
         toMarkdownRow(COLUMNS.map(() => '---')),
-        ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase))))
+        ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
+        '',
+        `Plans outside both phases: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`
     ].join('\n');
 }
 
@@ -76,4 +77,11 @@ function toCauseFigure(plansByCause: TopologyChurnPhaseReport['plansByCause']): 
 
 function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']): string {
     return hops === null ? NO_FIGURE : [hops.first, hops.last, hops.max].join(' / ');
+}
+
+function toDriftFigure(drift: TopologyChurnDrift): string {
+    return drift.status === 'measured'
+        ? `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
+            `extra ${drift.extraHops}.`
+        : `${NO_FIGURE} (${drift.reason})`;
 }

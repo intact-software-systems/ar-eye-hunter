@@ -4,19 +4,19 @@ import { join } from 'node:path';
 import { SESSION_HEARTBEAT_INTERVAL_MS } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
-import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
-import type {
-    GroupTopologyPolicy,
-    GroupTopologyReplanningMode
-} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
+import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+import { computeTopologyChurnDrift, type TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import { computeTopologyChurnPhaseWindows } from './compute-topology-churn-phase-windows.ts';
 import { computeTopologyChurnReport, type TopologyChurnPromotionSighting } from './compute-topology-churn-report.ts';
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
 import { toTopologyChurnMarkdownTable, type TopologyChurnRoomEntry } from './to-topology-churn-markdown-table.ts';
+import { toTopologyChurnMember } from './to-topology-churn-member.ts';
+import { toTopologyChurnPolicy } from './to-topology-churn-policy.ts';
 import type { TopologyChurnApi, TopologyChurnMember, TopologyChurnSession } from './topology-churn-api.mts';
 
 export const TOPOLOGY_CHURN_MEMBER_COUNTS = [3, 8, 20] as const;
@@ -28,6 +28,7 @@ export const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
 export const TOPOLOGY_CHURN_DURATION_MS = 90_000;
 export const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 export const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
+export const TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS = 30_000;
 export const TOPOLOGY_CHURN_REPORT_FILE = 'topology-churn-report.json';
 
 export interface TopologyChurnClock {
@@ -50,9 +51,6 @@ const CONVERGENCE_BOUND_MS = 15_000;
 const BURST_CONCURRENCY = 10;
 const ADMINISTRATOR_CLIENT_IP = '10.0.0.1';
 const APPLICATION_ID = 'topology-churn';
-const MANAGED_TOPOLOGY = resolveGroupLifecyclePolicyPreset('managed').topology;
-const DRIFT_UNDETERMINED_REASON = 'No typed read serves a room\'s mesh parameter, so the no-RTT layout cannot be ' +
-    'recomputed for the same members; hop figures come from the plan records.';
 
 interface TopologyChurnRoomSpec {
     readonly index: number;
@@ -74,7 +72,6 @@ interface PresentSession {
     readonly presentSinceEpochMs: number;
 }
 
-/** One room's live run; `present`, `sightings` and `progress.step` change while it runs. */
 interface ChurnRoom {
     readonly spec: TopologyChurnRoomSpec;
     readonly roomRef: GroupRef;
@@ -86,7 +83,6 @@ interface ChurnRoom {
 }
 
 interface ChurnPhase {
-    readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly events: readonly TopologyChurnEvent[];
 }
@@ -96,11 +92,7 @@ interface ConvergedRoom {
     readonly outcome: TopologyChurnOutcome;
 }
 
-/**
- * Drives one room per replanning mode and size through a formation burst and steady churn, with presence over HTTP
- * only, and records the room's retained plans. It asserts liveness only: a failed request, a room without a plan or a
- * newest plan not accepted in time fails the run, and no report is written. No figure is judged.
- */
+/** Liveness only: a failed or timed-out request, a room without a plan or a late convergence fails the run unreported. */
 export class TopologyChurnScenario {
     readonly #input: TopologyChurnScenario.Input;
     readonly #runToken = crypto.randomUUID().slice(0, 8);
@@ -167,11 +159,10 @@ export class TopologyChurnScenario {
             groupId: `churn-${spec.replanning}-${spec.memberCount}`
         };
         const creator = await this.#signIn(this.#createMember(spec));
-        await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyPolicy(spec.replanning) });
+        await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyChurnPolicy(spec.replanning) });
         return { spec, roomRef, creator, present: [], sightings: [], progress, signal };
     }
 
-    /** The sampler and the lease renewals run beside the measurement; the first failure of any of them ends it. */
     async #measureWhileLive(
         room: ChurnRoom,
         context: TopologyChurnRunContext,
@@ -197,17 +188,19 @@ export class TopologyChurnScenario {
         const formationStartedAtEpochMs = this.#input.clock.nowEpochMs();
         await this.#formRoom(room);
         const lastPresenceAnsweredAtEpochMs = Math.max(...room.present.map((present) => present.presentSinceEpochMs));
-        await this.#sleepUntil(lastPresenceAnsweredAtEpochMs + TOPOLOGY_CHURN_SETTLE_MS, room.signal);
+        const formationEndedAtEpochMs = lastPresenceAnsweredAtEpochMs + TOPOLOGY_CHURN_SETTLE_MS;
+        await this.#sleepUntil(formationEndedAtEpochMs, room.signal);
         room.progress.step = 'churning';
-        const churn = await this.#churnRoom(room);
+        const churn = await this.#churnRoom(room, formationEndedAtEpochMs);
         room.progress.step = 'waiting for the newest plan to be accepted';
         const converged = await this.#awaitConvergence(room, context.administrator);
+        room.progress.step = 'reading the accepted layout';
+        const drift = await this.#readDrift(room);
         const phases = computeTopologyChurnPhaseWindows({
             formationStartedAtEpochMs,
             lastPresenceAnsweredAtEpochMs,
-            formationJoinCount: room.spec.memberCount,
+            memberCount: room.spec.memberCount,
             settleMs: TOPOLOGY_CHURN_SETTLE_MS,
-            churnStartedAtEpochMs: churn.startedAtEpochMs,
             churnEndedAtEpochMs: churn.endedAtEpochMs,
             churnEvents: churn.events
         });
@@ -221,11 +214,16 @@ export class TopologyChurnScenario {
                 phases,
                 replacedLayoutOverlapMs: context.replacedLayoutOverlapMs
             }),
-            drift: null
+            drift
         };
     }
 
-    /** The creator connects and every other member registers, logs in, joins and connects, at most ten at a time. */
+    async #readDrift(room: ChurnRoom): Promise<TopologyChurnDrift> {
+        const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
+        const snapshot = await this.#input.api.readRoom(room.creator, room.roomRef);
+        return computeTopologyChurnDrift({ layout, leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot) });
+    }
+
     async #formRoom(room: ChurnRoom): Promise<void> {
         const joiners = Array.from({ length: room.spec.memberCount - 1 }, () => this.#createMember(room.spec));
         await this.#runConcurrently(room.signal, [
@@ -234,8 +232,7 @@ export class TopologyChurnScenario {
         ]);
     }
 
-    async #churnRoom(room: ChurnRoom): Promise<ChurnPhase> {
-        const startedAtEpochMs = this.#input.clock.nowEpochMs();
+    async #churnRoom(room: ChurnRoom, startedAtEpochMs: number): Promise<ChurnPhase> {
         const events: TopologyChurnEvent[] = [];
         for (
             let eventIndex = 0;
@@ -255,7 +252,7 @@ export class TopologyChurnScenario {
             events.push(event);
         }
         await this.#sleepUntil(startedAtEpochMs + TOPOLOGY_CHURN_DURATION_MS, room.signal);
-        return { startedAtEpochMs, endedAtEpochMs: this.#input.clock.nowEpochMs(), events };
+        return { endedAtEpochMs: this.#input.clock.nowEpochMs(), events };
     }
 
     async #applyChurnEvent(room: ChurnRoom, event: TopologyChurnEvent): Promise<void> {
@@ -316,7 +313,6 @@ export class TopologyChurnScenario {
         }
     }
 
-    /** Renews every present member's lease at the browser's cadence, as the browser renews its room presence. */
     async #renewPresenceLeases(room: ChurnRoom): Promise<void> {
         try {
             await this.#input.clock.sleep(SESSION_HEARTBEAT_INTERVAL_MS, room.signal);
@@ -382,18 +378,17 @@ export class TopologyChurnScenario {
         signal.throwIfAborted();
     }
 
-    /** Each member is its own client on its own address, spread over the cluster's API processes. */
     #createMember(spec: TopologyChurnRoomSpec): TopologyChurnMember {
-        const index = this.#nextMemberIndex;
+        const memberIndex = this.#nextMemberIndex;
         this.#nextMemberIndex += 1;
-        return {
-            username: `churn-${this.#runToken}-${spec.index}-${index}`,
-            clientIp: `10.${1 + Math.floor(index / 250)}.0.${1 + (index % 250)}`,
-            apiBaseUrl: this.#input.apiBaseUrls[index % this.#input.apiBaseUrls.length]
-        };
+        return toTopologyChurnMember({
+            runToken: this.#runToken,
+            roomIndex: spec.index,
+            memberIndex,
+            apiBaseUrls: this.#input.apiBaseUrls
+        });
     }
 
-    /** The lease the browser puts on its room presence row, renewed by every heartbeat. */
     #toLeaseExpiresAtEpochMs(): number {
         return this.#input.clock.nowEpochMs() + DEFAULT_STATE_HEARTBEAT_TTL_MSECS;
     }
@@ -403,16 +398,6 @@ function toRoomSpecs(): readonly TopologyChurnRoomSpec[] {
     return TOPOLOGY_CHURN_REPLANNING_MODES.flatMap((replanning) =>
         TOPOLOGY_CHURN_MEMBER_COUNTS.map((memberCount) => ({ replanning, memberCount }))
     ).map((spec, index) => ({ ...spec, index }));
-}
-
-function toTopologyPolicy(replanning: GroupTopologyReplanningMode): Partial<GroupTopologyPolicy> {
-    return replanning === 'debounced'
-        ? {
-            replanning,
-            debounceWindowMs: MANAGED_TOPOLOGY.debounceWindowMs,
-            maxReplanWaitMs: MANAGED_TOPOLOGY.maxReplanWaitMs
-        }
-        : { replanning };
 }
 
 function toReport(rooms: readonly TopologyChurnRoomEntry[], servedReplacedLayoutOverlapMs: number): object {
@@ -425,13 +410,13 @@ function toReport(rooms: readonly TopologyChurnRoomEntry[], servedReplacedLayout
             durationMs: TOPOLOGY_CHURN_DURATION_MS,
             settleMs: TOPOLOGY_CHURN_SETTLE_MS,
             sampleIntervalMs: TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS,
+            requestTimeoutMs: TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS,
             convergenceBoundMs: CONVERGENCE_BOUND_MS,
             burstConcurrency: BURST_CONCURRENCY,
             presenceLeaseMs: DEFAULT_STATE_HEARTBEAT_TTL_MSECS,
             heartbeatIntervalMs: SESSION_HEARTBEAT_INTERVAL_MS
         },
         servedReplacedLayoutOverlapMs,
-        driftUndeterminedReason: DRIFT_UNDETERMINED_REASON,
         rooms
     };
 }

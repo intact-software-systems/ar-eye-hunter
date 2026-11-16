@@ -18,7 +18,7 @@ import { MAX_GROUP_CONCURRENT_EDGE_SETUPS } from './group-lifecycle/to-normalize
 import { decodeGroupPresencePublicationKey } from './group-presence/decode-group-presence-publication-key.ts';
 import { decodeGroupPublicationGrantList } from './group-publication/group-publication-grants.ts';
 import { GROUP_PRESENCE_SESSION_KEYS, type GroupEvent, type GroupRef, type GroupSnapshot } from './group-types.ts';
-import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
+import { RALLAR_RTC_TOPOLOGY_KINDS, type RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import { formatRallarValidation } from './rallar-validation.ts';
 import type { StateEventPage } from './state-event-types.ts';
 import type { StateScope } from './state-types.ts';
@@ -661,7 +661,7 @@ export function validateAuthoritativeOverlayTopologySnapshot(
         fail('RallarOverlayTopologySnapshot overlayId is not canonical');
     }
     nonEmptyString(topology.name, 'RallarOverlayTopologySnapshot.name');
-    enumValue(topology.topology, ['star', 'tree', 'mesh'], 'RallarOverlayTopologySnapshot.topology');
+    enumValue(topology.topology, RALLAR_RTC_TOPOLOGY_KINDS, 'RallarOverlayTopologySnapshot.topology');
     nonEmptyString(topology.createdByClientId, 'RallarOverlayTopologySnapshot.createdByClientId');
     const activeSessionIds = decodeStringArray(
         topology.activeSessionIds,

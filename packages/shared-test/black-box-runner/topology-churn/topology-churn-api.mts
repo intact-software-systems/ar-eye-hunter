@@ -1,3 +1,4 @@
+import { toStateGroupHttpPath, toStateScopeHttpPath } from '@shared-web/browser/api/state-http-path.ts';
 import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
 import {
     ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,
@@ -6,18 +7,28 @@ import {
 } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import { decodeAdminRoomTopologyPlans } from '@shared/api/admin-rooms/decode-admin-room-topology-plans.ts';
 import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
+import {
+    validateAuthoritativeGroupSnapshot,
+    validateAuthoritativeOverlayTopologySnapshot
+} from '@shared/api/authoritative-state-validation.ts';
 import type { GroupTopologyPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import { requestJson } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import {
+    requestJson,
+    type ProofJsonObject,
+    type RequestOptions
+} from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
 
 export namespace TopologyChurnApi {
     export interface Config {
         readonly memberPassword: string;
         readonly administrator: Credentials;
+        /** Each request is aborted after this long, so a hung request fails the run instead of hanging it. */
+        readonly requestTimeoutMs: number;
     }
 
     export interface Credentials {
@@ -26,7 +37,6 @@ export namespace TopologyChurnApi {
     }
 }
 
-/** A principal as one client: its own address, so per-IP login limits never couple two members. */
 export interface TopologyChurnMember {
     readonly username: string;
     readonly clientIp: string;
@@ -58,7 +68,6 @@ interface TopologyChurnMutation {
     readonly body: object;
 }
 
-/** The HTTP calls of the churn scenario; every unexpected status or undecodable body throws. */
 export class TopologyChurnApi {
     readonly #config: TopologyChurnApi.Config;
 
@@ -67,12 +76,12 @@ export class TopologyChurnApi {
     }
 
     async readApiConfig(apiBaseUrl: string): Promise<ApiConfigResponse> {
-        const body = await requestJson(apiBaseUrl, '/api/config', { method: 'GET' });
+        const body = await this.#request(apiBaseUrl, '/api/config', { method: 'GET' });
         return requireRight(decodeApiConfigResponse(body, new URL(apiBaseUrl)));
     }
 
     async registerMember(member: TopologyChurnMember): Promise<void> {
-        await requestJson(member.apiBaseUrl, toApiMutationRequestPath('/api/auth/register', crypto.randomUUID()), {
+        await this.#request(member.apiBaseUrl, toApiMutationRequestPath('/api/auth/register', crypto.randomUUID()), {
             method: 'POST',
             headers: { 'x-forwarded-for': member.clientIp },
             body: { username: member.username, password: this.#config.memberPassword, displayName: member.username },
@@ -90,8 +99,8 @@ export class TopologyChurnApi {
     }
 
     async createRoom(input: CreateTopologyChurnRoomInput): Promise<void> {
-        const path = toGroupCollectionPath(input.roomRef);
-        await requestJson(input.creator.member.apiBaseUrl, toApiMutationRequestPath(path, crypto.randomUUID()), {
+        const path = `${toStateScopeHttpPath(input.roomRef)}/groups`;
+        await this.#request(input.creator.member.apiBaseUrl, toApiMutationRequestPath(path, crypto.randomUUID()), {
             method: 'POST',
             headers: toSessionHeaders(input.creator),
             body: {
@@ -146,7 +155,7 @@ export class TopologyChurnApi {
     }
 
     async readRoom(session: TopologyChurnSession, roomRef: GroupRef): Promise<GroupSnapshot> {
-        const body = await requestJson(session.member.apiBaseUrl, toGroupPath(roomRef), {
+        const body = await this.#request(session.member.apiBaseUrl, toGroupPath(roomRef), {
             method: 'GET',
             headers: toSessionHeaders(session)
         });
@@ -154,7 +163,19 @@ export class TopologyChurnApi {
         return body;
     }
 
-    /** Every live publication of the room exactly once, in storage-key order. */
+    async readAcceptedLayout(session: TopologyChurnSession, roomRef: GroupRef): Promise<RallarOverlayTopologySnapshot> {
+        const body = await this.#request(session.member.apiBaseUrl, `${toGroupPath(roomRef)}/topology`, {
+            method: 'GET',
+            headers: toSessionHeaders(session)
+        });
+        const acceptedSnapshot = body.acceptedSnapshot;
+        if (acceptedSnapshot === null || acceptedSnapshot === undefined) {
+            throw new TypeError(`The room ${roomRef.groupId} has accepted no layout.`);
+        }
+        validateAuthoritativeOverlayTopologySnapshot(acceptedSnapshot, roomRef);
+        return acceptedSnapshot;
+    }
+
     async readRoomTopologyPlans(
         administrator: TopologyChurnSession,
         roomRef: GroupRef
@@ -163,7 +184,7 @@ export class TopologyChurnApi {
         let afterPublicationId: string | null = null;
         do {
             const page: AdminRoomTopologyPlansResponse = requireRight(decodeAdminRoomTopologyPlans(
-                await requestJson(administrator.member.apiBaseUrl, toTopologyPlansPath(roomRef, afterPublicationId), {
+                await this.#request(administrator.member.apiBaseUrl, toTopologyPlansPath(roomRef, afterPublicationId), {
                     method: 'GET',
                     headers: toSessionHeaders(administrator)
                 })
@@ -176,7 +197,7 @@ export class TopologyChurnApi {
     }
 
     async #login(member: TopologyChurnMember, password: string): Promise<TopologyChurnSession> {
-        const body = await requestJson(
+        const body = await this.#request(
             member.apiBaseUrl,
             toApiMutationRequestPath('/api/auth/login', crypto.randomUUID()),
             {
@@ -193,11 +214,26 @@ export class TopologyChurnApi {
     }
 
     async #mutate(session: TopologyChurnSession, mutation: TopologyChurnMutation): Promise<void> {
-        await requestJson(session.member.apiBaseUrl, toApiMutationRequestPath(mutation.path, crypto.randomUUID()), {
+        await this.#request(session.member.apiBaseUrl, toApiMutationRequestPath(mutation.path, crypto.randomUUID()), {
             method: mutation.method,
             headers: toSessionHeaders(session),
             body: mutation.body
         });
+    }
+
+    async #request(baseUrl: string, path: string, options: RequestOptions): Promise<ProofJsonObject> {
+        try {
+            return await requestJson(baseUrl, path, {
+                ...options,
+                signal: AbortSignal.timeout(this.#config.requestTimeoutMs)
+            });
+        }
+        catch (error) {
+            if (error instanceof DOMException && error.name === 'TimeoutError') {
+                throw new Error(`${options.method} ${path} timed out after ${this.#config.requestTimeoutMs} ms.`);
+            }
+            throw error;
+        }
     }
 }
 
@@ -214,13 +250,8 @@ function toPresenceGenerationId(session: TopologyChurnSession): string {
     return `generation-${session.sessionId}`;
 }
 
-function toGroupCollectionPath(roomRef: GroupRef): string {
-    return `/api/state/apps/${encodeURIComponent(roomRef.applicationId)}` +
-        `/workspaces/${encodeURIComponent(roomRef.workspaceId)}/groups`;
-}
-
 function toGroupPath(roomRef: GroupRef): string {
-    return `${toGroupCollectionPath(roomRef)}/${encodeURIComponent(roomRef.groupId)}`;
+    return toStateGroupHttpPath(roomRef, roomRef.groupId);
 }
 
 function toPresencePath(input: Pick<TopologyChurnPresenceInput, 'session' | 'roomRef'>): string {

@@ -4,9 +4,9 @@ import type { TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 export interface ComputeTopologyChurnPhaseWindowsInput {
     readonly formationStartedAtEpochMs: number;
     readonly lastPresenceAnsweredAtEpochMs: number;
-    readonly formationJoinCount: number;
+    /** Every member joins during formation, the creator included. */
+    readonly memberCount: number;
     readonly settleMs: number;
-    readonly churnStartedAtEpochMs: number;
     readonly churnEndedAtEpochMs: number;
     readonly churnEvents: readonly TopologyChurnEvent[];
 }
@@ -14,17 +14,18 @@ export interface ComputeTopologyChurnPhaseWindowsInput {
 export function computeTopologyChurnPhaseWindows(
     input: ComputeTopologyChurnPhaseWindowsInput
 ): readonly TopologyChurnPhaseWindow[] {
+    const formationEndedAtEpochMs = input.lastPresenceAnsweredAtEpochMs + input.settleMs;
     return [
         {
             name: 'formation',
             startedAtEpochMs: input.formationStartedAtEpochMs,
-            endedAtEpochMs: input.lastPresenceAnsweredAtEpochMs + input.settleMs,
-            joinCount: input.formationJoinCount,
+            endedAtEpochMs: formationEndedAtEpochMs,
+            joinCount: input.memberCount,
             leaveCount: 0
         },
         {
             name: 'churn',
-            startedAtEpochMs: input.churnStartedAtEpochMs,
+            startedAtEpochMs: formationEndedAtEpochMs,
             endedAtEpochMs: input.churnEndedAtEpochMs,
             joinCount: input.churnEvents.filter((event) => event.kind === 'join').length,
             leaveCount: input.churnEvents.filter((event) => event.kind === 'leave').length

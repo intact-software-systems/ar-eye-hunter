@@ -9,6 +9,8 @@ import type {
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 
+import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
+
 export interface TopologyChurnPhaseWindow {
     readonly name: 'formation' | 'churn';
     readonly startedAtEpochMs: number;
@@ -70,16 +72,12 @@ export interface TopologyChurnPhaseReport {
 
 export interface TopologyChurnReport {
     readonly phases: readonly TopologyChurnPhaseReport[];
-}
-
-interface RecordedTopologyPlan {
-    readonly layout: GroupLayoutIdentity;
-    readonly degreeLimit: number;
-    readonly record: RtcTopologyPlanRecord;
+    /** Plans planned in no phase's window: before the first or from the end of the last. */
+    readonly outsidePhasesPlanCount: number;
 }
 
 interface ComputePhaseFiguresInput {
-    readonly plans: readonly RecordedTopologyPlan[];
+    readonly plans: readonly PlannedTopologyPlan[];
     readonly durationMs: number;
     readonly sightings: readonly TopologyChurnPromotionSighting[];
     readonly replacedLayoutOverlapMs: number;
@@ -88,9 +86,7 @@ interface ComputePhaseFiguresInput {
 const MS_PER_MINUTE = 60_000;
 
 export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInput): TopologyChurnReport {
-    const plans = input.plans
-        .flatMap(toRecordedTopologyPlan)
-        .sort((left, right) => left.record.plannedAtEpochMs - right.record.plannedAtEpochMs);
+    const plans = toPlannedTopologyPlans(input.plans);
     return {
         phases: input.phases.map((phase) => {
             const durationMs = phase.endedAtEpochMs - phase.startedAtEpochMs;
@@ -112,17 +108,14 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 ...computeEdgeFigures(figures.plans),
                 ...computeCauseFigures(figures.plans)
             };
-        })
+        }),
+        outsidePhasesPlanCount: plans.filter((plan) => !input.phases.some((phase) => isWithinPhase(plan, phase))).length
     };
 }
 
-function toRecordedTopologyPlan(entry: AdminRoomTopologyPlan): RecordedTopologyPlan[] {
-    return entry.plan === null ? [] : [{ layout: entry.layout, degreeLimit: entry.degreeLimit, record: entry.plan }];
-}
-
-function isWithinPhase(plan: RecordedTopologyPlan, phase: TopologyChurnPhaseWindow): boolean {
-    return plan.record.plannedAtEpochMs >= phase.startedAtEpochMs &&
-        plan.record.plannedAtEpochMs < phase.endedAtEpochMs;
+function isWithinPhase(plan: PlannedTopologyPlan, phase: TopologyChurnPhaseWindow): boolean {
+    return plan.plan.plannedAtEpochMs >= phase.startedAtEpochMs &&
+        plan.plan.plannedAtEpochMs < phase.endedAtEpochMs;
 }
 
 function computePromotionFigures(
@@ -130,7 +123,7 @@ function computePromotionFigures(
 ): Pick<TopologyChurnPhaseReport, 'promotedPlanCount' | 'promotionsPerMinute' | 'promotionLagMs'> {
     const lagsMs = input.plans.flatMap((plan) => {
         const sighting = input.sightings.find((candidate) => isSameGroupLayoutIdentity(candidate.layout, plan.layout));
-        return sighting === undefined ? [] : [Math.max(0, sighting.firstSeenAtEpochMs - plan.record.plannedAtEpochMs)];
+        return sighting === undefined ? [] : [Math.max(0, sighting.firstSeenAtEpochMs - plan.plan.plannedAtEpochMs)];
     });
     return {
         promotedPlanCount: lagsMs.length,
@@ -142,9 +135,7 @@ function computePromotionFigures(
 function computeOverlapFigures(
     input: ComputePhaseFiguresInput
 ): Pick<TopologyChurnPhaseReport, 'insideOverlapPlanCount' | 'insideOverlapShare'> {
-    const replacedAgesMs = input.plans.flatMap((plan) =>
-        plan.record.replaced === null ? [] : [plan.record.replaced.ageMs]
-    );
+    const replacedAgesMs = input.plans.flatMap((plan) => plan.plan.replaced === null ? [] : [plan.plan.replaced.ageMs]);
     const insideOverlapPlanCount = replacedAgesMs.filter((ageMs) => ageMs < input.replacedLayoutOverlapMs).length;
     return {
         insideOverlapPlanCount,
@@ -152,7 +143,7 @@ function computeOverlapFigures(
     };
 }
 
-function computeEdgeFigures(plans: readonly RecordedTopologyPlan[]): Pick<
+function computeEdgeFigures(plans: readonly PlannedTopologyPlan[]): Pick<
     TopologyChurnPhaseReport,
     | 'identityOnlyPlanCount'
     | 'changedSessionsPerPlan'
@@ -162,13 +153,13 @@ function computeEdgeFigures(plans: readonly RecordedTopologyPlan[]): Pick<
     | 'degreeLimit'
     | 'longestPathHops'
 > {
-    const edgeChanging = plans.map((plan) => plan.record).filter((record) => !isIdentityOnly(record));
+    const edgeChanging = plans.map((plan) => plan.plan).filter((record) => !isIdentityOnly(record));
     return {
         identityOnlyPlanCount: plans.length - edgeChanging.length,
         changedSessionsPerPlan: computeDistribution(edgeChanging.map((record) => record.delta.changedSessionCount)),
         reroutedSessionsPerPlan: computeDistribution(edgeChanging.map((record) => record.delta.reroutedSessionCount)),
         joinersPerPlan: computeDistribution(edgeChanging.map((record) => record.delta.joinedSessionCount)),
-        maxJoinerEdgesPerSession: Math.max(0, ...plans.map((plan) => plan.record.delta.maxJoinerEdgesPerSession)),
+        maxJoinerEdgesPerSession: Math.max(0, ...plans.map((plan) => plan.plan.delta.maxJoinerEdgesPerSession)),
         degreeLimit: plans.length === 0 ? null : Math.max(...plans.map((plan) => plan.degreeLimit)),
         longestPathHops: computeLongestPathHops(edgeChanging)
     };
@@ -189,12 +180,12 @@ function computeLongestPathHops(
 }
 
 function computeCauseFigures(
-    plans: readonly RecordedTopologyPlan[]
+    plans: readonly PlannedTopologyPlan[]
 ): Pick<
     TopologyChurnPhaseReport,
     'plansByCause' | 'uncausedPlanCount' | 'reroutingMembershipPlanCount' | 'reroutingMembershipPlanShare'
 > {
-    const records = plans.map((plan) => plan.record);
+    const records = plans.map((plan) => plan.plan);
     const membershipRecords = records.filter((record) =>
         record.causes.includes('join') || record.causes.includes('leave')
     );
