@@ -112,11 +112,11 @@ export function validateEffectiveGroupTopologyConfig(
         });
     }
 
-    if (config.meshParamK > config.degreeLimit) {
+    if (config.meshParamK >= config.degreeLimit) {
         issues.push({
-            code: 'mesh-param-k-exceeds-degree-limit',
+            code: 'mesh-param-k-not-below-degree-limit',
             path: ['meshParamK'],
-            message: 'meshParamK must be less than or equal to degreeLimit',
+            message: 'meshParamK must be less than degreeLimit',
             details: {
                 meshParamK: config.meshParamK,
                 degreeLimit: config.degreeLimit

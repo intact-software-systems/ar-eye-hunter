@@ -276,7 +276,7 @@ attempt answers 200, because a grantee that has not joined yet is refused `membe
 
 **The reshape.** A cell whose definition declares `roomTopology: 'reshaped'` ends its start state
 with the `receiver`'s `PUT …/topology/config/requests/{requestId}` of `{ topologyKind: 'tree',
-degreeLimit: 2, meshParamK: 2 }` (`topology-tree`), after any start grants. The formation poll then
+degreeLimit: 2, meshParamK: 1 }` (`topology-tree`), after any start grants. The formation poll then
 runs on the reshaped room, so it ends only once the server accepted the tree and holds the room
 settled on it, and every settle role's head read follows. After its applied-revision wait each settle
 role runs `reshape-in-force`: it reads its page's `health` every 250 ms for up to 90 s

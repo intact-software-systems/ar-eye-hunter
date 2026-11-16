@@ -9654,6 +9654,9 @@ components:
 
     GroupTopologyConfigPatch:
       type: object
+      description: >-
+        meshParamK, the links per mesh member, must be less than the degreeLimit that applies once the patch is
+        merged; a patch that leaves it equal to or above the limit is refused with 422.
       properties:
         topologyKind:
           anyOf:
@@ -9678,6 +9681,8 @@ components:
 
     EffectiveGroupTopologyConfig:
       type: object
+      description: >-
+        meshParamK is always less than degreeLimit.
       required:
         - topologyKind
         - degreeLimit

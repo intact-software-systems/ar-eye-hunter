@@ -273,7 +273,6 @@ test('configuration decoder validates every numeric policy boundary without fall
         ['group.admission.joinGroup', 1],
         ['group.admission.presencePrincipal', 1],
         ['group.admission.presenceGroup', 1],
-        ['topology.planning.degreeLimit', 1],
         ['topology.planning.rttReportingDegreeLimit', 1],
         ['topology.planning.treeMinSize', 1],
         ['topology.planning.meshMinSize', 1],
@@ -580,6 +579,33 @@ test('configuration decoder aggregates deterministic issues from every source ca
     );
 });
 
+test('configuration decoder requires the mesh parameter below the topology degree limit', () => {
+    for (const [degreeLimit, meshParamK, valid] of [[4, 4, false], [4, 5, false], [4, 3, true], [2, 1, true], [1, 1, false]] as const) {
+        const input = validDecodeApiV1ConfigurationInput();
+        setPath(input.defaultsSource, 'topology.planning.degreeLimit', degreeLimit);
+        setPath(input.defaultsSource, 'topology.planning.meshParamK', meshParamK);
+        if (valid) {
+            assert.doesNotThrow(() => decodeApiV1Configuration(input));
+        }
+        else {
+            const error = captureConfigurationError(() => decodeApiV1Configuration(input));
+            assert.deepEqual(
+                error.issues.map((issue) => [issue.source, issue.path, issue.code]),
+                [['invariant', 'topology.planning.meshParamK', 'mesh-param-not-below-degree']]
+            );
+        }
+    }
+
+    const input = validDecodeApiV1ConfigurationInput();
+    setPath(input.defaultsSource, 'topology.planning.degreeLimit', 0);
+    assert.equal(
+        captureConfigurationError(() => decodeApiV1Configuration(input)).issues.some(
+            (issue) => issue.path === 'topology.planning.degreeLimit'
+        ),
+        true
+    );
+});
+
 test('configuration decoder rejects weak authentication credentials in every profile', () => {
     const input = validDecodeApiV1ConfigurationInput();
     input.secretsSource = {
@@ -694,9 +720,6 @@ function preserveCrossFieldValidity(
 ): void {
     if (path === 'authentication.sessionTtlMs') {
         setPath(input.defaultsSource, 'clientSessions.disconnectedRetentionMs', 1);
-    }
-    if (path === 'topology.planning.degreeLimit') {
-        setPath(input.defaultsSource, 'topology.planning.meshParamK', 1);
     }
     if (path === 'topology.planning.meshMinSize') {
         setPath(input.defaultsSource, 'topology.planning.treeMinSize', 1);

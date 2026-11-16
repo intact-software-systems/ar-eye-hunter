@@ -84,11 +84,38 @@ describe('group topology config resolution', () => {
                 path: ['meshMinSize']
             }),
             expect.objectContaining({
-                code: 'mesh-param-k-exceeds-degree-limit',
+                code: 'mesh-param-k-not-below-degree-limit',
                 path: ['meshParamK']
             })
         ]);
     });
+
+    it.each([
+        { degreeLimit: 4, meshParamK: 4, valid: false },
+        { degreeLimit: 4, meshParamK: 5, valid: false },
+        { degreeLimit: 4, meshParamK: 3, valid: true },
+        { degreeLimit: 5, meshParamK: 2, valid: true }
+    ])(
+        'requires the mesh parameter below the degree limit (limit $degreeLimit, k $meshParamK)',
+        ({ degreeLimit, meshParamK, valid }) => {
+            const issues = validateEffectiveGroupTopologyConfig({
+                topologyKind: 'mesh',
+                degreeLimit,
+                treeMinSize: 4,
+                meshMinSize: 4,
+                meshParamK
+            });
+
+            expect(issues).toEqual(
+                valid ? [] : [{
+                    code: 'mesh-param-k-not-below-degree-limit',
+                    path: ['meshParamK'],
+                    message: 'meshParamK must be less than degreeLimit',
+                    details: { meshParamK, degreeLimit }
+                }]
+            );
+        }
+    );
 
     it('defaults override expiry to 15 minutes, caps it at 24 hours, and rejects elapsed values', () => {
         expect(computeOverrideExpiresAtEpochMs({ nowEpochMs: 1_000, ttlMs: 0 })).toBe(1_000);

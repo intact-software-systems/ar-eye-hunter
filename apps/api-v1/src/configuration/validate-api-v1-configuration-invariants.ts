@@ -123,12 +123,12 @@ function validateTopologyPlanningInvariants(
         collector.isValid(
             'topology.planning.meshParamK',
             'topology.planning.degreeLimit'
-        ) && planning.meshParamK > planning.degreeLimit
+        ) && planning.meshParamK >= planning.degreeLimit
     ) {
         collector.invariant(
             'topology.planning.meshParamK',
-            'mesh-param-exceeds-degree',
-            'Mesh parameter K must not exceed the topology degree limit.'
+            'mesh-param-not-below-degree',
+            'Mesh parameter K must be less than the topology degree limit.'
         );
     }
     const recompute = topology.recompute;
