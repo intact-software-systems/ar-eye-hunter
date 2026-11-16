@@ -785,8 +785,8 @@ and it has no status list.
   time; the Steiner-keeping removes exist for that setting, and the server has no signal for "left the room but
   still online".
 - The four `REMOVE_TRY_REPLACE_PRUNE_*` removes throw when the leaver is absent from the global graph
-  (`Graph.edge: could not find the … target node`, from `kCenterNodes`), which is the planner's input for every
-  leave.
+  (`Graph.edge: could not find the … target node`, from `kCenterNodes`), which was the planner's input for every
+  leave until its in-place graph kept the plan's leavers (D662); they were not run against that graph.
 - The minimum-diameter removes exceed the degree limit (degree 6 at a limit of 5 in 4 of 30 tree leaves and in 4 to
   8 mesh leaves) through the reconnect step's `degInc` relaxation.
 - The capacity rule and `getAvailableOutDegree` exist in three files of `packages/shared-graph/remove/`
@@ -800,13 +800,9 @@ and it has no status list.
   failed build into empty next hops. No failing path is known after D659 and D660, but the masking remains.
 - A mesh membership-delta fallback builds the complete room graph twice, once for the evolution and once for the
   rebuild.
-- The public diagnostic `createRoomGraph` and the B03 bench (`rtc-room-graph-rtt-bench.ts`) still time the sparse
-  graph for a mesh, which the planner no longer plans over.
 - The hang guard in the planner's tests (a single leave from a measured room) cannot fail by name: a synchronous
   loop ignores Vitest's timeout and stalls the run. `packages/tests/hetzner/owned-test-process.ts` could run it in
   a killable child.
-- `withInsertedEdgeFromGlobal` (`packages/shared-graph/remove/remove-dynamics-helpers.ts`) is an unused near-copy of
-  `withInsertedEdge`.
 - Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
   forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
   forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`

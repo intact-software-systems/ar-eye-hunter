@@ -157,7 +157,8 @@ function computeLeaveOfX(
     return updateGroupMesh({
         type: MessageType.TO_SERVER_LEAVE,
         fromNode: 'x',
-        group: createGroupSnapshot('group-1', ['a', 'b', 'c']),
+        // The room after the leave: every member of the group graph but x.
+        group: createGroupSnapshot('group-1', (groupGraph.nodes() as string[]).filter((node) => node !== 'x')),
         groupGraph,
         globalGraph,
         fifoSteiner: new Set<string>(),

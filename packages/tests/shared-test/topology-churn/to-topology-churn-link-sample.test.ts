@@ -1,11 +1,7 @@
 import { toTopologyChurnLinkSample } from '@shared-test/black-box-runner/topology-churn/to-topology-churn-link-sample.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { describe, expect, it } from 'vitest';
 
-const MESH: Pick<
-    RallarOverlayTopologySnapshot,
-    'sourceGroupStateCausalRevision' | 'version' | 'state' | 'topology' | 'activeSessionIds' | 'nextHopsBySessionId'
-> = {
+const MESH: Parameters<typeof toTopologyChurnLinkSample>[0] = {
     sourceGroupStateCausalRevision: { groupRevision: 7, presenceRevision: 3 },
     version: 4,
     state: 'active',

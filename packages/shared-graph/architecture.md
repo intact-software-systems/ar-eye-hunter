@@ -30,15 +30,23 @@ What holds, and is tested: after `updateGroupTree` with
 `removeAlgo: 'REMOVE_MINIMUM_COST_EDGE'`, or `updateGroupMesh` with
 `removeAlgo: DynamicMeshAlgo.K_REMOVE_MC`, for a `TO_SERVER_LEAVE`, the leaver
 is not a vertex of the result, the remaining members are connected, and no
-member exceeds its degree limit.
+member exceeds its degree limit. In a plan with several leavers the planner
+removes them one after another, and the result holds none of them.
 
 Under which conditions it was tested: every single leave of five formed rooms
-(trees of 8, 12 and 30, meshes of 20 and 30), degree limit 5, mesh parameter 2,
-a complete global graph over the remaining members with the leaver absent from
-it, in rooms without a director: no led room was tested, and no leader's leave.
-The planner tests also run every single leave of measured rooms (RTT
-measurements held for the pairs the members select), planned over a complete
-graph in which an unmeasured pair is weighted above the slowest measured one.
+(trees of 8, 12 and 30, meshes of 20 and 30), and every pair of their members
+leaving in one plan, linked or not (in the mesh of 20, the trees of 8, 12 and 30
+and the mesh of 30: 37, 7, 11, 29 and 57 linked pairs and 153, 21, 55, 406 and
+378 unlinked ones), degree limit 5, mesh parameter 2. The global graph is
+complete over the remaining members and those leaving in the same plan, so the
+repair of one leaver can read the limit of a neighbour that leaves after it;
+with the leavers absent from it, every linked pair was rebuilt in the meshes
+and 7 of 7, 8 of 11 and 24 of 29 in the trees, and now none is. The rooms have
+no director: no led room was tested, and no leader's leave. The planner tests
+also run every single leave of measured rooms, and every linked pair of the
+measured mesh of 20 (RTT measurements held for the pairs the members select),
+planned over a complete graph in which an unmeasured pair is weighted above the
+slowest measured one.
 The tests are
 `packages/tests/shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.test.ts`
 (through the planner), `packages/tests/shared-graph/graphs-tree-service-leave.test.ts`
@@ -65,7 +73,8 @@ Any other caller of the remove algorithms owes the same.
 What is not guaranteed: in a led room a repaired tree can exceed the leader's
 depth bound, so a leave can still be followed by a `leader-rooting` rebuild at
 the next quiet plan (a reviewer measured 2 of 7 non-leader leaves in a led tree
-of 8, none in led trees of 12 and 30). Outside those conditions the remove can refuse (a tree
+of 8, none in led trees of 12 and 30), and the leader's own leave is untested.
+Outside those conditions the remove can refuse (a tree
 then falls back to try-replace, which may keep the leaver as a forwarding
 vertex; so does a mesh whose removal would cut it apart), and the reconnect
 step relaxes the degree limit by one per round when no pair fits. The

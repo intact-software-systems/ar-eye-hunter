@@ -453,9 +453,9 @@ describe('the complete weighted room graph a leave is repaired over', () => {
         expect(graph.size).toBe(6);
         expect(edgeWeight(graph, 'peer-1', 'peer-2')).toBe(30);
         expect(edgeWeight(graph, 'peer-3', 'peer-4')).toBe(50);
-        // Each unmeasured pair weighs the slowest measured RTT, 50 ms, plus its canonical spread of at least 1.
-        for (const [from, to] of [['peer-1', 'peer-3'], ['peer-1', 'peer-4'], ['peer-2', 'peer-3'], ['peer-2', 'peer-4']]) {
-            expect(edgeWeight(graph, from!, to!)).toBeGreaterThanOrEqual(51);
+        // Each unmeasured pair weighs the slowest measured RTT, 50 ms, plus its canonical spread.
+        for (const [from, to] of [['peer-1', 'peer-3'], ['peer-1', 'peer-4'], ['peer-2', 'peer-3'], ['peer-2', 'peer-4']] as const) {
+            expect(edgeWeight(graph, from, to)).toBe(50 + computeCanonicalTopologyPairWeight(from, to));
         }
     });
 

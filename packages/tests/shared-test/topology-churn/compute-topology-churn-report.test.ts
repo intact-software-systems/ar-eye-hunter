@@ -381,6 +381,8 @@ describe('computeTopologyChurnReport', () => {
             [],
             [
                 { layout: toTopologyChurnLayout(1), underLinkedMemberCount: 0 },
+                // A decoy with plan 2's version but another group revision: a sample of some other layout.
+                { layout: { ...toTopologyChurnLayout(2), groupRevision: 99 }, underLinkedMemberCount: 5 },
                 { layout: toTopologyChurnLayout(3), underLinkedMemberCount: 2 }
             ]
         );

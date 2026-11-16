@@ -276,7 +276,7 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
   With RTT measurements the global graph held only measured pairs, and the reconnect step looped without
   end when a neighbour had no edge to the connected set; the loop is synchronous, so on the server it would
   stall the whole server process, not only that room. Of the 20 single leaves of a measured mesh of 20, 13 did
-  not return within 45 s before (the loop has no exit) and all return now. And a measured mesh rebuild was planned empty (`createGroupMesh` fails on the capped
+  not return within 45 s before (the loop's only exit is at a counter no plan reaches) and all return now. And a measured mesh rebuild was planned empty (`createGroupMesh` fails on the capped
   graph, and the planner's `createNextHopMap` turns the failure into empty next hops); validation refused it
   as disconnected, so a measured mesh never took an RTT improvement and a measured tree could not grow into
   a mesh. Over a sweep of 1 620 measured plans, 714 were disconnected before, all meshes, and none after. A measured join
@@ -290,6 +290,14 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
 - **The mesh parameter must be below the link limit (D661).** A mesh whose `meshParamK` equals the limit
   cannot be planned, with or without RTT, so configuration refuses `meshParamK >= degreeLimit`, for the
   server configuration and for a room's topology-config write.
+- **Several leavers in one plan (D662).** The in-place repair's graph holds the current members and those
+  leaving in the same plan, so the repair of one leaver can read the limit of a neighbour that leaves after it;
+  the rebuild's graph is unchanged. Two linked members leaving in one plan were always rebuilt before (the
+  same on `main`): every linked pair of the meshes of 20 and 30 (37 and 57), and 7 of 7, 8 of 11 and 24 of 29
+  in the trees of 8, 12 and 30. Now every pair of members of the five rooms, linked or not, is repaired in
+  place and reroutes nobody, and every linked pair of the measured mesh of 20 is repaired in place.
+- **The link limit is at least 2 (D662).** Configuration refuses a `degreeLimit` below 2 as a field rule with
+  its own message (`degree-limit-below-two`), for the server configuration and a room's topology-config write.
 - **Deploy.** A room's stored configuration is re-validated on every read, so a stored one with k at or
   above its limit would fail to load. The wipe was ruled for pull request 827; this work (#837) is stacked on
   #827 and may deploy later or separately, so it must deploy together with #827's wipe or be followed by a wipe
@@ -441,6 +449,8 @@ browsers.
 ## Still open
 
 - Restoring a mesh member's k links after a leave, if the measurement shows meshes thinning.
-- A leave in a led room, which the sweep does not cover: whether `leader-rooting` reshapes follow leaves more
+- A leave in a led room, which the sweeps do not cover: whether `leader-rooting` reshapes follow leaves more
   than the reviewer's measurement suggests, and the leader's own leave.
+- Three or more leavers in one plan: the pair sweep covers two; the graph holds every leaver of the plan, but
+  no sweep measured more.
 - Accepting a stated degree excess, if repairs that the reconnect step's relaxation produces are rebuilt.

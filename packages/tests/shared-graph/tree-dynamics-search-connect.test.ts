@@ -1,4 +1,5 @@
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import type { ConnectContext } from '@shared-graph/remove/tree-dynamics-connect-types.ts';
 import { connectMCE, connectMDE, connectSearchMCE, connectSearchMDE } from '@shared-graph/remove/tree-dynamics-connect.ts';
 import {
     canAcceptAnotherEdge,
@@ -235,7 +236,7 @@ describe('an already-linked pair counts as connected', () => {
     });
 });
 
-function createLinkedPairContext() {
+function createLinkedPairContext(): ConnectContext {
     const globalGraph = createGraph(
         [
             ['a', VertexState.MEMBER, 4],
