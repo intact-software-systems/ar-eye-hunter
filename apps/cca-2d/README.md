@@ -119,6 +119,9 @@ lead limit. Missing live poses retain the last newer movement base without renew
 that limit or falling back to an older checkpoint. Small corrections blend through
 collision constraints; freezes, recovery and authority changes reset immediately.
 Dash shows its cooldown and requires both predicted and observed host readiness.
+Player hoodie colors come from the shared retained participant order, so the local
+and remote views agree. The YOU label identifies your assigned hoodie; colors
+persist through reconnects and host changes within the same round.
 The smoother 150 ms remote presentation buffer is retained after the shorter-buffer
 phone trial proved jittery. Network transport and confirmed outcomes are separate
 from visual prediction. DOM diagnostics expose `data-pose-transport`,

@@ -55,9 +55,12 @@ small corrections and retains its last newer base through short pose gaps withou
 renewing prediction time. Confirmed freezes still override it. Dash visibly waits
 for both local and host-observed cooldown. Remote interpolation stays unchanged.
 
-The current two slices are (1) qualify local continuity and accepted Dash effects
-under delayed checkpoints, then retest the phone; (2) reproduce the separately
-reported stale lobby roster. Keep deferred broad clock work in #836. Detailed phone
+The v6 iPhone retest reported responsive local movement and Dash, "the way a game
+should feel like." Keep that tuning. The next observed defect was view-dependent
+hoodie colors; both render paths now use the canonical retained participant order,
+including the local YOU label. The current two slices are (1) verify matching
+colors on both phones/screens; (2) reproduce the separately reported stale lobby
+roster. Keep deferred broad clock work in #836. Detailed phone
 feedback and validation limits remain in [the trial report](babylon-local-trial.md).
 
 ## Global constraints

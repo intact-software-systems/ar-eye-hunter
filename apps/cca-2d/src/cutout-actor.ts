@@ -3,6 +3,7 @@ import { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import type { Scene } from '@babylonjs/core/scene';
+
 import { CutoutArt } from './cutout-art.ts';
 import type { TownStain } from './town/soiling.ts';
 
@@ -42,6 +43,10 @@ export class CutoutActor {
     private readonly scene: Scene;
     private readonly body: TransformNode;
     private readonly head: Mesh;
+    private readonly torso: Mesh;
+    private readonly sleeves: Mesh[] = [];
+    private readonly guard: boolean;
+    private color: string;
     private readonly leftArm: TransformNode;
     private readonly rightArm: TransformNode;
     private readonly leftLeg: TransformNode;
@@ -59,6 +64,8 @@ export class CutoutActor {
         const { scene, art, color, guard } = input;
         this.scene = scene;
         this.art = art;
+        this.guard = guard;
+        this.color = color;
         this.root = new TransformNode('actor-ground', scene);
         this.body = new TransformNode('paper-puppet', scene);
         this.body.parent = this.root;
@@ -69,7 +76,7 @@ export class CutoutActor {
         this.dizzy = art.head(guard, 'dizzy');
         this.leftLeg = this.createLimb(art.limb('#49464a', true), -0.23, true);
         this.rightLeg = this.createLimb(art.limb('#49464a', true), 0.23, true);
-        this.createPart({
+        this.torso = this.createPart({
             parent: this.body,
             material: art.torso(color, guard),
             width: 0.95,
@@ -100,6 +107,18 @@ export class CutoutActor {
             y: 1.2,
             z: -0.25
         });
+    }
+
+    updateColor(color: string): void {
+        if (color === this.color) {
+            return;
+        }
+        this.color = color;
+        this.torso.material = this.art.torso(color, this.guard);
+        const material = this.art.limb(color, false);
+        for (const sleeve of this.sleeves) {
+            sleeve.material = material;
+        }
     }
 
     render(pose: CutoutActor.Pose): void {
@@ -177,7 +196,7 @@ export class CutoutActor {
         const joint = new TransformNode('cutout-joint', this.scene);
         joint.parent = this.body;
         joint.position.set(x, leg ? 0.63 : 1.22, 0);
-        this.createPart({
+        const cloth = this.createPart({
             parent: joint,
             material,
             width: leg ? 0.45 : 0.43,
@@ -186,6 +205,9 @@ export class CutoutActor {
             y: leg ? -0.28 : -0.23,
             z: leg ? 0.01 : -0.05
         });
+        if (!leg) {
+            this.sleeves.push(cloth);
+        }
         return joint;
     }
 

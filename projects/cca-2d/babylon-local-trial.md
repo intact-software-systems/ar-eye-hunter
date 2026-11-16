@@ -44,8 +44,13 @@ continuity in this workload, not physical iPhone performance. The final validati
 includes the subsequent expiry/cooldown review fixes: final repeated runs advanced
 2.585/2.566 units over 718.9/698.9 ms, every sampled interval moved forward
 (22/22 and 21/21), with no backward step. Both first and immediately-after-ready
-second dashes were confirmed by successful prank counts. Phone acceptance remains
-open.
+second dashes were confirmed by successful prank counts.
+
+After reloading v6, Bob's iPhone feedback was **"it looks a lot better. It feels
+responsive and the way a game should feel like."** Alice's browser showed an active
+two-player round with 104 seconds remaining when that feedback was checked. This
+accepts movement/Dash feel for this physical trial; it is not a measured phone
+latency or a broad device/network qualification.
 Artifacts are ignored under `tmp/perf/cca-local-before`, `cca-local-after` and
 `cca-clean-local-control`.
 
@@ -55,8 +60,18 @@ RTC/WS fallback, remote/local response, host-loss recovery, and the complete fru
 round with matching results/rematch. Deferred AL edits were excluded and restored
 with hash verification. Full changed-file and recursive support review found no
 remaining issue; independent untouched code remained outside closure. No new
-follow-up issue was created. Physical-phone acceptance and the separate stale
-lobby observation remain the next two bounded tasks.
+follow-up issue was created. The phone trial then identified a separate appearance
+bug: each client colored itself teal and assigned remote colors by local insertion
+order. Colors now follow the shared retained participant roster on both screens;
+the torso, sleeves and local YOU label update together. Reconnect/host changes
+within the same round preserve those assignments. The next bounded tasks are
+verifying this visual correction on the phone, then reproducing the stale lobby
+observation. The color correction passed the CCA build/final typecheck and a real
+two-account browser test. Both screenshots were inspected: the same left player
+is teal and the same right player copper, with the correct local ground marker
+and YOU hint. Captures are under ignored `tmp/perf/cca-player-colors`. Full-file
+review included actor material caching/disposal and the recursively affected scene
+and renderer; independent untouched code stayed outside closure.
 
 ## Phone retest and remote-player smoothing — 16 November 2026
 

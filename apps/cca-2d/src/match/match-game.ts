@@ -12,6 +12,13 @@ import { TownMatchPresentation } from './match-presentation.ts';
 import type { TownMatchSession } from './match-session.ts';
 import { TOWN_MATCH_RATE, type TownMatchPlayer, type TownMatchState } from './town-match.ts';
 
+const TOWN_PLAYER_APPEARANCES = [
+    { color: '#347d79', label: 'TEAL HOODIE' },
+    { color: '#bd7047', label: 'COPPER HOODIE' },
+    { color: '#7a659b', label: 'PURPLE HOODIE' },
+    { color: '#b1a445', label: 'MUSTARD HOODIE' }
+] as const;
+
 interface TownMatchPeer {
     readonly actor: CutoutActor;
     readonly ice: Mesh;
@@ -65,7 +72,7 @@ export class TownMatchGame {
           <header class="hud"><div class="brand"><span>CCA / PLAYING WITH FRIENDS</span><h1>GRUMPY TOWN</h1></div><button id="leave-round">Leave town</button></header>
           <div class="scoreboard"><span id="round-clock"></span><span id="round-score"></span></div>
           <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
-          <div class="play-hint"><span class="you">YOU / TEAL HOODIE</span><p id="round-status" role="status"></p></div>
+          <div class="play-hint"><span class="you">YOU</span><p id="round-status" role="status"></p></div>
           <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><strong>DASH<br>+ DROP</strong></button></div>
           <section id="round-results" class="pause-overlay" hidden><div><h2 id="round-result-title">Round complete</h2><p id="round-winners"></p><button id="rematch">New round</button><button id="leave-results">Leave match</button><button id="solo-results">Back to solo</button></div></section>
         </main>`;
@@ -237,6 +244,7 @@ export class TownMatchGame {
             match.phase === 'playing' || !this.prepared || this.renderedMatchId !== match.matchId ||
             this.renderedZoom !== zoom || this.renderedPhase !== match.phase
         ) {
+            this.scene.updatePlayerColor(resolveTownMatchAppearance(match, player.id).color);
             this.renderPeers(view, performance.timeOrigin + now);
             this.scene.render({
                 state: { ...shown, town: match.town },
@@ -279,6 +287,7 @@ export class TownMatchGame {
         );
         this.root.dataset.dashes = String(player.consumedDash);
         this.root.dataset.pranks = String(player.pranks);
+        this.root.dataset.playerColor = resolveTownMatchAppearance(match, player.id).color;
         this.root.dataset.poseTransport = view.livePoses?.transport ?? 'checkpoint';
         this.root.dataset.liveSend = view.liveSend;
         this.root.dataset.inputTransport = view.inputTransport;
@@ -301,7 +310,7 @@ export class TownMatchGame {
         requirePracticeElement(this.root, '.controls').style.display = view.observing ? 'none' : '';
         requirePracticeElement(this.root, '.you').textContent = view.observing
             ? 'WATCHING THE TOWN'
-            : 'YOU / TEAL HOODIE';
+            : `YOU / ${resolveTownMatchAppearance(match, player.id).label}`;
         requirePracticeElement(this.root, '#round-status').textContent = view.recovering
             ? 'Connection paused. Waiting for confirmed match state…'
             : view.observing
@@ -344,9 +353,6 @@ export class TownMatchGame {
             player.id !== focus?.id &&
             view.match?.seats.some((seat) => seat.id === player.id && seat.status === 'active')
         ) ?? [];
-        if (players.length === 0) {
-            delete this.root.dataset.renderPeerX;
-        }
         this.removeAbsentPeers(players);
         for (const player of players) {
             let peer = this.peers.get(player.id);
@@ -354,7 +360,7 @@ export class TownMatchGame {
                 const actor = new CutoutActor({
                     scene: this.scene.scene,
                     art: this.art,
-                    color: ['#bd7047', '#7a659b', '#b1a445'][this.peers.size % 3],
+                    color: resolveTownMatchAppearance(view.match!, player.id).color,
                     guard: false
                 });
                 peer = {
@@ -364,6 +370,7 @@ export class TownMatchGame {
                 };
                 this.peers.set(player.id, peer);
             }
+            peer.actor.updateColor(resolveTownMatchAppearance(view.match!, player.id).color);
             const live = view.livePoses?.players.find((pose) => pose.id === player.id);
             const source = live && player.frozenUntil <= player.elapsed ? { ...player, ...live } : player;
             const pose = peer.presentation.advance({
@@ -378,6 +385,7 @@ export class TownMatchGame {
             });
             if (player === players[0]) {
                 this.root.dataset.renderPeerX = String(pose.x);
+                this.root.dataset.peerColor = resolveTownMatchAppearance(view.match!, player.id).color;
             }
             peer.ice.setEnabled(player.frozenUntil > player.elapsed);
             peer.ice.position.set(pose.x, 1, pose.z - 0.3);
@@ -399,6 +407,10 @@ export class TownMatchGame {
     }
 
     private removeAbsentPeers(players: readonly TownMatchPlayer[]): void {
+        if (players.length === 0) {
+            delete this.root.dataset.renderPeerX;
+            delete this.root.dataset.peerColor;
+        }
         for (const [id, peer] of this.peers) {
             if (!players.some((player) => player.id === id)) {
                 peer.actor.root.dispose();
@@ -419,4 +431,10 @@ function resolveTownMatchViewPlayer(view: TownMatchSession.View): TownMatchPlaye
 
 function toPreparationKey(match: TownMatchState | undefined): string {
     return JSON.stringify([match?.matchId, match?.members.map((member) => [member.id, member.sessionId])]);
+}
+
+/** Retained participants keep the same colors across views, disconnections and host changes. */
+function resolveTownMatchAppearance(match: TownMatchState, playerId: string): typeof TOWN_PLAYER_APPEARANCES[number] {
+    const index = match.participants.findIndex((participant) => participant.id === playerId);
+    return TOWN_PLAYER_APPEARANCES[index] ?? TOWN_PLAYER_APPEARANCES[0];
 }

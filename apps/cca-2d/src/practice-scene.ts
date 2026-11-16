@@ -7,6 +7,7 @@ import { CreateGround } from '@babylonjs/core/Meshes/Builders/groundBuilder';
 import { CreatePlane } from '@babylonjs/core/Meshes/Builders/planeBuilder';
 import type { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { Scene } from '@babylonjs/core/scene';
+
 import { createMarketEnvironment } from './create-market-environment.ts';
 import { CutoutActor } from './cutout-actor.ts';
 import { CutoutArt } from './cutout-art.ts';
@@ -115,6 +116,10 @@ export class PracticeScene {
             this.cloud.visibility = Math.min(0.45, (2.4 - cloud.age) * 0.7);
         }
         this.scene.render();
+    }
+
+    updatePlayerColor(color: string): void {
+        this.player.updateColor(color);
     }
 
     resize(): void {
