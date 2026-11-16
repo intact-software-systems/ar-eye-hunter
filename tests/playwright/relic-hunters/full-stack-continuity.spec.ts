@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Request } from '@playwright/test';
 import { observeBrowserWebGlContexts } from '../../../packages/shared-test/observe-browser-web-gl-contexts.ts';
 import { roomBrowserTest } from '../room-browser-fixture.ts';
 import { registerRelicHunter, waitForExpeditionScene } from './relic-browser-room-workflow.ts';
@@ -222,34 +222,56 @@ roomBrowserTest(
     're-enters the room in the same document after a shared-session withdrawal',
     async ({ page: host }) => {
         await registerRelicHunter(host, 'shared-reentry');
+        const disconnect = host.context().waitForEvent('request', isSessionDisconnect);
         const { link, other } = await withdrawAcrossSharedSessionTabs(host);
+        const sessionId = readDisconnectedSessionId(await disconnect);
         const roomId = readRoomId(link);
-        const sessionRemoved = other.waitForEvent(
-            'requestfinished',
-            (request) => request.method() === 'GET' && new URL(request.url()).pathname.endsWith(`/groups/${roomId}`)
-        );
+        const isRoomRead = (url: URL) => url.pathname.endsWith(`/groups/${roomId}`);
+        // The committed disconnect reaches this tab's room cache only with a later group read; holding those reads
+        // until the participation check reads the game snapshot forces the current room to move inside the check.
+        const snapshotHeld = Promise.withResolvers<void>();
+        const sessionRemoved = Promise.withResolvers<void>();
+        const releasedRoomReads = new Set<Request>();
+        let navigated = false;
+        let held = false;
+        other.on('response', async (response) => {
+            if (
+                releasedRoomReads.has(response.request()) && response.ok() &&
+                !decodeActiveSessionIds(await response.json()).includes(sessionId)
+            ) {
+                await response.finished();
+                sessionRemoved.resolve();
+            }
+        });
+        await other.route(isRoomRead, async (route) => {
+            if (route.request().method() === 'GET') {
+                await snapshotHeld.promise;
+                releasedRoomReads.add(route.request());
+            }
+            await route.continue();
+        });
+        await other.route(`**/api/relic/games/${roomId}`, async (route) => {
+            if (navigated && !held && route.request().method() === 'GET') {
+                held = true;
+                snapshotHeld.resolve();
+                await sessionRemoved.promise;
+            }
+            await route.continue();
+        });
         const joinRequested = other.waitForRequest((request) =>
             request.method() === 'POST' && request.url().includes(`/groups/${roomId}/join/requests/`)
         );
-        let held = false;
-        await other.route(`**/api/relic/games/${roomId}`, async (route) => {
-            if (held || route.request().method() !== 'GET') {
-                await route.continue();
-                return;
-            }
-            held = true;
-            // The committed disconnect reaches this tab's room cache only with a later group read; the
-            // participation check must survive the current room changing under it (#783).
-            await sessionRemoved;
-            await route.continue();
-        });
         try {
+            navigated = true;
             await other.goto(link);
             await joinRequested;
             await waitForExpeditionScene(other, 'shared-context');
             await expectWithdrawnInRoom(other, link);
+            expect(held).toBe(true);
         }
         finally {
+            snapshotHeld.resolve();
+            sessionRemoved.resolve();
             await other.close();
         }
     }
@@ -345,6 +367,33 @@ async function expectWithdrawnInRoom(page: Page, link: string): Promise<void> {
     await expect(page.getByLabel('Room link', { exact: true })).toHaveValue(link);
     await expect(page.locator('.lobby-party-row')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Join as/ })).toBeEnabled();
+}
+
+function isSessionDisconnect(request: Request): boolean {
+    return request.method() === 'POST' && /\/sessions\/[^/]+\/disconnect\/requests\//.test(request.url());
+}
+
+function readDisconnectedSessionId(request: Request): string {
+    const sessionId = /\/sessions\/([^/]+)\/disconnect\//.exec(new URL(request.url()).pathname)?.[1];
+    if (!sessionId) {
+        throw new Error('Expected the disconnected session id');
+    }
+    return sessionId;
+}
+
+function decodeActiveSessionIds(snapshot: unknown): string[] {
+    if (
+        typeof snapshot !== 'object' || snapshot === null || !('activeSessions' in snapshot) ||
+        !Array.isArray(snapshot.activeSessions)
+    ) {
+        throw new Error('Expected a group snapshot with active sessions');
+    }
+    return snapshot.activeSessions.flatMap((session: unknown) =>
+        typeof session === 'object' && session !== null && 'sessionId' in session &&
+            typeof session.sessionId === 'string'
+            ? [session.sessionId]
+            : []
+    );
 }
 
 function readRoomId(link: string): string {
