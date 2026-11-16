@@ -26,8 +26,10 @@ export interface StartCappedRenderLoopInput {
     readonly renderFrame: (frameTimeMs: number) => 'ready' | 'pending';
 }
 
+export type CappedRenderLoop = Pick<CappedFrameLoop, 'dispose' | 'invalidate' | 'pauseWhenReady' | 'resume'>;
+
 /** Babylon owns callback delivery; the shared loop owns capping, invalidation and cancellation. */
-export function startCappedRenderLoop(input: StartCappedRenderLoopInput): CappedFrameLoop {
+export function startCappedRenderLoop(input: StartCappedRenderLoopInput): CappedRenderLoop {
     const driver = new GpuPacedFrameDriver(input.engine, input.gpu);
     const loop = new CappedFrameLoop({
         driver,
@@ -35,7 +37,15 @@ export function startCappedRenderLoop(input: StartCappedRenderLoopInput): Capped
         renderFrame: () => driver.drawFrame(input.renderFrame)
     }, { frameIntervalMs: input.frameIntervalMs });
     loop.start();
-    return loop;
+    return {
+        invalidate: () => loop.invalidate(),
+        pauseWhenReady: () => loop.pauseWhenReady(),
+        resume: () => loop.resume(),
+        dispose: () => {
+            loop.dispose();
+            driver.dispose();
+        }
+    };
 }
 
 /**
@@ -66,6 +76,7 @@ class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
     stop(): void {
         this.engine.stopRenderLoop(this.animationFrame);
         this.scheduledFrame = null;
+        this.deletePreviousFrame();
     }
 
     resetTiming(): void {
@@ -85,6 +96,10 @@ class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
             this.gpu.flush();
         }
         return result;
+    }
+
+    dispose(): void {
+        this.deletePreviousFrame();
     }
 
     private deliverAnimationFrame(): void {
@@ -110,5 +125,12 @@ class GpuPacedFrameDriver implements CappedFrameLoop.Driver {
         }
         this.previousFrame = null;
         return true;
+    }
+
+    private deletePreviousFrame(): void {
+        if (this.gpu !== null && this.previousFrame !== null) {
+            this.gpu.deleteSync(this.previousFrame);
+            this.previousFrame = null;
+        }
     }
 }

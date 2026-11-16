@@ -1,7 +1,5 @@
-import { type CappedFrameLoop } from '@shared/resilience/timing/capped-frame-loop.ts';
-
 import { type RelicCameraMode } from '../relic-scene-model.ts';
-import { startCappedRenderLoop } from '../start-capped-render-loop.ts';
+import { startCappedRenderLoop, type CappedRenderLoop } from '../start-capped-render-loop.ts';
 import { computeRelicTerminalPresentationKey } from './compute-relic-terminal-presentation-key.ts';
 import { readRelicFrameReadiness } from './read-relic-frame-readiness.ts';
 import { changeRuntimeCameraMode, updateCamera } from './relic-camera.ts';
@@ -19,7 +17,7 @@ import { syncRelicAvatarPresentation } from './sync-relic-avatar-presentation.ts
 /** Owns one graphics lifetime; React and room/network state stay subscribed outside it. */
 export class RelicSceneLifecycle {
     readonly runtime: RelicSceneRuntime;
-    private readonly loop: CappedFrameLoop;
+    private readonly loop: CappedRenderLoop;
     private readonly input: RelicSceneInput;
     private disposed = false;
     private readonly resize = () => {
@@ -27,7 +25,7 @@ export class RelicSceneLifecycle {
         this.loop.invalidate();
     };
 
-    constructor(runtime: RelicSceneRuntime, loop: CappedFrameLoop, input: RelicSceneInput) {
+    constructor(runtime: RelicSceneRuntime, loop: CappedRenderLoop, input: RelicSceneInput) {
         this.runtime = runtime;
         this.loop = loop;
         this.input = input;
@@ -111,7 +109,7 @@ export function createRelicSceneLifecycle(input: RelicSceneRuntime.Input): Relic
     return lifecycle;
 }
 
-function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
+function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedRenderLoop {
     try {
         return startCappedRenderLoop({
             engine: runtime.engine,

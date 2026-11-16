@@ -223,4 +223,132 @@ describe('Relic gameplay render loop', () => {
         expect(frame.frameTimeMs()).toBe(160);
         loop.dispose();
     });
+
+    it('draws the next frame when the context places no fence', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        vi.spyOn(gpu, 'fenceSync').mockReturnValue(null);
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+        nowMs = 20;
+        engine.animationFrame();
+        expect(frame.draws()).toBe(2);
+        loop.dispose();
+    });
+
+    it('flushes the fence after placing it behind the drawn frame', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const renderFrame = vi.fn(() => 'ready' as const);
+        const fenceSync = vi.spyOn(gpu, 'fenceSync');
+        const flush = vi.spyOn(gpu, 'flush');
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame });
+        expect(renderFrame.mock.invocationCallOrder[0]).toBeLessThan(fenceSync.mock.invocationCallOrder[0] ?? 0);
+        expect(fenceSync.mock.invocationCallOrder[0]).toBeLessThan(flush.mock.invocationCallOrder[0] ?? 0);
+        loop.dispose();
+    });
+
+    it('passes the frame result on, so an unready image keeps a terminal pause drawing', () => {
+        const engine = new FakeEngine();
+        const results: ('ready' | 'pending')[] = ['ready', 'pending', 'pending', 'ready'];
+        let draws = 0;
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu: new FakeGpu(2),
+            frameIntervalMs: CAP_INTERVAL_MS,
+            renderFrame: () => results[draws++] ?? 'ready'
+        });
+        loop.pauseWhenReady();
+        runDriverFrames(engine, 30);
+        expect(draws).toBe(4);
+        expect(engine.loops.size, 'the ready image ends the pause').toBe(0);
+        loop.dispose();
+    });
+
+    it('keeps a terminal pause scheduled while the GPU has not executed the previous frame', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+        loop.pauseWhenReady();
+        runDriverFrames(engine, 10);
+        expect(frame.draws()).toBe(1);
+        expect(engine.loops.size).toBe(1);
+
+        gpu.executeQueuedFrames();
+        runDriverFrames(engine, 1);
+        expect(frame.draws()).toBe(2);
+        expect(engine.loops.size).toBe(0);
+        loop.dispose();
+    });
+
+    it('draws an invalidation that arrives while a fence is pending once the GPU has executed it', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const frame = countDraws();
+        const loop = startCappedRenderLoop({ engine, gpu, frameIntervalMs: 10, renderFrame: frame.renderFrame });
+        loop.pauseWhenReady();
+        gpu.executeQueuedFrames();
+        runDriverFrames(engine, 3);
+        loop.invalidate();
+        expect(frame.draws(), 'the idle loop draws the first invalidation at once').toBe(3);
+
+        loop.invalidate();
+        runDriverFrames(engine, 10);
+        expect(frame.draws()).toBe(3);
+        expect(engine.loops.size, 'the held invalidation stays scheduled').toBe(1);
+
+        gpu.executeQueuedFrames();
+        runDriverFrames(engine, 1);
+        expect(frame.draws()).toBe(4);
+        expect(engine.loops.size).toBe(0);
+        loop.dispose();
+    });
+
+    it('deletes the pending fence when a terminal pause stops drawing', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu(2);
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu,
+            frameIntervalMs: 10,
+            renderFrame: countDraws().renderFrame
+        });
+        loop.pauseWhenReady();
+        runDriverFrames(engine, 3);
+        expect(engine.loops.size).toBe(0);
+        expect(gpu.liveFences.size).toBe(0);
+        loop.dispose();
+    });
+
+    it('deletes the pending fence when the loop is disposed', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu();
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu,
+            frameIntervalMs: 10,
+            renderFrame: countDraws().renderFrame
+        });
+        expect(gpu.liveFences.size).toBe(1);
+        loop.dispose();
+        expect(gpu.liveFences.size).toBe(0);
+    });
+
+    it('deletes the fence of a draw made while the loop was idle when the loop is disposed', () => {
+        const engine = new FakeEngine();
+        const gpu = new FakeGpu(2);
+        const loop = startCappedRenderLoop({
+            engine,
+            gpu,
+            frameIntervalMs: 10,
+            renderFrame: countDraws().renderFrame
+        });
+        loop.pauseWhenReady();
+        runDriverFrames(engine, 3);
+        loop.invalidate();
+        expect(gpu.liveFences.size).toBe(1);
+        loop.dispose();
+        expect(gpu.liveFences.size).toBe(0);
+    });
 });
