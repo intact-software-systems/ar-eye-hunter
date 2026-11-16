@@ -5,9 +5,6 @@ import { computeTownPosition } from '../town/navigation.ts';
 import type { TownState } from '../town/state.ts';
 import type { TownMatchPlayer } from './town-match.ts';
 
-const PEER_INTERPOLATION_DELAY_MS = 50;
-const PEER_EXTRAPOLATION_LIMIT_MS = 100;
-
 export namespace TownMatchPeerPresentation {
     export interface Frame {
         readonly player: TownMatchPlayer;
@@ -24,11 +21,11 @@ export namespace TownMatchPeerPresentation {
     }
 }
 
-/** Adapts confirmed peer poses to Rallar Motion; no output is written back to the match. */
+/** Adapts accepted peer pose observations to Rallar Motion; no output is written back to the match. */
 export class TownMatchPeerPresentation {
     private readonly motion = createRallarMotionBuffer<never>({
-        interpolationDelayMs: PEER_INTERPOLATION_DELAY_MS,
-        maxExtrapolationMs: PEER_EXTRAPOLATION_LIMIT_MS,
+        interpolationDelayMs: 150,
+        maxExtrapolationMs: 100,
         maxSamplesPerEntity: 4,
         interpolationMode: 'linear'
     });
@@ -64,15 +61,14 @@ export class TownMatchPeerPresentation {
         }
         // Hold the capped extrapolation endpoint during silence. Sampling beyond Motion's
         // extrapolation window would fall back to the old sample and visibly jump backwards.
-        const sampleAt = Math.min(
-            nowEpochMs,
-            this.observedAtEpochMs + PEER_INTERPOLATION_DELAY_MS + PEER_EXTRAPOLATION_LIMIT_MS
-        );
+        const sampleAt = Math.min(nowEpochMs, this.observedAtEpochMs + 250);
         const estimate = this.motion.sample(player.id, sampleAt);
-        const position = estimate ? computeTownPosition(frame.town, player, {
-            x: estimate.position[0] - player.x,
-            z: estimate.position[2] - player.z
-        }) : player;
+        const position = estimate
+            ? computeTownPosition(frame.town, player, {
+                x: estimate.position[0] - player.x,
+                z: estimate.position[2] - player.z
+            })
+            : player;
         return {
             x: position.x,
             z: position.z,

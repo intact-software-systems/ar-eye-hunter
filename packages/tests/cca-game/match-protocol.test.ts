@@ -35,7 +35,7 @@ const members = [
 ];
 const frame = {
     protocol: 'cca.match.v1',
-    build: 'grumpy-town-v4',
+    build: 'grumpy-town-v5',
     roomRef,
     epoch: 3,
     matchId: 'round',
@@ -83,6 +83,29 @@ describe('Rallar match protocol admission', () => {
         for (const committed of [false, true]) {
             const action = { ...recovery, committed };
             expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right?.action).toEqual(action);
+        }
+    });
+
+    it('accepts bounded host poses only from the current appointed session', () => {
+        const action = {
+            kind: 'poses',
+            tick: 30,
+            players: [{ id: 'alice', x: 1, z: -2, vx: 3.6, vz: 0, elapsed: 1 }]
+        };
+        const decoded = decodeTownMatchFrame(JSON.stringify({ ...frame, action })).right;
+        expect(decoded).toBeDefined();
+        expect(validateTownMatchFrame(decoded!, reception).length).toBeGreaterThan(0);
+        expect(validateTownMatchFrame(decoded!, { ...reception, senderId: 'alice-session' })).toEqual([]);
+        for (
+            const invalid of [
+                { ...action, tick: -1 },
+                { ...action, players: [] },
+                { ...action, players: Array(5).fill(action.players[0]) },
+                { ...action, players: [{ ...action.players[0], x: 1000 }] },
+                { ...action, players: [{ ...action.players[0], score: 1000 }] }
+            ]
+        ) {
+            expect(decodeTownMatchFrame(JSON.stringify({ ...frame, action: invalid })).left).toBeDefined();
         }
     });
 

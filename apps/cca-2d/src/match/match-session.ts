@@ -1,9 +1,4 @@
-import type {
-    RallarMessage,
-    RallarTypedMessageChannel
-} from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarFacade } from '@shared-web/browser/rallar.ts';
-import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { RallarGroupDirectorAppointmentEligibility } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { SynchronousNotifications } from '@shared/cache/synchronous-notifications.ts';
@@ -14,8 +9,8 @@ import { startRepeating } from '@shared/resilience/timing/start-repeating.ts';
 
 import type { PracticeInput } from '../practice-rules.ts';
 import { TownMatchCheckpoints, type TownMatchAuthority } from './match-checkpoints.ts';
+import { TownMatchLivePoses } from './match-live-poses.ts';
 import {
-    decodeTownMatchFrame,
     TOWN_MATCH_BUILD,
     TOWN_MATCH_PROTOCOL,
     validateTownMatchFrame,
@@ -25,6 +20,7 @@ import {
 import { TownMatchRoom } from './match-room.ts';
 import { TownMatchSimulation } from './match-simulation.ts';
 import { createTownMatchSnapshot, decodeTownCheckpoint } from './match-snapshot.ts';
+import { TownMatchTransport } from './match-transport.ts';
 import {
     computeTownMatchRecovery,
     computeTownMatchRoster,
@@ -38,7 +34,10 @@ export namespace TownMatchSession {
         | Exclude<TownMatchAction, { readonly kind: 'ready'; }>
         | { readonly kind: 'ready'; readonly ready: boolean; };
     export interface Dependencies {
-        readonly browser: Pick<RallarFacade, 'director' | 'messages' | 'rooms' | 'session' | 'isConnected' | 'ws'>;
+        readonly browser: Pick<
+            RallarFacade,
+            'director' | 'messages' | 'realtime' | 'rooms' | 'session' | 'isConnected' | 'ws'
+        >;
         readonly timers: Timers;
         readonly subtle: Pick<SubtleCrypto, 'digest'>;
         readonly newMatchId: () => string;
@@ -55,6 +54,10 @@ export namespace TownMatchSession {
         readonly error: string;
         readonly appointmentEligibility: RallarGroupDirectorAppointmentEligibility;
         readonly appointing: boolean;
+        readonly livePoses: TownMatchLivePoses.Sample | undefined;
+        readonly liveSend: ReturnType<TownMatchTransport['getLiveSend']>;
+        /** Carrier of the last authenticated control frame received by this host, not an acknowledgement. */
+        readonly inputTransport: 'rtc' | 'ws' | 'none';
     }
 }
 
@@ -66,7 +69,9 @@ export class TownMatchSession {
         console.error('Match listener failed', error)
     );
     private readonly lifetime = new AbortController();
-    private readonly channel: RallarTypedMessageChannel<string>;
+    private readonly transport: TownMatchTransport;
+    private readonly livePoses = new TownMatchLivePoses();
+    private inputTransport: 'rtc' | 'ws' | 'none' = 'none';
     private readonly room: TownMatchRoom;
     private checkpoints: TownMatchCheckpoints | undefined;
     private simulation: TownMatchSimulation | undefined;
@@ -93,18 +98,21 @@ export class TownMatchSession {
     constructor(dependencies: TownMatchSession.Dependencies, roomRef: GroupRef) {
         this.dependencies = dependencies;
         this.roomRef = roomRef;
-        this.channel = dependencies.browser.messages.room<string>({
-            roomRef,
-            topicId: 'app.cca.match',
-            typeId: 'cca.match.frame',
-            purpose: 'notification',
-            access: 'members'
+        this.transport = new TownMatchTransport({
+            reliable: dependencies.browser.messages.room<string>({
+                roomRef,
+                topicId: 'app.cca.match',
+                typeId: 'cca.match.frame',
+                purpose: 'notification',
+                access: 'members'
+            }),
+            realtime: dependencies.browser.realtime.room<string>({ roomRef, waitForReady: false })
         });
         this.room = new TownMatchRoom(dependencies, roomRef);
     }
 
     start(): void {
-        this.subscriptions.add(this.channel.onWs((payload, message) => this.receive(payload, message)));
+        this.transport.start((reception) => this.receive(reception));
         this.subscriptions.add(this.dependencies.browser.ws.onLifecycle((event) => {
             if (event.kind === 'close' || event.kind === 'disconnected') {
                 this.interruptTransport();
@@ -135,6 +143,10 @@ export class TownMatchSession {
         const interruption = match && this.interruptedMatch?.matchId === match.matchId
             ? 'Round interrupted: recovery could not be confirmed. Your last confirmed points are preserved.'
             : undefined;
+        const recovering = (match?.phase === 'playing' || match?.phase === 'countdown') &&
+            (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
+                (this.lastCommit !== undefined &&
+                    this.dependencies.timers.nowMs() - this.lastCommit.at >= 1500));
         return {
             match,
             localId: this.dependencies.browser.session()?.clientId,
@@ -146,15 +158,17 @@ export class TownMatchSession {
                         seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'active'
                     )
             ),
-            recovering: (match?.phase === 'playing' || match?.phase === 'countdown') &&
-                (!available || !authorityAligned || Boolean(interruption) || checkpoint?.recoveryRequired === true ||
-                    (this.lastCommit !== undefined &&
-                        this.dependencies.timers.nowMs() - this.lastCommit.at >= 1500)),
+            recovering,
             interruption,
             inputGeneration: this.generation,
             error: this.error || (director.isFresh ? '' : this.appointmentError),
             appointmentEligibility,
-            appointing: this.appointing
+            appointing: this.appointing,
+            livePoses: available && !recovering
+                ? this.livePoses.resolve(match, this.dependencies.timers.nowMs())
+                : undefined,
+            liveSend: this.transport.getLiveSend(),
+            inputTransport: this.inputTransport
         };
     }
 
@@ -212,6 +226,8 @@ export class TownMatchSession {
         this.generation += 1;
         this.subscriptions.unsubscribe();
         this.room.stop();
+        this.transport.stop();
+        this.livePoses.clear();
         this.simulation?.stop();
     }
 
@@ -241,6 +257,9 @@ export class TownMatchSession {
             if (match?.phase === 'playing' && now - this.lastInput >= 50) {
                 this.lastInput = now;
                 await this.act({ kind: 'controls', ...this.controls });
+                if (view.isDirector && !view.recovering) {
+                    await this.publishLivePoses();
+                }
             }
             if (now - this.lastExchange >= 100) {
                 this.lastExchange = now;
@@ -255,6 +274,8 @@ export class TownMatchSession {
 
     private interruptTransport(): void {
         this.generation += 1;
+        this.livePoses.clear();
+        this.inputTransport = 'none';
         const authority = this.checkpoints?.getState().authority;
         this.checkpoints?.interruptTransport();
         if (authority?.sessionId !== this.dependencies.browser.session()?.sessionId) {
@@ -316,6 +337,8 @@ export class TownMatchSession {
         this.members = authority.members;
         this.authorityKey = key;
         this.generation += 1;
+        this.livePoses.clear();
+        this.inputTransport = 'none';
         if (this.checkpoints) {
             this.checkpoints.changeAuthority(authority);
         }
@@ -530,6 +553,17 @@ export class TownMatchSession {
         }
     }
 
+    private async publishLivePoses(): Promise<void> {
+        const working = this.simulation?.getState();
+        if (working?.phase !== 'playing') {
+            return;
+        }
+        const players = working.players.filter((player) =>
+            working.seats.some((seat) => seat.id === player.id && seat.status === 'active')
+        ).map(({ id, x, z, vx, vz, elapsed }) => ({ id, x, z, vx, vz, elapsed }));
+        await this.write(this.createFrame(working.matchId, { kind: 'poses', tick: working.tick, players }));
+    }
+
     private async write(frame: TownMatchFrame): Promise<void> {
         if (this.lifetime.signal.aborted || !this.getView().available) {
             return;
@@ -538,35 +572,29 @@ export class TownMatchSession {
         if (!senderId) {
             return;
         }
-        await this.accept(frame, senderId);
-        if (!this.validateReception(frame, senderId, this.roomRef) || this.members.length < 2) {
+        await this.accept(frame, senderId, 'local');
+        if (
+            !this.validateReception(frame, senderId, this.roomRef) || this.members.length < 2 ||
+            (frame.action.kind === 'controls' && this.getView().isDirector)
+        ) {
             return;
         }
         try {
-            const sent = await this.channel.sendWs(JSON.stringify(frame), {
-                ttlMs: frame.action.kind === 'controls' ? 250 : 2000,
-                reliability: 'best-effort',
-                ack: 'none'
-            });
-            const delivery = sent.lifecycle();
-            if (delivery.state === 'failed' || delivery.state === 'rejected') {
-                this.error = 'Match traffic could not reach Rallar. Waiting to reconnect.';
-            }
+            await this.transport.write(
+                frame,
+                this.members.filter((member) => member.sessionId !== senderId)
+                    .map((member) => member.sessionId)
+            );
         }
         catch (error) {
             this.report(error);
         }
     }
 
-    private async receive(payload: string, message: RallarMessage<string>): Promise<void> {
-        const decoded = decodeTownMatchFrame(payload);
-        if (
-            !decoded.right ||
-            !this.validateReception(decoded.right, message.senderId, readALTargetGroupRef(message.raw))
-        ) {
-            return;
+    private async receive(reception: TownMatchTransport.Reception): Promise<void> {
+        if (this.validateReception(reception.frame, reception.senderId, reception.targetRoomRef)) {
+            await this.accept(reception.frame, reception.senderId, reception.transport);
         }
-        await this.accept(decoded.right, message.senderId);
     }
 
     private validateReception(frame: TownMatchFrame, senderId: string, targetRoomRef: GroupRef | undefined): boolean {
@@ -604,7 +632,7 @@ export class TownMatchSession {
                 }).length === 0;
     }
 
-    private async accept(frame: TownMatchFrame, senderId: string): Promise<void> {
+    private async accept(frame: TownMatchFrame, senderId: string, transport: 'rtc' | 'ws' | 'local'): Promise<void> {
         this.reconcileAuthority();
         if (!this.validateReception(frame, senderId, this.roomRef) || !this.checkpoints) {
             return;
@@ -614,6 +642,13 @@ export class TownMatchSession {
             return;
         }
         const action = frame.action;
+        if (action.kind === 'poses') {
+            const view = this.getView();
+            if (view.match && view.available && !view.recovering) {
+                this.livePoses.accept({ frame, match: view.match, now: this.dependencies.timers.nowMs(), transport });
+            }
+            return;
+        }
         if (action.kind === 'recover') {
             this.checkpoints.recover(senderId, {
                 epoch: action.checkpointEpoch,
@@ -634,6 +669,9 @@ export class TownMatchSession {
         }
         if (this.getView().isDirector) {
             this.simulation?.accept(frame, senderId, this.dependencies.timers.nowMs());
+            if (action.kind === 'controls' && transport !== 'local') {
+                this.inputTransport = transport;
+            }
         }
     }
 

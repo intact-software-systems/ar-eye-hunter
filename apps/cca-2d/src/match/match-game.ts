@@ -276,6 +276,10 @@ export class TownMatchGame {
                 ?.x ?? 0
         );
         this.root.dataset.dashes = String(player.consumedDash);
+        this.root.dataset.poseTransport = view.livePoses?.transport ?? 'checkpoint';
+        this.root.dataset.liveSend = view.liveSend;
+        this.root.dataset.inputTransport = view.inputTransport;
+        this.root.dataset.poseTick = String(view.livePoses?.tick ?? match.tick);
         requirePracticeElement(this.root, '#round-clock').textContent = `${
             Math.ceil(match.remainingTicks / TOWN_MATCH_RATE)
         }s`;
@@ -348,11 +352,13 @@ export class TownMatchGame {
                 };
                 this.peers.set(player.id, peer);
             }
+            const live = view.livePoses?.players.find((pose) => pose.id === player.id);
+            const source = live && player.frozenUntil <= player.elapsed ? { ...player, ...live } : player;
             const pose = peer.presentation.advance({
-                player,
+                player: source,
                 town: view.match!.town,
                 matchId: view.match!.matchId,
-                tick: view.match!.tick,
+                tick: live ? view.livePoses!.tick : view.match!.tick,
                 inputGeneration: view.inputGeneration,
                 enabled: this.visible && !document.hidden && view.match!.phase === 'playing' &&
                     view.available && !view.recovering,
@@ -367,9 +373,9 @@ export class TownMatchGame {
                 x: pose.x,
                 z: pose.z,
                 time: player.frozenUntil > player.elapsed ? 0 : pose.animationTime,
-                moving: player.frozenUntil <= player.elapsed && Math.hypot(player.vx, player.vz) > 0.2,
+                moving: player.frozenUntil <= player.elapsed && Math.hypot(source.vx, source.vz) > 0.2,
                 slipping: player.slipping,
-                facing: player.facingX,
+                facing: Math.abs(source.vx) > 0.05 ? Math.sign(source.vx) : player.facingX,
                 angry: false,
                 dizzy: player.dizzyUntil > player.elapsed,
                 puking: player.sickAt >= 0 && player.elapsed >= player.sickAt && player.elapsed < player.sickAt + 1,

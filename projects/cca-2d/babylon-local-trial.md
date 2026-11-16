@@ -21,15 +21,17 @@ largest was 272 ms. These DOM observations confirm uneven received presentation
 updates; they do not measure transport latency or phone frame rate. The raw
 sample is retained locally under `tmp/perf/cca-peer-before.json`.
 
-Remote actors now use the existing **Rallar Motion buffer** through an app-owned
-peer presentation adapter. It initially interpolated with a 150 ms buffer and can extend
+In the initial checkpoint-only revision, remote actors used the existing
+**Rallar Motion buffer** through an app-owned peer presentation adapter. It interpolated with a 150 ms buffer and can extend
 the latest confirmed velocity by at most 100 ms. After that it holds the endpoint,
 rather than moving indefinitely or snapping back to the old snapshot when the
 extrapolation window expires. The app's existing obstacle rules constrain the
 pose. Confirmed freezes, recovery, round/authority changes, large discontinuities
 and suspended rendering discard old pose history immediately. Face/status effects
-still use confirmed player state; animation time and displayed position can advance
-between checkpoints. No package implementation or message format changes.
+used confirmed player state; animation time and displayed position could advance
+between checkpoints. That initial revision changed neither package implementation
+nor message format. The current RTC revision below uses live velocity for facing
+and introduces the v5 match wire format.
 
 **Tradeoff:** buffering smooths the remote player's movement at the cost of some
 additional presentation delay. It does not make remote actions arrive earlier.
@@ -55,7 +57,7 @@ long town simulation. Deferred AL-builder edits were excluded and restored with
 hash verification. Review covered all changed files; no shared Motion code was
 modified. That initial version was smooth on the phone but its response delay was not accepted.
 
-### Shorter peer display delay
+### Rejected shorter peer display delay
 
 After the user reported **"Moves smoothly, but reacts late"** and confirmed it
 was after reloading the new smoothing update, the display buffer was reduced
@@ -78,7 +80,13 @@ changes. These are small desktop Chromium samples, not iPhone guarantees.
 Lower delay spends more time extrapolating between sparse checkpoints, so sharp
 reversals can require more correction and longer gaps can reach the hold limit.
 This adjustment removes deliberate display delay; checkpoint agreement and
-transport delay still precede it. Phone acceptance of the new balance remains open.
+transport delay still precede it. The physical-phone retest rejected this balance:
+the user reported **"It feels worse then the previous round. It is jittery"**.
+The app restores the earlier **150 ms interpolation / 100 ms extrapolation**
+configuration. The lower median delay and extra rendered frames were insufficient
+acceptance metrics: neither proves smooth direction changes or correction quality
+on the phone. The trial measurements remain historical evidence, not a successful
+optimization. The 50 ms-specific assertions are removed with the rejected policy.
 
 The clean candidate separately passed all 170 game/Motion tests, the app
 production build and four real-service browser checks (peer delay/smoothness and
@@ -87,13 +95,51 @@ and restored with hash verification. These checks and artifacts are retained und
 ignored `tmp/perf/cca-clean-peer-delay`. Full-file review found no remaining
 issue in the adapter or tests; no shared package code changed.
 
+### RTC-first movement with WebSocket fallback
+
+The user requested RTC and explicitly allowed WS when RTC is unavailable. CCA
+now sends controls and compact host poses through Rallar's existing room realtime
+channel at up to 20 Hz. A peer missing an accepted RTC send receives the same
+sequenced frame over WS. Closing a native realtime channel switches that peer to
+WS; agreement, points, shared world state, results and recovery remain on the
+existing WS checkpoint path. No Rallar package implementation change was needed.
+
+Fresh authenticated host poses feed the remote presentation buffer before
+checkpoint agreement. The smoother 150 ms buffer / 100 ms extrapolation policy
+is restored. Poses expire after 250 ms, obey match/room/host-epoch checks, reject
+out-of-order frames and cannot release a confirmed freeze or change scores.
+Facing follows live velocity; status effects remain confirmed. Protocol
+**grumpy-town-v5** requires both players to reload before the next trial.
+
+Real-browser tests observe native RTCDataChannel messages, verify that guest
+input changes the host state, and move the remote actor while new WS checkpoint
+proposals/commits are withheld. Separate blocked-RTC and mid-round channel-close
+cases verify WS movement and dash. Four runs of these two scenarios passed,
+plus both local-response and remote-presentation checks. The game/Motion suite
+passed 178 tests; the Rallar room realtime runtime passed nine tests separately.
+The app production build and focused changed-test typecheck passed. These are
+Chromium observations at phone viewport size, not physical iPhone acceptance.
+
+The first recovery run failed before the partition while the lobby showed 2/3
+ready and heartbeat timeouts; its immediate restart hit test-port contention.
+A fresh run passed host-loss takeover, old-host fencing/return and resumed input.
+This does not establish the cause or resolution of the separate stale-roster
+observation. The uninterrupted full fruit-prank round also passed shared cleanup,
+matching results and a clean rematch on this RTC candidate. The second full round
+passed human rescue and two qualifying winners with matching results. All nine
+final browser checks passed across the transport, response, recovery and full-round
+runs. Deferred AL changes were excluded and restored with hash verification.
+Final formatting corrected three restored files; no gameplay behavior changed.
+Full-file and recursive support review found no blocker or retained affected legacy.
+
 ### Next two useful slices
 
-1. Repeat the phone trial with the 50 ms buffer, comparing starts, stops, dashes
-   and direction changes. If it still reacts late, measure control submission,
-   host simulation and checkpoint agreement separately using local monotonic
-   timing. Do not weaken shared scoring/recovery guarantees or blindly increase
-   full-checkpoint traffic to hide latency.
+1. Qualify the user's requested RTC-first realtime controls/host poses with WS
+   fallback, keeping the smoother 150 ms buffer. Fresh poses now use a separate
+   presentation path before checkpoint agreement; points/world/recovery remain
+   confirmed. Verify the native RTC channel and close it mid-round to prove WS
+   fallback. Repeat starts, stops, reversals and dash corrections on the phone;
+   frame-change counts and median delay alone cannot establish smoothness.
 2. Reproduce the stale lobby-membership observation: Bob showed the correct room
    code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
    Alice through solo and online refreshed the roster, then both became ready and

@@ -35,6 +35,8 @@ export async function startTownMatch(
     await alice.getByRole('button', { name: 'Start round', exact: true }).click();
     for (const page of pages) {
         await expect(page.locator('#online-game')).toHaveAttribute('data-phase', 'playing', { timeout: 15000 });
+        await expect(page.getByLabel('Movement joystick')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Dash and drop', exact: true })).toBeEnabled();
     }
 }
 

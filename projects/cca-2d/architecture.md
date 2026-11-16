@@ -1,9 +1,10 @@
 # Architecture and reliable multiplayer
 
-Status: target design for the selected Babylon trial and player-hosted Rallar
-multiplayer. The SPA now runs the [local Babylon trial](babylon-local-trial.md)
-without a backend; the historical CCA server is outside this entry. Host migration,
-rates and phone hosting are requirements to prove, not completed platform features.
+Status: architecture for the Babylon trial and player-hosted Rallar multiplayer.
+The transport contract below includes the RTC-first revision. The original recovery
+and performance requirements remain acceptance targets; current implementation
+and measured limits are in the [trial report](babylon-local-trial.md) and
+[multiplayer plan](rallar-multiplayer.md). The historical CCA server is excluded.
 
 ## Ownership and deployment
 
@@ -84,13 +85,16 @@ room-admin privileges simply to let a player host.
 
 ## Transport contract
 
-Prove the first multiplayer slice with Rallar WebSocket room messages, so all
-required traffic works through the single backend. Use room-bound handles with
-explicit WS routing and appropriate publication semantics. The director relay is
-for low-rate authority coordination, not a durable command per joystick sample.
+Use `rallar.realtime.room(...)` for expiring movement controls and compact live
+host poses. Fall back per recipient to `rallar.messages.room(...).sendWs(...)`
+when RTC cannot accept a frame. Reuse the same frame identity and sequence across
+carriers. Keep ready/start, checkpoint agreement, scores, world state, results and
+recovery on WS. Rallar Server remains the only backend; RTC peer traffic needs no
+separate game service. The director relay is for low-rate authority coordination.
 
-Starting rates: fixed 30 Hz host rules, at most 20 Hz fresh movement input while
-held, and 10 Hz bounded full snapshots. These are measurement hypotheses.
+Current rates: fixed 30 Hz host rules, at most 20 Hz fresh movement input and live
+host poses, and 10 Hz bounded checkpoint proposals. Live poses reach presentation
+without waiting for checkpoint agreement; they never commit gameplay outcomes.
 Refresh held state, send neutral on release, and expire input after 250 ms without
 fresh evidence. Idle clients still provide bounded control liveness for proximity interactions.
 Coalesce replaceable values; do not replay stale movement after reconnect.
@@ -103,8 +107,12 @@ If a public capability cannot support this, improve Rallar rather than bypass it
   replicated state can be replaceable, but transport delivery is not durable commitment.
 - Coordination: ready, start, handover, checkpoint acknowledgement, sync and rematch
   need identities and explicit game outcomes.
-- Optional later RTC: only through Rallar room APIs; WS-only play must still pass.
-  Do not silently require separate STUN/TURN infrastructure.
+- RTC and WS: both use Rallar room APIs. WS-only play and RTC loss during play
+  must pass. Do not silently require separate STUN/TURN infrastructure.
+- Live poses: authenticated current-host observations, monotonic sequence/tick,
+  active seats only and 250 ms maximum age. Reset on authority/recovery changes;
+  confirmed freezes and terminal phases override provisional presentation.
+  Current wire build is `grumpy-town-v5`; reload all clients together.
 
 Every envelope binds full scoped `GroupRef`, match ID, protocol/rules version,
 appointment epoch and relevant sequence/tick. Authenticate sender identity from

@@ -28,6 +28,31 @@ qualification work; browser emulation does not establish those properties.
 The PR owns release-gate and review status. Earlier implementation evidence below
 records the limits at each stage; it is not a list of current missing features.
 
+## Realtime movement revision
+
+The physical phone trial found the 150 ms interpolation buffer smooth but late;
+a 50 ms experiment made movement jittery and was rejected. The 150 ms baseline is
+restored. Per the user's direction, live controls and compact host poses now use
+`rallar.realtime.room(...)` with per-recipient WS fallback. Default Rallar realtime
+lanes are unordered, have no retransmissions and use bounded replace-by-key queues.
+The app sends the same frame identity on fallback; sequenced input and pose
+admission prevent duplicates or older copies rewinding gameplay/presentation.
+
+`TownMatchTransport` owns carrier policy and subscription disposal.
+`TownMatchSession` validates room, authenticated sender, match and fresh director
+epoch before passing inputs to its simulation or host poses to `TownMatchLivePoses`.
+The latter retains one observation for at most 250 ms and never writes checkpoints.
+Authority/recovery changes clear it. Confirmed freezes and terminal phases override
+live rendering; scores, world effects, results and recovery retain checkpoint truth.
+The host publishes at most 20 compact pose frames/second independently of checkpoint
+acknowledgements. Controls retain their existing host-receipt expiry and dash counter.
+Wire build is `grumpy-town-v5`; reload all clients together.
+
+The current two slices are (1) qualify actual RTC, WS-only delivery and live
+fallback, then compare phone starts/stops/reversals; (2) reproduce the separately
+reported stale lobby roster. Keep deferred broad clock work in #836. Detailed phone
+feedback and validation limits remain in [the trial report](babylon-local-trial.md).
+
 ## Global constraints
 
 - Solo opens without authentication or a server dependency; online code loads on demand.
@@ -40,8 +65,10 @@ records the limits at each stage; it is not a list of current missing features.
   qualification target. Several players can qualify. A rematch uses a new match ID.
 - Only a server-appointed current director may advance simulation and outcomes.
   Never appoint by writing metadata or trust a host identity claimed in a payload.
-- Start with WS-only transport through Rallar room channels: 30 Hz simulation,
-  bounded 20 Hz input, 10 Hz state proposals and explicit recovery commitment.
+- Use Rallar RTC realtime room channels first for bounded 20 Hz controls and
+  compact host poses, with WS fallback for unavailable peer channels. Keep 30 Hz
+  simulation and acknowledged 10 Hz checkpoint proposals for scores and recovery;
+  live pose presentation must not wait for checkpoint agreement.
 - Input expires after 250 ms; neutral input replaces held controls on pause/blur.
 - Recover from a committed checkpoint under a new appointment, or explicitly
   interrupt the round. Never silently restart time or fabricate preserved scores.

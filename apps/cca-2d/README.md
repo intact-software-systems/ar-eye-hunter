@@ -101,12 +101,25 @@ round targets 100 individual points and permits several qualifiers. Online playe
 are real human sessions; BOT PAL remains only in solo.
 Ready submits your username for the round's player labels. The host associates it
 with your authenticated seat and retains it through results. This trial uses wire
-build `grumpy-town-v4`; refresh every open trial tab before playing together.
+build `grumpy-town-v5`; refresh every open trial tab before playing together.
 Leaving hands ownership to another active member, or closes the town when its
 last member leaves. Lost action replies expose a retry button. Returning to solo
 opens the playground immediately while the online session finishes cancelling
 its search; online re-entry waits for that cleanup. If the network stays unavailable,
 cancellation cannot be confirmed and the search status must be checked after reconnecting.
+Live movement uses Rallar's unordered RTC realtime room channel first, with
+WebSocket delivery to peers whose RTC channel cannot accept the frame. Controls
+and compact host poses are published at up to 20 Hz; poses do not wait for
+checkpoint acknowledgements. The host still decides all gameplay. Scores, town
+interactions, results and recovery remain on acknowledged WS checkpoints.
+Receiver checks bind every frame to the full room, current host epoch, match and
+session. Pose sequences/ticks cannot rewind; stale poses expire after 250 ms.
+The smoother 150 ms presentation buffer is retained after the shorter-buffer
+phone trial proved jittery. Network transport and confirmed outcomes are separate
+from visual prediction. DOM diagnostics expose `data-pose-transport`,
+`data-live-send`, `data-input-transport` (last authenticated input carrier) and
+`data-pose-tick`; those are developer observations, not new gameplay controls.
+
 The healthy shared-match flow and temporary checkpoint-loss pause/resume are implemented.
 If confirmation stops for 1.5 seconds, the game shows a pause while retrying checkpoints;
 movement and dash pressed during that pause are discarded. With three players, closing
@@ -199,9 +212,13 @@ physical Safari behavior. The development server's HTTPS/proxy options follow
 - `online/online-match.ts`: current-room match lifetime, ready/start controls and gameplay mount.
 - `match/match-room.ts`: current room sessions, authority relay, bounded refresh and eligible appointment.
 - `match/match-session.ts`: authenticated room traffic, checkpoint exchange and recovery lifecycle.
+- `match/match-transport.ts`: RTC-first live frames, missing-recipient WS fallback and subscriptions; agreement remains WS.
+- `match/match-live-poses.ts`: bounded latest host pose observation, independent of confirmed state.
+- `match/match-peer-presentation.ts`: Rallar Motion interpolation and collision-constrained remote poses.
+- `match/match-presentation.ts`: bounded local movement/dash prediction.
 - `match/match-simulation.ts`: director clock, expiring inputs and speculative canonical town state.
 - `match/match-seats.ts`: confirmed controller seats, absolute grace deadlines and observer eligibility.
-- `match/match-game.ts`: committed-state canvas, human peers, timer, results and input lifecycle.
+- `match/match-game.ts`: confirmed world/timer/results, live human poses and input lifecycle.
 - `match/match-checkpoints.ts`, `match-protocol.ts`, `match-snapshot.ts`: agreement and exact wire validation.
 - `practice-app.ts`: fixed 60 Hz simulation loop, HUD, pause/reset and teardown.
 - `practice-controls.ts`: keyboard, independent pointer capture and pinch input.
