@@ -91,6 +91,15 @@ for (const departure of ['temporary', 'expired', 'voluntary']) {
         const contexts = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
         const [alice, bob, carol] = await Promise.all(contexts.map((context) => context.newPage()));
         const traffic: string[] = [];
+        let expiredSeatProposed = false;
+        alice.on('websocket', (socket) =>
+            socket.on('framesent', ({ payload }) => {
+                const frame = decodeMatchWire(payload);
+                if (frame?.action.kind === 'proposal') {
+                    const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                    expiredSeatProposed ||= snapshot?.seats.some((seat) => seat.status === 'observer') === true;
+                }
+            }));
         [alice, bob, carol].forEach((page, index) => recordMatchTraffic(page, index, traffic));
         try {
             await startTownMatch([alice, bob, carol]);
@@ -105,12 +114,7 @@ for (const departure of ['temporary', 'expired', 'voluntary']) {
             const clock = await alice.locator('#round-clock').textContent();
             await expect.poll(() => alice.locator('#round-clock').textContent()).not.toBe(clock);
             if (departure === 'expired') {
-                const remaining = Number((await alice.locator('#round-clock').textContent())?.replace('s', ''));
-                await expect.poll(
-                    async () => Number((await alice.locator('#round-clock').textContent())?.replace('s', '')),
-                    { timeout: 16000 }
-                )
-                    .toBeLessThanOrEqual(remaining - 11);
+                await expect.poll(() => expiredSeatProposed, { timeout: 16000 }).toBe(true);
             }
             const returned = await contexts[2].newPage();
             recordMatchTraffic(returned, 2, traffic);
