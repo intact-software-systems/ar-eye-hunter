@@ -3,16 +3,14 @@ import {
     requireEpoch,
     requireExactKeys,
     requireOneOf,
-    requireRecord,
-    requireString
+    requireRecord
 } from '../exact-object-decoding.ts';
-import { toCanonicalGroupRef } from '../group-types.ts';
-import { assertValidRallarGroupRef } from '../rallar-validation.ts';
 import {
     ADMIN_ROOM_TOPOLOGY_WORK_STATUSES,
     type AdminRoomTopologyWorkRequest,
     type AdminRoomTopologyWorkResponse
 } from './admin-room-topology-work.ts';
+import { decodeAdminRoomRef } from './decode-admin-room-ref.ts';
 
 export function decodeAdminRoomTopologyWork(
     value: unknown,
@@ -27,9 +25,9 @@ export function decodeAdminRoomTopologyWork(
         'attempts',
         'settledAtEpochMs'
     ], 'Topology work outcome');
-    const identity = requireRecord(response.roomRef, 'Topology work room');
-    requireExactKeys(identity, ['applicationId', 'workspaceId', 'groupId'], 'Topology work room');
-    const roomRef = toCanonicalGroupRef(assertValidRallarGroupRef(identity));
+    const roomRef = decodeAdminRoomRef(response.roomRef).fold((message) => {
+        throw new TypeError(message);
+    }, (ref) => ref);
     const outboxId = decodeAdminTopologyOutboxId(response.outboxId);
     if (!isSameGroupRef(roomRef, request.roomRef) || outboxId !== request.outboxId) {
         throw new TypeError('Topology work outcome belongs to another room or receipt');
@@ -57,9 +55,12 @@ export function decodeAdminRoomTopologyWork(
 
 /** A command's outbox identity includes a suffix beyond the request route ID. */
 export function decodeAdminTopologyOutboxId(value: unknown): string {
-    requireString(value, 'Topology work receipt identity');
-    if (value.length > 256) {
-        throw new TypeError('Topology work receipt identity is too long');
+    if (!isAdminTopologyOutboxId(value)) {
+        throw new TypeError('Topology work receipt identity must be a non-empty string of at most 256 characters');
     }
     return value;
+}
+
+export function isAdminTopologyOutboxId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= 256;
 }

@@ -123,4 +123,20 @@ describe('BoundedHistogram', () => {
         expect(issues.some((issue) => issue.includes('h.bucketCounts[1]'))).toBe(true);
         expect(issues.some((issue) => issue.includes('h.sum'))).toBe(true);
     });
+
+    it('refuses a count beyond the safe integers, whose sum of buckets cannot be checked', () => {
+        const unsafe = Number.MAX_SAFE_INTEGER + 1;
+        const decoded = decodeBoundedHistogram({
+            upperBounds: [10],
+            bucketCounts: [unsafe, 0],
+            count: unsafe,
+            sum: 0,
+            min: 0,
+            max: 0
+        }, 'h');
+
+        const issues = decoded.left ?? [];
+        expect(issues.some((issue) => issue.includes('h.bucketCounts[0]'))).toBe(true);
+        expect(issues.some((issue) => issue.includes('h.count'))).toBe(true);
+    });
 });

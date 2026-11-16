@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getOwnCount, getOwnField } from '@shared/api/topology-plan/get-own-field.ts';
+import { getOwnCount, getOwnField } from '@shared/encoding/get-own-field.ts';
 
 describe('getOwnField', () => {
     it('reads an own data property and nothing inherited', () => {

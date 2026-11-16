@@ -17,7 +17,7 @@ function isFiniteNonNegative(value: unknown): value is number {
 }
 
 function isWholeCount(value: unknown): value is number {
-    return isFiniteNonNegative(value) && Number.isInteger(value);
+    return isFiniteNonNegative(value) && Number.isSafeInteger(value);
 }
 
 function decodeBoundedHistogramBounds(value: unknown, path: string): Either<readonly string[], readonly number[]> {

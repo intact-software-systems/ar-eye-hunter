@@ -15,6 +15,7 @@ import type {
     AdminRoomDirectoryResponse,
     AdminRoomSummary
 } from './admin-room-directory.ts';
+import { decodeAdminRoomRef } from './decode-admin-room-ref.ts';
 
 /** Private diagnostic responses must match the requested scope and retain explicit validity. */
 export function decodeAdminRoomDirectory(
@@ -101,13 +102,9 @@ function decodeRoomSummary(value: unknown, scope: GroupScope): AdminRoomSummary 
 }
 
 function decodeRoomRef(value: unknown, scope: GroupScope): GroupRef {
-    const ref = requireRecord(value, 'Room identity');
-    requireExactKeys(ref, ['applicationId', 'workspaceId', 'groupId'], 'Room identity');
-    const decoded = {
-        applicationId: assertValidRallarRouteId(ref.applicationId),
-        workspaceId: assertValidRallarRouteId(ref.workspaceId),
-        groupId: assertValidRallarRouteId(ref.groupId)
-    };
+    const decoded = decodeAdminRoomRef(value).fold((message) => {
+        throw new TypeError(message);
+    }, (ref) => ref);
     assertRequestedScope(decoded, scope);
     return decoded;
 }

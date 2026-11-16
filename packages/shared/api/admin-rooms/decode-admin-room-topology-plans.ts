@@ -1,19 +1,19 @@
+import { getOwnCount, getOwnField } from '../../encoding/get-own-field.ts';
 import { Either } from '../../resilience/Either.ts';
 import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
-import type { GroupRef } from '../group-types.ts';
 import { RALLAR_RTC_TOPOLOGY_KINDS } from '../overlay-topology.ts';
 import { decodeRtcTopologyPlanRecord } from '../topology-plan/decode-rtc-topology-plan-record.ts';
-import { getOwnCount, getOwnField } from '../topology-plan/get-own-field.ts';
 import type { RtcTopologyPlanRecord } from '../topology-plan/rtc-topology-plan-record.ts';
 import {
     ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,
     type AdminRoomTopologyPlan,
     type AdminRoomTopologyPlansResponse
 } from './admin-room-topology-plans.ts';
+import { decodeAdminRoomRef } from './decode-admin-room-ref.ts';
+import { isAdminTopologyOutboxId } from './decode-admin-room-topology-work.ts';
 
 const RESPONSE_KEYS = ['roomRef', 'observedAtEpochMs', 'plans', 'nextAfterPublicationId'] as const;
-const ROOM_REF_KEYS = ['applicationId', 'workspaceId', 'groupId'] as const;
 const PLAN_KEYS = [
     'publicationId',
     'requestedAtEpochMs',
@@ -23,20 +23,19 @@ const PLAN_KEYS = [
     'degreeLimit',
     'plan'
 ] as const;
-const MAX_PUBLICATION_ID_LENGTH = 256;
 
 export function decodeAdminRoomTopologyPlans(value: unknown): Either<string, AdminRoomTopologyPlansResponse> {
     const fields = decodePlainRecord(value).right;
     if (fields === undefined || !hasExactKeys(fields, RESPONSE_KEYS)) {
         return Either.ofLeft('Room topology plans must be an exact object with its own fields');
     }
-    const roomRef = decodeRoomRef(getOwnField(fields, 'roomRef'));
+    const roomRef = decodeAdminRoomRef(getOwnField(fields, 'roomRef')).right;
     const observedAtEpochMs = getOwnCount(fields, 'observedAtEpochMs');
     const nextAfterPublicationId = getOwnField(fields, 'nextAfterPublicationId');
     const entries = getOwnField(fields, 'plans');
     if (
-        roomRef === null || observedAtEpochMs === null ||
-        (nextAfterPublicationId !== null && !isPublicationId(nextAfterPublicationId)) ||
+        roomRef === undefined || observedAtEpochMs === null ||
+        (nextAfterPublicationId !== null && !isAdminTopologyOutboxId(nextAfterPublicationId)) ||
         !Array.isArray(entries) || entries.length > ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT
     ) {
         return Either.ofLeft('Room topology plans name no room, observation time, page of plans or cursor');
@@ -64,7 +63,7 @@ function decodeAdminRoomTopologyPlan(value: unknown): Either<string, AdminRoomTo
     const memberCount = getOwnCount(fields, 'memberCount');
     const degreeLimit = getOwnCount(fields, 'degreeLimit');
     if (
-        !isPublicationId(publicationId) || requestedAtEpochMs === null || !isGroupLayoutIdentity(layout) ||
+        !isAdminTopologyOutboxId(publicationId) || requestedAtEpochMs === null || !isGroupLayoutIdentity(layout) ||
         topology === undefined || memberCount === null || degreeLimit === null
     ) {
         return Either.ofLeft('Room topology plan names no publication, request time, layout, kind or sizes');
@@ -81,25 +80,4 @@ function decodeAdminRoomTopologyPlan(value: unknown): Either<string, AdminRoomTo
         degreeLimit,
         plan: record
     }));
-}
-
-function decodeRoomRef(value: unknown): GroupRef | null {
-    const fields = decodePlainRecord(value).right;
-    if (fields === undefined || !hasExactKeys(fields, ROOM_REF_KEYS)) {
-        return null;
-    }
-    const applicationId = getOwnField(fields, 'applicationId');
-    const workspaceId = getOwnField(fields, 'workspaceId');
-    const groupId = getOwnField(fields, 'groupId');
-    return isNonEmptyString(applicationId) && isNonEmptyString(workspaceId) && isNonEmptyString(groupId)
-        ? { applicationId, workspaceId, groupId }
-        : null;
-}
-
-function isPublicationId(value: unknown): value is string {
-    return isNonEmptyString(value) && value.length <= MAX_PUBLICATION_ID_LENGTH;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-    return typeof value === 'string' && value.length > 0;
 }

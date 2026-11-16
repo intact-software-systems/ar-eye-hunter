@@ -1,11 +1,12 @@
 # Measurement
 
-Import the owning module directly. This folder has no local barrel; it holds the three measurement primitives that
+Import the owning module directly. This folder has no local barrel; it holds the four measurement primitives that
 runtime code, the harness and the reports share, so that no feature carries its own copy (D642, D650).
 
 | Owner                                                            | What it answers                                                                                                                |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | [computeNearestRank](compute-nearest-rank.ts)                    | The nearest-rank percentile of a list of values.                                                                               |
+| [computeNumberExtrema](compute-number-extrema.ts)                | The smallest and the largest of a list of values, absent for no values.                                                        |
 | [BoundedHistogram](bounded-histogram.ts)                         | A fixed-bound histogram of non-negative numbers: its creation, one more sample, and the decoding of one read from outside.     |
 | [computeSameRegimeComparison](compute-same-regime-comparison.ts) | Whether two runs measured under the same regime differ in a figure by more than a declared band, or cannot be compared at all. |
 

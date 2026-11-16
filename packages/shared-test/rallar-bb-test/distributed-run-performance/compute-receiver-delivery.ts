@@ -1,4 +1,5 @@
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
+import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunLowestReceiver, DistributedRunReceiverDelivery } from '../distributed-artifact-analysis.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
@@ -6,7 +7,7 @@ import {
     decodeReceiverDeliverySpecsByCommandId,
     type ReceiverDeliverySpec
 } from '../distributed-artifact-analysis/decode-receiver-delivery-spec.ts';
-import { computeNumberExtrema, toRoundedMetric } from './compute-timing-summary.ts';
+import { toRoundedMetric } from './compute-timing-summary.ts';
 
 export interface ReceiverDeliverySources {
     readonly distributedRun: ControlDistributedRunSnapshot;

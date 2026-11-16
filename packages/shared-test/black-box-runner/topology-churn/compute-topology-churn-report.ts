@@ -10,6 +10,7 @@ import {
     type TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
+import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
 import {
     computeCountsByKey,
@@ -250,8 +251,9 @@ function computeShare(count: number, total: number): number | null {
 function computeDistribution(values: readonly number[]): TopologyChurnDistribution | null {
     const median = computeNearestRank(values, 0.5);
     const p90 = computeNearestRank(values, 0.9);
-    if (median === undefined || p90 === undefined) {
+    const extrema = computeNumberExtrema(values);
+    if (median === undefined || p90 === undefined || extrema === undefined) {
         return null;
     }
-    return { min: Math.min(...values), median, p90, max: Math.max(...values) };
+    return { min: extrema.min, median, p90, max: extrema.max };
 }

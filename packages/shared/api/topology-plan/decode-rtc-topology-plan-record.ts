@@ -1,7 +1,7 @@
+import { getOwnCount, getOwnField } from '../../encoding/get-own-field.ts';
 import { Either } from '../../resilience/Either.ts';
-import { decodePlainRecord, getOwnNumber, hasExactKeys } from '../exact-object-decoding.ts';
+import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
-import { getOwnCount, getOwnField } from './get-own-field.ts';
 import { isEmptyTopologyLayoutDelta } from './is-empty-topology-layout-delta.ts';
 import {
     TOPOLOGY_REPLAN_CAUSES,
@@ -108,16 +108,23 @@ function decodeTopologyLayoutDelta(value: unknown): Either<string, TopologyLayou
     if (fields === undefined || !hasExactKeys(fields, DELTA_KEYS)) {
         return Either.ofLeft('Topology layout delta must be an exact object with its own fields');
     }
-    const badField = DELTA_KEYS.find((key) => getOwnCount(fields, key) === null);
-    if (badField !== undefined) {
+    const delta = {
+        joinedSessionCount: getOwnCount(fields, 'joinedSessionCount'),
+        leftSessionCount: getOwnCount(fields, 'leftSessionCount'),
+        changedSessionCount: getOwnCount(fields, 'changedSessionCount'),
+        reroutedSessionCount: getOwnCount(fields, 'reroutedSessionCount'),
+        acceptingSessionCount: getOwnCount(fields, 'acceptingSessionCount'),
+        maxJoinerEdgesPerSession: getOwnCount(fields, 'maxJoinerEdgesPerSession')
+    };
+    if (!isCountedTopologyLayoutDelta(delta)) {
+        const badField = DELTA_KEYS.find((key) => delta[key] === null);
         return Either.ofLeft(`Topology layout delta ${badField} must be a non-negative integer`);
     }
-    return Either.ofRight({
-        joinedSessionCount: getOwnNumber(fields, ['joinedSessionCount'], Number.NaN),
-        leftSessionCount: getOwnNumber(fields, ['leftSessionCount'], Number.NaN),
-        changedSessionCount: getOwnNumber(fields, ['changedSessionCount'], Number.NaN),
-        reroutedSessionCount: getOwnNumber(fields, ['reroutedSessionCount'], Number.NaN),
-        acceptingSessionCount: getOwnNumber(fields, ['acceptingSessionCount'], Number.NaN),
-        maxJoinerEdgesPerSession: getOwnNumber(fields, ['maxJoinerEdgesPerSession'], Number.NaN)
-    });
+    return Either.ofRight(delta);
+}
+
+function isCountedTopologyLayoutDelta(
+    delta: Readonly<Record<keyof TopologyLayoutDelta, number | null>>
+): delta is TopologyLayoutDelta {
+    return DELTA_KEYS.every((key) => delta[key] !== null);
 }

@@ -15,7 +15,7 @@ import {
     toDistributedRunBaselineFigures
 } from '@shared-test/rallar-bb-test/distributed-run-performance/to-distributed-run-baseline-figures.ts';
 import { decodePlainRecord } from '@shared/api/exact-object-decoding.ts';
-import { getOwnField } from '@shared/api/topology-plan/get-own-field.ts';
+import { getOwnField } from '@shared/encoding/get-own-field.ts';
 import {
     computeSameRegimeComparison,
     type SameRegimeComparison

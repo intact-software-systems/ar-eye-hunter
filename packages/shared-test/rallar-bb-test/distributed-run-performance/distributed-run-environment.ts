@@ -1,5 +1,5 @@
 import { decodePlainRecord, hasExactKeys } from '../../../shared/api/exact-object-decoding.ts';
-import { getOwnCount, getOwnField } from '../../../shared/api/topology-plan/get-own-field.ts';
+import { getOwnCount, getOwnField } from '../../../shared/encoding/get-own-field.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 /** Every field of the API's topology planning configuration: they decide the planned layout and the re-plan cadence. */
