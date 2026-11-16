@@ -201,6 +201,7 @@ describe('what a single join or leave in a mesh of twenty reroutes today', () =>
 });
 
 describe('the planner\'s plans over every single leave of a mesh of twenty and a tree of eight', () => {
+    // The limit of this sweep: the fixture rooms have no director, so no leader's leave is covered.
     const meshSweep = computeRoomSweep(MESH_OF_TWENTY);
     const treeSweep = computeRoomSweep(TREE_OF_EIGHT);
 

@@ -46,7 +46,12 @@ export interface RtcTopologyFixtureReplan {
     readonly planned: ComputedRtcTopologyPlan;
 }
 
-export interface RtcTopologyFixtureLeave extends RtcTopologyFixtureReplan {
+/** A replan with the planning input it was derived from: the room, options, intent and measurements. */
+export interface RtcTopologyFixtureReplanned extends RtcTopologyFixtureReplan {
+    readonly replanInput: RtcTopologyFixturePlanInput;
+}
+
+export interface RtcTopologyFixtureLeave extends RtcTopologyFixtureReplanned {
     readonly leaverSessionId: string;
 }
 
@@ -94,12 +99,12 @@ export function computeRtcTopologyFixtureLeave(input: RtcTopologyFixtureLeaveInp
     const leaverSessionId = typeof input.leaver === 'string'
         ? input.leaver
         : resolveRtcTopologyFixtureSessionId(previous, input.leaver);
-    const planned = computeRtcTopologyFixturePlan({
+    const replanInput: RtcTopologyFixturePlanInput = {
         options: input.options,
         group: createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
         previous
-    });
-    return { previous, planned, leaverSessionId };
+    };
+    return { previous, planned: computeRtcTopologyFixturePlan(replanInput), replanInput, leaverSessionId };
 }
 
 function resolveRtcTopologyFixtureSessionId(
@@ -140,13 +145,13 @@ function toRtcTopologyFixtureEdge(left: string, right: string): string {
 }
 
 /** The smallest room whose replan the real planner rebuilds for each reason. */
-export function computeRtcTopologyFixtureRebuild(reason: TopologyReshapeReason): RtcTopologyFixtureReplan {
+export function computeRtcTopologyFixtureRebuild(reason: TopologyReshapeReason): RtcTopologyFixtureReplanned {
     return REBUILD_SCENARIOS[reason]();
 }
 
 const ONE_LINK_TREE_OPTIONS: RallarRtcTopologyServiceOptions = { ...RTC_TOPOLOGY_TREE_OPTIONS, degreeLimit: 1, rttReportingDegreeLimit: 1 };
 
-const REBUILD_SCENARIOS: Readonly<Record<TopologyReshapeReason, () => RtcTopologyFixtureReplan>> = {
+const REBUILD_SCENARIOS: Readonly<Record<TopologyReshapeReason, () => RtcTopologyFixtureReplanned>> = {
     // Four members are below the default tree entry size of five; the fifth member selects a tree.
     'kind-change': () =>
         computeReplan({ options: SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
@@ -210,7 +215,8 @@ interface FormedRoom {
 function computeReplan(
     room: FormedRoom,
     toReplanInput: (previous: RallarOverlayTopologySnapshot) => RtcTopologyFixturePlanInput
-): RtcTopologyFixtureReplan {
+): RtcTopologyFixtureReplanned {
     const previous = computeRtcTopologyFixturePlan({ options: room.options, group: room.formed, previous: undefined }).snapshot;
-    return { previous, planned: computeRtcTopologyFixturePlan(toReplanInput(previous)) };
+    const replanInput = toReplanInput(previous);
+    return { previous, planned: computeRtcTopologyFixturePlan(replanInput), replanInput };
 }

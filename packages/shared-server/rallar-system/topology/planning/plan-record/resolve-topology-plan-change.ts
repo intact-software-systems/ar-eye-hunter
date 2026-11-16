@@ -1,3 +1,4 @@
+import { isEmptyTopologyLayoutDelta } from '@shared/api/topology-plan/is-empty-topology-layout-delta.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan-change.ts';
 
@@ -8,7 +9,7 @@ export function resolveTopologyPlanChange(
     derivation: RtcTopologyPlanDerivation,
     delta: TopologyLayoutDelta
 ): TopologyPlanChange | null {
-    if (Object.values(delta).every((count) => count === 0)) {
+    if (isEmptyTopologyLayoutDelta(delta)) {
         return null;
     }
     switch (derivation.method) {

@@ -82,10 +82,11 @@ function assertPublicationFields(publication: JsonWireObject, expectedRef: Group
         throw new TypeError('RTC topology publication recipients are invalid');
     }
     safeInteger(publication.expiresAtEpochMs, createdAtEpochMs + 1, 'expiresAtEpochMs');
-    assertPublicationSnapshot(publication, expectedRef);
+    const snapshot = decodePublicationSnapshot(publication, expectedRef);
+    assertPublicationPlan(publication, snapshot.state);
 }
 
-function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: GroupRef): void {
+function decodePublicationSnapshot(publication: JsonWireObject, expectedRef: GroupRef): RallarOverlayTopologySnapshot {
     const snapshot = decodeRtcTopologySnapshot(
         decodeJsonWireValue(publication.snapshot, 'RTC topology publication snapshot'),
         expectedRef
@@ -100,7 +101,7 @@ function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: Gro
     ) {
         throw new TypeError('RTC topology publication winner is internally inconsistent');
     }
-    assertPublicationPlan(publication, snapshot.state);
+    return snapshot;
 }
 
 function assertPublicationPlan(publication: JsonWireObject, state: RallarOverlayTopologySnapshot['state']): void {

@@ -2,6 +2,7 @@ import { Either } from '../../resilience/Either.ts';
 import { decodePlainRecord, getOwnNumber, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import { getOwnCount, getOwnField } from './get-own-field.ts';
+import { isEmptyTopologyLayoutDelta } from './is-empty-topology-layout-delta.ts';
 import {
     TOPOLOGY_REPLAN_CAUSES,
     type ReplacedTopologyLayout,
@@ -9,8 +10,9 @@ import {
     type TopologyLayoutDelta,
     type TopologyReplanCause
 } from './rtc-topology-plan-record.ts';
+import { TOPOLOGY_RESHAPE_REASONS, type TopologyPlanChange } from './topology-plan-change.ts';
 
-const RECORD_KEYS = ['plannedAtEpochMs', 'replaced', 'causes', 'delta', 'longestPathHops'] as const;
+const RECORD_KEYS = ['plannedAtEpochMs', 'replaced', 'causes', 'delta', 'longestPathHops', 'change'] as const;
 const REPLACED_KEYS = ['layout', 'ageMs'] as const;
 const DELTA_KEYS = [
     'joinedSessionCount',
@@ -36,16 +38,42 @@ export function decodeRtcTopologyPlanRecord(value: unknown): Either<string, RtcT
         : decodeReplacedTopologyLayout(getOwnField(fields, 'replaced'));
     const causes = decodeTopologyReplanCauses(getOwnField(fields, 'causes'));
     const delta = decodeTopologyLayoutDelta(getOwnField(fields, 'delta'));
-    if (replaced.right === undefined || causes.right === undefined || delta.right === undefined) {
-        return Either.ofLeft(replaced.left ?? causes.left ?? delta.left ?? 'Topology plan record is invalid');
+    const change = decodeTopologyPlanChange(getOwnField(fields, 'change'));
+    if (
+        replaced.right === undefined || causes.right === undefined || delta.right === undefined ||
+        change.right === undefined
+    ) {
+        return Either.ofLeft(
+            replaced.left ?? causes.left ?? delta.left ?? change.left ?? 'Topology plan record is invalid'
+        );
+    }
+    if ((change.right === null) !== isEmptyTopologyLayoutDelta(delta.right)) {
+        return Either.ofLeft('Topology plan record change must be null exactly when its delta is empty');
     }
     return Either.ofRight({
         plannedAtEpochMs,
         replaced: replaced.right,
         causes: causes.right,
         delta: delta.right,
-        longestPathHops
+        longestPathHops,
+        change: change.right
     });
+}
+
+function decodeTopologyPlanChange(value: unknown): Either<string, TopologyPlanChange | null> {
+    if (value === null) {
+        return Either.ofRight(null);
+    }
+    const fields = decodePlainRecord(value).right ?? {};
+    const kind = getOwnField(fields, 'kind');
+    if ((kind === 'attach' || kind === 'repair') && hasExactKeys(fields, ['kind'])) {
+        return Either.ofRight({ kind });
+    }
+    const reason = TOPOLOGY_RESHAPE_REASONS.find((known) => known === getOwnField(fields, 'reason'));
+    if (kind === 'reshape' && reason !== undefined && hasExactKeys(fields, ['kind', 'reason'])) {
+        return Either.ofRight({ kind, reason });
+    }
+    return Either.ofLeft('Topology plan change must be null, an attach, a repair, or a reshape with a known reason');
 }
 
 function decodeReplacedTopologyLayout(value: unknown): Either<string, ReplacedTopologyLayout> {

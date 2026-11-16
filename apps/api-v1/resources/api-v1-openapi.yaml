@@ -6312,7 +6312,7 @@ components:
     RtcTopologyPlanRecord:
       type: object
       additionalProperties: false
-      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops]
+      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change]
       properties:
         plannedAtEpochMs: { type: integer, minimum: 0 }
         replaced:
@@ -6325,6 +6325,26 @@ components:
         delta:
           $ref: '#/components/schemas/TopologyLayoutDelta'
         longestPathHops: { type: integer, minimum: 0 }
+        change:
+          oneOf:
+            - $ref: '#/components/schemas/TopologyPlanChange'
+            - type: 'null'
+
+    TopologyPlanChange:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [attach, repair] }
+        - type: object
+          additionalProperties: false
+          required: [kind, reason]
+          properties:
+            kind: { type: string, enum: [reshape] }
+            reason:
+              type: string
+              enum: [leader-rooting, delta-too-large, update-failed, invariant-violation, kind-change, refinement]
 
     ReplacedTopologyLayout:
       type: object

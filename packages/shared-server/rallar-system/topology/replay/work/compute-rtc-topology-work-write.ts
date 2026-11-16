@@ -1,5 +1,6 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan-change.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -62,6 +63,8 @@ export type AcceptedRtcTopologyWork =
         planningObservation: RtcTopologyPlanningObservation | null;
         /** Why an RTT refresh promotes; null for membership work. */
         rttReplanPromotion: PromotedRttReplan | null;
+        /** The published record's kind, carried for the timing line; nothing decides on it. */
+        planChange: TopologyPlanChange | null;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';

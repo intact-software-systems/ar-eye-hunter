@@ -1329,6 +1329,9 @@
                 "causes": ["any"],
                 "delta": {
                   "joinedSessionCount": "integer"
+                },
+                "change": {
+                  "kind": "attach|reshape"
                 }
               }
             }

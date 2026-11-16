@@ -9,13 +9,15 @@ import {
 
 import { computeLongestHopPath } from './compute-longest-hop-path.ts';
 import { computeTopologyLayoutDelta } from './compute-topology-layout-delta.ts';
+import { resolveTopologyPlanChange } from './resolve-topology-plan-change.ts';
+import type { RtcTopologyPlanDerivation } from './rtc-topology-plan-derivation.ts';
 
 export interface ComputeRtcTopologyPlanRecordInput {
     readonly stored: RallarOverlayTopologySnapshot | null;
     readonly planned: RallarOverlayTopologySnapshot;
     readonly rttRefresh: boolean;
     readonly changeGated: boolean;
-    readonly leaderRerooted: boolean;
+    readonly derivation: RtcTopologyPlanDerivation;
     readonly nowEpochMs: number;
 }
 
@@ -25,7 +27,7 @@ interface ResolveTopologyReplanCausesInput {
     readonly planned: RallarOverlayTopologySnapshot;
     readonly rttRefresh: boolean;
     readonly changeGated: boolean;
-    readonly leaderRerooted: boolean;
+    readonly derivation: RtcTopologyPlanDerivation;
 }
 
 export function computeRtcTopologyPlanRecord(input: ComputeRtcTopologyPlanRecordInput): RtcTopologyPlanRecord {
@@ -44,21 +46,22 @@ export function computeRtcTopologyPlanRecord(input: ComputeRtcTopologyPlanRecord
             planned,
             rttRefresh: input.rttRefresh,
             changeGated: input.changeGated,
-            leaderRerooted: input.leaderRerooted
+            derivation: input.derivation
         }),
         delta,
-        longestPathHops: computeLongestHopPath(planned)
+        longestPathHops: computeLongestHopPath(planned),
+        change: resolveTopologyPlanChange(input.derivation, delta)
     };
 }
 
 function resolveTopologyReplanCauses(input: ResolveTopologyReplanCausesInput): readonly TopologyReplanCause[] {
-    const { delta, replaced, planned } = input;
+    const { delta, replaced, planned, derivation } = input;
     const configChanged = replaced !== null &&
         (replaced.degreeLimit !== planned.degreeLimit || replaced.name !== planned.name);
     const present: Readonly<Record<TopologyReplanCause, boolean>> = {
         join: delta.joinedSessionCount > 0,
         leave: delta.leftSessionCount > 0,
-        'leader-change': input.leaderRerooted,
+        'leader-change': derivation.method === 'rebuilt' && derivation.reason === 'leader-rooting',
         config: (!input.rttRefresh && !input.changeGated) || configChanged,
         rtt: input.rttRefresh
     };

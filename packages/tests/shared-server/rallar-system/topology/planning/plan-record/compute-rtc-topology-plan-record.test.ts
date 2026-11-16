@@ -39,7 +39,7 @@ function createLayout(
     };
 }
 
-/** A presence-driven replan: change-gated, not an RTT refresh, no leader re-root. */
+/** A presence-driven replan: change-gated, not an RTT refresh, derived incrementally. */
 function createInput(
     stored: RallarOverlayTopologySnapshot | null,
     planned: RallarOverlayTopologySnapshot,
@@ -50,7 +50,7 @@ function createInput(
         planned,
         rttRefresh: false,
         changeGated: true,
-        leaderRerooted: false,
+        derivation: { method: 'incremental' },
         nowEpochMs: NOW_EPOCH_MS,
         ...overrides
     };
@@ -64,7 +64,8 @@ describe('computeRtcTopologyPlanRecord', () => {
             replaced: null,
             causes: ['join'],
             delta: { ...EMPTY_DELTA, joinedSessionCount: 3 },
-            longestPathHops: 2
+            longestPathHops: 2,
+            change: { kind: 'attach' }
         };
 
         expect(computeRtcTopologyPlanRecord(createInput(null, planned))).toEqual(expected);
@@ -140,13 +141,34 @@ describe('computeRtcTopologyPlanRecord', () => {
         expect(computeRtcTopologyPlanRecord(createInput(stored, nameChanged)).causes).toEqual(['config']);
     });
 
-    it('a re-rooted leader is caused by leader-change', () => {
+    it('a plan rebuilt to root a leader is caused by leader-change and is a reshape for leader-rooting', () => {
         const stored = createLayout(3, ['a', 'b', 'c']);
         const planned = createLayout(4, ['b', 'a', 'c']);
 
-        expect(computeRtcTopologyPlanRecord(createInput(stored, planned, { leaderRerooted: true })).causes).toEqual([
-            'leader-change'
-        ]);
+        const record = computeRtcTopologyPlanRecord(
+            createInput(stored, planned, { derivation: { method: 'rebuilt', reason: 'leader-rooting' } })
+        );
+
+        expect(record.causes).toEqual(['leader-change']);
+        expect(record.change).toEqual({ kind: 'reshape', reason: 'leader-rooting' });
+    });
+
+    it('a plan rebuilt for any other reason is no leader-change', () => {
+        const stored = createLayout(3, ['a', 'b', 'c']);
+        const planned = createLayout(4, ['b', 'a', 'c']);
+
+        const record = computeRtcTopologyPlanRecord(
+            createInput(stored, planned, { derivation: { method: 'rebuilt', reason: 'kind-change' } })
+        );
+
+        expect(record.causes).toEqual([]);
+        expect(record.change).toEqual({ kind: 'reshape', reason: 'kind-change' });
+    });
+
+    it('an incremental plan a member left is a repair', () => {
+        const record = computeRtcTopologyPlanRecord(createInput(createLayout(3, ['a', 'b', 'c']), createLayout(4, ['a', 'b'])));
+
+        expect(record.change).toEqual({ kind: 'repair' });
     });
 
     it('a plan that changes nothing has no cause and an empty delta', () => {
@@ -157,5 +179,6 @@ describe('computeRtcTopologyPlanRecord', () => {
 
         expect(record.causes).toEqual([]);
         expect(record.delta).toEqual(EMPTY_DELTA);
+        expect(record.change).toBeNull();
     });
 });

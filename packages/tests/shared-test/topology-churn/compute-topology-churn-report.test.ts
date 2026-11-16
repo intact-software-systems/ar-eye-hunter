@@ -6,6 +6,7 @@ import {
 } from '@shared-test/black-box-runner/topology-churn/compute-topology-churn-report.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
+import { isEmptyTopologyLayoutDelta } from '@shared/api/topology-plan/is-empty-topology-layout-delta.ts';
 import type {
     ReplacedTopologyLayout,
     TopologyLayoutDelta,
@@ -42,6 +43,15 @@ function toReplaced(version: number, ageMs: number | null): ReplacedTopologyLayo
 }
 
 function createPlan(input: TestPlanInput): AdminRoomTopologyPlan {
+    const delta: TopologyLayoutDelta = {
+        joinedSessionCount: 0,
+        leftSessionCount: 0,
+        changedSessionCount: 1,
+        reroutedSessionCount: 0,
+        acceptingSessionCount: 0,
+        maxJoinerEdgesPerSession: 0,
+        ...input.delta
+    };
     return {
         publicationId: `publication-${input.version}`,
         requestedAtEpochMs: input.plannedAtEpochMs,
@@ -53,16 +63,9 @@ function createPlan(input: TestPlanInput): AdminRoomTopologyPlan {
             plannedAtEpochMs: input.plannedAtEpochMs,
             replaced: toReplaced(input.version, input.replacedAgeMs === undefined ? 60_000 : input.replacedAgeMs),
             causes: input.causes ?? ['join'],
-            delta: {
-                joinedSessionCount: 0,
-                leftSessionCount: 0,
-                changedSessionCount: 1,
-                reroutedSessionCount: 0,
-                acceptingSessionCount: 0,
-                maxJoinerEdgesPerSession: 0,
-                ...input.delta
-            },
-            longestPathHops: input.longestPathHops ?? 1
+            delta,
+            longestPathHops: input.longestPathHops ?? 1,
+            change: isEmptyTopologyLayoutDelta(delta) ? null : { kind: 'attach' }
         }
     };
 }

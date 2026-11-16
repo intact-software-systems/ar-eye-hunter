@@ -25,7 +25,8 @@ const PLAN: AdminRoomTopologyPlan = {
             acceptingSessionCount: 1,
             maxJoinerEdgesPerSession: 1
         },
-        longestPathHops: 3
+        longestPathHops: 3,
+        change: { kind: 'attach' }
     }
 };
 
@@ -60,7 +61,8 @@ describe('decodeAdminRoomTopologyPlans', () => {
             { ...PLAN, memberCount: -1 },
             { ...PLAN, publicationId: '' },
             { ...PLAN, layout: { version: 2 } },
-            { ...PLAN, plan: { ...PLAN.plan, causes: ['unknown'] } }
+            { ...PLAN, plan: { ...PLAN.plan, causes: ['unknown'] } },
+            { ...PLAN, plan: { ...PLAN.plan, change: null } }
         ];
 
         for (const entry of invalidEntries) {

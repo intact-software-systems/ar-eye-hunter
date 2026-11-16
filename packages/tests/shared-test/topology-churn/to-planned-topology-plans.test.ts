@@ -22,7 +22,8 @@ function createPlan(version: number, plannedAtEpochMs: number): AdminRoomTopolog
                 acceptingSessionCount: 1,
                 maxJoinerEdgesPerSession: 1
             },
-            longestPathHops: 2
+            longestPathHops: 2,
+            change: { kind: 'attach' }
         }
     };
 }

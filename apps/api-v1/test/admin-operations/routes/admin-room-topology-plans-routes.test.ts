@@ -8,6 +8,7 @@ import type {
     AdminRoomTopologyPlansRequest,
     AdminRoomTopologyPlansResponse
 } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import { registerAdminRoomRoutes } from '../../../src/admin-operations/register-admin-room-routes.ts';
 import { installApiDocumentationRoutes } from '../../../src/routes/swagger-routes.ts';
@@ -44,7 +45,8 @@ const response: AdminRoomTopologyPlansResponse = {
                 acceptingSessionCount: 3,
                 maxJoinerEdgesPerSession: 1
             },
-            longestPathHops: 2
+            longestPathHops: 2,
+            change: { kind: 'attach' }
         }
     }],
     nextAfterPublicationId: null
@@ -171,7 +173,8 @@ test('the OpenAPI document describes the path and every field the route serves',
             replaced: { oneOf: [{ $ref: '#/components/schemas/ReplacedTopologyLayout' }, { type: 'null' }] },
             causes: { type: 'array', items: { type: 'string', enum: ['join', 'leave', 'leader-change', 'config', 'rtt'] } },
             delta: { $ref: '#/components/schemas/TopologyLayoutDelta' },
-            longestPathHops: count
+            longestPathHops: count,
+            change: { oneOf: [{ $ref: '#/components/schemas/TopologyPlanChange' }, { type: 'null' }] }
         },
         ReplacedTopologyLayout: { layout, ageMs: count },
         TopologyLayoutDelta: {
@@ -189,4 +192,20 @@ test('the OpenAPI document describes the path and every field the route serves',
         assert.deepEqual(schemas[name].properties, properties, name);
         assert.deepEqual([...schemas[name].required].sort(), Object.keys(properties).sort(), name);
     }
+    assert.deepEqual(schemas.TopologyPlanChange, {
+        oneOf: [
+            {
+                type: 'object',
+                additionalProperties: false,
+                required: ['kind'],
+                properties: { kind: { type: 'string', enum: ['attach', 'repair'] } }
+            },
+            {
+                type: 'object',
+                additionalProperties: false,
+                required: ['kind', 'reason'],
+                properties: { kind: { type: 'string', enum: ['reshape'] }, reason: { type: 'string', enum: [...TOPOLOGY_RESHAPE_REASONS] } }
+            }
+        ]
+    });
 });

@@ -360,12 +360,10 @@ function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
     const { authority, planned, inputFingerprint, promotionRead } = input;
-    const { publication, facts } = computeAcceptedTopologyPublication(input);
     const mutationInput: RtcTopologyMutationInput = {
         read: input.mutationRead,
         candidate: planned.snapshot,
-        publication,
-        facts
+        ...computeAcceptedTopologyPublication(input)
     };
     const computed = computeTopologyMutation(mutationInput);
     if (computed.outcome === 'retry') {
@@ -380,12 +378,13 @@ function computeAcceptedTopologyMutation(
         group: authority.group,
         computed,
         mutationInput,
-        publication,
+        publication: mutationInput.publication,
         inputFingerprint,
         promotionRead,
         criterionPetition: { authority, planned: planned.snapshot },
         planningObservation: planned.planningObservation,
-        rttReplanPromotion: input.rttReplanPromotion
+        rttReplanPromotion: input.rttReplanPromotion,
+        planChange: mutationInput.publication?.plan?.change ?? null
     });
 }
 
@@ -403,7 +402,7 @@ function computeAcceptedTopologyPublication(
     const publication = toTopologyPublication({
         group: input.authority.group,
         snapshot: input.planned.snapshot,
-        plan: toPublishedPlanRecord(input),
+        plan: computePublishedPlanRecord(input),
         facts: {
             workId,
             createdAtEpochMs: workEnvelope.data.requestedAtEpochMs,
@@ -421,9 +420,9 @@ function computeAcceptedTopologyPublication(
     };
 }
 
-function toPublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput): RtcTopologyPlanRecord | null {
+function computePublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput): RtcTopologyPlanRecord | null {
     const { planned } = input;
-    if (planned.snapshot.state === 'removed') {
+    if (planned.snapshot.state === 'removed' || planned.derivation === null) {
         return null;
     }
     const work = input.facts.workEnvelope.data;
@@ -432,7 +431,7 @@ function toPublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput): Rtc
         planned: planned.snapshot,
         rttRefresh: work.kind === 'rtt-refresh',
         changeGated: isChangeGatedGroupRevisionWork(work),
-        leaderRerooted: planned.planningObservation?.incrementalFallbackReasons.includes('leader-rooting') ?? false,
+        derivation: planned.derivation,
         nowEpochMs: input.authority.nowEpochMs
     });
 }
