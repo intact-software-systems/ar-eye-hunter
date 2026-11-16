@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+
 import {
     computePracticePlayerTick,
     computePracticeTick,
@@ -74,11 +75,25 @@ describe('cutout practice actions', () => {
         expect(Math.abs(state.vz)).toBeLessThan(0.01);
         expect(state.slips).toBe(1);
     });
-    it('stops a dash at a stall instead of tunnelling through it', () => {
-        let state = { ...createPracticeState(), x: 2.8, z: 3 };
-        for (let tick = 0; tick < 20; tick++) {
-            state = computePracticeTick(state, { x: 1, z: 0, dash: 1 }, { seconds: 1 / 60, routes });
+    it.each([
+        { x: 4.8, z: 0.16, inputX: 0, inputZ: 1 },
+        { x: 4.8, z: 0.4, inputX: 0, inputZ: 1 },
+        { x: 2.2, z: 3, inputX: 1, inputZ: 0 },
+        { x: 2.8, z: 3, inputX: 1, inputZ: 0 }
+    ])('a dash reaches and tips a stall without entering it from $x, $z', (approach) => {
+        for (const seconds of [1 / 30, 1 / 60]) {
+            let state = { ...createPracticeState(), x: approach.x, z: approach.z };
+            for (let tick = 0; tick < 0.25 / seconds; tick++) {
+                state = computePracticeTick(state, {
+                    x: approach.inputX,
+                    z: approach.inputZ,
+                    dash: 1
+                }, { seconds, routes });
+            }
+            expect(state.town.spills).toBe(1);
+            expect(state.town.score).toBe(10);
+            expect(state.town.npcs[0].mode).toBe('cleaning');
+            expect(approach.inputX ? state.x <= 3.12 : state.z <= 1.42).toBe(true);
         }
-        expect(state.x).toBeLessThanOrEqual(3.13);
     });
 });

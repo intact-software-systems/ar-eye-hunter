@@ -38,25 +38,29 @@ export function computeTownPosition(town: TownState, from: TownPoint, delta: Tow
     for (const obstacle of getTownObstacles(town)) {
         const width = obstacle.width / 2 + 0.38;
         const depth = obstacle.depth / 2 + 0.38;
-        const inside = Math.abs(from.x - obstacle.x) < width && Math.abs(from.z - obstacle.z) < depth;
+        const left = obstacle.x - width;
+        const right = obstacle.x + width;
+        const bottom = obstacle.z - depth;
+        const top = obstacle.z + depth;
+        const inside = from.x > left && from.x < right && from.z > bottom && from.z < top;
         if (inside) {
-            const overlapX = width - Math.abs(x - obstacle.x);
-            const overlapZ = depth - Math.abs(z - obstacle.z);
+            const overlapX = Math.min(x - left, right - x);
+            const overlapZ = Math.min(z - bottom, top - z);
             if (overlapX > 0 && overlapZ > 0) {
                 if (overlapX < overlapZ) {
-                    x = obstacle.x + (x < obstacle.x ? -width : width);
+                    x = x < obstacle.x ? left : right;
                 }
                 else {
-                    z = obstacle.z + (z < obstacle.z ? -depth : depth);
+                    z = z < obstacle.z ? bottom : top;
                 }
             }
             continue;
         }
-        if (Math.abs(x - obstacle.x) < width && Math.abs(from.z - obstacle.z) < depth) {
-            x = from.x;
+        if (x > left && x < right && from.z > bottom && from.z < top) {
+            x = from.x < obstacle.x ? left : right;
         }
-        if (Math.abs(x - obstacle.x) < width && Math.abs(z - obstacle.z) < depth) {
-            z = from.z;
+        if (x > left && x < right && z > bottom && z < top) {
+            z = from.z < obstacle.z ? bottom : top;
         }
     }
     return { x, z };

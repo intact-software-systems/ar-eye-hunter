@@ -174,6 +174,12 @@ establish shared gameplay or physical-device networking.
 
 ## Shared-world preparation
 
+Movement reaches the edge of a solid prop when a step would enter it. Rejecting
+the whole step can leave a dashing player outside the interaction radius,
+making an apparently direct hit fail at some starting distances. Solo and the
+30 Hz director share the same contact rule, so stalls can spill and reward a
+hit without allowing players through their solid footprints.
+
 Police targeting, proximity rescue, shopkeeper pursuit and animal attacks now
 have canonical roster rules. Solo uses those same rules through its explicit
 player/bot projection. Guard warnings retain a target identity through roster
