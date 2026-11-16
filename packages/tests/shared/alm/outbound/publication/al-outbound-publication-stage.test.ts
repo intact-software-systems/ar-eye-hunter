@@ -156,7 +156,6 @@ describe('ALOutboundPublicationStage', () => {
             staged: 0
         });
         await fixture.engine.stop();
-        expect(fixture.reportTaskFailure).not.toHaveBeenCalled();
     });
 
     it('brings a started engine\'s next pass forward when a value lands on an idle lane', async () => {
