@@ -28,9 +28,14 @@ import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hop
 import { createRtcRoomGraph, materializeSparseRtcRoomGraphFallback } from './create-rtc-room-graph.ts';
 import {
     computeEvolvedTopologyNextHops,
-    type EvolvePlannedTopologyFullRebuildReason
+    type EvolvePlannedTopologyFullRebuildReason,
+    type EvolvePlannedTopologyResult
 } from './evolve-planned-topology.ts';
 import { planRallarRtcTopologySnapshot } from './plan-rallar-rtc-topology-snapshot.ts';
+import type {
+    DerivedRtcTopologyNextHops,
+    RtcTopologyPlanDerivation
+} from './plan-record/rtc-topology-plan-derivation.ts';
 import { resolveRttRefinementNextHops } from './resolve-rtt-refinement-next-hops.ts';
 import {
     DEFAULT_MESH_EXIT_WIDTH,
@@ -188,7 +193,7 @@ export class RtcTopologyPlanner {
             publicDispatch
         );
         const degreeLimit = this.readDegreeLimit(topologyOptions);
-        const nextHopsBySessionId = this.computePlannedNextHops(
+        const planned = this.computePlannedNextHops(
             {
                 group: input.group,
                 leaderSessionId: resolveRallarGroupLeaderSessionId(input.group),
@@ -205,7 +210,7 @@ export class RtcTopologyPlanner {
             group: input.group,
             previous: input.previous,
             topology,
-            nextHopsBySessionId,
+            ...planned,
             degreeLimit,
             nowEpochMs: input.nowEpochMs
         });
@@ -287,34 +292,30 @@ export class RtcTopologyPlanner {
     private computePlannedNextHops(
         plan: RtcTopologyPlanInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): Record<string, readonly string[]> {
+    ): DerivedRtcTopologyNextHops {
         if (plan.topology === 'star') {
             return this.computeStarNextHops(plan);
         }
         const evolved = this.computeEvolvedNextHops(plan, publicDispatch);
-        if (evolved !== undefined) {
-            return evolved;
+        if (evolved?.outcome === 'planned') {
+            return { nextHopsBySessionId: evolved.nextHopsBySessionId, derivation: { method: 'incremental' } };
         }
+        const rebuildDerivation = resolveRtcTopologyPlanDerivation(plan, {
+            method: 'rebuilt',
+            reason: evolved?.reason ?? 'refinement'
+        });
         if (plan.relevantRttMeasurements.length === 0) {
-            return this.computeNoRttNextHops(plan);
+            return { nextHopsBySessionId: this.computeNoRttNextHops(plan), derivation: rebuildDerivation };
         }
-        return this.computeWeightedNextHops(plan, publicDispatch);
+        return this.computeWeightedNextHops(plan, rebuildDerivation, publicDispatch);
     }
 
     private computeWeightedNextHops(
         plan: RtcTopologyPlanInput,
+        rebuildDerivation: RtcTopologyPlanDerivation,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): Record<string, readonly string[]> {
-        const globalGraph = this.createMeasuredRoomGraph(
-            {
-                group: plan.group,
-                leaderSessionId: plan.leaderSessionId,
-                rttMeasurements: plan.relevantRttMeasurements,
-                topology: plan.topology,
-                options: plan.topologyOptions
-            },
-            publicDispatch
-        );
+    ): DerivedRtcTopologyNextHops {
+        const globalGraph = this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch);
         const rebuiltNextHopsBySessionId = this.createNextHopMap({
             topology: plan.topology,
             group: plan.group,
@@ -327,7 +328,7 @@ export class RtcTopologyPlanner {
             plan.planningIntent !== 'full-rebuild' || plan.topology !== 'tree' || plan.previous?.state !== 'active' ||
             plan.previous.topology !== 'tree'
         ) {
-            return rebuiltNextHopsBySessionId;
+            return { nextHopsBySessionId: rebuiltNextHopsBySessionId, derivation: rebuildDerivation };
         }
         return resolveRttRefinementNextHops({
             evolve: {
@@ -345,7 +346,7 @@ export class RtcTopologyPlanner {
         });
     }
 
-    private computeStarNextHops(plan: RtcTopologyPlanInput): Record<string, readonly string[]> {
+    private computeStarNextHops(plan: RtcTopologyPlanInput): DerivedRtcTopologyNextHops {
         const startedAtMs = this.dependencies.durationNowMs();
         const nextHopsBySessionId = computeNoRttTopologyNextHops({
             topology: plan.topology,
@@ -355,13 +356,13 @@ export class RtcTopologyPlanner {
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
         });
         this.dependencies.metrics.recordStarPlan(this.dependencies.durationNowMs() - startedAtMs);
-        return nextHopsBySessionId;
+        return { nextHopsBySessionId, derivation: resolveRtcTopologyPlanDerivation(plan, { method: 'incremental' }) };
     }
 
     private computeEvolvedNextHops(
         plan: RtcTopologyPlanInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): Record<string, readonly string[]> | undefined {
+    ): EvolvePlannedTopologyResult | undefined {
         if (
             plan.planningIntent !== 'membership-delta' ||
             plan.previous?.state !== 'active' ||
@@ -375,26 +376,17 @@ export class RtcTopologyPlanner {
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph: this.createMeasuredRoomGraph(
-                {
-                    group: plan.group,
-                    leaderSessionId: plan.leaderSessionId,
-                    rttMeasurements: plan.relevantRttMeasurements,
-                    topology: plan.topology,
-                    options: plan.topologyOptions
-                },
-                publicDispatch
-            ),
+            globalGraph: this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch),
             kind: plan.topology,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
         });
         if (evolved.outcome === 'full-rebuild') {
             this.dependencies.metrics.recordIncrementalFallback(evolved.reason);
-            return undefined;
+            return evolved;
         }
         this.dependencies.metrics.recordIncrementalPlan();
-        return evolved.nextHopsBySessionId;
+        return evolved;
     }
 
     private computeNoRttNextHops(plan: RtcTopologyPlanInput): Record<string, readonly string[]> {
@@ -508,6 +500,29 @@ export class RtcTopologyPlanner {
     private readMeshMinSize(options: RallarRtcTopologyServiceOptions): number {
         return options.meshMinSize ?? DEFAULT_MESH_MIN_SIZE;
     }
+}
+
+function resolveRtcTopologyPlanDerivation(
+    plan: RtcTopologyPlanInput,
+    sameKindDerivation: RtcTopologyPlanDerivation
+): RtcTopologyPlanDerivation {
+    if (plan.previous?.state !== 'active') {
+        return { method: 'established' };
+    }
+    if (plan.previous.topology !== plan.topology) {
+        return { method: 'rebuilt', reason: 'kind-change' };
+    }
+    return sameKindDerivation;
+}
+
+function toMeasuredRoomGraphInput(plan: RtcTopologyPlanInput): CreateMeasuredRoomGraphInput {
+    return {
+        group: plan.group,
+        leaderSessionId: plan.leaderSessionId,
+        rttMeasurements: plan.relevantRttMeasurements,
+        topology: plan.topology,
+        options: plan.topologyOptions
+    };
 }
 
 function filterRttMeasurementsForActiveSessions(

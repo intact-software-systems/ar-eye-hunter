@@ -14,6 +14,7 @@ import {
     createRtcTopologyGroupSnapshot,
     createRtcTopologyMemberIds,
     createRtcTopologyRttMeasurement,
+    RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
     toRtcTopologyGroupWithDirector
 } from '../rtc-topology-test-fixtures.ts';
 
@@ -474,6 +475,7 @@ describe('RTC topology planning options and revisions', () => {
                 'peer-2': ['peer-1'],
                 'peer-3': ['peer-1']
             },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 100
         });
@@ -482,6 +484,7 @@ describe('RTC topology planning options and revisions', () => {
             previous: first.snapshot,
             topology: 'tree',
             nextHopsBySessionId: first.snapshot.nextHopsBySessionId,
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 200
         });
@@ -495,6 +498,7 @@ describe('RTC topology planning options and revisions', () => {
             group,
             topology: 'star',
             nextHopsBySessionId: { 'peer-1': [] },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 1,
             nowEpochMs: 100
         });
@@ -504,6 +508,7 @@ describe('RTC topology planning options and revisions', () => {
             previous: { ...active.snapshot, state: 'removed' },
             topology: 'star',
             nextHopsBySessionId: { 'peer-1': [] },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 1,
             nowEpochMs: 200
         });
@@ -522,6 +527,7 @@ describe('RTC topology planning options and revisions', () => {
                 'peer-2': ['peer-1'],
                 'peer-3': ['peer-1']
             },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 100
         });
@@ -535,6 +541,7 @@ describe('RTC topology planning options and revisions', () => {
             previous: first.snapshot,
             topology: 'tree',
             nextHopsBySessionId: first.snapshot.nextHopsBySessionId,
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 300
         });
@@ -557,6 +564,7 @@ describe('RTC topology planning options and revisions', () => {
                 'peer-2': ['peer-1'],
                 'peer-3': ['peer-1']
             },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 100
         });
@@ -569,6 +577,7 @@ describe('RTC topology planning options and revisions', () => {
                 'peer-2': ['peer-1'],
                 'peer-3': ['peer-1']
             },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 400
         });
@@ -588,6 +597,7 @@ describe('RTC topology planning options and revisions', () => {
                 'peer-2': ['peer-1'],
                 'peer-3': ['peer-1']
             },
+            derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
             degreeLimit: 5,
             nowEpochMs: 100
         }).snapshot;

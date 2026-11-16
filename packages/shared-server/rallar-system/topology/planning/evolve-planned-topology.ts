@@ -10,6 +10,7 @@ import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts
 import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import type { TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
@@ -31,11 +32,7 @@ export type EvolvePlannedTopologyResult =
     | Readonly<{ outcome: 'planned'; nextHopsBySessionId: Record<string, readonly string[]>; }>
     | Readonly<{ outcome: 'full-rebuild'; reason: EvolvePlannedTopologyFullRebuildReason; }>;
 
-export type EvolvePlannedTopologyFullRebuildReason =
-    | 'leader-rooting'
-    | 'delta-too-large'
-    | 'update-failed'
-    | 'invariant-violation';
+export type EvolvePlannedTopologyFullRebuildReason = Exclude<TopologyReshapeReason, 'kind-change' | 'refinement'>;
 
 /**
  * Evolves the previous accepted graph by the membership delta through the

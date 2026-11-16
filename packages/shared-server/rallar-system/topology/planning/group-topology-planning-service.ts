@@ -382,7 +382,7 @@ function requireGroupTopologyPlanningAuthority(
 
 interface ReconfigureGroupTopologyResponseInput {
     readonly groupRef: GroupRef;
-    readonly result: RallarRtcTopologyUpdateResult;
+    readonly result: Pick<RallarRtcTopologyUpdateResult, 'snapshot' | 'changed' | 'previous'>;
     readonly config: Awaited<ReturnType<GroupTopologyConfigQueryService['readConfig']>>;
     readonly published: boolean;
 }

@@ -49,7 +49,11 @@ import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { FakeRuntimeStateRepository } from '../../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import { createAppInboxTestDatabase } from '../../../app-inbox/test-support/app-inbox-test-database.ts';
 import { createMutationFacts, createMutationRead } from '../../../group-state/group-state-concurrency-test-fixtures.ts';
-import { createRtcTopologyGroupSnapshot, createRtcTopologyRttMeasurement } from '../../rtc-topology-test-fixtures.ts';
+import {
+    createRtcTopologyGroupSnapshot,
+    createRtcTopologyRttMeasurement,
+    RTC_TOPOLOGY_ESTABLISHED_DERIVATION
+} from '../../rtc-topology-test-fixtures.ts';
 
 describe('activation status series settlement', () => {
     it.each(['basis', 'epoch'] as const)('petitions and publishes once for a new %s with no evidence', async (change) => {
@@ -335,6 +339,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): Ac
     const plan = planRallarRtcTopologySnapshot({
         group: authority.group,
         topology: 'star',
+        derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
         degreeLimit: 25,
         nextHopsBySessionId: { center: spokes, ...Object.fromEntries(spokes.map((sessionId) => [sessionId, ['center']])) },
         nowEpochMs: 2_000
