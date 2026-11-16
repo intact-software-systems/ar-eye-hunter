@@ -5,6 +5,9 @@ import { computeTownPosition } from '../town/navigation.ts';
 import type { TownState } from '../town/state.ts';
 import type { TownMatchPlayer } from './town-match.ts';
 
+const PEER_INTERPOLATION_DELAY_MS = 50;
+const PEER_EXTRAPOLATION_LIMIT_MS = 100;
+
 export namespace TownMatchPeerPresentation {
     export interface Frame {
         readonly player: TownMatchPlayer;
@@ -24,8 +27,8 @@ export namespace TownMatchPeerPresentation {
 /** Adapts confirmed peer poses to Rallar Motion; no output is written back to the match. */
 export class TownMatchPeerPresentation {
     private readonly motion = createRallarMotionBuffer<never>({
-        interpolationDelayMs: 150,
-        maxExtrapolationMs: 100,
+        interpolationDelayMs: PEER_INTERPOLATION_DELAY_MS,
+        maxExtrapolationMs: PEER_EXTRAPOLATION_LIMIT_MS,
         maxSamplesPerEntity: 4,
         interpolationMode: 'linear'
     });
@@ -61,7 +64,10 @@ export class TownMatchPeerPresentation {
         }
         // Hold the capped extrapolation endpoint during silence. Sampling beyond Motion's
         // extrapolation window would fall back to the old sample and visibly jump backwards.
-        const sampleAt = Math.min(nowEpochMs, this.observedAtEpochMs + 250);
+        const sampleAt = Math.min(
+            nowEpochMs,
+            this.observedAtEpochMs + PEER_INTERPOLATION_DELAY_MS + PEER_EXTRAPOLATION_LIMIT_MS
+        );
         const estimate = this.motion.sample(player.id, sampleAt);
         const position = estimate ? computeTownPosition(frame.town, player, {
             x: estimate.position[0] - player.x,

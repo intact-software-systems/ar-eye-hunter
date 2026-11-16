@@ -17,11 +17,23 @@ describe('remote player presentation', () => {
         const next = { ...frame, tick: 6, nowEpochMs: 1200, player: { ...player, x: 0.6, elapsed: 0.2 } };
         const first = presentation.advance(next);
         const second = presentation.advance({ ...next, nowEpochMs: 1250 });
-        expect(first.x).toBeCloseTo(0.15);
-        expect(second.x).toBeCloseTo(0.3);
-        expect(second.x).toBeLessThan(next.player.x);
+        expect(first.x).toBeGreaterThanOrEqual(next.player.x - player.vx * 0.05 - 0.00001);
+        expect(second.x).toBeCloseTo(next.player.x);
+        expect(second.x).toBeGreaterThan(first.x);
         expect(next.player.x).toBe(0.6);
         expect(match.players[0].score).toBe(0);
+    });
+
+    it('settles at a received stop within 50 ms without predicting beyond it', () => {
+        const presentation = new TownMatchPeerPresentation();
+        presentation.advance(frame);
+        const stopped = {
+            ...frame, tick: 6, nowEpochMs: 1200,
+            player: { ...player, x: 0.6, vx: 0, elapsed: 0.2 }
+        };
+        presentation.advance(stopped);
+        expect(presentation.advance({ ...stopped, nowEpochMs: 1250 }).x).toBeCloseTo(0.6);
+        expect(presentation.advance({ ...stopped, nowEpochMs: 1400 }).x).toBeCloseTo(0.6);
     });
 
     it('caps velocity extrapolation and holds that endpoint instead of snapping backwards during silence', () => {

@@ -22,7 +22,7 @@ updates; they do not measure transport latency or phone frame rate. The raw
 sample is retained locally under `tmp/perf/cca-peer-before.json`.
 
 Remote actors now use the existing **Rallar Motion buffer** through an app-owned
-peer presentation adapter. It interpolates with a 150 ms buffer and can extend
+peer presentation adapter. It initially interpolated with a 150 ms buffer and can extend
 the latest confirmed velocity by at most 100 ms. After that it holds the endpoint,
 rather than moving indefinitely or snapping back to the old snapshot when the
 extrapolation window expires. The app's existing obstacle rules constrain the
@@ -34,8 +34,9 @@ between checkpoints. No package implementation or message format changes.
 **Tradeoff:** buffering smooths the remote player's movement at the cost of some
 additional presentation delay. It does not make remote actions arrive earlier.
 The local player's immediate response is unaffected. Long delivery gaps and sharp
-direction changes may still require a visible correction. Phone acceptance of
-this tradeoff is pending.
+direction changes may still require a visible correction. The user subsequently
+confirmed that movement was smooth but reacted late after reloading this version;
+the delay adjustment below follows that feedback.
 
 The browser regression drives one player through visible controls and samples
 the other view each animation frame, recording both confirmed and rendered peer
@@ -52,13 +53,47 @@ five browser checks passed (peer/local-response checks repeated twice, plus sile
 host-loss recovery). The existing 15-second unit-test budget was retained for the
 long town simulation. Deferred AL-builder edits were excluded and restored with
 hash verification. Review covered all changed files; no shared Motion code was
-modified. Physical-phone smoothing acceptance remains open.
+modified. That initial version was smooth on the phone but its response delay was not accepted.
+
+### Shorter peer display delay
+
+After the user reported **"Moves smoothly, but reacts late"** and confirmed it
+was after reloading the new smoothing update, the display buffer was reduced
+from 150 ms to **50 ms**. Extrapolation remains capped at 100 ms; its hold endpoint
+is derived from both limits so changing the buffer cannot accidentally extend
+prediction. A received stop settles at its confirmed position within 50 ms.
+No checkpoint acknowledgement, exchange cadence, wire format, scoring, recovery
+or shared Rallar implementation changes in this adjustment.
+
+Two comparative Chromium runs measured median **observed checkpoint-to-displayed-position delay** of 157.7 / 165.2 ms before and 55.0 / 57.7 ms after. The test starts
+at the confirmed position exposed by the render loop and ends when the displayed
+peer reaches that position. It does not measure socket receipt, remote input or
+network latency. Medians include positions reached within the 1.5-second sample
+window, so the incomplete tail is excluded. Both before/after runs used the same
+working-tree state, including the separately deferred AL edits. Artifacts are
+under ignored `tmp/perf/cca-peer-delay-before` and `cca-peer-delay-after`.
+The shorter-buffer runs retained 42 / 50 visible changes versus 6 / 7 checkpoint
+changes. These are small desktop Chromium samples, not iPhone guarantees.
+
+Lower delay spends more time extrapolating between sparse checkpoints, so sharp
+reversals can require more correction and longer gaps can reach the hold limit.
+This adjustment removes deliberate display delay; checkpoint agreement and
+transport delay still precede it. Phone acceptance of the new balance remains open.
+
+The clean candidate separately passed all 170 game/Motion tests, the app
+production build and four real-service browser checks (peer delay/smoothness and
+local movement/dash, each repeated twice). Deferred clock edits were excluded
+and restored with hash verification. These checks and artifacts are retained under
+ignored `tmp/perf/cca-clean-peer-delay`. Full-file review found no remaining
+issue in the adapter or tests; no shared package code changed.
 
 ### Next two useful slices
 
-1. Repeat the physical-phone trial with peer smoothing. Compare moving, stopping,
-   dashing and corrections near stalls; judge whether the remote character is
-   smooth enough and whether the extra presentation delay is acceptable.
+1. Repeat the phone trial with the 50 ms buffer, comparing starts, stops, dashes
+   and direction changes. If it still reacts late, measure control submission,
+   host simulation and checkpoint agreement separately using local monotonic
+   timing. Do not weaken shared scoring/recovery guarantees or blindly increase
+   full-checkpoint traffic to hide latency.
 2. Reproduce the stale lobby-membership observation: Bob showed the correct room
    code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
    Alice through solo and online refreshed the roster, then both became ready and

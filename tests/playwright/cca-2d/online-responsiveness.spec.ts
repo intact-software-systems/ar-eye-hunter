@@ -53,9 +53,19 @@ test('remote movement is rendered between confirmations', async ({ browser }) =>
             const renderedChanges = observations.filter((sample, index) =>
                 index > 0 && Math.abs(sample.rendered - observations[index - 1].rendered) > 0.00001
             ).length;
+            const displayDelays = observations.flatMap((sample, index) => {
+                if (index === 0 || sample.confirmed <= observations[index - 1].confirmed) {
+                    return [];
+                }
+                const displayed = observations.slice(index).find((later) => later.rendered >= sample.confirmed);
+                return displayed ? [displayed.at - sample.at] : [];
+            }).sort((left, right) => left - right);
+            const medianDisplayDelayMs = displayDelays[Math.floor(displayDelays.length / 2)];
             await writeFile(test.info().outputPath('peer-presentation.json'), JSON.stringify({
-                confirmedChanges, renderedChanges, observations
+                confirmedChanges, renderedChanges, medianDisplayDelayMs, displayDelays, observations
             }, null, 2));
+            expect(displayDelays.length).toBeGreaterThan(2);
+            expect(medianDisplayDelayMs).toBeLessThan(100);
             expect(confirmedChanges).toBeGreaterThan(3);
             expect(renderedChanges).toBeGreaterThan(confirmedChanges * 2);
             expect(observations.every((sample) => Number.isFinite(sample.rendered))).toBe(true);
