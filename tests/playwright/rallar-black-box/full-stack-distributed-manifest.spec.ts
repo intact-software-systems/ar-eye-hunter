@@ -13,16 +13,15 @@ import {
     mkdir,
     readdir,
     readFile,
-    statfs,
     writeFile
 } from 'node:fs/promises';
 import {
     availableParallelism,
     cpus,
+    loadavg,
     platform,
     release,
-    totalmem,
-    version
+    totalmem
 } from 'node:os';
 import path from 'node:path';
 
@@ -46,6 +45,7 @@ import {
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { decodeControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
 import { decodeControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { readDistributedRunEnvironment } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { isJsonRecordValue } from '../../../packages/shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
@@ -105,7 +105,6 @@ test('observes the selected authored ALM manifest with complete native evidence'
         await writeProvenance(artifactDir, source, selection.participantCount);
         expect(process.env.CI).toBe('1');
         expect(process.env.RALLAR_BLACK_BOX_FULL_STACK_HEADLESS).toBe('1');
-        expect(['memory', 'postgres']).toContain(process.env.RALLAR_BLACK_BOX_API_MODE);
         expect(process.env.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE).toBe(String(selection.meshMinSize));
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS).toBe('unbounded');
         expect(process.env.RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS).toBe('unbounded');
@@ -450,13 +449,33 @@ async function retainAvailableControlSnapshot(
 
 async function writeProvenance(artifactDir: string, source: Buffer, participantCount: number): Promise<void> {
     const configuration = await readLocalApiConfiguration();
-    const disk = await statfs(artifactDir);
+    const apiMode = process.env.RALLAR_BLACK_BOX_API_MODE;
+    if (apiMode !== 'memory' && apiMode !== 'postgres') {
+        throw new Error('RALLAR_BLACK_BOX_API_MODE must be memory or postgres.');
+    }
+    const environment = readDistributedRunEnvironment({
+        apiMode,
+        pubSub: configuration.database.pubSub,
+        ice: configuration.ice.mode,
+        manifestSha256: createHash('sha256').update(source).digest('hex'),
+        agentCount: participantCount,
+        nodeVersion: process.version,
+        chromiumExecutablePath: chromium.executablePath(),
+        readCommandOutput: (command, args) => spawnSync(command, [...args], { encoding: 'utf8' }).stdout,
+        readHost: () => ({
+            platform: platform(),
+            release: release(),
+            cpuCount: cpus().length,
+            availableParallelism: availableParallelism(),
+            memoryBytes: totalmem(),
+            oneMinuteLoadAverage: loadavg()[0]
+        })
+    });
     await writeFile(
         path.join(artifactDir, 'provenance.json'),
         JSON.stringify(
             {
-                sourceCommit: spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(),
-                worktreeDirty: spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).stdout.length > 0,
+                environment,
                 measuredFiles: await Promise.all([
                     '.github/workflows/github-free-distributed-recipe.yml',
                     'apps/rallar-black-box/playwright.full-stack.config.ts',
@@ -467,29 +486,9 @@ async function writeProvenance(artifactDir: string, source: Buffer, participantC
                     sha256: createHash('sha256').update(await readFile(file)).digest('hex')
                 }))),
                 recorderDirectory: process.env.RALLAR_BLACK_BOX_STORAGE_DIR,
-                manifestSha256: createHash('sha256').update(source).digest('hex'),
-                cpuCount: cpus().length,
-                availableParallelism: availableParallelism(),
-                memoryBytes: totalmem(),
-                diskBytes: disk.blocks * disk.bsize,
-                diskAvailableBytes: disk.bavail * disk.bsize,
-                os: { platform: platform(), release: release(), version: version() },
-                node: process.version,
-                bun: spawnSync('bun', ['--version'], { encoding: 'utf8' }).stdout.trim(),
-                chromium: spawnSync(chromium.executablePath(), ['--version'], { encoding: 'utf8' }).stdout.trim(),
-                effectiveProfile: configuration.profile.name,
-                databaseMode: configuration.database.mode,
-                pubSub: configuration.database.pubSub,
-                ice: configuration.ice.mode,
-                topology: configuration.topology.planning,
-                runtimeRetention: { events: 'unbounded', results: 'unbounded' },
                 limits: [
-                    process.env.RALLAR_BLACK_BOX_API_MODE === 'postgres'
-                        ? 'Ephemeral Postgres service container'
-                        : 'Fresh ephemeral PGlite',
-                    process.env.RALLAR_BLACK_BOX_API_MODE === 'postgres'
-                        ? 'Postgres pubsub'
-                        : 'Local pubsub and ICE',
+                    apiMode === 'postgres' ? 'Ephemeral Postgres service container' : 'Fresh ephemeral PGlite',
+                    apiMode === 'postgres' ? 'Postgres pubsub' : 'Local pubsub and ICE',
                     'Loopback transport',
                     `${participantCount} co-located browser contexts`,
                     'Runtime versions differ from hosted runs; CPU-only causality is not established'
