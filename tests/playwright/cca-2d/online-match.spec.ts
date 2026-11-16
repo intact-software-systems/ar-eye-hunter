@@ -155,6 +155,207 @@ for (const departure of ['temporary', 'expired', 'voluntary']) {
     });
 }
 
+for (const outcome of ['active', 'observer', 'solo', 'interrupted-solo'] as const) {
+    test(`a disconnected player returns as ${outcome} without reloading the page`, async ({ browser }) => {
+        const expires = outcome === 'observer';
+        test.setTimeout(90000);
+        const contexts = await Promise.all([browser.newContext(), browser.newContext(), browser.newContext()]);
+        const pages = await Promise.all(contexts.map((context) => context.newPage()));
+        const [alice, bob, carol] = pages;
+        const traffic: string[] = [];
+        let offline = false;
+        let disconnect: (() => Promise<void>) | undefined;
+        let expiredSeatProposed = false;
+        let retainedX: number | undefined;
+        let withholdCommit = false;
+        let latestCommit = 0;
+        let unfinishedProposal: number | undefined;
+        let unfinishedAcknowledged = false;
+        await contexts[2].routeWebSocket(/\/api\/ws\//, async (socket) => {
+            traffic.push(JSON.stringify({ at: Date.now(), event: 'socket-attempt', offline }));
+            if (offline) {
+                await socket.close();
+                return;
+            }
+            const server = socket.connectToServer();
+            server.onMessage((message) => {
+                const frame = decodeMatchWire(message);
+                if (frame?.action.kind === 'commit') {
+                    if (withholdCommit) {
+                        return;
+                    }
+                    latestCommit = Math.max(latestCommit, frame.action.proposalSequence);
+                }
+                if (withholdCommit && frame?.action.kind === 'proposal' && frame.sequence > latestCommit) {
+                    unfinishedProposal ??= frame.sequence;
+                }
+                socket.send(message);
+            });
+            socket.onMessage((message) => {
+                const frame = decodeMatchWire(message);
+                if (frame?.action.kind === 'ack' && frame.action.proposalSequence === unfinishedProposal) {
+                    unfinishedAcknowledged = true;
+                }
+                server.send(message);
+            });
+            disconnect = async () => {
+                await Promise.all([socket.close(), server.close()]);
+            };
+        });
+        alice.on('websocket', (socket) =>
+            socket.on('framesent', ({ payload }) => {
+                const frame = decodeMatchWire(payload);
+                if (frame?.action.kind === 'proposal') {
+                    const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                    expiredSeatProposed ||= snapshot?.seats.some((seat) => seat.status === 'observer') === true;
+                    const absent = snapshot?.seats.find((seat) => seat.status === 'away');
+                    if (absent) {
+                        retainedX = snapshot?.players.find((player) => player.id === absent.id)?.x;
+                    }
+                }
+            }));
+        pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
+        try {
+            await startTownMatch(pages);
+            const matchId = await carol.locator('#online-game').getAttribute('data-match-id');
+            const dashes = await carol.locator('#online-game').getAttribute('data-dashes');
+            expect(disconnect).toBeDefined();
+            if (expires) {
+                withholdCommit = true;
+                await expect.poll(() => unfinishedAcknowledged, { timeout: 5000 }).toBe(true);
+            }
+            offline = true;
+            traffic.push(JSON.stringify({ at: Date.now(), event: 'socket-disconnect' }));
+            await disconnect!();
+            await expect(alice.locator('#round-status')).toContainText('2 friends in town', { timeout: 10000 });
+            await contexts[2].setOffline(true);
+            await expect(carol.locator('#round-status')).toContainText('Waiting for confirmed match state', {
+                timeout: 5000
+            });
+            if (outcome === 'solo' || outcome === 'interrupted-solo') {
+                if (outcome === 'interrupted-solo') {
+                    await expect(carol.getByRole('heading', { name: 'Round interrupted', exact: true }))
+                        .toBeVisible({ timeout: 12000 });
+                    await expect(carol.locator('#round-winners')).toContainText('Confirmed points');
+                }
+                await carol.screenshot({ path: test.info().outputPath('offline-exit-phone.png') });
+                await carol.getByRole('button', { name: 'Back to solo', exact: true }).click();
+                await expect(carol.getByRole('button', { name: 'Play with friends' })).toBeVisible();
+                await expect(carol.getByLabel('Movement joystick')).toBeVisible();
+                await expect(carol.locator('#online-game')).toHaveCount(0);
+                return;
+            }
+            await carol.keyboard.down('KeyD');
+            await carol.keyboard.press('Space');
+            if (expires) {
+                await expect.poll(() => expiredSeatProposed, { timeout: 16000 }).toBe(true);
+            }
+            offline = false;
+            withholdCommit = false;
+            traffic.push(JSON.stringify({ at: Date.now(), event: 'network-restored' }));
+            await contexts[2].setOffline(false);
+            for (const page of pages) {
+                await expect(page.locator('#round-status')).toContainText(
+                    expires && page === carol ? 'Watching until the next round' : 'Dash to make trouble',
+                    { timeout: 40000 }
+                );
+                await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+                await expect(page.locator('#round-results')).toBeHidden();
+            }
+            await expect(carol.locator('#online-game')).toHaveAttribute('data-seat', expires ? 'observer' : 'active');
+            const resumedX = Number(await carol.locator('#online-game').getAttribute('data-x'));
+            expect(retainedX).toBeDefined();
+            expect(resumedX).toBe(retainedX);
+            const clock = await bob.locator('#round-clock').textContent();
+            await expect.poll(() => bob.locator('#round-clock').textContent()).not.toBe(clock);
+            expect(Number(await carol.locator('#online-game').getAttribute('data-x'))).toBeCloseTo(resumedX, 1);
+            await expect(carol.locator('#online-game')).toHaveAttribute('data-dashes', dashes!);
+            await carol.keyboard.up('KeyD');
+            if (!expires) {
+                await carol.keyboard.down('KeyD');
+                await expect.poll(async () => Number(await carol.locator('#online-game').getAttribute('data-x')))
+                    .toBeGreaterThan(resumedX + 1);
+                await carol.keyboard.up('KeyD');
+            }
+            await expect(alice.locator('#round-results')).toBeHidden();
+        }
+        finally {
+            await writeMatchTraffic(traffic);
+            await Promise.allSettled(contexts.map((context) => context.close()));
+        }
+    });
+}
+
+test('a briefly disconnected host settles its outstanding proposal after returning to the same appointment', async ({ browser }) => {
+    test.setTimeout(60000);
+    const contexts = await Promise.all([browser.newContext(), browser.newContext()]);
+    const pages = await Promise.all(contexts.map((context) => context.newPage()));
+    const [alice, bob] = pages;
+    const traffic: string[] = [];
+    let disconnect: (() => Promise<void>) | undefined;
+    let sockets = 0;
+    let withholdAcknowledgement = false;
+    let baselineTick = 0;
+    let unfinished: TownMatchFrame | undefined;
+    let acknowledgementWithheld = false;
+    let resent = false;
+    await contexts[0].routeWebSocket(/\/api\/ws\//, (socket) => {
+        sockets += 1;
+        const server = socket.connectToServer();
+        disconnect = async () => {
+            await Promise.all([socket.close(), server.close()]);
+        };
+        socket.onMessage((message) => {
+            const frame = decodeMatchWire(message);
+            if (frame?.action.kind === 'proposal') {
+                const snapshot = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                if (withholdAcknowledgement && snapshot && snapshot.tick > baselineTick) {
+                    unfinished ??= frame;
+                }
+                if (sockets > 1 && frame.epoch === unfinished?.epoch && frame.sequence === unfinished.sequence) {
+                    resent = true;
+                }
+            }
+            server.send(message);
+        });
+        server.onMessage((message) => {
+            const frame = decodeMatchWire(message);
+            if (withholdAcknowledgement && frame?.action.kind === 'ack') {
+                acknowledgementWithheld ||= frame.action.proposalSequence === unfinished?.sequence;
+                return;
+            }
+            socket.send(message);
+        });
+    });
+    pages.forEach((page, index) => recordMatchTraffic(page, index, traffic));
+    try {
+        await startTownMatch(pages);
+        const matchId = await alice.locator('#online-game').getAttribute('data-match-id');
+        baselineTick = Number(await alice.locator('#online-game').getAttribute('data-tick'));
+        for (const context of contexts) {
+            await context.route('**/director/appoint/requests/*', (route) => route.abort());
+        }
+        withholdAcknowledgement = true;
+        await expect.poll(() => acknowledgementWithheld).toBe(true);
+        expect(disconnect).toBeDefined();
+        await disconnect!();
+        withholdAcknowledgement = false;
+        await expect.poll(() => sockets, { timeout: 10000 }).toBeGreaterThan(1);
+        await expect.poll(() => resent, { timeout: 10000 }).toBe(true);
+        for (const page of pages) {
+            await expect(page.locator('#round-status')).toContainText('Dash to make trouble', { timeout: 10000 });
+            await expect(page.locator('#online-game')).toHaveAttribute('data-match-id', matchId!);
+            await expect.poll(async () => Number(await page.locator('#online-game').getAttribute('data-tick')))
+                .toBeGreaterThan(baselineTick + 30);
+            await expect(page.locator('#round-results')).toBeHidden();
+        }
+    }
+    finally {
+        await writeMatchTraffic(traffic);
+        await Promise.allSettled(contexts.map((context) => context.close()));
+    }
+});
+
 test('a lost prepared graphics context revokes readiness and leaves a usable exit', async ({ page }) => {
     await registerPlayer(page, `cca-context-${Date.now()}`);
     await page.getByRole('button', { name: 'Create town', exact: true }).click();
@@ -360,8 +561,8 @@ for (const lostPlayer of ['host', 'backup'] as const) {
             expect(Date.now() - pausedAt).toBeGreaterThan(8500);
             await expect(survivor.locator('#round-clock')).toHaveText(clock!);
             await expect(survivor.locator('#round-score')).toHaveText(score!);
-            await survivor.getByRole('button', { name: 'Leave match', exact: true }).click();
-            await expect(survivor.getByRole('button', { name: 'Create town', exact: true })).toBeVisible();
+            await survivor.getByRole('button', { name: 'Back to solo', exact: true }).click();
+            await expect(survivor.getByRole('button', { name: 'Play with friends' })).toBeVisible();
         }
         finally {
             await Promise.allSettled([first.close(), second.close()]);
@@ -369,43 +570,53 @@ for (const lostPlayer of ['host', 'backup'] as const) {
     });
 }
 
-test('a stalled authoritative room read cannot prevent the local recovery deadline', async ({ browser }) => {
-    test.setTimeout(60000);
-    const first = await browser.newContext();
-    const second = await browser.newContext();
-    let dropMatchMessages = false;
-    let stalledReads = 0;
-    await second.routeWebSocket(/\/api\/ws\//, (socket) => {
-        const server = socket.connectToServer();
-        socket.onMessage((message) => {
-            if (!dropMatchMessages || !String(message).includes('cca.match.frame')) {
-                server.send(message);
-            }
+for (const roomRead of ['stalled', 'missing'] as const) {
+    test(`a ${roomRead} authoritative room read cannot prevent the local recovery deadline`, async ({ browser }) => {
+        test.setTimeout(60000);
+        const first = await browser.newContext();
+        const second = await browser.newContext();
+        let dropMatchMessages = false;
+        let stalledReads = 0;
+        await second.routeWebSocket(/\/api\/ws\//, (socket) => {
+            const server = socket.connectToServer();
+            socket.onMessage((message) => {
+                if (!dropMatchMessages || !String(message).includes('cca.match.frame')) {
+                    server.send(message);
+                }
+            });
         });
+        const alice = await first.newPage();
+        const bob = await second.newPage();
+        try {
+            await startTownMatch([alice, bob]);
+            await alice.route(
+                /\/api\/state\/apps\/cca-2d\/workspaces\/default\/groups\/[^/?]+(?:\?.*)?$/,
+                async (route) => {
+                    if (route.request().method() === 'GET') {
+                        stalledReads += 1;
+                        if (roomRead === 'missing') {
+                            await route.fulfill({ status: 404, json: { error: 'Room not found' } });
+                        }
+                        return;
+                    }
+                    return route.continue();
+                }
+            );
+            dropMatchMessages = true;
+            await expect(alice.locator('#round-status')).toContainText('Waiting for confirmed match state');
+            await expect.poll(() => stalledReads).toBeGreaterThan(0);
+            await expect(alice.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
+                timeout: 12000
+            });
+            await expect(alice.locator('#round-winners')).toContainText('Confirmed points');
+            await alice.getByRole('button', { name: 'Back to solo', exact: true }).click();
+            await expect(alice.getByRole('button', { name: 'Play with friends' })).toBeVisible();
+        }
+        finally {
+            await Promise.allSettled([first.close(), second.close()]);
+        }
     });
-    const alice = await first.newPage();
-    const bob = await second.newPage();
-    try {
-        await startTownMatch([alice, bob]);
-        await alice.route(/\/api\/state\/apps\/cca-2d\/workspaces\/default\/groups\/[^/?]+(?:\?.*)?$/, (route) => {
-            if (route.request().method() === 'GET') {
-                stalledReads += 1;
-                return;
-            }
-            return route.continue();
-        });
-        dropMatchMessages = true;
-        await expect(alice.locator('#round-status')).toContainText('Waiting for confirmed match state');
-        await expect.poll(() => stalledReads).toBeGreaterThan(0);
-        await expect(alice.getByRole('heading', { name: 'Round interrupted', exact: true })).toBeVisible({
-            timeout: 12000
-        });
-        await expect(alice.locator('#round-winners')).toContainText('Confirmed points');
-    }
-    finally {
-        await Promise.allSettled([first.close(), second.close()]);
-    }
-});
+}
 
 async function startTownMatch(pages: readonly Page[]): Promise<void> {
     for (const [index, page] of pages.entries()) {

@@ -34,7 +34,7 @@ import {
 
 export namespace TownMatchSession {
     export interface Dependencies {
-        readonly browser: Pick<RallarFacade, 'director' | 'messages' | 'rooms' | 'session' | 'isConnected'>;
+        readonly browser: Pick<RallarFacade, 'director' | 'messages' | 'rooms' | 'session' | 'isConnected' | 'ws'>;
         readonly timers: Timers;
         readonly subtle: Pick<SubtleCrypto, 'digest'>;
         readonly newMatchId: () => string;
@@ -97,6 +97,11 @@ export class TownMatchSession {
 
     start(): void {
         this.subscriptions.add(this.channel.onWs((payload, message) => this.receive(payload, message)));
+        this.subscriptions.add(this.dependencies.browser.ws.onLifecycle((event) => {
+            if (event.kind === 'close' || event.kind === 'disconnected') {
+                this.interruptTransport();
+            }
+        }, { emitCurrent: false }));
         this.subscriptions.add(startRepeating({
             timers: this.dependencies.timers,
             intervalMs: 16,
@@ -216,6 +221,20 @@ export class TownMatchSession {
         catch (error) {
             this.report(error);
         }
+    }
+
+    private interruptTransport(): void {
+        this.generation += 1;
+        const authority = this.checkpoints?.getState().authority;
+        if (authority?.sessionId !== this.dependencies.browser.session()?.sessionId) {
+            this.checkpoints?.interruptTransport();
+            this.lastProposal = undefined;
+            this.committedProposal = undefined;
+        }
+        this.simulation?.pause(this.dependencies.timers.nowMs());
+        this.controls = { x: 0, z: 0, dash: this.controls.dash };
+        this.intent = undefined;
+        this.changes.publishLatest(undefined);
     }
 
     private reconcileAuthority(): void {
@@ -409,6 +428,7 @@ export class TownMatchSession {
         }
         const generation = this.generation;
         const snapshot = await createTownMatchSnapshot(working, this.dependencies.subtle);
+        this.reconcileAuthority();
         if (!this.isCurrent(generation) || !this.getView().isDirector) {
             return;
         }
@@ -417,9 +437,13 @@ export class TownMatchSession {
             return;
         }
         const frame = this.createFrame(working.matchId, { kind: 'proposal', ...snapshot.right! });
-        await this.receiveProposal(frame, this.dependencies.browser.session()!.sessionId);
-        const pending = this.checkpoints?.getState().pending?.checkpoint;
-        if (this.isCurrent(generation) && pending?.epoch === frame.epoch && pending.sequence === frame.sequence) {
+        const accepted = this.checkpoints?.propose({
+            epoch: frame.epoch,
+            sequence: frame.sequence,
+            digest: snapshot.right!.digest,
+            state: working
+        }, this.dependencies.browser.session()!.sessionId);
+        if (accepted?.right) {
             this.lastProposal = frame;
         }
     }
@@ -491,8 +515,9 @@ export class TownMatchSession {
         const retained = checkpointState?.committed;
         const action = frame.action;
         const recoveryIdentity = action.kind === 'recover' &&
-            [retained, checkpointState?.retainedProposal].some((checkpoint) =>
-                checkpoint?.state.matchId === frame.matchId && checkpoint.epoch === action.checkpointEpoch &&
+            [retained, checkpointState?.recoveryCheckpoint, ...checkpointState?.retainedProposals ?? []].some((
+                checkpoint
+            ) => checkpoint?.state.matchId === frame.matchId && checkpoint.epoch === action.checkpointEpoch &&
                 checkpoint.sequence === action.proposalSequence && checkpoint.digest === action.digest
             );
         const retainedIdentity = retained && frame.epoch === retained.epoch &&
@@ -587,6 +612,14 @@ export class TownMatchSession {
     private publishCommit(): void {
         const committed = this.checkpoints?.getState().committed;
         this.lastCommitAt = this.dependencies.timers.nowMs();
+        if (
+            committed?.state.seats.some((seat) =>
+                seat.id === this.dependencies.browser.session()?.clientId && seat.status === 'observer'
+            )
+        ) {
+            this.interruptedMatchId = undefined;
+            this.recoveryStartedAt = undefined;
+        }
         this.interruptSimulation();
         if (committed && this.lastProposal?.sequence === committed.sequence) {
             this.committedProposal = this.lastProposal;

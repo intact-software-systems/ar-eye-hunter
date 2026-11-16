@@ -263,12 +263,15 @@ from leaking into the wire contract.
 The current participant sessions are the frozen acknowledgement set. Every session
 must acknowledge the same digest and sequence, and the director must publish a
 commit. A commit arriving before the final acknowledgement remains provisional.
-Duplicates cannot reopen committed work; an outstanding proposal cannot be
-silently overwritten. Match phases and confirmed time cannot move backward.
+Duplicates cannot reopen committed work; ordinary outstanding proposals cannot be
+silently overwritten. A follower catching up after socket loss can supersede a
+pending proposal only with a strictly newer proposal from its current director.
+Match phases and confirmed time cannot move backward.
 
 On a new appointment or participant set, the current pending agreement is discarded
-while committed presentation remains available. One verified old-director proposal
-is retained separately as a bounded recovery candidate. Current surviving sessions
+while committed presentation remains available. At most two compatible verified
+proposals are retained as recovery candidates: the newest may still be unfinished
+while its predecessor was committed by a survivor. Current surviving sessions
 must agree on the selected recovery identity before new countdown, gameplay or winner confirmation.
 Without agreement, an explicit interrupted outcome remains possible. The runtime
 must bound recovery/retransmission, preserve authenticated source identities,
@@ -466,12 +469,11 @@ expiry, rematch reset and invalid seat records. The trial wire build is now
 `grumpy-town-v3`; all players must refresh together.
 
 Deadlines use the appointed host's epoch clock, preserved in confirmed state;
-cross-device clock skew is not yet qualified. These tests establish fresh-page
-reopening, not same-page transport recovery. Same/new-session network reconnect,
-stale host return, physical backgrounding, shared rescue/full-round browser results
-and secure phone access remain required before release.
+cross-device clock skew is not yet qualified. Stale host return, silent network
+loss, physical backgrounding, shared rescue/full-round browser results and secure
+phone access remain required before release.
 
-### Same-page recovery investigation
+### Same-page recovery and local exit
 
 Additional browser trials close both socket endpoints, wait for the surviving
 players to confirm absence, block replacement sockets, and then disable HTTP.
@@ -479,27 +481,55 @@ Chromium's offline toggle alone did not close the existing socket; applying it
 before socket closure also prevented prompt server close observation. These
 trials therefore distinguish an observed disconnect from silent network loss.
 
-Individual active and observer returns succeeded, but repeated runs exposed a
-lifecycle gap: `OnlineMatch.reconcile` disposes the match when presence temporarily
-removes `currentRoomRef`, losing the paused screen and its confirmed points.
-Simply retaining that session is insufficient: its local interruption marker can
-keep an accepted observer paused, and Leave town currently relies on the missing
-current room. Missing snapshots can also represent authoritative revocation, so
-they cannot automatically count as temporary outages. The first retention change
-was withdrawn after this review; same-page recovery is not qualified yet.
+The game retains the paused match using `rallar.rooms.selected()`, a read-only
+copy of Rallar's existing authenticated selection. Temporary absence from the
+presence projection no longer disposes the match. Explicit departure and observed
+membership revocation clear that selection; an unrelated authenticated session
+cannot inherit it. Selection is not permission or proof that a room still exists.
+A missing room therefore reaches a bounded interruption with confirmed points
+and a local exit. Rallar's selected-room recovery remains the presence owner;
+the game adds no separate rejoin loop.
 
-The next repair must keep confirmed results accessible, distinguish recoverable
-selection from departure/revocation, make explicit leave work for the retained
-room, and reconcile local interruption with newly committed observer state.
-Rallar's selected-room recovery remains the presence owner; do not add a parallel
-app rejoin loop. Browser assertions compare returned position with the host's
-retained absent-player position and retain a pre-disconnect dash baseline.
+A newly committed observer seat clears a returning player's local timeout, so
+the same page can watch the continuing round after grace expires. Returning
+before expiry restores control. Browser assertions compare returned position
+with the host's retained absent-player position and retain a pre-disconnect dash
+baseline, guarding against replay of input pressed while disconnected.
+
+Socket loss also has a checkpoint lifecycle, even when the returning browser
+sees the same appointment and final roster. A follower must release unfinished
+agreement while preserving confirmed state and bounded verified recovery candidates.
+During resynchronization it may accept a strictly newer current-director proposal
+over delayed pending work; equal-sequence conflicts remain invalid. A full commit
+ends this resynchronization window and restores normal pending-proposal locking.
+Retain at most the two newest compatible verified proposals across interruption:
+the latest may be unfinished while its predecessor was committed by a survivor.
+Either exact candidate needs a current commit witness; an older witness cannot
+rewind an already selected recovery checkpoint.
+The current host instead retains and retransmits its exact unfinished proposal:
+connected peers may still need that identity to settle their agreement. Host
+admission and retention of the outbound proposal must be synchronous. A changed
+appointment or roster still enters the existing witnessed recovery protocol.
+Every socket close invalidates unfinished asynchronous verification and clears
+controls; it cannot manufacture confirmed progress or replay an old action.
+
+During recovery, the top exit becomes Back to solo; interruption results also
+offer that local exit. It disposes the match immediately and opens solo while
+online cleanup settles separately. It does not claim a server-confirmed departure.
+Server Leave match is unavailable when the connection/authority is unavailable.
+Normal departure resolves the explicitly selected room and reads its exact
+snapshot, even when the active-presence projection has no current room.
 
 Transport retry backoff is independent of the ten-second seat grace. A successful
 expired-return trace took about twenty-one seconds after restoring access; the
 test permits forty seconds to cover the configured reconnect backoff and request.
-Neither those individual passes nor emulation establish reliable repeated
-recovery, silent-loss behavior or physical-phone performance.
+This observed-disconnect coverage does not establish silent-loss behavior,
+background-host availability or physical-phone performance.
+
+The phone-sized observer and offline-exit captures keep controls and exits visible.
+The interrupted-results capture also exposes raw principal-ID fallbacks for some
+peers. Preserve readable participant names through recovery before release; the
+current score/identity checks do not establish that presentation quality.
 
 The next two useful outcomes remain concrete:
 

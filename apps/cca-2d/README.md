@@ -116,7 +116,17 @@ an original player can close and reopen their browser and rejoin within a ten-se
 seat grace period. A later return, or an explicit departure, watches until the next
 round with confirmed points preserved. The other two sessions agree on recovery;
 the returning browser must acknowledge the new state before confirmation resumes.
-Same-page network loss, background-host behavior and complete-round browser qualification remain in
+The same page also retains the paused scene after an observed socket disconnect.
+Restoring access before grace expires returns control; a later return watches
+the continuing round. Transport backoff can delay that return beyond seat grace;
+one expired-return trace took about twenty-one seconds after access was restored.
+Input pressed during disconnection is discarded. During recovery and on the
+interruption screen, **Back to solo** opens local play immediately while online
+cleanup settles separately; it does not claim server-confirmed departure.
+Checkpoint recovery distinguishes a returning follower, which must catch up past
+abandoned proposals, from a briefly disconnected host, which must retransmit its
+exact outstanding proposal while its appointment and roster remain unchanged.
+Silent connection loss, background-host behavior and complete-round browser qualification remain in
 [the multiplayer plan](../../projects/cca-2d/rallar-multiplayer.md).
 
 `npm --workspace cca-2d run test:browser` starts local Rallar when needed and tests

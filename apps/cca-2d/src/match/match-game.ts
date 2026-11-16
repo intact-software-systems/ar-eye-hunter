@@ -14,6 +14,15 @@ interface TownMatchPeer {
     readonly ice: Mesh;
 }
 
+export namespace TownMatchGame {
+    export interface Input {
+        readonly root: HTMLElement;
+        readonly session: TownMatchSession;
+        readonly onLeave: () => void;
+        readonly onSolo: () => void;
+    }
+}
+
 /** The online canvas displays committed match state; it never advances the simulation. */
 export class TownMatchGame {
     private readonly scene: PracticeScene;
@@ -36,7 +45,8 @@ export class TownMatchGame {
     private readonly root: HTMLElement;
     private readonly session: TownMatchSession;
 
-    constructor(root: HTMLElement, session: TownMatchSession, onLeave: () => void) {
+    constructor(input: TownMatchGame.Input) {
+        const { root, session, onLeave, onSolo } = input;
         this.root = root;
         root.style.position = 'fixed';
         root.style.inset = '0';
@@ -51,15 +61,23 @@ export class TownMatchGame {
           <div class="zoom" role="group" aria-label="Camera zoom"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button></div>
           <div class="play-hint"><span class="you">YOU / TEAL HOODIE</span><p id="round-status" role="status"></p></div>
           <div class="controls"><div class="stick-wrap"><div id="joystick" aria-label="Movement joystick"><div id="puck"></div></div><span>MOVE</span></div><button id="dash" aria-label="Dash and drop"><strong>DASH<br>+ DROP</strong></button></div>
-          <section id="round-results" class="pause-overlay" hidden><div><h2 id="round-result-title">Round complete</h2><p id="round-winners"></p><button id="rematch">New round</button><button id="leave-results">Leave match</button></div></section>
+          <section id="round-results" class="pause-overlay" hidden><div><h2 id="round-result-title">Round complete</h2><p id="round-winners"></p><button id="rematch">New round</button><button id="leave-results">Leave match</button><button id="solo-results">Back to solo</button></div></section>
         </main>`;
         const canvas = requirePracticeElement<HTMLCanvasElement>(root, 'canvas');
         this.scene = new PracticeScene(canvas);
         this.art = new CutoutArt(this.scene.scene);
         this.canvas = canvas;
         const options = { signal: this.lifetime.signal };
-        requirePracticeElement(root, '#leave-round').addEventListener('click', onLeave, options);
+        requirePracticeElement(root, '#leave-round').addEventListener('click', () => {
+            if (session.getView().recovering) {
+                onSolo();
+            }
+            else {
+                onLeave();
+            }
+        }, options);
         requirePracticeElement(root, '#leave-results').addEventListener('click', onLeave, options);
+        requirePracticeElement(root, '#solo-results').addEventListener('click', onSolo, options);
         requirePracticeElement(root, '#rematch').addEventListener('click', () => {
             void session.act({ kind: 'rematch', nextMatchId: crypto.randomUUID() });
         }, options);
@@ -240,6 +258,7 @@ export class TownMatchGame {
             Math.ceil(match.remainingTicks / TOWN_MATCH_RATE)
         }s`;
         requirePracticeElement(this.root, '#round-score').textContent = `${player.score} / 100 POINTS`;
+        requirePracticeElement(this.root, '#leave-round').textContent = view.recovering ? 'Back to solo' : 'Leave town';
         requirePracticeElement<HTMLButtonElement>(this.root, '#dash').disabled = view.recovering || view.observing;
         requirePracticeElement(this.root, '.controls').style.display = view.observing ? 'none' : '';
         requirePracticeElement(this.root, '.you').textContent = view.observing
@@ -262,6 +281,7 @@ export class TownMatchGame {
         const match = view.match;
         const interrupted = Boolean(view.interruption) || match?.phase === 'interrupted';
         const finished = match?.phase === 'finished' || interrupted;
+        requirePracticeElement(this.root, '#leave-round').hidden = finished;
         requirePracticeElement(this.root, '#round-results').hidden = !finished;
         requirePracticeElement(this.root, '#round-result-title').textContent = interrupted
             ? 'Round interrupted'
@@ -269,6 +289,7 @@ export class TownMatchGame {
         requirePracticeElement(this.root, '#rematch').hidden = !view.isDirector;
         requirePracticeElement<HTMLButtonElement>(this.root, '#rematch').disabled = !view.available ||
             (match?.phase !== 'interrupted' && match?.phase !== 'finished');
+        requirePracticeElement<HTMLButtonElement>(this.root, '#leave-results').disabled = !view.available;
         const points = match?.participants.map((participant) =>
             `${participant.displayName}: ${match.players.find((player) => player.id === participant.id)?.score ?? 0}`
         ).join(' · ');

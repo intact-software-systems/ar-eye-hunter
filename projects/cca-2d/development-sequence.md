@@ -15,8 +15,12 @@ server prototype remains outside the app. Optional Rallar social entry and the f
 shared player-hosted match are now implemented. Real-browser tests cover three-player
 host-close succession, two-player recovery timeout and browser reopen/rejoin before
 and after seat grace, including immediate forfeiture on voluntary departure.
-Same-page network recovery, background-host behavior and full-round qualification
-remain under development.
+Same-page recovery after an observed socket disconnect retains the paused scene,
+returns active players or observers according to seat grace, and offers a local
+Back to solo exit. Checkpoint recovery must cover delayed proposals at a returning
+follower and exact outstanding-proposal retransmission by a briefly disconnected
+host. Silent network loss, background-host behavior and full-round
+qualification remain under development.
 
 The new visual target is [cutout market](visual-concepts/README.md), with a
 [construction recipe](babylon-scene-construction.md). Retire the old square frame,

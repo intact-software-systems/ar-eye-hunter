@@ -29,7 +29,7 @@ export namespace TownMatchCheckpoints {
         readonly recovered: boolean;
         readonly recoveryRequired: boolean;
         readonly recoveryCheckpoint: TownCheckpoint | undefined;
-        readonly retainedProposal: TownCheckpoint | undefined;
+        readonly retainedProposals: readonly TownCheckpoint[];
     }
 }
 
@@ -40,9 +40,10 @@ export class TownMatchCheckpoints {
     private committed: TownCheckpoint | undefined;
     private recoverySessions = new Set<string>();
     private recoveryRequired = false;
-    private retainedProposal: TownCheckpoint | undefined;
+    private retainedProposals: readonly TownCheckpoint[] = [];
     private recoveryCheckpoint: TownCheckpoint | undefined;
     private recoveryCommitWitness = false;
+    private resynchronizing = false;
 
     constructor(authority: TownMatchAuthority) {
         this.authority = authority;
@@ -60,7 +61,7 @@ export class TownMatchCheckpoints {
             committed: this.committed,
             recoveryRequired: this.recoveryRequired,
             recoveryCheckpoint: this.recoveryCheckpoint,
-            retainedProposal: this.retainedProposal,
+            retainedProposals: this.retainedProposals,
             recovered: this.recoveryCommitWitness && recoveryMembers.length >= 2 &&
                 recoveryMembers.some((member) => member.sessionId === this.authority.sessionId) &&
                 recoveryMembers.every((member) => this.recoverySessions.has(member.sessionId))
@@ -83,7 +84,7 @@ export class TownMatchCheckpoints {
         if (sameCheckpoint(this.committed, checkpoint) || sameCheckpoint(this.pending?.checkpoint, checkpoint)) {
             return Either.ofRight(false);
         }
-        if (this.pending) {
+        if (this.pending && (!this.resynchronizing || checkpoint.sequence <= this.pending.checkpoint.sequence)) {
             return Either.ofLeft('The outstanding checkpoint must settle before it can be replaced.');
         }
         if (
@@ -99,6 +100,7 @@ export class TownMatchCheckpoints {
         if (transition.length > 0) {
             return Either.ofLeft(transition.join(' '));
         }
+        this.retainPendingProposal();
         this.pending = { checkpoint, acknowledgements: [], commitReceived: false };
         return Either.ofRight(true);
     }
@@ -145,11 +147,8 @@ export class TownMatchCheckpoints {
             return Either.ofRight(false);
         }
         this.authority = authority;
-        const pending = this.pending?.checkpoint;
-        if (pending && validateCheckpointTransition(this.retainedProposal?.state, pending.state).length === 0) {
-            this.retainedProposal = pending;
-        }
-        this.pending = undefined;
+        this.retainPendingProposal();
+        this.resynchronizing = false;
         this.recoverySessions.clear();
         this.recoveryCheckpoint = this.recoveryCheckpoint ?? this.committed;
         this.recoveryCommitWitness = false;
@@ -157,24 +156,35 @@ export class TownMatchCheckpoints {
         return Either.ofRight(true);
     }
 
+    interruptTransport(): void {
+        this.retainPendingProposal();
+        this.resynchronizing = true;
+    }
+
     recover(senderId: string, checkpoint: TownCheckpointIdentity, committed: boolean): Either<string, boolean> {
+        const candidate = [this.recoveryCheckpoint, ...this.retainedProposals].find((retained) =>
+            sameCheckpoint(retained, checkpoint)
+        );
         if (
             this.authority.members.length < 2 ||
             !this.authority.members.some((member) => member.sessionId === senderId) ||
-            ![this.recoveryCheckpoint, this.retainedProposal].some((candidate) =>
-                sameCheckpoint(candidate, checkpoint) &&
-                candidate?.state.members.some((member) => member.sessionId === senderId)
-            )
+            !candidate?.state.members.some((member) => member.sessionId === senderId)
         ) {
             return Either.ofLeft('Recovery reports must come from current sessions that held the named checkpoint.');
         }
         if (!sameCheckpoint(this.recoveryCheckpoint, checkpoint)) {
-            if (!committed || !sameCheckpoint(this.retainedProposal, checkpoint)) {
+            const previous = this.recoveryCheckpoint;
+            if (
+                !committed ||
+                (previous && (candidate.epoch < previous.epoch ||
+                    (candidate.epoch === previous.epoch && candidate.sequence <= previous.sequence))) ||
+                validateCheckpointTransition(previous?.state, candidate.state).length > 0
+            ) {
                 return Either.ofLeft(
                     'Recovery must name committed state or a locally verified proposal with a commit witness.'
                 );
             }
-            this.recoveryCheckpoint = this.retainedProposal;
+            this.recoveryCheckpoint = candidate;
             this.pending = undefined;
             this.recoverySessions.clear();
             this.recoveryCommitWitness = false;
@@ -182,6 +192,20 @@ export class TownMatchCheckpoints {
         this.recoverySessions.add(senderId);
         this.recoveryCommitWitness ||= committed;
         return Either.ofRight(this.getState().recovered);
+    }
+
+    private retainPendingProposal(): void {
+        const pending = this.pending?.checkpoint;
+        const latest = this.retainedProposals[0];
+        if (
+            pending &&
+            (!latest || pending.epoch > latest.epoch ||
+                (pending.epoch === latest.epoch && pending.sequence > latest.sequence)) &&
+            validateCheckpointTransition(latest?.state, pending.state).length === 0
+        ) {
+            this.retainedProposals = [pending, ...this.retainedProposals].slice(0, 2);
+        }
+        this.pending = undefined;
     }
 
     private commitAcknowledged(): boolean {
@@ -193,10 +217,11 @@ export class TownMatchCheckpoints {
             return false;
         }
         this.committed = pending.checkpoint;
-        this.retainedProposal = undefined;
+        this.retainedProposals = [];
         this.recoveryCheckpoint = undefined;
         this.recoveryCommitWitness = false;
         this.recoveryRequired = false;
+        this.resynchronizing = false;
         this.pending = undefined;
         return true;
     }

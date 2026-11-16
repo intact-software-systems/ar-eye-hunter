@@ -284,13 +284,13 @@ export class OnlineSession {
     }
 
     private async leaveCurrentTown(): Promise<void> {
-        const current = this.browser.rooms.state().currentRoomRef;
+        const current = this.browser.rooms.selected() ?? this.browser.rooms.state().currentRoomRef;
         if (!current) {
             return;
         }
         const options = { signal: this.lifetime.signal };
         await this.browser.rooms.session(current).refresh(options);
-        const snapshot = this.browser.rooms.current();
+        const snapshot = this.browser.rooms.session(current).snapshot();
         const principalId = this.browser.session()?.clientId;
         if (!snapshot || !isSameGroupRef(snapshot.group, current)) {
             return;

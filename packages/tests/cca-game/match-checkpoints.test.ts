@@ -19,6 +19,76 @@ const proposal = { epoch: 1, sequence: 1, digest: 'a'.repeat(64), state };
 
 // These values have already passed the wire decoder and SHA-256 check.
 describe('match checkpoint agreement', () => {
+    it('accepts current director progress after a socket interruption without confirming abandoned work', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(proposal, member.sessionId);
+        }
+        checkpoints.commit(proposal, 'alice-session');
+        const unfinished = { ...proposal, sequence: 2, digest: 'b'.repeat(64) };
+        checkpoints.propose(unfinished, 'alice-session');
+        checkpoints.acknowledge(unfinished, 'carol-session');
+
+        checkpoints.interruptTransport();
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        expect(checkpoints.commit(unfinished, 'alice-session').left).toBeDefined();
+        expect(checkpoints.acknowledge(unfinished, 'bob-session').left).toBeDefined();
+        expect(checkpoints.propose(unfinished, 'alice-session').right).toBe(true);
+        expect(checkpoints.propose(unfinished, 'alice-session').right).toBe(false);
+        expect(checkpoints.propose({ ...unfinished, digest: 'd'.repeat(64) }, 'alice-session').left).toBeDefined();
+        const current = { ...proposal, sequence: 8, digest: 'c'.repeat(64) };
+        expect(checkpoints.propose(current, 'alice-session').right).toBe(true);
+        checkpoints.acknowledge(current, 'alice-session');
+        checkpoints.acknowledge(current, 'bob-session');
+        checkpoints.commit(current, 'alice-session');
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        expect(checkpoints.acknowledge(current, 'carol-session').right).toBe(true);
+        expect(checkpoints.getState().committed?.sequence).toBe(8);
+        expect(checkpoints.propose({ ...current, sequence: 9 }, 'alice-session').right).toBe(true);
+        expect(checkpoints.propose({ ...current, sequence: 10 }, 'alice-session').left).toBeDefined();
+    });
+
+    it('retains a verified proposal across socket loss for a surviving commit witness', () => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        checkpoints.interruptTransport();
+        checkpoints.interruptTransport();
+        checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
+        expect(checkpoints.getState().committed).toBeUndefined();
+        expect(checkpoints.recover('carol-session', proposal, false).left).toBeDefined();
+        expect(checkpoints.recover('carol-session', proposal, true).right).toBe(false);
+        expect(checkpoints.recover('bob-session', proposal, false).right).toBe(true);
+        expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(1);
+        expect(checkpoints.getState().committed).toBeUndefined();
+    });
+
+    it.each([8, 9])('recovers witnessed proposal %s after superseding uncommitted resynchronization work', (sequence) => {
+        const checkpoints = new TownMatchCheckpoints(authority);
+        checkpoints.propose(proposal, 'alice-session');
+        for (const member of members) {
+            checkpoints.acknowledge(proposal, member.sessionId);
+        }
+        checkpoints.commit(proposal, 'alice-session');
+        checkpoints.interruptTransport();
+        const superseded = { ...proposal, sequence: 8, digest: 'b'.repeat(64) };
+        const latest = { ...proposal, sequence: 9, digest: 'c'.repeat(64) };
+        checkpoints.propose(superseded, 'alice-session');
+        checkpoints.acknowledge(superseded, 'carol-session');
+        checkpoints.propose(latest, 'alice-session');
+        checkpoints.changeAuthority({ epoch: 2, sessionId: 'bob-session', members: members.slice(1) });
+
+        const witnessed = sequence === 8 ? superseded : latest;
+        expect(checkpoints.recover('bob-session', witnessed, true).right).toBe(false);
+        expect(checkpoints.recover('carol-session', witnessed, false).right).toBe(true);
+        expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(sequence);
+        expect(checkpoints.getState().committed?.sequence).toBe(1);
+        if (sequence === 9) {
+            expect(checkpoints.recover('bob-session', superseded, true).left).toBeDefined();
+            expect(checkpoints.getState().recoveryCheckpoint?.sequence).toBe(9);
+        }
+    });
+
     it('lets surviving backups admit a returning browser, which must acknowledge the new checkpoint before play', () => {
         const continuing = { epoch: 2, sessionId: 'bob-session', members: members.slice(1) };
         const checkpoints = new TownMatchCheckpoints(continuing);

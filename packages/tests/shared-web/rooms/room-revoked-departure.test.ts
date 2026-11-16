@@ -29,6 +29,25 @@ afterEach(() => {
 });
 
 describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
+    it('retains explicit selection across presence loss and clears it on authorized departure', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        respondToDeparture(code, 403);
+        const facade = createRallarFacade();
+        expect(facade.rooms.selected()).toBeUndefined();
+        await facade.rooms.join(destination.group);
+        const selected = facade.rooms.selected();
+        expect(selected).toEqual({
+            applicationId: destination.group.applicationId,
+            workspaceId: destination.group.workspaceId,
+            groupId: destination.group.groupId
+        });
+        seedRoomSnapshots([{ ...destination, activeSessions: [], onlineMemberCount: 0 }]);
+        expect(facade.rooms.current()).toBeUndefined();
+        expect(facade.rooms.selected()).toEqual(selected);
+        await facade.rooms.leave({ roomRef: destination.group });
+        expect(facade.rooms.selected()).toBeUndefined();
+    });
+
     it.each(['rooms', 'session'])('clears current selection through %s without inventing a membership snapshot', async (surface) => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         respondToDeparture(code, 403);
@@ -43,10 +62,14 @@ describe.each(['member-banned', 'member-removed'])('%s departure', (code) => {
 
     it('clears the selected room when an authoritative refresh denies access', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
-        vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'forbidden', code }), { status: 403 }));
+        respondToDeparture(code, 403);
         const facade = createRallarFacade();
-        await expect(facade.rooms.session(previous.group).refresh()).rejects.toMatchObject({ status: 403 });
+        await facade.rooms.join(destination.group);
+        expect(facade.rooms.selected()?.groupId).toBe('destination');
+        vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'forbidden', code }), { status: 403 }));
+        await expect(facade.rooms.session(destination.group).refresh()).rejects.toMatchObject({ status: 403 });
         expect(facade.rooms.state().currentRoomRef).toBeUndefined();
+        expect(facade.rooms.selected()).toBeUndefined();
     });
 
     it('keeps a newly admitted destination when the source membership refuses departure', async () => {

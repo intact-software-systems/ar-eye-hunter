@@ -25,8 +25,13 @@ export class OnlineLobby {
         requirePracticeElement(root, '#solo').addEventListener('click', onSolo, { signal: this.lifetime.signal });
         root.addEventListener('submit', (event) => this.submit(event), { signal: this.lifetime.signal });
         root.addEventListener('click', (event) => this.click(event), { signal: this.lifetime.signal });
-        this.match = new OnlineMatch(root, rallar, () => {
-            void this.session.leaveTown();
+        this.match = new OnlineMatch({
+            root,
+            browser: rallar,
+            onLeave: () => {
+                void this.session.leaveTown();
+            },
+            onSolo
         });
         this.unsubscribe = this.session.onChange(() => this.render());
         void this.session.start();

@@ -208,6 +208,8 @@ export interface BrowserRallarRooms {
         options?: RallarRoomPresenceWaitOptions
     ): Promise<RallarRoomPresenceWaitResult>;
     current(): GroupSnapshot | undefined;
+    /** Explicit selection survives missing presence; it is not proof of membership or permission. */
+    selected(): GroupRef | undefined;
     onChange(listener: RallarStateListener<RallarRoomState>, options?: RallarOnChangeOptions): RallarUnsubscribe;
     onEvent(listener: RallarStateEventListener<GroupEvent>, options?: RallarRoomEventOptions): RallarUnsubscribe;
 }
@@ -291,6 +293,7 @@ function createRoomReadOperations(
     | 'listEventPage'
     | 'replayEvents'
     | 'current'
+    | 'selected'
     | 'onChange'
     | 'onEvent'
 > {
@@ -303,6 +306,10 @@ function createRoomReadOperations(
         listEventPage: async (eventInput) => await input.roomEvents.listPage(eventInput),
         replayEvents: async (eventInput, listener) => await input.roomEvents.replay(eventInput, listener),
         current: () => input.stateStore.state().currentRoom,
+        selected: () => {
+            const room = input.stateStore.selectedForRecovery();
+            return room ? { ...room } : undefined;
+        },
         onChange: (
             listener: RallarStateListener<RallarRoomState>,
             options: RallarOnChangeOptions = {}

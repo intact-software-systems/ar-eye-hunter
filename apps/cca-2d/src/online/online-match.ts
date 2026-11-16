@@ -7,6 +7,12 @@ import { TownMatchSession } from '../match/match-session.ts';
 
 /** Owns the current room's match lifetime independently of social-panel rerenders. */
 export namespace OnlineMatch {
+    export interface Input {
+        readonly root: HTMLElement;
+        readonly browser: RallarFacade;
+        readonly onLeave: () => void;
+        readonly onSolo: () => void;
+    }
     export interface Button {
         readonly label: string;
         readonly action: () => void;
@@ -23,15 +29,18 @@ export class OnlineMatch {
     private readonly root: HTMLElement;
     private readonly browser: RallarFacade;
     private readonly onLeave: () => void;
+    private readonly onSolo: () => void;
 
-    constructor(root: HTMLElement, browser: RallarFacade, onLeave: () => void) {
+    constructor(input: OnlineMatch.Input) {
+        const { root, browser, onLeave, onSolo } = input;
         this.root = root;
         this.browser = browser;
         this.onLeave = onLeave;
+        this.onSolo = onSolo;
     }
 
     reconcile(): void {
-        const room = this.browser.rooms.state().currentRoomRef;
+        const room = this.browser.rooms.selected();
         if (this.session && (!room || !isSameGroupRef(this.session.roomRef, room))) {
             this.stop();
         }
@@ -141,7 +150,12 @@ export class OnlineMatch {
             const root = document.createElement('div');
             root.id = 'online-game';
             this.root.append(root);
-            this.game = new TownMatchGame(root, this.session, this.onLeave);
+            this.game = new TownMatchGame({
+                root,
+                session: this.session,
+                onLeave: this.onLeave,
+                onSolo: this.onSolo
+            });
         }
         this.game?.setVisible(Boolean(playing));
     }
