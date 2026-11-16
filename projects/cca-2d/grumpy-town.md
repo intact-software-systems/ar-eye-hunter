@@ -335,6 +335,8 @@ implementation commitment or a change to the multiplayer delivery sequence.
 | Barber and upstairs flat | The barber displays a magnificent wig while a neighbour beats a rug | A warned gust launches the wig; the barber follows it, briefly abandoning their lookout position |
 | Laundrette and clothesline alley | A resident sorts identical white shirts with exaggerated care | A splash stains the washing; a turning clothesline briefly reveals a shortcut while the resident rescues the laundry |
 | Bus stop and newspaper booth | Commuters queue under a NEVER LATE sign for an absent bus | A disturbance scatters newspapers; the queue leader reorganizes everybody facing the wrong way, briefly opening a route |
+| Clockmaker and repair booth | A resident synchronizes a whole wall of clocks | A dash rings them out of sequence; the grump climbs between clocks trying to silence them, abandoning their lookout |
+| Fishmonger and striped market tents | Sellers guard neat displays while a cat watches the fish | A spill draws the cat and an arguing seller; neighbouring stalls react differently to the same mess |
 
 The strongest comic pattern is setup, visible warning, disproportionate reaction,
 then a short recovery. A resident should sometimes be smug or content with their
@@ -399,3 +401,24 @@ well-marked opportunities first: they preserve immediate play for younger player
 and the existing controls. Later, test whether experienced friends enjoy arranging
 two compatible incidents together. Keep the current implementation sequence;
 this brainstorm does not authorize another content slice ahead of reliability.
+
+For the next town-art discussion, propose a square with streets continuing beyond
+the camera: uneven attached houses, occasional taller civic landmarks, small
+freestanding booths and service passages between buildings. Use interrupted
+frontages and visible routes beyond the fountain so the square feels connected
+to a town. Awnings, balcony silhouettes and foreground roofs must not conceal
+players or warnings. Decorative density can increase without shrinking movement
+space; an exterior facade does not imply a playable interior.
+
+The three spectacles should also carry different dilemmas. Starting a fire buys
+points and access to washing water, but witnesses may identify the culprit and
+the arriving crew changes the route. Big Stink occupies grumps with cleaning,
+but its warning gives friends and enemies the same chance to escape, and its
+user can be splashed. Redirecting the café stream can inconvenience a pursuer,
+but requires approaching a clearly warned hazard. Prefer these readable choices
+over earning more points merely by covering more of the screen.
+
+One proposed ending to the café gag: the inspector finally straightens their tie
+and raises an APPROVED stamp; a tiny final hiccup soils the form. The waiter has
+saved the cake but discovers a pigeon eating it. These are short visual reactions
+alongside continued play, with no extra stun, reward chain or camera takeover.
