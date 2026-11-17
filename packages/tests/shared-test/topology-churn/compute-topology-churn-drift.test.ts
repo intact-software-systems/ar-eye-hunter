@@ -19,9 +19,10 @@ describe('computeTopologyChurnDrift', () => {
         expect(
             computeTopologyChurnDrift({
                 layout: { topology: 'tree', activeSessionIds: SESSIONS, nextHopsBySessionId: CHAIN, degreeLimit: 3 },
-                leaderSessionId: 'session-a'
+                leaderSessionId: 'session-a',
+                meshParamK: 2
             })
-        ).toEqual({ status: 'measured', acceptedLongestPathHops: 7, freshLongestPathHops: 4, extraHops: 3 });
+        ).toEqual({ acceptedLongestPathHops: 7, freshLongestPathHops: 4, extraHops: 3 });
     });
 
     it('measures no extra hops for a tree that is the fresh plan', () => {
@@ -36,9 +37,10 @@ describe('computeTopologyChurnDrift', () => {
         expect(
             computeTopologyChurnDrift({
                 layout: { topology: 'tree', activeSessionIds: SESSIONS, nextHopsBySessionId: fresh, degreeLimit: 2 },
-                leaderSessionId: 'session-c'
+                leaderSessionId: 'session-c',
+                meshParamK: 2
             })
-        ).toMatchObject({ status: 'measured', extraHops: 0 });
+        ).toMatchObject({ extraHops: 0 });
     });
 
     it('measures no extra hops for a star, whose fresh plan connects every pair', () => {
@@ -56,18 +58,21 @@ describe('computeTopologyChurnDrift', () => {
                     nextHopsBySessionId: star,
                     degreeLimit: 4
                 },
-                leaderSessionId: undefined
+                leaderSessionId: undefined,
+                meshParamK: 2
             })
-        ).toEqual({ status: 'measured', acceptedLongestPathHops: 1, freshLongestPathHops: 1, extraHops: 0 });
+        ).toEqual({ acceptedLongestPathHops: 1, freshLongestPathHops: 1, extraHops: 0 });
     });
 
-    it('answers undetermined with its reason for a mesh, whose fresh plan needs the unserved mesh parameter', () => {
-        const drift = computeTopologyChurnDrift({
-            layout: { topology: 'mesh', activeSessionIds: SESSIONS, nextHopsBySessionId: CHAIN, degreeLimit: 4 },
-            leaderSessionId: undefined
-        });
-
-        expect(drift.status).toBe('undetermined');
-        expect(drift.status === 'undetermined' && drift.reason).toContain('mesh parameter');
+    it('measures the extra hops of an accepted mesh over a fresh no-RTT mesh with the room\'s mesh parameter', () => {
+        // With degree limit 4 and k = 2 the planner's no-RTT mesh over these eight sessions is three hops across;
+        // with k = 1 it would be six.
+        expect(
+            computeTopologyChurnDrift({
+                layout: { topology: 'mesh', activeSessionIds: SESSIONS, nextHopsBySessionId: CHAIN, degreeLimit: 4 },
+                leaderSessionId: 'session-a',
+                meshParamK: 2
+            })
+        ).toEqual({ acceptedLongestPathHops: 7, freshLongestPathHops: 3, extraHops: 4 });
     });
 });

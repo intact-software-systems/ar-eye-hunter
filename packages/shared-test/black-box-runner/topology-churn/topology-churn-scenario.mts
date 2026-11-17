@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { SESSION_HEARTBEAT_INTERVAL_MS } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -31,7 +32,6 @@ import type { TopologyChurnApi, TopologyChurnMember, TopologyChurnSession } from
 
 const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
-const TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K = 2;
 export const TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS = 30_000;
 export const TOPOLOGY_CHURN_REPORT_FILE = 'topology-churn-report.json';
 
@@ -75,6 +75,7 @@ interface ChurnRoom {
     readonly spec: TopologyChurnRoomSpec;
     readonly roomRef: GroupRef;
     readonly creator: TopologyChurnSession;
+    readonly topologyConfig: EffectiveGroupTopologyConfig;
     readonly present: PresentSession[];
     readonly sightings: TopologyChurnPromotionSighting[];
     readonly linkSamples: TopologyChurnLinkSample[];
@@ -155,7 +156,19 @@ export class TopologyChurnScenario {
         };
         const creator = await this.#signIn(this.#createMember(spec));
         await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyChurnPolicy(spec.replanning) });
-        return { spec, roomRef, creator, present: [], sightings: [], linkSamples: [], progress, signal };
+        progress.step = 'reading the room\'s topology configuration';
+        const topologyConfig = await this.#input.api.readEffectiveTopologyConfig(creator, roomRef);
+        return {
+            spec,
+            roomRef,
+            creator,
+            topologyConfig,
+            present: [],
+            sightings: [],
+            linkSamples: [],
+            progress,
+            signal
+        };
     }
 
     async #measureWhileLive(
@@ -209,14 +222,18 @@ export class TopologyChurnScenario {
                 replacedLayoutOverlapMs: context.replacedLayoutOverlapMs
             }),
             drift,
-            assumedMeshParamK: TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K
+            topologyConfig: room.topologyConfig
         };
     }
 
     async #readDrift(room: ChurnRoom): Promise<TopologyChurnDrift> {
         const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
         const snapshot = await this.#input.api.readRoom(room.creator, room.roomRef);
-        return computeTopologyChurnDrift({ layout, leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot) });
+        return computeTopologyChurnDrift({
+            layout,
+            leaderSessionId: resolveRallarGroupLeaderSessionId(snapshot),
+            meshParamK: room.topologyConfig.meshParamK
+        });
     }
 
     async #formRoom(room: ChurnRoom): Promise<void> {
@@ -324,7 +341,7 @@ export class TopologyChurnScenario {
     /** Kept under the identity of the layout read, which may be newer than the one sighted. */
     async #sampleLinks(room: ChurnRoom): Promise<void> {
         const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
-        const sample = toTopologyChurnLinkSample(layout, TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K);
+        const sample = toTopologyChurnLinkSample(layout, room.topologyConfig.meshParamK);
         if (
             sample !== null && !room.linkSamples.some((kept) => isSameGroupLayoutIdentity(kept.layout, sample.layout))
         ) {

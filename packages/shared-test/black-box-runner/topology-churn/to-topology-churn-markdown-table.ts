@@ -1,3 +1,4 @@
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
@@ -15,7 +16,7 @@ export interface TopologyChurnRoomEntry {
     readonly topology: readonly RallarRtcTopologyKind[];
     readonly report: TopologyChurnReport;
     readonly drift: TopologyChurnDrift;
-    readonly assumedMeshParamK: number;
+    readonly topologyConfig: EffectiveGroupTopologyConfig;
 }
 
 const NO_FIGURE = '—';
@@ -67,8 +68,7 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
         '',
         `Plans outside every phase: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
-        `Members under k links: k = ${entry.assumedMeshParamK} is assumed, the planner's default mesh parameter; ` +
-        `no typed read serves the room's own.`
+        toConfigurationLine(entry.topologyConfig)
     ].join('\n');
 }
 
@@ -115,8 +115,11 @@ function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']):
 }
 
 function toDriftFigure(drift: TopologyChurnDrift): string {
-    return drift.status === 'measured'
-        ? `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
-            `extra ${drift.extraHops}.`
-        : `${NO_FIGURE} (${drift.reason})`;
+    return `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
+        `extra ${drift.extraHops}.`;
+}
+
+function toConfigurationLine(config: EffectiveGroupTopologyConfig): string {
+    return `Room configuration: kind ${config.topologyKind}, tree from ${config.treeMinSize} members, ` +
+        `mesh from ${config.meshMinSize}, k = ${config.meshParamK}, degree limit ${config.degreeLimit}.`;
 }

@@ -8,46 +8,33 @@ interface ComputeTopologyChurnDriftInput {
         'topology' | 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'
     >;
     readonly leaderSessionId: string | undefined;
+    readonly meshParamK: number;
 }
 
-export type TopologyChurnDrift =
-    | {
-        readonly status: 'measured';
-        readonly acceptedLongestPathHops: number;
-        readonly freshLongestPathHops: number;
-        readonly extraHops: number;
-    }
-    | { readonly status: 'undetermined'; readonly reason: string; };
-
-const MESH_DRIFT_REASON = 'A fresh mesh plan needs the room\'s mesh parameter, which no typed read serves.';
-/** `computeNoRttTopologyNextHops` reads the mesh parameter only for a mesh. */
-const MESH_PARAMETER_UNREAD_FOR_STAR_AND_TREE = 0;
+export interface TopologyChurnDrift {
+    readonly acceptedLongestPathHops: number;
+    readonly freshLongestPathHops: number;
+    readonly extraHops: number;
+}
 
 /**
  * How many hops the accepted layout's longest path exceeds a fresh no-RTT plan's for the same members, kind, degree
- * limit and leader, planned as the planner plans one: a star without a preferred source, a tree from the leader.
+ * limit and leader, planned as the planner plans one: a tree from the leader, a star and a mesh without a preferred
+ * source, a mesh with the room's mesh parameter.
  */
 export function computeTopologyChurnDrift(input: ComputeTopologyChurnDriftInput): TopologyChurnDrift {
     const { layout } = input;
-    if (layout.topology === 'mesh') {
-        return { status: 'undetermined', reason: MESH_DRIFT_REASON };
-    }
     const fresh = computeNoRttTopologyNextHops({
         topology: layout.topology,
         activeSessionIds: layout.activeSessionIds,
         preferredSourceSessionId: layout.topology === 'tree' ? input.leaderSessionId : undefined,
         degreeLimit: layout.degreeLimit,
-        meshParamK: MESH_PARAMETER_UNREAD_FOR_STAR_AND_TREE
+        meshParamK: input.meshParamK
     });
     const acceptedLongestPathHops = computeLongestHopPath(layout);
     const freshLongestPathHops = computeLongestHopPath({
         activeSessionIds: layout.activeSessionIds,
         nextHopsBySessionId: fresh
     });
-    return {
-        status: 'measured',
-        acceptedLongestPathHops,
-        freshLongestPathHops,
-        extraHops: acceptedLongestPathHops - freshLongestPathHops
-    };
+    return { acceptedLongestPathHops, freshLongestPathHops, extraHops: acceptedLongestPathHops - freshLongestPathHops };
 }

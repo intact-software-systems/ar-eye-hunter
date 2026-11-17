@@ -11,10 +11,12 @@ import {
     validateAuthoritativeGroupSnapshot,
     validateAuthoritativeOverlayTopologySnapshot
 } from '@shared/api/authoritative-state-validation.ts';
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { getOwnField } from '@shared/encoding/get-own-field.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import {
@@ -22,6 +24,7 @@ import {
     type ProofJsonObject,
     type RequestOptions
 } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { decodeEffectiveGroupTopologyConfig } from './decode-effective-group-topology-config.ts';
 
 export namespace TopologyChurnApi {
     export interface Config {
@@ -174,6 +177,17 @@ export class TopologyChurnApi {
         }
         validateAuthoritativeOverlayTopologySnapshot(acceptedSnapshot, roomRef);
         return acceptedSnapshot;
+    }
+
+    async readEffectiveTopologyConfig(
+        session: TopologyChurnSession,
+        roomRef: GroupRef
+    ): Promise<EffectiveGroupTopologyConfig> {
+        const body = await this.#request(session.member.apiBaseUrl, `${toGroupPath(roomRef)}/topology/config`, {
+            method: 'GET',
+            headers: toSessionHeaders(session)
+        });
+        return requireRight(decodeEffectiveGroupTopologyConfig(getOwnField(body, 'effective')));
     }
 
     async readRoomTopologyPlans(

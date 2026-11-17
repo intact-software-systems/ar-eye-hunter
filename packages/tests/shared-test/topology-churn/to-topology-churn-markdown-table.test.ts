@@ -142,8 +142,8 @@ const ENTRY: TopologyChurnRoomEntry = {
     memberCount: 8,
     topology: ['tree', 'mesh'],
     report: { phases: [EMPTY_FORMATION, CHURN], outsidePhasesPlanCount: 2 },
-    drift: { status: 'measured', acceptedLongestPathHops: 4, freshLongestPathHops: 3, extraHops: 1 },
-    assumedMeshParamK: 2
+    drift: { acceptedLongestPathHops: 4, freshLongestPathHops: 3, extraHops: 1 },
+    topologyConfig: { topologyKind: 'auto', degreeLimit: 4, treeMinSize: 5, meshMinSize: 16, meshParamK: 3 }
 };
 
 function toCells(line: string): string[] {
@@ -260,22 +260,11 @@ describe('toTopologyChurnMarkdownTable', () => {
         expect(cells.filter((cell) => cell === '' || cell.includes('null') || cell.includes('NaN'))).toEqual([]);
     });
 
-    it('states the plans outside every phase and the measured drift under the table', () => {
+    it('states the plans outside every phase, the measured drift and the room\'s configuration under the table', () => {
         expect(lines.slice(6)).toEqual([
             '',
             'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.',
-            'Members under k links: k = 2 is assumed, the planner\'s default mesh parameter; no typed read serves the room\'s own.'
+            'Room configuration: kind auto, tree from 5 members, mesh from 16, k = 3, degree limit 4.'
         ]);
-    });
-
-    it('prints an undetermined drift as an em dash with its reason', () => {
-        const undetermined: TopologyChurnRoomEntry = {
-            ...ENTRY,
-            drift: { status: 'undetermined', reason: 'No typed read serves the mesh parameter.' }
-        };
-
-        expect(toTopologyChurnMarkdownTable(undetermined).split('\n').at(-2)).toBe(
-            'Plans outside every phase: 2. Drift: — (No typed read serves the mesh parameter.)'
-        );
     });
 });
