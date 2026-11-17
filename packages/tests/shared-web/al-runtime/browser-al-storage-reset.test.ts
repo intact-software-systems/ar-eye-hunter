@@ -43,7 +43,7 @@ describe('browser ALM observed storage lifecycle', () => {
         expect(() => first.db.transaction(STORE_NAME)).toThrow();
         const recreated = await openIndexedDbAdmissionStorage(input);
         expect(recreated.opening).toEqual({ kind: 'reset', reason: 'other-context' });
-        expect(events).toEqual([{ dbName: input.dbName, previousSchemaId: undefined, schemaId: AL_ADMISSION_SCHEMA_ID, reason: 'other-context' }]);
+        expect(events).toEqual([{ dbName: input.dbName, schemaId: AL_ADMISSION_SCHEMA_ID, reason: 'other-context' }]);
         expect(await readIndexedDbRequest(recreated.db.transaction(STORE_NAME).objectStore(STORE_NAME).get(AL_ADMISSION_SCHEMA_KEY)))
             .toMatchObject({ value: 'rallar-alm-2026-10-roster-fence' });
         recreated.db.close();

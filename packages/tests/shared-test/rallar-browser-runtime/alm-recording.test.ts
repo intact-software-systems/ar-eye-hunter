@@ -69,7 +69,7 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
     ports.storage?.({
         kind: 'reset',
         storeId: 'store-1',
-        event: { dbName: 'test', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+        event: { dbName: 'test', schemaId: 'current', reason: 'other-context' }
     });
 }
 

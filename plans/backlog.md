@@ -82,13 +82,10 @@ and it has no status list.
   worker; a per-message persistence barrier; the Temporal polyfill leaving the
   browser bundle (an estimated 39.7 KiB brotli, D110); and the fence-snapshot
   fold (§7.3), which merges the D17 fence snapshot into the decision read.
-- ALM schema mismatch: D3 deletes incompatible browser storage, but since #652
-  `openIndexedDbAdmissionStorage` refuses it with `ALStorageSchemaMismatchError`
-  and keeps the rows, so nothing reclaims it; the `reset-blocked` cause and the
-  `schema-id-mismatch` and `store-schema-mismatch` reset reasons have no
-  producer, and the QoS plan's sections 2 and 8 still describe deletion. Ruled
-  (D642): delete all three, and align D3 and the QoS plan to "refuse and keep"
-  (roadmap F9, PC10).
+- ALM schema mismatch: `openIndexedDbAdmissionStorage` refuses incompatible
+  browser storage with `ALStorageSchemaMismatchError` and keeps the rows (D663),
+  so nothing reclaims a store an older build left; a reclaim is unbuilt (roadmap
+  F9, PC10).
 - `packages/shared/alm/al-runtime-state-stores.ts` holds only snapshot
   interfaces and keeps its name (S9-i, D624): 26 importers and a `mod.ts` line
   would change for a name alone. Rename it for what it holds, with its

@@ -1423,11 +1423,10 @@ undecodable identity rejects with `ALStorageSchemaIdentityError` and its origina
 Error cause. Acquired handles close on failure. Opening and cleanup never delete/recreate
 an incompatible database or silently rewrite its format.
 
-- `reset`: an externally notified reset (`ALStorageResetEvent`). The canonical
+- `reset`: another context's reset (`ALStorageResetEvent`). The canonical
   opener reports only recreation it observed after this document recorded
-  `versionchange`, with reason `other-context` and `previousSchemaId: undefined`.
-  Independently supplied `schema-id-mismatch`/`store-schema-mismatch` descriptors
-  remain valid observation inputs. A database-wide cleanup's external-reset
+  `versionchange`, with reason `other-context`, the database name and the
+  current schema id. A database-wide cleanup's external-reset
   observation names the database instead of a store; cleanup does not cause a reset;
 - `recovery`: what a durable store found when its lane started, once per store
   and connect (`ALStorageRecoveryOutcome`: `restored`, `expired-at-recovery`,

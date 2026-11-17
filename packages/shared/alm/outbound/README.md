@@ -1570,14 +1570,13 @@ identity, callback or opening-initialization failure. Refusal preserves the exis
 schema and every row, including live and unselected data; it performs no delete/recreate
 attempt or deletion timeout. The exported `ALStorageResetBlockedError` class is removed.
 
-The required `onStorageReset` callback now reports an external recreation this opener
-observes after this document recorded `versionchange`: reason `other-context`, current
-schema id and `previousSchemaId: undefined`. The browser composition forwards it as the
-store's `reset` event on the `storage` port; database-wide cleanup names the database.
-Recreation without a recorded `versionchange` remains an eviction observation. Current
-external descriptor-input contracts still accept independently supplied
-`schema-id-mismatch`/`store-schema-mismatch` notifications and `reset-blocked` failure
-descriptors; those observations do not authorize the opener to perform a destructive reset.
+The required `onStorageReset` callback reports an external recreation this opener
+observes after this document recorded `versionchange`: the database name, the current
+schema id and the reason `other-context`, the only reason there is. The browser
+composition forwards it as the store's `reset` event on the `storage` port;
+database-wide cleanup names the database. Recreation without a recorded `versionchange`
+remains an eviction observation. No reset reason and no failure cause describes a
+schema-mismatch reset: nothing performs one.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical

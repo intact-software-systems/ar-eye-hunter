@@ -1017,29 +1017,20 @@ The browser's `RallarDiagnosticsPorts.storage` port receives every
 arm here and every other arm on `rallar.browser.alm.storage` (below).
 
 `rallar.browser.alm.storage_reset` carries an `ALStorageResetEvent` recorded
-the moment `openIndexedDbAdmissionDatabase` deletes and reopens a database
-whose stores or schema identity no longer match. This is not one event per
-delete-and-recreate cutover: every opener racing the same mismatched database
-detects it independently and emits its own event, so a single cutover can
-leave behind N events, one per concurrent opener. The event's `data` is the
-event itself:
+when `openIndexedDbAdmissionDatabase` finds a database created again after a
+`versionchange` closed this document's connection to it: another context
+deleted and recreated it. Every opener of that database in this document
+observes the recreation independently and emits its own event. The event's
+`data` is the event itself:
 
 - `dbName`: the IndexedDB database that was reset; for the browser runtime, the
   scope's database `rallar-al-runtime:<applicationId>:<workspaceId>`
-- `previousSchemaId`: the schema id read back before the reset, or `undefined`
-  either when the store set itself did not match (so no schema id could be
-  read) or when the stores matched but the database carried no schema record
-  at all (an undecodable or absent schema row is treated as a mismatch, not a
-  hard failure)
 - `schemaId`: the current `AL_ADMISSION_SCHEMA_ID` the database now carries
-- `reason`: `schema-id-mismatch` when the stores matched but the stored
-  schema id was missing, undecodable, or differed, or `store-schema-mismatch`
-  when the store set, key path, auto-increment, or index set did not match
+- `reason`: `other-context`, the only reason
 
-This is the evidence an incompatible browser cutover (new indexes, new key
-layouts, new stored fields) leaves behind: it confirms the old database was
-discarded rather than left mismatched underneath a client that assumes the
-current shape.
+The opener never resets a database itself. One whose stores or schema identity
+do not match is refused with `ALStorageSchemaMismatchError` and keeps its
+schema and rows, so an incompatible browser cutover leaves no reset event.
 
 ## Storage Diagnostics
 
@@ -1133,10 +1124,9 @@ are the sync points of a paired `agent.reload`.
   one, reads the database as it is. `outcome` is:
   - `storage-created`: the database was created, the first time this document
     opened it
-  - `storage-reset` with `reason`: the database was reset because it did not
-    match (`schema-id-mismatch`, `store-schema-mismatch`), or created again
-    after another context's `versionchange` closed this document's connection
-    (`other-context`); a reset wins over the creation it caused
+  - `storage-reset` with `reason`: the database was created again after
+    another context's `versionchange` closed this document's connection
+    (`other-context`, the only reason); a reset wins over the creation it caused
   - `restored` with `claimed` and `expired`: the database existed; `claimed` is
     what the lane's first batch claimed, `expired` the expired rows of the
     lane's own work type its reservations deleted up to that batch

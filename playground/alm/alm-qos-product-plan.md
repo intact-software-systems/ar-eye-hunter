@@ -53,8 +53,8 @@ dispatch. This plan makes performance a first-class, configurable part of ALM's 
   - No second queue, persistence layer, scheduler or coordination primitive is written (D8).
 - **No legacy, no migration code** (D3, D8). A persisted-shape change bumps
   `AL_ADMISSION_SCHEMA_ID`. Since #652 an open of incompatible browser storage is refused with
-  `ALStorageSchemaMismatchError` and its rows are kept; D3's deletion waits on the maintainer's
-  ruling named in `plans/backlog.md`.
+  `ALStorageSchemaMismatchError` and its rows are kept: refuse and keep, with no deletion and no
+  reset vocabulary for one (D663).
   Web and API deploy together.
 - **Evidence before optimization.** Every performance claim here is labelled _measured_, _proven
   from code_ or _needs measurement_. No optimization lands without before-and-after pins and
@@ -402,9 +402,9 @@ These apply to every durable tier:
   - Today a browser without IndexedDB quietly gets memory stores for its durable pairs
     (`packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts`).
   - I2a applies the channel's `onStorageUnavailable` instead.
-  - The same typed `storage-unavailable` outcome covers quota exceeded, the reset's blocked delete
-    (the open names no version, so no upgrade can block), detected eviction and, for
-    `local-checkpoint`, recovery lag beyond the bound (I2a design, 2026-10-01).
+  - The same typed `storage-unavailable` outcome covers quota exceeded, detected eviction and, for
+    `local-checkpoint`, recovery lag beyond the bound (I2a design, 2026-10-01). No cause describes a
+    reset's blocked delete: nothing resets a database (D663).
 - **Persistent storage.** Delivered (I2a-i, 527267e73). The first durable admission in a session requests
   `navigator.storage.persist()`, and the grant is reported. Rallar never requests it today.
 - **Typed recovery outcomes.** Delivered (I2a-i, 527267e73).
@@ -416,7 +416,7 @@ These apply to every durable tier:
     a document's first open; a creation on a reopen within one document reads `storage-reset` after
     another tab's reset, otherwise `storage-unavailable` with cause `evicted` (I2a design,
     2026-10-01).
-  - `storage-reset`, for a schema mismatch (D3).
+  - `storage-reset`, for another context's reset only; a schema mismatch is refused and kept (D663).
 - **One health vocabulary** on the public diagnostics sink. Delivered (I2a-i, 527267e73).
   - The sink is one `storage` port of four kinds, `reset`, `recovery`, `health` and `persist`,
     widening today's `onStorageReset` (D121) (I2a design, 2026-10-01).
@@ -493,7 +493,7 @@ The product description's completion criteria 4, 5 and 10 carry the contract.
 | The Temporal polyfill leaves the storage hot path                                                            | P1a      | the harness's CPU-profile share of the polyfill and the codec, and send-to-dispatch p50 and p95, before and after                                           |
 | A probe on a cadence notices a due row, an exhausted row or a crashed lease within its stated bound          | P1b      | a fake-clock unit test per probe; the harness figures                                                                                                       |
 | One durable owner per session store, with takeover on release                                                | I2a      | unit: two owners on a lock fake; lane: `durable-takeover` in the Playwright lane only (D124) (I2a design, 2026-10-01)                                       |
-| Quota, the reset's blocked delete or missing storage ends typed or degrades with a note, never silently      | I2a      | a unit test per cause; lane: `storage-unavailable` through the fault port, every carrier (I2a design, 2026-10-01)                                           |
+| Quota or missing storage ends typed or degrades with a note, never silently                                  | I2a      | a unit test per cause; lane: `storage-unavailable` through the fault port, every carrier (I2a design, 2026-10-01)                                           |
 | Recovery outcomes `restored`, `expired-at-recovery`, `storage-created` and `storage-reset`                   | I2a      | a unit test per outcome; lane: `delivery-reload` reads the outcome                                                                                          |
 | Dedup retention covers the deadline plus the receipt grace                                                   | I2a      | unit: a replay after 60 s and inside the deadline is re-acknowledged without a second delivery                                                              |
 | A purge reaches memory, storage and checkpoint, and nothing replays across sessions                          | I2a      | unit: a checkpoint after a purge writes nothing back; login over a session leaves no rows                                                                   |

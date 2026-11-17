@@ -67,7 +67,6 @@ const ALM_FAILED_ATTEMPT_OUTCOMES: Readonly<Record<AlmFailedAttemptOutcome, true
 const ALM_STORAGE_UNAVAILABLE_CAUSES: Readonly<Record<ALStorageUnavailableCause, true>> = {
     missing: true,
     'open-failed': true,
-    'reset-blocked': true,
     quota: true,
     closed: true,
     evicted: true,

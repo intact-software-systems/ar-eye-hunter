@@ -1097,7 +1097,7 @@ only, in `relayRejection`.
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
 the send over; `congested`, a carrier at its high watermark with no fallback carrier left), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
-its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
+its `cause` (`missing`, `open-failed`, `quota`, `closed`, `evicted` or
 `transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
 with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
