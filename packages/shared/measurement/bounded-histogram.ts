@@ -143,3 +143,19 @@ export function decodeBoundedHistogram(value: unknown, path: string): Either<rea
         max: value.max as number | null
     });
 }
+
+export function decodeBoundedHistogramOnBounds(
+    value: unknown,
+    path: string,
+    declaredBounds: readonly number[]
+): Either<readonly string[], BoundedHistogram> {
+    const histogram = decodeBoundedHistogram(value, path);
+    if (histogram.right === undefined) {
+        return histogram;
+    }
+    const { upperBounds } = histogram.right;
+    return upperBounds.length === declaredBounds.length &&
+            upperBounds.every((bound, index) => bound === declaredBounds[index])
+        ? histogram
+        : Either.ofLeft([`${path}.upperBounds are not the bounds declared for it`]);
+}

@@ -51,6 +51,7 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
         action: 'defer',
         priority: 0,
         msgId: 'msg-1',
+        atMs: 1_000,
         traceId: 'trace-msg-1',
         corrId: 'msg-1'
     });

@@ -6,6 +6,7 @@ import {
 
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_CONGESTION_EPISODE_BOUNDS_MS } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import {
     AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
     computeALOutboundPublicationFiguresAfterSelection,
@@ -44,6 +45,18 @@ const PUBLICATION_REPORT: RallarBlackBoxTestAlmUsage['publication'] = {
     figures: PUBLICATION_FIGURES
 };
 const ORDERING_COUNTERS: RallarBlackBoxTestAlmUsage['ordering'] = { entered: 4, omitted: 1, witnessed: 2, beforeEntry: 3 };
+const CONGESTION_EPISODES: RallarBlackBoxTestAlmUsage['congestionEpisodes'] = {
+    durationMs: {
+        upperBounds: AL_CONGESTION_EPISODE_BOUNDS_MS,
+        bucketCounts: [0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        count: 3,
+        sum: 250,
+        min: 50,
+        max: 100
+    },
+    openEpisodes: 1,
+    unrecordedSamples: 0
+};
 const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 3, bytes: 912, oldestAgeMs: 1_250, tracks: 2 },
     own: { admissions: 2, bytes: 600 },
@@ -55,7 +68,8 @@ const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
     repliesHeld: 2,
     replyWaitsOpen: 1,
     publication: PUBLICATION_REPORT,
-    ordering: ORDERING_COUNTERS
+    ordering: ORDERING_COUNTERS,
+    congestionEpisodes: CONGESTION_EPISODES
 };
 const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     usage: { admissions: 1_500, bytes: 60_000, oldestAgeMs: 29_000, tracks: 64 },
@@ -68,7 +82,8 @@ const SECOND_REPORT: RallarBlackBoxTestAlmUsage = {
     repliesHeld: 512,
     replyWaitsOpen: 0,
     publication: { ...PUBLICATION_REPORT, lanes: 0, streams: 0, staged: 0, stagedBytes: 0 },
-    ordering: { ...ORDERING_COUNTERS, entered: 900 }
+    ordering: { ...ORDERING_COUNTERS, entered: 900 },
+    congestionEpisodes: { ...CONGESTION_EPISODES, openEpisodes: 0 }
 };
 
 function createDefaultPageRuntime(
@@ -380,7 +395,8 @@ describe('the stats result rallar.alm block', () => {
                 counters: { ...PUBLICATION_REPORT.counters, cancelled: 0.5 },
                 figures: { ...PUBLICATION_FIGURES, unrecordedSamples: 0.5 }
             },
-            ordering: { ...ORDERING_COUNTERS, witnessed: -1, beforeEntry: 1.5 }
+            ordering: { ...ORDERING_COUNTERS, witnessed: -1, beforeEntry: 1.5 },
+            congestionEpisodes: CONGESTION_EPISODES
         }));
 
         const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
@@ -463,10 +479,46 @@ describe('the stats result rallar.alm block', () => {
         expect(result.ok).toBe(false);
         expect(result.error?.message).toBe(
             'The page\'s session ledger report is not valid: ' +
-                'publication.figures.selectionAgeMs.upperBounds are not the bounds the stage declares for it; ' +
+                'publication.figures.selectionAgeMs.upperBounds are not the bounds declared for it; ' +
                 'publication.figures.drainBytesPercent.bucketCounts[0] must be a whole number of at least 0; ' +
                 'publication.figures.missedOpportunities is not a count'
         );
+    });
+});
+
+describe('the stats result rallar.alm.congestionEpisodes block', () => {
+    it('carries the connect\'s congestion episodes: their durations, the ones still open and the ones it let go', async () => {
+        const runtime = createDefaultPageRuntime(async () => FIRST_REPORT);
+
+        const stats = await readStats(runtime, 'stats-1');
+
+        expect(stats.value).toMatchObject({ rallar: { alm: { congestionEpisodes: CONGESTION_EPISODES } } });
+    });
+
+    // Two pages' durations compare bucket by bucket only on one set of bounds, so another set is a refusal.
+    it('fails the stats command when the page answers episodes on other bounds, a bad count or none, naming each', async () => {
+        const otherBounds = AL_CONGESTION_EPISODE_BOUNDS_MS.map((bound) => bound * 2);
+        const onOtherBounds = createDefaultPageRuntime(async () => ({
+            ...FIRST_REPORT,
+            congestionEpisodes: {
+                durationMs: { ...CONGESTION_EPISODES.durationMs, upperBounds: otherBounds },
+                openEpisodes: -1,
+                unrecordedSamples: 0.5
+            }
+        }));
+        const { congestionEpisodes: _omitted, ...withoutEpisodes } = FIRST_REPORT;
+        const absent = createDefaultPageRuntime(async () => withoutEpisodes);
+
+        const refused = await onOtherBounds.execute({ kind: 'stats', commandId: 'stats-1' });
+        const refusedAbsent = await absent.execute({ kind: 'stats', commandId: 'stats-2' });
+
+        expect(refused.error?.message).toBe(
+            'The page\'s session ledger report is not valid: ' +
+                'congestionEpisodes.durationMs.upperBounds are not the bounds declared for it; ' +
+                'congestionEpisodes.openEpisodes is not a count; congestionEpisodes.unrecordedSamples is not a count'
+        );
+        expect(refusedAbsent.ok).toBe(false);
+        expect(refusedAbsent.error?.message).toContain('congestionEpisodes.durationMs');
     });
 });
 

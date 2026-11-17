@@ -6,6 +6,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { AL_MESSAGE_ENVELOPE_VERSION, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import {
     ALVolatileSessionBudget,
@@ -63,7 +64,8 @@ export class AlmReloadVolatileSession {
             repliesHeld: 0,
             replyWaitsOpen: 0,
             publication,
-            ordering: createALInboundOrderingCounters()
+            ordering: createALInboundOrderingCounters(),
+            congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
         };
     }
 }

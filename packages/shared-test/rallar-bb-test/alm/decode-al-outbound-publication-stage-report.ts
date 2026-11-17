@@ -6,7 +6,7 @@ import {
 } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import type { ALOutboundPublicationCounters } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
 import type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
-import { decodeBoundedHistogram, type BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
+import { decodeBoundedHistogramOnBounds, type BoundedHistogram } from '@shared/measurement/bounded-histogram.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
@@ -116,16 +116,11 @@ function decodeFigureHistogram(
     record: RallarBlackBoxTestRecord,
     field: FigureHistogramField
 ): Either<readonly string[], BoundedHistogram> {
-    const path = `publication.figures.${field}`;
-    const histogram = decodeBoundedHistogram(record[field], path);
-    if (histogram.right === undefined) {
-        return histogram;
-    }
-    const declared = FIGURE_HISTOGRAM_BOUNDS[field];
-    const { upperBounds } = histogram.right;
-    return upperBounds.length === declared.length && upperBounds.every((bound, index) => bound === declared[index])
-        ? histogram
-        : Either.ofLeft([`${path}.upperBounds are not the bounds the stage declares for it`]);
+    return decodeBoundedHistogramOnBounds(
+        record[field],
+        `publication.figures.${field}`,
+        FIGURE_HISTOGRAM_BOUNDS[field]
+    );
 }
 
 function toCounters(

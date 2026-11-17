@@ -757,6 +757,7 @@ export class WsQueueBoxClientService {
             diagnostics: this.dependencies.outboundDiagnostics,
             carrier: 'ws',
             message,
+            atMs: this.dependencies.outboundRuntime.clock.nowMs(),
             selfPeerId: this.sessionId,
             qosProvider: this.dependencies.qosProvider
         });
