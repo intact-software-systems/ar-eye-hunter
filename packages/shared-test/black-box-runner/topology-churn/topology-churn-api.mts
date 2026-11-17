@@ -13,7 +13,7 @@ import {
 } from '@shared/api/authoritative-state-validation.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupRole, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { getOwnField } from '@shared/encoding/get-own-field.ts';
@@ -63,6 +63,13 @@ interface TopologyChurnPresenceInput {
     readonly session: TopologyChurnSession;
     readonly roomRef: GroupRef;
     readonly leaseExpiresAtEpochMs: number;
+}
+
+interface TopologyChurnMemberRoleInput {
+    readonly owner: TopologyChurnSession;
+    readonly roomRef: GroupRef;
+    readonly principalId: string;
+    readonly role: GroupRole;
 }
 
 interface TopologyChurnMutation {
@@ -155,6 +162,19 @@ export class TopologyChurnApi {
             path: `${toPresencePath({ session, roomRef })}/disconnect`,
             body: { generationId: toPresenceGenerationId(session), principalId: session.clientId }
         });
+    }
+
+    async writeMemberRole(input: TopologyChurnMemberRoleInput): Promise<void> {
+        await this.#mutate(input.owner, {
+            method: 'PUT',
+            path: `${toGroupPath(input.roomRef)}/members/${encodeURIComponent(input.principalId)}/role`,
+            body: { role: input.role }
+        });
+    }
+
+    /** Appoints the session itself as the room's director. */
+    async writeDirectorAppointment(session: TopologyChurnSession, roomRef: GroupRef): Promise<void> {
+        await this.#mutate(session, { method: 'POST', path: `${toGroupPath(roomRef)}/director/appoint`, body: {} });
     }
 
     async readRoom(session: TopologyChurnSession, roomRef: GroupRef): Promise<GroupSnapshot> {

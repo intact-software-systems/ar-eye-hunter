@@ -24,7 +24,14 @@ import { computeValuesByKey } from './compute-values-by-key.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 
-export type TopologyChurnPhaseName = 'formation' | 'churn' | 'ramp-up' | 'ramp-down' | 'flap';
+export type TopologyChurnPhaseName =
+    | 'formation'
+    | 'churn'
+    | 'ramp-up'
+    | 'ramp-down'
+    | 'flap'
+    | 'leader'
+    | 'leader-churn';
 
 export interface TopologyChurnPhaseWindow {
     readonly name: TopologyChurnPhaseName;
@@ -32,6 +39,7 @@ export interface TopologyChurnPhaseWindow {
     readonly endedAtEpochMs: number;
     readonly joinCount: number;
     readonly leaveCount: number;
+    readonly appointmentCount: number;
 }
 
 export interface TopologyChurnPromotionSighting {
@@ -66,6 +74,7 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly durationMs: number;
     readonly joinCount: number;
     readonly leaveCount: number;
+    readonly appointmentCount: number;
     readonly planCount: number;
     readonly plansPerMinute: number | null;
     readonly promotedPlanCount: number;
@@ -128,6 +137,7 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 durationMs,
                 joinCount: phase.joinCount,
                 leaveCount: phase.leaveCount,
+                appointmentCount: phase.appointmentCount,
                 planCount: figures.plans.length,
                 plansPerMinute: computePerMinute(figures.plans.length, durationMs),
                 ...computePromotionFigures(figures),

@@ -27,18 +27,28 @@ export function toTopologyChurnRoomSpecs(shapes: readonly TopologyChurnRoomShape
 const NINETY_SECOND_CHURN_PHASES: readonly TopologyChurnPhaseSpec[] = [{
     name: 'churn',
     shape: 'alternate',
-    durationMs: 90_000
+    durationMs: 90_000,
+    interleaved: 'none'
 }];
 
 export const TOPOLOGY_CHURN_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs(
     [3, 8, 20].map((memberCount) => ({ memberCount, phases: NINETY_SECOND_CHURN_PHASES }))
 );
 
-export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs([{
-    memberCount: 4,
-    phases: [
-        { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
-        { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
-        { name: 'flap', shape: 'alternate', durationMs: 90_000 }
-    ]
-}]);
+const LEADER_PHASES: readonly TopologyChurnPhaseSpec[] = [
+    { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
+    { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' }
+];
+
+export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs([
+    {
+        memberCount: 4,
+        phases: [
+            { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
+            { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
+            { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' }
+        ]
+    },
+    { memberCount: 8, phases: LEADER_PHASES },
+    { memberCount: 12, phases: LEADER_PHASES }
+]);

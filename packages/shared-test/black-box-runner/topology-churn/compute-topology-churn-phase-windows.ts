@@ -27,14 +27,16 @@ export function computeTopologyChurnPhaseWindows(
             startedAtEpochMs: input.formationStartedAtEpochMs,
             endedAtEpochMs: formationEndedAtEpochMs,
             joinCount: input.memberCount,
-            leaveCount: 0
+            leaveCount: 0,
+            appointmentCount: 0
         },
         ...input.runs.map((run, index) => ({
             name: run.name,
             startedAtEpochMs: runStartsAtEpochMs[index],
             endedAtEpochMs: run.endedAtEpochMs,
             joinCount: run.events.filter((event) => event.kind === 'join').length,
-            leaveCount: run.events.filter((event) => event.kind === 'leave').length
+            leaveCount: run.events.filter((event) => event.kind === 'leave').length,
+            appointmentCount: run.events.filter((event) => event.kind === 'appoint').length
         }))
     ];
 }

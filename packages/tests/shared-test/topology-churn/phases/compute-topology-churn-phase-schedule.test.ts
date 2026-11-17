@@ -26,7 +26,7 @@ const RAMP_DOWN: TopologyChurnPhaseSpec = { name: 'ramp-down', shape: 'ramp', to
 describe('computeTopologyChurnPhaseSchedule', () => {
     it('alternates join and leave every interval from the phase\'s start, starting with a join', () => {
         const schedule = computeTopologyChurnPhaseSchedule({
-            spec: { name: 'churn', shape: 'alternate', durationMs: 90_000 },
+            spec: { name: 'churn', shape: 'alternate', durationMs: 90_000, interleaved: 'none' },
             presentMemberCount: 8,
             topologyConfig: SERVED_TOPOLOGY_CONFIG
         });
@@ -49,7 +49,7 @@ describe('computeTopologyChurnPhaseSchedule', () => {
 
     it('places no step at the phase\'s end', () => {
         const schedule = computeTopologyChurnPhaseSchedule({
-            spec: { name: 'churn', shape: 'alternate', durationMs: 9_000 },
+            spec: { name: 'churn', shape: 'alternate', durationMs: 9_000, interleaved: 'none' },
             presentMemberCount: 8,
             topologyConfig: SERVED_TOPOLOGY_CONFIG
         });
@@ -68,7 +68,7 @@ describe('computeTopologyChurnPhaseSchedule', () => {
 
     it('places a step in a phase\'s last partial interval', () => {
         const schedule = computeTopologyChurnPhaseSchedule({
-            spec: { name: 'churn', shape: 'alternate', durationMs: 10_000 },
+            spec: { name: 'churn', shape: 'alternate', durationMs: 10_000, interleaved: 'none' },
             presentMemberCount: 8,
             topologyConfig: SERVED_TOPOLOGY_CONFIG
         });
@@ -80,7 +80,7 @@ describe('computeTopologyChurnPhaseSchedule', () => {
 
     it('flaps like churn, under its own name', () => {
         const schedule = computeTopologyChurnPhaseSchedule({
-            spec: { name: 'flap', shape: 'alternate', durationMs: 90_000 },
+            spec: { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' },
             presentMemberCount: 4,
             topologyConfig: SERVED_TOPOLOGY_CONFIG
         });
@@ -138,11 +138,69 @@ describe('computeTopologyChurnPhaseSchedule', () => {
             topologyConfig: SERVED_TOPOLOGY_CONFIG
         })).toEqual({ name: 'ramp-down', steps: [], durationMs: 0 });
     });
+
+    it('appoints the creator first, then the deepest member every interval', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
+            presentMemberCount: 12,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // Four appointments ten seconds apart; the phase lasts four intervals.
+        expect(schedule).toEqual({
+            name: 'leader',
+            durationMs: 40_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'appoint', candidate: 'creator' } },
+                { offsetMs: 10_000, action: { kind: 'appoint', candidate: 'deepest' } },
+                { offsetMs: 20_000, action: { kind: 'appoint', candidate: 'deepest' } },
+                { offsetMs: 30_000, action: { kind: 'appoint', candidate: 'deepest' } }
+            ]
+        });
+    });
+
+    it('interleaves an appointment half an interval after every fourth membership slot', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' },
+            presentMemberCount: 12,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+        const deepest = { kind: 'appoint', candidate: 'deepest' };
+
+        // 45 s holds 15 membership slots, at 0, 3 000, …, 42 000; slots 0, 4, 8 and 12 are followed by an appointment.
+        expect(schedule.name).toBe('leader-churn');
+        expect(schedule.durationMs).toBe(45_000);
+        expect(schedule.steps).toHaveLength(19);
+        expect(schedule.steps.slice(0, 7)).toEqual([
+            { offsetMs: 0, action: { kind: 'join' } },
+            { offsetMs: 1_500, action: deepest },
+            { offsetMs: 3_000, action: { kind: 'leave' } },
+            { offsetMs: 6_000, action: { kind: 'join' } },
+            { offsetMs: 9_000, action: { kind: 'leave' } },
+            { offsetMs: 12_000, action: { kind: 'join' } },
+            { offsetMs: 13_500, action: deepest }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind === 'appoint').map((step) => step.offsetMs)).toEqual([
+            1_500,
+            13_500,
+            25_500,
+            37_500
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind !== 'appoint')).toEqual(
+            Array.from({ length: 15 }, (_, index) => ({
+                offsetMs: index * 3_000,
+                action: { kind: index % 2 === 0 ? 'join' : 'leave' }
+            }))
+        );
+        expect(schedule.steps.map((step) => step.offsetMs)).toEqual(
+            [...schedule.steps.map((step) => step.offsetMs)].sort((left, right) => left - right)
+        );
+    });
 });
 
 describe('computeTopologyChurnPhaseSchedule against the planner\'s kind selection', () => {
     it('the kind room crosses the planner\'s kind thresholds at 5 and 16 going up, 11 and 4 going down, and at every flap step', () => {
-        const flap: TopologyChurnPhaseSpec = { name: 'flap', shape: 'alternate', durationMs: 90_000 };
+        const flap: TopologyChurnPhaseSpec = { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' };
 
         expect(computeKindChangeSizes(RAMP_UP, 4)).toEqual([5, 16]);
         // The mesh holds down to 12 (16 less the exit width 4) and the tree down to 5 (no exit width).

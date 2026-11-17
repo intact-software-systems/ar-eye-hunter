@@ -15,9 +15,11 @@ import {
     type TopologyChurnPhaseRun
 } from './compute-topology-churn-phase-windows.ts';
 import { computeTopologyChurnReport, type TopologyChurnPromotionSighting } from './compute-topology-churn-report.ts';
+import { appointTopologyChurnLeader } from './phases/appoint-topology-churn-leader.mts';
 import {
     computeTopologyChurnPhaseSchedule,
     TOPOLOGY_CHURN_INTERVAL_MS,
+    type TopologyChurnAction,
     type TopologyChurnPhaseSchedule
 } from './phases/compute-topology-churn-phase-schedule.ts';
 import type { TopologyChurnRoomSpec } from './phases/topology-churn-room-specs.ts';
@@ -72,12 +74,18 @@ interface PresentSession {
     readonly presentSinceEpochMs: number;
 }
 
+interface TopologyChurnLeadership {
+    leader: TopologyChurnSession | null;
+}
+
 interface ChurnRoom {
     readonly spec: TopologyChurnRoomSpec;
     readonly roomRef: GroupRef;
     readonly creator: TopologyChurnSession;
     readonly topologyConfig: EffectiveGroupTopologyConfig;
     readonly present: PresentSession[];
+    /** The member last appointed director; it stays, as the creator does. */
+    readonly leadership: TopologyChurnLeadership;
     readonly sightings: TopologyChurnPromotionSighting[];
     readonly linkSamples: TopologyChurnLinkSample[];
     readonly progress: TopologyChurnProgress;
@@ -165,6 +173,7 @@ export class TopologyChurnScenario {
             creator,
             topologyConfig,
             present: [],
+            leadership: { leader: null },
             sightings: [],
             linkSamples: [],
             progress,
@@ -270,19 +279,41 @@ export class TopologyChurnScenario {
         const events: TopologyChurnEvent[] = [];
         for (const step of schedule.steps) {
             await this.#sleepUntil(startedAtEpochMs + step.offsetMs, room.signal);
-            const event = resolveTopologyChurnEvent({
-                action: step.action,
-                presentMembers: room.present.map((present) => ({
-                    memberId: present.session.clientId,
-                    presentSinceEpochMs: present.presentSinceEpochMs
-                })),
-                creatorMemberId: room.creator.clientId
-            });
-            await this.#applyChurnEvent(room, event);
-            events.push(event);
+            events.push(await this.#applyStep(room, step.action));
         }
         await this.#sleepUntil(startedAtEpochMs + schedule.durationMs, room.signal);
         return { name: schedule.name, endedAtEpochMs: this.#input.clock.nowEpochMs(), events };
+    }
+
+    async #applyStep(room: ChurnRoom, action: TopologyChurnAction): Promise<TopologyChurnEvent> {
+        if (action.kind === 'appoint') {
+            const leader = await appointTopologyChurnLeader({
+                api: this.#input.api,
+                roomRef: room.roomRef,
+                creator: room.creator,
+                present: room.present.map((present) => present.session),
+                leaderSessionId: room.leadership.leader?.sessionId ?? null,
+                candidate: action.candidate
+            });
+            if (leader === null) {
+                return { kind: 'skip' };
+            }
+            room.leadership.leader = leader;
+            return { kind: 'appoint', memberId: leader.clientId };
+        }
+        const stayingMemberIds = [room.creator, room.leadership.leader].flatMap((session) =>
+            session === null ? [] : [session.clientId]
+        );
+        const event = resolveTopologyChurnEvent({
+            action,
+            presentMembers: room.present.map((present) => ({
+                memberId: present.session.clientId,
+                presentSinceEpochMs: present.presentSinceEpochMs
+            })),
+            stayingMemberIds
+        });
+        await this.#applyChurnEvent(room, event);
+        return event;
     }
 
     async #applyChurnEvent(room: ChurnRoom, event: TopologyChurnEvent): Promise<void> {

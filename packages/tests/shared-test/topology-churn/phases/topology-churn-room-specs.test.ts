@@ -6,9 +6,9 @@ import {
 } from '@shared-test/black-box-runner/topology-churn/phases/topology-churn-room-specs.ts';
 import { describe, expect, it } from 'vitest';
 
-const SHORT_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 9_000 };
-const LONG_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 30_000 };
-const NINETY_SECOND_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 90_000 };
+const SHORT_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 9_000, interleaved: 'none' };
+const LONG_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 30_000, interleaved: 'none' };
+const NINETY_SECOND_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alternate', durationMs: 90_000, interleaved: 'none' };
 
 describe('toTopologyChurnRoomSpecs', () => {
     it('crosses both replanning modes with every room shape, mode by mode, and numbers the rooms in that order', () => {
@@ -41,16 +41,24 @@ describe('TOPOLOGY_CHURN_ROOM_SPECS', () => {
 });
 
 describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
-    it('the reshape room set is a room of 4 that ramps up, ramps down and flaps for 90 s, under both modes', () => {
-        const phases: readonly TopologyChurnPhaseSpec[] = [
+    it('the reshape room set is a room of 4 that ramps and flaps, and led rooms of 8 and 12 re-rooted quiet and under churn, under both modes', () => {
+        const kindPhases: readonly TopologyChurnPhaseSpec[] = [
             { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
             { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
-            { name: 'flap', shape: 'alternate', durationMs: 90_000 }
+            { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' }
+        ];
+        const leaderPhases: readonly TopologyChurnPhaseSpec[] = [
+            { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
+            { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' }
         ];
 
         expect(TOPOLOGY_RESHAPE_ROOM_SPECS).toEqual([
-            { index: 0, replanning: 'auto', memberCount: 4, phases },
-            { index: 1, replanning: 'debounced', memberCount: 4, phases }
+            { index: 0, replanning: 'auto', memberCount: 4, phases: kindPhases },
+            { index: 1, replanning: 'auto', memberCount: 8, phases: leaderPhases },
+            { index: 2, replanning: 'auto', memberCount: 12, phases: leaderPhases },
+            { index: 3, replanning: 'debounced', memberCount: 4, phases: kindPhases },
+            { index: 4, replanning: 'debounced', memberCount: 8, phases: leaderPhases },
+            { index: 5, replanning: 'debounced', memberCount: 12, phases: leaderPhases }
         ]);
     });
 });

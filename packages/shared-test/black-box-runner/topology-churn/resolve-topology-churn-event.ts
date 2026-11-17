@@ -6,15 +6,16 @@ export interface TopologyChurnPresentMember {
 }
 
 interface ResolveTopologyChurnEventInput {
-    readonly action: TopologyChurnAction;
+    readonly action: Extract<TopologyChurnAction, { kind: 'join' | 'leave'; }>;
     readonly presentMembers: readonly TopologyChurnPresentMember[];
-    readonly creatorMemberId: string;
+    readonly stayingMemberIds: readonly string[];
 }
 
-/** `skip` is a leave turn with no member but the creator present. */
+/** `skip` is a leave turn with only staying members present, or an appointment turn without a candidate. */
 export type TopologyChurnEvent =
     | { readonly kind: 'join'; }
     | { readonly kind: 'leave'; readonly memberId: string; }
+    | { readonly kind: 'appoint'; readonly memberId: string; }
     | { readonly kind: 'skip'; };
 
 export function resolveTopologyChurnEvent(input: ResolveTopologyChurnEventInput): TopologyChurnEvent {
@@ -22,7 +23,7 @@ export function resolveTopologyChurnEvent(input: ResolveTopologyChurnEventInput)
         return { kind: 'join' };
     }
     const leaver = input.presentMembers
-        .filter((member) => member.memberId !== input.creatorMemberId)
+        .filter((member) => !input.stayingMemberIds.includes(member.memberId))
         .reduce<TopologyChurnPresentMember | null>(
             (longest, member) =>
                 longest === null || member.presentSinceEpochMs < longest.presentSinceEpochMs ? member : longest,

@@ -24,7 +24,8 @@ const FORMATION: TopologyChurnPhaseWindow = {
     startedAtEpochMs: 0,
     endedAtEpochMs: 60_000,
     joinCount: 4,
-    leaveCount: 0
+    leaveCount: 0,
+    appointmentCount: 0
 };
 
 function computeFormation(
@@ -51,7 +52,8 @@ describe('computeTopologyChurnReport', () => {
             startedAtEpochMs: 60_000,
             endedAtEpochMs: 180_000,
             joinCount: 6,
-            leaveCount: 5
+            leaveCount: 5,
+            appointmentCount: 0
         };
         const emptyChurn: TopologyChurnPhaseWindow = { ...churn, startedAtEpochMs: 180_000 };
         const report = computeTopologyChurnReport({
@@ -88,6 +90,38 @@ describe('computeTopologyChurnReport', () => {
         expect(emptyPhase.promotionsPerMinute).toBeNull();
         // The plan at 180 000 lies in no phase's window.
         expect(report.outsidePhasesPlanCount).toBe(1);
+    });
+
+    it('counts each run\'s appointments', () => {
+        const leader: TopologyChurnPhaseWindow = {
+            name: 'leader',
+            startedAtEpochMs: 60_000,
+            endedAtEpochMs: 100_000,
+            joinCount: 0,
+            leaveCount: 0,
+            appointmentCount: 4
+        };
+        const leaderChurn: TopologyChurnPhaseWindow = {
+            name: 'leader-churn',
+            startedAtEpochMs: 100_000,
+            endedAtEpochMs: 145_000,
+            joinCount: 8,
+            leaveCount: 7,
+            appointmentCount: 3
+        };
+        const report = computeTopologyChurnReport({
+            plans: [],
+            sightings: [],
+            linkSamples: [],
+            phases: [FORMATION, leader, leaderChurn],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.phases.map((phase) => [phase.phase, phase.appointmentCount])).toEqual([
+            ['formation', 0],
+            ['leader', 4],
+            ['leader-churn', 3]
+        ]);
     });
 
     it('counts the plans planned before the first phase or after the last, and no removal', () => {
@@ -358,7 +392,8 @@ describe('computeTopologyChurnReport', () => {
             startedAtEpochMs: 0,
             endedAtEpochMs: 30_000,
             joinCount: 0,
-            leaveCount: 0
+            leaveCount: 0,
+            appointmentCount: 0
         };
         const report = computeTopologyChurnReport({
             plans: [

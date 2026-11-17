@@ -1,13 +1,25 @@
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 
 export const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
+/** An interleaved appointment follows every fourth membership slot, half an interval after it. */
+export const TOPOLOGY_CHURN_INTERLEAVE_SLOTS = 4;
+export const TOPOLOGY_CHURN_INTERLEAVE_OFFSET_MS = 1_500;
 
 export type TopologyChurnPhaseSpec =
-    | { readonly name: 'churn' | 'flap'; readonly shape: 'alternate'; readonly durationMs: number; }
+    | {
+        readonly name: 'churn' | 'flap' | 'leader-churn';
+        readonly shape: 'alternate';
+        readonly durationMs: number;
+        readonly interleaved: 'none' | 'appoint-deepest';
+    }
     | { readonly name: 'ramp-up'; readonly shape: 'ramp'; readonly toMemberCount: 'one-past-mesh-entry'; }
-    | { readonly name: 'ramp-down'; readonly shape: 'ramp'; readonly toMemberCount: 'one-below-tree-entry'; };
+    | { readonly name: 'ramp-down'; readonly shape: 'ramp'; readonly toMemberCount: 'one-below-tree-entry'; }
+    | { readonly name: 'leader'; readonly shape: 'appointments'; readonly count: number; readonly intervalMs: number; };
 
-export type TopologyChurnAction = { readonly kind: 'join'; } | { readonly kind: 'leave'; };
+export type TopologyChurnAction =
+    | { readonly kind: 'join'; }
+    | { readonly kind: 'leave'; }
+    | { readonly kind: 'appoint'; readonly candidate: 'creator' | 'deepest'; };
 
 export interface TopologyChurnStep {
     readonly offsetMs: number;
@@ -33,10 +45,21 @@ export function computeTopologyChurnPhaseSchedule(
     const { spec } = input;
     if (spec.shape === 'alternate') {
         const stepCount = Math.ceil(spec.durationMs / TOPOLOGY_CHURN_INTERVAL_MS);
+        const membershipSteps = toSteps(stepCount, (index) => index % 2 === 0 ? { kind: 'join' } : { kind: 'leave' });
         return {
             name: spec.name,
-            steps: toSteps(stepCount, (index) => index % 2 === 0 ? { kind: 'join' } : { kind: 'leave' }),
+            steps: spec.interleaved === 'none' ? membershipSteps : toInterleavedSteps(membershipSteps),
             durationMs: spec.durationMs
+        };
+    }
+    if (spec.shape === 'appointments') {
+        return {
+            name: spec.name,
+            steps: Array.from({ length: spec.count }, (_, index) => ({
+                offsetMs: index * spec.intervalMs,
+                action: { kind: 'appoint', candidate: index === 0 ? 'creator' : 'deepest' }
+            })),
+            durationMs: spec.count * spec.intervalMs
         };
     }
     const difference = resolveRampTargetMemberCount(spec.toMemberCount, input.topologyConfig) -
@@ -62,4 +85,15 @@ function toSteps(stepCount: number, toAction: (index: number) => TopologyChurnAc
         offsetMs: index * TOPOLOGY_CHURN_INTERVAL_MS,
         action: toAction(index)
     }));
+}
+
+function toInterleavedSteps(membershipSteps: readonly TopologyChurnStep[]): readonly TopologyChurnStep[] {
+    return membershipSteps.flatMap((step, index) =>
+        index % TOPOLOGY_CHURN_INTERLEAVE_SLOTS === 0
+            ? [step, {
+                offsetMs: step.offsetMs + TOPOLOGY_CHURN_INTERLEAVE_OFFSET_MS,
+                action: { kind: 'appoint', candidate: 'deepest' }
+            }]
+            : [step]
+    );
 }

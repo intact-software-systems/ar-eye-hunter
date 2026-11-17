@@ -23,8 +23,22 @@ describe('computeTopologyChurnPhaseWindows', () => {
 
         // Every one of the room's members joins during formation, the creator included; nobody leaves.
         expect(windows).toEqual([
-            { name: 'formation', startedAtEpochMs: 10_000, endedAtEpochMs: 20_500, joinCount: 8, leaveCount: 0 },
-            { name: 'churn', startedAtEpochMs: 20_500, endedAtEpochMs: 110_700, joinCount: 3, leaveCount: 1 }
+            {
+                name: 'formation',
+                startedAtEpochMs: 10_000,
+                endedAtEpochMs: 20_500,
+                joinCount: 8,
+                leaveCount: 0,
+                appointmentCount: 0
+            },
+            {
+                name: 'churn',
+                startedAtEpochMs: 20_500,
+                endedAtEpochMs: 110_700,
+                joinCount: 3,
+                leaveCount: 1,
+                appointmentCount: 0
+            }
         ]);
     });
 
@@ -87,5 +101,40 @@ describe('computeTopologyChurnPhaseWindows', () => {
         // The first run joined two and left none; the second left two and joined one. A skip is neither.
         expect(first).toMatchObject({ joinCount: 2, leaveCount: 0 });
         expect(second).toMatchObject({ joinCount: 1, leaveCount: 2 });
+    });
+
+    it('counts each run\'s appointments', () => {
+        const [formation, leader, leaderChurn] = computeTopologyChurnPhaseWindows({
+            formationStartedAtEpochMs: 0,
+            lastPresenceAnsweredAtEpochMs: 1_000,
+            memberCount: 8,
+            settleMs: 6_000,
+            runs: [
+                {
+                    name: 'leader',
+                    endedAtEpochMs: 47_000,
+                    events: [
+                        { kind: 'appoint', memberId: 'creator' },
+                        { kind: 'appoint', memberId: 'a' },
+                        { kind: 'skip' },
+                        { kind: 'appoint', memberId: 'b' }
+                    ]
+                },
+                {
+                    name: 'leader-churn',
+                    endedAtEpochMs: 92_000,
+                    events: [
+                        { kind: 'join' },
+                        { kind: 'appoint', memberId: 'c' },
+                        { kind: 'leave', memberId: 'd' }
+                    ]
+                }
+            ]
+        });
+
+        // Formation appoints nobody; a skipped appointment is not one; joins and leaves are counted apart.
+        expect(formation.appointmentCount).toBe(0);
+        expect(leader).toMatchObject({ name: 'leader', joinCount: 0, leaveCount: 0, appointmentCount: 3 });
+        expect(leaderChurn).toMatchObject({ name: 'leader-churn', joinCount: 1, leaveCount: 1, appointmentCount: 1 });
     });
 });
