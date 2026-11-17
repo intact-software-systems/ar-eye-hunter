@@ -50,6 +50,7 @@ import {
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
+import { DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
 import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
@@ -60,7 +61,8 @@ import { readDistributedRunSeedFromUrl, writeDistributedRunSeedToUrl } from './d
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
 import { readAvailableControlValue } from './read-available-control-value.ts';
 import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
-import { DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS, RUNNER_DISTRIBUTED_POLL_MS } from './runner-runs-constants.ts';
+
+const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
 
 export type UseRunnerRunsControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
