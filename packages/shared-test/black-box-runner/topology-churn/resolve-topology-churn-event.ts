@@ -16,6 +16,7 @@ export type TopologyChurnEvent =
     | { readonly kind: 'join'; }
     | { readonly kind: 'leave'; readonly memberId: string; }
     | { readonly kind: 'appoint'; readonly memberId: string; }
+    | { readonly kind: 'rtt-reports'; readonly reportCount: number; }
     | { readonly kind: 'skip'; };
 
 export function resolveTopologyChurnEvent(input: ResolveTopologyChurnEventInput): TopologyChurnEvent {

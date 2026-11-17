@@ -196,6 +196,25 @@ describe('computeTopologyChurnPhaseSchedule', () => {
             [...schedule.steps.map((step) => step.offsetMs)].sort((left, right) => left - right)
         );
     });
+
+    it('sends the matrix at the start and again after the refinement interval', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' },
+            presentMemberCount: 8,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // The server claims one refinement per room every 30 s; the repeat comes 2 s after that, and the phase lasts
+        // one settle of 6 s longer.
+        expect(schedule).toEqual({
+            name: 'rtt-skewed',
+            durationMs: 38_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'skewed' } },
+                { offsetMs: 32_000, action: { kind: 'report-rtt', matrix: 'skewed' } }
+            ]
+        });
+    });
 });
 
 describe('computeTopologyChurnPhaseSchedule against the planner\'s kind selection', () => {

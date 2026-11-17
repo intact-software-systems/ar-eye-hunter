@@ -1,9 +1,17 @@
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 
+import type { TopologyChurnRttMatrixShape } from '../rtt/compute-topology-churn-rtt-matrix.ts';
+
 export const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
 /** An interleaved appointment follows every fourth membership slot, half an interval after it. */
 export const TOPOLOGY_CHURN_INTERLEAVE_SLOTS = 4;
 export const TOPOLOGY_CHURN_INTERLEAVE_OFFSET_MS = 1_500;
+/**
+ * The server claims at most one RTT refinement per room every 30 s; a matrix is sent again 2 s after that, so the
+ * repeat's first report claims and plans over the complete stored matrix even when the first claim did not.
+ */
+export const TOPOLOGY_CHURN_RTT_REPEAT_MS = 32_000;
+const TOPOLOGY_CHURN_RTT_SETTLE_MS = 6_000;
 
 export type TopologyChurnPhaseSpec =
     | {
@@ -14,12 +22,18 @@ export type TopologyChurnPhaseSpec =
     }
     | { readonly name: 'ramp-up'; readonly shape: 'ramp'; readonly toMemberCount: 'one-past-mesh-entry'; }
     | { readonly name: 'ramp-down'; readonly shape: 'ramp'; readonly toMemberCount: 'one-below-tree-entry'; }
-    | { readonly name: 'leader'; readonly shape: 'appointments'; readonly count: number; readonly intervalMs: number; };
+    | { readonly name: 'leader'; readonly shape: 'appointments'; readonly count: number; readonly intervalMs: number; }
+    | {
+        readonly name: 'rtt-uniform' | 'rtt-skewed';
+        readonly shape: 'rtt-repeat';
+        readonly matrix: TopologyChurnRttMatrixShape;
+    };
 
 export type TopologyChurnAction =
     | { readonly kind: 'join'; }
     | { readonly kind: 'leave'; }
-    | { readonly kind: 'appoint'; readonly candidate: 'creator' | 'deepest'; };
+    | { readonly kind: 'appoint'; readonly candidate: 'creator' | 'deepest'; }
+    | { readonly kind: 'report-rtt'; readonly matrix: TopologyChurnRttMatrixShape; };
 
 export interface TopologyChurnStep {
     readonly offsetMs: number;
@@ -60,6 +74,14 @@ export function computeTopologyChurnPhaseSchedule(
                 action: { kind: 'appoint', candidate: index === 0 ? 'creator' : 'deepest' }
             })),
             durationMs: spec.count * spec.intervalMs
+        };
+    }
+    if (spec.shape === 'rtt-repeat') {
+        const action: TopologyChurnAction = { kind: 'report-rtt', matrix: spec.matrix };
+        return {
+            name: spec.name,
+            steps: [{ offsetMs: 0, action }, { offsetMs: TOPOLOGY_CHURN_RTT_REPEAT_MS, action }],
+            durationMs: TOPOLOGY_CHURN_RTT_REPEAT_MS + TOPOLOGY_CHURN_RTT_SETTLE_MS
         };
     }
     const difference = resolveRampTargetMemberCount(spec.toMemberCount, input.topologyConfig) -

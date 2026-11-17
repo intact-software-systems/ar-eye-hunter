@@ -29,7 +29,8 @@ describe('computeTopologyChurnPhaseWindows', () => {
                 endedAtEpochMs: 20_500,
                 joinCount: 8,
                 leaveCount: 0,
-                appointmentCount: 0
+                appointmentCount: 0,
+                rttReportCount: 0
             },
             {
                 name: 'churn',
@@ -37,7 +38,8 @@ describe('computeTopologyChurnPhaseWindows', () => {
                 endedAtEpochMs: 110_700,
                 joinCount: 3,
                 leaveCount: 1,
-                appointmentCount: 0
+                appointmentCount: 0,
+                rttReportCount: 0
             }
         ]);
     });
@@ -136,5 +138,27 @@ describe('computeTopologyChurnPhaseWindows', () => {
         expect(formation.appointmentCount).toBe(0);
         expect(leader).toMatchObject({ name: 'leader', joinCount: 0, leaveCount: 0, appointmentCount: 3 });
         expect(leaderChurn).toMatchObject({ name: 'leader-churn', joinCount: 1, leaveCount: 1, appointmentCount: 1 });
+    });
+
+    it('counts each run\'s RTT reports', () => {
+        const [formation, uniform, skewed] = computeTopologyChurnPhaseWindows({
+            formationStartedAtEpochMs: 0,
+            lastPresenceAnsweredAtEpochMs: 1_000,
+            memberCount: 8,
+            settleMs: 6_000,
+            runs: [
+                {
+                    name: 'rtt-uniform',
+                    endedAtEpochMs: 45_000,
+                    events: [{ kind: 'rtt-reports', reportCount: 14 }, { kind: 'rtt-reports', reportCount: 13 }]
+                },
+                { name: 'rtt-skewed', endedAtEpochMs: 83_000, events: [{ kind: 'rtt-reports', reportCount: 0 }] }
+            ]
+        });
+
+        // A run's count is the sum of the reports its sends carried; formation reports nothing.
+        expect(formation.rttReportCount).toBe(0);
+        expect(uniform).toMatchObject({ name: 'rtt-uniform', joinCount: 0, leaveCount: 0, rttReportCount: 27 });
+        expect(skewed).toMatchObject({ name: 'rtt-skewed', rttReportCount: 0 });
     });
 });

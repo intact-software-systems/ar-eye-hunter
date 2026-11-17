@@ -31,7 +31,9 @@ export type TopologyChurnPhaseName =
     | 'ramp-down'
     | 'flap'
     | 'leader'
-    | 'leader-churn';
+    | 'leader-churn'
+    | 'rtt-uniform'
+    | 'rtt-skewed';
 
 export interface TopologyChurnPhaseWindow {
     readonly name: TopologyChurnPhaseName;
@@ -40,6 +42,8 @@ export interface TopologyChurnPhaseWindow {
     readonly joinCount: number;
     readonly leaveCount: number;
     readonly appointmentCount: number;
+    /** The RTT reports the phase sent, accepted or not. */
+    readonly rttReportCount: number;
 }
 
 export interface TopologyChurnPromotionSighting {
@@ -75,6 +79,7 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly joinCount: number;
     readonly leaveCount: number;
     readonly appointmentCount: number;
+    readonly rttReportCount: number;
     readonly planCount: number;
     readonly plansPerMinute: number | null;
     readonly promotedPlanCount: number;
@@ -138,6 +143,7 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 joinCount: phase.joinCount,
                 leaveCount: phase.leaveCount,
                 appointmentCount: phase.appointmentCount,
+                rttReportCount: phase.rttReportCount,
                 planCount: figures.plans.length,
                 plansPerMinute: computePerMinute(figures.plans.length, durationMs),
                 ...computePromotionFigures(figures),

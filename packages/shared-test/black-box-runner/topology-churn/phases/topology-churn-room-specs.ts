@@ -6,11 +6,14 @@ export interface TopologyChurnRoomSpec {
     readonly index: number;
     readonly replanning: GroupTopologyReplanningMode;
     readonly memberCount: number;
+    /** Each present member opens a ticketed WebSocket after formation, the socket the room's RTT reports go over. */
+    readonly opensRttSockets: boolean;
     readonly phases: readonly TopologyChurnPhaseSpec[];
 }
 
 export interface TopologyChurnRoomShape {
     readonly memberCount: number;
+    readonly opensRttSockets: boolean;
     readonly phases: readonly TopologyChurnPhaseSpec[];
 }
 
@@ -32,7 +35,7 @@ const NINETY_SECOND_CHURN_PHASES: readonly TopologyChurnPhaseSpec[] = [{
 }];
 
 export const TOPOLOGY_CHURN_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs(
-    [3, 8, 20].map((memberCount) => ({ memberCount, phases: NINETY_SECOND_CHURN_PHASES }))
+    [3, 8, 20].map((memberCount) => ({ memberCount, opensRttSockets: false, phases: NINETY_SECOND_CHURN_PHASES }))
 );
 
 const LEADER_PHASES: readonly TopologyChurnPhaseSpec[] = [
@@ -40,15 +43,22 @@ const LEADER_PHASES: readonly TopologyChurnPhaseSpec[] = [
     { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' }
 ];
 
+const RTT_PHASES: readonly TopologyChurnPhaseSpec[] = [
+    { name: 'rtt-uniform', shape: 'rtt-repeat', matrix: 'uniform' },
+    { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' }
+];
+
 export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs([
     {
         memberCount: 4,
+        opensRttSockets: false,
         phases: [
             { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
             { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
             { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' }
         ]
     },
-    { memberCount: 8, phases: LEADER_PHASES },
-    { memberCount: 12, phases: LEADER_PHASES }
+    { memberCount: 8, opensRttSockets: false, phases: LEADER_PHASES },
+    { memberCount: 12, opensRttSockets: false, phases: LEADER_PHASES },
+    { memberCount: 8, opensRttSockets: true, phases: RTT_PHASES }
 ]);

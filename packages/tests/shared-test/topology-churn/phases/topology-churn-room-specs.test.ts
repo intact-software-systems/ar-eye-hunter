@@ -13,15 +13,15 @@ const NINETY_SECOND_CHURN: TopologyChurnPhaseSpec = { name: 'churn', shape: 'alt
 describe('toTopologyChurnRoomSpecs', () => {
     it('crosses both replanning modes with every room shape, mode by mode, and numbers the rooms in that order', () => {
         const specs = toTopologyChurnRoomSpecs([
-            { memberCount: 5, phases: [SHORT_CHURN] },
-            { memberCount: 12, phases: [SHORT_CHURN, LONG_CHURN] }
+            { memberCount: 5, opensRttSockets: false, phases: [SHORT_CHURN] },
+            { memberCount: 12, opensRttSockets: true, phases: [SHORT_CHURN, LONG_CHURN] }
         ]);
 
         expect(specs).toEqual([
-            { index: 0, replanning: 'auto', memberCount: 5, phases: [SHORT_CHURN] },
-            { index: 1, replanning: 'auto', memberCount: 12, phases: [SHORT_CHURN, LONG_CHURN] },
-            { index: 2, replanning: 'debounced', memberCount: 5, phases: [SHORT_CHURN] },
-            { index: 3, replanning: 'debounced', memberCount: 12, phases: [SHORT_CHURN, LONG_CHURN] }
+            { index: 0, replanning: 'auto', memberCount: 5, opensRttSockets: false, phases: [SHORT_CHURN] },
+            { index: 1, replanning: 'auto', memberCount: 12, opensRttSockets: true, phases: [SHORT_CHURN, LONG_CHURN] },
+            { index: 2, replanning: 'debounced', memberCount: 5, opensRttSockets: false, phases: [SHORT_CHURN] },
+            { index: 3, replanning: 'debounced', memberCount: 12, opensRttSockets: true, phases: [SHORT_CHURN, LONG_CHURN] }
         ]);
     });
 });
@@ -30,18 +30,18 @@ describe('TOPOLOGY_CHURN_ROOM_SPECS', () => {
     it('the churn room set is rooms of 3, 8 and 20 members, each with one 90 s churn phase, under both modes', () => {
         // The six rooms the churn measurement has always run, in the order it has always run them.
         expect(TOPOLOGY_CHURN_ROOM_SPECS).toEqual([
-            { index: 0, replanning: 'auto', memberCount: 3, phases: [NINETY_SECOND_CHURN] },
-            { index: 1, replanning: 'auto', memberCount: 8, phases: [NINETY_SECOND_CHURN] },
-            { index: 2, replanning: 'auto', memberCount: 20, phases: [NINETY_SECOND_CHURN] },
-            { index: 3, replanning: 'debounced', memberCount: 3, phases: [NINETY_SECOND_CHURN] },
-            { index: 4, replanning: 'debounced', memberCount: 8, phases: [NINETY_SECOND_CHURN] },
-            { index: 5, replanning: 'debounced', memberCount: 20, phases: [NINETY_SECOND_CHURN] }
+            { index: 0, replanning: 'auto', memberCount: 3, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] },
+            { index: 1, replanning: 'auto', memberCount: 8, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] },
+            { index: 2, replanning: 'auto', memberCount: 20, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] },
+            { index: 3, replanning: 'debounced', memberCount: 3, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] },
+            { index: 4, replanning: 'debounced', memberCount: 8, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] },
+            { index: 5, replanning: 'debounced', memberCount: 20, opensRttSockets: false, phases: [NINETY_SECOND_CHURN] }
         ]);
     });
 });
 
 describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
-    it('the reshape room set is a room of 4 that ramps and flaps, and led rooms of 8 and 12 re-rooted quiet and under churn, under both modes', () => {
+    it('the reshape room set is a room of 4 that ramps and flaps, led rooms of 8 and 12 re-rooted quiet and under churn, and a room of 8 that reports RTT, under both modes', () => {
         const kindPhases: readonly TopologyChurnPhaseSpec[] = [
             { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
             { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
@@ -51,14 +51,20 @@ describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
             { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
             { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' }
         ];
+        const rttPhases: readonly TopologyChurnPhaseSpec[] = [
+            { name: 'rtt-uniform', shape: 'rtt-repeat', matrix: 'uniform' },
+            { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' }
+        ];
 
         expect(TOPOLOGY_RESHAPE_ROOM_SPECS).toEqual([
-            { index: 0, replanning: 'auto', memberCount: 4, phases: kindPhases },
-            { index: 1, replanning: 'auto', memberCount: 8, phases: leaderPhases },
-            { index: 2, replanning: 'auto', memberCount: 12, phases: leaderPhases },
-            { index: 3, replanning: 'debounced', memberCount: 4, phases: kindPhases },
-            { index: 4, replanning: 'debounced', memberCount: 8, phases: leaderPhases },
-            { index: 5, replanning: 'debounced', memberCount: 12, phases: leaderPhases }
+            { index: 0, replanning: 'auto', memberCount: 4, opensRttSockets: false, phases: kindPhases },
+            { index: 1, replanning: 'auto', memberCount: 8, opensRttSockets: false, phases: leaderPhases },
+            { index: 2, replanning: 'auto', memberCount: 12, opensRttSockets: false, phases: leaderPhases },
+            { index: 3, replanning: 'auto', memberCount: 8, opensRttSockets: true, phases: rttPhases },
+            { index: 4, replanning: 'debounced', memberCount: 4, opensRttSockets: false, phases: kindPhases },
+            { index: 5, replanning: 'debounced', memberCount: 8, opensRttSockets: false, phases: leaderPhases },
+            { index: 6, replanning: 'debounced', memberCount: 12, opensRttSockets: false, phases: leaderPhases },
+            { index: 7, replanning: 'debounced', memberCount: 8, opensRttSockets: true, phases: rttPhases }
         ]);
     });
 });

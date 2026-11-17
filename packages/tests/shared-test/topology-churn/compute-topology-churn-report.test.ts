@@ -25,7 +25,8 @@ const FORMATION: TopologyChurnPhaseWindow = {
     endedAtEpochMs: 60_000,
     joinCount: 4,
     leaveCount: 0,
-    appointmentCount: 0
+    appointmentCount: 0,
+    rttReportCount: 0
 };
 
 function computeFormation(
@@ -53,7 +54,8 @@ describe('computeTopologyChurnReport', () => {
             endedAtEpochMs: 180_000,
             joinCount: 6,
             leaveCount: 5,
-            appointmentCount: 0
+            appointmentCount: 0,
+            rttReportCount: 0
         };
         const emptyChurn: TopologyChurnPhaseWindow = { ...churn, startedAtEpochMs: 180_000 };
         const report = computeTopologyChurnReport({
@@ -99,7 +101,8 @@ describe('computeTopologyChurnReport', () => {
             endedAtEpochMs: 100_000,
             joinCount: 0,
             leaveCount: 0,
-            appointmentCount: 4
+            appointmentCount: 4,
+            rttReportCount: 0
         };
         const leaderChurn: TopologyChurnPhaseWindow = {
             name: 'leader-churn',
@@ -107,7 +110,8 @@ describe('computeTopologyChurnReport', () => {
             endedAtEpochMs: 145_000,
             joinCount: 8,
             leaveCount: 7,
-            appointmentCount: 3
+            appointmentCount: 3,
+            rttReportCount: 0
         };
         const report = computeTopologyChurnReport({
             plans: [],
@@ -121,6 +125,38 @@ describe('computeTopologyChurnReport', () => {
             ['formation', 0],
             ['leader', 4],
             ['leader-churn', 3]
+        ]);
+    });
+
+    it('counts each run\'s RTT reports', () => {
+        const uniform: TopologyChurnPhaseWindow = {
+            name: 'rtt-uniform',
+            startedAtEpochMs: 60_000,
+            endedAtEpochMs: 98_000,
+            joinCount: 0,
+            leaveCount: 0,
+            appointmentCount: 0,
+            rttReportCount: 27
+        };
+        const skewed: TopologyChurnPhaseWindow = {
+            ...uniform,
+            name: 'rtt-skewed',
+            startedAtEpochMs: 98_000,
+            endedAtEpochMs: 136_000,
+            rttReportCount: 26
+        };
+        const report = computeTopologyChurnReport({
+            plans: [],
+            sightings: [],
+            linkSamples: [],
+            phases: [FORMATION, uniform, skewed],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.phases.map((phase) => [phase.phase, phase.rttReportCount])).toEqual([
+            ['formation', 0],
+            ['rtt-uniform', 27],
+            ['rtt-skewed', 26]
         ]);
     });
 
@@ -393,7 +429,8 @@ describe('computeTopologyChurnReport', () => {
             endedAtEpochMs: 30_000,
             joinCount: 0,
             leaveCount: 0,
-            appointmentCount: 0
+            appointmentCount: 0,
+            rttReportCount: 0
         };
         const report = computeTopologyChurnReport({
             plans: [

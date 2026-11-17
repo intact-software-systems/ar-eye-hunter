@@ -8,6 +8,7 @@ import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-ma
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { DEFAULT_RTT_REPORTING_DEGREE_LIMIT } from '@shared/rtc/rtt-reporting-policy.ts';
 
 import { computeTopologyChurnDrift, type TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import {
@@ -18,7 +19,10 @@ import { computeTopologyChurnReport, type TopologyChurnPromotionSighting } from 
 import { appointTopologyChurnLeader } from './phases/appoint-topology-churn-leader.mts';
 import {
     computeTopologyChurnPhaseSchedule,
+    TOPOLOGY_CHURN_INTERLEAVE_OFFSET_MS,
+    TOPOLOGY_CHURN_INTERLEAVE_SLOTS,
     TOPOLOGY_CHURN_INTERVAL_MS,
+    TOPOLOGY_CHURN_RTT_REPEAT_MS,
     type TopologyChurnAction,
     type TopologyChurnPhaseSchedule
 } from './phases/compute-topology-churn-phase-schedule.ts';
@@ -26,6 +30,9 @@ import type { TopologyChurnRoomSpec } from './phases/topology-churn-room-specs.t
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
+import { TOPOLOGY_CHURN_RTT_MS, type TopologyChurnRttMatrixShape } from './rtt/compute-topology-churn-rtt-matrix.ts';
+import { TopologyChurnRttReporter } from './rtt/topology-churn-rtt-reporter.mts';
+import type { TopologyChurnWsEndpoint } from './rtt/topology-churn-rtt-socket.mts';
 import { toTopologyChurnLinkSample, type TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 import { toTopologyChurnMarkdownTable, type TopologyChurnRoomEntry } from './to-topology-churn-markdown-table.ts';
 import { toTopologyChurnMember } from './to-topology-churn-member.ts';
@@ -63,6 +70,7 @@ const APPLICATION_ID = 'topology-churn';
 interface TopologyChurnRunContext {
     readonly administrator: TopologyChurnSession;
     readonly replacedLayoutOverlapMs: number;
+    readonly endpointsByApiBaseUrl: ReadonlyMap<string, TopologyChurnWsEndpoint>;
 }
 
 interface TopologyChurnProgress {
@@ -86,6 +94,8 @@ interface ChurnRoom {
     readonly present: PresentSession[];
     /** The member last appointed director; it stays, as the creator does. */
     readonly leadership: TopologyChurnLeadership;
+    /** Sends the room's RTT reports; it opens sockets only in a room whose spec opens them. */
+    readonly rttReporter: TopologyChurnRttReporter;
     readonly sightings: TopologyChurnPromotionSighting[];
     readonly linkSamples: TopologyChurnLinkSample[];
     readonly progress: TopologyChurnProgress;
@@ -110,10 +120,17 @@ export class TopologyChurnScenario {
 
     async run(): Promise<void> {
         const primary = this.#input.apiBaseUrls[0];
-        const config = await this.#input.api.readApiConfig(primary);
+        const configs = await Promise.all(
+            this.#input.apiBaseUrls.map((apiBaseUrl) => this.#input.api.readApiConfig(apiBaseUrl))
+        );
+        const config = configs[0];
         const context: TopologyChurnRunContext = {
             administrator: await this.#input.api.loginAdministrator(primary, ADMINISTRATOR_CLIENT_IP),
-            replacedLayoutOverlapMs: config.rtcReplacedLayoutOverlapMs
+            replacedLayoutOverlapMs: config.rtcReplacedLayoutOverlapMs,
+            endpointsByApiBaseUrl: new Map(this.#input.apiBaseUrls.map((apiBaseUrl, index) => [apiBaseUrl, {
+                wsBaseUrl: configs[index].wsBaseUrl,
+                createWsPath: configs[index].endpoints.createWs
+            }]))
         };
         const rooms: TopologyChurnRoomEntry[] = [];
         for (const spec of this.#input.rooms) {
@@ -129,8 +146,18 @@ export class TopologyChurnScenario {
     async #runRoom(spec: TopologyChurnRoomSpec, context: TopologyChurnRunContext): Promise<TopologyChurnRoomEntry> {
         const progress: TopologyChurnProgress = { step: 'creating the room' };
         const run = new AbortController();
+        const roomRef: GroupRef = {
+            applicationId: APPLICATION_ID,
+            workspaceId: this.#workspaceId,
+            groupId: `churn-${spec.index}-${spec.replanning}-${spec.memberCount}`
+        };
+        const rttReporter = new TopologyChurnRttReporter({
+            api: this.#input.api,
+            roomRef,
+            endpointsByApiBaseUrl: context.endpointsByApiBaseUrl
+        });
         try {
-            const room = await this.#openRoom(spec, progress, run.signal);
+            const room = await this.#openRoom({ spec, roomRef, rttReporter, progress, signal: run.signal });
             const entry = await this.#measureWhileLive(room, context, run);
             progress.step = 'disconnecting the members still present';
             await this.#runConcurrently(
@@ -149,35 +176,27 @@ export class TopologyChurnScenario {
             );
         }
         finally {
+            rttReporter.close();
             run.abort();
         }
     }
 
     async #openRoom(
-        spec: TopologyChurnRoomSpec,
-        progress: TopologyChurnProgress,
-        signal: AbortSignal
+        opening: Pick<ChurnRoom, 'spec' | 'roomRef' | 'rttReporter' | 'progress' | 'signal'>
     ): Promise<ChurnRoom> {
-        const roomRef: GroupRef = {
-            applicationId: APPLICATION_ID,
-            workspaceId: this.#workspaceId,
-            groupId: `churn-${spec.index}-${spec.replanning}-${spec.memberCount}`
-        };
+        const { spec, roomRef } = opening;
         const creator = await this.#signIn(this.#createMember(spec));
         await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyChurnPolicy(spec.replanning) });
-        progress.step = 'reading the room\'s topology configuration';
+        opening.progress.step = 'reading the room\'s topology configuration';
         const topologyConfig = await this.#input.api.readEffectiveTopologyConfig(creator, roomRef);
         return {
-            spec,
-            roomRef,
+            ...opening,
             creator,
             topologyConfig,
             present: [],
             leadership: { leader: null },
             sightings: [],
-            linkSamples: [],
-            progress,
-            signal
+            linkSamples: []
         };
     }
 
@@ -207,6 +226,9 @@ export class TopologyChurnScenario {
         await this.#formRoom(room);
         const lastPresenceAnsweredAtEpochMs = Math.max(...room.present.map((present) => present.presentSinceEpochMs));
         const formationEndedAtEpochMs = lastPresenceAnsweredAtEpochMs + TOPOLOGY_CHURN_SETTLE_MS;
+        if (room.spec.opensRttSockets) {
+            await this.#openRttSockets(room);
+        }
         await this.#sleepUntil(formationEndedAtEpochMs, room.signal);
         const runs = await this.#runPhases(room, formationEndedAtEpochMs);
         room.progress.step = 'waiting for the newest plan to be accepted';
@@ -254,6 +276,21 @@ export class TopologyChurnScenario {
         ]);
     }
 
+    /**
+     * The pairs are chosen under the default RTT reporting limit, and the server selects them under the larger of that
+     * limit and the room's degree limit, so the two must agree.
+     */
+    async #openRttSockets(room: ChurnRoom): Promise<void> {
+        room.progress.step = 'opening the RTT sockets';
+        if (room.topologyConfig.degreeLimit !== DEFAULT_RTT_REPORTING_DEGREE_LIMIT) {
+            throw new Error(
+                `the room's degree limit ${room.topologyConfig.degreeLimit} is not the RTT reporting limit ` +
+                    `${DEFAULT_RTT_REPORTING_DEGREE_LIMIT} its reported pairs are chosen under`
+            );
+        }
+        await room.rttReporter.open(room.present.map((present) => present.session));
+    }
+
     async #runPhases(room: ChurnRoom, formationEndedAtEpochMs: number): Promise<readonly TopologyChurnPhaseRun[]> {
         const runs: TopologyChurnPhaseRun[] = [];
         let startedAtEpochMs = formationEndedAtEpochMs;
@@ -286,6 +323,9 @@ export class TopologyChurnScenario {
     }
 
     async #applyStep(room: ChurnRoom, action: TopologyChurnAction): Promise<TopologyChurnEvent> {
+        if (action.kind === 'report-rtt') {
+            return await this.#reportRtt(room, action.matrix);
+        }
         if (action.kind === 'appoint') {
             const leader = await appointTopologyChurnLeader({
                 api: this.#input.api,
@@ -314,6 +354,14 @@ export class TopologyChurnScenario {
         });
         await this.#applyChurnEvent(room, event);
         return event;
+    }
+
+    async #reportRtt(room: ChurnRoom, matrix: TopologyChurnRttMatrixShape): Promise<TopologyChurnEvent> {
+        const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
+        return {
+            kind: 'rtt-reports',
+            reportCount: room.rttReporter.report({ layout, shape: matrix, nowEpochMs: this.#input.clock.nowEpochMs() })
+        };
     }
 
     async #applyChurnEvent(room: ChurnRoom, event: TopologyChurnEvent): Promise<void> {
@@ -477,6 +525,10 @@ function toReport(
         constants: {
             roomSpecs,
             intervalMs: TOPOLOGY_CHURN_INTERVAL_MS,
+            interleaveSlots: TOPOLOGY_CHURN_INTERLEAVE_SLOTS,
+            interleaveOffsetMs: TOPOLOGY_CHURN_INTERLEAVE_OFFSET_MS,
+            rttMs: TOPOLOGY_CHURN_RTT_MS,
+            rttRepeatMs: TOPOLOGY_CHURN_RTT_REPEAT_MS,
             settleMs: TOPOLOGY_CHURN_SETTLE_MS,
             sampleIntervalMs: TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS,
             requestTimeoutMs: TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS,

@@ -27,6 +27,7 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['joins', (phase) => String(phase.joinCount)],
     ['leaves', (phase) => String(phase.leaveCount)],
     ['appointments', (phase) => String(phase.appointmentCount)],
+    ['rtt reports', (phase) => String(phase.rttReportCount)],
     ['plans', (phase) => String(phase.planCount)],
     ['plans/min', (phase) => toFixedFigure(phase.plansPerMinute, 1)],
     ['promoted', (phase) => String(phase.promotedPlanCount)],

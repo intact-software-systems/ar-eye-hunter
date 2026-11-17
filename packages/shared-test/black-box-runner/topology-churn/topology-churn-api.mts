@@ -21,6 +21,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 
 import {
     requestJson,
+    requireString,
     type ProofJsonObject,
     type RequestOptions
 } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
@@ -177,6 +178,15 @@ export class TopologyChurnApi {
         await this.#mutate(session, { method: 'POST', path: `${toGroupPath(roomRef)}/director/appoint`, body: {} });
     }
 
+    /** A one-use ticket that authenticates the session's WebSocket upgrade. */
+    async writeWebSocketTicket(session: TopologyChurnSession): Promise<string> {
+        const body = await this.#mutate(session, { method: 'POST', path: '/api/auth/ws-ticket', body: {} });
+        if (requireString(body.sessionId, 'ticket session id') !== session.sessionId) {
+            throw new TypeError(`The WebSocket ticket of ${session.member.username} names another session.`);
+        }
+        return requireString(body.ticket, 'WebSocket ticket');
+    }
+
     async readRoom(session: TopologyChurnSession, roomRef: GroupRef): Promise<GroupSnapshot> {
         const body = await this.#request(session.member.apiBaseUrl, toGroupPath(roomRef), {
             method: 'GET',
@@ -247,12 +257,16 @@ export class TopologyChurnApi {
         return { member, clientId, sessionId, accessToken };
     }
 
-    async #mutate(session: TopologyChurnSession, mutation: TopologyChurnMutation): Promise<void> {
-        await this.#request(session.member.apiBaseUrl, toApiMutationRequestPath(mutation.path, crypto.randomUUID()), {
-            method: mutation.method,
-            headers: toSessionHeaders(session),
-            body: mutation.body
-        });
+    async #mutate(session: TopologyChurnSession, mutation: TopologyChurnMutation): Promise<ProofJsonObject> {
+        return await this.#request(
+            session.member.apiBaseUrl,
+            toApiMutationRequestPath(mutation.path, crypto.randomUUID()),
+            {
+                method: mutation.method,
+                headers: toSessionHeaders(session),
+                body: mutation.body
+            }
+        );
     }
 
     async #request(baseUrl: string, path: string, options: RequestOptions): Promise<ProofJsonObject> {
