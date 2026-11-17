@@ -213,6 +213,9 @@ Built. Nothing here changes behaviour.
   `auto` and the `debounced` replanning policy) through formation, 90 s of one join or leave every
   3 s, and convergence. It reads the records through the operator read and writes
   `topology-churn-report.json` and a Markdown table. It is run by hand; it is not in CI.
+- `npm run perf:api-v1:topology-reshapes` is the second command, over the same scenario and report
+  (schema `rallar.topology-churn.report.v2`). It provokes the reshapes the first one does not: kind
+  changes, leader re-roots and RTT refinements. See "The reshape measurement" below.
 
 ### Slice 2 — the kind of each plan is a fact the timing reads
 
@@ -268,8 +271,8 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
   mesh of 20 leaves `peer-13` with one, because all four pairs the remove chose were already linked, so
   nothing was added. The capacity cases leave nobody under 2 links in these rooms.
 - **k is measured, not restored.** Nothing in shared-graph restores a mesh member's k links after a leave.
-  The churn report counts them, in the `link-sampled plans` and `members under k links` columns, with k = 2
-  assumed, since no typed read serves the room's own.
+  The churn report counts them, in the `link-sampled plans` and `members under k links` columns, with the
+  room's own k, read once the room is created (`topologyConfig` of each room entry).
 - **Complete graph (D659, D660).** The in-place repair, and the weighted mesh rebuild, plan over a complete room
   graph: a measured pair at its RTT, an unmeasured pair at the worst measured RTT plus the canonical pair
   spread. The weighted tree rebuild keeps the sparse measured graph. Two defects on `main` are fixed by it.
@@ -310,11 +313,77 @@ promoted and all inside the previous layout's overlap, and attach, repair, and r
 15, 15, and 0: no reshape at all, where the earlier runs had rebuilt 3 to 5 of 15 tree leaves and
 5 to 8 of 15 mesh leaves. No plan rerouted a member: rerouted sessions were 0 at the maximum in
 every room, where earlier mesh rebuilds had rerouted up to 18. Both mesh rooms had all 30
-accepted layouts sampled for links and no member under k = 2 links. The drift against a fresh
+accepted layouts sampled for links and no member under k links. The drift against a fresh
 no-RTT plan was 0 hops in the star rooms in both runs. The tree rooms' accepted layout had a
 longest path of 4 hops against 5 (auto) and 4 against 4 (debounced) in the first run, and 5
 against 5 (auto) and 3 against 4 (debounced) in the final one. The rooms have no director, so a
 leader's re-root was not exercised.
+
+### The reshape measurement
+
+`npm run perf:api-v1:topology-reshapes` drives the churn scenario with named phases that provoke each reason
+for a reshape. It starts a managed API on Postgres (ports 18890-18892) and writes
+`topology-reshape-report.json` and a Markdown table under
+`tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`. It is run by hand and is not in CI. The churn
+command is unchanged and keeps its six rooms; the reshape command is a second command, not a combined room
+(maintainer rulings Q-1 and Q-2).
+
+Each room shape runs under both re-planning modes, so there are ten rooms, with group ids
+`churn-<index>-<replanning>-<memberCount>`. Each report row is a phase: `formation`, `churn`, `ramp-up`,
+`ramp-down`, `flap`, `leader`, `leader-churn`, `rtt-uniform`, `rtt-skewed`, `rtt-shift` and `rtt-churn`.
+The report adds `reshapes/min`, the reroutes per reshape reason, the count of appointments and of RTT
+reports, and the room's effective configuration (`topologyConfig`: kind, tree from, mesh from, k, degree
+limit). Thresholds are read from that configuration, never assumed.
+
+| Room                    | Phases                                                                                                                             | What it provokes                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 4 members               | `ramp-up` to one past the mesh entry, `ramp-down` to one below the tree entry, `flap` (90 s of alternating joins and leaves)       | kind changes up and down; each flap step crosses a threshold    |
+| 8 and 12 members, led   | `leader` (four appointments, 10 s apart), `leader-churn` (45 s of churn with a deepest-member appointment after every fourth slot) | leader re-roots                                                 |
+| 8 members, RTT sockets  | `rtt-uniform`, `rtt-skewed`                                                                                                        | RTT refinement of a tree                                        |
+| 20 members, RTT sockets | `rtt-shift` (a shifting matrix every 10 s for 120 s), `rtt-churn` (45 s of churn with RTT reports interleaved)                     | RTT refinement of a mesh; RTT reports racing membership changes |
+
+**Mechanisms.**
+
+- Appointments go through an admin role: the scenario appoints the creator first, then the deepest member of
+  the accepted layout, which is the candidate most likely to need a re-root.
+- RTT reports go over ticketed WebSockets that each present member opens after formation, with made-up values.
+  The matrix shapes are `uniform` (50 ms for every pair), `skewed` (layout links 120 ms, every other pair
+  10 ms) and `shifting` (a new matrix each round). The pairs are taken from the accepted layout.
+- The server decides in the order claim, then age. A report claims the room's refinement slot first; a layout
+  younger than 15 s then drops the plan. So a first send on a young layout spends its claim and is dropped, and
+  the matrix is sent again 32 s later. There is one claim per room per 30 s, because only the primary runs queue
+  workers.
+
+**Expectations derived from the code** (these are what the tests pin, not run figures).
+
+- Kind changes at 5 and 16 members going up and at 11 and 4 going down; in `flap` every step crosses one.
+- Leader re-root: appointing the deepest member does not always re-root. The planner's fresh tree rooted at the
+  candidate is built by nearest weight, not breadth-first, and can be as deep as the kept tree, in which case
+  the leader rule keeps the tree. Over 200 rooms with random session ids, about 58 % of deepest appointments
+  re-root a room of 8 and about 76 % a room of 12 (a random member: about 34 % in a room of 8). Most deepest
+  appointments re-root.
+- The uniform matrix is not a control. A tree formed without RTT is often 5 hops across, and a uniform 50 ms
+  matrix lets a 3-hop rebuild pass both refinement thresholds (at least 10 ms and at least 25 %), so the
+  uniform phase refines the formed tree in about half of rooms of 8. Once refined, a repeated uniform matrix
+  keeps the tree. The skewed matrix rebuilds the tree in every room and keeps none of its links.
+- Live timing, a derivation and not a run figure: a refinement lands at the repeat send, 32 s after the first,
+  and no room refines more than once per 30 s.
+- Mesh: consecutive shifting rounds make the planner rebuild the mesh with different links each time. The live
+  rate is bounded by the 30 s claim gate and the 15 s young-layout drop, not by the matrix.
+- RTT during churn refines only on the membership race, when a report claims between two membership plans.
+
+**Known limits.**
+
+- The RTT values are made up. They show that the server refines and at what rate; they say nothing about real
+  RTT.
+- The `rtt reports` column counts reports sent, accepted or not. The server may refuse some after a reshape
+  (stored measurements live 60 s, and a pair may no longer be a reporting pair), and a member that left during
+  churn may still report while the accepted layout holds it. The measurement picks pairs from the accepted
+  layout while the server judges them against its stored layout. Refused reports are not seen.
+- A joiner during churn has no socket, so it reports nothing.
+- Drift is read once per room, at its end. It is measured for star, tree and mesh with the room's own k, and
+  has no status of its own.
+- Still needing browsers: edge setup time, real RTT, and the cost of a reshape to a browser.
 
 ### What the measurement found
 
@@ -359,7 +428,8 @@ no repair rerouted an uninvolved member.
   repairs those leaves. The leave-repair slice above answers both bullets about these leaves; runs 2 to 4
   stay as the record of the planner before it.
 - What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
-  occurred, so the reshapes this plan was written to hold back are unmeasured in rate. `auto` and
+  occurred, so the reshapes this plan was written to hold back were unmeasured in rate; the reshape
+  measurement above now provokes them, and its results follow. `auto` and
   `debounced` do not differ at this cadence: events are 3 s apart and the debounce window is 500 ms.
 
 Done when the report exists for `auto` and `debounced` rooms of three sizes, and per run counts the
@@ -437,8 +507,9 @@ browsers.
    accepted layout, the instant its coverage first reached the success rate.
 2. **How far a patched graph drifts.** The accepted layout against the planner's own fresh no-RTT
    plan after 30 attaches and repairs: a star 0 extra hops, a tree 0 or 1 (0 in one run, 1 in the
-   other: accepted 4, fresh plan 3). A mesh is undetermined, because no typed read serves the mesh
-   parameter the fresh plan needs. RTT drift is unmeasured: the scenario sends no RTT reports.
+   other: accepted 4, fresh plan 3). A mesh's drift is computed with the room's own k, read from the room's
+   effective configuration. RTT drift is measured only against made-up values: the reshape measurement sends
+   RTT reports, but they are not real RTT.
 3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
    3, 8 and 20 in the formation plan. What a batch costs the members that accept the new edges
    needs browsers (edge setup time).
