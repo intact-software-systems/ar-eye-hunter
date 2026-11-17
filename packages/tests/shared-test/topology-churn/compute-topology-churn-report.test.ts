@@ -352,6 +352,80 @@ describe('computeTopologyChurnReport', () => {
         expect(withoutReshape.reroutedSessionsPerReshape).toBeNull();
     });
 
+    it('counts reshapes per minute over the phase\'s duration', () => {
+        const thirtySeconds: TopologyChurnPhaseWindow = {
+            name: 'churn',
+            startedAtEpochMs: 0,
+            endedAtEpochMs: 30_000,
+            joinCount: 0,
+            leaveCount: 0
+        };
+        const report = computeTopologyChurnReport({
+            plans: [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 5_000, change: { kind: 'reshape', reason: 'refinement' } }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 10_000 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 20_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 25_000, change: { kind: 'repair' } })
+            ],
+            sightings: [],
+            linkSamples: [],
+            phases: [thirtySeconds],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        // Two reshapes of any reason, not the attach or the repair: 2 × 60 000 / 30 000 ms = 4 per minute.
+        expect(report.phases[0].reshapesPerMinute).toBe(4);
+    });
+
+    it('reports no reshape rate for a phase of no duration', () => {
+        const instant: TopologyChurnPhaseWindow = { ...FORMATION, startedAtEpochMs: 60_000 };
+        const report = computeTopologyChurnReport({
+            plans: [createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 60_000, change: { kind: 'reshape', reason: 'refinement' } })],
+            sightings: [],
+            linkSamples: [],
+            phases: [instant],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.phases[0].durationMs).toBe(0);
+        expect(report.phases[0].reshapesPerMinute).toBeNull();
+    });
+
+    it('distributes the reroutes of each reason\'s reshapes on their own', () => {
+        const phase = computeFormation([
+            createTopologyChurnPlan({
+                version: 1,
+                plannedAtEpochMs: 1_000,
+                change: { kind: 'reshape', reason: 'refinement' },
+                delta: { reroutedSessionCount: 6 }
+            }),
+            createTopologyChurnPlan({
+                version: 2,
+                plannedAtEpochMs: 2_000,
+                change: { kind: 'reshape', reason: 'kind-change' },
+                delta: { reroutedSessionCount: 9 }
+            }),
+            createTopologyChurnPlan({
+                version: 3,
+                plannedAtEpochMs: 3_000,
+                change: { kind: 'reshape', reason: 'refinement' },
+                delta: { reroutedSessionCount: 2 }
+            }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000, delta: { reroutedSessionCount: 4 } })
+        ]);
+
+        // Refinement ascending [2, 6]: median rank ceil(0.5 × 2) = 1 → 2, p90 rank ceil(0.9 × 2) = 2 → 6.
+        // Kind-change has the one reshape rerouting 9. The attach's 4 belongs to no reason.
+        expect(phase.reroutedSessionsPerReshapeByReason).toEqual({
+            'leader-rooting': null,
+            'delta-too-large': null,
+            'update-failed': null,
+            'invariant-violation': null,
+            'kind-change': { min: 9, median: 9, p90: 9, max: 9 },
+            refinement: { min: 2, median: 2, p90: 6, max: 6 }
+        });
+    });
+
     it('counts, per kind, the plans that rerouted a member they did not involve', () => {
         const phase = computeFormation([
             createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, delta: { reroutedSessionCount: 1 } }),

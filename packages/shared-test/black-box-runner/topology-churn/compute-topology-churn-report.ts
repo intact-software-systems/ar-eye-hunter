@@ -9,19 +9,25 @@ import {
     type RtcTopologyPlanRecord,
     type TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+import {
+    TOPOLOGY_RESHAPE_REASONS,
+    type TopologyReshapeReason
+} from '@shared/api/topology-plan/topology-plan-change.ts';
 import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 
-import { computeCountsByKey } from './compute-counts-by-key.ts';
 import {
     computeTopologyChurnKindFigures,
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
+import { computeValuesByKey } from './compute-values-by-key.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 
+export type TopologyChurnPhaseName = 'formation' | 'churn';
+
 export interface TopologyChurnPhaseWindow {
-    readonly name: 'formation' | 'churn';
+    readonly name: TopologyChurnPhaseName;
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly joinCount: number;
@@ -56,7 +62,7 @@ interface TopologyChurnLongestPathHops {
 
 /** Rates and shares are null when their denominator is 0; distributions are null over no values. */
 export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
-    readonly phase: TopologyChurnPhaseWindow['name'];
+    readonly phase: TopologyChurnPhaseName;
     readonly durationMs: number;
     readonly joinCount: number;
     readonly leaveCount: number;
@@ -77,8 +83,12 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly degreeLimit: number | null;
     readonly plansByCause: Record<TopologyReplanCause, number>;
     readonly uncausedPlanCount: number;
+    readonly reshapesPerMinute: number | null;
     /** The reroutes of the reshape plans alone; null when the phase has none. */
     readonly reroutedSessionsPerReshape: TopologyChurnDistribution | null;
+    readonly reroutedSessionsPerReshapeByReason: Readonly<
+        Record<TopologyReshapeReason, TopologyChurnDistribution | null>
+    >;
     readonly longestPathHops: TopologyChurnLongestPathHops | null;
     /** The plans of the phase whose layout was sampled as an accepted mesh. */
     readonly linkSampledPlanCount: number;
@@ -162,20 +172,37 @@ function selectPromotedPlans(input: ComputePhaseFiguresInput): readonly Promoted
     });
 }
 
+interface ReshapeReroute {
+    readonly reason: TopologyReshapeReason;
+    readonly reroutedSessionCount: number;
+}
+
 function computeKindFigures(
     input: ComputePhaseFiguresInput
-): TopologyChurnKindFigures & Pick<TopologyChurnPhaseReport, 'reroutedSessionsPerReshape'> {
+):
+    & TopologyChurnKindFigures
+    & Pick<
+        TopologyChurnPhaseReport,
+        'reshapesPerMinute' | 'reroutedSessionsPerReshape' | 'reroutedSessionsPerReshapeByReason'
+    > {
     const records = input.plans.map((plan) => plan.plan);
+    const reshapes: readonly ReshapeReroute[] = records.flatMap((record) =>
+        record.change?.kind === 'reshape'
+            ? [{ reason: record.change.reason, reroutedSessionCount: record.delta.reroutedSessionCount }]
+            : []
+    );
+    const distributeReroutes = (reason: TopologyReshapeReason): TopologyChurnDistribution | null =>
+        computeDistribution(
+            reshapes.filter((reshape) => reshape.reason === reason).map((reshape) => reshape.reroutedSessionCount)
+        );
     return {
         ...computeTopologyChurnKindFigures({
             records,
             promotedRecords: selectPromotedPlans(input).map((promoted) => promoted.plan.plan)
         }),
-        reroutedSessionsPerReshape: computeDistribution(
-            records.filter((record) => record.change?.kind === 'reshape').map((record) =>
-                record.delta.reroutedSessionCount
-            )
-        )
+        reshapesPerMinute: computePerMinute(reshapes.length, input.durationMs),
+        reroutedSessionsPerReshape: computeDistribution(reshapes.map((reshape) => reshape.reroutedSessionCount)),
+        reroutedSessionsPerReshapeByReason: computeValuesByKey(TOPOLOGY_RESHAPE_REASONS, distributeReroutes)
     };
 }
 
@@ -258,7 +285,7 @@ function computeCauseFigures(
 function computePlansByCause(records: readonly RtcTopologyPlanRecord[]): Record<TopologyReplanCause, number> {
     const countPlans = (cause: TopologyReplanCause): number =>
         records.filter((record) => record.causes.includes(cause)).length;
-    return computeCountsByKey(TOPOLOGY_REPLAN_CAUSES, countPlans);
+    return computeValuesByKey(TOPOLOGY_REPLAN_CAUSES, countPlans);
 }
 
 function computePerMinute(count: number, durationMs: number): number | null {

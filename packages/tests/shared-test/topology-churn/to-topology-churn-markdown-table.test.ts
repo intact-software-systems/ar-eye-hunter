@@ -29,7 +29,9 @@ const COLUMNS = [
     'promoted kinds attach/repair/reshape',
     'rerouting kinds attach/repair/reshape',
     'reshape reasons',
+    'reshapes/min',
     'rerouted per reshape min/p50/p90/max',
+    'rerouted per reshape by reason p50/max',
     'causes join/leave/leader-change/config/rtt',
     'uncaused',
     'longest path hops first/last/max',
@@ -68,7 +70,17 @@ const CHURN: TopologyChurnPhaseReport = {
         'kind-change': 0,
         refinement: 2
     },
+    // Three reshapes over 90 250 ms.
+    reshapesPerMinute: 1.9944598337950139,
     reroutedSessionsPerReshape: { min: 1, median: 2, p90: 3, max: 3 },
+    reroutedSessionsPerReshapeByReason: {
+        'leader-rooting': null,
+        'delta-too-large': { min: 1, median: 1, p90: 1, max: 1 },
+        'update-failed': null,
+        'invariant-violation': null,
+        'kind-change': null,
+        refinement: { min: 2, median: 2, p90: 3, max: 3 }
+    },
     plansByCause: { join: 7, leave: 5, 'leader-change': 0, config: 0, rtt: 1 },
     uncausedPlanCount: 0,
     longestPathHops: { first: 2, last: 3, max: 4 },
@@ -109,7 +121,16 @@ const EMPTY_FORMATION: TopologyChurnPhaseReport = {
         'kind-change': 0,
         refinement: 0
     },
+    reshapesPerMinute: null,
     reroutedSessionsPerReshape: null,
+    reroutedSessionsPerReshapeByReason: {
+        'leader-rooting': null,
+        'delta-too-large': null,
+        'update-failed': null,
+        'invariant-violation': null,
+        'kind-change': null,
+        refinement: null
+    },
     plansByCause: { join: 0, leave: 0, 'leader-change': 0, config: 0, rtt: 0 },
     longestPathHops: null,
     linkSampledPlanCount: 0,
@@ -168,13 +189,36 @@ describe('toTopologyChurnMarkdownTable', () => {
             '5 / 2 / 2',
             '0 / 0 / 3',
             'delta-too-large: 1, refinement: 2',
+            '2.0',
             '1 / 2 / 3 / 3',
+            'delta-too-large: 1/1, refinement: 2/3',
             '7 / 5 / 0 / 0 / 1',
             '0',
             '2 / 3 / 4',
             '9',
             '0 / 1 / 2 / 3'
         ]);
+    });
+
+    it('prints the median and max of each reason that reshaped, in the order the reasons are declared', () => {
+        const byReason: TopologyChurnPhaseReport['reroutedSessionsPerReshapeByReason'] = {
+            // Listed out of order: the cell follows the declared reason order, not the object's.
+            refinement: { min: 1, median: 4, p90: 6, max: 7 },
+            'kind-change': null,
+            'invariant-violation': null,
+            'update-failed': null,
+            'delta-too-large': null,
+            'leader-rooting': { min: 2, median: 3, p90: 5, max: 5 }
+        };
+        const entry: TopologyChurnRoomEntry = {
+            ...ENTRY,
+            report: { phases: [{ ...CHURN, reroutedSessionsPerReshapeByReason: byReason }], outsidePhasesPlanCount: 0 }
+        };
+        const column = COLUMNS.indexOf('rerouted per reshape by reason p50/max');
+
+        expect(toCells(toTopologyChurnMarkdownTable(entry).split('\n')[4])[column]).toBe(
+            'leader-rooting: 3/5, refinement: 4/7'
+        );
     });
 
     it('prints every null figure as an em dash, never null, NaN or an empty cell', () => {
@@ -205,6 +249,8 @@ describe('toTopologyChurnMarkdownTable', () => {
             '0 / 0 / 0',
             '—',
             '—',
+            '—',
+            '—',
             '0 / 0 / 0 / 0 / 0',
             '0',
             '—',
@@ -214,10 +260,10 @@ describe('toTopologyChurnMarkdownTable', () => {
         expect(cells.filter((cell) => cell === '' || cell.includes('null') || cell.includes('NaN'))).toEqual([]);
     });
 
-    it('states the plans outside both phases and the measured drift under the table', () => {
+    it('states the plans outside every phase and the measured drift under the table', () => {
         expect(lines.slice(6)).toEqual([
             '',
-            'Plans outside both phases: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.',
+            'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.',
             'Members under k links: k = 2 is assumed, the planner\'s default mesh parameter; no typed read serves the room\'s own.'
         ]);
     });
@@ -229,7 +275,7 @@ describe('toTopologyChurnMarkdownTable', () => {
         };
 
         expect(toTopologyChurnMarkdownTable(undetermined).split('\n').at(-2)).toBe(
-            'Plans outside both phases: 2. Drift: — (No typed read serves the mesh parameter.)'
+            'Plans outside every phase: 2. Drift: — (No typed read serves the mesh parameter.)'
         );
     });
 });

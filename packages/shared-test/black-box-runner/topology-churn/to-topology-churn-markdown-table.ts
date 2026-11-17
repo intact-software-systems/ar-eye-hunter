@@ -1,5 +1,6 @@
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import type { TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import type {
@@ -43,7 +44,12 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['promoted kinds attach/repair/reshape', (phase) => toKindFigure(phase.promotedPlansByKind)],
     ['rerouting kinds attach/repair/reshape', (phase) => toKindFigure(phase.reroutingPlansByKind)],
     ['reshape reasons', (phase) => toReshapeReasonFigure(phase.reshapesByReason)],
+    ['reshapes/min', (phase) => toFixedFigure(phase.reshapesPerMinute, 1)],
     ['rerouted per reshape min/p50/p90/max', (phase) => toDistributionFigure(phase.reroutedSessionsPerReshape)],
+    [
+        'rerouted per reshape by reason p50/max',
+        (phase) => toReroutesByReasonFigure(phase.reroutedSessionsPerReshapeByReason)
+    ],
     ['causes join/leave/leader-change/config/rtt', (phase) => toCauseFigure(phase.plansByCause)],
     ['uncaused', (phase) => String(phase.uncausedPlanCount)],
     ['longest path hops first/last/max', (phase) => toLongestPathFigure(phase.longestPathHops)],
@@ -60,7 +66,7 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         toMarkdownRow(COLUMNS.map(() => '---')),
         ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
         '',
-        `Plans outside both phases: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
+        `Plans outside every phase: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
         `Members under k links: k = ${entry.assumedMeshParamK} is assumed, the planner's default mesh parameter; ` +
         `no typed read serves the room's own.`
     ].join('\n');
@@ -92,6 +98,16 @@ function toKindFigure(counts: TopologyChurnPhaseReport['plansByKind']): string {
 function toReshapeReasonFigure(reshapesByReason: TopologyChurnPhaseReport['reshapesByReason']): string {
     const reasons = Object.entries(reshapesByReason).filter(([, count]) => count > 0);
     return reasons.length === 0 ? NO_FIGURE : reasons.map(([reason, count]) => `${reason}: ${count}`).join(', ');
+}
+
+function toReroutesByReasonFigure(
+    reroutesByReason: TopologyChurnPhaseReport['reroutedSessionsPerReshapeByReason']
+): string {
+    const reasons = TOPOLOGY_RESHAPE_REASONS.flatMap((reason) => {
+        const distribution = reroutesByReason[reason];
+        return distribution === null ? [] : [`${reason}: ${distribution.median}/${distribution.max}`];
+    });
+    return reasons.length === 0 ? NO_FIGURE : reasons.join(', ');
 }
 
 function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']): string {

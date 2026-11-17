@@ -205,8 +205,7 @@ export class TopologyChurnScenario {
             lastPresenceAnsweredAtEpochMs,
             memberCount: room.spec.memberCount,
             settleMs: TOPOLOGY_CHURN_SETTLE_MS,
-            churnEndedAtEpochMs: churn.endedAtEpochMs,
-            churnEvents: churn.events
+            runs: [{ name: 'churn', endedAtEpochMs: churn.endedAtEpochMs, events: churn.events }]
         });
         return {
             replanning: room.spec.replanning,
