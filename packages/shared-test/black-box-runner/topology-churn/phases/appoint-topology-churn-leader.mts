@@ -37,17 +37,12 @@ export async function appointTopologyChurnLeader(
     return appointee;
 }
 
-/** Only present sessions are eligible, so a session the accepted layout still holds after it left is passed over. */
 async function readDeepestPresentSession(
     input: AppointTopologyChurnLeader.Input
 ): Promise<TopologyChurnSession | null> {
-    const layout = await input.api.readAcceptedLayout(input.creator, input.roomRef);
-    const presentSessionIds = new Set(input.present.map((session) => session.sessionId));
     const candidateSessionId = resolveTopologyChurnLeaderCandidate({
-        layout: {
-            activeSessionIds: layout.activeSessionIds.filter((sessionId) => presentSessionIds.has(sessionId)),
-            nextHopsBySessionId: layout.nextHopsBySessionId
-        },
+        layout: await input.api.readAcceptedLayout(input.creator, input.roomRef),
+        presentSessionIds: input.present.map((session) => session.sessionId),
         leaderSessionId: input.leaderSessionId
     });
     return input.present.find((session) => session.sessionId === candidateSessionId) ?? null;

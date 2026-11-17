@@ -27,14 +27,14 @@ describe('resolveTopologyChurnLeaderCandidate', () => {
         // m – k – c – z: m and z are three hops from each other, k and c at most two from anyone; z leads.
         const layout = toLayout(['c', 'k', 'm', 'z'], [['m', 'k'], ['k', 'c'], ['c', 'z']]);
 
-        expect(resolveTopologyChurnLeaderCandidate({ layout, leaderSessionId: 'z' })).toBe('m');
+        expect(resolveTopologyChurnLeaderCandidate({ layout, presentSessionIds: layout.activeSessionIds, leaderSessionId: 'z' })).toBe('m');
     });
 
     it('never picks the leader', () => {
         // a – b – c: a and c are equally far from each other, and a comes first, but a leads.
         const layout = toLayout(['a', 'b', 'c'], [['a', 'b'], ['b', 'c']]);
 
-        expect(resolveTopologyChurnLeaderCandidate({ layout, leaderSessionId: 'a' })).toBe('c');
+        expect(resolveTopologyChurnLeaderCandidate({ layout, presentSessionIds: layout.activeSessionIds, leaderSessionId: 'a' })).toBe('c');
     });
 
     it('breaks a tie by identifier order', () => {
@@ -45,13 +45,38 @@ describe('resolveTopologyChurnLeaderCandidate', () => {
             ['hub', 'peer-10']
         ]);
 
-        expect(resolveTopologyChurnLeaderCandidate({ layout, leaderSessionId: null })).toBe('peer-10');
+        expect(resolveTopologyChurnLeaderCandidate({ layout, presentSessionIds: layout.activeSessionIds, leaderSessionId: null }))
+            .toBe('peer-10');
+    });
+
+    it('passes over a session the layout still holds after it left', () => {
+        // a-left – b – c – d: a-left has left but the layout still holds it. Its hop still counts towards d's distance
+        // to the far end, so d, three hops from a-left, is the deepest present session.
+        const layout = toLayout(['a-left', 'b', 'c', 'd'], [['a-left', 'b'], ['b', 'c'], ['c', 'd']]);
+
+        expect(resolveTopologyChurnLeaderCandidate({ layout, presentSessionIds: ['b', 'c', 'd'], leaderSessionId: null }))
+            .toBe('d');
     });
 
     it('answers null when only the leader is present', () => {
-        expect(resolveTopologyChurnLeaderCandidate({ layout: toLayout(['solo'], []), leaderSessionId: 'solo' }))
-            .toBeNull();
-        expect(resolveTopologyChurnLeaderCandidate({ layout: toLayout([], []), leaderSessionId: null })).toBeNull();
+        expect(
+            resolveTopologyChurnLeaderCandidate({
+                layout: toLayout(['solo'], []),
+                presentSessionIds: ['solo'],
+                leaderSessionId: 'solo'
+            })
+        ).toBeNull();
+        expect(
+            resolveTopologyChurnLeaderCandidate({ layout: toLayout([], []), presentSessionIds: [], leaderSessionId: null })
+        ).toBeNull();
+        // The layout still holds members that have left; only the leader is present.
+        expect(
+            resolveTopologyChurnLeaderCandidate({
+                layout: toLayout(['leader', 'gone'], [['leader', 'gone']]),
+                presentSessionIds: ['leader'],
+                leaderSessionId: 'leader'
+            })
+        ).toBeNull();
     });
 });
 
@@ -59,26 +84,35 @@ describe('resolveTopologyChurnLeaderCandidate against the real planner', () => {
     const leaderRooting = { method: 'rebuilt', reason: 'leader-rooting' };
 
     it('each appointed candidate makes the real planner rebuild a led tree of 12 for leader rooting, three times in a row', () => {
-        expect(computeThreeAppointmentDerivations(12)).toEqual([leaderRooting, leaderRooting, leaderRooting]);
+        expect(computeThreeAppointments(12)).toEqual([
+            { candidate: 'peer-1', derivation: leaderRooting },
+            { candidate: 'peer-11', derivation: leaderRooting },
+            { candidate: 'peer-1', derivation: leaderRooting }
+        ]);
     });
 
     it('the real planner rebuilds a led tree of 8 for leader rooting at the second of three appointed candidates only', () => {
         // The planner's no-RTT tree is a nearest-weight tree, not a breadth-first one: rooted at the candidate it can
         // be as deep from the candidate as the kept tree is, and then the leader rule keeps the tree. Of the three
         // candidates of this room of 8 at degree limit 5, only the second one's rooted tree is shallower.
-        expect(computeThreeAppointmentDerivations(8)).toEqual([
-            { method: 'incremental' },
-            leaderRooting,
-            { method: 'incremental' }
+        expect(computeThreeAppointments(8)).toEqual([
+            { candidate: 'peer-3', derivation: { method: 'incremental' } },
+            { candidate: 'peer-7', derivation: leaderRooting },
+            { candidate: 'peer-1', derivation: { method: 'incremental' } }
         ]);
     });
 });
 
+interface FixtureAppointment {
+    readonly candidate: string;
+    readonly derivation: ComputedRtcTopologyPlan['derivation'];
+}
+
 /**
- * Forms the room without a leader, then appoints the candidate of the current layout three times, each against the
- * layout the appointment before it produced, as the reshape measurement's quiet leader phase does.
+ * Forms the room without a leader, then appoints the deepest candidate three times, each against the layout the
+ * appointment before it produced. Every member stays present.
  */
-function computeThreeAppointmentDerivations(memberCount: number): readonly ComputedRtcTopologyPlan['derivation'][] {
+function computeThreeAppointments(memberCount: number): readonly FixtureAppointment[] {
     const group = createRtcTopologyFixtureGroup(memberCount);
     let layout = computeRtcTopologyFixturePlan({
         options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
@@ -86,9 +120,13 @@ function computeThreeAppointmentDerivations(memberCount: number): readonly Compu
         previous: undefined
     }).snapshot;
     let leaderSessionId: string | null = null;
-    const derivations: ComputedRtcTopologyPlan['derivation'][] = [];
+    const appointments: FixtureAppointment[] = [];
     for (let appointment = 1; appointment <= 3; appointment += 1) {
-        const candidate = resolveTopologyChurnLeaderCandidate({ layout, leaderSessionId });
+        const candidate = resolveTopologyChurnLeaderCandidate({
+            layout,
+            presentSessionIds: layout.activeSessionIds,
+            leaderSessionId
+        });
         if (candidate === null) {
             throw new Error(`The layout before appointment ${appointment} has no candidate.`);
         }
@@ -98,9 +136,9 @@ function computeThreeAppointmentDerivations(memberCount: number): readonly Compu
             previous: layout
         });
         expect(planned.snapshot.topology).toBe('tree');
-        derivations.push(planned.derivation);
+        appointments.push({ candidate, derivation: planned.derivation });
         layout = planned.snapshot;
         leaderSessionId = candidate;
     }
-    return derivations;
+    return appointments;
 }
