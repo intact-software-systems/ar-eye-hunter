@@ -304,7 +304,17 @@ nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-md
   of its own, or the topology-config records holding k at or above their limit must be removed. An environment that sets a degree limit
   of 2 or below without a mesh parameter below it fails at startup.
 
-Run results, for the code of this slice, are added after the measurement.
+Two runs of `npm run perf:api-v1:topology-churn` measured the code of this slice, one before the
+final fixes and one on the final code. In both, every room's churn phase had 30 plans, all
+promoted and all inside the previous layout's overlap, and attach, repair, and reshape counted
+15, 15, and 0: no reshape at all, where the earlier runs had rebuilt 3 to 5 of 15 tree leaves and
+5 to 8 of 15 mesh leaves. No plan rerouted a member: rerouted sessions were 0 at the maximum in
+every room, where earlier mesh rebuilds had rerouted up to 18. Both mesh rooms had all 30
+accepted layouts sampled for links and no member under k = 2 links. The drift against a fresh
+no-RTT plan was 0 hops in the star rooms in both runs. The tree rooms' accepted layout had a
+longest path of 4 hops against 5 (auto) and 4 against 4 (debounced) in the first run, and 5
+against 5 (auto) and 3 against 4 (debounced) in the final one. The rooms have no director, so a
+leader's re-root was not exercised.
 
 ### What the measurement found
 
