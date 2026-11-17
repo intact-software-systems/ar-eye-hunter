@@ -127,6 +127,8 @@ export class ALOutboundPublicationStage<TContext> {
     private readonly lanes = new Map<string, ALOutboundPublicationLane<TContext>>();
     private readonly ledger: ALOutboundPublicationLedger;
     private disposed = false;
+    /** The opportunities run one at a time, whether the engine's task or a staging on an idle lane started them. */
+    private opportunities: Promise<void> = Promise.resolve();
 
     constructor(input: ALOutboundPublicationStage.Input<TContext>) {
         this.input = input;
@@ -135,7 +137,7 @@ export class ALOutboundPublicationStage<TContext> {
             name: input.taskId,
             maxConcurrency: () => 1,
             isWork: () => this.hasDueLane(this.input.clock.nowMs()),
-            runnable: () => this.runDueOpportunities(),
+            runnable: () => this.runSerializedOpportunities(),
             ongoingTasks: []
         });
     }
@@ -173,7 +175,7 @@ export class ALOutboundPublicationStage<TContext> {
         );
         if (lane.nextOpportunityAtMs === undefined) {
             this.scheduleLane(lane, publication.stagedAtMs);
-            this.input.queueEngine.wake();
+            this.openIdleLaneOpportunity();
         }
         return { kind: 'staged', displacedMsgId: displaced[0]?.msgId };
     }
@@ -327,6 +329,21 @@ export class ALOutboundPublicationStage<TContext> {
         if (this.disposed) {
             throw new Error('The publication stage is disposed.');
         }
+    }
+
+    /**
+     * An idle lane's opportunity is due at once (D469), and an engine round waits for every task's readiness probe, which
+     * for a durable lane reads storage. The stage runs it itself, after the staging returns; the engine retains it, so a
+     * failure is reported and `stop` joins it as for its own runnable.
+     */
+    private openIdleLaneOpportunity(): void {
+        this.input.queueEngine.retainSettlingWork(this.input.taskId, this.runSerializedOpportunities());
+    }
+
+    private runSerializedOpportunities(): Promise<void> {
+        const run = this.opportunities.then(() => this.runDueOpportunities());
+        this.opportunities = run.catch(() => undefined);
+        return run;
     }
 
     private hasDueLane(nowMs: number): boolean {

@@ -141,6 +141,23 @@ describe('ALOutboundPublicationStage', () => {
         });
     });
 
+    it('submits a value that lands on an idle lane without waiting for an engine pass', async () => {
+        const fixture = createStageFixture();
+
+        stageValue(fixture, 'v1');
+        expect(fixture.submitted).toEqual([]);
+        await vi.waitFor(() => expect(fixture.submitted).toEqual([['v1']]));
+
+        expect(opportunitiesOf(fixture.diagnostics)).toEqual([
+            expect.objectContaining({ laneKey: 'arena/arena.pose.v1', atMs: START_MS, selected: 1 })
+        ]);
+        expect(fixture.stage.readLane('arena/arena.pose.v1')).toMatchObject({
+            nextOpportunityAtMs: START_MS + LATEST_POLICY.cadenceMs,
+            staged: 0
+        });
+        await fixture.engine.stop();
+    });
+
     it('brings a started engine\'s next pass forward when a value lands on an idle lane', async () => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         try {
