@@ -93,7 +93,8 @@ function replanWithRttRound(input: RttRoundReplanInput): ComputedRtcTopologyPlan
         layout: previous,
         roomRef,
         reportingDegreeLimit: 5,
-        reporterSessionIds: previous.activeSessionIds
+        reporterSessionIds: previous.activeSessionIds,
+        presentSessionIds: previous.activeSessionIds
     });
     const measurements = computeTopologyChurnRttMatrix({ pairs, layout: previous, shape: input.shape, round: input.round })
         .map((report, index) => createRtcTopologyRttMeasurement({ ...report, version: index + 1 }));
@@ -116,7 +117,8 @@ describe('computeTopologyChurnRttPairs', () => {
             layout: formed,
             roomRef,
             reportingDegreeLimit: 5,
-            reporterSessionIds: formed.activeSessionIds
+            reporterSessionIds: formed.activeSessionIds,
+            presentSessionIds: formed.activeSessionIds
         });
         const measurements = pairs.map((pair, index) => createRtcTopologyRttMeasurement({ ...pair, rttMs: 50, version: index + 1 }));
 
@@ -147,7 +149,8 @@ describe('computeTopologyChurnRttPairs', () => {
             layout,
             roomRef: ROOM_REF,
             reportingDegreeLimit: 2,
-            reporterSessionIds: layout.activeSessionIds
+            reporterSessionIds: layout.activeSessionIds,
+            presentSessionIds: layout.activeSessionIds
         });
 
         expect(pairs.slice(0, 2)).toEqual([toPair('a', 'b'), toPair('a', 'c')]);
@@ -172,7 +175,8 @@ describe('computeTopologyChurnRttPairs', () => {
             layout,
             roomRef: ROOM_REF,
             reportingDegreeLimit: 2,
-            reporterSessionIds: layout.activeSessionIds
+            reporterSessionIds: layout.activeSessionIds,
+            presentSessionIds: layout.activeSessionIds
         });
 
         expect(pairs.slice(0, 2)).toEqual([toPair('a', 'z'), toPair('b', 'z')]);
@@ -188,7 +192,8 @@ describe('computeTopologyChurnRttPairs', () => {
             layout,
             roomRef: ROOM_REF,
             reportingDegreeLimit: 5,
-            reporterSessionIds: layout.activeSessionIds
+            reporterSessionIds: layout.activeSessionIds,
+            presentSessionIds: layout.activeSessionIds
         });
 
         // Sessions in identifier order, each one's next hops sorted, canonical and de-duplicated: a's links to c and d,
@@ -210,7 +215,8 @@ describe('computeTopologyChurnRttPairs', () => {
             layout,
             roomRef: ROOM_REF,
             reportingDegreeLimit: 5,
-            reporterSessionIds: ['a', 'b', 'd']
+            reporterSessionIds: ['a', 'b', 'd'],
+            presentSessionIds: layout.activeSessionIds
         });
 
         expect(pairs.slice(0, 2)).toEqual([toPair('a', 'b'), toPair('b', 'c')]);
@@ -222,6 +228,37 @@ describe('computeTopologyChurnRttPairs', () => {
             'b|c',
             'b|d'
         ]);
+    });
+
+    it('leaves out a pair whose other session has left', () => {
+        // A path a – b – c – d the accepted layout still holds after d left; every member, d too, keeps its socket.
+        // The server refuses a pair with a departed session as no-shared-active-group.
+        const layout = toLayout(['a', 'b', 'c', 'd'], [['a', 'b'], ['b', 'c'], ['c', 'd']]);
+
+        const pairs = computeTopologyChurnRttPairs({
+            layout,
+            roomRef: ROOM_REF,
+            reportingDegreeLimit: 5,
+            reporterSessionIds: ['a', 'b', 'c', 'd'],
+            presentSessionIds: ['a', 'b', 'c']
+        });
+
+        expect(pairs.map((pair) => `${pair.sessionIdFrom}|${pair.sessionIdTo}`).sort()).toEqual(['a|b', 'a|c', 'b|c']);
+    });
+
+    it('leaves out a pair whose reporter has left, though its socket is open', () => {
+        // The same path after a left: a would be the canonical reporter of each of its pairs.
+        const layout = toLayout(['a', 'b', 'c', 'd'], [['a', 'b'], ['b', 'c'], ['c', 'd']]);
+
+        const pairs = computeTopologyChurnRttPairs({
+            layout,
+            roomRef: ROOM_REF,
+            reportingDegreeLimit: 5,
+            reporterSessionIds: ['a', 'b', 'c', 'd'],
+            presentSessionIds: ['b', 'c', 'd']
+        });
+
+        expect(pairs.map((pair) => `${pair.sessionIdFrom}|${pair.sessionIdTo}`).sort()).toEqual(['b|c', 'b|d', 'c|d']);
     });
 });
 

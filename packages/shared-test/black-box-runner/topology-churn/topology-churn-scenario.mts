@@ -278,14 +278,15 @@ export class TopologyChurnScenario {
 
     /**
      * The pairs are chosen under the default RTT reporting limit, and the server selects them under the larger of that
-     * limit and the room's degree limit, so the two must agree.
+     * limit and the room's degree limit, so only a room degree limit above the default selects other pairs.
      */
     async #openRttSockets(room: ChurnRoom): Promise<void> {
         room.progress.step = 'opening the RTT sockets';
-        if (room.topologyConfig.degreeLimit !== DEFAULT_RTT_REPORTING_DEGREE_LIMIT) {
+        if (room.topologyConfig.degreeLimit > DEFAULT_RTT_REPORTING_DEGREE_LIMIT) {
             throw new Error(
-                `the room's degree limit ${room.topologyConfig.degreeLimit} is not the RTT reporting limit ` +
-                    `${DEFAULT_RTT_REPORTING_DEGREE_LIMIT} its reported pairs are chosen under`
+                `the room's degree limit ${room.topologyConfig.degreeLimit} is above the default RTT reporting limit ` +
+                    `${DEFAULT_RTT_REPORTING_DEGREE_LIMIT} its reported pairs are chosen under, so the server would ` +
+                    'select other pairs'
             );
         }
         await room.rttReporter.open(room.present.map((present) => present.session));
@@ -367,6 +368,7 @@ export class TopologyChurnScenario {
                 layout,
                 shape: action.matrix,
                 round: action.round,
+                presentSessionIds: room.present.map((present) => present.session.sessionId),
                 nowEpochMs: this.#input.clock.nowEpochMs()
             })
         };

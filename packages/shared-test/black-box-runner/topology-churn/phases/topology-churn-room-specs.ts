@@ -17,7 +17,7 @@ export interface TopologyChurnRoomShape {
     readonly phases: readonly TopologyChurnPhaseSpec[];
 }
 
-export const TOPOLOGY_CHURN_REPLANNING_MODES = [
+const TOPOLOGY_CHURN_REPLANNING_MODES = [
     'auto',
     'debounced'
 ] as const satisfies readonly GroupTopologyReplanningMode[];

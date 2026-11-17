@@ -33,6 +33,11 @@ interface ComputeTopologyChurnRttPairsInput {
     readonly reportingDegreeLimit: number;
     /** The sessions that can send a report; a pair is reported by its canonical (lesser) session. */
     readonly reporterSessionIds: readonly string[];
+    /**
+     * The room's present sessions. The accepted layout can still hold a session that left, and the server refuses a
+     * pair with a departed session, so a pair is reported only when both its sessions are present.
+     */
+    readonly presentSessionIds: readonly string[];
 }
 
 interface ComputeTopologyChurnRttMatrixInput {
@@ -68,6 +73,8 @@ export function computeTopologyChurnRttPairs(
     for (const pair of [...layoutLinks, ...selectedPairs]) {
         if (
             input.reporterSessionIds.includes(pair.sessionIdFrom) &&
+            input.presentSessionIds.includes(pair.sessionIdFrom) &&
+            input.presentSessionIds.includes(pair.sessionIdTo) &&
             !kept.some((keptPair) => isSamePair(keptPair, pair)) &&
             countPairs(pair.sessionIdFrom) < input.reportingDegreeLimit &&
             countPairs(pair.sessionIdTo) < input.reportingDegreeLimit

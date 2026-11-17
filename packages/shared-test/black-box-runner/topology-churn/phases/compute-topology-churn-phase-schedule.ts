@@ -59,49 +59,76 @@ interface ComputeTopologyChurnPhaseScheduleInput {
     readonly topologyConfig: EffectiveGroupTopologyConfig;
 }
 
+type TopologyChurnPhaseSpecOf<Shape extends TopologyChurnPhaseSpec['shape']> = Extract<
+    TopologyChurnPhaseSpec,
+    { readonly shape: Shape; }
+>;
+
+type TopologyChurnInterleavedAction = Exclude<TopologyChurnPhaseSpecOf<'alternate'>['interleaved'], 'none'>;
+
 export function computeTopologyChurnPhaseSchedule(
     input: ComputeTopologyChurnPhaseScheduleInput
 ): TopologyChurnPhaseSchedule {
     const { spec } = input;
-    if (spec.shape === 'alternate') {
-        const stepCount = Math.ceil(spec.durationMs / TOPOLOGY_CHURN_INTERVAL_MS);
-        const membershipSteps = toSteps(stepCount, (index) => index % 2 === 0 ? { kind: 'join' } : { kind: 'leave' });
-        return {
-            name: spec.name,
-            steps: spec.interleaved === 'none'
-                ? membershipSteps
-                : toInterleavedSteps(membershipSteps, spec.interleaved),
-            durationMs: spec.durationMs
-        };
+    switch (spec.shape) {
+        case 'alternate':
+            return computeAlternateSchedule(spec);
+        case 'appointments':
+            return computeAppointmentSchedule(spec);
+        case 'rtt-repeat':
+            return computeRttRepeatSchedule(spec);
+        case 'rtt-rounds':
+            return computeRttRoundSchedule(spec);
+        case 'ramp':
+            return computeRampSchedule(spec, input);
     }
-    if (spec.shape === 'appointments') {
-        return {
-            name: spec.name,
-            steps: Array.from({ length: spec.count }, (_, index) => ({
-                offsetMs: index * spec.intervalMs,
-                action: { kind: 'appoint', candidate: index === 0 ? 'creator' : 'deepest' }
-            })),
-            durationMs: spec.count * spec.intervalMs
-        };
-    }
-    if (spec.shape === 'rtt-repeat') {
-        const action: TopologyChurnAction = { kind: 'report-rtt', matrix: spec.matrix, round: 0 };
-        return {
-            name: spec.name,
-            steps: [{ offsetMs: 0, action }, { offsetMs: TOPOLOGY_CHURN_RTT_REPEAT_MS, action }],
-            durationMs: TOPOLOGY_CHURN_RTT_REPEAT_MS + TOPOLOGY_CHURN_RTT_SETTLE_MS
-        };
-    }
-    if (spec.shape === 'rtt-rounds') {
-        return {
-            name: spec.name,
-            steps: Array.from({ length: Math.ceil(spec.durationMs / spec.roundIntervalMs) }, (_, round) => ({
-                offsetMs: round * spec.roundIntervalMs,
-                action: { kind: 'report-rtt', matrix: 'shifting', round }
-            })),
-            durationMs: spec.durationMs
-        };
-    }
+}
+
+function computeAlternateSchedule(spec: TopologyChurnPhaseSpecOf<'alternate'>): TopologyChurnPhaseSchedule {
+    const stepCount = Math.ceil(spec.durationMs / TOPOLOGY_CHURN_INTERVAL_MS);
+    const membershipSteps = toSteps(stepCount, (index) => index % 2 === 0 ? { kind: 'join' } : { kind: 'leave' });
+    return {
+        name: spec.name,
+        steps: spec.interleaved === 'none' ? membershipSteps : toInterleavedSteps(membershipSteps, spec.interleaved),
+        durationMs: spec.durationMs
+    };
+}
+
+function computeAppointmentSchedule(spec: TopologyChurnPhaseSpecOf<'appointments'>): TopologyChurnPhaseSchedule {
+    return {
+        name: spec.name,
+        steps: Array.from({ length: spec.count }, (_, index) => ({
+            offsetMs: index * spec.intervalMs,
+            action: { kind: 'appoint', candidate: index === 0 ? 'creator' : 'deepest' }
+        })),
+        durationMs: spec.count * spec.intervalMs
+    };
+}
+
+function computeRttRepeatSchedule(spec: TopologyChurnPhaseSpecOf<'rtt-repeat'>): TopologyChurnPhaseSchedule {
+    const action: TopologyChurnAction = { kind: 'report-rtt', matrix: spec.matrix, round: 0 };
+    return {
+        name: spec.name,
+        steps: [{ offsetMs: 0, action }, { offsetMs: TOPOLOGY_CHURN_RTT_REPEAT_MS, action }],
+        durationMs: TOPOLOGY_CHURN_RTT_REPEAT_MS + TOPOLOGY_CHURN_RTT_SETTLE_MS
+    };
+}
+
+function computeRttRoundSchedule(spec: TopologyChurnPhaseSpecOf<'rtt-rounds'>): TopologyChurnPhaseSchedule {
+    return {
+        name: spec.name,
+        steps: Array.from({ length: Math.ceil(spec.durationMs / spec.roundIntervalMs) }, (_, round) => ({
+            offsetMs: round * spec.roundIntervalMs,
+            action: { kind: 'report-rtt', matrix: 'shifting', round }
+        })),
+        durationMs: spec.durationMs
+    };
+}
+
+function computeRampSchedule(
+    spec: TopologyChurnPhaseSpecOf<'ramp'>,
+    input: ComputeTopologyChurnPhaseScheduleInput
+): TopologyChurnPhaseSchedule {
     const difference = resolveRampTargetMemberCount(spec.toMemberCount, input.topologyConfig) -
         input.presentMemberCount;
     const action: TopologyChurnAction = difference > 0 ? { kind: 'join' } : { kind: 'leave' };
@@ -114,7 +141,7 @@ export function computeTopologyChurnPhaseSchedule(
 }
 
 function resolveRampTargetMemberCount(
-    toMemberCount: 'one-past-mesh-entry' | 'one-below-tree-entry',
+    toMemberCount: TopologyChurnPhaseSpecOf<'ramp'>['toMemberCount'],
     topologyConfig: EffectiveGroupTopologyConfig
 ): number {
     return toMemberCount === 'one-past-mesh-entry' ? topologyConfig.meshMinSize + 1 : topologyConfig.treeMinSize - 1;
@@ -129,7 +156,7 @@ function toSteps(stepCount: number, toAction: (index: number) => TopologyChurnAc
 
 function toInterleavedSteps(
     membershipSteps: readonly TopologyChurnStep[],
-    interleaved: 'appoint-deepest' | 'report-rtt'
+    interleaved: TopologyChurnInterleavedAction
 ): readonly TopologyChurnStep[] {
     return membershipSteps.flatMap((step, index) =>
         index % TOPOLOGY_CHURN_INTERLEAVE_SLOTS === 0
@@ -142,7 +169,7 @@ function toInterleavedSteps(
 }
 
 /** The interleaved step's action; a shifting report's round is the step's index among the phase's interleaved steps. */
-function toInterleavedAction(interleaved: 'appoint-deepest' | 'report-rtt', round: number): TopologyChurnAction {
+function toInterleavedAction(interleaved: TopologyChurnInterleavedAction, round: number): TopologyChurnAction {
     return interleaved === 'appoint-deepest'
         ? { kind: 'appoint', candidate: 'deepest' }
         : { kind: 'report-rtt', matrix: 'shifting', round };

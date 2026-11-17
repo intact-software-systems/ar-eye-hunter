@@ -14,13 +14,15 @@ interface ComputeTopologyChurnDriftInput {
 export interface TopologyChurnDrift {
     readonly acceptedLongestPathHops: number;
     readonly freshLongestPathHops: number;
-    readonly extraHops: number;
+    /** Accepted minus fresh; negative when the accepted layout is shorter than the fresh plan. */
+    readonly hopDifference: number;
 }
 
 /**
- * How many hops the accepted layout's longest path exceeds a fresh no-RTT plan's for the same members, kind, degree
- * limit and leader, planned as the planner plans one: a tree from the leader, a star and a mesh without a preferred
- * source, a mesh with the room's mesh parameter.
+ * The signed difference between the accepted layout's longest path and a fresh no-RTT plan's for the same members,
+ * kind, degree limit and leader, planned as the planner plans one: a tree from the leader, a star without a preferred
+ * source, a mesh without one and with the room's mesh parameter. The fresh plan is the planner's reference layout,
+ * not the shortest one, so an evolved layout can be shorter.
  */
 export function computeTopologyChurnDrift(input: ComputeTopologyChurnDriftInput): TopologyChurnDrift {
     const { layout } = input;
@@ -36,5 +38,9 @@ export function computeTopologyChurnDrift(input: ComputeTopologyChurnDriftInput)
         activeSessionIds: layout.activeSessionIds,
         nextHopsBySessionId: fresh
     });
-    return { acceptedLongestPathHops, freshLongestPathHops, extraHops: acceptedLongestPathHops - freshLongestPathHops };
+    return {
+        acceptedLongestPathHops,
+        freshLongestPathHops,
+        hopDifference: acceptedLongestPathHops - freshLongestPathHops
+    };
 }

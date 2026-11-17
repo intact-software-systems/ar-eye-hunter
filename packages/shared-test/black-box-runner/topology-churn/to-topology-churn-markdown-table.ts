@@ -117,8 +117,9 @@ function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']):
 }
 
 function toDriftFigure(drift: TopologyChurnDrift): string {
+    const shorterNote = drift.hopDifference < 0 ? ' (negative: the accepted layout is shorter)' : '';
     return `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
-        `extra ${drift.extraHops}.`;
+        `difference ${drift.hopDifference}${shorterNote}.`;
 }
 
 function toConfigurationLine(config: EffectiveGroupTopologyConfig): string {

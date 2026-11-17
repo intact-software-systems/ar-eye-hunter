@@ -24,6 +24,8 @@ export namespace TopologyChurnRttReporter {
         readonly layout: Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId'>;
         readonly shape: TopologyChurnRttMatrixShape;
         readonly round: number;
+        /** A member that left keeps its socket open, but neither reports nor is reported on. */
+        readonly presentSessionIds: readonly string[];
         readonly nowEpochMs: number;
     }
 }
@@ -65,7 +67,8 @@ export class TopologyChurnRttReporter {
             layout: input.layout,
             roomRef: this.#input.roomRef,
             reportingDegreeLimit: DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
-            reporterSessionIds: [...this.#socketsBySessionId.keys()]
+            reporterSessionIds: [...this.#socketsBySessionId.keys()],
+            presentSessionIds: input.presentSessionIds
         });
         const reports = computeTopologyChurnRttMatrix({
             pairs,

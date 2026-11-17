@@ -148,7 +148,7 @@ const ENTRY: TopologyChurnRoomEntry = {
     memberCount: 8,
     topology: ['tree', 'mesh'],
     report: { phases: [EMPTY_FORMATION, CHURN], outsidePhasesPlanCount: 2 },
-    drift: { acceptedLongestPathHops: 4, freshLongestPathHops: 3, extraHops: 1 },
+    drift: { acceptedLongestPathHops: 4, freshLongestPathHops: 3, hopDifference: 1 },
     topologyConfig: { topologyKind: 'auto', degreeLimit: 4, treeMinSize: 5, meshMinSize: 16, meshParamK: 3 }
 };
 
@@ -273,8 +273,20 @@ describe('toTopologyChurnMarkdownTable', () => {
     it('states the plans outside every phase, the measured drift and the room\'s configuration under the table', () => {
         expect(lines.slice(6)).toEqual([
             '',
-            'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.',
+            'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, difference 1.',
             'Room configuration: kind auto, tree from 5 members, mesh from 16, k = 3, degree limit 4.'
         ]);
+    });
+
+    it('says a negative drift means the accepted layout is shorter than the fresh plan', () => {
+        const entry: TopologyChurnRoomEntry = {
+            ...ENTRY,
+            drift: { acceptedLongestPathHops: 4, freshLongestPathHops: 5, hopDifference: -1 }
+        };
+
+        expect(toTopologyChurnMarkdownTable(entry).split('\n')[7]).toBe(
+            'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 5 hops, difference -1 ' +
+                '(negative: the accepted layout is shorter).'
+        );
     });
 });

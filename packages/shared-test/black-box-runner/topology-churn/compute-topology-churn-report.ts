@@ -21,21 +21,11 @@ import {
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
 import { computeValuesByKey } from './compute-values-by-key.ts';
+import type { TopologyChurnPhaseSpec } from './phases/compute-topology-churn-phase-schedule.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 
-export type TopologyChurnPhaseName =
-    | 'formation'
-    | 'churn'
-    | 'ramp-up'
-    | 'ramp-down'
-    | 'flap'
-    | 'leader'
-    | 'leader-churn'
-    | 'rtt-uniform'
-    | 'rtt-skewed'
-    | 'rtt-shift'
-    | 'rtt-churn';
+export type TopologyChurnPhaseName = 'formation' | TopologyChurnPhaseSpec['name'];
 
 export interface TopologyChurnPhaseWindow {
     readonly name: TopologyChurnPhaseName;

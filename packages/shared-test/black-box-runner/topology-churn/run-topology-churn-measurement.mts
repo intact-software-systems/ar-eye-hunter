@@ -9,17 +9,15 @@ import {
     type TopologyChurnClock
 } from './topology-churn-scenario.mts';
 
-export namespace TopologyChurnMeasurement {
-    export interface Input {
-        readonly rooms: readonly TopologyChurnRoomSpec[];
-        /** The report's file name in the run's artifact directory. */
-        readonly reportFile: string;
-        /** The Postgres `application_name` prefix of the cluster's API processes. */
-        readonly applicationNamePrefix: string;
-    }
+interface RunTopologyChurnMeasurementInput {
+    readonly rooms: readonly TopologyChurnRoomSpec[];
+    /** The report's file name in the run's artifact directory. */
+    readonly reportFile: string;
+    /** The Postgres `application_name` prefix of the cluster's API processes. */
+    readonly applicationNamePrefix: string;
 }
 
-export async function runTopologyChurnMeasurement(input: TopologyChurnMeasurement.Input): Promise<void> {
+export async function runTopologyChurnMeasurement(input: RunTopologyChurnMeasurementInput): Promise<void> {
     const artifactDir = await runManagedClusterProof({
         applicationNamePrefix: input.applicationNamePrefix,
         runScenario: (scenario) =>
