@@ -4,15 +4,18 @@ import { degreeLimitOf, degreeOf, neighborsOf } from './remove-dynamics-helpers.
 import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 import { connectMCE, connectSearchMCE } from './tree-dynamics-connect.ts';
 
+export function hasReconnectCapacity(
+    ctx: Pick<RemoveDynamicsContext, 'globalGraph' | 'groupGraph' | 'actionVertexId'>
+): boolean {
+    const adjacent = new Set(neighborsOf(ctx.groupGraph, ctx.actionVertexId));
+    return getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) + adjacent.size >=
+        getMinODNeedConnectV(adjacent.size);
+}
+
 export function rvMCEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const adjacent = new Set(neighborsOf(ctx.groupGraph, ctx.actionVertexId));
 
-    const odAvailableNeighbors = getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
-        adjacent.size;
-
-    const minOdNeeded = getMinODNeedConnectV(adjacent.size);
-
-    if (odAvailableNeighbors < minOdNeeded) {
+    if (!hasReconnectCapacity(ctx)) {
         throw new Error('rvMCEdge infeasible: insufficient available out-degree.');
     }
 
@@ -40,12 +43,7 @@ export function rvMCEdge(ctx: RemoveDynamicsContext): RemoveResult {
 export function rvSearchMCEdge(ctx: RemoveDynamicsContext): RemoveResult {
     const adjacent = new Set(neighborsOf(ctx.groupGraph, ctx.actionVertexId));
 
-    const odAvailableNeighbors = getAvailableOutDegree(ctx.groupGraph, ctx.globalGraph, adjacent) +
-        adjacent.size;
-
-    const minOdNeeded = getMinODNeedConnectV(adjacent.size);
-
-    if (odAvailableNeighbors < minOdNeeded) {
+    if (!hasReconnectCapacity(ctx)) {
         throw new Error('rvSearchMCEdge infeasible: insufficient available out-degree.');
     }
 

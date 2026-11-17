@@ -14,6 +14,7 @@ export interface TopologyChurnRoomEntry {
     readonly topology: readonly RallarRtcTopologyKind[];
     readonly report: TopologyChurnReport;
     readonly drift: TopologyChurnDrift;
+    readonly assumedMeshParamK: number;
 }
 
 const NO_FIGURE = '—';
@@ -45,7 +46,9 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['rerouted per reshape min/p50/p90/max', (phase) => toDistributionFigure(phase.reroutedSessionsPerReshape)],
     ['causes join/leave/leader-change/config/rtt', (phase) => toCauseFigure(phase.plansByCause)],
     ['uncaused', (phase) => String(phase.uncausedPlanCount)],
-    ['longest path hops first/last/max', (phase) => toLongestPathFigure(phase.longestPathHops)]
+    ['longest path hops first/last/max', (phase) => toLongestPathFigure(phase.longestPathHops)],
+    ['link-sampled plans', (phase) => String(phase.linkSampledPlanCount)],
+    ['members under k links min/p50/p90/max', (phase) => toDistributionFigure(phase.underLinkedMembersPerPlan)]
 ];
 
 export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): string {
@@ -57,7 +60,9 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         toMarkdownRow(COLUMNS.map(() => '---')),
         ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
         '',
-        `Plans outside both phases: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`
+        `Plans outside both phases: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
+        `Members under k links: k = ${entry.assumedMeshParamK} is assumed, the planner's default mesh parameter; ` +
+        `no typed read serves the room's own.`
     ].join('\n');
 }
 

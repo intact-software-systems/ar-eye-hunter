@@ -4,6 +4,7 @@ import {
     type TopologyChurnPhaseWindow,
     type TopologyChurnPromotionSighting
 } from '@shared-test/black-box-runner/topology-churn/compute-topology-churn-report.ts';
+import type { TopologyChurnLinkSample } from '@shared-test/black-box-runner/topology-churn/to-topology-churn-link-sample.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
@@ -28,11 +29,13 @@ const FORMATION: TopologyChurnPhaseWindow = {
 
 function computeFormation(
     plans: readonly AdminRoomTopologyPlan[],
-    sightings: readonly TopologyChurnPromotionSighting[] = []
+    sightings: readonly TopologyChurnPromotionSighting[] = [],
+    linkSamples: readonly TopologyChurnLinkSample[] = []
 ): TopologyChurnPhaseReport {
     const report = computeTopologyChurnReport({
         plans,
         sightings,
+        linkSamples,
         phases: [FORMATION],
         replacedLayoutOverlapMs: OVERLAP_MS
     });
@@ -62,6 +65,7 @@ describe('computeTopologyChurnReport', () => {
                 createTopologyChurnPlan({ version: 7, plannedAtEpochMs: 180_000 })
             ],
             sightings: [],
+            linkSamples: [],
             phases: [FORMATION, churn, emptyChurn],
             replacedLayoutOverlapMs: OVERLAP_MS
         });
@@ -96,6 +100,7 @@ describe('computeTopologyChurnReport', () => {
                 createTopologyChurnRemoval(5, 90_000)
             ],
             sightings: [],
+            linkSamples: [],
             phases: [FORMATION],
             replacedLayoutOverlapMs: OVERLAP_MS
         });
@@ -364,5 +369,43 @@ describe('computeTopologyChurnReport', () => {
 
         expect(phase.plansByKind).toEqual({ attach: 2, repair: 3, reshape: 1 });
         expect(phase.reroutingPlansByKind).toEqual({ attach: 1, repair: 2, reshape: 1 });
+    });
+
+    it('gives the members under the mesh parameter per plan whose accepted layout was sampled', () => {
+        const phase = computeFormation(
+            [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 0 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 10_000 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 20_000 })
+            ],
+            [],
+            [
+                { layout: toTopologyChurnLayout(1), underLinkedMemberCount: 0 },
+                // A decoy with plan 2's version but another group revision: a sample of some other layout.
+                { layout: { ...toTopologyChurnLayout(2), groupRevision: 99 }, underLinkedMemberCount: 5 },
+                { layout: toTopologyChurnLayout(3), underLinkedMemberCount: 2 }
+            ]
+        );
+
+        // Version 2 was superseded before its layout was read: two sampled plans, not three.
+        expect(phase.linkSampledPlanCount).toBe(2);
+        // Ascending [0, 2]: median = rank ceil(0.5 × 2) = 1 → 0; p90 = rank ceil(0.9 × 2) = 2 → 2.
+        expect(phase.underLinkedMembersPerPlan).toEqual({ min: 0, median: 0, p90: 2, max: 2 });
+    });
+
+    it('has no link figure when no plan of the phase was sampled', () => {
+        const phase = computeFormation(
+            [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 0 }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 10_000 }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 20_000 })
+            ],
+            [],
+            [{ layout: toTopologyChurnLayout(9), underLinkedMemberCount: 1 }]
+        );
+
+        // A plan that was not sampled is not a plan with no member under k links.
+        expect(phase.linkSampledPlanCount).toBe(0);
+        expect(phase.underLinkedMembersPerPlan).toBeNull();
     });
 });

@@ -1518,7 +1518,7 @@ describe('alm-conformance recipe family', () => {
             expect(receiver.slice(0, 2).map((command) => command.metadata?.cellArming)).toEqual(['cue-subscription', 'cue-subscription']);
             expect(receiver[2]).toMatchObject({
                 kind: 'http.request',
-                request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } } }
+                request: { method: 'PUT', body: { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 } } }
             });
             expect(receiver.at(-1)).toMatchObject({ kind: 'http.request', request: { method: 'DELETE' } });
             expect(receiver.at(-1)).not.toHaveProperty(['request', 'body']);

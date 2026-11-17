@@ -17,9 +17,10 @@ import {
 import { kBestLocatedNodesFromVertexSubsetAverage } from './graph/core-node-algorithms.ts';
 import { diameterDistance } from './graph/graph-algs.ts';
 import { validateGroupTopology, type GroupTopologyValidationResult } from './group-topology-validation.ts';
+import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
+import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
 import { insertMinimumDiameterDegreeLimitedEdge } from './tree/insert-dynamics-mddl.ts';
 import { mddlOTTC, relaxDegreeByOne } from './tree/mddl-ottc.ts';
-import { removeTryReplaceMDDL } from './tree/remove-dynamics-mddl.ts';
 
 export interface CreateGroupTreeInputDto {
     readonly group: GroupSnapshot;
@@ -38,13 +39,17 @@ export interface CreateGroupTreeComputedDto {
     readonly reason: string | undefined;
 }
 
+export interface GlobalTreeArgs extends GlobalArgs {
+    readonly removeAlgo: DynamicTreeAlgo;
+}
+
 export interface UpdateGroupTreeInputDto {
     readonly type: MessageType;
     readonly fromNode: string;
     readonly group: GroupSnapshot;
     readonly groupGraph: TreeGraph;
     readonly globalGraph: WeightedGraph;
-    readonly globalArgs: GlobalArgs;
+    readonly globalArgs: GlobalTreeArgs;
 }
 
 export interface UpdateGroupTreeComputedDto {
@@ -113,11 +118,12 @@ export function updateGroupTree(
         }
 
         case MessageType.TO_SERVER_LEAVE: {
-            updatedTree = removeTryReplaceMDDL(
-                input.groupGraph,
-                input.globalGraph,
-                input.fromNode
-            );
+            updatedTree = removeVertexFromTree({
+                globalGraph: input.globalGraph,
+                groupGraph: input.groupGraph,
+                actionVertexId: input.fromNode,
+                treeAlgo: input.globalArgs.removeAlgo
+            }).graph;
             break;
         }
 

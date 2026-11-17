@@ -695,7 +695,7 @@ reliability. No hosted manifest carries them (D505).
   over RTC and confirms it (expected 1, confirmed 1, outside 0); the receiver, elected but of another principal, is
   absent from the audience and asserts the publication's absence.
 - `granted-rtc-relay-only` (three-agent): the receiver's start state PUTs `{ topologyKind: 'tree', degreeLimit: 2,
-  meshParamK: 2 }` to the room's topology config through `http.request` (`roomTopology: 'reshaped'`), so the three
+  meshParamK: 1 }` to the room's topology config through `http.request` (`roomTopology: 'reshaped'`), so the three
   pages form a path; in the lane every page then holds the path before `armed` (the runtime diagnostic contract's
   lane cell settle), and the sender connects with `connect.minReadyPeers: 1`, since a path leaf has one next hop. The receiver holds
   `subscribe` and an election and recipient-b `publish` alone, so the sender's `ack: 'none'` publication is frozen
@@ -723,7 +723,7 @@ reliability. No hosted manifest carries them (D505).
 `receipted-relay-path` (`scenarios/relay-path/`, three-agent, `rtc`, full scope)
 sends a non-granted receipted multicast through the forced path. The receiver owns
 the room, so its start state PUTs the path config the granted path cells use
-(`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 }`, one shared topology
+(`{ topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 }`, one shared topology
 command, from `roomTopology: 'reshaped'`), and every page connects with `connect.minReadyPeers: 1`. Once the sender
 says it listens, the receiver cues `start`; then the sender and the
 receiver each send one `receiver`-receipted (`all-logical-recipients`) multicast

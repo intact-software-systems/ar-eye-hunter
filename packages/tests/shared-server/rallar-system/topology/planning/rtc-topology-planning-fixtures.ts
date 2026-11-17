@@ -1,12 +1,15 @@
+import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import { computeRtcTopologyPlan, type ComputedRtcTopologyPlan } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
 import type {
     RallarRtcTopologyServiceOptions,
     RtcTopologyPlanningIntent
 } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 
 import {
     createRtcTopologyGroupSnapshot,
@@ -30,7 +33,8 @@ export const RTC_TOPOLOGY_STAR_OPTIONS: RallarRtcTopologyServiceOptions = {
     degreeLimit: 5,
     rttReportingDegreeLimit: 5
 };
-const SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
+/** No fixed kind: the planner selects star, tree or mesh by the room's size, a mesh from 16 members. */
+export const RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS: RallarRtcTopologyServiceOptions = { degreeLimit: 5, rttReportingDegreeLimit: 5 };
 
 interface RtcTopologyFixturePlanInput {
     readonly options: RallarRtcTopologyServiceOptions;
@@ -134,6 +138,116 @@ export function createRtcTopologyFixtureRttMeasurements(
     );
 }
 
+interface RtcTopologyFixtureReportedRttInput {
+    readonly group: GroupSnapshot;
+    /** The accepted layout whose links each browser measures first; links to members no longer in the room are skipped. */
+    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+    readonly rttReportingDegreeLimit: number;
+}
+
+/**
+ * The RTT the members' browsers report: each member measures the peers the production reporting policy selects
+ * (its overlay next hops first, then rendezvous-ordered peers, up to the reporting limit), and a pair measures ten
+ * times its canonical pair weight, so the measurements are deterministic and spread like real ones.
+ */
+export function createRtcTopologyFixtureReportedRttMeasurements(input: RtcTopologyFixtureReportedRttInput): readonly RttMeasurementInfo[] {
+    const sessionIds = input.group.activeSessions.map((session) => session.sessionId);
+    const groupKey = toWebRtcGroupKey(input.group.group);
+    const reportedPairs = new Map<string, readonly [string, string]>();
+    for (const localSessionId of sessionIds) {
+        const { selectedPeerIds } = selectRttReportingPeers({
+            localSessionId,
+            degreeLimit: input.rttReportingDegreeLimit,
+            overlayNextHopSessionIds: (input.nextHopsBySessionId[localSessionId] ?? []).filter((peer) => sessionIds.includes(peer)),
+            activePeerSessionIds: sessionIds,
+            groupKey
+        });
+        for (const peerSessionId of selectedPeerIds) {
+            reportedPairs.set(
+                toRtcTopologyFixtureEdge(localSessionId, peerSessionId),
+                localSessionId < peerSessionId ? [localSessionId, peerSessionId] : [peerSessionId, localSessionId]
+            );
+        }
+    }
+    return [...reportedPairs.values()].map(([sessionIdFrom, sessionIdTo], index) =>
+        createRtcTopologyRttMeasurement({
+            sessionIdFrom,
+            sessionIdTo,
+            rttMs: 10 * computeCanonicalTopologyPairWeight(sessionIdFrom, sessionIdTo),
+            version: index + 1
+        })
+    );
+}
+
+export interface RtcTopologyFixtureDepartureInput {
+    readonly options: RallarRtcTopologyServiceOptions;
+    readonly formed: RallarOverlayTopologySnapshot;
+    /** The members that leave the formed room, all in the same plan. */
+    readonly leaverSessionIds: readonly string[];
+}
+
+/** Plans the formed room again without the leavers, with nothing measured. */
+export function computeRtcTopologyFixtureDeparture(input: RtcTopologyFixtureDepartureInput): ComputedRtcTopologyPlan {
+    return computeRtcTopologyFixturePlan({
+        options: input.options,
+        group: createRtcTopologyFixtureRemainingGroup(input),
+        previous: input.formed
+    });
+}
+
+export interface RtcTopologyFixtureMeasuredLeaveInput extends RtcTopologyFixtureDepartureInput {
+    readonly rttReportingDegreeLimit: number;
+}
+
+/** Plans the formed room again without the leavers, with the RTT its remaining members' browsers report. */
+export function computeRtcTopologyFixtureMeasuredLeave(input: RtcTopologyFixtureMeasuredLeaveInput): ComputedRtcTopologyPlan {
+    const group = createRtcTopologyFixtureRemainingGroup(input);
+    return computeRtcTopologyFixturePlan({
+        options: input.options,
+        group,
+        previous: input.formed,
+        rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+            group,
+            nextHopsBySessionId: input.formed.nextHopsBySessionId,
+            rttReportingDegreeLimit: input.rttReportingDegreeLimit
+        })
+    });
+}
+
+function createRtcTopologyFixtureRemainingGroup(input: RtcTopologyFixtureDepartureInput): GroupSnapshot {
+    return createRtcTopologyFixtureGroupOf(
+        input.formed.activeSessionIds.filter((sessionId) => !input.leaverSessionIds.includes(sessionId))
+    );
+}
+
+/** The part of a planned layout the connectivity check reads. */
+export type RtcTopologyFixtureLayout = Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId' | 'degreeLimit'>;
+
+/**
+ * Every link is two-way and inside the degree limit, and a walk over next hops from the first member reaches every
+ * member, so in a room of two or more every member holds at least one link.
+ */
+export function isConnectedRtcTopologyFixtureLayout(planned: RtcTopologyFixtureLayout): boolean {
+    const readNextHops = (sessionId: string) => planned.nextHopsBySessionId[sessionId] ?? [];
+    const reachedSessionIds = computeRtcTopologyFixtureReachedSessionIds(planned);
+    return planned.activeSessionIds.every((sessionId) =>
+        readNextHops(sessionId).length <= planned.degreeLimit &&
+        readNextHops(sessionId).every((nextHop) => readNextHops(nextHop).includes(sessionId)) &&
+        reachedSessionIds.has(sessionId)
+    );
+}
+
+/** The members a walk over next hops reaches from the first member. */
+function computeRtcTopologyFixtureReachedSessionIds(planned: RtcTopologyFixtureLayout): ReadonlySet<string> {
+    const reachedSessionIds = new Set(planned.activeSessionIds.slice(0, 1));
+    for (const sessionId of reachedSessionIds) {
+        for (const nextHop of planned.nextHopsBySessionId[sessionId] ?? []) {
+            reachedSessionIds.add(nextHop);
+        }
+    }
+    return reachedSessionIds;
+}
+
 function toRtcTopologyFixtureEdgeSet(nextHopsBySessionId: Readonly<Record<string, readonly string[]>>): Set<string> {
     return new Set(
         Object.entries(nextHopsBySessionId).flatMap(([from, nextHops]) => nextHops.map((to) => toRtcTopologyFixtureEdge(from, to)))
@@ -154,8 +268,8 @@ const ONE_LINK_TREE_OPTIONS: RallarRtcTopologyServiceOptions = { ...RTC_TOPOLOGY
 const REBUILD_SCENARIOS: Readonly<Record<TopologyReshapeReason, () => RtcTopologyFixtureReplanned>> = {
     // Four members are below the default tree entry size of five; the fifth member selects a tree.
     'kind-change': () =>
-        computeReplan({ options: SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
-            options: SIZE_SELECTED_OPTIONS,
+        computeReplan({ options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS, formed: createRtcTopologyFixtureGroup(4) }, (previous) => ({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
             group: createRtcTopologyFixtureGroup(5),
             previous
         })),

@@ -681,7 +681,9 @@ and it has no status list.
   `congestion` diagnostic carries no instant and no clear action, and only the
   RTC channel's own queue flush knows when its backpressure ended. Measuring it
   needs a defined episode (for example a message's first `defer` to its
-  attempt's settlement) and an instant on the diagnostic.
+  attempt's settlement) and an instant on the diagnostic. The maintainer ruled the episode (D656): a message's
+  first deferral to the settlement of its attempt, as a histogram and a count of episodes still open, with one
+  instant added to the congestion diagnostic; it is not built.
 - Admission to native submission is not a stage figure (D651); it needs the
   carriers' `attempt-started` instant beside the stage's admission settlement.
 - The interpolating medians (two middle values averaged) stay in five
@@ -709,7 +711,8 @@ and it has no status list.
 - The local baseline's median command time is not stable inside its declared
   band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
   tell a regression from noise; the band or the figure for the median is the
-  maintainer's to set (D652).
+  maintainer's to set (D652). Ruled (D656): each side is several runs and the comparison uses the median of the
+  medians, in the same band, re-checked with a same-commit pair; it is not built.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
@@ -773,7 +776,33 @@ and it has no status list.
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".
 - Mesh drift: the churn measurement cannot compare an accepted mesh with the planner's fresh plan, because no typed
-  read serves the mesh parameter. RTT drift is unmeasured too: the scenario sends no RTT reports.
+  read serves the mesh parameter. RTT drift is unmeasured too: the scenario sends no RTT reports. The maintainer
+  ruled a typed read of the mesh parameter with the next measurement (D655), which also replaces the assumed k of
+  the churn report.
+- Restoring k after a leave: nothing in shared-graph restores a mesh member's k links; the churn report counts the
+  members under k; if meshes thin under churn it is its own slice, taken to the maintainer (D657).
+- The departed peer as a time-limited forwarder: a leaver that stays online could forward for the room for a bounded
+  time; the Steiner-keeping removes exist for that setting, and the server has no signal for "left the room but
+  still online".
+- The four `REMOVE_TRY_REPLACE_PRUNE_*` removes throw when the leaver is absent from the global graph
+  (`Graph.edge: could not find the … target node`, from `kCenterNodes`), which was the planner's input for every
+  leave until its in-place graph kept the plan's leavers (D662); they were not run against that graph.
+- The minimum-diameter removes exceed the degree limit (degree 6 at a limit of 5 in 4 of 30 tree leaves and in 4 to
+  8 mesh leaves) through the reconnect step's `degInc` relaxation.
+- The capacity rule and `getAvailableOutDegree` exist in three files of `packages/shared-graph/remove/`
+  (`remove-dynamics-mc.ts`, `remove-dynamics-md.ts`, `tree-dynamics-connect.ts`).
+- `packages/shared-graph/architecture.md` still names files that do not exist: `GroupGraphService.ts`,
+  `GroupGraphReadService.ts`, `graph-vivaldi-service.ts`, `crdt-graph.ts`.
+- A leave in a led room is not covered by the planner sweep (its fixture rooms have no director): in a led tree of
+  8 a reviewer measured 2 of 7 non-leader leaves followed by a `leader-rooting` rebuild at the next quiet plan,
+  none in led trees of 12 and 30; the leader's own leave is unmeasured.
+- The planner's `createNextHopMap` ignores the `.success` of `createGroupMesh` and `createGroupTree` and turns a
+  failed build into empty next hops. No failing path is known after D659 and D660, but the masking remains.
+- A mesh membership-delta fallback builds the complete room graph twice, once for the evolution and once for the
+  rebuild.
+- The hang guard in the planner's tests (a single leave from a measured room) cannot fail by name: a synchronous
+  loop ignores Vitest's timeout and stalls the run. `packages/tests/hetzner/owned-test-process.ts` could run it in
+  a killable child.
 - Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
   forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
   forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`

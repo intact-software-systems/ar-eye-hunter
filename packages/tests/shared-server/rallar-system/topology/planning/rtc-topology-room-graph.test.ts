@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import {
+    createCompleteRtcRoomGraph,
     createRtcRoomGraph,
     materializeSparseRtcRoomGraphFallback,
     type CreateRtcRoomGraphResult
@@ -14,6 +15,16 @@ import {
     createRtcTopologyMemberIds,
     createRtcTopologyRttMeasurement
 } from '../rtc-topology-test-fixtures.ts';
+import {
+    computeRtcTopologyFixturePlan,
+    createRtcTopologyFixtureGroup,
+    createRtcTopologyFixtureReportedRttMeasurements,
+    isConnectedRtcTopologyFixtureLayout,
+    RTC_TOPOLOGY_MESH_OPTIONS,
+    RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+    RTC_TOPOLOGY_TREE_OPTIONS,
+    type RtcTopologyFixtureLayout
+} from './rtc-topology-planning-fixtures.ts';
 
 describe('RTC topology weighted room graph planning', () => {
     it('returns the deterministic complete fallback graph when RTT is absent', () => {
@@ -331,7 +342,27 @@ describe('RTC topology weighted room graph planning', () => {
         expect(graph.hasEdge('peer-1', 'peer-8')).toBe(true);
     });
 
-    it('builds a sparse weighted candidate graph when RTT reporting is degree bounded', () => {
+    it('builds a sparse weighted candidate graph for a tree when RTT reporting is degree bounded', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(32);
+        const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            rttReplanMinimumLayoutAgeMs: 15_000,
+            now: () => 100,
+            topologyKind: 'tree',
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5
+        });
+        const measurements = createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1')
+            .filter((rtt) => rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1')
+            .slice(0, 5);
+
+        const graph = service.createRoomGraph(group, measurements);
+
+        expect(graph.order).toBe(32);
+        expect(graph.size).toBeLessThanOrEqual((32 * 5) / 2);
+    });
+
+    it('builds the complete graph the mesh rebuild plans over for a room its size makes a mesh', () => {
         const memberSessionIds = createRtcTopologyMemberIds(32);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
@@ -347,15 +378,16 @@ describe('RTC topology weighted room graph planning', () => {
         const graph = service.createRoomGraph(group, measurements);
 
         expect(graph.order).toBe(32);
-        expect(graph.size).toBeLessThanOrEqual((32 * 5) / 2);
+        expect(graph.size).toBe((32 * 31) / 2);
     });
 
-    it('keeps RTT-weighted candidate graph edge count linear in room size', () => {
+    it('keeps the RTT-weighted candidate graph of a tree linear in room size', () => {
         const memberSessionIds = createRtcTopologyMemberIds(200);
         const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
         const service = new RallarRtcTopologyService({
             rttReplanMinimumLayoutAgeMs: 15_000,
             now: () => 100,
+            topologyKind: 'tree',
             degreeLimit: 5,
             rttReportingDegreeLimit: 5
         });
@@ -402,6 +434,170 @@ describe('RTC topology weighted room graph planning', () => {
         expect(result.snapshot.topology).toBe('mesh');
     });
 });
+
+describe('the complete weighted room graph a leave is repaired over', () => {
+    it('links every pair of a room of four, two of them at their measured RTT and the rest above it', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(4);
+
+        const graph = createCompleteRtcRoomGraph({
+            group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
+            sessionIds: memberSessionIds,
+            rttMeasurements: [
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-2', sessionIdTo: 'peer-1', rttMs: 30, version: 1 }),
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-3', sessionIdTo: 'peer-4', rttMs: 90, version: 2 }),
+                createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-4', sessionIdTo: 'peer-3', rttMs: 50, version: 3 })
+            ],
+            degreeLimit: 2
+        });
+
+        expect(graph.size).toBe(6);
+        expect(edgeWeight(graph, 'peer-1', 'peer-2')).toBe(30);
+        expect(edgeWeight(graph, 'peer-3', 'peer-4')).toBe(50);
+        // Each unmeasured pair weighs the slowest measured RTT, 50 ms, plus its canonical spread.
+        for (const [from, to] of [['peer-1', 'peer-3'], ['peer-1', 'peer-4'], ['peer-2', 'peer-3'], ['peer-2', 'peer-4']] as const) {
+            expect(edgeWeight(graph, from, to)).toBe(50 + computeCanonicalTopologyPairWeight(from, to));
+        }
+    });
+
+    it('is the complete fallback graph when nothing is measured', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(3);
+
+        const graph = createCompleteRtcRoomGraph({
+            group: createRtcTopologyGroupSnapshot('room-graph-owner', memberSessionIds),
+            sessionIds: memberSessionIds,
+            rttMeasurements: [],
+            degreeLimit: 5
+        });
+
+        expect(graph.getAttributes()).toEqual({
+            id: '["app-1","workspace-1","room-graph-owner"]',
+            version: 1,
+            degreeLimitMember: 5,
+            degreeLimitSteiner: 5
+        });
+        expect(graph.edges().map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')])).toEqual([
+            [['peer-1', 'peer-2'], computeCanonicalTopologyPairWeight('peer-1', 'peer-2')],
+            [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
+            [['peer-2', 'peer-3'], computeCanonicalTopologyPairWeight('peer-2', 'peer-3')]
+        ]);
+    });
+});
+
+describe('the weighted rebuild still plans over the sparse measured graph', () => {
+    it('plans the first measured layout of an eleven-member tree as before the leave repair took a complete graph', () => {
+        // The browsers measured the no-RTT layout's links and their rendezvous peers; nothing was accepted before, so
+        // the plan is a weighted rebuild over the room graph capped at the reporting limit. Over the complete graph the
+        // same rebuild links peer-3 to peer-11 and drops peer-4 to peer-5.
+        const group = createRtcTopologyFixtureGroup(11);
+        const formed = computeRtcTopologyFixturePlan({ options: RTC_TOPOLOGY_TREE_OPTIONS, group, previous: undefined }).snapshot;
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_TREE_OPTIONS,
+            group,
+            previous: undefined,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.snapshot.nextHopsBySessionId).toEqual({
+            'peer-1': ['peer-4'],
+            'peer-2': ['peer-11', 'peer-6', 'peer-7'],
+            'peer-3': ['peer-9'],
+            'peer-4': ['peer-1', 'peer-5', 'peer-6'],
+            'peer-5': ['peer-4', 'peer-9'],
+            'peer-6': ['peer-10', 'peer-2', 'peer-4'],
+            'peer-7': ['peer-2'],
+            'peer-8': ['peer-10'],
+            'peer-9': ['peer-3', 'peer-5'],
+            'peer-10': ['peer-6', 'peer-8'],
+            'peer-11': ['peer-2']
+        });
+    });
+});
+
+describe('a measured mesh plans over the complete room graph', () => {
+    // The browsers measured the formed layout's links and their rendezvous peers, so the measured graph is capped at the
+    // reporting limit; a mesh built over that graph lacked the pairs K_INSERT_MC weighs, and most members had no link.
+    it.each([16, 20, 30])('a measured mesh is rebuilt into a connected layout (%i members)', (memberCount) => {
+        const group = createRtcTopologyFixtureGroup(memberCount);
+        const formed = computeRtcTopologyFixturePlan({ options: RTC_TOPOLOGY_MESH_OPTIONS, group, previous: undefined }).snapshot;
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group,
+            previous: formed,
+            planningIntent: 'full-rebuild',
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
+        expect(readUnlinkedSessionIds(planned.snapshot)).toEqual([]);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+
+    it('a measured tree that reaches the mesh size changes kind into a connected mesh', () => {
+        const formed = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+            group: createRtcTopologyFixtureGroup(15),
+            previous: undefined
+        }).snapshot;
+        const group = createRtcTopologyFixtureGroup(16);
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+            group,
+            previous: formed,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(formed.topology).toBe('tree');
+        expect(planned.snapshot.topology).toBe('mesh');
+        expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'kind-change' });
+        expect(readUnlinkedSessionIds(planned.snapshot)).toEqual([]);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+
+    it('a join into a measured mesh of twenty is planned in place, the joiner holding its two links', () => {
+        // Pins the measured mesh join the complete graph made incremental; over the measured graph it was rebuilt.
+        const formed = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group: createRtcTopologyFixtureGroup(20),
+            previous: undefined
+        }).snapshot;
+        const group = createRtcTopologyFixtureGroup(21);
+
+        const planned = computeRtcTopologyFixturePlan({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            group,
+            previous: formed,
+            rttMeasurements: createRtcTopologyFixtureReportedRttMeasurements({
+                group,
+                nextHopsBySessionId: formed.nextHopsBySessionId,
+                rttReportingDegreeLimit: 5
+            })
+        });
+
+        expect(planned.derivation).toEqual({ method: 'incremental' });
+        expect(planned.snapshot.nextHopsBySessionId['peer-21']).toHaveLength(2);
+        expect(isConnectedRtcTopologyFixtureLayout(planned.snapshot)).toBe(true);
+    });
+});
+
+/** The members the plan gave no link, which a connected layout of two or more members never has. */
+function readUnlinkedSessionIds(planned: RtcTopologyFixtureLayout): readonly string[] {
+    return planned.activeSessionIds.filter((sessionId) => (planned.nextHopsBySessionId[sessionId] ?? []).length === 0);
+}
 
 function edgeWeight(graph: ReturnType<RallarRtcTopologyService['createRoomGraph']>, from: string, to: string): number | undefined {
     const edge = graph.edge(from, to);

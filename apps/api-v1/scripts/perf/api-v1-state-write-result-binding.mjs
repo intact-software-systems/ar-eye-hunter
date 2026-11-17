@@ -300,7 +300,7 @@ function validTopologyConfig(value) {
         'meshParamK'
     ]) && ['auto', 'star', 'tree', 'mesh'].includes(value.topologyKind) &&
         numericFields.every((field) => Number.isSafeInteger(value[field]) && value[field] > 0) &&
-        value.meshMinSize >= value.treeMinSize && value.meshParamK <= value.degreeLimit;
+        value.meshMinSize >= value.treeMinSize && value.meshParamK < value.degreeLimit;
 }
 
 function validAcceptedCausalRevision(value) {

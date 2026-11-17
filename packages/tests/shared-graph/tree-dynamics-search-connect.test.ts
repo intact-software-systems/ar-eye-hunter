@@ -1,4 +1,5 @@
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import type { ConnectContext } from '@shared-graph/remove/tree-dynamics-connect-types.ts';
 import { connectMCE, connectMDE, connectSearchMCE, connectSearchMDE } from '@shared-graph/remove/tree-dynamics-connect.ts';
 import {
     canAcceptAnotherEdge,
@@ -189,3 +190,73 @@ describe('shared-graph tree dynamics search and connect', () => {
         expect(searchDiameter.graph.hasEdge('b', 'u')).toBe(true);
     });
 });
+
+describe('an already-linked pair counts as connected', () => {
+    it('connectMCE adds no second link between a linked pair', () => {
+        // The cheapest pair from a is a-b, already linked, so b counts as connected and nothing is added; c then
+        // joins by b-c (2), cheaper than a-c (5). Skipping linked pairs when choosing would pick a-c first and end
+        // with three links.
+        const result = connectMCE(createLinkedPairContext(), new Set(['b', 'c']), new Set(['a']));
+
+        expect(result.graph.size).toBe(2);
+        expect(result.graph.hasEdge('a', 'b')).toBe(true);
+        expect(result.graph.hasEdge('b', 'c')).toBe(true);
+        expect(result.graph.hasEdge('a', 'c')).toBe(false);
+        expect(result.connectedVertices).toEqual(new Set(['a', 'b', 'c']));
+        expect(result.remainingVertices).toEqual(new Set<string>());
+    });
+
+    it('connectSearchMCE adds no second link between a linked pair', () => {
+        const result = connectSearchMCE(createLinkedPairContext(), new Set(['b', 'c']), new Set(['a']));
+
+        expect(result.graph.size).toBe(2);
+        expect(result.graph.hasEdge('a', 'b')).toBe(true);
+        expect(result.graph.hasEdge('b', 'c')).toBe(true);
+        expect(result.remainingVertices).toEqual(new Set<string>());
+    });
+
+    it('connectMDE adds no second link between a linked pair', () => {
+        // The first pick is a-b (diameter 2), already linked; the second is a-c. Skipping linked pairs would pick b-c.
+        const result = connectMDE(createLinkedPairContext(), new Set(['a', 'b', 'c']), new Set<string>());
+
+        expect(result.graph.size).toBe(2);
+        expect(result.graph.hasEdge('a', 'b')).toBe(true);
+        expect(result.graph.hasEdge('a', 'c')).toBe(true);
+        expect(result.remainingVertices).toEqual(new Set(['a']));
+        expect(result.connectedVertices).toEqual(new Set(['b', 'c']));
+    });
+
+    it('connectSearchMDE adds no second link between a linked pair', () => {
+        const result = connectSearchMDE(createLinkedPairContext(), new Set(['a', 'b', 'c']), new Set<string>());
+
+        expect(result.graph.size).toBe(2);
+        expect(result.graph.hasEdge('a', 'b')).toBe(true);
+        expect(result.graph.hasEdge('b', 'c')).toBe(true);
+        expect(result.remainingVertices).toEqual(new Set(['c']));
+    });
+});
+
+function createLinkedPairContext(): ConnectContext {
+    const globalGraph = createGraph(
+        [
+            ['a', VertexState.MEMBER, 4],
+            ['b', VertexState.MEMBER, 4],
+            ['c', VertexState.MEMBER, 4]
+        ],
+        [
+            ['a', 'b', 1],
+            ['a', 'c', 5],
+            ['b', 'c', 2]
+        ]
+    );
+    const groupGraph = createGraph(
+        [
+            ['a', VertexState.MEMBER, 4],
+            ['b', VertexState.MEMBER, 4],
+            ['c', VertexState.MEMBER, 4]
+        ],
+        [['a', 'b', 1]]
+    );
+
+    return { globalGraph, groupGraph };
+}

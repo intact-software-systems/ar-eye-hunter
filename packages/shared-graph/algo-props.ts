@@ -19,11 +19,6 @@ export type MessageLike = {
     groupId: string;
 };
 
-export type GroupInformation = {
-    getMembers(): ReadonlySet<string>;
-    getTreeStructure(): TreeGraph;
-};
-
 export type SelectSteinerCandidate = (
     tree: TreeGraph,
     globalGraph: TreeGraph,

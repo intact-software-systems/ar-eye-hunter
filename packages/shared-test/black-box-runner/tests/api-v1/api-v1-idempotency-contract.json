@@ -359,7 +359,7 @@
                 "Authorization": "{adminAuthHeader}",
                 "x-client-id": "{adminClientId}"
               },
-              "body": { "config": { "topologyKind": "tree", "degreeLimit": 2 } },
+              "body": { "config": { "topologyKind": "tree", "degreeLimit": 2, "meshParamK": 1 } },
               "outputs": { "equalPrimaryBody": "body" }
             },
             "expect": { "status": 200 }
@@ -378,7 +378,7 @@
                 "Authorization": "{renewedAdminAuthHeader}",
                 "x-client-id": "{adminClientId}"
               },
-              "body": { "config": { "degreeLimit": 2, "topologyKind": "tree" } },
+              "body": { "config": { "degreeLimit": 2, "meshParamK": 1, "topologyKind": "tree" } },
               "outputs": { "equalSecondaryBody": "body" }
             },
             "expect": { "status": 200 }
@@ -397,7 +397,7 @@
                 "Authorization": "{renewedAdminAuthHeader}",
                 "x-client-id": "{adminClientId}"
               },
-              "body": { "config": { "topologyKind": "tree", "degreeLimit": 2 } },
+              "body": { "config": { "topologyKind": "tree", "degreeLimit": 2, "meshParamK": 1 } },
               "outputs": { "equalTertiaryBody": "body" }
             },
             "expect": { "status": 200 }

@@ -315,6 +315,7 @@ test('OpenAPI JSON includes scoped graph and topology management contracts', asy
         ['auto', 'star', 'tree', 'mesh']
     );
     assert.equal(json.components.schemas.GroupTopologyPositiveInteger.minimum, 1);
+    assert.equal(json.components.schemas.GroupTopologyDegreeLimit.minimum, 2);
     const topologyOverrideRequest = json.components.schemas
         .PutGroupTopologyOverrideRequest as {
             properties?: Record<string, { minimum?: number; description?: string; }>;

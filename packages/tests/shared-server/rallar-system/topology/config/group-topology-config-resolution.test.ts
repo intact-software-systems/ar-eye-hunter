@@ -10,6 +10,7 @@ import {
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
     validateEffectiveGroupTopologyConfig,
+    validateEffectiveGroupTopologyConfigRules,
     validateGroupTopologyConfigPatch
 } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 
@@ -84,9 +85,73 @@ describe('group topology config resolution', () => {
                 path: ['meshMinSize']
             }),
             expect.objectContaining({
-                code: 'mesh-param-k-exceeds-degree-limit',
+                code: 'mesh-param-k-not-below-degree-limit',
                 path: ['meshParamK']
             })
+        ]);
+    });
+
+    it.each([
+        { topologyKind: 'mesh' as const, degreeLimit: 4, meshParamK: 4, valid: false },
+        { topologyKind: 'tree' as const, degreeLimit: 4, meshParamK: 4, valid: false },
+        { topologyKind: 'mesh' as const, degreeLimit: 4, meshParamK: 5, valid: false },
+        { topologyKind: 'mesh' as const, degreeLimit: 4, meshParamK: 3, valid: true },
+        { topologyKind: 'mesh' as const, degreeLimit: 5, meshParamK: 2, valid: true }
+    ])(
+        'requires the mesh parameter below the degree limit ($topologyKind, limit $degreeLimit, k $meshParamK)',
+        ({ topologyKind, degreeLimit, meshParamK, valid }) => {
+            const issues = validateEffectiveGroupTopologyConfig({
+                topologyKind,
+                degreeLimit,
+                treeMinSize: 4,
+                meshMinSize: 4,
+                meshParamK
+            });
+
+            expect(issues).toEqual(
+                valid ? [] : [{
+                    code: 'mesh-param-k-not-below-degree-limit',
+                    path: ['meshParamK'],
+                    message: 'meshParamK must be less than degreeLimit',
+                    details: { meshParamK, degreeLimit }
+                }]
+            );
+        }
+    );
+
+    it('refuses a link limit below 2 with its own message, before and after the patch is merged', () => {
+        const degreeLimitIssue = {
+            code: 'degree-limit-below-two',
+            path: ['degreeLimit'],
+            message: 'degreeLimit must be at least 2',
+            details: { value: 1 }
+        };
+
+        expect(validateGroupTopologyConfigPatch({ degreeLimit: 1 })).toEqual([degreeLimitIssue]);
+        expect(
+            validateEffectiveGroupTopologyConfig({ topologyKind: 'auto', degreeLimit: 1, treeMinSize: 4, meshMinSize: 4, meshParamK: 1 })
+        ).toContainEqual(degreeLimitIssue);
+    });
+
+    it('accepts a link limit of 2 with a mesh parameter of 1', () => {
+        expect(
+            validateEffectiveGroupTopologyConfig({ topologyKind: 'mesh', degreeLimit: 2, treeMinSize: 4, meshMinSize: 4, meshParamK: 1 })
+        ).toEqual([]);
+    });
+
+    it('names the fields each rule reads beside its issue', () => {
+        const ruleIssues = validateEffectiveGroupTopologyConfigRules({
+            topologyKind: 'auto',
+            degreeLimit: 1,
+            treeMinSize: 10,
+            meshMinSize: 9,
+            meshParamK: 0
+        });
+
+        expect(ruleIssues.map(({ fields, issue }) => [issue.code, fields])).toEqual([
+            ['degree-limit-below-two', ['degreeLimit']],
+            ['invalid-positive-integer', ['meshParamK']],
+            ['mesh-min-size-before-tree-min-size', ['meshMinSize', 'treeMinSize']]
         ]);
     });
 

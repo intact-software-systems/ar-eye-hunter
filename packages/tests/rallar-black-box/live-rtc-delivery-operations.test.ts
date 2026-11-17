@@ -624,7 +624,7 @@ describe('live RTC delivery owner', () => {
                     request: {
                         path: '/api/state/apps/app%2Fa/workspaces/work%20b/groups/room%2Fc/topology/config/requests/topology-mesh-messages-rtc-try%2Fd-all',
                         method: 'PUT',
-                        body: { config: { topologyKind: 'mesh', degreeLimit: 2 } }
+                        body: { config: { topologyKind: 'mesh', degreeLimit: 3 } }
                     }
                 }),
                 expect.objectContaining({

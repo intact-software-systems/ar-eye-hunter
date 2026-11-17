@@ -32,7 +32,9 @@ const COLUMNS = [
     'rerouted per reshape min/p50/p90/max',
     'causes join/leave/leader-change/config/rtt',
     'uncaused',
-    'longest path hops first/last/max'
+    'longest path hops first/last/max',
+    'link-sampled plans',
+    'members under k links min/p50/p90/max'
 ];
 
 const CHURN: TopologyChurnPhaseReport = {
@@ -69,7 +71,9 @@ const CHURN: TopologyChurnPhaseReport = {
     reroutedSessionsPerReshape: { min: 1, median: 2, p90: 3, max: 3 },
     plansByCause: { join: 7, leave: 5, 'leader-change': 0, config: 0, rtt: 1 },
     uncausedPlanCount: 0,
-    longestPathHops: { first: 2, last: 3, max: 4 }
+    longestPathHops: { first: 2, last: 3, max: 4 },
+    linkSampledPlanCount: 9,
+    underLinkedMembersPerPlan: { min: 0, median: 1, p90: 2, max: 3 }
 };
 
 // A phase without plans: every rate, share, distribution and hop figure is null in the report.
@@ -107,7 +111,9 @@ const EMPTY_FORMATION: TopologyChurnPhaseReport = {
     },
     reroutedSessionsPerReshape: null,
     plansByCause: { join: 0, leave: 0, 'leader-change': 0, config: 0, rtt: 0 },
-    longestPathHops: null
+    longestPathHops: null,
+    linkSampledPlanCount: 0,
+    underLinkedMembersPerPlan: null
 };
 
 const ENTRY: TopologyChurnRoomEntry = {
@@ -115,7 +121,8 @@ const ENTRY: TopologyChurnRoomEntry = {
     memberCount: 8,
     topology: ['tree', 'mesh'],
     report: { phases: [EMPTY_FORMATION, CHURN], outsidePhasesPlanCount: 2 },
-    drift: { status: 'measured', acceptedLongestPathHops: 4, freshLongestPathHops: 3, extraHops: 1 }
+    drift: { status: 'measured', acceptedLongestPathHops: 4, freshLongestPathHops: 3, extraHops: 1 },
+    assumedMeshParamK: 2
 };
 
 function toCells(line: string): string[] {
@@ -164,7 +171,9 @@ describe('toTopologyChurnMarkdownTable', () => {
             '1 / 2 / 3 / 3',
             '7 / 5 / 0 / 0 / 1',
             '0',
-            '2 / 3 / 4'
+            '2 / 3 / 4',
+            '9',
+            '0 / 1 / 2 / 3'
         ]);
     });
 
@@ -198,6 +207,8 @@ describe('toTopologyChurnMarkdownTable', () => {
             '—',
             '0 / 0 / 0 / 0 / 0',
             '0',
+            '—',
+            '0',
             '—'
         ]);
         expect(cells.filter((cell) => cell === '' || cell.includes('null') || cell.includes('NaN'))).toEqual([]);
@@ -206,7 +217,8 @@ describe('toTopologyChurnMarkdownTable', () => {
     it('states the plans outside both phases and the measured drift under the table', () => {
         expect(lines.slice(6)).toEqual([
             '',
-            'Plans outside both phases: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.'
+            'Plans outside both phases: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, extra 1.',
+            'Members under k links: k = 2 is assumed, the planner\'s default mesh parameter; no typed read serves the room\'s own.'
         ]);
     });
 
@@ -216,7 +228,7 @@ describe('toTopologyChurnMarkdownTable', () => {
             drift: { status: 'undetermined', reason: 'No typed read serves the mesh parameter.' }
         };
 
-        expect(toTopologyChurnMarkdownTable(undetermined).split('\n').at(-1)).toBe(
+        expect(toTopologyChurnMarkdownTable(undetermined).split('\n').at(-2)).toBe(
             'Plans outside both phases: 2. Drift: — (No typed read serves the mesh parameter.)'
         );
     });

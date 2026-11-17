@@ -7,7 +7,8 @@ cheap, necessary changes through at once, and bounds how long anyone waits. In t
 words it is back pressure on the joiners, and its strength must follow what the room is doing.
 
 Slices 1 and 2 are built (pull request #827): the server records each plan and names it an attach, a
-repair or a reshape, and nothing acts on that yet. The gates are not built. The maintainer decided the
+repair or a reshape, and nothing acts on that yet. A leave is repaired in place instead of rebuilt (pull
+request #837, on top of #827). The gates are not built. The maintainer decided the
 plan's shape on 2026-11-14 (see "Decisions"). What the measurement answered and what it left open
 is listed at the end.
 
@@ -231,9 +232,89 @@ Built. No timing, promotion or delivery behaviour changed.
 - The churn report counts plans by kind (`plansByKind`, `promotedPlansByKind`,
   `reroutingPlansByKind`), reshapes by reason (`reshapesByReason`) and what a reshape rerouted
   (`reroutedSessionsPerReshape`).
-- Pinned at the planner and the work, with a sweep of 58 real-planner plans
+- Pinned at the planner and the work, with a sweep of 205 real-planner plans over five rooms (a mesh of
+  20, trees of 8, 12 and 30, a mesh of 30)
   (`packages/tests/shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.test.ts`)
-  that finds no incremental plan rerouting a member the change did not involve.
+  that still finds no incremental plan rerouting a member the change did not involve.
+
+### Leave repair — a leave no longer forces a rebuild
+
+Built (pull request #837). The planner's validation and its rebuild fallback are unchanged: a layout that
+fails `validateGroupTopology` is still thrown away and rebuilt.
+
+A member that left cannot forward for the room, so a repair that keeps the leaver as a forwarding vertex
+fails validation. A leave now runs shared-graph's own cheapest-links remove, which links the leaver's
+neighbours and keeps no leaver, with three rules:
+
+- a tree leave uses `REMOVE_MINIMUM_COST_EDGE`, which the planner names for every tree leave in place of
+  try-replace (the tree update takes the algorithm from its caller, as the mesh update does);
+- when the pair of the leaver's neighbours that the remove chooses is already linked, nothing is added and
+  that neighbour counts as connected (one shared step for the four connect helpers);
+- when the capacity rule refuses a mesh leave (`hasReconnectCapacity`, asked by the mesh service before the
+  remove service) and the mesh stays connected without the leaver, the result is the mesh without the leaver.
+
+The rules and the limits of what they guarantee are in `packages/shared-graph/architecture.md`, "Leaving a
+tree or a mesh". `packages/shared-graph/tree/remove-dynamics-mddl.ts`, a second port of try-replace that
+nothing imported any more, is deleted; `rvTRMDDLN` in `remove/remove-dynamics-mddl.ts` is the one port.
+
+- **What the sweep found.** Single leaves rebuilt before this slice: 9 of 20 (mesh), 1 of 8, 3 of 12 and 7
+  of 30 (trees) and 9 of 30 (mesh). Now 0 of 100. A repair adds at most 4 links (measured over every single leave of the five rooms before the slice) and
+  reroutes nobody (pinned by the sweep). The sweep's rooms have no director: no led room and no leader's leave
+  is covered.
+- **A led tree.** In a led tree a repaired layout can exceed the leader's depth bound, so a `leader-rooting`
+  reshape can follow a leave at the next quiet plan: a reviewer measured 2 of 7 non-leader leaves in a led tree
+  of 8 and none in led trees of 12 and 30. The leader's own leave is not covered.
+- **A thin member.** Of the 50 single mesh leaves, one leaves a member with one link: `peer-11` leaving the
+  mesh of 20 leaves `peer-13` with one, because all four pairs the remove chose were already linked, so
+  nothing was added. The capacity cases leave nobody under 2 links in these rooms.
+- **k is measured, not restored.** Nothing in shared-graph restores a mesh member's k links after a leave.
+  The churn report counts them, in the `link-sampled plans` and `members under k links` columns, with k = 2
+  assumed, since no typed read serves the room's own.
+- **Complete graph (D659, D660).** The in-place repair, and the weighted mesh rebuild, plan over a complete room
+  graph: a measured pair at its RTT, an unmeasured pair at the worst measured RTT plus the canonical pair
+  spread. The weighted tree rebuild keeps the sparse measured graph. Two defects on `main` are fixed by it.
+  With RTT measurements the global graph held only measured pairs, and the reconnect step looped without
+  end when a neighbour had no edge to the connected set; the loop is synchronous, so on the server it would
+  stall the whole server process, not only that room. Of the 20 single leaves of a measured mesh of 20, 13 did
+  not return within 45 s before (the loop's only exit is at a counter no plan reaches) and all return now. And a measured mesh rebuild was planned empty (`createGroupMesh` fails on the capped
+  graph, and the planner's `createNextHopMap` turns the failure into empty next hops); validation refused it
+  as disconnected, so a measured mesh never took an RTT improvement and a measured tree could not grow into
+  a mesh. Over a sweep of 1 620 measured plans, 714 were disconnected before, all meshes, and none after. A measured join
+  into a mesh is repaired in place now, where it was rebuilt and refused.
+- **The relaxed degree limit stays (D659).** The reconnect step raises the degree limit by one when no pair
+  fits; the maintainer holds that relaxation intended, because the change to the layout would otherwise be
+  larger. No validation is relaxed in this slice: the planner, the work, the store, the decoders, the replay
+  and the browser's snapshot parser all refuse a member over its limit, and a repair that produced one is
+  rebuilt. The churn report's reshapes by reason shows whether that happens. Accepting a stated excess would
+  be its own slice across server and browser.
+- **The mesh parameter must be below the link limit (D661).** A mesh whose `meshParamK` equals the limit
+  cannot be planned, with or without RTT, so configuration refuses `meshParamK >= degreeLimit`, for the
+  server configuration and for a room's topology-config write.
+- **Several leavers in one plan (D662).** The in-place repair's graph holds the current members and those
+  leaving in the same plan, so the repair of one leaver can read the limit of a neighbour that leaves after it;
+  the rebuild's graph is unchanged. Two linked members leaving in one plan were always rebuilt before (the
+  same on `main`): every linked pair of the meshes of 20 and 30 (37 and 57), and 7 of 7, 8 of 11 and 24 of 29
+  in the trees of 8, 12 and 30. Now every pair of members of the five rooms, linked or not, is repaired in
+  place and reroutes nobody, and every linked pair of the measured mesh of 20 is repaired in place.
+- **The link limit is at least 2 (D662).** Configuration refuses a `degreeLimit` below 2 as a field rule with
+  its own message (`degree-limit-below-two`), for the server configuration and a room's topology-config write.
+- **Deploy.** A room's stored configuration is re-validated on every read, so a stored one with k at or
+  above its limit would fail to load. The wipe was ruled for pull request 827; this work (#837) is stacked on
+  #827 and may deploy later or separately, so it must deploy together with #827's wipe or be followed by a wipe
+  of its own, or the topology-config records holding k at or above their limit must be removed. An environment that sets a degree limit
+  of 2 or below without a mesh parameter below it fails at startup.
+
+Two runs of `npm run perf:api-v1:topology-churn` measured the code of this slice, one before the
+final fixes and one on the final code. In both, every room's churn phase had 30 plans, all
+promoted and all inside the previous layout's overlap, and attach, repair, and reshape counted
+15, 15, and 0: no reshape at all, where the earlier runs had rebuilt 3 to 5 of 15 tree leaves and
+5 to 8 of 15 mesh leaves. No plan rerouted a member: rerouted sessions were 0 at the maximum in
+every room, where earlier mesh rebuilds had rerouted up to 18. Both mesh rooms had all 30
+accepted layouts sampled for links and no member under k = 2 links. The drift against a fresh
+no-RTT plan was 0 hops in the star rooms in both runs. The tree rooms' accepted layout had a
+longest path of 4 hops against 5 (auto) and 4 against 4 (debounced) in the first run, and 5
+against 5 (auto) and 3 against 4 (debounced) in the final one. The rooms have no director, so a
+leader's re-root was not exercised.
 
 ### What the measurement found
 
@@ -275,7 +356,8 @@ no repair rerouted an uninvolved member.
   which, where the leaver was a relay, is the failure named above (a departed relay's dependants stay
   cut off while the server waits). The measurement does not say which leavers were relays. The gate
   slices must first answer it: a rule for a rebuild a leave forces, or mesh and tree evolution that
-  repairs those leaves.
+  repairs those leaves. The leave-repair slice above answers both bullets about these leaves; runs 2 to 4
+  stay as the record of the planner before it.
 - What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
   occurred, so the reshapes this plan was written to hold back are unmeasured in rate. `auto` and
   `debounced` do not differ at this cadence: events are 3 s apart and the debounce window is 500 ms.
@@ -285,9 +367,8 @@ plans as attaches, repairs and reshapes and the reshapes by reason: both are met
 
 ### Later, decided after slice 2
 
-- Before either gate: what a leave that forces a rebuild does under the reshape gate. The
-  measurement shows every reshape at the scenario's cadence was such a leave (see "What the
-  measurement found").
+- Answered: what a leave that forces a rebuild does under the reshape gate. A leave is repaired at
+  once, and no gate holds a plan a leave makes necessary.
 - The two gates of "Mechanism": one pure function over stored state, with the lifecycle policy's
   `topology` section carrying the reshape gate's two bounds.
 - The forced edge for a joiner that cannot be attached cheaply while the reshape gate is far from
@@ -362,21 +443,24 @@ browsers.
    3, 8 and 20 in the formation plan. What a batch costs the members that accept the new edges
    needs browsers (edge setup time).
 
-## Open for the maintainer
+## Answered by the maintainer (2026-11-16)
 
-- Whether the churn measurement belongs in CI; today it is run by hand.
-- Whether "promotion" in this plan means the published plan (what the record counts) or the
-  accepted-slot write.
-- Whether a deployed store is wiped at deploy, or left for the previous build's publication rows to
-  be refused until they expire (up to 24 h) and the runtime-state expiry worker evicts them: the
-  record has one stored shape (D653). The operator's prune removes only expired rows, which that
-  worker already evicts every 60 s; only a wipe, or deleting the publication rows by hand, removes a
-  live row of the previous build.
-- Whether the plans read should report a stored publication row that does not decode as an invalid
-  entry, as the room directory read does (`status: 'invalid'`, `completeness: 'partial'`). Today it
-  answers 500 "Room inspection is unavailable" for the whole room while one such row is retained;
-  on a store not wiped at deploy that is every room that published in the previous 24 h, until those
-  rows expire and are evicted. Topology work and replay are not affected (D653).
-- A typed read for the mesh parameter, which mesh drift needs.
-- What the reshape gate does with a leave the planner cannot repair incrementally, which is every
-  reshape the measurement produced.
+1. A leave always reconnects at once; no gate ever holds a plan a leave makes necessary. Whether a leaver
+   left for good is perhaps never known; it may stay available for a while to forward as a non-member.
+2. The store is wiped when pull request 827 deploys: one stored shape, no window of refused rows.
+3. The plans read keeps answering 500 for a room with an undecodable stored publication.
+4. The churn measurement stays a manual command, out of CI.
+5. "Promoted" as sampled is enough: published plans checked against 250 ms samples of the accepted layout.
+6. The mesh parameter gets a typed read with the next measurement, so mesh drift can be computed.
+7. The record's delta is decided with the gates: it stays against the planned layout until a gate holds a plan.
+8. The plan's kind has one home, the record's `change`; it is not copied onto the accepted work.
+9. The seven-digest pin test stays deleted.
+
+## Still open
+
+- Restoring a mesh member's k links after a leave, if the measurement shows meshes thinning.
+- A leave in a led room, which the sweeps do not cover: whether `leader-rooting` reshapes follow leaves more
+  than the reviewer's measurement suggests, and the leader's own leave.
+- Three or more leavers in one plan: the pair sweep covers two; the graph holds every leaver of the plan, but
+  no sweep measured more.
+- Accepting a stated degree excess, if repairs that the reconnect step's relaxation produces are rebuilt.

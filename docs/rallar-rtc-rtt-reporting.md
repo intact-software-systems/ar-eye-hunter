@@ -176,11 +176,22 @@ The topology service has two broad planning modes:
 
 - No RTT measurements: it uses deterministic fallback weights and optimized
   no-RTT paths for tree and mesh topology.
-- RTT measurements present: it builds a sparse weighted candidate graph from
-  accepted RTT edges plus deterministic fallback edges, capped by the reporting
-  degree. If the sparse candidate graph cannot remain connected under the
-  configured limit, the service falls back to the no-RTT topology plan and
+- RTT measurements present: a tree rebuild builds a sparse weighted candidate
+  graph from accepted RTT edges plus deterministic fallback edges, capped by the
+  reporting degree. If the sparse candidate graph cannot remain connected under
+  the configured limit, the service falls back to the no-RTT topology plan and
   increments `weightedRoomGraphSparseFallbackCount`.
+
+A mesh rebuild, and evolving an accepted layout in place (a membership change,
+or the kept tree an RTT refinement weighs against its rebuild), plan over the
+complete room graph instead: every pair of members is a candidate, a measured
+pair at its RTT and an unmeasured pair above the slowest measured RTT. An
+in-place evolution's graph also holds the members leaving in that plan, so the
+repair of one leaver can read the limit of a neighbour that leaves after it;
+their pairs are unmeasured, since the planner reads only the members' RTT. The mesh
+insertion weighs a link from each new member to every mesh member with a free
+link, and the in-place repair links only pairs that are edges of its graph, so
+a sparse graph could leave either without a candidate.
 
 Before a group recompute uses stored latest-pair RTTs, the management layer
 filters those samples through the same server reporting-edge policy for the

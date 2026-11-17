@@ -5,6 +5,7 @@ import { SESSION_HEARTBEAT_INTERVAL_MS } from '@shared-web/browser/session/brows
 import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
+import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -14,6 +15,7 @@ import { computeTopologyChurnReport, type TopologyChurnPromotionSighting } from 
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
+import { toTopologyChurnLinkSample, type TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 import { toTopologyChurnMarkdownTable, type TopologyChurnRoomEntry } from './to-topology-churn-markdown-table.ts';
 import { toTopologyChurnMember } from './to-topology-churn-member.ts';
 import { toTopologyChurnPolicy } from './to-topology-churn-policy.ts';
@@ -28,6 +30,7 @@ const TOPOLOGY_CHURN_INTERVAL_MS = 3_000;
 const TOPOLOGY_CHURN_DURATION_MS = 90_000;
 const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
+const TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K = 2;
 export const TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS = 30_000;
 export const TOPOLOGY_CHURN_REPORT_FILE = 'topology-churn-report.json';
 
@@ -78,6 +81,7 @@ interface ChurnRoom {
     readonly creator: TopologyChurnSession;
     readonly present: PresentSession[];
     readonly sightings: TopologyChurnPromotionSighting[];
+    readonly linkSamples: TopologyChurnLinkSample[];
     readonly progress: TopologyChurnProgress;
     readonly signal: AbortSignal;
 }
@@ -160,7 +164,7 @@ export class TopologyChurnScenario {
         };
         const creator = await this.#signIn(this.#createMember(spec));
         await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyChurnPolicy(spec.replanning) });
-        return { spec, roomRef, creator, present: [], sightings: [], progress, signal };
+        return { spec, roomRef, creator, present: [], sightings: [], linkSamples: [], progress, signal };
     }
 
     async #measureWhileLive(
@@ -211,10 +215,12 @@ export class TopologyChurnScenario {
             report: computeTopologyChurnReport({
                 plans: converged.plans,
                 sightings: [...room.sightings],
+                linkSamples: [...room.linkSamples],
                 phases,
                 replacedLayoutOverlapMs: context.replacedLayoutOverlapMs
             }),
-            drift
+            drift,
+            assumedMeshParamK: TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K
         };
     }
 
@@ -304,12 +310,24 @@ export class TopologyChurnScenario {
                 });
                 if (sighting !== null) {
                     room.sightings.push(sighting);
+                    await this.#sampleLinks(room);
                 }
                 await this.#input.clock.sleep(TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS, room.signal);
             }
         }
         catch (error) {
             throw new Error(`sampling the accepted layout: ${String(error)}`, { cause: error });
+        }
+    }
+
+    /** Kept under the identity of the layout read, which may be newer than the one sighted. */
+    async #sampleLinks(room: ChurnRoom): Promise<void> {
+        const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
+        const sample = toTopologyChurnLinkSample(layout, TOPOLOGY_CHURN_ASSUMED_MESH_PARAM_K);
+        if (
+            sample !== null && !room.linkSamples.some((kept) => isSameGroupLayoutIdentity(kept.layout, sample.layout))
+        ) {
+            room.linkSamples.push(sample);
         }
     }
 

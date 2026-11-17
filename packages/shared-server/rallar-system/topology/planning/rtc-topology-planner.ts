@@ -25,7 +25,11 @@ import type {
 } from '../runtime/rtc-topology-metrics.ts';
 import { toCanonicalTopologySessionIds } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
-import { createRtcRoomGraph, materializeSparseRtcRoomGraphFallback } from './create-rtc-room-graph.ts';
+import {
+    createCompleteRtcRoomGraph,
+    createRtcRoomGraph,
+    materializeSparseRtcRoomGraphFallback
+} from './create-rtc-room-graph.ts';
 import {
     computeEvolvedTopologyNextHops,
     type EvolvePlannedTopologyFullRebuildReason,
@@ -68,7 +72,7 @@ interface CreateWeightedTopologyNextHopsInput {
     readonly options: RallarRtcTopologyServiceOptions;
 }
 
-interface CreateMeasuredRoomGraphInput {
+interface CreateRoomGraphInput {
     readonly group: GroupSnapshot;
     readonly leaderSessionId: string | undefined;
     readonly rttMeasurements: readonly RttMeasurementInfo[];
@@ -218,13 +222,14 @@ export class RtcTopologyPlanner {
         return result;
     }
 
+    /** The graph a weighted rebuild of the room plans over, for the kind the planner selects for it. */
     createRoomGraph(
         group: GroupSnapshot,
         rttMeasurements: readonly RttMeasurementInfo[],
         publicDispatch: RtcTopologyPlanner.PublicDispatch = this
     ): WeightedGraph {
         const topology = publicDispatch.selectTopology(group, this.serviceOptions);
-        return this.createMeasuredRoomGraph(
+        return this.createRebuildRoomGraph(
             {
                 group,
                 leaderSessionId: resolveRallarGroupLeaderSessionId(group),
@@ -296,7 +301,7 @@ export class RtcTopologyPlanner {
         if (plan.topology === 'star') {
             return this.computeStarNextHops(plan);
         }
-        const evolved = this.computeEvolvedNextHops(plan, publicDispatch);
+        const evolved = this.computeEvolvedNextHops(plan);
         if (evolved?.outcome === 'planned') {
             return { nextHopsBySessionId: evolved.nextHopsBySessionId, derivation: { method: 'incremental' } };
         }
@@ -315,13 +320,12 @@ export class RtcTopologyPlanner {
         rebuildDerivation: RtcTopologyPlanDerivation,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
     ): DerivedRtcTopologyNextHops {
-        const globalGraph = this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch);
         const rebuiltNextHopsBySessionId = this.createNextHopMap({
             topology: plan.topology,
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph,
+            globalGraph: this.createRebuildRoomGraph(toRoomGraphInput(plan), publicDispatch),
             options: plan.topologyOptions
         });
         if (
@@ -336,7 +340,7 @@ export class RtcTopologyPlanner {
                 group: plan.group,
                 leaderSessionId: plan.leaderSessionId,
                 activeSessionIds: plan.activeSessionIds,
-                globalGraph,
+                globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
                 kind: plan.topology,
                 degreeLimit: this.readDegreeLimit(plan.topologyOptions),
                 meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -359,10 +363,7 @@ export class RtcTopologyPlanner {
         return { nextHopsBySessionId, derivation: resolveRtcTopologyPlanDerivation(plan, { method: 'incremental' }) };
     }
 
-    private computeEvolvedNextHops(
-        plan: RtcTopologyPlanInput,
-        publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): EvolvePlannedTopologyResult | undefined {
+    private computeEvolvedNextHops(plan: RtcTopologyPlanInput): EvolvePlannedTopologyResult | undefined {
         if (
             plan.planningIntent !== 'membership-delta' ||
             plan.previous?.state !== 'active' ||
@@ -376,7 +377,7 @@ export class RtcTopologyPlanner {
             group: plan.group,
             leaderSessionId: plan.leaderSessionId,
             activeSessionIds: plan.activeSessionIds,
-            globalGraph: this.createMeasuredRoomGraph(toMeasuredRoomGraphInput(plan), publicDispatch),
+            globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
             kind: plan.topology,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
@@ -409,7 +410,7 @@ export class RtcTopologyPlanner {
     }
 
     private createMeasuredRoomGraph(
-        input: CreateMeasuredRoomGraphInput,
+        input: CreateRoomGraphInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
     ): WeightedGraph {
         const startedAtMs = this.dependencies.durationNowMs();
@@ -434,6 +435,46 @@ export class RtcTopologyPlanner {
         return result.outcome === 'ready'
             ? result.graph
             : materializeSparseRtcRoomGraphFallback(result);
+    }
+
+    private createRebuildRoomGraph(
+        input: CreateRoomGraphInput,
+        publicDispatch: RtcTopologyPlanner.PublicDispatch
+    ): WeightedGraph {
+        // K_INSERT_MC weighs a link from each inserted member to every mesh member with a free link, so it needs
+        // every pair; the measured graph, capped at the reporting limit, lacks most of them.
+        return input.topology === 'mesh'
+            ? this.createCompleteRoomGraph(input, readGroupMemberSessionIds(input.group))
+            : this.createMeasuredRoomGraph(input, publicDispatch);
+    }
+
+    /**
+     * The previous layout's members leaving in this plan stay vertices, so the repair of one leaver can read the limit
+     * of a neighbour that leaves after it; the repair removes them all, and validation reads the current members only.
+     */
+    private createEvolutionRoomGraph(
+        plan: RtcTopologyPlanInput,
+        previous: RallarOverlayTopologySnapshot
+    ): WeightedGraph {
+        return this.createCompleteRoomGraph(toRoomGraphInput(plan), [
+            ...readGroupMemberSessionIds(plan.group),
+            ...previous.activeSessionIds
+        ]);
+    }
+
+    private createCompleteRoomGraph(input: CreateRoomGraphInput, sessionIds: readonly string[]): WeightedGraph {
+        const startedAtMs = this.dependencies.durationNowMs();
+        this.dependencies.metrics.recordWeightedRoomGraphAttempt();
+        const graph = createCompleteRtcRoomGraph({
+            group: input.group,
+            sessionIds: toCanonicalTopologySessionIds(sessionIds),
+            rttMeasurements: input.rttMeasurements,
+            degreeLimit: this.readDegreeLimit(input.options)
+        });
+        this.dependencies.metrics.recordWeightedRoomGraphDuration(
+            this.dependencies.durationNowMs() - startedAtMs
+        );
+        return graph;
     }
 
     private createNextHopMap(
@@ -515,7 +556,7 @@ function resolveRtcTopologyPlanDerivation(
     return sameKindDerivation;
 }
 
-function toMeasuredRoomGraphInput(plan: RtcTopologyPlanInput): CreateMeasuredRoomGraphInput {
+function toRoomGraphInput(plan: RtcTopologyPlanInput): CreateRoomGraphInput {
     return {
         group: plan.group,
         leaderSessionId: plan.leaderSessionId,

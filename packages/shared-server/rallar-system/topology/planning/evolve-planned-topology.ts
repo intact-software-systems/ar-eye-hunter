@@ -199,7 +199,8 @@ function applyMembershipChange(
             globalGraph: input.globalGraph,
             globalArgs: {
                 diameterBound: Number.POSITIVE_INFINITY,
-                reconfigAlgo: ReconfigAlgo.NO_RECONFIG_ALGO
+                reconfigAlgo: ReconfigAlgo.NO_RECONFIG_ALGO,
+                removeAlgo: 'REMOVE_MINIMUM_COST_EDGE'
             }
         }).tree;
     }

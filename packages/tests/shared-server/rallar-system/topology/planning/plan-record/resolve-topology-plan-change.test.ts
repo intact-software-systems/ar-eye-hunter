@@ -3,17 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';
 import { resolveTopologyPlanChange } from '@shared-server/rallar-system/topology/planning/plan-record/resolve-topology-plan-change.ts';
 import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/topology/planning/plan-record/rtc-topology-plan-derivation.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
-import { TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 import {
+    computeRtcTopologyFixtureDeparture,
     computeRtcTopologyFixtureLeave,
+    computeRtcTopologyFixtureMeasuredLeave,
     computeRtcTopologyFixturePlan,
     computeRtcTopologyFixtureRebuild,
     createRtcTopologyFixtureGroup,
+    isConnectedRtcTopologyFixtureLayout,
     RTC_TOPOLOGY_MESH_OPTIONS,
     RTC_TOPOLOGY_TREE_OPTIONS,
+    type RtcTopologyFixtureLayout,
     type RtcTopologyFixtureLeaveInput,
     type RtcTopologyFixtureReplan
 } from '../rtc-topology-planning-fixtures.ts';
@@ -27,8 +32,23 @@ const JOIN_DELTA: TopologyLayoutDelta = {
 };
 const LEAVE_DELTA: TopologyLayoutDelta = { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, leftSessionCount: 1, changedSessionCount: 1 };
 const MESH_OF_TWENTY = { options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20, joinerCount: 0 };
-const TREE_OF_EIGHT = { options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8, joinerCount: 0 };
+// The pair counts split every pair of the formed members by whether the formed layout links them.
+const SWEEP_ROOMS = [
+    { room: 'a mesh of twenty', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20, linkedPairCount: 37, unlinkedPairCount: 153 },
+    { room: 'a tree of eight', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 8, linkedPairCount: 7, unlinkedPairCount: 21 },
+    { room: 'a tree of twelve', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 12, linkedPairCount: 11, unlinkedPairCount: 55 },
+    { room: 'a tree of thirty', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 30, linkedPairCount: 29, unlinkedPairCount: 406 },
+    { room: 'a mesh of thirty', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30, linkedPairCount: 57, unlinkedPairCount: 378 }
+];
 const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
+const MEASURED_ROOMS = [
+    { room: 'a measured 20-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20 },
+    { room: 'a measured 30-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30 },
+    { room: 'a measured 30-member tree', options: RTC_TOPOLOGY_TREE_OPTIONS, memberCount: 30 }
+];
+// A measured leave plans in milliseconds; the timeout fails a slow repair by its leaver. A repair that never
+// returns is a synchronous loop, which no timeout interrupts: the run stalls on that leaver instead of failing.
+const MEASURED_LEAVE_TIMEOUT_MS = 10_000;
 
 describe('resolveTopologyPlanChange', () => {
     it.each<RtcTopologyPlanDerivation>([
@@ -149,7 +169,7 @@ describe('the kind of the planner\'s own plans', () => {
     });
 });
 
-describe('what a single join or leave in a mesh of twenty reroutes today', () => {
+describe('what a single join or leave in a mesh of twenty reroutes', () => {
     const formed = computeRtcTopologyFixturePlan({
         options: RTC_TOPOLOGY_MESH_OPTIONS,
         group: createRtcTopologyFixtureGroup(20),
@@ -179,43 +199,163 @@ describe('what a single join or leave in a mesh of twenty reroutes today', () =>
         expect(resolveTopologyPlanChange(left.planned.derivation, delta)).toEqual({ kind: 'repair' });
         expect(delta.reroutedSessionCount).toBe(0);
     });
-
-    it('a leave from a mesh that reroutes members it did not involve is rebuilt, so it is a reshape', () => {
-        // The evolved mesh breaks an invariant, and the rebuild moves edges between members peer-4 never touched.
-        const left = computeRtcTopologyFixtureLeave({ ...MESH_OF_TWENTY, leaver: 'peer-4' });
-
-        const delta = computeTopologyLayoutDelta(left.previous, left.planned.snapshot);
-
-        expect(left.planned.derivation).toEqual({ method: 'rebuilt', reason: 'invariant-violation' });
-        expect(resolveTopologyPlanChange(left.planned.derivation, delta))
-            .toEqual({ kind: 'reshape', reason: 'invariant-violation' });
-        expect(delta.reroutedSessionCount).toBe(3);
-    });
 });
 
-describe('the planner\'s plans over every single leave of a mesh of twenty and a tree of eight', () => {
+describe.each(SWEEP_ROOMS)('the planner\'s plans over every single leave of $room', ({ options, memberCount }) => {
     // The limit of this sweep: the fixture rooms have no director, so no leader's leave is covered.
-    const meshSweep = computeRoomSweep(MESH_OF_TWENTY);
-    const treeSweep = computeRoomSweep(TREE_OF_EIGHT);
+    const sweep = computeRoomSweep({ options, memberCount });
+    const leaves = sweep.filter((plan) => plan.event === 'leave');
+    const leavesWithJoin = sweep.filter((plan) => plan.event === 'leave-and-join');
 
-    it.each([
-        { room: 'a mesh of twenty', sweep: meshSweep },
-        { room: 'a tree of eight', sweep: treeSweep }
-    ])('no incremental plan reroutes a member it did not involve ($room)', ({ sweep }) => {
+    it('no incremental plan reroutes a member the change did not involve', () => {
         const incrementalPlans = sweep.filter((plan) => plan.derivation.method === 'incremental');
 
         expect(new Set(incrementalPlans.map((plan) => plan.event))).toEqual(new Set(SWEEP_EVENTS));
         expect(incrementalPlans.filter((plan) => plan.delta.reroutedSessionCount > 0)).toEqual([]);
     });
 
-    // These pin the planner's CURRENT evolution: the count should fall if evolution learns to repair these leaves,
-    // and each leave counted here will be a reshape once reshapes are gated.
-    it('today 9 of the 20 single leaves from a 20-member mesh cannot be repaired incrementally and are rebuilt', () => {
-        expect(countSingleLeaveRebuildReasons(meshSweep)).toEqual({ 'invariant-violation': 9 });
+    it('every single leave is repaired in place and none is rebuilt', () => {
+        expect(leaves).toHaveLength(memberCount);
+        expect(leaves.filter((plan) => plan.derivation.method !== 'incremental').map(toRebuiltLeave)).toEqual([]);
     });
 
-    it('today 1 of the 8 single leaves from an 8-member tree cannot be repaired incrementally and are rebuilt', () => {
-        expect(countSingleLeaveRebuildReasons(treeSweep)).toEqual({ 'invariant-violation': 1 });
+    it('every single leave leaves the leaver gone and the rest connected inside the degree limit', () => {
+        expect(leaves.filter((plan) => !isValidLeaveLayout(plan.planned, plan.leaverSessionIds)).map(toRebuiltLeave))
+            .toEqual([]);
+    });
+
+    it('every single leave with a join in the same plan is repaired in place and none is rebuilt', () => {
+        expect(leavesWithJoin).toHaveLength(memberCount);
+        expect(leavesWithJoin.filter((plan) => plan.derivation.method !== 'incremental').map(toRebuiltLeave)).toEqual([]);
+    });
+});
+
+describe.each(SWEEP_ROOMS)(
+    'the planner\'s plans over every pair of members of $room leaving in one plan',
+    ({ options, memberCount, linkedPairCount, unlinkedPairCount }) => {
+        // A linked pair is the case where the first leaver's repair reaches the second leaver.
+        const departures = computeRoomPairSweep({ options, memberCount });
+
+        describe.each([
+            { pairs: 'linked', linked: true, pairCount: linkedPairCount },
+            { pairs: 'unlinked', linked: false, pairCount: unlinkedPairCount }
+        ])('$pairs pairs', ({ linked, pairCount }) => {
+            const pairs = departures.filter((plan) => plan.linked === linked);
+
+            it('every pair is repaired in place and none is rebuilt', () => {
+                expect(pairs).toHaveLength(pairCount);
+                expect(pairs.filter((plan) => plan.derivation.method !== 'incremental').map(toRebuiltLeave)).toEqual([]);
+            });
+
+            it('every pair leaves both leavers gone and the rest connected inside the degree limit', () => {
+                expect(pairs.filter((plan) => !isValidLeaveLayout(plan.planned, plan.leaverSessionIds)).map(toRebuiltLeave))
+                    .toEqual([]);
+            });
+
+            it('no pair\'s repair reroutes a member the leaves did not involve', () => {
+                expect(pairs.filter((plan) => plan.delta.reroutedSessionCount > 0).map(toRebuiltLeave)).toEqual([]);
+            });
+        });
+    }
+);
+
+describe.each(MEASURED_ROOMS)('a single leave from $room is planned without hanging', ({ options, memberCount }) => {
+    // The remaining members' browsers report RTT for the pairs they select, so the planner holds a sparse measured graph.
+    const formed = computeRtcTopologyFixturePlan({
+        options,
+        group: createRtcTopologyFixtureGroup(memberCount),
+        previous: undefined
+    }).snapshot;
+
+    it.each(formed.activeSessionIds)('the leave of %s is repaired in place, the leaver gone and the rest connected inside the limit', (leaverSessionId) => {
+        const planned = computeRtcTopologyFixtureMeasuredLeave({ options, formed, leaverSessionIds: [leaverSessionId], rttReportingDegreeLimit: 5 });
+
+        expect(planned.derivation).toEqual({ method: 'incremental' });
+        expect(isValidLeaveLayout(planned.snapshot, [leaverSessionId])).toBe(true);
+    }, MEASURED_LEAVE_TIMEOUT_MS);
+});
+
+describe('two linked members leaving a measured 20-member mesh in one plan', () => {
+    // The remaining members' browsers report RTT for the pairs they select, as for a single measured leave.
+    const formed = computeRtcTopologyFixturePlan({
+        options: RTC_TOPOLOGY_MESH_OPTIONS,
+        group: createRtcTopologyFixtureGroup(20),
+        previous: undefined
+    }).snapshot;
+    const linkedPairs = formed.activeSessionIds.flatMap((first) =>
+        (formed.nextHopsBySessionId[first] ?? []).filter((second) => first < second).map((second) => [first, second] as const)
+    );
+
+    it('the formed mesh has every link of the unmeasured sweep\'s mesh of twenty', () => {
+        expect(linkedPairs).toHaveLength(37);
+    });
+
+    it.each(linkedPairs)('the leave of %s and %s is repaired in place, both gone and the rest connected inside the limit', (first, second) => {
+        const planned = computeRtcTopologyFixtureMeasuredLeave({
+            options: RTC_TOPOLOGY_MESH_OPTIONS,
+            formed,
+            leaverSessionIds: [first, second],
+            rttReportingDegreeLimit: 5
+        });
+
+        expect(planned.derivation).toEqual({ method: 'incremental' });
+        expect(isValidLeaveLayout(planned.snapshot, [first, second])).toBe(true);
+    }, MEASURED_LEAVE_TIMEOUT_MS);
+});
+
+describe('the leave layout check of the sweep', () => {
+    // Each layout breaks exactly one clause of the check, with peer-4 as the leaver.
+    it.each<{ readonly layout: string; readonly planned: RtcTopologyFixtureLayout; }>([
+        {
+            layout: 'still links the leaver',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1', 'peer-3'], 'peer-3': ['peer-2', 'peer-4'], 'peer-4': ['peer-3'] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'gives a member more links than the degree limit',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2', 'peer-3'], 'peer-2': ['peer-1'], 'peer-3': ['peer-1'] },
+                degreeLimit: 1
+            }
+        },
+        {
+            layout: 'links a pair one way only',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2', 'peer-3'], 'peer-2': ['peer-1'], 'peer-3': [] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'leaves a member unreachable',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1'], 'peer-3': [] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'keeps next hops for the leaver that nobody lists back',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1', 'peer-3'], 'peer-3': ['peer-2'], 'peer-4': ['peer-3'] },
+                degreeLimit: 2
+            }
+        },
+        {
+            layout: 'links a member both ways to a session that is no member',
+            planned: {
+                activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+                nextHopsBySessionId: { 'peer-1': ['peer-2'], 'peer-2': ['peer-1', 'peer-3'], 'peer-3': ['peer-2', 'peer-9'], 'peer-9': ['peer-3'] },
+                degreeLimit: 2
+            }
+        }
+    ])('rejects a layout that $layout', ({ planned }) => {
+        expect(isValidLeaveLayout(planned, ['peer-4'])).toBe(false);
     });
 });
 
@@ -223,13 +363,15 @@ type SweepEvent = (typeof SWEEP_EVENTS)[number];
 
 interface SweptPlan {
     readonly event: SweepEvent;
-    readonly leaverSessionId: string | null;
+    /** None for the join, one for a leave. */
+    readonly leaverSessionIds: readonly string[];
     readonly derivation: RtcTopologyPlanDerivation;
     readonly delta: TopologyLayoutDelta;
+    readonly planned: RallarOverlayTopologySnapshot;
 }
 
 /** Every single leave, one join, and every single leave with one join in the same plan, from the formed room. */
-function computeRoomSweep(room: Omit<RtcTopologyFixtureLeaveInput, 'leaver'>): readonly SweptPlan[] {
+function computeRoomSweep(room: Pick<RtcTopologyFixtureLeaveInput, 'options' | 'memberCount'>): readonly SweptPlan[] {
     const formed = computeRtcTopologyFixturePlan({
         options: room.options,
         group: createRtcTopologyFixtureGroup(room.memberCount),
@@ -243,29 +385,64 @@ function computeRoomSweep(room: Omit<RtcTopologyFixtureLeaveInput, 'leaver'>): r
     const leaves = formed.activeSessionIds.flatMap((leaverSessionId) =>
         ([0, 1] as const).map((joinerCount) => {
             const left = computeRtcTopologyFixtureLeave({ ...room, leaver: leaverSessionId, joinerCount });
-            return toSweptPlan(joinerCount === 0 ? 'leave' : 'leave-and-join', leaverSessionId, left);
+            return toSweptPlan(joinerCount === 0 ? 'leave' : 'leave-and-join', [leaverSessionId], left);
         })
     );
-    return [toSweptPlan('join', null, { previous: formed, planned: joined }), ...leaves];
+    return [toSweptPlan('join', [], { previous: formed, planned: joined }), ...leaves];
 }
 
-function toSweptPlan(event: SweepEvent, leaverSessionId: string | null, replan: RtcTopologyFixtureReplan): SweptPlan {
+function toSweptPlan(event: SweepEvent, leaverSessionIds: readonly string[], replan: RtcTopologyFixtureReplan): SweptPlan {
     return {
         event,
-        leaverSessionId,
+        leaverSessionIds,
         derivation: replan.planned.derivation,
-        delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot)
+        delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot),
+        planned: replan.planned.snapshot
     };
 }
 
-function countSingleLeaveRebuildReasons(sweep: readonly SweptPlan[]): Partial<Record<TopologyReshapeReason, number>> {
-    const counts: Partial<Record<TopologyReshapeReason, number>> = {};
-    for (const plan of sweep) {
-        if (plan.event === 'leave' && plan.derivation.method === 'rebuilt') {
-            counts[plan.derivation.reason] = (counts[plan.derivation.reason] ?? 0) + 1;
-        }
-    }
-    return counts;
+interface SweptDeparture extends Pick<SweptPlan, 'leaverSessionIds' | 'derivation' | 'delta' | 'planned'> {
+    /** The formed layout links the two leavers. */
+    readonly linked: boolean;
+}
+
+/** Every pair of the formed members leaving in the same plan, with nobody joining. */
+function computeRoomPairSweep(room: Pick<RtcTopologyFixtureLeaveInput, 'options' | 'memberCount'>): readonly SweptDeparture[] {
+    const formed = computeRtcTopologyFixturePlan({
+        options: room.options,
+        group: createRtcTopologyFixtureGroup(room.memberCount),
+        previous: undefined
+    }).snapshot;
+    return formed.activeSessionIds.flatMap((first, index) =>
+        formed.activeSessionIds.slice(index + 1).map((second) => {
+            const planned = computeRtcTopologyFixtureDeparture({ options: room.options, formed, leaverSessionIds: [first, second] });
+            return {
+                leaverSessionIds: [first, second],
+                linked: (formed.nextHopsBySessionId[first] ?? []).includes(second),
+                derivation: planned.derivation,
+                delta: computeTopologyLayoutDelta(formed, planned.snapshot),
+                planned: planned.snapshot
+            };
+        })
+    );
+}
+
+/** A plan named by its leavers and how the planner derived it, so a failure says which leave and why. */
+function toRebuiltLeave(plan: Pick<SweptPlan, 'leaverSessionIds' | 'derivation'>): string {
+    const reason = plan.derivation.method === 'rebuilt' ? plan.derivation.reason : plan.derivation.method;
+    return `${plan.leaverSessionIds.join(' + ')}: ${reason}`;
+}
+
+/**
+ * No leaver is a member, every session the next hops name or list is a member, and every link is two-way, inside the
+ * limit, and connects all members.
+ */
+function isValidLeaveLayout(planned: RtcTopologyFixtureLayout, leaverSessionIds: readonly string[]): boolean {
+    const isMember = (sessionId: string) => planned.activeSessionIds.includes(sessionId);
+    return leaverSessionIds.length > 0 &&
+        !leaverSessionIds.some(isMember) &&
+        Object.entries(planned.nextHopsBySessionId).every(([sessionId, nextHops]) => isMember(sessionId) && nextHops.every(isMember)) &&
+        isConnectedRtcTopologyFixtureLayout(planned);
 }
 
 /** The staying members whose next hops the plan changed, in the planner's member order. */
