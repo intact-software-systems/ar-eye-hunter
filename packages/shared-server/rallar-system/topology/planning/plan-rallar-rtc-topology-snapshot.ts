@@ -12,6 +12,7 @@ import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shar
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RallarRtcTopologyUpdateResult } from '../runtime/rallar-rtc-topology-service.ts';
+import type { RtcTopologyPlanDerivation } from './plan-record/rtc-topology-plan-derivation.ts';
 
 export function planRallarRtcTopologySnapshot(
     input: Readonly<{
@@ -19,6 +20,7 @@ export function planRallarRtcTopologySnapshot(
         previous?: RallarOverlayTopologySnapshot;
         topology: RallarRtcTopologyKind;
         nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+        derivation: RtcTopologyPlanDerivation;
         degreeLimit: number;
         nowEpochMs: number;
     }>
@@ -51,7 +53,7 @@ export function planRallarRtcTopologySnapshot(
     const snapshot = input.previous && rtcTopologySemanticEqual(candidate, input.previous)
         ? input.previous
         : candidate;
-    return { snapshot, changed, previous: input.previous ?? null };
+    return { snapshot, changed, previous: input.previous ?? null, derivation: input.derivation };
 }
 
 function isSameNextHopMap(

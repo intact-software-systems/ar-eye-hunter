@@ -1,4 +1,9 @@
-import { computeCadenceBoundaryAtMs, computeNextCadenceAtMs, isCadenceDue } from '@shared/resilience/timing/cadence.ts';
+import {
+    computeCadenceBoundaryAtMs,
+    computeMissedCadenceCount,
+    computeNextCadenceAtMs,
+    isCadenceDue
+} from '@shared/resilience/timing/cadence.ts';
 import { describe, expect, it } from 'vitest';
 
 const CADENCE_MS = 100;
@@ -48,5 +53,27 @@ describe('isCadenceDue', () => {
         expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_099 })).toBe(false);
         expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_100 })).toBe(true);
         expect(isCadenceDue({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 6_000 })).toBe(true);
+    });
+});
+
+describe('computeMissedCadenceCount', () => {
+    it('counts no missed boundary for a run on time or less than one cadence late', () => {
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_100 })).toBe(0);
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_199 })).toBe(0);
+    });
+
+    it('counts each later boundary at or before now as missed', () => {
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_200 })).toBe(1);
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_400 })).toBe(3);
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_350 })).toBe(2);
+    });
+
+    it('counts none for a run before its boundary', () => {
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: CADENCE_MS, nowMs: 5_000 })).toBe(0);
+    });
+
+    it('counts none for a cadence of zero or less', () => {
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: 0, nowMs: 9_000 })).toBe(0);
+        expect(computeMissedCadenceCount({ boundaryAtMs: 5_100, cadenceMs: -10, nowMs: 9_000 })).toBe(0);
     });
 });

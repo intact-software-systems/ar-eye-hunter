@@ -7,6 +7,7 @@ import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distribu
 import type { RallarBlackBoxTestRecipeRunCommand, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { createControlFleetAggregateReport } from '../src/fleet/control-fleet-aggregate-report.ts';
 import { createControlFleetRunReport } from '../src/fleet/create-control-fleet-run-report.ts';
 import { toDistributedManifest } from './support/control-service-test-fixtures.ts';
 
@@ -217,4 +218,15 @@ test('fleet recognizes successful polling inside a retained loaded recipe', asyn
     expect(fixture.controlRun.results[0].ok).toEqual(true);
     assert(fixture.controlRun.events.length > 0);
     expect(report(fixture).summary.failed).toEqual(0);
+});
+
+test('fleet states the region timing distribution by nearest rank, and { count: 0 } when no agent reported a duration', async () => {
+    const fixture = await runPollingFixture('success');
+    const reports = [10, 20, 30, 40, 50].map((runDurationMs) => ({ ...report(fixture), runDurationMs }));
+    const aggregate = createControlFleetAggregateReport(reports, 5_000);
+    expect(aggregate.timing.runs).toEqual({ count: 5, minMs: 10, p50Ms: 30, p90Ms: 50, p95Ms: 50, maxMs: 50 });
+    expect(report(fixture).regions[0].timing).toEqual({ count: 1, minMs: 2000, p50Ms: 2000, p90Ms: 2000, p95Ms: 2000, maxMs: 2000 });
+    const silent = report({ ...fixture, controlRun: { ...fixture.controlRun, results: [] } });
+    expect(silent.regions[0].timing).toEqual({ count: 0 });
+    expect(silent.timing.commands).toEqual({ count: 0 });
 });

@@ -6,6 +6,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import type { RallarRtcTopologyMetrics } from '@shared/rtc/rallar-rtc-topology-metrics.ts';
 
+import type { RtcTopologyPlanDerivation } from '../planning/plan-record/rtc-topology-plan-derivation.ts';
 import { RtcTopologyPlanner } from '../planning/rtc-topology-planner.ts';
 import { RtcTopologyMetrics, type RtcTopologyPlanningObservation } from './rtc-topology-metrics.ts';
 import { RtcTopologySnapshotRegistry } from './rtc-topology-snapshot-registry.ts';
@@ -33,6 +34,7 @@ export interface RallarRtcTopologyUpdateResult {
     readonly snapshot: RallarOverlayTopologySnapshot;
     readonly changed: boolean;
     readonly previous: RallarOverlayTopologySnapshot | null;
+    readonly derivation: RtcTopologyPlanDerivation;
 }
 
 export interface RallarRtcTopologyUpdateOptions {

@@ -1,4 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 
 export const RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY = Object.freeze({
     appendCount: 300,
@@ -38,17 +39,11 @@ export interface WorkloadResult {
 }
 
 export function summarizeRtcTopologyDeliveryLatencies(samples: readonly number[]): LatencySummary {
-    if (samples.length === 0) {
+    const p50 = computeNearestRank(samples, 0.5);
+    const p95 = computeNearestRank(samples, 0.95);
+    const p99 = computeNearestRank(samples, 0.99);
+    if (p50 === undefined || p95 === undefined || p99 === undefined) {
         throw new TypeError('RTC topology delivery benchmark latency samples are required');
     }
-    const sorted = [...samples].sort((left, right) => left - right);
-    return {
-        p50: percentile(sorted, 0.5),
-        p95: percentile(sorted, 0.95),
-        p99: percentile(sorted, 0.99)
-    };
-}
-
-function percentile(sorted: readonly number[], fraction: number): number {
-    return sorted[Math.ceil(sorted.length * fraction) - 1]!;
+    return { p50, p95, p99 };
 }

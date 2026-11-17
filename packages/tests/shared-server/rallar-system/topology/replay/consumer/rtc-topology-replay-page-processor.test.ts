@@ -25,8 +25,8 @@ const PUBLISHER_STREAM_ID = '00000000-0000-4000-8000-000000000007';
 const DATABASE_NOW_EPOCH_MS = 100;
 
 describe('RtcTopologyReplayPageProcessor', () => {
-    it('advances past a pre-v4 publication row as a gap, re-hydrates, and moves the cursor over the later v4 rows', async () => {
-        const replay = await createReplayPage('pre-v4');
+    it('advances past an expired retention entry as a gap, re-hydrates, and moves the cursor over the later rows', async () => {
+        const replay = await createReplayPage('expired-retention');
 
         await expect(replay.processor.process(replay.input)).resolves.toBe('done');
 
@@ -61,7 +61,7 @@ interface ReplayPageFixture {
     readonly diagnostics: RtcTopologyReplayDiagnosticsEvent[];
 }
 
-async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<ReplayPageFixture> {
+async function createReplayPage(secondRow: 'expired-retention' | 'malformed-v4'): Promise<ReplayPageFixture> {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const publications = new RtcTopologyPublicationRepository(runtimeRepository);
     const groupRef = createGroupRef();
@@ -72,7 +72,7 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<R
             {
                 namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
                 key: publications.publicationKey(groupRef, publication.publicationId),
-                value: JSON.stringify(index === 1 ? toStoredSecondRow(publication, secondRow) : publication),
+                value: JSON.stringify(index === 1 && secondRow === 'malformed-v4' ? { ...publication, traceId: 'not a trace' } : publication),
                 expireAtTimestamp: Date.now() + 60_000
             }
         );
@@ -109,7 +109,9 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<R
         result: {
             status: 'page',
             expectedCursorSequence: 0,
-            entries: rows.map((publication, index) => toLogEntry(publication, outbox, index + 1)),
+            entries: rows.map((publication, index) =>
+                toLogEntry({ publication, outbox, sequence: index + 1, expired: index === 1 && secondRow === 'expired-retention' })
+            ),
             hasMore: false,
             capturedHeadSequence: 3,
             retainedFromSequence: 1,
@@ -121,26 +123,14 @@ async function createReplayPage(secondRow: 'pre-v4' | 'malformed-v4'): Promise<R
     return { processor, input, sent, timeline, diagnostics };
 }
 
-interface CorruptPublicationRow extends Omit<RtcTopologyPublication, 'traceId'> {
-    readonly traceId?: string;
+interface ToLogEntryInput {
+    readonly publication: RtcTopologyPublication;
+    readonly outbox: readonly ResourceEntry[];
+    readonly sequence: number;
+    readonly expired: boolean;
 }
 
-function toStoredSecondRow(
-    publication: RtcTopologyPublication,
-    secondRow: 'pre-v4' | 'malformed-v4'
-): CorruptPublicationRow {
-    if (secondRow === 'malformed-v4') {
-        return { ...publication, traceId: 'not a trace' };
-    }
-    const { traceId: _traceId, ...preV4Row } = publication;
-    return preV4Row;
-}
-
-function toLogEntry(
-    publication: RtcTopologyPublication,
-    outbox: readonly ResourceEntry[],
-    sequence: number
-): RtcTopologyDeliveryLogEntry {
+function toLogEntry({ publication, outbox, sequence, expired }: ToLogEntryInput): RtcTopologyDeliveryLogEntry {
     const firstPage = computeRtcTopologyPublicationOutbox(publication)[0];
     return {
         publisherStreamId: PUBLISHER_STREAM_ID,
@@ -148,7 +138,7 @@ function toLogEntry(
         groupRef: publication.groupRef,
         publicationId: publication.publicationId,
         outboxKey: outbox.find((page) => isKeysEqual(page.key, firstPage.key))!.key,
-        retainUntilEpochMs: publication.expiresAtEpochMs,
+        retainUntilEpochMs: expired ? DATABASE_NOW_EPOCH_MS : publication.expiresAtEpochMs,
         insertedAtEpochMs: publication.createdAtEpochMs
     };
 }

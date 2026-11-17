@@ -367,7 +367,7 @@ describe('RTC topology snapshot repository', () => {
             .toThrow('expiresAtEpochMs');
     });
 
-    it.each(['direct', 'list', 'page'] as const)(
+    it.each(['direct', 'page'] as const)(
         'rejects a nondeterministic publication id on the %s surface',
         async (surface) => {
             const runtimeRepository = new FakeRuntimeStateRepository();
@@ -388,9 +388,7 @@ describe('RTC topology snapshot repository', () => {
 
             const read = surface === 'direct'
                 ? repository.findPublication(tampered.groupRef, tampered.publicationId)
-                : surface === 'list'
-                ? repository.listPublicationEntries()
-                : repository.listPublicationEntriesPage({ limit: 10 });
+                : repository.listGroupPublicationEntriesPage(tampered.groupRef, { limit: 10 });
             await expect(read).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });

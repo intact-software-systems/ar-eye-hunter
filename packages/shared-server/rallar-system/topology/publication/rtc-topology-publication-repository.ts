@@ -14,24 +14,18 @@ import {
     RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     type RtcTopologyClaimedPublication,
-    type RtcTopologyPublicationRead,
     type RtcTopologyPublicationWorkClaim
 } from './rtc-topology-publication-repository-contracts.ts';
 import {
     assertTrustedSlot,
     childKey,
-    compact,
+    childKeyPrefix,
     decodeChildKey,
     parseValue,
     publicationCorruption,
     validateWorkClaim
 } from './rtc-topology-publication-repository-state.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
-
-type StoredPublicationRead =
-    | Readonly<{ status: 'live'; entry: RuntimeStateEntryValue<RtcTopologyPublication>; }>
-    | Readonly<{ status: 'expired'; }>
-    | Readonly<{ status: 'unsupported'; message: string; }>;
 
 export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     readonly runtimeRepository: RuntimeStateRepositoryLike;
@@ -45,25 +39,11 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         groupRef: GroupRef,
         publicationId: string
     ): Promise<RtcTopologyPublication | undefined> {
-        const read = await this.readPublication(groupRef, publicationId);
-        return read.status === 'found' ? read.publication : undefined;
-    }
-
-    async readPublication(
-        groupRef: GroupRef,
-        publicationId: string
-    ): Promise<RtcTopologyPublicationRead> {
         const entry = await this.runtimeRepository.findEntry(
             RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
             this.publicationKey(groupRef, publicationId)
         );
-        const stored = entry
-            ? await this.toLivePublicationEntry(entry, groupRef, publicationId)
-            : { status: 'expired' as const };
-        if (stored.status === 'live') {
-            return { status: 'found', publication: stored.entry.value };
-        }
-        return stored.status === 'unsupported' ? stored : { status: 'absent' };
+        return entry ? (await this.toLivePublicationEntry(entry, groupRef, publicationId))?.value : undefined;
     }
 
     async findPublicationForWork(
@@ -123,40 +103,28 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         return await this.toLiveWorkClaimEntry(entry, groupRef, workId);
     }
 
-    async listPublicationEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE
-        );
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
-    }
-
-    async listPublicationEntriesPage(
+    /** Rows are validated before their expiry is judged; expired rows are skipped without ending the walk. */
+    async listGroupPublicationEntriesPage(
+        groupRef: GroupRef,
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublication>[]> {
-        const entries = await this.listEntriesPage(
-            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-            '',
-            options
-        );
-        return toLivePublicationEntries(await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry))));
-    }
-
-    async listWorkClaimEntries(): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
-        const entries = await this.runtimeRepository.findAllEntries(
-            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE
-        );
-        return compact(await Promise.all(entries.map((entry) => this.toLiveWorkClaimEntry(entry))));
-    }
-
-    async listWorkClaimEntriesPage(
-        options: RuntimeStateEntryPageOptions
-    ): Promise<readonly RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim>[]> {
-        const entries = await this.listEntriesPage(
-            RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-            '',
-            options
-        );
-        return compact(await Promise.all(entries.map((entry) => this.toLiveWorkClaimEntry(entry))));
+        const keyPrefix = childKeyPrefix(groupRef, 'publication');
+        const live: RuntimeStateEntryValue<RtcTopologyPublication>[] = [];
+        let afterKey = options.afterKey;
+        while (live.length < options.limit) {
+            const missing = options.limit - live.length;
+            const entries = await this.listEntriesPage(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, keyPrefix, {
+                afterKey,
+                limit: missing
+            });
+            const reads = await Promise.all(entries.map((entry) => this.toLivePublicationEntry(entry)));
+            live.push(...reads.flatMap((read) => read ? [read] : []));
+            if (entries.length < missing) {
+                break;
+            }
+            afterKey = entries[entries.length - 1]!.key;
+        }
+        return live;
     }
 
     publicationKey(groupRef: GroupRef, publicationId: string): string {
@@ -171,7 +139,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         entry: RuntimeStateEntry,
         trustedRef?: GroupRef,
         trustedPublicationId?: string
-    ): Promise<StoredPublicationRead> {
+    ): Promise<RuntimeStateEntryValue<RtcTopologyPublication> | undefined> {
         const decoded = decodeChildKey(entry.key, 'publication');
         assertTrustedSlot({
             decoded,
@@ -179,29 +147,26 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
             trustedValue: trustedPublicationId,
             storageKey: entry.key
         });
-        const publication = decodeRtcTopologyPublication(parseValue(entry), decoded.groupRef);
-        if (publication.left?.code === 'malformed') {
-            throw publicationCorruption(entry.key, publication.left.message);
-        }
+        const value = decodeRtcTopologyPublication(parseValue(entry), decoded.groupRef).fold<RtcTopologyPublication>(
+            (message) => {
+                throw publicationCorruption(entry.key, message);
+            },
+            (decodedPublication) => decodedPublication
+        );
         const live = await this.toLiveJsonEntryValue(RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE, entry);
         if (!live) {
-            return { status: 'expired' };
+            return undefined;
         }
-        return publication.fold<StoredPublicationRead>(
-            (refusal) => ({ status: 'unsupported', message: refusal.message }),
-            (value) => {
-                if (value.publicationId !== decoded.value) {
-                    throw publicationCorruption(entry.key, 'publication value differs from key');
-                }
-                return { status: 'live', entry: { entry: live.entry, value } };
-            }
-        );
+        if (value.publicationId !== decoded.value) {
+            throw publicationCorruption(entry.key, 'publication value differs from key');
+        }
+        return { entry: live.entry, value };
     }
 
     private async toLiveWorkClaimEntry(
         entry: RuntimeStateEntry,
-        trustedRef?: GroupRef,
-        trustedWorkId?: string
+        trustedRef: GroupRef,
+        trustedWorkId: string
     ): Promise<RuntimeStateEntryValue<RtcTopologyPublicationWorkClaim> | undefined> {
         const decoded = decodeChildKey(entry.key, 'work');
         assertTrustedSlot({
@@ -229,11 +194,4 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         );
         return live ? { entry: live.entry, value } : undefined;
     }
-}
-
-/** Listings treat an unsupported (pre-v4) row like an expired one: it is absent, never corruption for the page. */
-function toLivePublicationEntries(
-    reads: readonly StoredPublicationRead[]
-): readonly RuntimeStateEntryValue<RtcTopologyPublication>[] {
-    return reads.flatMap((read) => read.status === 'live' ? [read.entry] : []);
 }

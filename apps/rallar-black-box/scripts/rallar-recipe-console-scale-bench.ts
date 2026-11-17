@@ -7,6 +7,7 @@ import {
     createRecipeConsoleScaleFixture,
     validateRecipeConsoleScaleFixtureSize
 } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import { computeNearestRank } from '../../../packages/shared/measurement/compute-nearest-rank.ts';
 import { createAnalyzeArtifactModel } from '../src/recipe-console/analyze/analyze-artifact-model.ts';
 
 const DEFAULT_SIZES = [500, 2_000, 15_000] as const;
@@ -539,14 +540,14 @@ function exposedGarbageCollector(): (() => void) | undefined {
 
 function summarize(values: readonly number[]): MetricSummary {
     const sorted = [...values].sort((left, right) => left - right);
-    if (sorted.length === 0) {
+    const approximateP95 = computeNearestRank(sorted, 0.95);
+    if (approximateP95 === undefined) {
         throw new Error('Cannot summarize an empty sample set.');
     }
     const middle = Math.floor(sorted.length / 2);
     const median = sorted.length % 2 === 0
         ? (sorted[middle - 1] + sorted[middle]) / 2
         : sorted[middle];
-    const approximateP95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
     return {
         median,
         approximateP95,

@@ -4,6 +4,7 @@ import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import type { RtcTopologyPlanningObservation } from '../runtime/rtc-topology-metrics.ts';
+import type { RtcTopologyPlanDerivation } from './plan-record/rtc-topology-plan-derivation.ts';
 
 export type GroupTopologyPublisher = (
     message: ALMessage,
@@ -39,6 +40,8 @@ export type ReconcileGroupTopologyResult =
         previous: RallarOverlayTopologySnapshot | null;
         changed: boolean;
         planningObservation: RtcTopologyPlanningObservation | null;
+        /** How the planner derived the next hops; null for a removal tombstone, which has none. */
+        derivation: RtcTopologyPlanDerivation | null;
     }>
     | Readonly<{
         action: 'frozen';

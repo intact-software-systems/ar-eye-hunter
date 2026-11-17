@@ -1679,13 +1679,22 @@ two pools, `own` and `inbound` each pool (D189), and `overloaded` says the
 smallest next own send would be refused at the count or byte limit.
 `publication` is the connect's publication stage report (D480): `{ lanes, streams, staged, stagedBytes,
 limits: { maxStreams, maxStagedValues, maxStagedBytes }, counters: { staged, superseded, expired, refused,
-cancelled, admitted, deferred } }`. `lanes` counts the lanes the connect has opened, one per live channel route
+cancelled, admitted, deferred }, figures: { selectionAgeMs, selectionToAdmissionMs, drainMessagesPercent,
+drainBytesPercent, submittedOpportunities, missedOpportunities, unrecordedSamples } }`. `lanes` counts the lanes the connect has opened, one per live channel route
 it staged on (an emptied lane stays open until the stage stops); `streams`, `staged` and `stagedBytes` are what the
 stage holds now; `limits` are the session's stage limits, lowered by `rallar.almPublicationLimits`; each counter is cumulative over the
 connect, one per value the stage settled that way, with `admitted` the values its opportunities handed to a carrier
 and `deferred` the values each opportunity left for a later one, summed over the opportunities. A connect that
 staged no live value yet reports zeros with its limits. An `assert` reads it as
 `latestStats.rallar.alm.publication.counters.refused`.
+`figures` (D651) holds four bounded histograms, each `{ upperBounds, bucketCounts, count, sum, min, max }` with
+`min` and `max` null while `count` is 0: `selectionAgeMs` and `selectionToAdmissionMs` on the stage's age bounds and
+`drainMessagesPercent` and `drainBytesPercent` on its percent bounds, and three counts. Whenever `unrecordedSamples`
+is 0, `selectionAgeMs.count` equals `counters.admitted` and the other three `count` fields equal
+`submittedOpportunities`; the stage counts a sample a histogram refuses in `unrecordedSamples`. An `assert` reads one
+as `latestStats.rallar.alm.publication.figures.submittedOpportunities`; the paced conformance cells read the equalities
+with a `comparisonSource` path. A page answer whose histogram has other bounds, or whose counts disagree with its
+buckets, fails the stats command.
 `ordering` is `readUsage().ordering`, required: `{ entered, omitted, witnessed, beforeEntry }`, the
 `ordering-position` events the connect's inbound admissions stated on either carrier, cumulative over the
 connect and counted per event, not per distinct copy.

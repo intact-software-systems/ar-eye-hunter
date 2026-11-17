@@ -178,10 +178,9 @@ close. The audit stamp is the trace: a group or client event names the trace of
 the request (HTTP `x-request-id` or WS envelope) whose command ran. The request
 bodies carry no trace, and `AuditStamp.traceId` stays `string | null` only for
 rows written before I1b-i. A persisted envelope from before version 4 is
-refused, with no backfill; a topology publication from before version 4 is
-refused `unsupported` without stalling replay, which takes it as a gap and
-re-hydrates from current topology. An open tab on a pre-v4 bundle must reload:
-the server refuses its version-3 frames and the tab refuses the server's
+refused, with no backfill; a stored topology publication without a trace is
+corruption, like any other publication that does not decode. An open tab on a
+pre-v4 bundle must reload: the server refuses its version-3 frames and the tab refuses the server's
 version-4 frames. `id.sessionId` is unchanged: the topology hydration unicast
 stamps it and the browser compares it.
 

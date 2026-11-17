@@ -1124,3 +1124,37 @@ schema-and-capabilities.md describes the gte comparison.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts packages/tests/shared-test/rallar-bb-test-set-operator-admission.test.ts
 ```
+
+```text
+Title: stats.rallar.alm.publication carries the publication figures
+Date: 2026-11-16
+Owner: ALM publication figures
+
+Change type:
+- Compatible addition to a result value; a stricter decode of recorded stats
+
+Affected schemas:
+- None: the recipe schema and the control validator are unchanged; the stats result value and its decoder change
+
+Old shape:
+stats.rallar.alm.publication was { lanes, streams, staged, stagedBytes, limits, counters } and named no figures.
+
+New shape:
+stats.rallar.alm.publication also carries figures: { selectionAgeMs, selectionToAdmissionMs, drainMessagesPercent,
+drainBytesPercent, submittedOpportunities, missedOpportunities, unrecordedSamples }, the first four bounded histograms
+(D651). A page answer without figures, with a histogram on bounds other than the stage declares, or with a bad
+histogram field, fails the stats command, naming each bad field under publication.figures.
+
+Migration:
+None for recipes. A recorded stats event from before this change no longer decodes and is skipped, so re-reading an
+older artifact reports no-readings for its ledger. A page and a harness that read figures ship together.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the figures; alm-observation-artifact.md the ledger readings' decode.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts
+```

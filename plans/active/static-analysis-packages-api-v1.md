@@ -100,7 +100,7 @@ Leave these as warnings or human review:
 
 ## False-positive risks
 
-- The expiry sweep and admin `listPublicationEntries` / `listMeasurementEntries` are full namespace reads on purpose. A checker that flags every `findAllEntries` will drown the RTT misuse unless it is rooted at mutation `read` functions.
+- The expiry sweep and admin `listGroupPublicationEntriesPage` / `listMeasurementEntries` are full namespace reads on purpose. A checker that flags every `findAllEntries` will drown the RTT misuse unless it is rooted at mutation `read` functions.
 - `writeRuntimeStateGuardedBatch` will trip a naive line-count rule.
 - `prune-graph.ts` will trip cognitive load. Splitting the k-best-links algorithm into pass-through files makes it harder to follow.
 - Prefix scans that use `store_key >= prefix AND store_key < prefixEnd` can be index range scans. The membership finding is the extra `right()` filter on a workspace-wide prefix, not the existence of prefix queries.

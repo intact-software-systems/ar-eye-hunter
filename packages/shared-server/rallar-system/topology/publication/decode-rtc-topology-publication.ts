@@ -1,5 +1,7 @@
 import { decodeALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { decodeRtcTopologyPlanRecord } from '@shared/api/topology-plan/decode-rtc-topology-plan-record.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { decodeJsonWireValue, type JsonWireObject } from '../../protocol/json-wire-identity.ts';
 import { decodeRtcTopologySnapshot } from '../persistence/decode-rtc-topology-snapshot.ts';
@@ -9,13 +11,7 @@ import {
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 
-/** Why a stored publication cannot be used: `unsupported` predates envelope version 4, `malformed` is corrupt. */
-export interface RtcTopologyPublicationRefusal {
-    readonly code: 'unsupported' | 'malformed';
-    readonly message: string;
-}
-
-const PRE_V4_PUBLICATION_KEYS = [
+const PUBLICATION_KEYS = [
     'publicationId',
     'workId',
     'groupRef',
@@ -24,33 +20,24 @@ const PRE_V4_PUBLICATION_KEYS = [
     'targetGroupSnapshotVersion',
     'recipientSessionIds',
     'snapshot',
+    'plan',
     'expiresAtEpochMs',
-    'createdAtEpochMs'
+    'createdAtEpochMs',
+    'traceId'
 ] as const;
 
-const PUBLICATION_KEYS = [...PRE_V4_PUBLICATION_KEYS, 'traceId'] as const;
-
-/** Strict decode of an authoritative persisted publication; a pre-v4 row is refused as `unsupported`. */
+/** Strict decode of an authoritative persisted publication. */
 export function decodeRtcTopologyPublication(
     value: unknown,
     expectedRef: GroupRef
-): Either<RtcTopologyPublicationRefusal, RtcTopologyPublication> {
+): Either<string, RtcTopologyPublication> {
     try {
         const publication = decodePublicationRecord(value, 'RTC topology publication');
-        if (hasExactKeys(publication, PRE_V4_PUBLICATION_KEYS)) {
-            return Either.ofLeft({
-                code: 'unsupported',
-                message: 'RTC topology publication predates AL envelope version 4'
-            });
-        }
         assertPublicationFields(publication, expectedRef);
         return Either.ofRight(value as RtcTopologyPublication);
     }
     catch (error) {
-        return Either.ofLeft({
-            code: 'malformed',
-            message: error instanceof TypeError ? error.message : 'RTC topology publication is invalid'
-        });
+        return Either.ofLeft(error instanceof TypeError ? error.message : 'RTC topology publication is invalid');
     }
 }
 
@@ -59,8 +46,8 @@ export function assertRtcTopologyPublication(
     value: RtcTopologyPublication,
     expectedRef: GroupRef
 ): void {
-    decodeRtcTopologyPublication(value, expectedRef).fold((refusal) => {
-        throw new TypeError(refusal.message);
+    decodeRtcTopologyPublication(value, expectedRef).fold((message) => {
+        throw new TypeError(message);
     }, () => undefined);
 }
 
@@ -95,10 +82,11 @@ function assertPublicationFields(publication: JsonWireObject, expectedRef: Group
         throw new TypeError('RTC topology publication recipients are invalid');
     }
     safeInteger(publication.expiresAtEpochMs, createdAtEpochMs + 1, 'expiresAtEpochMs');
-    assertPublicationSnapshot(publication, expectedRef);
+    const snapshot = decodePublicationSnapshot(publication, expectedRef);
+    assertPublicationPlan(publication, snapshot.state);
 }
 
-function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: GroupRef): void {
+function decodePublicationSnapshot(publication: JsonWireObject, expectedRef: GroupRef): RallarOverlayTopologySnapshot {
     const snapshot = decodeRtcTopologySnapshot(
         decodeJsonWireValue(publication.snapshot, 'RTC topology publication snapshot'),
         expectedRef
@@ -112,6 +100,19 @@ function assertPublicationSnapshot(publication: JsonWireObject, expectedRef: Gro
         !rtcTopologySemanticEqual(snapshot.activeSessionIds, publication.recipientSessionIds)
     ) {
         throw new TypeError('RTC topology publication winner is internally inconsistent');
+    }
+    return snapshot;
+}
+
+function assertPublicationPlan(publication: JsonWireObject, state: RallarOverlayTopologySnapshot['state']): void {
+    const plan = publication.plan;
+    if ((plan === null) !== (state === 'removed')) {
+        throw new TypeError('RTC topology publication plan must be null exactly when its layout is removed');
+    }
+    if (plan !== null) {
+        decodeRtcTopologyPlanRecord(plan).fold((message) => {
+            throw new TypeError(message);
+        }, () => undefined);
     }
 }
 

@@ -34,6 +34,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createRtcTopologyPublicationPlan } from '../../../../packages/tests/shared-server/rallar-system/topology/rtc-topology-test-fixtures.ts';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 import { recordPGliteStatements } from './record-p-glite-statements.ts';
 
@@ -413,6 +414,7 @@ function publication(workId: string, sessionCount = 1): RtcTopologyPublication {
         targetGroupSnapshotVersion: 7,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: expiresAtMs,
         createdAtEpochMs
     };

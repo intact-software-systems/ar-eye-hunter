@@ -31,7 +31,8 @@ function createApp(input: TopologyWorkTestInput): Hono {
         adminClientIds: ['admin'],
         requireApiAuthSession: input.requireSession,
         directory: { read: () => Promise.reject(new Error('Directory must not be read')) },
-        topologyWork: input.topologyWork
+        topologyWork: input.topologyWork,
+        topologyPlans: { read: () => Promise.reject(new Error('Topology plans must not be read')) }
     });
     return app;
 }

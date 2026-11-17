@@ -1,3 +1,4 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
@@ -556,9 +557,9 @@ export function deriveFleetReportTimingDistribution(
     return {
         count: sorted.length,
         minMs: sorted[0],
-        p50Ms: nearestRank(sorted, 0.5),
-        p90Ms: nearestRank(sorted, 0.9),
-        p95Ms: nearestRank(sorted, 0.95),
+        p50Ms: computeNearestRank(sorted, 0.5),
+        p90Ms: computeNearestRank(sorted, 0.9),
+        p95Ms: computeNearestRank(sorted, 0.95),
         maxMs: sorted[sorted.length - 1]
     };
 }
@@ -1192,17 +1193,6 @@ function boundedLimit(value: number, length: number): number {
     return Math.min(length, Math.floor(value));
 }
 
-function nearestRank(sortedValues: readonly number[], percentile: number): number {
-    const index = Math.max(
-        0,
-        Math.min(
-            sortedValues.length - 1,
-            Math.ceil(sortedValues.length * percentile) - 1
-        )
-    );
-    return sortedValues[index];
-}
-
 function minDefined(
     left: number | undefined,
     right: number | undefined
@@ -1249,7 +1239,7 @@ function comparePolicyText(
         : compareText(left, right);
 }
 
-function exactTupleIdentity(parts: readonly unknown[]): string {
+function exactTupleIdentity(parts: readonly (string | null)[]): string {
     return JSON.stringify(parts);
 }
 

@@ -6,6 +6,12 @@ import {
 
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
+    computeALOutboundPublicationFiguresAfterSelection,
+    computeALOutboundPublicationFiguresAfterSubmission,
+    toIdleALOutboundPublicationFigures
+} from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
 import type { RallarBlackBoxBrowserRallarRuntime } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
@@ -20,13 +26,22 @@ import { decodeRecord } from '../../../shared-test/rallar-bb-test/runtime/decode
 import { createBrowserRallarRequiredMethodsTestDouble } from '../browser-rallar-required-methods-test-double.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
+const PUBLICATION_FIGURES = computeALOutboundPublicationFiguresAfterSubmission(
+    computeALOutboundPublicationFiguresAfterSelection(toIdleALOutboundPublicationFigures(), {
+        atMs: 1_150,
+        stagedAtMs: [1_000],
+        missedOpportunities: 1
+    }),
+    { atMs: 1_150, settledAtMs: 1_190, selected: 1, selectedBytes: 100, drain: { messages: 8, bytes: 65_536 } }
+);
 const PUBLICATION_REPORT: RallarBlackBoxTestAlmUsage['publication'] = {
     lanes: 1,
     streams: 2,
     staged: 3,
     stagedBytes: 300,
     limits: AL_PUBLICATION_STAGE_LIMITS,
-    counters: { staged: 5, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 1, deferred: 2 }
+    counters: { staged: 5, superseded: 1, expired: 0, refused: 1, cancelled: 0, admitted: 1, deferred: 2 },
+    figures: PUBLICATION_FIGURES
 };
 const ORDERING_COUNTERS: RallarBlackBoxTestAlmUsage['ordering'] = { entered: 4, omitted: 1, witnessed: 2, beforeEntry: 3 };
 const FIRST_REPORT: RallarBlackBoxTestAlmUsage = {
@@ -362,7 +377,8 @@ describe('the stats result rallar.alm block', () => {
                 ...PUBLICATION_REPORT,
                 stagedBytes: -1,
                 limits: { maxStreams: 64, maxStagedValues: 1_000 },
-                counters: { ...PUBLICATION_REPORT.counters, cancelled: 0.5 }
+                counters: { ...PUBLICATION_REPORT.counters, cancelled: 0.5 },
+                figures: { ...PUBLICATION_FIGURES, unrecordedSamples: 0.5 }
             },
             ordering: { ...ORDERING_COUNTERS, witnessed: -1, beforeEntry: 1.5 }
         }));
@@ -376,8 +392,8 @@ describe('the stats result rallar.alm block', () => {
                 'inbound.bytes is not a count; overloaded is not a boolean; orderingTracks is not a count; ' +
                 'deliveredMarkers is not a count; repliesHeld is not a count; replyWaitsOpen is not a count; ' +
                 'publication.stagedBytes is not a count; publication.limits.maxStagedBytes is not a count; ' +
-                'publication.counters.cancelled is not a count; ordering.witnessed is not a count; ' +
-                'ordering.beforeEntry is not a count'
+                'publication.counters.cancelled is not a count; publication.figures.unrecordedSamples is not a count; ' +
+                'ordering.witnessed is not a count; ordering.beforeEntry is not a count'
         );
     });
 
@@ -409,7 +425,47 @@ describe('the stats result rallar.alm block', () => {
                 'publication.counters.staged is not a count; publication.counters.superseded is not a count; ' +
                 'publication.counters.expired is not a count; publication.counters.refused is not a count; ' +
                 'publication.counters.cancelled is not a count; publication.counters.admitted is not a count; ' +
-                'publication.counters.deferred is not a count'
+                'publication.counters.deferred is not a count; publication.figures.selectionAgeMs must be an object; ' +
+                'publication.figures.selectionToAdmissionMs must be an object; ' +
+                'publication.figures.drainMessagesPercent must be an object; ' +
+                'publication.figures.drainBytesPercent must be an object; ' +
+                'publication.figures.submittedOpportunities is not a count; ' +
+                'publication.figures.missedOpportunities is not a count; publication.figures.unrecordedSamples is not a count'
+        );
+    });
+
+    it('decodes the publication figures into the stats result', async () => {
+        const runtime = createDefaultPageRuntime(async () => FIRST_REPORT);
+
+        const stats = await readStats(runtime, 'stats-1');
+
+        expect(stats.value).toMatchObject({ rallar: { alm: { publication: { figures: PUBLICATION_FIGURES } } } });
+        expect(runtime.state().latestStats?.rallar?.alm?.publication.figures).toEqual(PUBLICATION_FIGURES);
+    });
+
+    it('fails the stats command when the page answers figures on other bounds, or a malformed histogram, naming each bad field', async () => {
+        const otherAgeBounds = AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS.map((bound) => bound * 2);
+        const runtime = createDefaultPageRuntime(async () => ({
+            ...FIRST_REPORT,
+            publication: {
+                ...PUBLICATION_REPORT,
+                figures: {
+                    ...PUBLICATION_FIGURES,
+                    selectionAgeMs: { ...PUBLICATION_FIGURES.selectionAgeMs, upperBounds: otherAgeBounds },
+                    drainBytesPercent: { ...PUBLICATION_FIGURES.drainBytesPercent, bucketCounts: [1.5, 0, 0, 0, 0, 0, 0] },
+                    missedOpportunities: -1
+                }
+            }
+        }));
+
+        const result = await runtime.execute({ kind: 'stats', commandId: 'stats-1' });
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.message).toBe(
+            'The page\'s session ledger report is not valid: ' +
+                'publication.figures.selectionAgeMs.upperBounds are not the bounds the stage declares for it; ' +
+                'publication.figures.drainBytesPercent.bucketCounts[0] must be a whole number of at least 0; ' +
+                'publication.figures.missedOpportunities is not a count'
         );
     });
 });

@@ -3781,6 +3781,61 @@ paths:
           headers:
             x-request-id:
               $ref: '#/components/headers/XRequestId'
+  /api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans:
+    get:
+      tags: [Admin Operations]
+      summary: Read the retained topology plans of one room
+      description: >-
+        Requires current platform admin authorization. Lists the live retained topology publications of the
+        room with the plan record each was computed from; `plan` is null for a removal. Pages come in
+        storage-key order, not time order: follow `nextAfterPublicationId` until it is null to see every live
+        publication exactly once, and sort by `plan.plannedAtEpochMs` to read them in time. The response
+        carries no member identities and no routing edges.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/XRequestId'
+        - in: path
+          name: groupId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$' }
+        - in: query
+          name: limit
+          description: Occurs at most once.
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: afterPublicationId
+          description: Exclusive publication identity from the preceding page of the same room; occurs at most once.
+          schema: { type: string, minLength: 1, maxLength: 256 }
+      responses:
+        '200':
+          description: A private, uncacheable observation of retained topology plans.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+            Cache-Control:
+              schema: { type: string, enum: ['private, no-store'] }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminRoomTopologyPlansResponse'
+        '400':
+          description: Invalid room scope, limit or cursor.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Inspection unavailable; no internal publication payload is returned.
+          headers:
+            x-request-id:
+              $ref: '#/components/headers/XRequestId'
   /api/admin/operations/state:
     get:
       parameters:
@@ -6221,6 +6276,102 @@ components:
         status: { type: string, enum: [unknown, pending, completed, failed] }
         attempts: { type: [integer, 'null'], minimum: 0 }
         settledAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+
+    AdminRoomTopologyPlansResponse:
+      type: object
+      additionalProperties: false
+      required: [roomRef, observedAtEpochMs, plans, nextAfterPublicationId]
+      properties:
+        roomRef:
+          $ref: '#/components/schemas/GroupRef'
+        observedAtEpochMs: { type: integer, minimum: 0 }
+        plans:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/AdminRoomTopologyPlan'
+        nextAfterPublicationId: { type: [string, 'null'], minLength: 1, maxLength: 256 }
+
+    AdminRoomTopologyPlan:
+      type: object
+      additionalProperties: false
+      required: [publicationId, requestedAtEpochMs, layout, topology, memberCount, degreeLimit, plan]
+      properties:
+        publicationId: { type: string, minLength: 1, maxLength: 256 }
+        requestedAtEpochMs: { type: integer, minimum: 0 }
+        layout:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+        topology: { type: string, enum: [star, tree, mesh] }
+        memberCount: { type: integer, minimum: 0 }
+        degreeLimit: { type: integer, minimum: 0 }
+        plan:
+          oneOf:
+            - $ref: '#/components/schemas/RtcTopologyPlanRecord'
+            - type: 'null'
+
+    RtcTopologyPlanRecord:
+      type: object
+      additionalProperties: false
+      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change]
+      properties:
+        plannedAtEpochMs: { type: integer, minimum: 0 }
+        replaced:
+          oneOf:
+            - $ref: '#/components/schemas/ReplacedTopologyLayout'
+            - type: 'null'
+        causes:
+          type: array
+          items: { type: string, enum: [join, leave, leader-change, config, rtt] }
+        delta:
+          $ref: '#/components/schemas/TopologyLayoutDelta'
+        longestPathHops: { type: integer, minimum: 0 }
+        change:
+          oneOf:
+            - $ref: '#/components/schemas/TopologyPlanChange'
+            - type: 'null'
+
+    TopologyPlanChange:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: { type: string, enum: [attach, repair] }
+        - type: object
+          additionalProperties: false
+          required: [kind, reason]
+          properties:
+            kind: { type: string, enum: [reshape] }
+            reason:
+              type: string
+              enum: [leader-rooting, delta-too-large, update-failed, invariant-violation, kind-change, refinement]
+
+    ReplacedTopologyLayout:
+      type: object
+      additionalProperties: false
+      required: [layout, ageMs]
+      properties:
+        layout:
+          $ref: '#/components/schemas/GroupLayoutIdentity'
+        ageMs: { type: integer, minimum: 0 }
+
+    TopologyLayoutDelta:
+      type: object
+      additionalProperties: false
+      required:
+        - joinedSessionCount
+        - leftSessionCount
+        - changedSessionCount
+        - reroutedSessionCount
+        - acceptingSessionCount
+        - maxJoinerEdgesPerSession
+      properties:
+        joinedSessionCount: { type: integer, minimum: 0 }
+        leftSessionCount: { type: integer, minimum: 0 }
+        changedSessionCount: { type: integer, minimum: 0 }
+        reroutedSessionCount: { type: integer, minimum: 0 }
+        acceptingSessionCount: { type: integer, minimum: 0 }
+        maxJoinerEdgesPerSession: { type: integer, minimum: 0 }
 
     AdminRoomDirectoryResponse:
       type: object

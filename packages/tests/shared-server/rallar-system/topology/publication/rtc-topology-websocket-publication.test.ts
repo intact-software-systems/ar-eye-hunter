@@ -72,7 +72,7 @@ describe('RTC topology websocket publication', () => {
         onTestFinished(() => service.dispose());
         const replay = new RtcTopologyReplayEntryHandlerService({
             publications: {
-                readPublication: async () => ({ status: 'found', publication: fixture.publication })
+                findPublication: async () => fixture.publication
             },
             outbox: {
                 getItem: async (key) => fixture.outbox.find((page) => JSON.stringify(page.key) === JSON.stringify(key))

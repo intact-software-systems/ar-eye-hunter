@@ -7,6 +7,7 @@ import {
     NEVER_ATTEMPTED,
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationTtlMs,
     toPublicationVerdictCommands
@@ -52,7 +53,13 @@ export const pacedCancel: AlmConformanceScenarioDefinition = {
             state: 'cancelled',
             facts: [NEVER_ATTEMPTED]
         }),
-        ...toPublicationVerdictCommands({ step: sender, index: ADMITTED_INDEX, state: 'transport-accepted', facts: [] })
+        ...toPublicationVerdictCommands({
+            step: sender,
+            index: ADMITTED_INDEX,
+            state: 'transport-accepted',
+            facts: []
+        }),
+        ...toPublicationFigureInvariantCommands(sender)
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1, 0),

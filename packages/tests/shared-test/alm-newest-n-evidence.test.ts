@@ -72,7 +72,11 @@ it.each([
         payload: { data: { kind: 'publication-opportunity', laneKey: 'room.alm-conformance/alm.conformance.rtc.paced-newest-n', selected, deferred, expired } }
     });
     const burstIndex = scenario.sender.commands.findIndex((command) => command.kind === 'loop');
-    const commands = scenario.sender.commands.slice(burstIndex + 1);
+    // The stage evidence ends at the last verdict. The figure invariants after it are proven against a real stage by
+    // apps/rallar-black-box-control-server/test/control-alm-reload-publication-lane.test.ts and by the lane.
+    const figuresIndex = scenario.sender.commands.findIndex((command, index) => index > burstIndex && command.kind === 'stats');
+    expect(figuresIndex).toBeGreaterThan(burstIndex);
+    const commands = scenario.sender.commands.slice(burstIndex + 1, figuresIndex);
     const result = runtime.execute({ kind: 'recipe.run', recipe: { ...scenario.sender, commands } });
     await vi.runAllTimersAsync();
     expect((await result).ok).toBe(passes);

@@ -7,6 +7,7 @@ import {
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
     STAGE_DISPLACED,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationTtlMs,
     toPublicationVerdictCommands
@@ -53,7 +54,8 @@ export const pacedLatest: AlmConformanceScenarioDefinition = {
                 facts: [NEVER_ATTEMPTED, STAGE_DISPLACED]
             })
         ),
-        ...toPublicationVerdictCommands({ step: sender, index: LAST_SEND, state: 'transport-accepted', facts: [] })
+        ...toPublicationVerdictCommands({ step: sender, index: LAST_SEND, state: 'transport-accepted', facts: [] }),
+        ...toPublicationFigureInvariantCommands(sender)
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1, 0),
