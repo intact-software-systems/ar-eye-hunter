@@ -779,6 +779,15 @@ and it has no status list.
   after the room is created (D655), so mesh drift is computed with the room's own k and the churn report no longer
   assumes one. Still open: RTT refinements are provoked only with made-up values (the reshape measurement,
   `npm run perf:api-v1:topology-reshapes`); real RTT needs browsers.
+- An RTT-refresh topology publication id is longer than the admin contract allows. The reshape measurement
+  found it. `toRtcTopologyPublicationId`
+  (`packages/shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts`) builds the id as
+  `workId:groupRev:presenceRev:overlayVersion`, and an RTT-refresh work id embeds the RTT outbox id
+  (`pair=…:version=…:commandHash=sha256%3A…:group=…`), so the publication id is about 346 characters.
+  `isAdminTopologyOutboxId` (`packages/shared/api/admin-rooms/decode-admin-room-topology-work.ts`) and the
+  OpenAPI `publicationId` cap it at 256. The operator plans read then fails with "Room topology plan names no
+  publication…", and `npm run perf:api-v1:topology-reshapes` stops at the first RTT room. There are two fixes:
+  digest the resource id in RTT-refresh work ids, or widen the contract. The maintainer decides which.
 - Restoring k after a leave: nothing in shared-graph restores a mesh member's k links; the churn report counts the
   members under k; if meshes thin under churn it is its own slice, taken to the maintainer (D657).
 - The departed peer as a time-limited forwarder: a leaver that stays online could forward for the room for a bounded

@@ -365,7 +365,10 @@ limit). Thresholds are read from that configuration, never assumed.
 - The uniform matrix is not a control. A tree formed without RTT is often 5 hops across, and a uniform 50 ms
   matrix lets a 3-hop rebuild pass both refinement thresholds (at least 10 ms and at least 25 %), so the
   uniform phase refines the formed tree in about half of rooms of 8. Once refined, a repeated uniform matrix
-  keeps the tree. The skewed matrix rebuilds the tree in every room and keeps none of its links.
+  keeps the tree. The skewed matrix rebuilds the tree in every room. It keeps none of the formed tree's links,
+  and about one of a tree the uniform matrix refined (1 of 7 in a room of 8). The uniform phase's measurements
+  live 60 s and occupy endpoint degree, so while they live the server refuses some skewed reports as over-degree
+  (about 5 % over 200 sampled rooms).
 - Live timing, a derivation and not a run figure: a refinement lands at the repeat send, 32 s after the first,
   and no room refines more than once per 30 s.
 - Mesh: consecutive shifting rounds make the planner rebuild the mesh with different links each time. The live
@@ -377,20 +380,28 @@ limit). Thresholds are read from that configuration, never assumed.
 - The RTT values are made up. They show that the server refines and at what rate; they say nothing about real
   RTT.
 - The `rtt reports` column counts reports sent, accepted or not. The server may refuse some after a reshape
-  (stored measurements live 60 s, and a pair may no longer be a reporting pair), and a member that left during
-  churn may still report while the accepted layout holds it. The measurement picks pairs from the accepted
-  layout while the server judges them against its stored layout. Refused reports are not seen.
+  (stored measurements live 60 s, and a pair may no longer be a reporting pair). The measurement picks pairs
+  from the accepted layout while the server judges them against its stored layout. Refused reports are not
+  seen.
+- A member that left during churn keeps its socket, because closing it would make the server clean up the
+  session. While the accepted layout still holds that member, the measurement neither reports from it nor
+  reports a pair that includes it, since the server would refuse such a pair (`no-shared-active-group`).
 - A joiner during churn has no socket, so it reports nothing.
+- The RTT rooms cannot report until a server bug is fixed: an RTT-refresh publication id is longer than the
+  256 characters the operator plans read accepts, so that read fails and the command stops at the first RTT
+  room (see `plans/backlog.md`).
 - Drift is read once per room, at its end. It is measured for star, tree and mesh with the room's own k, and
-  has no status of its own.
+  has no status of its own. It is signed: the fresh no-RTT plan is the planner's reference layout, not the
+  shortest one, so an evolved layout can be shorter and the difference negative.
 - Still needing browsers: edge setup time, real RTT, and the cost of a reshape to a browser.
 
 ### What the measurement found
 
 Six rooms, 30 churn plans each (one join or leave every 3 s for 90 s), one formation plan each. Every
 churn plan was promoted and landed inside the previous layout's 15 s overlap. Every figure is
-from one run. Drift is extra hops of the accepted layout over the planner's own
-fresh no-RTT plan after the 30 churn plans.
+from one run. Drift is the accepted layout's longest path minus the longest path of the planner's
+own fresh no-RTT plan, after the 30 churn plans. The fresh plan is the planner's reference layout,
+not the shortest one, so the difference can be negative.
 
 | Room               | Churn plans | Plans/min | Promoted | Inside overlap | Attach / repair / reshape | Rerouted an uninvolved member (join/leave plans) | Sessions rerouted per reshape, p50 / max | Longest hop path, max | Drift        |
 | ------------------ | ----------- | --------- | -------- | -------------- | ------------------------- | ------------------------------------------------ | ---------------------------------------- | --------------------- | ------------ |
@@ -402,7 +413,7 @@ fresh no-RTT plan after the 30 churn plans.
 | mesh 20, debounced | 30          | 20.0      | 30       | 1.00           | 15 / 9 / 6                | 0.20                                             | 13 / 18                                  | 5                     | undetermined |
 
 The table is run 3. Among the cells shown, run 2 differed in the tree's longest hop path (5 for
-`auto`, 6 for `debounced`, where run 3 reads 6 and 5), in the tree's drift (0 extra hops, where run
+`auto`, 6 for `debounced`, where run 3 reads 6 and 5), in the tree's drift (0, where run
 3 reads 1: accepted 4, fresh plan 3) and in the share of join and leave plans that rerouted an
 uninvolved member (tree 0.07 and 0.10, mesh 0.17 and 0.17).
 
@@ -505,9 +516,11 @@ browsers.
 1. **What the server can see of "absorbed".** Not measured. The server knows when a layout was
    accepted and replaced, but not when its edges came up: that needs a browser to report, per
    accepted layout, the instant its coverage first reached the success rate.
-2. **How far a patched graph drifts.** The accepted layout against the planner's own fresh no-RTT
-   plan after 30 attaches and repairs: a star 0 extra hops, a tree 0 or 1 (0 in one run, 1 in the
-   other: accepted 4, fresh plan 3). A mesh's drift is computed with the room's own k, read from the room's
+2. **How far a patched graph drifts.** The accepted layout's longest path minus that of the
+   planner's own fresh no-RTT plan, after 30 attaches and repairs: a star 0, a tree 0 or 1 (0 in one
+   run, 1 in the other: accepted 4, fresh plan 3). The difference is signed. The fresh plan is the
+   planner's reference layout, not the shortest one, so an evolved layout can be shorter: a later
+   live run read -1 in 3 of 6 rooms. A mesh's drift is computed with the room's own k, read from the room's
    effective configuration. RTT drift stays unmeasured against real RTT: the reshape measurement sends
    RTT reports, but the values are made up, and the drift read compares with a no-RTT plan.
 3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
