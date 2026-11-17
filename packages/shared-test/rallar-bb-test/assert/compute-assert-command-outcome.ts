@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestAssertResultValue,
@@ -16,6 +18,7 @@ import {
     isRallarBlackBoxAssertOperator,
     RALLAR_BLACK_BOX_COMMAND_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
+import { isAssertComparison, type RallarBlackBoxTestAssertComparisonOperator } from './is-assert-comparison.ts';
 
 export interface AssertCommandEvidence {
     readonly command: RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;
@@ -69,27 +72,26 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
         });
     }
 
-    if (
-        command.operator === 'sameUniqueStringSet' &&
-        (typeof command.comparisonSource !== 'string' || command.comparisonSource.trim().length === 0)
-    ) {
-        return toInvalidAssertOutcome(command, 'Set comparison requires a non-empty comparisonSource.', undefined);
+    const comparisonSource = toComparisonSource(command);
+    if (comparisonSource.kind === 'invalid') {
+        return toInvalidAssertOutcome(command, comparisonSource.message, undefined);
     }
     if (
         !isAssertHistoryCovered(command.source, state) ||
-        (command.operator === 'sameUniqueStringSet' && !isAssertHistoryCovered(command.comparisonSource, state))
+        (comparisonSource.kind === 'present' && !isAssertHistoryCovered(comparisonSource.path, state))
     ) {
         return toEventHistoryUnavailableOutcome(state.eventHistory);
     }
     const roots = toAssertSourceRoots(evidence);
     const source = resolveAssertSource(command.source, roots);
-    const comparison = command.operator === 'sameUniqueStringSet'
-        ? resolveAssertSource(command.comparisonSource, roots)
+    const comparison = comparisonSource.kind === 'present'
+        ? { operator: comparisonSource.operator, result: resolveAssertSource(comparisonSource.path, roots) }
         : undefined;
-    const passed = command.operator === 'sameUniqueStringSet'
-        ? source.exists && comparison?.exists === true && areSameUniqueStringSet(source.value, comparison.value)
-        : isAssertOperatorSatisfied(source, command.operator, command.expected);
-    const value = toAssertResultValue({ command, source, comparison, passed });
+    const passed = comparison === undefined
+        ? isAssertOperatorSatisfied(source, command.operator, command.expected)
+        : source.exists && comparison.result.exists &&
+            isComparisonSatisfied(comparison.operator, source.value, comparison.result.value);
+    const value = toAssertResultValue({ command, source, comparison: comparison?.result, passed });
     return passed
         ? { status: 'ok', value, nextStatus: state.status }
         : {
@@ -102,6 +104,36 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
             },
             nextStatus: 'failed'
         };
+}
+
+type ComparisonSource =
+    | Readonly<{ kind: 'absent'; }>
+    | Readonly<{ kind: 'invalid'; message: string; }>
+    | Readonly<{ kind: 'present'; path: string; operator: RallarBlackBoxTestAssertComparisonOperator; }>;
+
+function toComparisonSource(command: AssertCommandEvidence['command']): ComparisonSource {
+    if (!isAssertComparison(command)) {
+        return command.comparisonSource === undefined
+            ? { kind: 'absent' }
+            : { kind: 'invalid', message: 'A comparisonSource is unsupported for this operator.' };
+    }
+    if (typeof command.comparisonSource !== 'string' || command.comparisonSource.trim().length === 0) {
+        return { kind: 'invalid', message: 'A comparison requires a non-empty comparisonSource.' };
+    }
+    return command.expected === undefined
+        ? { kind: 'present', path: command.comparisonSource, operator: command.operator }
+        : { kind: 'invalid', message: 'A comparison does not take an expected value.' };
+}
+
+/** The compared result stands where a literal comparison names `expected`, so both forms share one meaning. */
+function isComparisonSatisfied(
+    operator: RallarBlackBoxTestAssertComparisonOperator,
+    actual: ApiJsonValue,
+    comparisonActual: ApiJsonValue
+): boolean {
+    return operator === 'sameUniqueStringSet'
+        ? areSameUniqueStringSet(actual, comparisonActual)
+        : isAssertOperatorSatisfied({ exists: true, value: actual }, operator, comparisonActual);
 }
 
 function resolveAssertSource(source: string, roots: AssertSourceRoots): PayloadPathLookup {
@@ -141,7 +173,7 @@ export function toAssertSourceRoots(evidence: Pick<AssertCommandEvidence, 'state
 
 function toAssertResultValue(input: ToAssertResultValueInput): RallarBlackBoxTestAssertResultValue {
     const { command, source, comparison, passed } = input;
-    if (command.operator === 'sameUniqueStringSet') {
+    if (isAssertComparison(command)) {
         return {
             operator: command.operator,
             actual: source.exists ? source.value : undefined,
@@ -165,7 +197,7 @@ function toInvalidAssertOutcome(
     message: string,
     details: Readonly<{ operator: string; supportedOperators: readonly string[]; }> | undefined
 ): RallarBlackBoxTestCommandOutcome {
-    const value: RallarBlackBoxTestAssertResultValue = command.operator === 'sameUniqueStringSet'
+    const value: RallarBlackBoxTestAssertResultValue = isAssertComparison(command)
         ? {
             operator: command.operator,
             exists: false,

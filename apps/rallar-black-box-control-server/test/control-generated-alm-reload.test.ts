@@ -23,6 +23,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+import { writeAlmCellStartEvents } from '../../../packages/tests/shared-test/write-alm-cell-start-events.ts';
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
 import { createRallarBlackBoxControlService, type RallarBlackBoxControlService } from '../src/control-service.ts';
 import {
@@ -48,6 +49,8 @@ for (const replacesDocument of [true, false]) {
         const ports = new AlmReloadPorts(replacesDocument, createFixtureParticipants(false));
         const receiverRecipe = manifest.recipes.find((entry) => entry.role === 'receiver')?.recipe;
         assert(receiverRecipe);
+        // The fixture runs the sender's segments to their end first; the receiver's cells open before, as the barriers order them.
+        writeAlmCellStartEvents(ports.receiver, receiverRecipe.commands);
         ports.prepareReceiverBarriers(receiverRecipe.commands);
         const input = toControlServiceInput({ now: () => ports.now, runtimeRetentionBounds: { commands: 1, results: 1 } });
         let service = createRallarBlackBoxControlService(input);
@@ -158,6 +161,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
         }).find((candidate) => candidate.scenarioId === 'durable-takeover');
         assert(scenario?.successor);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+        writeAlmCellStartEvents(ports.receiver, scenario.receiver.commands);
 
         const owner = await ports.sender.execute(toRecipeRun(scenario.sender));
         const held = ports.messages.filter((message) => isJsonRecordValue(message.command.payload) && message.command.payload.marker === 'durable-takeover');
@@ -215,12 +219,21 @@ function findCatalogScenario(input: CreateAlmConformanceRecipesInput, scenarioId
     return scenario;
 }
 
-/** The recipe's commands from the one after `after` up to and including `through`; undefined ends at the last. */
+/**
+ * The recipe's commands from the one after `after` up to and including `through`; undefined ends at the last. A named
+ * boundary the recipe does not contain fails here, not later as a segment that silently starts or ends elsewhere.
+ */
 function toSegment(recipe: RallarBlackBoxTestRecipe, after: string | undefined, through: string | undefined): RallarBlackBoxTestRecipe {
     const ids = recipe.commands.map((command) => command.commandId);
-    const start = after === undefined ? 0 : ids.indexOf(after) + 1;
-    const end = through === undefined ? ids.length : ids.indexOf(through) + 1;
+    const start = after === undefined ? 0 : findBoundaryIndex(ids, after) + 1;
+    const end = through === undefined ? ids.length : findBoundaryIndex(ids, through) + 1;
     return { ...recipe, recipeId: `${recipe.recipeId}:${start}`, commands: recipe.commands.slice(start, end) };
+}
+
+function findBoundaryIndex(ids: readonly (string | undefined)[], boundary: string): number {
+    const index = ids.indexOf(boundary);
+    assert(index >= 0, `segment boundary ${boundary} is not a command of the recipe`);
+    return index;
 }
 
 function findMarked(ports: AlmReloadPorts, marker: string): readonly PortMessage[] {
@@ -254,6 +267,7 @@ for (const carrier of ALM_CONFORMANCE_CARRIERS) {
     test(`the ${carrier} checkpoint-lag recipes lag, refuse, recover and deliver the admitted sends`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'checkpoint-lag');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
@@ -272,6 +286,7 @@ for (const carrier of ['ws', 'rtc'] as const) {
         const { sender, receiver, successor } = findCatalogScenario(toCatalogInput(carrier), 'flush-on-hide');
         assert(successor);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
 
         const owner = await ports.sender.execute(toRecipeRun(sender));
         ports.flushCheckpoints();
@@ -303,6 +318,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     test(`the ${carrier} ordering-gap-repair pair holds the second frame, reads the range NACK and delivers all three in order`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'ordering-gap-repair');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(false));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
 
         const sent = await ports.sender.execute(toRecipeRun(sender));
         const received = await ports.receiver.execute(toRecipeRun(receiver));
@@ -322,19 +338,20 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
 
 for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
     // The sender opens the gap only once both recipients cued that they delivered the first frame, so the three pages
-    // replay in the lane's order around that gate: the first send, both recipients' arrival and cue, then the rest.
+    // replay in the lane's order around that gate: the first send through its admission, both recipients' arrival and
+    // cue, then the rest, which starts with the sender's waits for those cues.
     test(`the ${carrier} repair-exhausted trio keeps the hold, spends the budget and reads the second send skipped`, async () => {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'repair-exhausted');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
-        const firstSent = `alm-${carrier}-repair-exhausted-sender-assert-sent-1`;
+        const firstSendEnd = `alm-${carrier}-repair-exhausted-sender-assert-admitted-1`;
         const toCueSent = (role: string) => `alm-${carrier}-repair-exhausted-cues-${role}-cue-${role}-delivered-1-sent`;
 
         const results = [
-            await ports.sender.execute(toRecipeRun(toSegment(sender, undefined, firstSent))),
+            await ports.sender.execute(toRecipeRun(toSegment(sender, undefined, firstSendEnd))),
             await ports.receiver.execute(toRecipeRun(toSegment(receiver, undefined, toCueSent('receiver')))),
             await ports.recipientB.execute(toRecipeRun(toSegment(recipientB, undefined, toCueSent('recipient-b')))),
-            await ports.sender.execute(toRecipeRun(toSegment(sender, firstSent, undefined))),
+            await ports.sender.execute(toRecipeRun(toSegment(sender, firstSendEnd, undefined))),
             await ports.receiver.execute(toRecipeRun(toSegment(receiver, toCueSent('receiver'), undefined))),
             await ports.recipientB.execute(toRecipeRun(toSegment(recipientB, toCueSent('recipient-b'), undefined)))
         ];
@@ -374,6 +391,8 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-delivery');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
+        writeAlmCellStartEvents(ports.recipientB, recipientB.commands);
 
         const results = [
             await ports.sender.execute(toRecipeRun(sender)),
@@ -404,6 +423,8 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
+        writeAlmCellStartEvents(ports.recipientB, recipientB.commands);
 
         const results = [
             await ports.sender.execute(toRecipeRun(sender)),
@@ -434,6 +455,7 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
     test(`the ${carrier} fenced-catch-up receiver fails while no roster move lifts the floor`, async () => {
         const { sender, receiver } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
         const floored = `${receiver.recipeId}-received-floored`;
         // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.
         const shortened = {
@@ -451,6 +473,8 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
         const { sender, receiver, recipientB } = findCatalogScenario(toCatalogInput(carrier), 'fenced-catch-up');
         assert(recipientB);
         const ports = new AlmReloadPorts(true, createFixtureParticipants(true));
+        writeAlmCellStartEvents(ports.receiver, receiver.commands);
+        writeAlmCellStartEvents(ports.recipientB, recipientB.commands);
         ports.group.owner = 'recipient-b';
         const floored = `${receiver.recipeId}-received-floored`;
         // The arrival never comes, so the wait is shortened to keep the absence of a delivery cheap to prove.

@@ -118,6 +118,94 @@ describe('wait payload field constraints', () => {
         ).toBe(false);
     });
 
+    describe('numeric floors', () => {
+        const APPLIED_TOPIC = 'rallar.browser.group_state.applied';
+        const FLOORS = {
+            'data.groupRevision': '{resultCache.formation.value.groupRevision}',
+            'data.presenceRevision': 3
+        };
+
+        function createRuntimeAfterFormation(formation: Readonly<Record<string, number | string>>) {
+            return createDefaultRallarBlackBoxTestRuntime({
+                commandExecutor: (command) => command.kind === 'formation.readiness' ? { status: 'ok', value: formation } : undefined
+            });
+        }
+
+        async function readFormation(runtime: ReturnType<typeof createRuntimeAfterFormation>) {
+            await runtime.execute({ kind: 'formation.readiness', commandId: 'formation', timeoutMs: 1_000 });
+        }
+
+        function toFloorWait(payloadMinimums: Record<string, number | string>): RallarBlackBoxTestWaitCommand {
+            return { kind: 'wait', commandId: 'settled', timeoutMs: 20, match: { kind: 'diagnostic', topic: APPLIED_TOPIC, payloadMinimums } };
+        }
+
+        function recordApplied(runtime: ReturnType<typeof createRuntimeAfterFormation>, data: Readonly<Record<string, number | string>>) {
+            runtime.recordEvent({ kind: 'diagnostic', topic: APPLIED_TOPIC, payload: { data } });
+        }
+
+        it('matches an event whose numbers reach floors read from an earlier result', async () => {
+            const runtime = createRuntimeAfterFormation({ groupRevision: 7 });
+            await readFormation(runtime);
+            recordApplied(runtime, { page: 'below', groupRevision: 6, presenceRevision: 9 });
+            recordApplied(runtime, { page: 'reached', groupRevision: 7, presenceRevision: 3 });
+            recordApplied(runtime, { page: 'text', groupRevision: '8', presenceRevision: 9 });
+
+            const result = await runtime.execute(toFloorWait(FLOORS));
+
+            expect(result.status).toBe('ok');
+            expect(result.value).toHaveProperty('event.payload.data.page', 'reached');
+        });
+
+        it('a floor reached by one path but not another in the same event does not match', async () => {
+            const runtime = createRuntimeAfterFormation({ groupRevision: 7 });
+            await readFormation(runtime);
+            recordApplied(runtime, { groupRevision: 9, presenceRevision: 2 });
+            recordApplied(runtime, { groupRevision: 6, presenceRevision: 9 });
+
+            const result = await runtime.execute(toFloorWait(FLOORS));
+
+            expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_TIMEOUT');
+        });
+
+        it('a floor that names no numeric result is invalid', async () => {
+            const runtime = createRuntimeAfterFormation({ groupRevision: 'seven' });
+            await readFormation(runtime);
+            recordApplied(runtime, { groupRevision: 9, presenceRevision: 9 });
+
+            const textual = await runtime.execute(toFloorWait(FLOORS));
+            const missing = await runtime.execute({
+                ...toFloorWait({ 'data.groupRevision': '{resultCache.formation.value.planned}' }),
+                commandId: 'settled-missing'
+            });
+
+            expect(textual.error).toMatchObject({
+                code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+                details: { path: 'data.groupRevision', reference: 'resultCache.formation.value.groupRevision' }
+            });
+            expect(missing.error).toMatchObject({
+                code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
+                details: { path: 'data.groupRevision', reference: 'resultCache.formation.value.planned' }
+            });
+        });
+
+        it('admits finite numbers and one result reference at both command boundaries', () => {
+            const command = toFloorWait({ ...FLOORS, 'data.loopKeyed': '{resultCache.stable:i{loop.iteration}:c1:formation.value.groupRevision}' });
+
+            expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(true);
+        });
+
+        it.each([null, [], 'data.groupRevision', { 'data.groupRevision': true }, { 'data.groupRevision': 'at {resultCache.formation.value.groupRevision}' }])(
+            'rejects malformed floors at control admission and in the published schema: %j',
+            (payloadMinimums) => {
+                const command = { ...toFloorWait({}), match: { payloadMinimums } };
+
+                expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
+                expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+            }
+        );
+    });
+
     it('owns field operands before caller mutation can redirect execution', async () => {
         const runtime = createDefaultRallarBlackBoxTestRuntime();
         const payloadFields = { 'data.identity': { scenario: 'one', sequence: [1, 2] }, 'data.reason': null };

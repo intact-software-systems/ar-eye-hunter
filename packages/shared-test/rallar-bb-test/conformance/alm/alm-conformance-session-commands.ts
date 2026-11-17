@@ -25,6 +25,8 @@ import {
     toScenarioTopicId,
     toScenarioTypeId
 } from './alm-conformance-step-identities.ts';
+import { toAlmCellRequestId } from './cell/to-alm-cell-request-id.ts';
+import { toWaitHistoryMetadata, type AlmWaitHistory } from './cell/to-cell-history-marked-commands.ts';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 const CONNECT_READINESS_INTERVAL_MS = 100;
@@ -94,7 +96,7 @@ export function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlack
         },
         request: {
             method: 'POST',
-            path: `${toStatePrefix(group)}/groups/requests/${toEnsureRequestId(step, 'group')}`,
+            path: `${toStatePrefix(group)}/groups/requests/${toAlmCellRequestId(step, 'group')}`,
             body: {
                 groupId: group.groupId,
                 displayName: group.groupId,
@@ -161,7 +163,7 @@ function toSelfMembershipWriteCommand(
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, write.requestName)}`,
+                `/requests/${toAlmCellRequestId(step, write.requestName)}`,
             ...(headers === undefined ? {} : { headers }),
             body: {
                 status
@@ -191,7 +193,9 @@ export function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxT
             almDiagnostics: true,
             typeId,
             topicId: toScenarioTopicId(step),
-            ...(step.messageSelector === undefined ? {} : { messageSelector: { ...step.messageSelector } }),
+            ...(step.messages.messageSelector === undefined
+                ? {}
+                : { messageSelector: { ...step.messages.messageSelector } }),
             ...(step.role === 'successor' ? RESTORED_SESSION_RALLAR : {}),
             ...(installsRecoveryOwner(step) ? { recoveryOwner: 'record' } : {})
         },
@@ -263,6 +267,8 @@ export interface AlmConformanceRecoveredStore {
     /** The connect whose result names the session the store id embeds. */
     readonly connectName: string;
     readonly timeoutMs: number;
+    /** `page` when the named connect is a fresh document's first, a successor's or the one after a reload. */
+    readonly historyFrom: AlmWaitHistory;
 }
 
 /** The absence window plus the time the next owner of the original needs before it can submit. */
@@ -300,16 +306,9 @@ export function toStoreRecoveryWait(
             contains:
                 `"kind":"recovery","storeId":"${store.storeIdPrefix}:${sessionId}${store.lane}","outcome":{"kind":"restored"`
         },
-        timeoutMs: store.timeoutMs
+        timeoutMs: store.timeoutMs,
+        ...toWaitHistoryMetadata(store.historyFrom)
     };
-}
-
-function toEnsureRequestId(
-    step: AlmConformanceStepInput,
-    operation: AlmConformanceEnsureRequest
-): string {
-    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
-        `-${step.role}-${operation}`;
 }
 
 function toStatePrefix(group: RallarBlackBoxDistributedGroupRef): string {

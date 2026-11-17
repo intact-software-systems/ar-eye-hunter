@@ -1,4 +1,16 @@
-import { expect, test } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Page
+} from '@playwright/test';
+
+interface MobilePointerInput {
+    readonly selector: string;
+    readonly type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel';
+    readonly pointerId: number;
+    readonly offsetX: number;
+    readonly offsetY: number;
+}
 
 test.describe('AR Eye Hunter mobile controls', () => {
     test('landscape mobile exposes dual-stick controls and updates input diagnostics', async ({ page }, testInfo) => {
@@ -7,8 +19,8 @@ test.describe('AR Eye Hunter mobile controls', () => {
         await page.goto('/');
         const canvas = page.locator('canvas.arena-canvas');
         await expect(canvas).toBeVisible();
-        await expect.poll(() => canvasDataset(page, 'arenaRuntimeReady')).toBe('true');
-        await expect.poll(() => canvasDataset(page, 'arenaSize')).toBe('120');
+        await expect.poll(() => readCanvasDataset(page, 'arenaRuntimeReady')).toBe('true');
+        await expect.poll(() => readCanvasDataset(page, 'arenaSize')).toBe('120');
 
         await expect(page.locator('.mobile-fps-controls')).toBeVisible();
         await expect(page.locator('.mobile-stick-zone')).toBeVisible();
@@ -16,28 +28,79 @@ test.describe('AR Eye Hunter mobile controls', () => {
         await expect(page.getByRole('button', { name: 'Fire' })).toBeVisible();
         await expect(page.locator('.mobile-rotate-prompt')).toBeHidden();
 
-        await dispatchPointer(page, '.mobile-stick-zone', 'pointerdown', 31, 82, 96);
-        await dispatchPointer(page, '.mobile-stick-zone', 'pointermove', 31, 144, 36);
-        await expect.poll(() => canvasDataset(page, 'arenaTouchMoveActive')).toBe('true');
-        await expect.poll(() => canvasDataset(page, 'arenaInputMode')).toMatch(/touch/);
-        await expect.poll(() => canvasDataset(page, 'arenaMobileControls')).toBe('true');
+        await dispatchPointer(page, {
+            selector: '.mobile-stick-zone',
+            type: 'pointerdown',
+            pointerId: 31,
+            offsetX: 82,
+            offsetY: 96
+        });
+        await dispatchPointer(page, {
+            selector: '.mobile-stick-zone',
+            type: 'pointermove',
+            pointerId: 31,
+            offsetX: 144,
+            offsetY: 36
+        });
+        await expect.poll(() => readCanvasDataset(page, 'arenaTouchMoveActive')).toBe('true');
+        await expect.poll(() => readCanvasDataset(page, 'arenaInputMode')).toMatch(/touch/);
+        await expect.poll(() => readCanvasDataset(page, 'arenaMobileControls')).toBe('true');
 
-        await dispatchPointer(page, '.mobile-look-zone', 'pointerdown', 41, 90, 120);
-        await dispatchPointer(page, '.mobile-look-zone', 'pointermove', 41, 150, 104);
-        await expect.poll(() => canvasDataset(page, 'arenaTouchLookActive')).toBe('true');
+        await dispatchPointer(page, {
+            selector: '.mobile-look-zone',
+            type: 'pointerdown',
+            pointerId: 41,
+            offsetX: 90,
+            offsetY: 120
+        });
+        await dispatchPointer(page, {
+            selector: '.mobile-look-zone',
+            type: 'pointermove',
+            pointerId: 41,
+            offsetX: 150,
+            offsetY: 104
+        });
+        await expect.poll(() => readCanvasDataset(page, 'arenaTouchLookActive')).toBe('true');
 
-        const beforeEffects = Number(await canvasDataset(page, 'arenaEffectCount'));
-        await dispatchPointer(page, '.mobile-action--fire', 'pointerdown', 51, 18, 18);
-        await page.waitForTimeout(180);
-        await dispatchPointer(page, '.mobile-action--fire', 'pointerup', 51, 18, 18);
-        await expect.poll(async () => Number(await canvasDataset(page, 'arenaEffectCount'))).toBeGreaterThan(
+        const beforeEffects = Number(await readCanvasDataset(page, 'arenaEffectCount'));
+        const beforeShot = Number(await readCanvasDataset(page, 'arenaShotSequence'));
+        await dispatchPointer(page, {
+            selector: '.mobile-action--fire',
+            type: 'pointerdown',
+            pointerId: 51,
+            offsetX: 18,
+            offsetY: 18
+        });
+        await expect.poll(async () => Number(await readCanvasDataset(page, 'arenaShotSequence'))).toBeGreaterThan(
+            beforeShot
+        );
+        await expect.poll(async () => Number(await readCanvasDataset(page, 'arenaEffectCount'))).toBeGreaterThan(
             beforeEffects
         );
+        await dispatchPointer(page, {
+            selector: '.mobile-action--fire',
+            type: 'pointerup',
+            pointerId: 51,
+            offsetX: 18,
+            offsetY: 18
+        });
 
-        await dispatchPointer(page, '.mobile-stick-zone', 'pointerup', 31, 144, 36);
-        await dispatchPointer(page, '.mobile-look-zone', 'pointerup', 41, 150, 104);
-        await expect.poll(() => canvasDataset(page, 'arenaTouchMoveActive')).toBe('false');
-        await expect.poll(() => canvasDataset(page, 'arenaTouchLookActive')).toBe('false');
+        await dispatchPointer(page, {
+            selector: '.mobile-stick-zone',
+            type: 'pointerup',
+            pointerId: 31,
+            offsetX: 144,
+            offsetY: 36
+        });
+        await dispatchPointer(page, {
+            selector: '.mobile-look-zone',
+            type: 'pointerup',
+            pointerId: 41,
+            offsetX: 150,
+            offsetY: 104
+        });
+        await expect.poll(() => readCanvasDataset(page, 'arenaTouchMoveActive')).toBe('false');
+        await expect.poll(() => readCanvasDataset(page, 'arenaTouchLookActive')).toBe('false');
     });
 
     test('portrait phone shows rotate prompt instead of combat controls', async ({ page }, testInfo) => {
@@ -45,28 +108,22 @@ test.describe('AR Eye Hunter mobile controls', () => {
 
         await page.goto('/');
         await expect(page.locator('canvas.arena-canvas')).toBeVisible();
-        await expect.poll(() => canvasDataset(page, 'arenaRuntimeReady')).toBe('true');
+        await expect.poll(() => readCanvasDataset(page, 'arenaRuntimeReady')).toBe('true');
         await expect(page.locator('.mobile-rotate-prompt')).toBeVisible();
         await expect(page.locator('.mobile-fps-controls')).toBeHidden();
         await expect(page.getByText('Rotate for combat')).toBeVisible();
     });
 });
 
-async function canvasDataset(page: import('@playwright/test').Page, key: string): Promise<string | undefined> {
+async function readCanvasDataset(page: Page, key: string): Promise<string | undefined> {
     return page.locator('canvas.arena-canvas').evaluate(
         (canvas, datasetKey) => (canvas as HTMLCanvasElement).dataset[datasetKey],
         key
     );
 }
 
-async function dispatchPointer(
-    page: import('@playwright/test').Page,
-    selector: string,
-    type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
-    pointerId: number,
-    offsetX: number,
-    offsetY: number
-): Promise<void> {
+async function dispatchPointer(page: Page, input: MobilePointerInput): Promise<void> {
+    const { selector, type, pointerId, offsetX, offsetY } = input;
     const box = await page.locator(selector).boundingBox();
     if (!box) {
         throw new Error(`Missing pointer target: ${selector}`);

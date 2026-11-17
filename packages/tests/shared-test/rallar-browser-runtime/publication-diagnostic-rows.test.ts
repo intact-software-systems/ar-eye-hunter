@@ -20,6 +20,7 @@ import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al
 import { ALOutboundPublicationStage } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 
+import { writeAlmCellStartEvents } from '../write-alm-cell-start-events.ts';
 import { facade, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 
 const START_MS = 1_760_000_000_000;
@@ -173,6 +174,7 @@ it('satisfies the authored newest-N wait using actual session-wide publication d
     await recorded.engine.executeOnce();
     await recorded.engine.stop();
     const runtime = createDefaultRallarBlackBoxTestRuntime();
+    writeAlmCellStartEvents(runtime, [wait]);
     for (const { kind, topic, severity, atEpochMs, data } of recorded.emitted) {
         runtime.recordEvent(toRallarBrowserEventInput({ kind, topic, severity, atEpochMs, data }));
     }

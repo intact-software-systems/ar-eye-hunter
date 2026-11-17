@@ -2,13 +2,13 @@ import type { RallarBlackBoxTestCommand } from '../../../rallar-black-box-test-c
 
 import { ALM_CONFORMANCE_CARRIERS } from '../alm-conformance-carriers.ts';
 import { toResultAssertion, toSendCommand, toStorageCountersCommand } from '../alm-conformance-message-commands.ts';
-import { toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../alm-conformance-receiver-commands.ts';
 import {
     SMOKE_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
 /**
  * D2 and D55: a send with no options is receipted and leaves nothing in IndexedDB on either page. The

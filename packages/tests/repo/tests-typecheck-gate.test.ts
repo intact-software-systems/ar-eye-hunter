@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -69,5 +71,21 @@ describe('packages/tests typecheck gate', () => {
         expect(entries.filter(([, count]) => !Number.isInteger(count) || count < 1)).toEqual([]);
         expect(entries.filter(([file]) => file.includes('node_modules'))).toEqual([]);
         expect(entries.filter(([file]) => file.startsWith('/') || file.includes('\\'))).toEqual([]);
+    });
+
+    it('types the Playwright drivers in the tests project, so the lane\'s driver is checked with its tests', () => {
+        const compiler = path.join(
+            path.dirname(createRequire(import.meta.url).resolve('typescript/package.json')),
+            'bin',
+            'tsc'
+        );
+        const shown = spawnSync(process.execPath, [compiler, '-p', 'packages/tests/tsconfig.json', '--showConfig'], {
+            cwd: repoRoot,
+            encoding: 'utf8'
+        });
+        const files = (JSON.parse(shown.stdout) as { files: string[]; }).files;
+
+        expect(shown.status).toBe(0);
+        expect(files.includes('../../tests/playwright/rallar-black-box/full-stack-helpers.ts')).toBe(true);
     });
 });

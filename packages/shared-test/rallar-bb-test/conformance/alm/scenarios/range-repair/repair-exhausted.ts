@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
-import { toHeldGapCommands, toOrderedSendCommands, toSentCommands } from '../../alm-conformance-ordering-commands.ts';
+import { toHeldGapCommands, toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
 import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import { ALM_CONFORMANCE_THREE_AGENT_ROLES, type AlmConformanceRole } from '../../alm-conformance-roles.ts';
 import {
@@ -55,7 +55,6 @@ function toRepairExhaustedSenderCommands(
     return [
         ...toCueListenCommands(cue),
         ...toOrderedSendCommands(sender, 1),
-        ...toSentCommands({ ...sender, index: 1 }),
         ...sender.roles.filter((role) => role !== 'sender').map((role) => toCueWait(cue, toDeliveredCue(role))),
         ...toHeldGapCommands(sender),
         ...toOrderedSendCommands(sender, 4),

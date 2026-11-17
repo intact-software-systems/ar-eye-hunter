@@ -16,6 +16,7 @@ import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-por
 import type { ScriptedTransportFault, TransportFaultRewrite } from '@shared/transport-faults/transport-fault-port.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 import type { AlmFaultRewrite } from './alm/decode-alm-fault-rewrite.ts';
+import type { RallarBlackBoxTestAssertComparisonOperator } from './assert/is-assert-comparison.ts';
 import type { RecipeEventHistorySelection } from './recipe/validate-recipe-event-history.ts';
 import type {
     ResultCaptureIdentity,
@@ -275,6 +276,9 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly contains?: string;
     readonly exists?: boolean;
     readonly sinceEpochMs?: number;
+    readonly sinceCommandIdPrefix?: string;
+    /** Every path must reach its floor, a finite number or one `{resultCache…}` reference, in the same event. */
+    readonly payloadMinimums?: Readonly<Record<string, number | string>>;
 }
 
 export type RallarBlackBoxTestWaitCommand =
@@ -325,7 +329,7 @@ export type RallarBlackBoxTestAssertCommand =
         }>
         | Readonly<{
             source: string;
-            operator: 'sameUniqueStringSet';
+            operator: RallarBlackBoxTestAssertComparisonOperator;
             comparisonSource: string;
             expected?: never;
         }>
@@ -1107,7 +1111,7 @@ export interface RallarBlackBoxTestWaitResultValue {
 
 export type {
     RallarBlackBoxTestAssertResultValue,
-    RallarBlackBoxTestSetAssertResultValue,
+    RallarBlackBoxTestComparisonAssertResultValue,
     RallarBlackBoxTestValueAssertResultValue
 } from './assert/assert-result-contracts.ts';
 

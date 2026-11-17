@@ -5,17 +5,20 @@ import {
 } from 'vitest';
 
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { toAlmCellSettleCommand } from '@shared-test/rallar-bb-test/conformance/alm/cell/to-alm-cell-authored-commands.ts';
 import {
     createAlmConformanceRecipes,
     toAlmConformanceRoleRecipe,
     type AlmConformanceScenario
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { AlmConformanceIdentityParticipant } from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-conformance-identity.ts';
+import {
+    assessAlmUnconfirmedReceiptRole,
+    toAlmUnconfirmedReceiptRole
+} from '@shared-test/rallar-bb-test/conformance/alm/identity/assess-alm-unconfirmed-receipt-role.ts';
 import { resolveAlmConformancePrincipals } from '@shared-test/rallar-bb-test/conformance/alm/resolve-alm-conformance-principals.ts';
-import { assessSubscriptionRevokeDisconnected } from '@shared-test/rallar-bb-test/conformance/alm/scenarios/topic-subscription/assess-subscription-revoke-disconnected.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestHttpRequestCommand,
     RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -25,7 +28,18 @@ import {
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-import { CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import { CONFORMANCE_BARRIERED_SETTLE, CONFORMANCE_PRINCIPAL_IDS, toConformanceInput } from './alm-conformance-test-input.ts';
+import {
+    describeDeclaredStartStates,
+    PERMISSIONS,
+    toGrantRequests,
+    type DeclaredState,
+    type GrantRequest,
+    type Permissions,
+    type StartStateTable
+} from './describe-declared-start-states.ts';
+import { toNestedCommands } from './to-nested-commands.ts';
+import { writeAlmCellStartEvents } from './write-alm-cell-start-events.ts';
 
 const FOUR_ROLE_IDS = [
     'subscription-delivery',
@@ -37,6 +51,24 @@ const FOUR_ROLE_IDS = [
 ] as const;
 
 const GRANTED_TOPIC_ID = 'room.alm-conformance-granted';
+
+const { NONE, SUBSCRIBE, BOTH } = PERMISSIONS;
+
+/** Both producers hold both permissions and the sibling shares the sender's; only the receiver and sibling elect. */
+const PRODUCERS_HOLD_BOTH: DeclaredState = { receiver: SUBSCRIBE, 'publisher-b': BOTH, sender: BOTH };
+
+const TOPIC_SUBSCRIPTION_START_STATES: StartStateTable = {
+    'subscription-delivery': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-entry': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-omission': PRODUCERS_HOLD_BOTH,
+    'subscription-ordered-reconnect': PRODUCERS_HOLD_BOTH,
+    // The sender's grant is the cell's subject: it follows the receiver's release of its first token.
+    'subscription-token-count': { receiver: SUBSCRIBE, 'publisher-b': NONE, sender: NONE },
+    'subscription-revoke-disconnected': { receiver: SUBSCRIBE, 'publisher-b': NONE, sender: BOTH },
+    'subscription-successor': { receiver: PERMISSIONS.PUBLISH, sender: SUBSCRIBE }
+};
+
+describeDeclaredStartStates('subscription-', TOPIC_SUBSCRIPTION_START_STATES);
 
 /** The api-v1 mutation route's own rule for a `requests/{requestId}` path segment. */
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
@@ -50,24 +82,9 @@ function toRoleRecipes(scenario: AlmConformanceScenario): readonly RallarBlackBo
     return scenario.roles.flatMap((role) => toAlmConformanceRoleRecipe(scenario, role) ?? []);
 }
 
-/** Every command a recipe runs, the children of each poll included. */
-function toFlatCommands(commands: readonly RallarBlackBoxTestCommand[]): readonly RallarBlackBoxTestCommand[] {
-    return commands.flatMap((command) => command.kind === 'loop' ? [command, ...toFlatCommands(command.commands)] : [command]);
-}
-
-function toGrantRequests(
-    recipe: RallarBlackBoxTestRecipe
-): readonly Pick<RallarBlackBoxTestHttpRequestCommand['request'], 'path' | 'body'>[] {
-    return toFlatCommands(recipe.commands).flatMap((command) =>
-        command.kind === 'http.request' && command.request.path?.includes('/publication-grants/')
-            ? [{ path: command.request.path, body: command.request.body }]
-            : []
-    );
-}
-
 /** A request id as the page resolves it: a 13-character runtime identity and a poll's first attempt. */
 function toResolvedRequestIds(recipe: RallarBlackBoxTestRecipe): readonly string[] {
-    return toFlatCommands(recipe.commands).flatMap((command) => {
+    return toNestedCommands(recipe.commands).flatMap((command) => {
         const path = command.kind === 'http.request' ? command.request.path : undefined;
         const requestId = path?.split('/requests/')[1];
         return requestId === undefined
@@ -149,19 +166,20 @@ describe('ALM topic subscription conformance', () => {
             throw new Error('The ws carrier creates the subscription-delivery cell.');
         }
 
-        expect(toGrantRequests(delivery.receiver)).toEqual([
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.receiver}/grant/requests/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true }
-            },
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS['publisher-b']}/grant/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: true }
-            },
-            {
-                path: expect.stringContaining(`/publication-grants/${CONFORMANCE_PRINCIPAL_IDS.sender}/grant/`),
-                body: { topicId: GRANTED_TOPIC_ID, publish: true, subscribe: true }
-            }
+        const grantee = (principalId: string | undefined, operation: GrantRequest['operation'], permissions: Permissions) => ({
+            operation,
+            principalId,
+            topicId: GRANTED_TOPIC_ID,
+            permissions
+        });
+        // Per principal: a revoke of its rows and of what it does not hold, then a grant of what it holds.
+        expect(toGrantRequests(delivery.receiver.commands)).toEqual([
+            grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'revoke', { publish: true, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.receiver, 'grant', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS['publisher-b'], 'revoke', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS['publisher-b'], 'grant', { publish: true, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.sender, 'revoke', { publish: false, subscribe: true }),
+            grantee(CONFORMANCE_PRINCIPAL_IDS.sender, 'grant', { publish: true, subscribe: true })
         ]);
         expect(JSON.stringify(delivery.receiver)).not.toContain('{principal:');
     });
@@ -203,7 +221,7 @@ describe('ALM topic subscription conformance', () => {
     it('publisher-b recipes carry the sender commands', () => {
         const [delivery] = toTopicSubscriptionScenarios('ws');
         const sends = (recipe: RallarBlackBoxTestRecipe | undefined) =>
-            toFlatCommands(recipe?.commands ?? []).flatMap((command) =>
+            toNestedCommands(recipe?.commands ?? []).flatMap((command) =>
                 command.kind === 'messages.send' && !('replayOnCarrier' in command) && command.topicId === GRANTED_TOPIC_ID
                     ? [command.payload]
                     : []
@@ -276,13 +294,13 @@ describe('ALM topic subscription conformance', () => {
     it('keeps the successor\'s election, which the replaced owner page\'s later row reads name', () => {
         const successor = toTopicSubscriptionScenarios('ws').find(({ laneFamily }) => laneFamily === 'same-context');
 
-        expect(toFlatCommands(successor?.successor?.commands ?? []).filter(({ kind }) => kind === 'messages.unsubscribe'))
+        expect(toNestedCommands(successor?.successor?.commands ?? []).filter(({ kind }) => kind === 'messages.unsubscribe'))
             .toEqual([]);
     });
 
     it('pins the revoke-disconnected sibling to nothing received and a refused re-assertion, and the receiver to both', () => {
         const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
-        const sibling = toFlatCommands(scenario?.sibling?.commands ?? []);
+        const sibling = toNestedCommands(scenario?.sibling?.commands ?? []);
         const receiver = scenario?.receiver.commands ?? [];
         const publicationWaits = (commands: readonly RallarBlackBoxTestCommand[]) =>
             commands.flatMap((command) => command.kind === 'wait' && command.commandId?.includes('-publication-') ? [command.absent === true] : []);
@@ -295,7 +313,38 @@ describe('ALM topic subscription conformance', () => {
         });
     });
 
-    it('fails a revoke-disconnected receipt that confirms the sibling', () => {
+    // A pause only lets time pass; a receipt's lists stop changing once its handle has ended.
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'reads each revoke-disconnected receipt over %s only once its publication\'s handle has ended, after the last publication, with no pause',
+        (carrier) => {
+            const scenario = toTopicSubscriptionScenarios(carrier).find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+            const sender = scenario?.sender.commands ?? [];
+            const prefix = `alm-${carrier}-subscription-revoke-disconnected-sender-`;
+            const indexOf = (name: string) => sender.findIndex(({ commandId }) => commandId === `${prefix}${name}`);
+
+            expect(
+                sender.filter((command) =>
+                    command.kind === 'wait' && command.match.kind === 'diagnostic' && command.match.topic === 'rallar.black-box.alm.pause'
+                )
+            )
+                .toEqual([]);
+            for (const publication of ['publication-1', 'publication-2']) {
+                const observe = indexOf(`${publication}-observe`);
+                expect(sender[observe], publication).toEqual({
+                    kind: 'messages.observe',
+                    commandId: `${prefix}${publication}-observe`,
+                    connection: expect.any(String),
+                    handleId: `${prefix}${publication}-send`,
+                    state: ['acknowledged'],
+                    timeoutMs: expect.any(Number)
+                });
+                expect(observe, publication).toBeGreaterThan(indexOf('publication-2-send'));
+                expect(indexOf(`${publication}-receipts`), publication).toBe(observe + 1);
+            }
+        }
+    );
+
+    it('fails a receipt that confirms the role the sender names unconfirmed, naming that role', () => {
         const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
         if (scenario?.sibling === undefined) {
             throw new Error('The ws carrier creates the subscription-revoke-disconnected cell.');
@@ -308,26 +357,55 @@ describe('ALM topic subscription conformance', () => {
                 'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: second }
             });
 
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: toSender(['receiver-session'], ['receiver-session']),
-            sibling
+            unconfirmed: sibling
         })).toEqual([]);
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: toSender(['receiver-session'], ['receiver-session', 'sibling-session']),
-            sibling
+            unconfirmed: sibling
         })).toEqual([
-            'alm-ws-subscription-revoke-disconnected-sender-publication-2-send: the receipt confirms the sibling, whose ' +
-            'election was revoked while it was disconnected.'
+            'alm-ws-subscription-revoke-disconnected-sender-publication-2-send: the receipt confirms the sibling, which ' +
+            'no receipt of the cell may confirm.'
         ]);
-        expect(assessSubscriptionRevokeDisconnected({
+        expect(assessAlmUnconfirmedReceiptRole({
             runId: 'run',
             sender: { ...toSender([], []), result: undefined },
-            sibling
+            unconfirmed: sibling
         })).toEqual(['sender: missing, mismatched or failed recipe envelope.']);
     });
+
+    it('judges the revoke-disconnected sender on the commands the shared identity entry yields: its settle is the harness\'s', () => {
+        const scenario = toTopicSubscriptionScenarios('ws').find(({ scenarioId }) => scenarioId === 'subscription-revoke-disconnected');
+        if (scenario?.sibling === undefined) {
+            throw new Error('The ws carrier creates the subscription-revoke-disconnected cell.');
+        }
+        const siblingConnect = scenario.sibling.commands.find(({ kind }) => kind === 'rtc.connect')!.commandId!;
+        const sibling = toRecipeRunParticipant('sibling', scenario.sibling, { [siblingConnect]: { sessionId: 'sibling-session' } });
+        const receipt = scenario.sender.commands.find(({ kind }) => kind === 'messages.receipts')!;
+        const settleReceipt = toAlmCellSettleCommand({ ...receipt, commandId: 'settle-receipt' });
+        const settled = { ...scenario.sender, commands: [settleReceipt, ...scenario.sender.commands] };
+        const sender = toRecipeRunParticipant('sender', settled, {
+            'settle-receipt': { confirmedRecipientPeerIds: ['sibling-session'] },
+            'alm-ws-subscription-revoke-disconnected-sender-publication-1-receipts': { confirmedRecipientPeerIds: ['receiver-session'] },
+            'alm-ws-subscription-revoke-disconnected-sender-publication-2-receipts': { confirmedRecipientPeerIds: ['receiver-session'] }
+        });
+
+        expect(assessAlmUnconfirmedReceiptRole({ runId: 'run', sender, unconfirmed: sibling })).toEqual([]);
+    });
 });
+
+/** The receiver's start state of the producers' cells: each principal's rows and unheld permissions revoked, then granted. */
+const START_STATE_STEPS = [
+    'start-revoke-receiver-ps',
+    'start-grant-receiver-s',
+    'start-revoke-publisher-b-s',
+    'start-grant-publisher-b-ps',
+    'start-revoke-sender-s',
+    'start-grant-sender-ps'
+] as const;
 
 type OrderedScenarioId = 'subscription-ordered-entry' | 'subscription-ordered-omission' | 'subscription-ordered-reconnect';
 type ProducerRole = 'sender' | 'publisher-b';
@@ -395,8 +473,39 @@ function toConfirmedCueSteps(publication: number): readonly string[] {
     return PRODUCER_TRACKS.map(([, track]) => `cue-${track}-p${publication}-confirmed-received`);
 }
 
+/** The cues a receiver waits for: none of them is a sibling's election cue. */
+function toReceiverCueWaitNames(receiver: RallarBlackBoxTestRecipe): readonly string[] {
+    return toStepNames(receiver).filter((name) => name.startsWith('cue-') && name.endsWith('-received'));
+}
+
 function toCounts(confirmations: number, outsideAudience: number): readonly number[] {
     return [confirmations + outsideAudience, confirmations, outsideAudience];
+}
+
+function findBarrieredReconnectScenario(carrier: (typeof ALM_CONFORMANCE_CARRIERS)[number]): AlmConformanceScenario {
+    const scenario = createAlmConformanceRecipes({ ...toConformanceInput(carrier), cellSettle: CONFORMANCE_BARRIERED_SETTLE })
+        .find(({ scenarioId }) => scenarioId === 'subscription-ordered-reconnect');
+    if (scenario === undefined) {
+        throw new Error(`${carrier} creates no barriered subscription-ordered-reconnect cell.`);
+    }
+    return scenario;
+}
+
+/** Runs one wait on a page whose history holds `events` in order; the wait gets 1 ms, the history being complete. */
+async function runWaitAfterEvents(
+    wait: RallarBlackBoxTestCommand,
+    events: readonly Parameters<ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>['recordEvent']>[0][]
+): Promise<boolean> {
+    const runtime = createDefaultRallarBlackBoxTestRuntime();
+    for (const event of events) {
+        runtime.recordEvent(event);
+    }
+    const recipe: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: 'session-removal-probe',
+        commands: [{ ...wait, timeoutMs: 1 }]
+    };
+    return (await runtime.execute({ kind: 'recipe.run', recipe })).ok;
 }
 
 /** Runs `commands` on a page whose history already holds `events`; each wait gets 1 ms, the history being complete. */
@@ -405,6 +514,7 @@ async function runAfterEvents(
     events: readonly Parameters<ReturnType<typeof createDefaultRallarBlackBoxTestRuntime>['recordEvent']>[0][]
 ): Promise<boolean> {
     const runtime = createDefaultRallarBlackBoxTestRuntime();
+    writeAlmCellStartEvents(runtime, commands);
     for (const event of events) {
         runtime.recordEvent(event);
     }
@@ -452,7 +562,7 @@ describe('ALM ordered subscription entry conformance', () => {
                     ...toPublishSteps('probe-ready'),
                     ...toPublishSteps(`${track}-p1`),
                     ...toPublishSteps(`${track}-p2`),
-                    'cue-entered-received',
+                    'cue-entered-applied-by-receiver-received',
                     ...toPublishSteps(`${track}-p3`),
                     'no-repair-dispatch',
                     'no-gap-nack'
@@ -464,7 +574,6 @@ describe('ALM ordered subscription entry conformance', () => {
                 'cue-listen-sent',
                 'cue-published-2-received',
                 'subscribe-sibling',
-                'subscribe-delta-margin',
                 'cue-entered',
                 'cue-entered-sent',
                 ...toPublicationSteps('received', 'a', [3]),
@@ -479,15 +588,18 @@ describe('ALM ordered subscription entry conformance', () => {
             expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
                 'cue-listen',
                 'cue-listen-sent',
-                'grant-receiver-s',
+                ...START_STATE_STEPS,
                 'subscribe-receiver',
-                'grant-publisher-b-ps',
-                'grant-sender-ps',
                 ...toPublicationSteps('received', 'a', [1, 2]),
                 ...toPublicationSteps('received', 'c', [1, 2]),
                 ...toConfirmedCueSteps(2),
                 'cue-published-2',
                 'cue-published-2-sent',
+                'cue-entered-received',
+                'entered-head-read',
+                'entered-head-applied',
+                'cue-entered-applied-by-receiver',
+                'cue-entered-applied-by-receiver-sent',
                 ...toPublicationSteps('received', 'a', [3]),
                 ...toPublicationSteps('received', 'c', [3]),
                 ...toConfirmedCueSteps(3),
@@ -530,9 +642,11 @@ describe('ALM ordered subscription entry conformance', () => {
                 ...toPublishSteps(`${track}-p1`),
                 ...toPublishSteps(`${track}-p2`),
                 'cue-revoked-received',
+                'revoke-head-read',
+                'revoke-head-applied',
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-resubscribed-received',
+                'cue-resubscribed-applied-by-receiver-received',
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
                 'no-gap-nack'
@@ -541,15 +655,14 @@ describe('ALM ordered subscription entry conformance', () => {
         expect(toStepNames(receiver)).toEqual([
             'cue-listen',
             'cue-listen-sent',
-            'grant-receiver-s',
+            ...START_STATE_STEPS,
             'subscribe-receiver',
-            'grant-publisher-b-ps',
-            'grant-sender-ps',
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
             'revoke-sender-s',
-            'revoke-delta-margin',
+            'revoke-head-read',
+            'revoke-head-applied',
             'cue-revoked',
             'cue-revoked-sent',
             ...toPublicationSteps('received', 'a', [3, 4]),
@@ -558,6 +671,11 @@ describe('ALM ordered subscription entry conformance', () => {
             'grant-sender-s',
             'cue-regranted',
             'cue-regranted-sent',
+            'cue-resubscribed-received',
+            'resubscribed-head-read',
+            'resubscribed-head-applied',
+            'cue-resubscribed-applied-by-receiver',
+            'cue-resubscribed-applied-by-receiver-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -574,7 +692,6 @@ describe('ALM ordered subscription entry conformance', () => {
             'unsubscribe-sibling',
             'assert-unsubscribe-sibling-lapsed',
             'subscribe-sibling-regranted',
-            'subscribe-delta-margin',
             'cue-resubscribed',
             'cue-resubscribed-sent',
             ...toPublicationSteps('received', 'a', [5]),
@@ -588,12 +705,125 @@ describe('ALM ordered subscription entry conformance', () => {
             'assert-unsubscribe-sibling-regranted-lapsed'
         ]);
         // D492: the revoke takes the sender principal's `subscribe` alone, and the re-grant gives exactly it back.
-        expect(toGrantRequests(receiver).map(({ path, body }) => ({ operation: path?.split('/')[11], body })).slice(3)).toEqual([
-            { operation: 'revoke', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } },
-            { operation: 'grant', body: { topicId: GRANTED_TOPIC_ID, publish: false, subscribe: true } }
-        ]);
-        expect(findStep(receiver, 'revoke-delta-margin')).toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
+        expect(toGrantRequests(receiver.commands).map(({ operation, topicId, permissions }) => ({ operation, topicId, permissions })).slice(6))
+            .toEqual([
+                { operation: 'revoke', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } },
+                { operation: 'grant', topicId: GRANTED_TOPIC_ID, permissions: { publish: false, subscribe: true } }
+            ]);
+        expect(toStepNames(receiver)).not.toContain('revoke-delta-margin');
     });
+
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'subscription-ordered-omission: every page the revoke must reach waits for its applied revision after its cue or its own write instead of a fixed pause over %s',
+        (carrier) => {
+            const scenario = findOrderedScenario(carrier, 'subscription-ordered-omission');
+            const pagesAfterRevoke = [
+                { role: 'receiver', after: 'revoke-sender-s' },
+                { role: 'sender', after: 'cue-revoked-received' },
+                { role: 'publisher-b', after: 'cue-revoked-received' }
+            ] as const;
+
+            for (const { role, after } of pagesAfterRevoke) {
+                const recipe = requireRoleRecipe(scenario, role);
+                const names = toStepNames(recipe);
+                const head = `{resultCache.${recipe.recipeId}-revoke-head-read.value.body.causalRevision`;
+
+                expect(names.indexOf(after), `${carrier} ${role}`).toBeGreaterThan(-1);
+                expect(names.slice(names.indexOf(after) + 1, names.indexOf(after) + 3), `${carrier} ${role}`)
+                    .toEqual(['revoke-head-read', 'revoke-head-applied']);
+                expect(findStep(recipe, 'revoke-head-read'), `${carrier} ${role}`).toMatchObject({
+                    kind: 'http.request',
+                    request: { method: 'GET' },
+                    timeoutMs: 5_000
+                });
+                expect(findStep(recipe, 'revoke-head-applied'), `${carrier} ${role}`).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadFields: { 'data.change': 'held', 'data.groupRef.groupId': 'room-alm' },
+                        payloadMinimums: {
+                            'data.groupRevision': `${head}.groupRevision}`,
+                            'data.presenceRevision': `${head}.presenceRevision}`
+                        },
+                        sinceCommandIdPrefix: `${recipe.recipeId}-`
+                    },
+                    timeoutMs: 30_000
+                });
+                expect(findStep(recipe, 'revoke-head-applied'), `${carrier} ${role}`).not.toHaveProperty('absent');
+            }
+            expect(toStepNames(requireRoleRecipe(scenario, 'sibling'))).not.toContain('revoke-head-read');
+        }
+    );
+
+    // The receiver, which a copy must find current, has no write after a sibling's election: the sibling's cue is its
+    // ordering point, and the producers publish only once the receiver says it applied the head it read after it.
+    it.each(ALM_CONFORMANCE_CARRIERS)(
+        'a sibling\'s election reaches the producers\' first publication after it through the receiver\'s applied head, with no pause, over %s',
+        (carrier) => {
+            const cells = [
+                { scenarioId: 'subscription-ordered-entry', elected: 'entered', next: 'p3' },
+                { scenarioId: 'subscription-ordered-omission', elected: 'resubscribed', next: 'p5' },
+                { scenarioId: 'subscription-ordered-reconnect', elected: 'reentered', next: 'probe-reentered' }
+            ] as const;
+            for (const { scenarioId, elected, next } of cells) {
+                const scenario = findOrderedScenario(carrier, scenarioId);
+                const receiver = requireRoleRecipe(scenario, 'receiver');
+                const names = toStepNames(receiver);
+                const heard = names.indexOf(`cue-${elected}-received`);
+                const head = `{resultCache.${receiver.recipeId}-${elected}-head-read.value.body.causalRevision`;
+                // A reopened socket re-asserts the sibling's presence, which re-plans the room's layout: the receiver
+                // waits until the room settled on it, and each producer applies a head read after that.
+                const reasserted = scenarioId === 'subscription-ordered-reconnect';
+                const settled = reasserted ? [`${elected}-formation-poll`] : [];
+
+                expect(heard, `${carrier} ${scenarioId}`).toBeGreaterThan(-1);
+                expect(names.slice(heard + 1, heard + 5 + settled.length), `${carrier} ${scenarioId}`).toEqual([
+                    ...settled,
+                    `${elected}-head-read`,
+                    `${elected}-head-applied`,
+                    `cue-${elected}-applied-by-receiver`,
+                    `cue-${elected}-applied-by-receiver-sent`
+                ]);
+                if (reasserted) {
+                    // The settle's own formation poll, under the cue's name, outside the settle.
+                    const { metadata: _settle, ...settlePoll } = findStep(
+                        requireRoleRecipe(findBarrieredReconnectScenario(carrier), 'receiver'),
+                        'formation-poll'
+                    );
+                    const renamed = JSON.stringify(settlePoll)
+                        .replaceAll(`${receiver.recipeId}-formation-poll`, `${receiver.recipeId}-${elected}-formation-poll`);
+                    expect(findStep(receiver, `${elected}-formation-poll`), `${carrier} ${scenarioId}`).toEqual(JSON.parse(renamed));
+                }
+                expect(findStep(receiver, `${elected}-head-applied`), `${carrier} ${scenarioId}`).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadMinimums: {
+                            'data.groupRevision': `${head}.groupRevision}`,
+                            'data.presenceRevision': `${head}.presenceRevision}`
+                        },
+                        sinceCommandIdPrefix: `${receiver.recipeId}-`
+                    }
+                });
+                for (const [role, track] of PRODUCER_TRACKS) {
+                    const producerNames = toStepNames(requireRoleRecipe(scenario, role));
+                    const first = next.startsWith('probe') ? next : `${track}-${next}`;
+                    const before = producerNames.indexOf(toPublishSteps(first)[0]!);
+                    // After a re-asserted presence the re-entered sibling also applies the settled layout and cues it.
+                    const applied = reasserted
+                        ? [`cue-${elected}-applied-by-sibling-received`, `${elected}-head-read`, `${elected}-head-applied`]
+                        : [];
+                    expect(producerNames.slice(before - 1 - applied.length, before), `${carrier} ${scenarioId} ${role}`)
+                        .toEqual([`cue-${elected}-applied-by-receiver-received`, ...applied]);
+                    expect(producerNames, `${carrier} ${scenarioId} ${role}`).not.toContain(`cue-${elected}-received`);
+                }
+                const siblingNames = scenarioId === 'subscription-ordered-reconnect'
+                    ? toContinuationStepNames(findBarrieredReconnectScenario(carrier))
+                    : toStepNames(requireRoleRecipe(scenario, 'sibling'));
+                expect(siblingNames.filter((name) => name.endsWith('-delta-margin')), `${carrier} ${scenarioId}`).toEqual([]);
+            }
+        }
+    );
 
     it.each(
         [
@@ -751,8 +981,8 @@ describe('ALM ordered subscription reconnect conformance', () => {
             expect(receiver.commands.map(({ commandId }) => commandId)).toContain(gate);
             expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, scenario.continuation!.recipe)).toMatchObject({ ok: true });
             // The continuation runs on the sibling's open page, so its ids stay apart from the first recipe's.
-            const continuation = toFlatCommands(scenario.continuation!.recipe.commands);
-            const firstIds = new Set(toFlatCommands(requireRoleRecipe(scenario, 'sibling').commands).map(({ commandId }) => commandId));
+            const continuation = toNestedCommands(scenario.continuation!.recipe.commands);
+            const firstIds = new Set(toNestedCommands(requireRoleRecipe(scenario, 'sibling').commands).map(({ commandId }) => commandId));
             expect(continuation.filter(({ commandId }) => firstIds.has(commandId))).toEqual([]);
             expect(continuation.map(({ kind }) => kind)).not.toContain('rtc.connect');
         }
@@ -768,10 +998,14 @@ describe('ALM ordered subscription reconnect conformance', () => {
                 ...toPublishSteps('probe-ready'),
                 ...toPublishSteps(`${track}-p1`),
                 ...toPublishSteps(`${track}-p2`),
+                'sibling-left',
                 ...toPublishSteps('probe-receiver-alone'),
                 ...toPublishSteps(`${track}-p3`),
                 ...toPublishSteps(`${track}-p4`),
-                'cue-reentered-received',
+                'cue-reentered-applied-by-receiver-received',
+                'cue-reentered-applied-by-sibling-received',
+                'reentered-head-read',
+                'reentered-head-applied',
                 ...toPublishSteps('probe-reentered'),
                 ...toPublishSteps(`${track}-p5`),
                 'no-repair-dispatch',
@@ -781,16 +1015,20 @@ describe('ALM ordered subscription reconnect conformance', () => {
         expect(toStepNames(requireRoleRecipe(scenario, 'receiver'))).toEqual([
             'cue-listen',
             'cue-listen-sent',
-            'grant-receiver-s',
+            ...START_STATE_STEPS,
             'subscribe-receiver',
-            'grant-publisher-b-ps',
-            'grant-sender-ps',
             ...toPublicationSteps('received', 'a', [1, 2]),
             ...toPublicationSteps('received', 'c', [1, 2]),
             ...toConfirmedCueSteps(2),
             ...toPublicationSteps('received', 'a', [3, 4]),
             ...toPublicationSteps('received', 'c', [3, 4]),
             ...toConfirmedCueSteps(4),
+            'cue-reentered-received',
+            'reentered-formation-poll',
+            'reentered-head-read',
+            'reentered-head-applied',
+            'cue-reentered-applied-by-receiver',
+            'cue-reentered-applied-by-receiver-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             ...toConfirmedCueSteps(5),
@@ -813,9 +1051,13 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'tokens-reconnected',
             'rows-reconnected',
             'presence-reasserted',
-            'reentered-delta-margin',
             'cue-reentered',
             'cue-reentered-sent',
+            'cue-reentered-applied-by-receiver-received',
+            'reentered-head-read',
+            'reentered-head-applied',
+            'cue-reentered-applied-by-sibling',
+            'cue-reentered-applied-by-sibling-sent',
             ...toPublicationSteps('received', 'a', [5]),
             ...toPublicationSteps('received', 'c', [5]),
             'omitted-a-p5',
@@ -826,6 +1068,87 @@ describe('ALM ordered subscription reconnect conformance', () => {
             'unsubscribe-sibling',
             'assert-unsubscribe-sibling-lapsed'
         ]);
+    });
+
+    it('each producer\'s alone-probe follows its own observation that the sibling\'s session left the room', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = findBarrieredReconnectScenario(carrier);
+            for (const [role, track] of PRODUCER_TRACKS) {
+                const producer = requireRoleRecipe(scenario, role);
+                const armed = `${producer.recipeId}-armed`;
+                const commandIds = producer.commands.map(({ commandId }) => commandId);
+                const left = findStep(producer, 'sibling-left');
+
+                const lastPublication = `${producer.recipeId}-${track}-p2`;
+                const alone = `${producer.recipeId}-probe-receiver-alone`;
+
+                expect(commandIds.indexOf(armed), `${carrier} ${role}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(lastPublication), `${carrier} ${role} ${lastPublication}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(alone), `${carrier} ${role} ${alone}`).toBeGreaterThan(-1);
+                expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`).toBeGreaterThan(commandIds.indexOf(armed));
+                expect(commandIds.indexOf(left.commandId), `${carrier} ${role}`)
+                    .toBeGreaterThan(commandIds.indexOf(lastPublication));
+                expect(commandIds.indexOf(alone), `${carrier} ${role}`).toBeGreaterThan(commandIds.indexOf(left.commandId));
+                // Four roles share the room, so the sibling's removal leaves three.
+                expect(left).toMatchObject({
+                    kind: 'wait',
+                    match: {
+                        kind: 'diagnostic',
+                        topic: 'rallar.browser.group_state.applied',
+                        payloadFields: {
+                            'data.change': 'held',
+                            'data.groupRef.applicationId': 'app',
+                            'data.groupRef.workspaceId': 'ws',
+                            'data.groupRef.groupId': 'room-alm',
+                            'data.activeSessionCount': 3
+                        },
+                        sinceCommandIdPrefix: armed
+                    }
+                });
+                expect(left).not.toHaveProperty('absent');
+            }
+        }
+    });
+
+    it('counts a session removal from the armed barrier onward, and no count the roles reached while connecting', async () => {
+        const producer = requireRoleRecipe(findBarrieredReconnectScenario('rtc'), 'sender');
+        const left = findStep(producer, 'sibling-left');
+        const armed = {
+            kind: 'result' as const,
+            topic: 'rallar.bb.command.result',
+            commandId: `${producer.recipeId}-armed`,
+            severity: 'info' as const,
+            payload: {}
+        };
+        const toApplied = (activeSessionCount: number) => ({
+            kind: 'diagnostic' as const,
+            topic: 'rallar.browser.group_state.applied',
+            payload: {
+                data: {
+                    groupRef: { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' },
+                    groupRevision: 7,
+                    presenceRevision: 9,
+                    rosterVersion: 1,
+                    activeSessionCount,
+                    change: 'held'
+                }
+            }
+        });
+
+        expect(await runWaitAfterEvents(left, [toApplied(3), toApplied(4), armed])).toBe(false);
+        expect(await runWaitAfterEvents(left, [toApplied(3), armed, toApplied(4)])).toBe(false);
+        expect(await runWaitAfterEvents(left, [toApplied(4), armed, toApplied(3)])).toBe(true);
+    });
+
+    // The lane selects the revoke-disconnected receipt check by this metadata, as it selects the receipt-role check.
+    it('only the revoke-disconnected sender names the role none of its receipts may confirm', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const named = createAlmConformanceRecipes(toConformanceInput(carrier))
+                .flatMap((scenario) => toAlmUnconfirmedReceiptRole(scenario.sender) === undefined ? [] : [scenario]);
+
+            expect(named.map((scenario) => scenario.scenarioKey), carrier).toEqual(['subscription-revoke-disconnected']);
+            expect(toAlmUnconfirmedReceiptRole(named[0]!.sender), carrier).toBe('sibling');
+        }
     });
 
     it.each(
@@ -880,8 +1203,6 @@ describe('ALM ordered subscription reconnect conformance', () => {
         });
         expect(children('presence-reasserted')[1]).toMatchObject({ match: { topic: 'rallar.bb.http.response', contains: reconnected } });
         expect(children('presence-reasserted')[1]).not.toHaveProperty('absent');
-        expect(continuation.find(({ commandId }) => commandId === `${prefix}-reentered-delta-margin`))
-            .toMatchObject({ kind: 'wait', absent: true, timeoutMs: 2_000 });
     });
 
     it('reads the reopened sibling\'s p5 as an omission after p2 on each track, and p3 and p4 absent', () => {

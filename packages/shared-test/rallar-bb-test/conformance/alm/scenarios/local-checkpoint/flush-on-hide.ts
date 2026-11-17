@@ -33,6 +33,7 @@ import {
 export const flushOnHide: AlmConformanceScenarioDefinition = {
     scenarioId: 'flush-on-hide',
     scenarioKey: 'flush-on-hide',
+    ownerEnd: 'flush-and-crash',
     tags: FULL_TAGS,
     carriers: ['ws', 'rtc'],
     roles: ['sender', 'receiver', 'successor'],
@@ -87,6 +88,7 @@ function toSuccessorCommands(successor: AlmConformanceStepInput): readonly Ralla
             storeIdPrefix: toCheckpointStorePrefix(successor.input.carrier),
             lane: '',
             connectName: 'connect',
+            historyFrom: 'page',
             timeoutMs: toRecoveryTtlMs(successor.input.deadlineMs)
         }),
         toResultAssertion({

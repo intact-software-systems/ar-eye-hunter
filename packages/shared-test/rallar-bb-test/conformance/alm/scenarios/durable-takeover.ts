@@ -111,6 +111,7 @@ function toSuccessorCommands(successor: AlmConformanceStepInput): readonly Ralla
             storeIdPrefix: toOriginalStorePrefix(successor.input.carrier),
             lane: '',
             connectName: 'connect',
+            historyFrom: 'page',
             timeoutMs: toRecoveryTtlMs(successor.input.deadlineMs)
         }),
         toResultAssertion({

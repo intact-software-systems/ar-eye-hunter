@@ -2,17 +2,6 @@ import {
     type Vec3Tuple
 } from './arena-contracts.ts';
 
-export function mulberry32(seed: number): () => number {
-    let value = seed >>> 0;
-    return () => {
-        value += 0x6d2b79f5;
-        let next = value;
-        next = Math.imul(next ^ next >>> 15, next | 1);
-        next ^= next + Math.imul(next ^ next >>> 7, next | 61);
-        return ((next ^ next >>> 14) >>> 0) / 4294967296;
-    };
-}
-
 export function hashNumber(value: number): number {
     let hash = value | 0;
     hash ^= hash << 13;

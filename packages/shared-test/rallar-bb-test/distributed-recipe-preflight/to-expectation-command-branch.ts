@@ -1,4 +1,6 @@
-import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../barrier/wait-for-barrier.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
+import { RALLAR_BLACK_BOX_BARRIER_RESOLUTION_GRACE_MS } from '../barrier/rallar-black-box-barrier-resolution-grace-ms.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestBarrierCommand,
@@ -89,7 +91,7 @@ function toMatchSummary(match: RallarBlackBoxTestWaitCommand['match']): string {
     return entries.length > 0 ? entries.join(', ') : 'any runtime evidence';
 }
 
-function toShortValue(value: unknown): string {
+function toShortValue(value: ApiJsonValue): string {
     const rendered = typeof value === 'string'
         ? value
         : JSON.stringify(value);

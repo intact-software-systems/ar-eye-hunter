@@ -359,13 +359,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: 'optionalFinite',
         maximumMagnitude: 1
     }),
-    // Independent whole-owner review: The record predicate narrows the raw motion envelope before field access.
-    Object.freeze({
-        path: 'apps/relic-hunters-v1/src/game/scene/networking.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRecord',
-        maximumMagnitude: 1
-    }),
     // Independent whole-owner review: One keyed remote-avatar lifecycle owns motion, health and shot presentation.
     // This warning-tier cap permits no growth and waives no other rule.
     Object.freeze({
@@ -435,20 +428,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/relic-hunters/server/relic-game-move.ts',
         rule: 'boundary.unknown',
         symbol: 'requireNullableString',
-        maximumMagnitude: 1
-    }),
-    // Independent boundary review: Untrusted AI proposal data is checked by blueprint and visual-fit validators; only issues leave.
-    Object.freeze({
-        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateExpeditionEvaluationBlueprint',
-        maximumMagnitude: 1
-    }),
-    // Independent boundary review: A caught unknown is immediately normalized to Error.message or String for reporting.
-    Object.freeze({
-        path: 'apps/relic-hunter-server-v1/src/relic-expedition-ai.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toErrorMessage',
         maximumMagnitude: 1
     }),
     // Whole-owner retention review: canonical ingress mapping remains one closed
@@ -664,12 +643,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
         rule: 'boundary.unknown',
         symbol: 'verifyTicketRejection',
-        maximumMagnitude: 1
-    }),
-    Object.freeze({
-        path: 'apps/api-v1/test/db/websocket-ticket-rejection-binding-child.ts',
-        rule: 'boundary.unknown',
-        symbol: 'verifyRejectedErrors',
         maximumMagnitude: 1
     }),
     // These two process rejection listeners take Node's unknown reason and normalize it directly to Error for
@@ -1440,14 +1413,6 @@ export const reviewedDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined
     }),
-    // This predicate checks typeof, null and property presence before comparing
-    // kind. Only a boolean leaves the boundary; its unknown values stay local.
-    // The checker reports the boolean signature as a manual-review signal.
-    Object.freeze({
-        path: 'tests/playwright/relic-hunters/web.spec.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isCommandKind'
-    }),
     // The run-monitor spec mocks the control server and the API inside anonymous
     // test callbacks: route handlers receive raw request bodies, mock services take
     // raw configuration, and one window global is cast at the DOM boundary. Every
@@ -1691,17 +1656,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/webrtc/decode-rtc-signaling-message.ts',
         rule: 'boundary.unknown',
         symbol: 'decodeIceCandidate'
-    }),
-    Object.freeze({
-        path:
-            'packages/tests/shared-server/rallar-system/group-state/presence/group-presence-summary-delta-emission.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readEventRowPayload'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-server/rallar-system/group-state/presence/group-state-delta-envelope.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readGroupStateEventRowEnvelope'
     }),
     // Group command and persisted-evidence readers narrow raw JSON before any
     // identity, policy, receipt, or benchmark decision consumes it.
@@ -2032,11 +1986,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
         rule: 'boundary.unknown',
         symbol: 'computeALMessageEnvelopeBytes'
-    }),
-    Object.freeze({
-        path: 'packages/shared/al-contracts/al-message-resource-limits.ts',
-        rule: 'boundary.unknown',
-        symbol: 'computeALMessageEnvelopeSize'
     }),
     Object.freeze({
         path: 'packages/shared/api/state-snapshot-page.ts',

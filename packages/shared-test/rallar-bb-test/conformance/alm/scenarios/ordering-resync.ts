@@ -11,13 +11,14 @@ import {
 } from '../alm-conformance-diagnostic-waits.ts';
 import { toHeldSendCommands } from '../alm-conformance-fault-commands.ts';
 import { toAdmissionCommands, toSendCommand } from '../alm-conformance-message-commands.ts';
-import { toOrderedSendCommands, toOrderingKey, toSettledStateCommands } from '../alm-conformance-ordering-commands.ts';
+import { toOrderedSendCommands, toOrderingKey } from '../alm-conformance-ordering-commands.ts';
 import { toAdmissionOutcomeWait, toSingleArrivalReceiverCommands } from '../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../alm-conformance-scenario-definition.ts';
+import { toSettledStateCommands } from '../to-settled-state-commands.ts';
 
 const RESYNC_GAP_SEQ = 300;
 /** The frame the receiver never receives over RTC: seq 300's record names it as the receiver's prior. */
@@ -134,12 +135,14 @@ function toRecoveryOwnerWaits(receiver: AlmConformanceStepInput): readonly Ralla
             step: receiver,
             name: 'recovery-owner-invoked',
             topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             contains: `"kind":"recovery-owner-invoked","orderingKey":"${toOrderingKey(receiver)}",`
         }),
         toDiagnosticWait({
             step: receiver,
             name: 'recovery-owner-cursor',
             topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
             contains: cursor
         })
     ];

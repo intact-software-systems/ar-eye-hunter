@@ -94,7 +94,8 @@ function createServicesInput(
 ): CreateApiV1TopologyServicesInput {
     return {
         pendingReplanReader: {
-            findByKey: () => Promise.reject(new Error('pending replan not read by construction test'))
+            findByKey: () => Promise.reject(new Error('pending replan not read by construction test')),
+            readPendingByTopicAndContextId: () => Promise.reject(new Error('pending replan not read by construction test'))
         },
         runtimeStateRepository,
         groupStateRepository: new GroupStateRepository(

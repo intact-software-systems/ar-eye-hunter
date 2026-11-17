@@ -235,7 +235,7 @@ export const reviewedBrowserDispositions = Object.freeze([
         path: 'packages/relic-hunters/src/model.ts',
         rule: 'file.cognitive-load',
         symbol: undefined,
-        maximumMagnitude: 57
+        maximumMagnitude: 56
     }),
     // Independent review: constants, schema predicates and redaction serve the same Relic wire contract.
     Object.freeze({
@@ -903,42 +903,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeBlackBoxCommandRoomRef'
     }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodePeerIds'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeAck'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeMessageFields'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRealtimeSendEnvelope'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeBlackBoxRallarSendInput'
-    }),
-    Object.freeze({
-        path:
-            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts',
-        rule: 'boundary.unknown',
-        symbol: 'decodeBlackBoxRallarWsSendInput'
-    }),
     // The canonical finite parser accepts only Off, Signaling, Native or absence.
     // Its Left becomes a sanitized TypeError; only the parsed mode leaves this
     // decoder. The scanner's narrowing vocabulary omits the parse prefix.
@@ -1249,15 +1213,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined,
         maximumMagnitude: 1
     }),
-    // Recursive persisted JSON discovery checks arrays/records, then the canonical result decoder
-    // and receipt guard before producing typed capture receipts. Arbitrary nested user payloads
-    // are not treated as domain results without these checks.
-    Object.freeze({
-        path: 'apps/rallar-black-box-control-server/src/control-artifact-recorder.ts',
-        rule: 'boundary.unknown',
-        symbol: 'collectCaptureReceipts',
-        maximumMagnitude: 1
-    }),
     // The current module-owned value is the transport OpenAPI document, whose embedded canonical
     // JsonSchema supports opaque enum/const/examples/default data. It is only served as
     // documentation, never consumed as application authority or receipt policy.
@@ -1327,17 +1282,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'decodeResultReleaseEnvelope',
         maximumMagnitude: 1
-    }),
-    // Required separation review keeps one concrete runtime owner for assignment/reset, active
-    // execution and recipe leases, event/result commit and release fencing. Factory composition
-    // and stateless release/reference policies already have meaningful separate owners. Further
-    // method shuffling would hide shared race guards; discounted length is within 1200 and named
-    // methods within 60.
-    Object.freeze({
-        path: 'packages/shared-test/rallar-bb-test/runtime/in-memory-rallar-black-box-test-runtime.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 142
     }),
     // Arbitrary retained payload traversal checks array/record shape before descending and uses
     // exact selected-result matching. Its output is only an ownership-presence boolean.
@@ -1426,14 +1370,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: undefined,
         maximumMagnitude: 3
-    }),
-    // The cleanup-failure classifier checks Error, the named partial-failure contract, and
-    // operation before the caller's fenced recovery. Its only result is a boolean.
-    Object.freeze({
-        path: 'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isCreatedRoomCleanupFailure',
-        maximumMagnitude: 1
     }),
     // App extraction keeps each HUD capability together: intel and clue display, map projection,
     // party admission/readiness/coordination, and action planning. These files do not own transport

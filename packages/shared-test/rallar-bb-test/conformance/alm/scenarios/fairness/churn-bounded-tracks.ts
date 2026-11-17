@@ -9,12 +9,9 @@ import type {
     RallarBlackBoxTestMessagesSendCommand
 } from '../../../../rallar-black-box-test-contracts.ts';
 
-import {
-    NON_EXPIRING_SEND_TIMEOUT_MS,
-    NON_EXPIRING_TTL_MS,
-    RESPONSE_MARGIN_MS
-} from '../../alm-conformance-budgets.ts';
+import { NON_EXPIRING_SEND_TIMEOUT_MS, NON_EXPIRING_TTL_MS } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { ALM_STORAGE_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toObserveCommand, toResultAssertion, toSendCommand } from '../../alm-conformance-message-commands.ts';
 import { toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
 import {
@@ -24,7 +21,6 @@ import {
 } from '../../alm-conformance-scenario-definition.ts';
 import { toStatsCommand } from '../../alm-conformance-session-commands.ts';
 import { toCommandId, toSendHandleId } from '../../alm-conformance-step-identities.ts';
-import { toPauseCommand } from '../../to-pause-command.ts';
 import { toBoundReconnectCommands, toReconnectedArrivalsCommand } from '../volatile-bound/volatile-bound-commands.ts';
 import { toSendLoopCommand } from './to-send-loop-command.ts';
 
@@ -62,8 +58,7 @@ export const churnBoundedTracks: AlmConformanceScenarioDefinition = {
     toSenderCommands: toChurnSenderCommands,
     toRecipientCommands: (receiver) => [
         toReconnectedArrivalsCommand(receiver, CHURN_TRACK_COUNT, 0),
-        // A store states its count right after a new track's admission commit, before that track's delivery.
-        toPauseCommand(receiver, 'snapshots-settle', RESPONSE_MARGIN_MS),
+        toOrderingTracksCapStatedWait(receiver),
         ...toOrderingTracksCommands(receiver)
     ]
 };
@@ -107,6 +102,21 @@ function toTrackSend(sender: AlmConformanceStepInput, track: string): RallarBlac
             orderingKey: `${toOrderingKey(sender)}-${track}`,
             seq: 1
         }
+    });
+}
+
+/**
+ * The memory store states its count at the end of the eviction pass a newly opened track runs after its admission
+ * commit, not at the delivery the arrivals count, so the read follows the store's statement that it holds the cap.
+ */
+function toOrderingTracksCapStatedWait(receiver: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toDiagnosticWait({
+        step: receiver,
+        name: 'ordering-tracks-cap-stated',
+        topic: ALM_STORAGE_DIAGNOSTICS_TOPIC,
+        contains: '/volatile"',
+        payloadFields: { 'data.kind': 'ordering-tracks', 'data.tracks': AL_INBOUND_MAX_ORDERING_TRACKS },
+        historyFrom: 'cell'
     });
 }
 
