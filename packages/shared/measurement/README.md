@@ -25,18 +25,24 @@ A sample lands in the first bucket whose bound it does not exceed; a sample abov
 overflow bucket. `createBoundedHistogram` and `computeBoundedHistogramAfter` return an `Either`: a sample that is not a
 finite number of at least 0 is refused as a value, never clamped and never thrown, and the caller counts the refusal.
 `decodeBoundedHistogram` reads a histogram from `unknown` and names every field that is wrong, including a bucket total
-that differs from `count`. There is no quantile reader and no merge; the first reader that needs one adds it.
+that differs from `count`. `decodeBoundedHistogramOnBounds` also refuses a histogram on other bounds than the ones its
+owner declares, so two reads stay comparable bucket by bucket. [assertBoundedHistogram](assert-bounded-histogram.ts)
+creates the empty histogram of a declared set of bounds and throws on a set that is not valid, a programmer's error.
+There is no quantile reader and no merge; the first reader that needs one adds it.
 
 ## Same-regime comparison
 
-`computeSameRegimeComparison({ baseline, candidate, band })` compares two runs, each a `regime` record and a set of
-named `figures`, under a `band` of a relative and an absolute allowance. It refuses with one of three kinds, checked in
-this order: `different-regime` (the keys name every regime field that differs or is on one side only),
-`different-figures` (a figure only one run reports) and `non-finite-figures`. Otherwise every figure reads `noise`,
+`computeSameRegimeComparison({ baseline, candidate, band, minimumRunsPerSide })` compares two sides, each a list of
+runs, a run being a `regime` record and a set of named `figures`, under a `band` of a relative and an absolute
+allowance. A side's figure is the median of its runs' values by `computeNearestRank`, the lower middle run of an even
+number, never an interpolated value; every run's value is reported beside it (`baselineRuns`, `candidateRuns`). It
+refuses with one of four kinds, checked in this order: `too-few-runs` (the keys name each side with no run or fewer
+than `minimumRunsPerSide`), `different-regime` (the keys name every regime field that any run differs in or lacks),
+`different-figures` (a figure not every run reports) and `non-finite-figures`. Otherwise every figure reads `noise`,
 `regression` or `improvement`; every figure is lower-is-better. A difference is noise when it is at most the larger of
 the absolute allowance and the relative allowance of the baseline value, so a difference exactly at the band's edge is
-noise. The caller declares the band before it runs; a run outside it is investigated, not answered by widening it
-(D652).
+noise. The caller declares the band and the number of runs before it runs; a result outside the band is investigated,
+not answered by widening it (D652, D664).
 
 ## Not here
 

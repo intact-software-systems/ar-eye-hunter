@@ -1698,6 +1698,11 @@ buckets, fails the stats command.
 `ordering` is `readUsage().ordering`, required: `{ entered, omitted, witnessed, beforeEntry }`, the
 `ordering-position` events the connect's inbound admissions stated on either carrier, cumulative over the
 connect and counted per event, not per distinct copy.
+`congestionEpisodes` is `readUsage().congestionEpisodes`, required: `durationMs`, a bounded histogram on
+`AL_CONGESTION_EPISODE_BOUNDS_MS` of how long each message a carrier deferred waited, from its first deferral to the
+settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
+and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
+carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

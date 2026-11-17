@@ -1139,7 +1139,7 @@ its drop the `capacity` refusal above; a backpressure drop is the drop code and 
 WS at admission with a refused RTC attempt row and no `carrierFallback`, and a send with no fallback ends `rejected`
 with `{ kind: 'refused', reason: 'congested' }` and no attempt. `drop-low` drops a priority-0 (or lower) send only,
 `reject` every send, `defer` none; a kept send waits at submission, where backpressure is a `not-ready` on both
-carriers. Each decision is one `congestion` diagnostic, `{ carrier, cause, action, priority, msgId }` with `action`
+carriers. Each decision is one `congestion` diagnostic, `{ carrier, cause, action, priority, msgId, atMs }` with `action`
 `drop` (the outbound admission), `defer` (the submission, for every message the page holds there, relay forwards and
 controls included) or `hand-over` (the browser's message dispatch, which hands a congested RTC leg to WS at admission
 and names the message's own normalized congestion priority, not the one the carrier's QoS provider planned with) (D186);
@@ -1147,6 +1147,19 @@ the black-box harness counts them as `ALCongestionCounters`. Beside the three ac
 `rateLimited` and `circuitOpen`, the messages whose RTC hand-off the carrier's per-session rate limiter or open circuit
 breaker refused (each `rtc-handoff-refusal` diagnostic adds its `messageCount`), and `queuedBytesHighWater`, the most
 bytes an RTC data channel held queued when a submission read it (the largest `rtc-queued-bytes-high-water`).
+
+Congestion duration is a per-message episode (D665). `atMs` is the runtime clock's reading at the decision, the clock
+that stamps the delivery settlements, so a deferral and a settlement compare. An episode opens at a message's first
+`defer` on a carrier and ends at the first `attempt-settled` of that message on that carrier whose outcome is not
+`not-ready`, or at its `expired` settlement; the deferrals in between are the same episode. A deferral arrives on the
+outbound diagnostics port and a settlement on the carrier's settlement sink, so one owner per connect measures them:
+[`ALOutboundCongestionEpisodes`](congestion/al-outbound-congestion-episodes.ts), which the browser places in front of
+both (`BrowserOutboundCongestionEpisodesSink`). It reports `durationMs`, a `BoundedHistogram` on
+`AL_CONGESTION_EPISODE_BOUNDS_MS` (twelve bounds from 10 ms to 60 s), `openEpisodes`, the episodes no settlement has
+ended, and `unrecordedSamples`: an episode it let go at `AL_CONGESTION_MAX_OPEN_EPISODES` (1 024, the oldest first)
+or whose settlement was stamped before its deferral, counted and never estimated. A `drop` and a `hand-over` open no
+episode. The report is `rallar.messages.readUsage().congestionEpisodes`, cumulative over the connect and across both
+carriers; a relay forward or a control a carrier deferred is measured like the session's own send.
 
 The age limit bounds the admissions the ledger counts, not the ordering state the pairs keep (D181): the volatile
 pairs keep an ordering track for the repository's hour (`orderingTrackTtlMs`), because a receiver that forgot a track

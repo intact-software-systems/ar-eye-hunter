@@ -673,14 +673,13 @@ and it has no status list.
   workload family, not by ALM (D642): a receiver cannot compute it from the
   envelope, which carries only `expiresAtMs`
   (`packages/shared/al-contracts/al-contract.ts`).
-- Congestion duration has no measurable end (D651): the outbound runtime
-  decides congestion per attempt (`drop`, `defer`, `hand-over`), the
-  `congestion` diagnostic carries no instant and no clear action, and only the
-  RTC channel's own queue flush knows when its backpressure ended. Measuring it
-  needs a defined episode (for example a message's first `defer` to its
-  attempt's settlement) and an instant on the diagnostic. The maintainer ruled the episode (D656): a message's
-  first deferral to the settlement of its attempt, as a histogram and a count of episodes still open, with one
-  instant added to the congestion diagnostic; it is not built.
+- No lane cell asserts the congestion episode figure (D665): the `congestion` scenario cells read the action
+  counters only. A cell that holds a carrier backpressured, releases it and reads
+  `stats.rallar.alm.congestionEpisodes` needs the delta operator the paced cells also lack, or an invariant such
+  as `openEpisodes` of 0 after the release.
+- A congestion episode is keyed by carrier and message id (D665), so a message deferred on RTC and then on WS is two
+  episodes, and an attempt that settles `not-ready` for another reason than backpressure keeps the episode open
+  until the message sends or ends; whether either should read differently is the maintainer's.
 - Admission to native submission is not a stage figure (D651); it needs the
   carriers' `attempt-started` instant beside the stage's admission settlement.
 - The interpolating medians (two middle values averaged) stay in five

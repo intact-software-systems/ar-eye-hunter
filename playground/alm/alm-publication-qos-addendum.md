@@ -1536,10 +1536,12 @@ publishers and receipts, ordered entry and pacing. What the addendum still owes
 for those modes is its measurement half (§9) and the maintainer's adoption
 (§6). The publication figures in the stage are built, with one shared
 histogram and the local half of a same-regime baseline (D650 to D652; §9, "As
-applied (publication figures)"). The next outcomes, in this order, are
-make-before-break routing (D644) and a platform fault vocabulary, with an API instance stopped, paused or restarted,
-its database sessions cut, and seeded loss and delay on a browser carrier, that recipes can
-name. Receipt truth and the held-send path follow, proven with those steps; a
+applied (publication figures)"), and so are make-before-break routing (D644 to
+D646), the baseline over several runs per side (D664) and congestion duration
+(D665). The next outcome is a platform fault vocabulary, with an API instance
+stopped, paused or restarted, its database sessions cut, and seeded loss and
+delay on a browser carrier, that recipes can name. Receipt truth and the
+held-send path follow, proven with those steps; a
 retained admission then starts its `admitted` receipt only once its replay
 commits. With the figures in place and the contracts adopted, the addendum is
 complete for its advertised modes. The later outcomes below that no
@@ -1583,9 +1585,10 @@ owners and a first campaign on the three-replica fleet.
   ordered sends are measured by the 6b probe on room rows (counts in the Release 14
   record; the principal path is unmeasured). The path to it, as outcomes in
   order: a full-scope lane green on every carrier; publication figures in the
-  stage with one shared histogram (built, D650 to D652; congestion duration and
-  admission-to-native-submission age remain); the local half of a same-regime
-  baseline (built, D652; the hosted half and the median's band remain); a
+  stage with one shared histogram (built, D650 to D652, and congestion duration,
+  D665; admission-to-native-submission age remains); the local half of a
+  same-regime baseline (built, D652, over several runs per side, D664; the
+  hosted half remains); a
   fault-step vocabulary for the platform; a publication workload family on the scale
   builder; bottleneck probes at the owners; and a first campaign on the
   three-replica fleet.
@@ -1743,9 +1746,20 @@ refuses (a negative duration) is counted in `unrecordedSamples`, never thrown
 or clamped. The eight paced conformance cells end their sender with one stats
 read and assert those equalities and `submittedOpportunities` of at least 1,
 counts only, since a lane cell cannot assert a difference of two reads (D652).
-Congestion duration is not measured: the outbound runtime decides congestion
-per attempt and the `congestion` diagnostic carries no instant and no clear
-action, so the figure has no defined end (backlog). Delivered sample age is the
+Congestion duration is a per-message episode (D665): the `congestion` diagnostic
+carries `atMs`, the instant of its decision on the clock that stamps the
+delivery settlements, and one owner per connect measures from a message's first
+deferral on a carrier to the first attempt of it there that does not settle
+`not-ready`, or to its expiry. The report is
+`rallar.messages.readUsage().congestionEpisodes` and the harness's
+`stats.rallar.alm.congestionEpisodes`: `durationMs`, a `BoundedHistogram` on
+`AL_CONGESTION_EPISODE_BOUNDS_MS` (twelve bounds from 10 ms to 60 s),
+`openEpisodes`, the deferred messages no settlement has ended, and
+`unrecordedSamples`, the episodes let go at the bound of 1 024 open ones or
+stamped out of order, counted and never estimated. It covers every message a
+carrier deferred, relay forwards and controls included, across both carriers
+and cumulative over the connect; the harness refuses a histogram on other
+bounds. No lane cell asserts it yet (backlog). Delivered sample age is the
 workload family's, taken from payload timestamps (D642); a receiver cannot
 compute it from the envelope.
 

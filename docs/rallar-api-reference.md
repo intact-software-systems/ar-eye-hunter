@@ -1345,6 +1345,14 @@ over the connect: `staged`, `superseded`, `expired`, `refused`, `cancelled`,
 boundary left for a later one, counted at each boundary that left them). A
 connect that staged no live value reads zeros under the same limits.
 
+`rallar.messages.readUsage().congestionEpisodes` reads how long the connect's
+carriers held messages back for backpressure: `durationMs`, a bounded
+histogram of each episode from a message's first deferral to the settlement of
+the attempt that was not deferred again, `openEpisodes`, the deferred messages
+not yet settled, and `unrecordedSamples`, the episodes it could not measure.
+It is cumulative over the connect and counts every message a carrier deferred,
+a relayed copy included.
+
 `durability: 'local-checkpoint'` sits between `volatile` and `local-outbox`. The
 send is admitted and dispatched from memory and spends no storage operation on
 its way to the carrier; the tab that owns the session's work checkpoints what

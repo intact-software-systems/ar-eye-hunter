@@ -459,6 +459,12 @@ every session the page opens. The event's `data` is the event itself:
   delta — a concurrent commit on the same store (another sender, or the same
   sender's drain) lands in that window and is counted too
 
+- `congestion` carries `carrier`, `cause`, `action` (`drop`, `defer` or
+  `hand-over`), `priority`, `msgId` and `atMs`, the runtime clock's reading at
+  the decision: the same clock stamps the delivery settlements, so a `defer`
+  and the settlement of its attempt give a congestion episode's duration
+  (`stats.rallar.alm.congestionEpisodes`)
+
 - `rtc-handoff-refusal` carries `reason` (`rate-limited` or `circuit-open`) and
   `messageCount`: one event for each hand-off of the page's own sends or
   controls that the RTC carrier's per-session rate limiter or open circuit
