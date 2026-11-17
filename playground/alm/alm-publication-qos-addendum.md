@@ -1798,6 +1798,35 @@ regression is untested. The band was not widened and no figure dropped
 after the result; what the band or the figure should be for the median is open
 (D652). The local baseline is therefore not a regression gate for the median.
 
+As ruled (D656) and built (D664), each side of the comparison is several runs:
+`node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts
+--baseline <recorder-dir>... --candidate <recorder-dir>...` takes at least five
+recorder directories per side (`DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE`),
+a side's figure is the median of its runs by the shared nearest rank, the band is
+the same, and the report prints every run's value beside each median. A side
+with fewer runs is refused `too-few-runs`; the one-run-per-side form is gone.
+
+The re-check on one commit (`98c8885ae`, twenty all-local runs of manifest 19
+in two batches of ten, one regime key, all passed) does not make the median
+command time a stable figure. Its value per run was 80, 91, 76, 83, 76, 87, 77,
+105, 93 and 89 ms in the first batch and 114, 72, 71, 78, 46, 82, 52, 62, 69
+and 71 ms in the second. With five runs per side, the first batch read 77
+against 89 ms as a regression with alternate runs on each side and 80 against
+89 ms as a regression with its halves, and the second batch read 69 against
+72 ms as noise. With ten runs per side, the two batches against each other read
+83 against 71 ms as an improvement, and all twenty with alternate runs on each
+side read 76 against 82 ms as noise. So three of five comparisons of one commit
+with itself read outside the band: one of the three whose sides alternated in
+time, and both whose sides were taken one after the other. The machine ran other
+work throughout, with a one-minute load average of 8 to 11 during the first
+batch and 5 to 12 during the second, so the figure moves with what else the
+machine does more than a median of five or ten runs absorbs. The run duration
+read as noise in all five comparisons (37 780 to 39 637 ms over the twenty
+runs, a spread of 4.9 %). The band was not widened and no figure was dropped.
+The median command time is still not a local regression gate; what replaces it
+(a quiet machine, alternating runs as the protocol, another figure) is the
+maintainer's (backlog).
+
 The workload varies publication rate above/below cadence, N, drain
 message/byte budgets, payload size, key/group/consumer count, subscription and
 permission churn, relay depth, loss, browser frame load, and suspension. Prove

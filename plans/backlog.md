@@ -704,11 +704,12 @@ and it has no status list.
   counts need one (D652).
 - The bounded histogram has no quantile reader and no merge; the workload
   family adds them with its first reader (D650).
-- The local baseline's median command time is not stable inside its declared
-  band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
-  tell a regression from noise; the band or the figure for the median is the
-  maintainer's to set (D652). Ruled (D656): each side is several runs and the comparison uses the median of the
-  medians, in the same band, re-checked with a same-commit pair; it is not built.
+- The local baseline's median command time is not a regression figure, even as the median of several runs per
+  side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
+  against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
+  three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
+  noise in all five. Open for the maintainer: require a quiet machine, make alternating runs the protocol, or compare another
+  figure. The band is not widened.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
