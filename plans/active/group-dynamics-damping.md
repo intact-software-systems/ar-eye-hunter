@@ -313,7 +313,7 @@ promoted and all inside the previous layout's overlap, and attach, repair, and r
 15, 15, and 0: no reshape at all, where the earlier runs had rebuilt 3 to 5 of 15 tree leaves and
 5 to 8 of 15 mesh leaves. No plan rerouted a member: rerouted sessions were 0 at the maximum in
 every room, where earlier mesh rebuilds had rerouted up to 18. Both mesh rooms had all 30
-accepted layouts sampled for links and no member under k links. The drift against a fresh
+accepted layouts sampled for links and no member under k = 2 links (k was assumed in those runs). The drift against a fresh
 no-RTT plan was 0 hops in the star rooms in both runs. The tree rooms' accepted layout had a
 longest path of 4 hops against 5 (auto) and 4 against 4 (debounced) in the first run, and 5
 against 5 (auto) and 3 against 4 (debounced) in the final one. The rooms have no director, so a
@@ -325,8 +325,8 @@ leader's re-root was not exercised.
 for a reshape. It starts a managed API on Postgres (ports 18890-18892) and writes
 `topology-reshape-report.json` and a Markdown table under
 `tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`. It is run by hand and is not in CI. The churn
-command is unchanged and keeps its six rooms; the reshape command is a second command, not a combined room
-(maintainer rulings Q-1 and Q-2).
+command is unchanged and keeps its six rooms. The maintainer ruled two things: the reshape measurement is a
+second manual command, and there is no combined room that provokes everything at once.
 
 Each room shape runs under both re-planning modes, so there are ten rooms, with group ids
 `churn-<index>-<replanning>-<memberCount>`. Each report row is a phase: `formation`, `churn`, `ramp-up`,
@@ -354,7 +354,7 @@ limit). Thresholds are read from that configuration, never assumed.
   the matrix is sent again 32 s later. There is one claim per room per 30 s, because only the primary runs queue
   workers.
 
-**Expectations derived from the code** (these are what the tests pin, not run figures).
+**Expectations derived from the code and from sampling the planner** (not run figures).
 
 - Kind changes at 5 and 16 members going up and at 11 and 4 going down; in `flap` every step crosses one.
 - Leader re-root: appointing the deepest member does not always re-root. The planner's fresh tree rooted at the
@@ -428,8 +428,8 @@ no repair rerouted an uninvolved member.
   repairs those leaves. The leave-repair slice above answers both bullets about these leaves; runs 2 to 4
   stay as the record of the planner before it.
 - What the scenario did not exercise: no change of kind, no leader re-root and no RTT refinement
-  occurred, so the reshapes this plan was written to hold back were unmeasured in rate; the reshape
-  measurement above now provokes them, and its results follow. `auto` and
+  occurred, so the reshapes this plan was written to hold back were unmeasured in rate. The reshape
+  measurement above provokes them; its figures are recorded below once a run has been made. `auto` and
   `debounced` do not differ at this cadence: events are 3 s apart and the debounce window is 500 ms.
 
 Done when the report exists for `auto` and `debounced` rooms of three sizes, and per run counts the
@@ -508,8 +508,8 @@ browsers.
 2. **How far a patched graph drifts.** The accepted layout against the planner's own fresh no-RTT
    plan after 30 attaches and repairs: a star 0 extra hops, a tree 0 or 1 (0 in one run, 1 in the
    other: accepted 4, fresh plan 3). A mesh's drift is computed with the room's own k, read from the room's
-   effective configuration. RTT drift is measured only against made-up values: the reshape measurement sends
-   RTT reports, but they are not real RTT.
+   effective configuration. RTT drift stays unmeasured against real RTT: the reshape measurement sends
+   RTT reports, but the values are made up, and the drift read compares with a no-RTT plan.
 3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
    3, 8 and 20 in the formation plan. What a batch costs the members that accept the new edges
    needs browsers (edge setup time).

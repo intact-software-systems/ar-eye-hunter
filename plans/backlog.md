@@ -777,7 +777,7 @@ and it has no status list.
   rate, the only read of "absorbed".
 - Mesh drift: done for the mesh parameter. The measurement reads each room's effective topology configuration
   after the room is created (D655), so mesh drift is computed with the room's own k and the churn report no longer
-  assumes one. Still open: RTT drift is measured only against made-up values (the reshape measurement,
+  assumes one. Still open: RTT refinements are provoked only with made-up values (the reshape measurement,
   `npm run perf:api-v1:topology-reshapes`); real RTT needs browsers.
 - Restoring k after a leave: nothing in shared-graph restores a mesh member's k links; the churn report counts the
   members under k; if meshes thin under churn it is its own slice, taken to the maintainer (D657).
