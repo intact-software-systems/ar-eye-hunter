@@ -1209,10 +1209,13 @@ values, then bytes, is refused `capacity` with that `limit` and settles nothing 
 stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`; the stage appends
 the value and keeps the newest `retainNewest` with [`retainNewest`](../../cache/retain-newest.ts), the primitive the
 motion buffer's per-entity window shares. Staging on an idle lane
-opens an opportunity at once and wakes the engine; on a scheduled lane the value waits for that lane's boundary.
+opens an opportunity at once: the stage runs it itself after the staging returns, rather than waiting for an engine
+round, whose readiness probes include the durable lanes' storage reads, and hands it to the engine with
+`retainSettlingWork`, so a failure is reported and `stop` joins it. On a scheduled lane the value waits for that
+lane's boundary.
 
-The stage registers one task, at most one runnable at a time, on the session's `InboxOutboxEngine`; its `isWork`
-is "a lane is due" on the injected `Clock`. Each due lane runs one opportunity:
+The stage registers one task on the session's `InboxOutboxEngine`; its `isWork` is "a lane is due" on the injected
+`Clock`, and its opportunities run one at a time whichever path started them. Each due lane runs one opportunity:
 [`computeALPublicationSelection`](./publication/compute-al-publication-selection.ts) settles the values whose
 deadline passed `expired`, then takes the streams from the lane's cursor (`startIndex`), each oldest first, until the
 next value would pass `drain.messages` or `drain.bytes`; the rest wait, and the lane's cursor moves to the returned

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
@@ -147,7 +147,7 @@ describe('rallar.messages.readUsage', () => {
         expect(facade.messages.readUsage()).toMatchObject({ repliesHeld: 0, replyWaitsOpen: 0 });
     });
 
-    it('reads the publication stage beside the ledger: nothing with the connect\'s limits before a live send, then what it staged', async () => {
+    it('reads the publication stage beside the ledger: nothing with the connect\'s limits before a live send, then what it holds staged', async () => {
         const facade = createRallarTestFacade();
         await facade.connect();
 
@@ -168,6 +168,9 @@ describe('rallar.messages.readUsage', () => {
             access: 'members',
             publication: { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } }
         });
+        // The send that finds its lane idle is admitted at once (D469); the next waits staged for the lane's boundary.
+        await channel.sendWs({ x: 0 }, { scope: 'world', resourceId: 'entity-0', ttlMs: 60_000 });
+        await vi.waitFor(() => expect(facade.messages.readUsage().publication.counters.admitted).toBe(1));
         await channel.sendWs({ x: 1 }, { scope: 'world', resourceId: 'entity-1', ttlMs: 60_000 });
 
         const staged = facade.messages.readUsage().publication;
@@ -176,7 +179,7 @@ describe('rallar.messages.readUsage', () => {
             streams: 1,
             staged: 1,
             limits: STAGE_LIMITS,
-            counters: { ...NO_PUBLICATION_COUNTERS, staged: 1 }
+            counters: { ...NO_PUBLICATION_COUNTERS, staged: 2, admitted: 1 }
         });
         expect(staged.stagedBytes).toBeGreaterThan(0);
     });

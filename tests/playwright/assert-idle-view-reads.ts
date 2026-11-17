@@ -1,5 +1,7 @@
 import { expect, type Page, type Request } from '@playwright/test';
 
+export const socialViewReadPath = /^\/api\/(friends|parties|matchmaking)\/apps\//;
+
 export async function assertIdleViewReads(
     page: Page,
     view: 'social' | 'sessions' | 'tournaments' | 'moves'
@@ -12,7 +14,7 @@ export async function assertIdleViewReads(
             : view === 'tournaments'
             ? /^\/api\/tournaments\/apps\//.test(path)
             : view === 'social'
-            ? /^\/api\/(friends|parties|matchmaking)\/apps\//.test(path)
+            ? socialViewReadPath.test(path)
             : /^\/api\/state\/apps\/[^/]+\/workspaces\/[^/]+\/(group-sessions|groups\/[^/]+\/session)$/.test(path);
         if (request.method() === 'GET' && matches) {
             reads.push(new URL(request.url()).pathname);
