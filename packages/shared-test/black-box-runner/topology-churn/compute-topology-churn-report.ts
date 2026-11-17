@@ -79,6 +79,7 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly joinCount: number;
     readonly leaveCount: number;
     readonly appointmentCount: number;
+    /** The RTT reports the phase sent, accepted or not. */
     readonly rttReportCount: number;
     readonly planCount: number;
     readonly plansPerMinute: number | null;

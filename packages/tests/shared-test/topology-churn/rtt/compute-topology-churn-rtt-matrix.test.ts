@@ -52,6 +52,15 @@ function formFixtureTreeOfEight() {
     return { group, formed, roomRef };
 }
 
+/** A layout's links, each as `from|to` in canonical order. */
+function toLinks(layout: Pick<RallarOverlayTopologySnapshot, 'nextHopsBySessionId'>): ReadonlySet<string> {
+    return new Set(
+        Object.entries(layout.nextHopsBySessionId).flatMap(([sessionId, nextHops]) =>
+            nextHops.map((peerId) => sessionId < peerId ? `${sessionId}|${peerId}` : `${peerId}|${sessionId}`)
+        )
+    );
+}
+
 function countPairsBySessionId(pairs: readonly TopologyChurnRttPair[]): ReadonlyMap<string, number> {
     const counts = new Map<string, number>();
     for (const pair of pairs) {
@@ -252,11 +261,13 @@ describe('the RTT matrix against the real planner', () => {
     });
 
     it('the skewed matrix makes the planner rebuild the tree as a refinement', () => {
+        // Even a flat matrix refines this tree (see above) and keeps some of its links; the skew makes every one of the
+        // formed tree's links the slowest, so the rebuild keeps none of them.
         const { formed } = formFixtureTreeOfEight();
         const planned = replanWithMatrix(formed, 'skewed');
 
         expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
-        expect(planned.snapshot.nextHopsBySessionId).not.toEqual(formed.nextHopsBySessionId);
+        expect([...toLinks(planned.snapshot)].filter((link) => toLinks(formed).has(link))).toEqual([]);
     });
 
     it('the skewed matrix makes the planner rebuild, as a refinement, the tree the uniform matrix keeps', () => {

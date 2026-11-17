@@ -1,7 +1,7 @@
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
+import { isRtcRttCanonicalReporter, selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 
 export interface TopologyChurnRttPair {
     readonly sessionIdFrom: string;
@@ -83,7 +83,7 @@ function resolveRttMs(input: ComputeTopologyChurnRttMatrixInput, pair: TopologyC
 }
 
 function toCanonicalPair(sessionId: string, peerId: string): TopologyChurnRttPair {
-    return sessionId < peerId
+    return isRtcRttCanonicalReporter(sessionId, peerId)
         ? { sessionIdFrom: sessionId, sessionIdTo: peerId }
         : { sessionIdFrom: peerId, sessionIdTo: sessionId };
 }
