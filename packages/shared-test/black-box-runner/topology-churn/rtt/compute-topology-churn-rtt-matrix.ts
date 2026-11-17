@@ -12,10 +12,20 @@ export interface TopologyChurnRttReport extends TopologyChurnRttPair {
     readonly rttMs: number;
 }
 
-export type TopologyChurnRttMatrixShape = 'uniform' | 'skewed';
+export type TopologyChurnRttMatrixShape = 'uniform' | 'skewed' | 'shifting';
 
-/** Skewed: every layout link is slow and every other measured pair fast, so a weighted rebuild shortens the tree. */
-export const TOPOLOGY_CHURN_RTT_MS = { uniform: 50, layoutLink: 120, otherPair: 10 } as const;
+/**
+ * Skewed: every layout link is slow and every other measured pair fast, so a weighted rebuild shortens the tree.
+ * Shifting: pair i of a round's pairs measures base + step × ((i + round) mod 4), so every pair moves each round.
+ */
+export const TOPOLOGY_CHURN_RTT_MS = {
+    uniform: 50,
+    layoutLink: 120,
+    otherPair: 10,
+    shiftingBase: 20,
+    shiftingStep: 10
+} as const;
+const TOPOLOGY_CHURN_RTT_SHIFTING_LEVELS = 4;
 
 interface ComputeTopologyChurnRttPairsInput {
     readonly layout: Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId'>;
@@ -29,6 +39,8 @@ interface ComputeTopologyChurnRttMatrixInput {
     readonly pairs: readonly TopologyChurnRttPair[];
     readonly layout: Pick<RallarOverlayTopologySnapshot, 'nextHopsBySessionId'>;
     readonly shape: TopologyChurnRttMatrixShape;
+    /** The shifting matrix's round; uniform and skewed ignore it. */
+    readonly round: number;
 }
 
 /** The layout's links first, then each session's reporting selection, each endpoint in at most the limit's pairs. */
@@ -71,12 +83,16 @@ export function computeTopologyChurnRttPairs(
 export function computeTopologyChurnRttMatrix(
     input: ComputeTopologyChurnRttMatrixInput
 ): readonly TopologyChurnRttReport[] {
-    return input.pairs.map((pair) => ({ ...pair, rttMs: resolveRttMs(input, pair) }));
+    return input.pairs.map((pair, index) => ({ ...pair, rttMs: resolveRttMs(input, pair, index) }));
 }
 
-function resolveRttMs(input: ComputeTopologyChurnRttMatrixInput, pair: TopologyChurnRttPair): number {
+function resolveRttMs(input: ComputeTopologyChurnRttMatrixInput, pair: TopologyChurnRttPair, index: number): number {
     if (input.shape === 'uniform') {
         return TOPOLOGY_CHURN_RTT_MS.uniform;
+    }
+    if (input.shape === 'shifting') {
+        return TOPOLOGY_CHURN_RTT_MS.shiftingBase +
+            TOPOLOGY_CHURN_RTT_MS.shiftingStep * ((index + input.round) % TOPOLOGY_CHURN_RTT_SHIFTING_LEVELS);
     }
     const isLayoutLink = (input.layout.nextHopsBySessionId[pair.sessionIdFrom] ?? []).includes(pair.sessionIdTo);
     return isLayoutLink ? TOPOLOGY_CHURN_RTT_MS.layoutLink : TOPOLOGY_CHURN_RTT_MS.otherPair;

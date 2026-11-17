@@ -41,7 +41,7 @@ describe('TOPOLOGY_CHURN_ROOM_SPECS', () => {
 });
 
 describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
-    it('the reshape room set is a room of 4 that ramps and flaps, led rooms of 8 and 12 re-rooted quiet and under churn, and a room of 8 that reports RTT, under both modes', () => {
+    it('the reshape room set, per mode in order: kind 4, led 8, led 12, RTT tree 8, RTT mesh 20', () => {
         const kindPhases: readonly TopologyChurnPhaseSpec[] = [
             { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
             { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
@@ -51,20 +51,26 @@ describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
             { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
             { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' }
         ];
-        const rttPhases: readonly TopologyChurnPhaseSpec[] = [
+        const rttTreePhases: readonly TopologyChurnPhaseSpec[] = [
             { name: 'rtt-uniform', shape: 'rtt-repeat', matrix: 'uniform' },
             { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' }
+        ];
+        const rttMeshPhases: readonly TopologyChurnPhaseSpec[] = [
+            { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 120_000 },
+            { name: 'rtt-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'report-rtt' }
         ];
 
         expect(TOPOLOGY_RESHAPE_ROOM_SPECS).toEqual([
             { index: 0, replanning: 'auto', memberCount: 4, opensRttSockets: false, phases: kindPhases },
             { index: 1, replanning: 'auto', memberCount: 8, opensRttSockets: false, phases: leaderPhases },
             { index: 2, replanning: 'auto', memberCount: 12, opensRttSockets: false, phases: leaderPhases },
-            { index: 3, replanning: 'auto', memberCount: 8, opensRttSockets: true, phases: rttPhases },
-            { index: 4, replanning: 'debounced', memberCount: 4, opensRttSockets: false, phases: kindPhases },
-            { index: 5, replanning: 'debounced', memberCount: 8, opensRttSockets: false, phases: leaderPhases },
-            { index: 6, replanning: 'debounced', memberCount: 12, opensRttSockets: false, phases: leaderPhases },
-            { index: 7, replanning: 'debounced', memberCount: 8, opensRttSockets: true, phases: rttPhases }
+            { index: 3, replanning: 'auto', memberCount: 8, opensRttSockets: true, phases: rttTreePhases },
+            { index: 4, replanning: 'auto', memberCount: 20, opensRttSockets: true, phases: rttMeshPhases },
+            { index: 5, replanning: 'debounced', memberCount: 4, opensRttSockets: false, phases: kindPhases },
+            { index: 6, replanning: 'debounced', memberCount: 8, opensRttSockets: false, phases: leaderPhases },
+            { index: 7, replanning: 'debounced', memberCount: 12, opensRttSockets: false, phases: leaderPhases },
+            { index: 8, replanning: 'debounced', memberCount: 8, opensRttSockets: true, phases: rttTreePhases },
+            { index: 9, replanning: 'debounced', memberCount: 20, opensRttSockets: true, phases: rttMeshPhases }
         ]);
     });
 });

@@ -48,6 +48,11 @@ const RTT_PHASES: readonly TopologyChurnPhaseSpec[] = [
     { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' }
 ];
 
+const RTT_MESH_PHASES: readonly TopologyChurnPhaseSpec[] = [
+    { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 120_000 },
+    { name: 'rtt-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'report-rtt' }
+];
+
 export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs([
     {
         memberCount: 4,
@@ -60,5 +65,6 @@ export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toT
     },
     { memberCount: 8, opensRttSockets: false, phases: LEADER_PHASES },
     { memberCount: 12, opensRttSockets: false, phases: LEADER_PHASES },
-    { memberCount: 8, opensRttSockets: true, phases: RTT_PHASES }
+    { memberCount: 8, opensRttSockets: true, phases: RTT_PHASES },
+    { memberCount: 20, opensRttSockets: true, phases: RTT_MESH_PHASES }
 ]);

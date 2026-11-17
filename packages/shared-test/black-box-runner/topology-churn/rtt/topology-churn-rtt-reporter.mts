@@ -23,6 +23,7 @@ export namespace TopologyChurnRttReporter {
     export interface Report {
         readonly layout: Pick<RallarOverlayTopologySnapshot, 'activeSessionIds' | 'nextHopsBySessionId'>;
         readonly shape: TopologyChurnRttMatrixShape;
+        readonly round: number;
         readonly nowEpochMs: number;
     }
 }
@@ -66,7 +67,12 @@ export class TopologyChurnRttReporter {
             reportingDegreeLimit: DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
             reporterSessionIds: [...this.#socketsBySessionId.keys()]
         });
-        const reports = computeTopologyChurnRttMatrix({ pairs, layout: input.layout, shape: input.shape });
+        const reports = computeTopologyChurnRttMatrix({
+            pairs,
+            layout: input.layout,
+            shape: input.shape,
+            round: input.round
+        });
         for (const report of reports) {
             const socket = this.#getSocket(report.sessionIdFrom);
             socket.assertOpen();

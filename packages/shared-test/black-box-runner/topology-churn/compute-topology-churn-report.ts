@@ -33,7 +33,9 @@ export type TopologyChurnPhaseName =
     | 'leader'
     | 'leader-churn'
     | 'rtt-uniform'
-    | 'rtt-skewed';
+    | 'rtt-skewed'
+    | 'rtt-shift'
+    | 'rtt-churn';
 
 export interface TopologyChurnPhaseWindow {
     readonly name: TopologyChurnPhaseName;

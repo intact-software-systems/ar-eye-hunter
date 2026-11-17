@@ -210,10 +210,75 @@ describe('computeTopologyChurnPhaseSchedule', () => {
             name: 'rtt-skewed',
             durationMs: 38_000,
             steps: [
-                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'skewed' } },
-                { offsetMs: 32_000, action: { kind: 'report-rtt', matrix: 'skewed' } }
+                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'skewed', round: 0 } },
+                { offsetMs: 32_000, action: { kind: 'report-rtt', matrix: 'skewed', round: 0 } }
             ]
         });
+    });
+
+    it('a round every interval below the duration, numbered from 0', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 35_000 },
+            presentMemberCount: 20,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // 35 s at one round every 10 s: rounds at 0, 10 000, 20 000 and 30 000; 40 000 lies past the end.
+        expect(schedule).toEqual({
+            name: 'rtt-shift',
+            durationMs: 35_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'shifting', round: 0 } },
+                { offsetMs: 10_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 1 } },
+                { offsetMs: 20_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 2 } },
+                { offsetMs: 30_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 3 } }
+            ]
+        });
+        // The duration itself is no round: 120 s at 10 s holds twelve rounds, 0 to 11.
+        expect(
+            computeTopologyChurnPhaseSchedule({
+                spec: { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 120_000 },
+                presentMemberCount: 20,
+                topologyConfig: SERVED_TOPOLOGY_CONFIG
+            }).steps.map((step) => [step.offsetMs, step.action.kind === 'report-rtt' ? step.action.round : null])
+        ).toEqual(
+            Array.from({ length: 12 }, (_, index) => [index * 10_000, index])
+        );
+    });
+
+    it('interleaves a shifting report half an interval after every fourth membership slot', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'report-rtt' },
+            presentMemberCount: 20,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+        const toShift = (round: number) => ({ kind: 'report-rtt', matrix: 'shifting', round });
+
+        // 45 s holds 15 membership slots; slots 0, 4, 8 and 12 are followed by a report, numbered in offset order.
+        expect(schedule.name).toBe('rtt-churn');
+        expect(schedule.durationMs).toBe(45_000);
+        expect(schedule.steps).toHaveLength(19);
+        expect(schedule.steps.slice(0, 7)).toEqual([
+            { offsetMs: 0, action: { kind: 'join' } },
+            { offsetMs: 1_500, action: toShift(0) },
+            { offsetMs: 3_000, action: { kind: 'leave' } },
+            { offsetMs: 6_000, action: { kind: 'join' } },
+            { offsetMs: 9_000, action: { kind: 'leave' } },
+            { offsetMs: 12_000, action: { kind: 'join' } },
+            { offsetMs: 13_500, action: toShift(1) }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind === 'report-rtt')).toEqual([
+            { offsetMs: 1_500, action: toShift(0) },
+            { offsetMs: 13_500, action: toShift(1) },
+            { offsetMs: 25_500, action: toShift(2) },
+            { offsetMs: 37_500, action: toShift(3) }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind !== 'report-rtt')).toEqual(
+            Array.from({ length: 15 }, (_, index) => ({
+                offsetMs: index * 3_000,
+                action: { kind: index % 2 === 0 ? 'join' : 'leave' }
+            }))
+        );
     });
 });
 

@@ -35,21 +35,27 @@ function toPair(sessionIdFrom: string, sessionIdTo: string): TopologyChurnRttPai
     return { sessionIdFrom, sessionIdTo };
 }
 
-/** The fixture room of 8, formed without RTT by the real planner: a tree at the size-selected options. */
-function formFixtureTreeOfEight() {
-    const group = createRtcTopologyFixtureGroup(8);
+/** A fixture room formed without RTT by the real planner at the size-selected options. */
+function formFixtureRoom(memberCount: number) {
+    const group = createRtcTopologyFixtureGroup(memberCount);
     const formed = computeRtcTopologyFixturePlan({
         options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
         group,
         previous: undefined
     }).snapshot;
-    expect(formed.topology).toBe('tree');
     const roomRef: GroupRef = {
         applicationId: group.group.applicationId,
         workspaceId: group.group.workspaceId,
         groupId: group.group.groupId
     };
     return { group, formed, roomRef };
+}
+
+/** The fixture room of 8, formed without RTT by the real planner: a tree at the size-selected options. */
+function formFixtureTreeOfEight() {
+    const room = formFixtureRoom(8);
+    expect(room.formed.topology).toBe('tree');
+    return room;
 }
 
 /** A layout's links, each as `from|to` in canonical order. */
@@ -68,6 +74,38 @@ function countPairsBySessionId(pairs: readonly TopologyChurnRttPair[]): Readonly
         counts.set(pair.sessionIdTo, (counts.get(pair.sessionIdTo) ?? 0) + 1);
     }
     return counts;
+}
+
+interface RttRoundReplanInput {
+    readonly previous: RallarOverlayTopologySnapshot;
+    readonly shape: TopologyChurnRttMatrixShape;
+    readonly round: number;
+}
+
+/**
+ * Reports one round of the matrix over the pairs of the previous layout of its fixture room, as the members' browsers
+ * would, then replans the room as a claimed RTT refresh does; the kind stays the previous one.
+ */
+function replanWithRttRound(input: RttRoundReplanInput): ComputedRtcTopologyPlan {
+    const { previous } = input;
+    const { group, roomRef } = formFixtureRoom(previous.activeSessionIds.length);
+    const pairs = computeTopologyChurnRttPairs({
+        layout: previous,
+        roomRef,
+        reportingDegreeLimit: 5,
+        reporterSessionIds: previous.activeSessionIds
+    });
+    const measurements = computeTopologyChurnRttMatrix({ pairs, layout: previous, shape: input.shape, round: input.round })
+        .map((report, index) => createRtcTopologyRttMeasurement({ ...report, version: index + 1 }));
+    const planned = computeRtcTopologyFixturePlan({
+        options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+        group,
+        previous,
+        planningIntent: 'full-rebuild',
+        rttMeasurements: measurements
+    });
+    expect(planned.snapshot.topology).toBe(previous.topology);
+    return planned;
 }
 
 describe('computeTopologyChurnRttPairs', () => {
@@ -193,7 +231,7 @@ describe('computeTopologyChurnRttMatrix', () => {
     const pairs = [toPair('a', 'b'), toPair('a', 'c'), toPair('b', 'c')];
 
     it('uniform reports one value for every pair', () => {
-        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'uniform' })).toEqual([
+        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'uniform', round: 0 })).toEqual([
             { sessionIdFrom: 'a', sessionIdTo: 'b', rttMs: 50 },
             { sessionIdFrom: 'a', sessionIdTo: 'c', rttMs: 50 },
             { sessionIdFrom: 'b', sessionIdTo: 'c', rttMs: 50 }
@@ -201,11 +239,48 @@ describe('computeTopologyChurnRttMatrix', () => {
     });
 
     it('skewed makes layout links slow and other pairs fast', () => {
-        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'skewed' })).toEqual([
+        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'skewed', round: 0 })).toEqual([
             { sessionIdFrom: 'a', sessionIdTo: 'b', rttMs: 120 },
             { sessionIdFrom: 'a', sessionIdTo: 'c', rttMs: 10 },
             { sessionIdFrom: 'b', sessionIdTo: 'c', rttMs: 120 }
         ]);
+    });
+
+    it('uniform and skewed ignore the round', () => {
+        for (const shape of ['uniform', 'skewed'] as const) {
+            expect(computeTopologyChurnRttMatrix({ pairs, layout, shape, round: 3 })).toEqual(
+                computeTopologyChurnRttMatrix({ pairs, layout, shape, round: 0 })
+            );
+        }
+    });
+
+    it('shifting changes every pair\'s value from one round to the next', () => {
+        // Pair i measures 20 + 10 × ((i + round) mod 4) ms.
+        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'shifting', round: 0 })).toEqual([
+            { sessionIdFrom: 'a', sessionIdTo: 'b', rttMs: 20 },
+            { sessionIdFrom: 'a', sessionIdTo: 'c', rttMs: 30 },
+            { sessionIdFrom: 'b', sessionIdTo: 'c', rttMs: 40 }
+        ]);
+        expect(computeTopologyChurnRttMatrix({ pairs, layout, shape: 'shifting', round: 1 })).toEqual([
+            { sessionIdFrom: 'a', sessionIdTo: 'b', rttMs: 30 },
+            { sessionIdFrom: 'a', sessionIdTo: 'c', rttMs: 40 },
+            { sessionIdFrom: 'b', sessionIdTo: 'c', rttMs: 50 }
+        ]);
+    });
+
+    it('shifting values repeat every four rounds and stay between 20 and 50 ms', () => {
+        const toRttMs = (round: number): readonly number[] =>
+            computeTopologyChurnRttMatrix({ pairs, layout, shape: 'shifting', round }).map((report) => report.rttMs);
+
+        expect([0, 1, 2, 3, 4, 5].map(toRttMs)).toEqual([
+            [20, 30, 40],
+            [30, 40, 50],
+            [40, 50, 20],
+            [50, 20, 30],
+            [20, 30, 40],
+            [30, 40, 50]
+        ]);
+        expect(toRttMs(11)).toEqual(toRttMs(7));
     });
 });
 
@@ -215,25 +290,7 @@ describe('the RTT matrix against the real planner', () => {
         previous: RallarOverlayTopologySnapshot,
         shape: TopologyChurnRttMatrixShape
     ): ComputedRtcTopologyPlan {
-        const { group, roomRef } = formFixtureTreeOfEight();
-        const pairs = computeTopologyChurnRttPairs({
-            layout: previous,
-            roomRef,
-            reportingDegreeLimit: 5,
-            reporterSessionIds: previous.activeSessionIds
-        });
-        const measurements = computeTopologyChurnRttMatrix({ pairs, layout: previous, shape }).map((report, index) =>
-            createRtcTopologyRttMeasurement({ ...report, version: index + 1 })
-        );
-        const planned = computeRtcTopologyFixturePlan({
-            options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
-            group,
-            previous,
-            planningIntent: 'full-rebuild',
-            rttMeasurements: measurements
-        });
-        expect(planned.snapshot.topology).toBe('tree');
-        return planned;
+        return replanWithRttRound({ previous, shape, round: 0 });
     }
 
     /** The tree the uniform matrix leaves the fixture room with, as the measurement's uniform phase does. */
@@ -278,5 +335,34 @@ describe('the RTT matrix against the real planner', () => {
 
         expect(planned.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
         expect(planned.snapshot.nextHopsBySessionId).not.toEqual(refined.nextHopsBySessionId);
+    });
+});
+
+describe('the shifting matrix against the real planner', () => {
+    it('consecutive shifting rounds make the planner rebuild the mesh as a refinement each time, with different links', () => {
+        // A claimed RTT refresh of a mesh rebuilds it over the complete room graph with no gain test. The next round's
+        // pairs follow the rebuilt layout, so its values move even without the round's shift (round 0 twice also
+        // rebuilds with different links); the next test isolates the shift.
+        const { formed } = formFixtureRoom(20);
+        expect(formed.topology).toBe('mesh');
+
+        const first = replanWithRttRound({ previous: formed, shape: 'shifting', round: 0 });
+        const second = replanWithRttRound({ previous: first.snapshot, shape: 'shifting', round: 1 });
+
+        expect(first.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
+        expect(second.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
+        expect(second.snapshot.nextHopsBySessionId).not.toEqual(first.snapshot.nextHopsBySessionId);
+    });
+
+    it('the next round over an unchanged mesh makes the planner rebuild it with different links', () => {
+        // Rounds come every 10 s and a room claims at most one refinement every 30 s, so a round often finds the
+        // layout the round before it reported over: the same pairs, and only the round moves their values.
+        const { formed } = formFixtureRoom(20);
+
+        const roundZero = replanWithRttRound({ previous: formed, shape: 'shifting', round: 0 });
+        const roundOne = replanWithRttRound({ previous: formed, shape: 'shifting', round: 1 });
+
+        expect(roundOne.derivation).toEqual({ method: 'rebuilt', reason: 'refinement' });
+        expect(roundOne.snapshot.nextHopsBySessionId).not.toEqual(roundZero.snapshot.nextHopsBySessionId);
     });
 });

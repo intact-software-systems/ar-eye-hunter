@@ -30,7 +30,7 @@ import type { TopologyChurnRoomSpec } from './phases/topology-churn-room-specs.t
 import { resolveNewPromotionSighting } from './resolve-new-promotion-sighting.ts';
 import { resolveTopologyChurnEvent, type TopologyChurnEvent } from './resolve-topology-churn-event.ts';
 import { resolveTopologyChurnOutcome, type TopologyChurnOutcome } from './resolve-topology-churn-outcome.ts';
-import { TOPOLOGY_CHURN_RTT_MS, type TopologyChurnRttMatrixShape } from './rtt/compute-topology-churn-rtt-matrix.ts';
+import { TOPOLOGY_CHURN_RTT_MS } from './rtt/compute-topology-churn-rtt-matrix.ts';
 import { TopologyChurnRttReporter } from './rtt/topology-churn-rtt-reporter.mts';
 import type { TopologyChurnWsEndpoint } from './rtt/topology-churn-rtt-socket.mts';
 import { toTopologyChurnLinkSample, type TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
@@ -324,7 +324,7 @@ export class TopologyChurnScenario {
 
     async #applyStep(room: ChurnRoom, action: TopologyChurnAction): Promise<TopologyChurnEvent> {
         if (action.kind === 'report-rtt') {
-            return await this.#reportRtt(room, action.matrix);
+            return await this.#reportRtt(room, action);
         }
         if (action.kind === 'appoint') {
             const leader = await appointTopologyChurnLeader({
@@ -356,11 +356,19 @@ export class TopologyChurnScenario {
         return event;
     }
 
-    async #reportRtt(room: ChurnRoom, matrix: TopologyChurnRttMatrixShape): Promise<TopologyChurnEvent> {
+    async #reportRtt(
+        room: ChurnRoom,
+        action: Extract<TopologyChurnAction, { kind: 'report-rtt'; }>
+    ): Promise<TopologyChurnEvent> {
         const layout = await this.#input.api.readAcceptedLayout(room.creator, room.roomRef);
         return {
             kind: 'rtt-reports',
-            reportCount: room.rttReporter.report({ layout, shape: matrix, nowEpochMs: this.#input.clock.nowEpochMs() })
+            reportCount: room.rttReporter.report({
+                layout,
+                shape: action.matrix,
+                round: action.round,
+                nowEpochMs: this.#input.clock.nowEpochMs()
+            })
         };
     }
 
