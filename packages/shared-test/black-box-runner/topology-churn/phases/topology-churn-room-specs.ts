@@ -33,3 +33,12 @@ const NINETY_SECOND_CHURN_PHASES: readonly TopologyChurnPhaseSpec[] = [{
 export const TOPOLOGY_CHURN_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs(
     [3, 8, 20].map((memberCount) => ({ memberCount, phases: NINETY_SECOND_CHURN_PHASES }))
 );
+
+export const TOPOLOGY_RESHAPE_ROOM_SPECS: readonly TopologyChurnRoomSpec[] = toTopologyChurnRoomSpecs([{
+    memberCount: 4,
+    phases: [
+        { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
+        { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
+        { name: 'flap', shape: 'alternate', durationMs: 90_000 }
+    ]
+}]);

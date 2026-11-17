@@ -24,7 +24,7 @@ import { computeValuesByKey } from './compute-values-by-key.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
 import type { TopologyChurnLinkSample } from './to-topology-churn-link-sample.ts';
 
-export type TopologyChurnPhaseName = 'formation' | 'churn';
+export type TopologyChurnPhaseName = 'formation' | 'churn' | 'ramp-up' | 'ramp-down' | 'flap';
 
 export interface TopologyChurnPhaseWindow {
     readonly name: TopologyChurnPhaseName;

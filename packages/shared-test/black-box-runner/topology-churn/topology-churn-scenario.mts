@@ -33,7 +33,6 @@ import type { TopologyChurnApi, TopologyChurnMember, TopologyChurnSession } from
 const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
 export const TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS = 30_000;
-export const TOPOLOGY_CHURN_REPORT_FILE = 'topology-churn-report.json';
 
 export interface TopologyChurnClock {
     nowEpochMs(): number;
@@ -49,6 +48,8 @@ export namespace TopologyChurnScenario {
         /** The cluster's API processes; members are spread over them, the first serves the operator reads. */
         readonly apiBaseUrls: readonly string[];
         readonly rooms: readonly TopologyChurnRoomSpec[];
+        /** The report's file name in the artifact directory. */
+        readonly reportFile: string;
     }
 }
 
@@ -111,7 +112,7 @@ export class TopologyChurnScenario {
             rooms.push(await this.#runRoom(spec, context));
         }
         await writeFile(
-            join(this.#input.artifactDir, TOPOLOGY_CHURN_REPORT_FILE),
+            join(this.#input.artifactDir, this.#input.reportFile),
             JSON.stringify(toReport(this.#input.rooms, rooms, config.rtcReplacedLayoutOverlapMs), null, 2)
         );
         console.log(rooms.map(toTopologyChurnMarkdownTable).join('\n\n'));
@@ -134,7 +135,7 @@ export class TopologyChurnScenario {
         }
         catch (error) {
             throw new Error(
-                `The ${spec.replanning} room of ${spec.memberCount} members failed while ${progress.step}: ` +
+                `Room ${spec.index}, the ${spec.replanning} room of ${spec.memberCount} members, failed while ${progress.step}: ` +
                     String(error),
                 { cause: error }
             );
@@ -152,7 +153,7 @@ export class TopologyChurnScenario {
         const roomRef: GroupRef = {
             applicationId: APPLICATION_ID,
             workspaceId: this.#workspaceId,
-            groupId: `churn-${spec.replanning}-${spec.memberCount}`
+            groupId: `churn-${spec.index}-${spec.replanning}-${spec.memberCount}`
         };
         const creator = await this.#signIn(this.#createMember(spec));
         await this.#input.api.createRoom({ creator, roomRef, topology: toTopologyChurnPolicy(spec.replanning) });
@@ -249,7 +250,12 @@ export class TopologyChurnScenario {
         let startedAtEpochMs = formationEndedAtEpochMs;
         for (const phase of room.spec.phases) {
             room.progress.step = `running the ${phase.name} phase`;
-            const run = await this.#runPhase(room, computeTopologyChurnPhaseSchedule(phase), startedAtEpochMs);
+            const schedule = computeTopologyChurnPhaseSchedule({
+                spec: phase,
+                presentMemberCount: room.present.length,
+                topologyConfig: room.topologyConfig
+            });
+            const run = await this.#runPhase(room, schedule, startedAtEpochMs);
             runs.push(run);
             startedAtEpochMs = run.endedAtEpochMs;
         }

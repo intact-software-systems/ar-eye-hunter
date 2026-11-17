@@ -1,6 +1,7 @@
 import type { TopologyChurnPhaseSpec } from '@shared-test/black-box-runner/topology-churn/phases/compute-topology-churn-phase-schedule.ts';
 import {
     TOPOLOGY_CHURN_ROOM_SPECS,
+    TOPOLOGY_RESHAPE_ROOM_SPECS,
     toTopologyChurnRoomSpecs
 } from '@shared-test/black-box-runner/topology-churn/phases/topology-churn-room-specs.ts';
 import { describe, expect, it } from 'vitest';
@@ -36,5 +37,28 @@ describe('TOPOLOGY_CHURN_ROOM_SPECS', () => {
             { index: 4, replanning: 'debounced', memberCount: 8, phases: [NINETY_SECOND_CHURN] },
             { index: 5, replanning: 'debounced', memberCount: 20, phases: [NINETY_SECOND_CHURN] }
         ]);
+    });
+});
+
+describe('TOPOLOGY_RESHAPE_ROOM_SPECS', () => {
+    it('the reshape room set is a room of 4 that ramps up, ramps down and flaps for 90 s, under both modes', () => {
+        const phases: readonly TopologyChurnPhaseSpec[] = [
+            { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' },
+            { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' },
+            { name: 'flap', shape: 'alternate', durationMs: 90_000 }
+        ];
+
+        expect(TOPOLOGY_RESHAPE_ROOM_SPECS).toEqual([
+            { index: 0, replanning: 'auto', memberCount: 4, phases },
+            { index: 1, replanning: 'debounced', memberCount: 4, phases }
+        ]);
+    });
+});
+
+describe('the exported room sets', () => {
+    it('number every room of a set uniquely, since the room\'s group id is derived from its index', () => {
+        for (const roomSpecs of [TOPOLOGY_CHURN_ROOM_SPECS, TOPOLOGY_RESHAPE_ROOM_SPECS]) {
+            expect(new Set(roomSpecs.map((spec) => spec.index)).size).toBe(roomSpecs.length);
+        }
     });
 });
