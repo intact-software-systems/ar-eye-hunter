@@ -12,6 +12,7 @@ import {
 } from '@shared-test/rallar-bb-test/distributed-run-performance/distributed-run-environment.ts';
 import {
     DISTRIBUTED_RUN_LOCAL_BASELINE_BAND,
+    DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE,
     toDistributedRunBaselineFigures
 } from '@shared-test/rallar-bb-test/distributed-run-performance/to-distributed-run-baseline-figures.ts';
 import { decodePlainRecord } from '@shared/api/exact-object-decoding.ts';
@@ -22,9 +23,10 @@ import {
 } from '@shared/measurement/compute-same-regime-comparison.ts';
 import { Either, Try } from '@shared/resilience/Either.ts';
 
-const USAGE =
-    'Usage: node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts <baseline-recorder-dir> <candidate-recorder-dir>\n' +
-    'Each directory is an all-local observation recorder directory: the one that contains observation/.';
+const USAGE = 'Usage: node --import tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts ' +
+    '--baseline <recorder-dir>... --candidate <recorder-dir>...\n' +
+    `Each side is at least ${DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE} all-local observation recorder ` +
+    'directories of one build: the directories that contain observation/.';
 
 const RUN_FILES = {
     provenance: 'provenance.json',
@@ -42,6 +44,24 @@ interface LocalBaselineRunTexts {
 interface LocalBaselineReport {
     readonly lines: readonly string[];
     readonly exitCode: 0 | 1;
+}
+
+interface LocalBaselineSides {
+    readonly baseline: readonly string[];
+    readonly candidate: readonly string[];
+}
+
+export function decodeLocalBaselineSides(argv: readonly string[]): Either<string, LocalBaselineSides> {
+    const candidateFlagIndex = argv.indexOf('--candidate');
+    const baseline = argv.slice(1, Math.max(candidateFlagIndex, 1));
+    const candidate = candidateFlagIndex < 0 ? [] : argv.slice(candidateFlagIndex + 1);
+    const directories = [...baseline, ...candidate];
+    return argv[0] !== '--baseline' ||
+            baseline.length === 0 ||
+            candidate.length === 0 ||
+            directories.some((directory) => directory.startsWith('--'))
+        ? Either.ofLeft(USAGE)
+        : Either.ofRight({ baseline, candidate });
 }
 
 function toRunFilePath(recorderDirectory: string, name: string): string {
@@ -93,8 +113,9 @@ export function decodeLocalBaselineRun(
 }
 
 const REFUSAL_REASONS: Readonly<Record<SameRegimeComparison.Refusal['kind'], string>> = {
+    'too-few-runs': `fewer than ${DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE} runs on`,
     'different-regime': 'the regimes differ in',
-    'different-figures': 'only one run reports',
+    'different-figures': 'not every run reports',
     'non-finite-figures': 'a run reports a figure that is not a finite number:'
 };
 
@@ -104,10 +125,11 @@ function toRefusalLine(refusal: SameRegimeComparison.Refusal): string {
 
 function toComparisonReport(comparison: SameRegimeComparison): LocalBaselineReport {
     if (comparison.figures.length === 0) {
-        return { lines: ['not comparable: neither run reports a figure'], exitCode: 1 };
+        return { lines: ['not comparable: no run reports a figure'], exitCode: 1 };
     }
     const lines = comparison.figures.map((figure) =>
-        `${figure.name} baseline ${figure.baseline} candidate ${figure.candidate} ${figure.verdict}`
+        `${figure.name} baseline ${figure.baseline} (${figure.baselineRuns.join(', ')}) ` +
+        `candidate ${figure.candidate} (${figure.candidateRuns.join(', ')}) ${figure.verdict}`
     );
     const regressed = comparison.figures.filter((figure) => figure.verdict === 'regression');
     return regressed.length === 0
@@ -152,14 +174,27 @@ async function readLocalBaselineRun(
     });
 }
 
+async function readLocalBaselineSide(
+    recorderDirectories: readonly string[]
+): Promise<Either<readonly string[], readonly SameRegimeComparison.Run[]>> {
+    const runs = await Promise.all(recorderDirectories.map(readLocalBaselineRun));
+    const issues = runs.flatMap((run) => run.left ?? []);
+    return issues.length > 0
+        ? Either.ofLeft(issues)
+        : Either.ofRight(runs.flatMap((run) => (run.right === undefined ? [] : [run.right])));
+}
+
 async function main(): Promise<void> {
-    const directories = process.argv.slice(2);
-    if (directories.length !== 2) {
-        console.error(USAGE);
+    const sides = decodeLocalBaselineSides(process.argv.slice(2));
+    if (sides.right === undefined) {
+        console.error(sides.left);
         process.exitCode = 1;
         return;
     }
-    const [baseline, candidate] = await Promise.all(directories.map(readLocalBaselineRun));
+    const [baseline, candidate] = await Promise.all([
+        readLocalBaselineSide(sides.right.baseline),
+        readLocalBaselineSide(sides.right.candidate)
+    ]);
     if (baseline.right === undefined || candidate.right === undefined) {
         [...(baseline.left ?? []), ...(candidate.left ?? [])].forEach((issue) => console.error(issue));
         process.exitCode = 1;
@@ -168,7 +203,8 @@ async function main(): Promise<void> {
     const report = toLocalBaselineReport(computeSameRegimeComparison({
         baseline: baseline.right,
         candidate: candidate.right,
-        band: DISTRIBUTED_RUN_LOCAL_BASELINE_BAND
+        band: DISTRIBUTED_RUN_LOCAL_BASELINE_BAND,
+        minimumRunsPerSide: DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE
     }));
     report.lines.forEach((line) => (report.exitCode === 0 ? console.log(line) : console.error(line)));
     process.exitCode = report.exitCode;
