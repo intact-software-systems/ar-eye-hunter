@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { runManagedClusterProof } from '../cluster-proofs/run-managed-cluster-proof.mts';
+import { TOPOLOGY_CHURN_ROOM_SPECS } from './phases/topology-churn-room-specs.ts';
 import { TopologyChurnApi } from './topology-churn-api.mts';
 import {
     TOPOLOGY_CHURN_REPORT_FILE,
@@ -21,11 +22,13 @@ async function runTopologyChurnMeasurement(): Promise<void> {
                 }),
                 clock: createDefaultTopologyChurnClock(),
                 artifactDir: scenario.artifactDir,
-                apiBaseUrls: scenario.plans.map((plan) => plan.baseUrl)
+                apiBaseUrls: scenario.plans.map((plan) => plan.baseUrl),
+                rooms: TOPOLOGY_CHURN_ROOM_SPECS
             }).run()
     });
     console.log(
-        `PASS: six rooms formed, churned and converged. Report: ${join(artifactDir, TOPOLOGY_CHURN_REPORT_FILE)}`
+        `PASS: ${TOPOLOGY_CHURN_ROOM_SPECS.length} rooms formed, ran their phases and converged. ` +
+            `Report: ${join(artifactDir, TOPOLOGY_CHURN_REPORT_FILE)}`
     );
 }
 

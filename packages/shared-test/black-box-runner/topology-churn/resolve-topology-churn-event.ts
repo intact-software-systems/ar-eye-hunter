@@ -1,12 +1,14 @@
+import type { TopologyChurnAction } from './phases/compute-topology-churn-phase-schedule.ts';
+
 export interface TopologyChurnPresentMember {
     readonly memberId: string;
     readonly presentSinceEpochMs: number;
 }
 
 interface ResolveTopologyChurnEventInput {
+    readonly action: TopologyChurnAction;
     readonly presentMembers: readonly TopologyChurnPresentMember[];
     readonly creatorMemberId: string;
-    readonly eventIndex: number;
 }
 
 /** `skip` is a leave turn with no member but the creator present. */
@@ -16,7 +18,7 @@ export type TopologyChurnEvent =
     | { readonly kind: 'skip'; };
 
 export function resolveTopologyChurnEvent(input: ResolveTopologyChurnEventInput): TopologyChurnEvent {
-    if (input.eventIndex % 2 === 0) {
+    if (input.action.kind === 'join') {
         return { kind: 'join' };
     }
     const leaver = input.presentMembers
