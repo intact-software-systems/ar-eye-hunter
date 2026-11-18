@@ -5,6 +5,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import type { RuntimeStateConditionalWrite } from '../../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { computeAppOutboxInsert, type AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
@@ -19,8 +20,7 @@ import {
     type RtcTopologyRttRefreshWork
 } from '../../mutation/rtc-topology-outbox-entry.ts';
 import {
-    computeRtcTopologyReshapeGateWrite,
-    type RtcTopologyReshapeGateWrite
+    computeRtcTopologyReshapeGateWrite
 } from '../../persistence/rtc-topology-reshape-gate-store.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { ComputedTopologyReshapeGate } from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
@@ -232,7 +232,7 @@ function readTopologyWorkTarget(accepted: TransactedRtcTopologyWork): RallarOver
 function computeReshapeGateWrite(
     accepted: TransactedRtcTopologyWork,
     storedRevision: number | null
-): RtcTopologyReshapeGateWrite | null {
+): RuntimeStateConditionalWrite | null {
     if (accepted.decision !== 'accepted' && accepted.decision !== 'skipped-unchanged') {
         return null;
     }

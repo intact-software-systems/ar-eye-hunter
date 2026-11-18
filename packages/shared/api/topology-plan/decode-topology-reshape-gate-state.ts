@@ -3,11 +3,8 @@ import type { BackoffGateState } from '../../resilience/backoff-gate.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonValue } from '../api-json-value.ts';
 import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
-import {
-    HELD_TOPOLOGY_RESHAPE_REASONS,
-    type HeldTopologyReshapeReason,
-    type TopologyReshapeGateState
-} from './topology-reshape-gate.ts';
+import { decodeCanonicalSubset } from './decode-canonical-subset.ts';
+import { HELD_TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeGateState } from './topology-reshape-gate.ts';
 
 const STATE_KEYS = ['gate', 'wantedReasons'] as const satisfies readonly (keyof TopologyReshapeGateState)[];
 const GATE_KEYS = [
@@ -22,7 +19,11 @@ export function decodeTopologyReshapeGateState(value: ApiJsonValue): Either<stri
         return Either.ofLeft('Topology reshape gate state must be an exact object with gate and wantedReasons');
     }
     const gate = decodeBackoffGateState(getOwnField(fields, 'gate'));
-    const wantedReasons = decodeHeldTopologyReshapeReasons(getOwnField(fields, 'wantedReasons'));
+    const wantedReasons = decodeCanonicalSubset(
+        getOwnField(fields, 'wantedReasons'),
+        HELD_TOPOLOGY_RESHAPE_REASONS,
+        'Topology reshape gate wantedReasons'
+    );
     if (gate.right === undefined || wantedReasons.right === undefined) {
         return Either.ofLeft(gate.left ?? wantedReasons.left ?? 'Topology reshape gate state is invalid');
     }
@@ -44,17 +45,6 @@ function decodeBackoffGateState(value: ApiJsonValue): Either<string, BackoffGate
         return Either.ofLeft('Topology reshape gate heldAtEpochMs must be null before the first pass');
     }
     return Either.ofRight({ lastPassAtEpochMs, consecutiveHeldPasses, heldAtEpochMs });
-}
-
-function decodeHeldTopologyReshapeReasons(value: ApiJsonValue): Either<string, readonly HeldTopologyReshapeReason[]> {
-    if (!Array.isArray(value)) {
-        return Either.ofLeft('Topology reshape gate wantedReasons must be an array');
-    }
-    const reasons = HELD_TOPOLOGY_RESHAPE_REASONS.filter((reason) => value.includes(reason));
-    if (reasons.length !== value.length || reasons.some((reason, index) => reason !== value[index])) {
-        return Either.ofLeft('Topology reshape gate wantedReasons must be known, unique and in canonical order');
-    }
-    return Either.ofRight(reasons);
 }
 
 /** Null for an own null field, the count for a non-negative safe integer, else undefined. */

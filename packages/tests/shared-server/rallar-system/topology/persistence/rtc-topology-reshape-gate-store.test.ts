@@ -4,7 +4,8 @@ import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-st
 import { RtcTopologyRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/persistence/rtc-topology-errors.ts';
 import {
     computeRtcTopologyReshapeGateWrite,
-    decodeStoredTopologyReshapeGate
+    decodeStoredTopologyReshapeGate,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
@@ -22,7 +23,9 @@ describe('RTC topology reshape gate store', () => {
         const write = computeRtcTopologyReshapeGateWrite(GROUP_REF, HELD_STATE, 4);
 
         expect(write).toMatchObject({
+            namespace: RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
             key: groupStateGroupStorageKey(GROUP_REF),
+            operation: 'update',
             expectedRevision: 4,
             expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
         });
@@ -30,7 +33,7 @@ describe('RTC topology reshape gate store', () => {
     });
 
     it('a first gate write inserts where no row is stored', () => {
-        expect(computeRtcTopologyReshapeGateWrite(GROUP_REF, HELD_STATE, null).expectedRevision).toBeNull();
+        expect(computeRtcTopologyReshapeGateWrite(GROUP_REF, HELD_STATE, null).operation).toBe('insert');
     });
 
     it('a stored value naming another room is corruption', () => {

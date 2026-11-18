@@ -1,6 +1,7 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { runInPSqlTransaction } from '../../../../postgres/run-in-p-sql-transaction.ts';
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import type { RuntimeStateConditionalWrite } from '../../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
     writeAppOutboxInserts,
@@ -8,7 +9,6 @@ import {
 } from '../../../app-outbox/app-outbox-insert.ts';
 import type { RtcTopologyMutationComputed } from '../../mutation/rtc-topology-mutations.ts';
 import type { RtcTopologyExecutionRepository } from '../../persistence/rtc-topology-execution-repository.ts';
-import type { RtcTopologyReshapeGateWrite } from '../../persistence/rtc-topology-reshape-gate-store.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
     computeRtcTopologyPublicationOutboxWrites
@@ -31,7 +31,7 @@ export interface RtcTopologyPublicationTransactionWrite {
     readonly connectWrites: readonly AppOutboxInsert[];
     readonly fingerprint: RtcTopologyInputFingerprintWrite | null;
     /** The room's next reshape gate state; null when the work leaves the gate as it is. */
-    readonly reshapeGate: RtcTopologyReshapeGateWrite | null;
+    readonly reshapeGate: RuntimeStateConditionalWrite | null;
     /** The row that wakes the room when a held reshape's gate opens; null when none is due. */
     readonly reshapeDueWrite: AppOutboxInsert | null;
     readonly delivery: RtcTopologyPublicationDeliveryWrite | null;

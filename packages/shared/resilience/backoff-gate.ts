@@ -59,6 +59,11 @@ export function computeBackoffGateHold(state: BackoffGateState, nowEpochMs: numb
     return { ...state, heldAtEpochMs: nowEpochMs };
 }
 
+/**
+ * The count the next interval doubles by, in three cases: a pass that had been held first, within twice the interval
+ * of the last pass, counts one more, unless the interval is already the upper bound; otherwise a pass through an open
+ * gate resets the count, and a pass through a closed gate with nothing held keeps it.
+ */
 function computeNextHeldPasses(input: ComputeBackoffGatePassInput): number {
     const { state, bounds, nowEpochMs } = input;
     if (state === null || state.lastPassAtEpochMs === null) {

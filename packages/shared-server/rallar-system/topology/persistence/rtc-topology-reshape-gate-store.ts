@@ -5,6 +5,10 @@ import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topolog
 import { getOwnField } from '@shared/encoding/get-own-field.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import {
+    computeRuntimeStateConditionalWrite,
+    type RuntimeStateConditionalWrite
+} from '../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { groupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
@@ -16,14 +20,6 @@ export interface StoredTopologyReshapeGate {
     readonly revision: number;
 }
 
-export interface RtcTopologyReshapeGateWrite {
-    readonly key: string;
-    readonly value: string;
-    /** Null inserts where the room holds no gate; otherwise the row is replaced only at this revision. */
-    readonly expectedRevision: number | null;
-    readonly expireAtIsoTimestamp: string;
-}
-
 interface StoredTopologyReshapeGateValue {
     readonly groupRef: GroupRef;
     readonly state: TopologyReshapeGateState;
@@ -32,11 +28,12 @@ interface StoredTopologyReshapeGateValue {
 const STORED_VALUE_KEYS = ['groupRef', 'state'] as const satisfies readonly (keyof StoredTopologyReshapeGateValue)[];
 const GROUP_REF_KEYS = ['applicationId', 'workspaceId', 'groupId'] as const satisfies readonly (keyof GroupRef)[];
 
+/** A null revision inserts where the room holds no gate; otherwise the row is replaced only at that revision. */
 export function computeRtcTopologyReshapeGateWrite(
     groupRef: GroupRef,
     state: TopologyReshapeGateState,
     expectedRevision: number | null
-): RtcTopologyReshapeGateWrite {
+): RuntimeStateConditionalWrite {
     const stored: StoredTopologyReshapeGateValue = {
         groupRef: {
             applicationId: groupRef.applicationId,
@@ -45,12 +42,17 @@ export function computeRtcTopologyReshapeGateWrite(
         },
         state
     };
-    return {
+    const row = {
+        namespace: RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
         key: groupStateGroupStorageKey(groupRef),
         value: JSON.stringify(stored),
-        expectedRevision,
-        expireAtIsoTimestamp: new Date(NEVER_EXPIRE_AT_TIMESTAMP).toISOString()
+        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
     };
+    return computeRuntimeStateConditionalWrite(
+        expectedRevision === null
+            ? { ...row, operation: 'insert' }
+            : { ...row, operation: 'update', expectedRevision }
+    );
 }
 
 /** The row's own room must be the room its key names; anything else is corruption. */

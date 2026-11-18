@@ -8,7 +8,9 @@ import { type RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { RuntimeStateConditionalWrite } from '../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { writeRuntimeStateConditional } from '../../../runtime-state/postgres/write-runtime-state-conditional.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { groupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RtcTopologyPersistenceComputed } from '../mutation/compute-rtc-topology-persistence.ts';
@@ -23,7 +25,6 @@ import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-er
 import {
     decodeStoredTopologyReshapeGate,
     RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
-    type RtcTopologyReshapeGateWrite,
     type StoredTopologyReshapeGate
 } from './rtc-topology-reshape-gate-store.ts';
 import {
@@ -100,28 +101,9 @@ export class RtcTopologyExecutionRepository {
     }
 
     /** Compare-and-set on the revision the work read: a row another work wrote since is a conflict. */
-    async writeTopologyReshapeGate(transaction: PSqlSql, computed: RtcTopologyReshapeGateWrite): Promise<void> {
-        const rows = computed.expectedRevision === null
-            ? await transaction<Array<{ revision: number | string; }>>`
-                insert into runtime_state_store (store_namespace, store_key, store_value,
-                                                 expire_at_ts, updated_ts, revision)
-                values (${RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE}, ${computed.key}, ${computed.value},
-                        ${computed.expireAtIsoTimestamp}, now(), 0)
-                on conflict (store_namespace, store_key) do nothing
-                returning revision
-            `
-            : await transaction<Array<{ revision: number | string; }>>`
-                update runtime_state_store
-                set store_value = ${computed.value},
-                    expire_at_ts = ${computed.expireAtIsoTimestamp},
-                    updated_ts = now(),
-                    revision = revision + 1
-                where store_namespace = ${RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE}
-                  and store_key = ${computed.key}
-                  and revision = ${computed.expectedRevision}
-                returning revision
-            `;
-        if (!rows[0]) {
+    async writeTopologyReshapeGate(transaction: PSqlSql, computed: RuntimeStateConditionalWrite): Promise<void> {
+        const result = await writeRuntimeStateConditional(transaction, computed);
+        if (result.status !== 'applied') {
             throw new RuntimeStateWriteConflictError();
         }
     }

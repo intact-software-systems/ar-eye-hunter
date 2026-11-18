@@ -381,7 +381,7 @@ describe('RTC topology work reshape gate', () => {
         const plan = accepted.decision === 'accepted' ? accepted.publication?.plan : null;
         expect(plan?.change).toEqual({ kind: 'attach' });
         expect(plan?.heldReshapeReasons).toEqual(['kind-change']);
-        expect(transaction.reshapeGate?.expectedRevision).toBe(3);
+        expect(transaction.reshapeGate).toMatchObject({ operation: 'update', expectedRevision: 3 });
         expect(readWrittenReshapeGateState(transaction)).toEqual({
             gate: { lastPassAtEpochMs: NOW_EPOCH_MS - 5_000, consecutiveHeldPasses: 0, heldAtEpochMs: NOW_EPOCH_MS },
             wantedReasons: ['kind-change']
@@ -473,7 +473,7 @@ describe('RTC topology work reshape gate', () => {
 
         const { transaction } = computeGatedWork(workInput);
 
-        expect(transaction.reshapeGate?.expectedRevision).toBe(2);
+        expect(transaction.reshapeGate).toMatchObject({ operation: 'update', expectedRevision: 2 });
         expect(readWrittenReshapeGateState(transaction)).toEqual({
             gate: { lastPassAtEpochMs: null, consecutiveHeldPasses: 0, heldAtEpochMs: null },
             wantedReasons: []
@@ -591,7 +591,7 @@ describe('RTC topology work reshape gate', () => {
 
         const { transaction } = computeGatedWork(workInput);
 
-        expect(transaction.reshapeGate).toMatchObject({ expectedRevision: 2 });
+        expect(transaction.reshapeGate).toMatchObject({ operation: 'update', expectedRevision: 2 });
         expect(readWrittenReshapeGateState(transaction)).toEqual({
             gate: { lastPassAtEpochMs: null, consecutiveHeldPasses: 0, heldAtEpochMs: null },
             wantedReasons: []
