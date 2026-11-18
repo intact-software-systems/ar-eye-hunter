@@ -43,6 +43,9 @@ behind a gap, the pending receipts pass sixteen, and the sender stops handing ou
   were seen (an ACK-timeout retry of a room send writes no frame; most repair commits write no send; one conflicted
   ACK control was admitted 7.9 s late). They are read again after the fix and recorded, or become the next finding.
 - No fix of the lost stream start over `rtc` (its own slice, ruled 2026-11-18).
+- No fix of the `creation`-order claim on IndexedDB (a claim of `NEW` rows only). It reads sixteen rows by key and
+  then filters, as the `due` claim did, but no production code makes such a claim on that store. It gets a backlog
+  line and a contract case that states the gap (ruled 2026-11-18).
 - No new hosted manifest entry.
 
 ## Anti-goals
@@ -61,8 +64,9 @@ behind a gap, the pending receipts pass sixteen, and the sender stops handing ou
 - `resolveResourceInboxClaimOrder` already names two claim orders, `creation` (a claim without `RETRY`) and `due` (a
   claim with it). ALM's work port claims `NEW` and `RETRY`, so its order is `due`. PostgreSQL orders a `due` claim by
   `next_ts asc nulls first`.
-- Other callers of the same store calls: the resource-inbox dequeuer and the server's presence-summary claim. Their
-  behaviour for rows that are all due must not change.
+- Other callers of the same store calls: the resource-inbox dequeuer and the server's presence-summary claim. A
+  `due` claim of the dequeuer on IndexedDB moves from key order to the due order its contract already names; no
+  production code runs the dequeuer on that store. Their suites must pass unedited.
 - A readiness probe runs on every engine round; the IndexedDB operation counts of one probe are pinned by
   `al-indexeddb-operation-counts.test.ts`.
 
@@ -79,36 +83,53 @@ behind a gap, the pending receipts pass sixteen, and the sender stops handing ou
 
 ### 1. The rule
 
-A `due` claim takes at most `maxToReserve` rows that are reservable now, in this order: rows with no next time
-first, then rows by next time, earliest first; ties by key. A row whose next time is later than now is never read as
-a candidate in place of a row that is due. This is the order PostgreSQL already uses; it becomes the stated contract
-of `reserveEntries` for all stores, beside `resolveResourceInboxClaimOrder`.
+A row is due when it has no next time or its next time is at or before now. A `due` claim takes at most
+`maxToReserve` rows that are due, counted across every type and status the claim names: among rows with a next time,
+the earliest first. A row that is not yet due is never read as a candidate in place of one that is. Where two rows
+tie, and where a row has no next time, the store's own arrival order decides, as `resource-inbox-claim-order.ts`
+already says of ties (PostgreSQL puts a row with no next time first). This is the order PostgreSQL uses today; it
+becomes the stated contract of `reserveEntries` for every store.
 
-A readiness scan reads a status's pending rows in the same order, so the first page holds the earliest rows and the
-scan's existing rule (answer the earliest ready time it sees) is exact.
+A readiness scan asks for a status's pending rows in that order, merged across the work types of its owner before
+the page is cut, so the first page holds the earliest rows and the scan's existing rule (answer the earliest ready
+time it sees) is exact.
 
 ### 2. IndexedDB store
 
-`reserveEntries` reads the candidates of a `due` claim in two bounded steps: the rows of the type and status that
-have no next time, through `by-type-status-key`; then the rows whose next time is at or before now, through
-`by-type-status-next-key` with its upper bound at now. Both steps stop at `maxToReserve`. The context claim and the
-observed-entries path keep their meaning. The `creation` order is unchanged. Whether the overdue fairness pass
-(`reserveOverdueRetryEntries`) is still needed once a `due` claim reads in due order is checked; it is removed only
-if no caller needs it.
+`reserveEntries` reads the candidates of a `due` claim through `by-type-status-next-key`, with the upper bound of
+its range at now, at most `maxToReserve` rows per type and status, and merges them by next time. Only due rows are
+read, so no row can hide another.
 
-The page read a readiness scan uses reads in due order through the same index. Cursor paging in key order stays for
-the callers that page.
+That index holds only rows with a next time, and `by-type-status-key` holds every row, so a row with no next time
+cannot be read apart from the others without a scan. The store therefore keeps one invariant: **a pending row
+always has a next time.** A row enqueued without one is stored as due at its creation instant. Reservation still
+clears the next time, as today, and a reserved row is not pending. No caller enqueues such a row in this store
+today: its only users are ALM's admission backend and its cleanup, and ALM's inbound and outbound rows always name
+a next time. The codec, the indexes and the schema do not change.
+
+The context claim and the observed-entries path keep their meaning. The fairness pass
+(`reserveOverdueRetryEntries`) stays: it is a method of every store and the resource-inbox dequeuer's fairness lane
+calls it.
+
+The page read gains a required order: `key`, which pages with a cursor as today, or `due`, which returns the
+earliest rows and takes no cursor. A readiness scan asks for `due`; every existing caller names `key` and sees what
+it sees today.
 
 ### 3. Memory and PostgreSQL stores
 
-The memory store's claim already follows the rule; its page read gets the due order. PostgreSQL's claim already
-follows it; its page read is first shown wrong with a failing contract case, then given the same order. If the case
-does not fail there, the store is left as it is and the case stays.
+The memory store's `due` claim walks its rows in insertion order and takes the due ones as it meets them: it never
+skips a due row, but it does not take the earliest first. It is changed to the rule. Its page read gains the `due`
+order.
+
+PostgreSQL's claim follows the rule already. Its page read is ordered by creation time; the `due` order is first
+shown missing with a failing contract case, then added. The presence-summary claim names `key` and keeps the rows
+it scans today.
 
 ### 4. ALM
 
-`readALOutboundWorkReadyAt` keeps its rule and asks for due-ordered pages. The inbound lane's selection
-(`read-al-inbound-work-selection.ts`) is given the same failing test; it is changed only if the test fails.
+`readALOutboundWorkReadyAt` keeps its rule and asks for `due` pages; `readMergedALWorkPageScans` merges its types'
+pages by due time before it cuts. The inbound lane's selection (`read-al-inbound-work-selection.ts`) is given the
+same failing test; it is changed only if the test fails.
 
 ### 5. The cell
 
@@ -123,25 +144,36 @@ report of what remains.
 - The existing reproduction test turns green without edits to its assertions.
 - The resource-inbox dequeuer's and the presence-summary claim's suites pass unedited.
 - The pinned IndexedDB operation counts of a probe and a claim are restated with the reason for any change.
-- Lane, full scope: the cell three runs per carrier, then the whole two-agent family once per carrier.
+- Lane, full scope, with this session's ports: `RALLAR_BLACK_BOX_ALM_SCOPE=full RALLAR_BLACK_BOX_ALM_CARRIERS=<ws|rtc>
+  RALLAR_BLACK_BOX_ALM_ONLY=seeded-loss-stream npm run test:rallar:full-stack:memory:alm -- --retries=0`, three runs
+  per carrier; then the two-agent family once per carrier (no `ALM_ONLY`, `-g 'baseline family over <carrier>'`).
 - The gates of the earlier pull requests: unit lane, tooling, governance, style, coupling, reachability, bundles,
   and `test:api-v1:black-box:postgres:medium-scale` because the server's queue read changes.
 
 ## Left to the builder
 
-- The shape of the due-ordered page read in the queue contract (a required order on the page request, or a read of
-  its own), as long as there is one way and cursor paging keeps working.
-- How rows of status `RESERVED` are ordered in a readiness page.
-- Whether the fairness pass stays.
+- How rows of status `RESERVED` are ordered in a `due` page: a reserved row's ready time is its lease end, not a
+  next time.
+- The names of the page order and of the contract test.
+
+## Calls made after the builder check
+
+- Ties and rows with no next time fall to each store's arrival order; the contract test asserts neither.
+- "Earliest first" is required of every store, so the memory store's claim changes.
+- `maxToReserve` is a total across the claim's types and statuses, merged by next time.
+- The page read's order is a required field; existing callers name `key`.
+- The fairness pass stays.
+- On IndexedDB a pending row always has a next time (section 2).
 
 ## Decisions (maintainer, 2026-11-18)
 
-| Question                      | Ruling                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------ |
-| What follows the fault proofs | Recovery under loss, ahead of the held-send path and the relay statement rules.            |
-| How the slice starts          | A deterministic unit reproduction before any design.                                       |
-| The fix's approach            | Work is read in the order it comes due.                                                    |
-| Where the rule lives          | In the shared queue, for every store; no legacy, no migration, no ALM-only path.           |
-| The slice's scope             | The queue order first, with the cell as proof; the other three behaviours looked at after. |
-| Which stores                  | Memory, IndexedDB and PostgreSQL, one rule and one contract test.                          |
-| The no-`ack` receipt default  | Put to the maintainer during this slice, with what each channel purpose defaults to.       |
+| Question                                | Ruling                                                                                     |
+| --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| What follows the fault proofs           | Recovery under loss, ahead of the held-send path and the relay statement rules.            |
+| How the slice starts                    | A deterministic unit reproduction before any design.                                       |
+| The fix's approach                      | Work is read in the order it comes due.                                                    |
+| Where the rule lives                    | In the shared queue, for every store; no legacy, no migration, no ALM-only path.           |
+| The slice's scope                       | The queue order first, with the cell as proof; the other three behaviours looked at after. |
+| Which stores                            | Memory, IndexedDB and PostgreSQL, one rule and one contract test.                          |
+| The no-`ack` receipt default            | Put to the maintainer during this slice, with what each channel purpose defaults to.       |
+| The `creation`-order claim on IndexedDB | Recorded and left: a backlog line and a contract case that states the gap.                 |
