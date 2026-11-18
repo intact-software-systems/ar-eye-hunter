@@ -1,3 +1,4 @@
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
 import { GROUP_ESTABLISHMENT_TRANSPORTS } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLifecyclePolicy, GroupStageTrigger } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import {
@@ -8,7 +9,8 @@ import {
     MAX_GROUP_MANAGERS,
     MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
     MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
-    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
+    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+    MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -198,7 +200,14 @@ function decodeTopologyPolicy(value: JsonWireValue): GroupLifecyclePolicy['topol
     const topology = requireJsonWireObject(value, 'Group lifecycle topology policy');
     requireExactKeys(
         topology,
-        ['replanning', 'reconfigureLanding', 'debounceWindowMs', 'maxReplanWaitMs'],
+        [
+            'replanning',
+            'reconfigureLanding',
+            'debounceWindowMs',
+            'maxReplanWaitMs',
+            'reshapeMinIntervalMs',
+            'reshapeMaxIntervalMs'
+        ],
         'Group lifecycle topology policy'
     );
     return {
@@ -223,6 +232,18 @@ function decodeTopologyPolicy(value: JsonWireValue): GroupLifecyclePolicy['topol
             minimum: 0,
             maximum: MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
             label: 'Group lifecycle topology maxReplanWaitMs'
+        }),
+        reshapeMinIntervalMs: requireBoundedInteger({
+            value: topology.reshapeMinIntervalMs,
+            minimum: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS,
+            maximum: MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS,
+            label: 'Group lifecycle topology reshapeMinIntervalMs'
+        }),
+        reshapeMaxIntervalMs: requireBoundedInteger({
+            value: topology.reshapeMaxIntervalMs,
+            minimum: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS,
+            maximum: MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS,
+            label: 'Group lifecycle topology reshapeMaxIntervalMs'
         })
     };
 }

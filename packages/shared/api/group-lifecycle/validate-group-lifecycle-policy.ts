@@ -177,6 +177,15 @@ function toAutomationIssues(
         });
     }
 
+    if (topology.reshapeMinIntervalMs > topology.reshapeMaxIntervalMs) {
+        issues.push({
+            code: 'reshape-minimum-interval-exceeds-maximum',
+            field: 'topology.reshapeMinIntervalMs',
+            message: 'topology.reshapeMinIntervalMs exceeds topology.reshapeMaxIntervalMs, ' +
+                'so the reshape interval could never double up to its maximum'
+        });
+    }
+
     return issues;
 }
 

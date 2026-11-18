@@ -8734,6 +8734,12 @@ components:
             `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
             the first change of a burst; `auto` carries no policy window and
             replans on the server's first opportunity after a change.
+            `reshapeMinIntervalMs` is the shortest time an automatic optional
+            reshape must wait after the room's previous reshape (default
+            15000, range 15000 to 600000; a lower value is raised to 15000).
+            `reshapeMaxIntervalMs` is the longest that wait grows to as
+            reshapes keep coming (default 60000, range 15000 to 600000, and
+            not below `reshapeMinIntervalMs`).
           properties:
             replanning:
               type: string
@@ -8745,6 +8751,12 @@ components:
               type: integer
               format: int64
             maxReplanWaitMs:
+              type: integer
+              format: int64
+            reshapeMinIntervalMs:
+              type: integer
+              format: int64
+            reshapeMaxIntervalMs:
               type: integer
               format: int64
         activation:
