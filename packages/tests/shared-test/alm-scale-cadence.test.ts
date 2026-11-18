@@ -55,6 +55,7 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -373,7 +374,8 @@ class ScaleActor {
                     repliesHeld: 0,
                     replyWaitsOpen: 0,
                     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-                    ordering: createALInboundOrderingCounters()
+                    ordering: createALInboundOrderingCounters(),
+                    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
                 }),
                 readCongestionCounters: async () => ({ dropped: 0, deferred: 0, handedOver: 0, rateLimited: 0, circuitOpen: 0, queuedBytesHighWater: 0 }),
                 readStorageCounters: async (command) =>

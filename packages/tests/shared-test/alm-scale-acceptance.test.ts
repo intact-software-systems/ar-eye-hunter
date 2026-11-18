@@ -12,6 +12,7 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 import type { ALCongestionCounters } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 
 import type { BlackBoxRallarDeliveryObservation } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
@@ -76,7 +77,8 @@ const HEALTHY: RallarBlackBoxTestAlmUsage = {
     repliesHeld: 0,
     replyWaitsOpen: 0,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-    ordering: createALInboundOrderingCounters()
+    ordering: createALInboundOrderingCounters(),
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
 };
 const EMPTY: RallarBlackBoxTestAlmUsage = {
     ...HEALTHY,

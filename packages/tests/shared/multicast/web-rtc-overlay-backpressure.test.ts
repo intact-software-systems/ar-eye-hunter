@@ -125,6 +125,7 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
             action: 'drop',
             priority: 0,
             msgId: message.id.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-every-hop-full',
             corrId: message.id.msgId
         }]);
@@ -179,7 +180,7 @@ describe('the RTC origin\'s backpressure read of its ready next hops (D184, D185
 
         expect(verdict.kind).toBe('admitted');
         expect(fixture.channels.b!.sent).toEqual([]);
-        const trace = { traceId: 'trace-deferred', corrId: message.id.msgId };
+        const trace = { atMs: expect.any(Number), traceId: 'trace-deferred', corrId: message.id.msgId };
         expect(readCongestion(fixture)).toEqual([
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 5, msgId: message.id.msgId, ...trace },
             { kind: 'congestion', carrier: 'rtc', cause: 'backpressured', action: 'defer', priority: 5, msgId: message.id.msgId, ...trace }

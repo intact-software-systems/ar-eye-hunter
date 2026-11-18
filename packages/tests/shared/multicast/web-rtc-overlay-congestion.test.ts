@@ -76,6 +76,7 @@ describe('the RTC origin\'s congestion drop, by its cause', () => {
             action: 'drop',
             priority: 0,
             msgId: message.id.msgId,
+            atMs: expect.any(Number),
             traceId: 'trace-backpressured',
             corrId: message.id.msgId
         }]);

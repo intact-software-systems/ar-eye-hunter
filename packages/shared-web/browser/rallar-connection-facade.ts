@@ -1,6 +1,7 @@
 import type { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import type { RallarApiClientConfig } from '@shared-web/browser/api-client-config.ts';
 import type { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import type { BrowserOutboundCongestionEpisodesSink } from '@shared-web/browser/connection/browser-outbound-congestion-episodes-sink.ts';
 import type { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import type { RallarDiagnosticsPortsInput } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { RallarPeopleState } from '@shared-web/browser/people/rallar-people-contracts.ts';
@@ -64,6 +65,7 @@ export interface RallarBrowserMiddleware {
     readonly volatileBudget: Pick<ALVolatileSessionBudget, 'readReport'>;
     /** The ordering positions both carriers' runtimes stated on this connect, by status (S4ii-R6). */
     readonly orderingCounters: Pick<BrowserInboundOrderingCountersSink, 'readReport'>;
+    readonly congestionEpisodes: Pick<BrowserOutboundCongestionEpisodesSink, 'readReport'>;
     /** What the connect's publication stage holds at once (D477), read once when the connect began. */
     readonly publicationStageLimits: ALPublicationStageLimits;
     /**

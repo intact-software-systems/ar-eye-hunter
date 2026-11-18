@@ -1,9 +1,6 @@
 import type { ALPublicationDrainBudget } from '../../../al-contracts/publication/al-publication-policy.ts';
-import {
-    computeBoundedHistogramAfter,
-    createBoundedHistogram,
-    type BoundedHistogram
-} from '../../../measurement/bounded-histogram.ts';
+import { assertBoundedHistogram } from '../../../measurement/assert-bounded-histogram.ts';
+import { computeBoundedHistogramAfter, type BoundedHistogram } from '../../../measurement/bounded-histogram.ts';
 
 export const AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS: readonly number[] = [
     1,
@@ -56,20 +53,12 @@ interface ALPublicationFigureRecorded {
     readonly unrecordedSamples: number;
 }
 
-function assertALPublicationFigureHistogram(upperBounds: readonly number[], named: string): BoundedHistogram {
-    const created = createBoundedHistogram(upperBounds);
-    if (created.right === undefined) {
-        throw new Error(`${named} is not a valid set of histogram bounds: ${created.left}`);
-    }
-    return created.right;
-}
-
 export function toIdleALOutboundPublicationFigures(): ALOutboundPublicationFigures {
-    const idleAge = assertALPublicationFigureHistogram(
+    const idleAge = assertBoundedHistogram(
         AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS,
         'AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS'
     );
-    const idlePercent = assertALPublicationFigureHistogram(
+    const idlePercent = assertBoundedHistogram(
         AL_PUBLICATION_FIGURE_PERCENT_BOUNDS,
         'AL_PUBLICATION_FIGURE_PERCENT_BOUNDS'
     );

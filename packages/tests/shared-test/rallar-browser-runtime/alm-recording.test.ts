@@ -51,6 +51,7 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
         action: 'defer',
         priority: 0,
         msgId: 'msg-1',
+        atMs: 1_000,
         traceId: 'trace-msg-1',
         corrId: 'msg-1'
     });
@@ -69,7 +70,7 @@ function publishAlmEvents(ports: RallarDiagnosticsPortsInput): void {
     ports.storage?.({
         kind: 'reset',
         storeId: 'store-1',
-        event: { dbName: 'test', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' }
+        event: { dbName: 'test', schemaId: 'current', reason: 'other-context' }
     });
 }
 

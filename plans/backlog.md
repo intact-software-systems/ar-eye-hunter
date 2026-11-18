@@ -82,13 +82,10 @@ and it has no status list.
   worker; a per-message persistence barrier; the Temporal polyfill leaving the
   browser bundle (an estimated 39.7 KiB brotli, D110); and the fence-snapshot
   fold (§7.3), which merges the D17 fence snapshot into the decision read.
-- ALM schema mismatch: D3 deletes incompatible browser storage, but since #652
-  `openIndexedDbAdmissionStorage` refuses it with `ALStorageSchemaMismatchError`
-  and keeps the rows, so nothing reclaims it; the `reset-blocked` cause and the
-  `schema-id-mismatch` and `store-schema-mismatch` reset reasons have no
-  producer, and the QoS plan's sections 2 and 8 still describe deletion. Ruled
-  (D642): delete all three, and align D3 and the QoS plan to "refuse and keep"
-  (roadmap F9, PC10).
+- ALM schema mismatch: `openIndexedDbAdmissionStorage` refuses incompatible
+  browser storage with `ALStorageSchemaMismatchError` and keeps the rows (D663),
+  so nothing reclaims a store an older build left; a reclaim is unbuilt (roadmap
+  F9, PC10).
 - `packages/shared/alm/al-runtime-state-stores.ts` holds only snapshot
   interfaces and keeps its name (S9-i, D624): 26 importers and a `mod.ts` line
   would change for a name alone. Rename it for what it holds, with its
@@ -676,14 +673,13 @@ and it has no status list.
   workload family, not by ALM (D642): a receiver cannot compute it from the
   envelope, which carries only `expiresAtMs`
   (`packages/shared/al-contracts/al-contract.ts`).
-- Congestion duration has no measurable end (D651): the outbound runtime
-  decides congestion per attempt (`drop`, `defer`, `hand-over`), the
-  `congestion` diagnostic carries no instant and no clear action, and only the
-  RTC channel's own queue flush knows when its backpressure ended. Measuring it
-  needs a defined episode (for example a message's first `defer` to its
-  attempt's settlement) and an instant on the diagnostic. The maintainer ruled the episode (D656): a message's
-  first deferral to the settlement of its attempt, as a histogram and a count of episodes still open, with one
-  instant added to the congestion diagnostic; it is not built.
+- No lane cell asserts the congestion episode figure (D665): the `congestion` scenario cells read the action
+  counters only. A cell that holds a carrier backpressured, releases it and reads
+  `stats.rallar.alm.congestionEpisodes` needs the delta operator the paced cells also lack, or an invariant such
+  as `openEpisodes` of 0 after the release.
+- A congestion episode is keyed by carrier and message id (D665), so a message deferred on RTC and then on WS is two
+  episodes, and an attempt that settles `not-ready` for another reason than backpressure keeps the episode open
+  until the message sends or ends; whether either should read differently is the maintainer's.
 - Admission to native submission is not a stage figure (D651); it needs the
   carriers' `attempt-started` instant beside the stage's admission settlement.
 - The interpolating medians (two middle values averaged) stay in five
@@ -708,11 +704,12 @@ and it has no status list.
   counts need one (D652).
 - The bounded histogram has no quantile reader and no merge; the workload
   family adds them with its first reader (D650).
-- The local baseline's median command time is not stable inside its declared
-  band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
-  tell a regression from noise; the band or the figure for the median is the
-  maintainer's to set (D652). Ruled (D656): each side is several runs and the comparison uses the median of the
-  medians, in the same band, re-checked with a same-commit pair; it is not built.
+- The local baseline's median command time is not a regression figure, even as the median of several runs per
+  side (D664): of five comparisons of one commit with itself, three read outside the band (five runs per side: 77
+  against 89 ms and 80 against 89 ms; ten per side: 83 against 71 ms), on a machine that ran other work: one of the
+  three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
+  noise in all five. Open for the maintainer: require a quiet machine, make alternating runs the protocol, or compare another
+  figure. The band is not widened.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in

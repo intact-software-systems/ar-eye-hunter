@@ -20,6 +20,7 @@ function toCongestion(
         action,
         priority: 0,
         msgId: `msg-${action}`,
+        atMs: 1_000,
         traceId: `trace-msg-${action}`,
         corrId: `msg-${action}`
     };

@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestAlmUsage } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import { decodeALOutboundCongestionEpisodes } from './decode-al-outbound-congestion-episodes.ts';
 import { decodeALOutboundPublicationStageReport } from './decode-al-outbound-publication-stage-report.ts';
 import { decodeALVolatileSessionReport, decodeCount, decodeCounts } from './decode-al-volatile-session-report.ts';
 
@@ -31,15 +32,17 @@ export function decodeRallarBlackBoxTestAlmUsage(
     const report = decodeALVolatileSessionReport(value);
     const publication = decodeALOutboundPublicationStageReport(record.publication);
     const ordering = decodeCounts(record.ordering, ORDERING_FIELDS, 'ordering');
+    const congestionEpisodes = decodeALOutboundCongestionEpisodes(record.congestionEpisodes);
     if (
         report.right === undefined || publication.right === undefined || ordering.right === undefined ||
-        !hasEveryCount(counts)
+        congestionEpisodes.right === undefined || !hasEveryCount(counts)
     ) {
         return Either.ofLeft([
             ...(report.left ?? []),
             ...countIssues,
             ...(publication.left ?? []),
-            ...(ordering.left ?? [])
+            ...(ordering.left ?? []),
+            ...(congestionEpisodes.left ?? [])
         ]);
     }
     const { entered, omitted, witnessed, beforeEntry } = ordering.right;
@@ -47,14 +50,18 @@ export function decodeRallarBlackBoxTestAlmUsage(
         ...report.right,
         ...counts,
         publication: publication.right,
-        ordering: { entered, omitted, witnessed, beforeEntry }
+        ordering: { entered, omitted, witnessed, beforeEntry },
+        congestionEpisodes: congestionEpisodes.right
     });
 }
 
 function hasEveryCount(
     counts: Readonly<
         Record<
-            keyof Omit<RallarBlackBoxTestAlmUsage, keyof ALVolatileSessionReport | 'publication' | 'ordering'>,
+            keyof Omit<
+                RallarBlackBoxTestAlmUsage,
+                keyof ALVolatileSessionReport | 'publication' | 'ordering' | 'congestionEpisodes'
+            >,
             number | undefined
         >
     >

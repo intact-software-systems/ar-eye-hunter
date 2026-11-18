@@ -4,6 +4,8 @@ import type { DistributedRunPerformanceAnalysis } from '../distributed-artifact-
 /** Declared before any baseline run; a run that falls outside it is investigated, never answered by widening it. */
 export const DISTRIBUTED_RUN_LOCAL_BASELINE_BAND: SameRegimeComparison.Band = { relative: 0.1, absolute: 5 };
 
+export const DISTRIBUTED_RUN_LOCAL_BASELINE_MINIMUM_RUNS_PER_SIDE = 5;
+
 export function toDistributedRunBaselineFigures(
     analysis: DistributedRunPerformanceAnalysis
 ): Readonly<Record<string, number>> {

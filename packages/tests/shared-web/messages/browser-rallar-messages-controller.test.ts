@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import { BrowserOutboundCongestionEpisodesSink } from '@shared-web/browser/connection/browser-outbound-congestion-episodes-sink.ts';
 import type { ALPublicationStageLimits } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { toIdleALOutboundPublicationFigures } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import {
@@ -21,6 +22,11 @@ const LIMITS: ALVolatileSessionLimits = { maxAdmissions: 2, maxBytes: 1_024, max
 const STAGE_LIMITS: ALPublicationStageLimits = { maxStreams: 4, maxStagedValues: 8, maxStagedBytes: 65_536 };
 const NO_PUBLICATION_COUNTERS = { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 };
 const NO_ORDERING_COUNTERS = { entered: 0, omitted: 0, witnessed: 0, beforeEntry: 0 };
+const NO_CONGESTION_EPISODES = {
+    durationMs: expect.objectContaining({ count: 0 }),
+    openEpisodes: 0,
+    unrecordedSamples: 0
+};
 const NOT_CONNECTED = 'Rallar is not connected. Call rallar.connect() first.';
 
 const mocks = getRallarFacadeMocks();
@@ -31,17 +37,23 @@ installFakeBroadcastChannelPerTest();
 describe('rallar.messages.readUsage', () => {
     let budget: ALVolatileSessionBudget;
     let orderingCounters: BrowserInboundOrderingCountersSink;
+    let congestionEpisodes: BrowserOutboundCongestionEpisodesSink;
     let qboxEngine: InboxOutboxEngine;
 
     beforeEach(() => {
         resetRallarFacadeTestRuntime();
         budget = new ALVolatileSessionBudget(LIMITS);
         orderingCounters = new BrowserInboundOrderingCountersSink(() => {});
+        congestionEpisodes = new BrowserOutboundCongestionEpisodesSink({
+            diagnostics: () => {},
+            settlements: { ws: () => {}, rtc: () => {} }
+        });
         qboxEngine = new InboxOutboxEngine({ nowEpochMs: Date.now, random: () => 0.5, reportTaskFailure: () => undefined });
         mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble({
             middleware: {
                 volatileBudget: budget,
                 orderingCounters,
+                congestionEpisodes,
                 publicationStageLimits: STAGE_LIMITS,
                 // Never started: a staged value waits for an engine pass the test runs itself.
                 qboxEngine
@@ -77,7 +89,8 @@ describe('rallar.messages.readUsage', () => {
             repliesHeld: 0,
             replyWaitsOpen: 0,
             publication: expect.any(Object),
-            ordering: NO_ORDERING_COUNTERS
+            ordering: NO_ORDERING_COUNTERS,
+            congestionEpisodes: NO_CONGESTION_EPISODES
         });
         expect(report.usage.oldestAgeMs).toBeGreaterThanOrEqual(1_000);
         expect(report.usage.oldestAgeMs).toBeLessThan(31_000);
@@ -129,7 +142,8 @@ describe('rallar.messages.readUsage', () => {
             repliesHeld: 0,
             replyWaitsOpen: 0,
             publication: expect.any(Object),
-            ordering: NO_ORDERING_COUNTERS
+            ordering: NO_ORDERING_COUNTERS,
+            congestionEpisodes: NO_CONGESTION_EPISODES
         });
     });
 
@@ -231,5 +245,42 @@ describe('rallar.messages.readUsage', () => {
         }
 
         expect(facade.messages.readUsage().ordering).toEqual({ entered: 1, omitted: 1, witnessed: 0, beforeEntry: 2 });
+    });
+
+    it('reads the congestion episodes the connect measured, and the ones still open', async () => {
+        const facade = createRallarTestFacade();
+        await facade.connect();
+        const trace = { traceId: 'trace-1', corrId: 'corr-1' };
+        for (const msgId of ['settled', 'still-deferred']) {
+            congestionEpisodes.diagnostics({
+                kind: 'congestion',
+                carrier: 'rtc',
+                cause: 'backpressured',
+                action: 'defer',
+                priority: 5,
+                msgId,
+                atMs: 2_000,
+                ...trace
+            });
+        }
+        congestionEpisodes.settlements.rtc({
+            kind: 'attempt-settled',
+            msgId: 'settled',
+            traceId: 'trace-1',
+            carrier: 'rtc',
+            lane: 'volatile',
+            atMs: 2_300,
+            attemptId: 'attempt-2',
+            outcome: 'sent',
+            submissionAttempted: true,
+            detail: undefined,
+            willRetry: false
+        });
+
+        expect(facade.messages.readUsage().congestionEpisodes).toMatchObject({
+            openEpisodes: 1,
+            unrecordedSamples: 0,
+            durationMs: { count: 1, sum: 300 }
+        });
     });
 });

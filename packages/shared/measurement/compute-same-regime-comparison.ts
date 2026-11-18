@@ -1,4 +1,5 @@
 import { Either } from '../resilience/Either.ts';
+import { computeNearestRank } from './compute-nearest-rank.ts';
 
 export namespace SameRegimeComparison {
     export interface Run {
@@ -17,11 +18,13 @@ export namespace SameRegimeComparison {
         readonly name: string;
         readonly baseline: number;
         readonly candidate: number;
+        readonly baselineRuns: readonly number[];
+        readonly candidateRuns: readonly number[];
         readonly verdict: Verdict;
     }
 
     export interface Refusal {
-        readonly kind: 'different-regime' | 'different-figures' | 'non-finite-figures';
+        readonly kind: 'too-few-runs' | 'different-regime' | 'different-figures' | 'non-finite-figures';
         readonly keys: readonly string[];
     }
 }
@@ -31,26 +34,33 @@ export interface SameRegimeComparison {
 }
 
 interface SameRegimeComparisonInput {
-    readonly baseline: SameRegimeComparison.Run;
-    readonly candidate: SameRegimeComparison.Run;
+    readonly baseline: readonly SameRegimeComparison.Run[];
+    readonly candidate: readonly SameRegimeComparison.Run[];
     readonly band: SameRegimeComparison.Band;
+    readonly minimumRunsPerSide: number;
 }
 
-function computeOneSidedKeys(baseline: object, candidate: object): string[] {
+function computeShortSides(input: SameRegimeComparisonInput): readonly string[] {
+    const isShort = (runs: readonly SameRegimeComparison.Run[]) =>
+        runs.length === 0 || runs.length < input.minimumRunsPerSide;
     return [
-        ...Object.keys(baseline).filter((name) => !Object.hasOwn(candidate, name)),
-        ...Object.keys(candidate).filter((name) => !Object.hasOwn(baseline, name))
+        ...(isShort(input.baseline) ? ['baseline'] : []),
+        ...(isShort(input.candidate) ? ['candidate'] : [])
     ];
 }
 
-function computeDifferingRegimeKeys(
-    baseline: SameRegimeComparison.Run['regime'],
-    candidate: SameRegimeComparison.Run['regime']
-): readonly string[] {
-    const differing = Object.keys(baseline).filter((name) =>
-        Object.hasOwn(candidate, name) && baseline[name] !== candidate[name]
+function computeAllKeys(records: readonly object[]): readonly string[] {
+    return [...new Set(records.flatMap((record) => Object.keys(record)))].sort();
+}
+
+function computeDifferingRegimeKeys(regimes: readonly SameRegimeComparison.Run['regime'][]): readonly string[] {
+    return computeAllKeys(regimes).filter((name) =>
+        regimes.some((regime) => !Object.hasOwn(regime, name) || regime[name] !== regimes[0][name])
     );
-    return [...computeOneSidedKeys(baseline, candidate), ...differing].sort();
+}
+
+function computeUnsharedFigureKeys(figures: readonly SameRegimeComparison.Run['figures'][]): readonly string[] {
+    return computeAllKeys(figures).filter((name) => figures.some((run) => !Object.hasOwn(run, name)));
 }
 
 /** Every figure is lower-is-better. */
@@ -65,30 +75,50 @@ function computeVerdict(
     return candidate < baseline ? 'improvement' : 'regression';
 }
 
+function computeSideMedian(runs: readonly number[]): number {
+    const median = computeNearestRank(runs, 0.5);
+    if (median === undefined) {
+        throw new Error('A compared side holds at least one run.');
+    }
+    return median;
+}
+
+function computeFigure(name: string, input: SameRegimeComparisonInput): SameRegimeComparison.Figure {
+    const baselineRuns = input.baseline.map((run) => run.figures[name]);
+    const candidateRuns = input.candidate.map((run) => run.figures[name]);
+    const baseline = computeSideMedian(baselineRuns);
+    const candidate = computeSideMedian(candidateRuns);
+    return {
+        name,
+        baseline,
+        candidate,
+        baselineRuns,
+        candidateRuns,
+        verdict: computeVerdict(baseline, candidate, input.band)
+    };
+}
+
 export function computeSameRegimeComparison(
     input: SameRegimeComparisonInput
 ): Either<SameRegimeComparison.Refusal, SameRegimeComparison> {
-    const { baseline, candidate, band } = input;
-    const regimeKeys = computeDifferingRegimeKeys(baseline.regime, candidate.regime);
+    const shortSides = computeShortSides(input);
+    if (shortSides.length > 0) {
+        return Either.ofLeft({ kind: 'too-few-runs', keys: shortSides });
+    }
+    const runs = [...input.baseline, ...input.candidate];
+    const regimeKeys = computeDifferingRegimeKeys(runs.map((run) => run.regime));
     if (regimeKeys.length > 0) {
         return Either.ofLeft({ kind: 'different-regime', keys: regimeKeys });
     }
-    const figureKeys = computeOneSidedKeys(baseline.figures, candidate.figures).sort();
-    if (figureKeys.length > 0) {
-        return Either.ofLeft({ kind: 'different-figures', keys: figureKeys });
+    const figures = runs.map((run) => run.figures);
+    const unsharedKeys = computeUnsharedFigureKeys(figures);
+    if (unsharedKeys.length > 0) {
+        return Either.ofLeft({ kind: 'different-figures', keys: unsharedKeys });
     }
-    const nonFiniteKeys = Object.keys(baseline.figures)
-        .filter((name) => !Number.isFinite(baseline.figures[name]) || !Number.isFinite(candidate.figures[name]))
-        .sort();
+    const names = computeAllKeys(figures);
+    const nonFiniteKeys = names.filter((name) => figures.some((run) => !Number.isFinite(run[name])));
     if (nonFiniteKeys.length > 0) {
         return Either.ofLeft({ kind: 'non-finite-figures', keys: nonFiniteKeys });
     }
-    return Either.ofRight({
-        figures: Object.keys(baseline.figures).sort().map((name) => ({
-            name,
-            baseline: baseline.figures[name],
-            candidate: candidate.figures[name],
-            verdict: computeVerdict(baseline.figures[name], candidate.figures[name], band)
-        }))
-    });
+    return Either.ofRight({ figures: names.map((name) => computeFigure(name, input)) });
 }

@@ -191,7 +191,7 @@ export class BrowserRallarMessageDispatch {
         sink(toCarrierAdmissionSettlement(admission, this.input.nowMs()));
         wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (admission.fallback === 'retry') {
-            writeCongestionHandOverDiagnostic(delivery, result);
+            writeCongestionHandOverDiagnostic(delivery, result, this.input.nowMs());
             const fallback: BrowserRallarMessageDispatch.Delivery = {
                 ...delivery,
                 carrier: delivery.carrier === 'rtc' ? 'ws' : 'rtc',
@@ -356,7 +356,8 @@ export class BrowserRallarMessageDispatch {
  */
 function writeCongestionHandOverDiagnostic(
     delivery: BrowserRallarMessageDispatch.Delivery,
-    result: CapturedMessageAdmission
+    result: CapturedMessageAdmission,
+    atMs: number
 ): void {
     if (result.verdict.kind !== 'refused' || result.verdict.reason !== 'congested') {
         return;
@@ -368,6 +369,7 @@ function writeCongestionHandOverDiagnostic(
         action: 'hand-over',
         priority: normalizeALQosPolicy(result.message).effective.congestion.opts.priority,
         msgId: result.message.id.msgId,
+        atMs,
         ...toALMessageTrace(result.message)
     });
 }

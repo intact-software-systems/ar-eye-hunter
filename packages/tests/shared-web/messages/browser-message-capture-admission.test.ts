@@ -276,6 +276,7 @@ describe('required capture at final message admission', () => {
                 action: 'hand-over',
                 priority: 0,
                 msgId: handle.msgId,
+                atMs: expect.any(Number),
                 traceId: 'trace-congested-capture',
                 corrId: handle.msgId
             }]);
