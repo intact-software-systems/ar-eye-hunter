@@ -207,16 +207,36 @@ runs. Deferred AL changes were excluded and restored with hash verification.
 Final formatting corrected three restored files; no gameplay behavior changed.
 Full-file and recursive support review found no blocker or retained affected legacy.
 
+### Foreground heartbeat and stale lobby investigation — 18 November 2026
+
+In the iPhone trial Bob saw the expected room code while Alice saw only herself
+ready. A browser trial also observed the host showing 1/1 and the guest 1/2.
+A three-account regression isolated one way Ready could disappear. While a
+guest's Ready message was withheld, another player joined. Restoring delivery
+left the old implementation at 0/3. The guest now retries their pending choice
+within the same signed-in session, appointment epoch and lobby match. The host
+then confirms 1/3. A successful room recovery also clears the transient refresh
+error so the lobby can display the confirmed state again.
+
+An idle two-browser lobby sent 1,839,309 bytes in 266 WebSocket frames in a
+five-second sample. The host now reuses its confirmed checkpoint and replays
+it once a second so a guest can catch up. The comparison sample sent 124,665
+bytes in 20 frames. Pending changes still use the 100 ms exchange interval.
+These measurements concern lobby traffic. Running-round movement still uses
+RTC with per-peer WebSocket fallback.
+
+Two consecutive injected heartbeat timeouts alone did not interrupt an established
+foreground pair. Under concurrent browser load, timeouts and a countdown
+interruption also occurred before fault injection. The original phone interruption
+still needs a trace that distinguishes presence expiry from a delayed checkpoint.
+
 ### Next two useful slices
 
-1. Reproduce the observed heartbeat-timeout / interrupted-round sequence while
-   preserving the accepted movement and colors. Capture foreground/background
-   transitions and connection/authority state; do not assume a clock cause.
-2. Reproduce the stale lobby-membership observation: Bob showed the correct room
-   code, but Alice initially showed 1/1 ready and a disabled Start button. Cycling
-   Alice through solo and online refreshed the roster, then both became ready and
-   the round started. Root cause is unconfirmed; the host-button fix does not claim
-   to resolve missing roster updates.
+1. Repeat Ready, guest reload and round start on Bob's iPhone and Alice's
+   browser. Compare both rosters before starting and after returning to the lobby.
+2. Capture heartbeat timing, page visibility, lease freshness and the last
+   confirmed checkpoint together during a loaded countdown and an iPhone round.
+   Use the first divergent event to choose the next fix.
 
 ## Responsiveness correction — 16 November 2026
 

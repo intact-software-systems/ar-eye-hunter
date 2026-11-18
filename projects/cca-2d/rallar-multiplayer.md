@@ -59,10 +59,16 @@ The v6 iPhone retest reported responsive local movement and Dash, "the way a gam
 should feel like." Keep that tuning. The next observed defect was view-dependent
 hoodie colors; both render paths now use the canonical retained participant order,
 including the local YOU label. The phone color retest was accepted: "I am playing
-now and it looks good." The current two slices are (1) reproduce the separate
-observed heartbeat-timeout / round-interruption sequence without changing accepted
-movement tuning; (2) reproduce the stale lobby roster. Keep deferred broad clock work in #836. Detailed phone
-feedback and validation limits remain in [the trial report](babylon-local-trial.md).
+now and it looks good."
+
+On 18 November the three-account browser trial isolated a lost Ready retry during
+a membership change. The app preserves the choice within its original session,
+epoch and lobby, clears the transient recovery error on recovery, and reuses the
+confirmed checkpoint in an idle lobby. The next two slices are a same-room roster
+retest on the iPhone and a timed trace of the intermittent countdown interruption.
+The trace needs visibility, presence freshness and checkpoint progress. Broad
+clock qualification remains in [#836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
+Measurements and reproduction steps are in [the trial report](babylon-local-trial.md).
 
 ## Global constraints
 

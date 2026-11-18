@@ -82,13 +82,14 @@ export class TownMatchSession {
     private authorityKey = '';
     private error = '';
     private appointmentError = '';
+    private recoveryError = '';
     private appointing = false;
     private lastInput = 0;
     private lastExchange = 0;
     private lastCommit: { readonly at: number; readonly epoch: number; } | undefined;
     private recoveryStartedAt: number | undefined;
     private interruptedMatch: { readonly matchId: string; readonly epoch: number; } | undefined;
-    private intent: TownMatchFrame | undefined;
+    private intent: { readonly frame: TownMatchFrame; readonly sessionId: string; } | undefined;
     private lastProposal: TownMatchFrame | undefined;
     private committedProposal: TownMatchFrame | undefined;
 
@@ -161,7 +162,7 @@ export class TownMatchSession {
             recovering,
             interruption,
             inputGeneration: this.generation,
-            error: this.error || (director.isFresh ? '' : this.appointmentError),
+            error: this.error || this.recoveryError || (director.isFresh ? '' : this.appointmentError),
             appointmentEligibility,
             appointing: this.appointing,
             livePoses: available && !recovering
@@ -203,17 +204,20 @@ export class TownMatchSession {
     async act(action: TownMatchSession.Intent): Promise<void> {
         const state = this.checkpoints?.getState().committed?.state;
         const view = this.getView();
-        if (!state || !view.available || (action.kind === 'controls' && (view.recovering || view.observing))) {
+        const session = this.dependencies.browser.session();
+        if (
+            !state || !session || !view.available || (action.kind === 'controls' && (view.recovering || view.observing))
+        ) {
             return;
         }
         const frame = this.createFrame(
             state.matchId,
             action.kind === 'ready'
-                ? { ...action, displayName: this.dependencies.browser.session()?.username ?? '' }
+                ? { ...action, displayName: session.username ?? '' }
                 : action
         );
         if (action.kind === 'ready' || action.kind === 'start' || action.kind === 'rematch') {
-            this.intent = frame;
+            this.intent = { frame, sessionId: session.sessionId };
         }
         await this.write(frame);
     }
@@ -261,7 +265,12 @@ export class TownMatchSession {
                     await this.publishLivePoses();
                 }
             }
-            if (now - this.lastExchange >= 100) {
+            const checkpoint = this.checkpoints.getState();
+            const settledLobby = match?.phase === 'lobby' && !checkpoint.pending && !checkpoint.recoveryRequired &&
+                !this.intent && (!view.isDirector || this.simulation?.getState() === match);
+            // A quiet lobby still retransmits for a peer that missed commitment.
+            // New rosters, commands and unsettled checkpoints use the normal exchange interval.
+            if (now - this.lastExchange >= (settledLobby ? 1000 : 100)) {
                 this.lastExchange = now;
                 await this.exchangeCheckpoints();
             }
@@ -284,7 +293,9 @@ export class TownMatchSession {
         }
         this.simulation?.pause(this.dependencies.timers.nowMs());
         this.controls = { x: 0, z: 0, dash: this.controls.dash };
-        this.intent = undefined;
+        if (this.intent?.frame.action.kind !== 'ready') {
+            this.intent = undefined;
+        }
         this.changes.publishLatest(undefined);
     }
 
@@ -334,6 +345,13 @@ export class TownMatchSession {
         if (!session) {
             return;
         }
+        // A ready choice may still be in flight when another player joins or leaves.
+        const retryReady = this.intent?.frame.action.kind === 'ready' && working?.phase === 'lobby' &&
+            this.intent.frame.matchId === working.matchId && this.intent.frame.epoch === authority.epoch &&
+            this.intent.sessionId === session.sessionId;
+        if (!retryReady) {
+            this.intent = undefined;
+        }
         this.members = authority.members;
         this.authorityKey = key;
         this.generation += 1;
@@ -353,7 +371,6 @@ export class TownMatchSession {
             dash: working?.players.find((player) => player.id === this.dependencies.browser.session()?.clientId)
                 ?.consumedDash ?? 0
         };
-        this.intent = undefined;
         this.lastProposal = undefined;
         this.committedProposal = undefined;
     }
@@ -363,6 +380,7 @@ export class TownMatchSession {
         if (!view.recovering) {
             this.recoveryStartedAt = undefined;
             if (!view.match || view.available) {
+                this.recoveryError = '';
                 return;
             }
         }
@@ -379,7 +397,9 @@ export class TownMatchSession {
         }
         catch (error) {
             // A failed refresh must not starve agreement over a still-authorized live channel.
-            this.report(error);
+            if (!this.lifetime.signal.aborted) {
+                this.recoveryError = error instanceof Error ? error.message : 'The room could not be refreshed.';
+            }
         }
         this.reconcileAuthority();
         if (view.recovering) {
@@ -438,8 +458,8 @@ export class TownMatchSession {
                 committed: recovery === state.committed
             }));
         }
-        if (this.intent) {
-            await this.write(this.intent);
+        if (this.intent && this.intent.sessionId === this.dependencies.browser.session()?.sessionId) {
+            await this.write(this.intent.frame);
         }
         if (this.getView().isDirector) {
             if (state.committed?.epoch === state.authority.epoch) {
@@ -506,7 +526,7 @@ export class TownMatchSession {
 
     private async propose(): Promise<void> {
         const working = this.simulation?.getState();
-        if (!working) {
+        if (!working || (working.phase === 'lobby' && working === this.checkpoints?.getState().committed?.state)) {
             return;
         }
         const generation = this.generation;
@@ -726,6 +746,7 @@ export class TownMatchSession {
         const now = this.dependencies.timers.nowMs();
         this.expireRecovery(this.getView(), now);
         if (committed) {
+            this.error = '';
             this.lastCommit = { at: now, epoch: committed.epoch };
         }
         if (
@@ -744,7 +765,7 @@ export class TownMatchSession {
             this.committedProposal = this.lastProposal;
             this.lastProposal = undefined;
         }
-        const action = this.intent?.action;
+        const action = this.intent?.frame.action;
         if (committed && action) {
             const state = committed.state;
             const local = state.members.find((member) => member.id === this.dependencies.browser.session()?.clientId);
