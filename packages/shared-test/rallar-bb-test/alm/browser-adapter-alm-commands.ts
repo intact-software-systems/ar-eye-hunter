@@ -125,6 +125,11 @@ interface AlmReceivedOutcomeInput {
     readonly ascending: boolean | undefined;
 }
 
+interface AlmReceivedFailure {
+    readonly code: string;
+    readonly message: string;
+}
+
 type AlmDeliveryKind = 'messages.observe' | 'messages.cancel' | 'messages.receipts';
 
 type AlmTopicSubscriptionKind = 'messages.subscribe' | 'messages.unsubscribe';
@@ -644,7 +649,7 @@ function toAlmReceivedFailure(
     command: AlmReceivedOutcomeInput['command'],
     observed: number,
     counted: boolean
-): Readonly<{ code: string; message: string; }> {
+): AlmReceivedFailure {
     const observation = `messages.received observed ${observed} ${command.typeId} messages`;
     if (counted) {
         return {

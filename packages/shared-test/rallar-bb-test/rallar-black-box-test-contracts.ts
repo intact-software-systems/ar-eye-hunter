@@ -1,9 +1,5 @@
 import type { ALDeliveryCarrier } from '@shared/al-contracts/al-control-value-codec.ts';
-import type {
-    ALAckAlgo,
-    ALDurabilityAlgo,
-    ALOwnershipAlgo
-} from '@shared/al-contracts/al-policy.ts';
+import type { ALAckAlgo, ALDurabilityAlgo, ALOwnershipAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ALPublicationPolicy } from '@shared/al-contracts/publication/al-publication-policy.ts';
 import type { ALChannelPurpose } from '@shared/al-contracts/resolve-al-channel-send-defaults.ts';
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -449,10 +445,7 @@ export type RallarBlackBoxTestMessagesReceivedCommand =
         msgId?: string;
         count: number;
         absent?: boolean;
-        /**
-         * A field of each copy's payload that must be a number and strictly ascend in arrival order. Absent claims no
-         * order; an absence claim (`absent: true`) takes none.
-         */
+        /** A payload field that must ascend strictly in arrival order; an absence claim takes none. */
         ascendingBy?: string;
         windowMs: number;
     }>;
