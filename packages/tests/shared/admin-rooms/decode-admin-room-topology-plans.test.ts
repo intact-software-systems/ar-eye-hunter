@@ -26,7 +26,8 @@ const PLAN: AdminRoomTopologyPlan = {
             maxJoinerEdgesPerSession: 1
         },
         longestPathHops: 3,
-        change: { kind: 'attach' }
+        change: { kind: 'attach' },
+        heldReshapeReasons: []
     }
 };
 

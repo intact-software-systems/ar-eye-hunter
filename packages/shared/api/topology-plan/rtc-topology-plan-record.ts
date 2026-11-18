@@ -1,5 +1,6 @@
 import type { GroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import type { TopologyPlanChange } from './topology-plan-change.ts';
+import type { HeldTopologyReshapeReason } from './topology-reshape-gate.ts';
 
 export const TOPOLOGY_REPLAN_CAUSES = ['join', 'leave', 'leader-change', 'config', 'rtt'] as const;
 
@@ -30,4 +31,6 @@ export interface RtcTopologyPlanRecord {
     readonly delta: TopologyLayoutDelta;
     readonly longestPathHops: number;
     readonly change: TopologyPlanChange | null;
+    /** In HELD_TOPOLOGY_RESHAPE_REASONS order; empty when the planner held no reshape back. */
+    readonly heldReshapeReasons: readonly HeldTopologyReshapeReason[];
 }

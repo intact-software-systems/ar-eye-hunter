@@ -1,4 +1,4 @@
-import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan-change.ts';
+import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 
 import { recordRallarTiming, type RallarTimingSink } from '../../../observability/timing.ts';
 import type { RttReplanPromotion } from '../../planning/resolve-rtt-replan-promotion.ts';
@@ -25,7 +25,8 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
         return;
     }
     const promotion = readRttReplanPromotion(accepted);
-    const planChange = readPlanChange(accepted);
+    const plan = readPublishedPlan(accepted);
+    const planChange = plan?.change ?? null;
     recordRallarTiming({
         sink: input.timing,
         event: {
@@ -44,6 +45,9 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
                 layoutAgeMs: promotion !== null && 'layoutAgeMs' in promotion ? promotion.layoutAgeMs : undefined,
                 planChange: planChange?.kind,
                 reshapeReason: planChange?.kind === 'reshape' ? planChange.reason : undefined,
+                heldReshapeReasons: plan === null || plan.heldReshapeReasons.length === 0
+                    ? undefined
+                    : plan.heldReshapeReasons.join(','),
                 overlayVersion: readCommittedOverlayVersion(accepted),
                 groupRevision: accepted.group.causalRevision.groupRevision,
                 presenceRevision: accepted.group.causalRevision.presenceRevision
@@ -62,8 +66,8 @@ function readRttReplanPromotion(accepted: TimedRtcTopologyWork): RttReplanPromot
         : null;
 }
 
-function readPlanChange(accepted: TimedRtcTopologyWork): TopologyPlanChange | null {
-    return accepted.decision === 'accepted' ? accepted.publication?.plan?.change ?? null : null;
+function readPublishedPlan(accepted: TimedRtcTopologyWork): RtcTopologyPlanRecord | null {
+    return accepted.decision === 'accepted' ? accepted.publication?.plan ?? null : null;
 }
 
 /** The layout version the decision left stored; a superseded attempt committed none of its own. */

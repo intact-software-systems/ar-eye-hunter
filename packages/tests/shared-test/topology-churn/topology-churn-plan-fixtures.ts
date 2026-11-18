@@ -43,7 +43,8 @@ export function createTopologyChurnPlan(input: TopologyChurnTestPlanInput): Admi
             causes: input.causes ?? ['join'],
             delta,
             longestPathHops: input.longestPathHops ?? 1,
-            change: isEmptyTopologyLayoutDelta(delta) ? null : input.change ?? { kind: 'attach' }
+            change: isEmptyTopologyLayoutDelta(delta) ? null : input.change ?? { kind: 'attach' },
+            heldReshapeReasons: []
         }
     };
 }

@@ -43,6 +43,7 @@ function createInput(
         rttRefresh: false,
         changeGated: true,
         derivation: { method: 'incremental' },
+        heldReshapeReasons: [],
         nowEpochMs: NOW_EPOCH_MS,
         ...overrides
     };
@@ -57,7 +58,8 @@ describe('computeRtcTopologyPlanRecord', () => {
             causes: ['join'],
             delta: { ...EMPTY_TOPOLOGY_LAYOUT_DELTA, joinedSessionCount: 3 },
             longestPathHops: 2,
-            change: { kind: 'attach' }
+            change: { kind: 'attach' },
+            heldReshapeReasons: []
         };
 
         expect(computeRtcTopologyPlanRecord(createInput(null, planned))).toEqual(expected);
@@ -161,6 +163,18 @@ describe('computeRtcTopologyPlanRecord', () => {
         const record = computeRtcTopologyPlanRecord(createInput(createLayout(3, ['a', 'b', 'c']), createLayout(4, ['a', 'b'])));
 
         expect(record.change).toEqual({ kind: 'repair' });
+    });
+
+    it('names the reshape reasons the planner held while computing the plan', () => {
+        const stored = createLayout(3, ['a', 'b']);
+        const planned = createLayout(4, ['a', 'b', 'c']);
+
+        const record = computeRtcTopologyPlanRecord(
+            createInput(stored, planned, { heldReshapeReasons: ['kind-change', 'leader-rooting'] })
+        );
+
+        expect(record.heldReshapeReasons).toEqual(['kind-change', 'leader-rooting']);
+        expect(record.change).toEqual({ kind: 'attach' });
     });
 
     it('a plan that changes nothing has no cause and an empty delta', () => {

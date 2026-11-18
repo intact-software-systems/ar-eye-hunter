@@ -6312,7 +6312,7 @@ components:
     RtcTopologyPlanRecord:
       type: object
       additionalProperties: false
-      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change]
+      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change, heldReshapeReasons]
       properties:
         plannedAtEpochMs: { type: integer, minimum: 0 }
         replaced:
@@ -6329,6 +6329,9 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TopologyPlanChange'
             - type: 'null'
+        heldReshapeReasons:
+          type: array
+          items: { type: string, enum: [kind-change, leader-rooting] }
 
     TopologyPlanChange:
       oneOf:

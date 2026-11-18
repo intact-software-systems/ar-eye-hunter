@@ -432,6 +432,7 @@ function computePublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput)
         rttRefresh: work.kind === 'rtt-refresh',
         changeGated: isChangeGatedGroupRevisionWork(work),
         derivation: planned.derivation,
+        heldReshapeReasons: planned.heldReshapeReasons,
         nowEpochMs: input.authority.nowEpochMs
     });
 }

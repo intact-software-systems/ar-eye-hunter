@@ -37,6 +37,7 @@ import { toGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -264,6 +265,38 @@ describe('RTC topology work plan change', () => {
         expect(events.map((event) => event.details)).toEqual([
             expect.objectContaining({ planChange: 'reshape', reshapeReason: 'refinement' }),
             expect.objectContaining({ planChange: 'attach', reshapeReason: undefined })
+        ]);
+    });
+
+    it('the recompute line names the reshape reasons a plan held, and omits them for a plan that held none', () => {
+        const events: RallarTimingEvent[] = [];
+        const record = (accepted: AcceptedRtcTopologyWork) =>
+            recordRtcTopologyWorkTiming({
+                timing: (event) => events.push(event),
+                serviceId: 'topology-service',
+                accepted,
+                computeDurationMs: 3,
+                traceId: 'trace-held-reshape-recompute'
+            });
+        const accepted = computeFixtureReplanWork(toTreeJoinReplan());
+        const { publication } = accepted;
+        if (publication?.plan == null) {
+            throw new Error('Expected the tree join to publish a plan record');
+        }
+        const { plan } = publication;
+        const holding = (heldReshapeReasons: readonly HeldTopologyReshapeReason[]): AcceptedWork => ({
+            ...accepted,
+            publication: { ...publication, plan: { ...plan, heldReshapeReasons } }
+        });
+
+        record(holding(['kind-change']));
+        record(holding(['kind-change', 'leader-rooting']));
+        record(accepted);
+
+        expect(events.map((event) => event.details?.heldReshapeReasons)).toEqual([
+            'kind-change',
+            'kind-change,leader-rooting',
+            undefined
         ]);
     });
 

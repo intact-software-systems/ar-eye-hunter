@@ -46,7 +46,8 @@ const response: AdminRoomTopologyPlansResponse = {
                 maxJoinerEdgesPerSession: 1
             },
             longestPathHops: 2,
-            change: { kind: 'attach' }
+            change: { kind: 'attach' },
+            heldReshapeReasons: []
         }
     }],
     nextAfterPublicationId: null
@@ -174,7 +175,8 @@ test('the OpenAPI document describes the path and every field the route serves',
             causes: { type: 'array', items: { type: 'string', enum: ['join', 'leave', 'leader-change', 'config', 'rtt'] } },
             delta: { $ref: '#/components/schemas/TopologyLayoutDelta' },
             longestPathHops: count,
-            change: { oneOf: [{ $ref: '#/components/schemas/TopologyPlanChange' }, { type: 'null' }] }
+            change: { oneOf: [{ $ref: '#/components/schemas/TopologyPlanChange' }, { type: 'null' }] },
+            heldReshapeReasons: { type: 'array', items: { type: 'string', enum: ['kind-change', 'leader-rooting'] } }
         },
         ReplacedTopologyLayout: { layout, ageMs: count },
         TopologyLayoutDelta: {

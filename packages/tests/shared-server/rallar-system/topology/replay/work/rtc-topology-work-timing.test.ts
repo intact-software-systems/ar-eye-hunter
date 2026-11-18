@@ -56,6 +56,7 @@ describe('RTC topology recompute timing line', () => {
         })]);
         expect(events[0]?.details).not.toHaveProperty('layoutAgeMs', expect.anything());
         expect(events[0]?.details).not.toHaveProperty('reshapeReason', expect.anything());
+        expect(events[0]?.details).not.toHaveProperty('heldReshapeReasons', expect.anything());
         expect(events.map((event) => event.traceId)).toEqual(['trace-rtc-topology-work-timing']);
     });
 
