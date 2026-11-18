@@ -43,7 +43,7 @@ interface DeliveryObservation {
     readonly replyToMsgId: string | undefined;
     readonly listeners: Set<RallarMessageDeliveryListener>;
     readonly waits: Map<number, DeliveryWait>;
-    readonly replyDeadlines: Set<DeliveryDeadlineTimer>;
+    readonly deadlines: Set<DeliveryDeadlineTimer>;
     readonly replySlot: BrowserMessageReplySlot;
     lifecycle: ALDeliveryLifecycle;
     /**
@@ -60,7 +60,6 @@ interface DeliveryWait {
     resolve(outcome: RallarMessageDeliveryOutcome): void;
     /** Drops the wait from its observation and clears the timers and abort listener it armed. */
     release(): void;
-    updateDeadline(): void;
 }
 
 interface DeliveryEntry {
@@ -141,10 +140,7 @@ export class BrowserRallarDeliveryRegistry {
             observation,
             computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, now)
         );
-        for (const wait of observation.waits.values()) {
-            wait.updateDeadline();
-        }
-        for (const deadline of observation.replyDeadlines) {
+        for (const deadline of observation.deadlines) {
             this.rescheduleDeadlineTimer(deadline);
         }
     }
@@ -230,7 +226,7 @@ export class BrowserRallarDeliveryRegistry {
             replyToMsgId: message.actions?.replyToMsgId,
             listeners: new Set(),
             waits: new Map(),
-            replyDeadlines: new Set(),
+            deadlines: new Set(),
             lifecycle: createInitialALDeliveryLifecycle({
                 msgId: message.id.msgId,
                 typeId: message.payload.typeId,
@@ -342,13 +338,13 @@ export class BrowserRallarDeliveryRegistry {
         options: RallarMessageReplyWaitOptions
     ): Promise<RallarMessageReplyOutcome<T>> {
         const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
-        observation.replyDeadlines.add(deadline);
+        observation.deadlines.add(deadline);
         this.scheduleDeadlineTimer(deadline);
         try {
             return await observation.replySlot.awaitReply<T>(() => this.readLifecycle(observation), options);
         }
         finally {
-            observation.replyDeadlines.delete(deadline);
+            observation.deadlines.delete(deadline);
             clearTimeout(deadline.timerId);
         }
     }
@@ -362,34 +358,31 @@ export class BrowserRallarDeliveryRegistry {
         this.waitCount += 1;
         const waitId = this.waitCount;
         const armed = new AbortController();
-        const timerIds: ReturnType<typeof setTimeout>[] = [];
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         const deadline: DeliveryDeadlineTimer = { observation, timerId: undefined };
+        observation.deadlines.add(deadline);
         const release = (): void => {
+            observation.deadlines.delete(deadline);
             observation.waits.delete(waitId);
             armed.abort();
             clearTimeout(deadline.timerId);
-            for (const timerId of timerIds) {
-                clearTimeout(timerId);
-            }
+            clearTimeout(timeout);
         };
 
-        const updateDeadline = (): void => {
-            this.rescheduleDeadlineTimer(deadline);
-        };
-        observation.waits.set(waitId, { until: options.until, resolve, release, updateDeadline });
+        observation.waits.set(waitId, { until: options.until, resolve, release });
         options.signal?.addEventListener('abort', () => {
             release();
             resolve({ status: 'aborted', lifecycle: this.readLifecycle(observation) });
         }, { signal: armed.signal });
 
         if (options.timeoutMs !== undefined) {
-            timerIds.push(setTimeout(() => {
+            timeout = setTimeout(() => {
                 release();
                 resolve({ status: 'timeout', lifecycle: this.readLifecycle(observation) });
-            }, options.timeoutMs));
+            }, options.timeoutMs);
         }
 
-        updateDeadline();
+        this.scheduleDeadlineTimer(deadline);
     }
 
     private rescheduleDeadlineTimer(deadline: DeliveryDeadlineTimer): void {
