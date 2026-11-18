@@ -152,6 +152,21 @@ describe('the planner with the reshape held', () => {
 
         expect(held.derivation).toEqual({ method: 'rebuilt', reason: 'update-failed' });
         expect(held.heldReshapeReasons).toEqual([]);
+        expect(held.planningObservation.incrementalFallbackReasons).toEqual(['update-failed']);
+    });
+
+    it('a held plan whose in-place update fails records its fallback and its hysteresis hold once', () => {
+        // Thirteen members keep the mesh by its hysteresis; under a limit of two the evolved mesh cannot stand.
+        const formed = formSizeSelected(16);
+        const options = { ...RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS, degreeLimit: 2, rttReportingDegreeLimit: 2 };
+
+        const held = computeRtcTopologyFixturePlan({ options, group: createRtcTopologyFixtureGroup(13), previous: formed, reshape: HELD });
+
+        expect(formed.topology).toBe('mesh');
+        expect(held.snapshot.topology).toBe('mesh');
+        expect(held.derivation).toMatchObject({ method: 'rebuilt' });
+        expect(held.planningObservation.hysteresisHoldCount).toBe(1);
+        expect(held.planningObservation.incrementalFallbackReasons).toHaveLength(1);
     });
 
     it('an evolution the validator rejects with the kind held is rebuilt into the kind a fresh plan selects', () => {

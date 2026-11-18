@@ -44,6 +44,10 @@ import type {
     DerivedRtcTopologyNextHops,
     RtcTopologyPlanDerivation
 } from './plan-record/rtc-topology-plan-derivation.ts';
+import {
+    resolveHeldTopologyFallback,
+    type HeldTopologyFallback
+} from './reshape-gate/resolve-held-topology-fallback.ts';
 import { resolveHeldTopologyKind, type HeldTopologyKind } from './reshape-gate/resolve-held-topology-kind.ts';
 import { resolveRttRefinementNextHops } from './resolve-rtt-refinement-next-hops.ts';
 import {
@@ -81,6 +85,13 @@ interface PlanTopologySelectionInput {
     readonly topologyOptions: RallarRtcTopologyServiceOptions;
     readonly previous: RallarOverlayTopologySnapshot | undefined;
     readonly reshape: TopologyReshapePermission;
+    readonly recordsHysteresisHold: boolean;
+}
+
+interface CanonicalPlanAttempt {
+    readonly reshape: TopologyReshapePermission;
+    /** Set on the replan that follows a held attempt whose in-place update failed. */
+    readonly heldFallback: HeldTopologyFallback | undefined;
 }
 
 interface PlannedRtcTopologyNextHops extends DerivedRtcTopologyNextHops {
@@ -215,7 +226,7 @@ export class RtcTopologyPlanner {
     ): RallarRtcTopologyUpdateResult {
         const planned = this.computeCanonicalNextHops(
             input,
-            input.updateOptions.reshape ?? UNGATED_TOPOLOGY_RESHAPE,
+            { reshape: input.updateOptions.reshape ?? UNGATED_TOPOLOGY_RESHAPE, heldFallback: undefined },
             publicDispatch
         );
         const result = planRallarRtcTopologySnapshot({
@@ -283,13 +294,18 @@ export class RtcTopologyPlanner {
         };
     }
 
+    /** The replan after a held attempt rebuilds as a membership delta, so no refinement evolves the layout again. */
     private computeCanonicalNextHops(
         input: RtcTopologyPlanner.CanonicalPlanInput,
-        reshape: TopologyReshapePermission,
+        attempt: CanonicalPlanAttempt,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
     ): PlannedRtcTopologyNextHops {
+        const { reshape, heldFallback } = attempt;
         const topologyOptions = this.readTopologyOptions(input.updateOptions);
-        const selected = this.selectPlanTopology({ ...input, topologyOptions, reshape }, publicDispatch);
+        const selected = this.selectPlanTopology(
+            { ...input, topologyOptions, reshape, recordsHysteresisHold: heldFallback === undefined },
+            publicDispatch
+        );
         const plan: RtcTopologyPlanInput = {
             group: input.group,
             leaderSessionId: resolveRallarGroupLeaderSessionId(input.group),
@@ -298,12 +314,20 @@ export class RtcTopologyPlanner {
             topology: selected.topology,
             previous: input.previous,
             topologyOptions,
-            planningIntent: input.updateOptions.planningIntent ?? 'full-rebuild',
+            planningIntent: heldFallback === undefined
+                ? input.updateOptions.planningIntent ?? 'full-rebuild'
+                : 'membership-delta',
             reshape
         };
-        const evolved = this.computeEvolvedNextHops(plan);
+        const evolved = resolveHeldTopologyFallback(heldFallback, selected.topology) ??
+            this.computeEvolvedNextHops(plan);
         if (reshape.reshape === 'held' && evolved?.outcome === 'full-rebuild') {
-            return this.computeCanonicalNextHops(input, HELD_TOPOLOGY_REBUILD_RESHAPE, publicDispatch);
+            const fallback = { topology: selected.topology, reason: evolved.reason };
+            return this.computeCanonicalNextHops(
+                input,
+                { reshape: HELD_TOPOLOGY_REBUILD_RESHAPE, heldFallback: fallback },
+                publicDispatch
+            );
         }
         const planned = this.computePlannedNextHops(plan, evolved, publicDispatch);
         const heldReshapeReasons = HELD_TOPOLOGY_RESHAPE_REASONS.filter((reason) =>
@@ -319,6 +343,7 @@ export class RtcTopologyPlanner {
         const previousKind = input.previous?.state === 'active' ? input.previous.topology : undefined;
         const topology = publicDispatch.selectTopology(input.group, input.topologyOptions, previousKind);
         if (
+            input.recordsHysteresisHold &&
             previousKind !== undefined &&
             topology === previousKind &&
             publicDispatch.selectTopology(input.group, input.topologyOptions) !== topology
