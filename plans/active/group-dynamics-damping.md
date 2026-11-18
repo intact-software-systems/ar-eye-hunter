@@ -746,7 +746,9 @@ The figures follow the controller's runs of the cluster recipe and the two measu
 - The quality bound that asks for a reshape of a patched graph.
 - The two server paths that re-plan without the tree-keeping gate (leader rooting after a failed
   update, the mesh rebuild), which #823 left for a follow-up: the reshape gate (pull request #844)
-  holds them in time; their quality bound is still open.
+  holds the optional leader re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild
+  after a failed update or a broken invariant is not held. The quality bound for these paths, the
+  tree-keeping gate of #810 that they skip, is still open.
 
 ## Validation
 

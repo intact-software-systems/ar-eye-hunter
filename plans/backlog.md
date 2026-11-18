@@ -771,8 +771,10 @@ and it has no status list.
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
-  rebuild: the reshape gate of the group dynamics damping plan (pull request #844) holds them in time; their
-  quality bound is still open.
+  rebuild: the reshape gate of the group dynamics damping plan (pull request #844) holds the optional leader
+  re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild after a failed update or a broken
+  invariant is not held. The quality bound for these paths, the tree-keeping gate of #810 that they skip, is still
+  open.
 - A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
   reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
   (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
