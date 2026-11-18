@@ -9,6 +9,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { readBrowserServerCreationEpochMs } from '../connection/server-clock/browser-server-clock-session.ts';
 
 import { adoptJoinedRoom } from './adopt-joined-room.ts';
 import { leaveRoom } from './leave-room.ts';
@@ -20,11 +21,11 @@ import {
     createRoomJoinPartialFailureError,
     type StateGroupWorkflowValue
 } from './room-group-state-workflows.ts';
+import { readConfirmedRoomArrival } from './room-presence.ts';
 import { captureRoomSession, type RoomSessionFence } from './room-session-fence.ts';
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface CreateAndJoinRoomInput {
-    readonly nowMs: () => number;
     readonly newGroupId: () => string;
     readonly room: string | RallarCreateRoomInput;
     readonly sessionFence?: RoomSessionFence;
@@ -54,7 +55,7 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
     const session = fence.session;
     const scope = input.resolveOperationScope(createInput.scope);
     const snapshot = await createAndJoinStateGroup({
-        nowMs: input.nowMs,
+        nowMs: () => readBrowserServerCreationEpochMs(context.serverTime),
         newGroupId: input.newGroupId,
         displayName: createInput.displayName,
         principalId: session.clientId,
@@ -74,7 +75,13 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
         return await adoptJoinedRoom({
             dependencies: input,
             context,
-            snapshot,
+            snapshot: await readConfirmedRoomArrival({
+                context,
+                fence,
+                snapshot,
+                options: operationOptions,
+                generationId: context.middleware.heartbeat.generationId
+            }),
             options: operationOptions,
             assertCurrent: fence.assertCurrent
         });

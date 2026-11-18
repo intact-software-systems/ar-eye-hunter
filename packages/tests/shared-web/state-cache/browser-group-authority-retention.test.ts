@@ -546,6 +546,8 @@ async function runSuccessfulHeartbeat(group: GroupSnapshot): Promise<string[]> {
     const firstRenewalMs = BROWSER_STATE_CACHE_TTL_MS - SESSION_HEARTBEAT_RENEWAL_MARGIN_MS;
     vi.setSystemTime(heartbeatAtEpochMs - firstRenewalMs);
     const heartbeat = await initHeartbeat(clientData, {
+        creationEpochMs: Date.now,
+        expiryEpochMs: Date.now,
         publicationKey: null,
         authSession,
         scope: {

@@ -3,8 +3,8 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { isGroupActive } from '@shared/api/group-client-views.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
-import type { Timers } from '@shared/resilience/timers.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import { readBrowserServerExpiryEpochMs } from '../../connection/server-clock/browser-server-clock-session.ts';
 
 import { ApiHttpError } from '../../api/http-error.ts';
 import { isRetryableApiViewFailure } from '../../api/read-api-view.ts';
@@ -33,10 +33,11 @@ export interface PresenceReconnect extends PresenceRestore {
 }
 
 interface ObservedRoomPresence {
+    readonly connectionGenerationId: string | undefined;
     readonly room: GroupRef;
     readonly session: AuthSession;
     readonly snapshot: GroupSnapshot | undefined;
-    readonly timers: Timers;
+    readonly nowEpochMs: number;
 }
 
 interface RestoreSnapshot {
@@ -70,13 +71,12 @@ export async function readRestoreSnapshot(
 
 export async function sendPresenceReconnect(
     reconnect: PresenceReconnect,
-    assertCurrent: () => void,
-    timers: Timers
+    assertCurrent: () => void
 ): Promise<GroupSnapshot> {
     const result = await reconnect.command.run().catch((error) => {
         if (
             error instanceof ApiHttpError && error.status === 400 &&
-            reconnect.expiresAtEpochMs <= timers.nowMs()
+            reconnect.expiresAtEpochMs <= readBrowserServerExpiryEpochMs(reconnect.context.serverTime)
         ) {
             throw new RestoredPresenceExpiredError('Expired presence request was definitively rejected.');
         }
@@ -86,7 +86,7 @@ export async function sendPresenceReconnect(
     if (!result || !isSameGroupRef(reconnect.room, result.group)) {
         throw new Error('Selected room did not confirm presence on the replacement socket.');
     }
-    if (reconnect.expiresAtEpochMs <= timers.nowMs()) {
+    if (reconnect.expiresAtEpochMs <= readBrowserServerExpiryEpochMs(reconnect.context.serverTime)) {
         throw new RestoredPresenceExpiredError('Presence request resolved after its lease expired.');
     }
     return await readSummarisedRoomPresence({
@@ -94,11 +94,14 @@ export async function sendPresenceReconnect(
         fence: { session: reconnect.fence.session, assertCurrent },
         context: reconnect.context,
         options: { timeoutMs: reconnect.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000 },
-        isSummarised: (snapshot) => isConfirmedPresence(reconnect, snapshot, timers.nowMs())
+        isSummarised: (snapshot) =>
+            isConfirmedPresence(reconnect, snapshot, readBrowserServerExpiryEpochMs(reconnect.context.serverTime))
     });
 }
 
-export function needsPresenceRestore({ room, session, snapshot, timers }: ObservedRoomPresence): boolean {
+export function needsPresenceRestore(
+    { room, session, snapshot, nowEpochMs, connectionGenerationId }: ObservedRoomPresence
+): boolean {
     if (!snapshot) {
         return true;
     }
@@ -107,7 +110,7 @@ export function needsPresenceRestore({ room, session, snapshot, timers }: Observ
     }
     return !snapshot.activeSessions.some((row) =>
         row.principalId === session.clientId && row.sessionId === session.sessionId &&
-        row.expiresAtEpochMs > timers.nowMs()
+        row.connectionGenerationId === connectionGenerationId && row.expiresAtEpochMs > nowEpochMs
     );
 }
 

@@ -313,7 +313,7 @@ export async function initialiseMiddleware(
         const storageAvailability = initialiseBrowserRuntimeStores(
             session.sessionId,
             options.scope ?? defaultStateScope(),
-            { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage }
+            { diagnosticsPorts: options.diagnosticsPorts, runtimeStorage, serverClock }
         );
         const transportInput = createBrowserTransportInput(session, { ...options, signal: serverClock.signal }, {
             nowEpochMs: () => readBrowserServerExpiryEpochMs(serverClock),
@@ -566,6 +566,7 @@ function toCommandOptions<T>(
 }
 
 interface BrowserRuntimeStorageInput {
+    readonly serverClock: BrowserServerClockSession.Port;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly runtimeStorage: ALRuntimeStorage;
 }
@@ -575,12 +576,25 @@ function initialiseBrowserRuntimeStores(
     scope: StateScope,
     storage: BrowserRuntimeStorageInput
 ): BrowserALStorageAvailability {
-    const { diagnosticsPorts, runtimeStorage } = storage;
+    const { diagnosticsPorts, runtimeStorage, serverClock } = storage;
     initialiseBrowserCacheRepositories();
-    const storageAvailability = configureBrowserALRuntimeStores(sessionId, { scope, diagnosticsPorts, runtimeStorage });
-    initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage: diagnosticsPorts.storage }).catch((error) =>
-        console.error('Failed to initialise browser AL runtime expiry eviction:', toError(error))
-    );
+    const storageAvailability = configureBrowserALRuntimeStores(sessionId, {
+        scope,
+        diagnosticsPorts,
+        runtimeStorage,
+        nowMs: () => readBrowserServerExpiryEpochMs(serverClock),
+        workNowMs: () => serverClock.readWorkEpochMs()
+    });
+    initBrowserALRuntimeExpiryEviction({
+        currentScope: scope,
+        storage: diagnosticsPorts.storage,
+        signal: serverClock.signal,
+        nowMs: () => readBrowserServerCreationEpochMs(serverClock)
+    }).catch((error) => {
+        if (!serverClock.signal.aborted) {
+            reportBrowserConnectionCleanupFailure(toError(error));
+        }
+    });
     return storageAvailability;
 }
 

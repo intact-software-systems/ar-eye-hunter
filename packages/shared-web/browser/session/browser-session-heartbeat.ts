@@ -32,6 +32,8 @@ export const SESSION_HEARTBEAT_RETRY_MS = 5_000;
 export const SESSION_HEARTBEAT_RENEWAL_MARGIN_MS = 2 * SESSION_HEARTBEAT_RETRY_MS;
 
 export interface InitHeartbeatOptions {
+    readonly creationEpochMs: () => number;
+    readonly expiryEpochMs: () => number;
     readonly groupPresence?: RallarGroupPresencePolicy;
     /** What each group heartbeat registers on the page's presence row. */
     readonly publicationKey: GroupPresencePublicationKey | null;
@@ -59,7 +61,7 @@ interface FirstHeartbeatRenewalInput {
     /** The issued access token's expiry: the browser's only bound until the client snapshot names the lease. */
     readonly accessTokenExpiresAtEpochMs: number | undefined;
     /** The earliest lapse among the cached snapshots of the groups this session joined, when any is cached. */
-    readonly joinedGroupSnapshotsExpireAtEpochMs: number | undefined;
+    readonly remainingCacheMs: number;
     readonly cacheTtlMs: number;
     readonly marginMs: number;
 }
@@ -111,10 +113,10 @@ class BrowserStateHeartbeatRuntime {
     public start(): void {
         this.#groupRecoveryAtEpochMs = this.readGroupCacheDeadline();
         const firstRenewalDelayMs = computeFirstHeartbeatRenewalDelayMs({
-            nowEpochMs: this.#timers.nowMs(),
+            nowEpochMs: this.#options.expiryEpochMs(),
             leaseExpiresAtEpochMs: this.readOwnSessionLease()?.expiresAtEpochMs,
             accessTokenExpiresAtEpochMs: this.#options.authSession?.expiresAtEpochMs,
-            joinedGroupSnapshotsExpireAtEpochMs: this.#groupRecoveryAtEpochMs,
+            remainingCacheMs: this.#groupRecoveryAtEpochMs - this.#timers.nowMs(),
             cacheTtlMs: BROWSER_STATE_CACHE_TTL_MS,
             marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS
         });
@@ -149,8 +151,11 @@ class BrowserStateHeartbeatRuntime {
 
     /** A rejection asks the loop for the retry; a stopped or replaced heartbeat and an auth failure end quietly. */
     private async runHeartbeat(): Promise<void> {
+        if (!this.isCurrent()) {
+            return;
+        }
         const renewal = resolveHeartbeatRenewal({
-            nowEpochMs: this.#timers.nowMs(),
+            nowEpochMs: this.#options.expiryEpochMs(),
             intervalMs: SESSION_HEARTBEAT_INTERVAL_MS,
             marginMs: SESSION_HEARTBEAT_RENEWAL_MARGIN_MS,
             lease: this.readOwnSessionLease()
@@ -168,7 +173,7 @@ class BrowserStateHeartbeatRuntime {
                 }).run();
             }
             else {
-                await this.refreshHeartbeat();
+                await this.refreshHeartbeat(this.#options.policies?.command?.signal);
             }
         }
         catch (error) {
@@ -210,7 +215,7 @@ class BrowserStateHeartbeatRuntime {
         }
         const joinedGroups = this.readJoinedGroups();
         const refreshed = await refreshStateHeartbeat(this.#clientData, joinedGroups, {
-            heartbeatAtEpochMs: this.#timers.nowMs(),
+            heartbeatAtEpochMs: this.#options.creationEpochMs(),
             generationId: this.handle.generationId,
             wsConnectionGenerationId: wsConnectionGeneration?.right,
             clientSnapshot: clientStateSnapshotsRepository.findClientStateSnapshotByPrincipalId(
@@ -295,7 +300,7 @@ class BrowserStateHeartbeatRuntime {
     }
 
     private isCurrent(): boolean {
-        return !this.#stopped && activeHeartbeat === this.handle;
+        return !this.#stopped && activeHeartbeat === this.handle && !this.#options.policies?.command?.signal?.aborted;
     }
 
     private readOwnSessionLease(): SessionLease | undefined {
@@ -333,12 +338,13 @@ export function stopHeartbeat(
  * group's cached snapshot or a snapshot written now would lapse.
  */
 function computeFirstHeartbeatRenewalDelayMs(input: FirstHeartbeatRenewalInput): number {
-    const renewByEpochMs = Math.min(
-        input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY,
-        input.joinedGroupSnapshotsExpireAtEpochMs ?? Number.POSITIVE_INFINITY,
-        input.nowEpochMs + input.cacheTtlMs
+    const leaseExpiry = input.leaseExpiresAtEpochMs ?? input.accessTokenExpiresAtEpochMs ?? Number.POSITIVE_INFINITY;
+    const remainingMs = Math.min(
+        leaseExpiry - input.nowEpochMs,
+        input.remainingCacheMs,
+        input.cacheTtlMs
     );
-    return Math.max(0, renewByEpochMs - input.nowEpochMs - input.marginMs);
+    return Math.max(0, remainingMs - input.marginMs);
 }
 
 /**

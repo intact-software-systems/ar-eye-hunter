@@ -337,7 +337,8 @@ export function createCheckpointALOutboundRuntimeStores<TPrepared>(
     const checkpoint = new ALCheckpoint({
         storage: toALCheckpointStorage(options, memory, admissionStore.namespace),
         ownership: options.ownership,
-        nowMs: input.nowMs
+        nowMs: input.nowMs,
+        workNowMs: input.workNowMs
     });
     options.runtimeStorage?.ownCheckpoint(checkpoint);
     return {

@@ -283,13 +283,13 @@ export function createBrowserRallarRooms(
         ...createRoomEntryOperations({
             rooms: input,
             newGroupId: () => crypto.randomUUID(),
-            presence: { newPresenceGenerationId: () => crypto.randomUUID(), nowMs: () => Date.now() },
+            presence: { newPresenceGenerationId: () => crypto.randomUUID() },
             createSession,
             createFormation,
             resolveRoomRef,
             onCacheChange
         }),
-        ...createRoomMembershipOperations(input, Date.now),
+        ...createRoomMembershipOperations(input),
         ...createRoomUpdateOperations(input)
     };
 }
@@ -356,15 +356,11 @@ function createRoomEntryOperations(
             joinRoom({ ...rooms, ...input.presence, room, options, createRoomSession: input.createSession })
         );
     return {
-        create: (room) =>
-            rooms.changeRoom(() =>
-                createAndJoinRoom({ ...rooms, nowMs: input.presence.nowMs, newGroupId: input.newGroupId, room })
-            ),
+        create: (room) => rooms.changeRoom(() => createAndJoinRoom({ ...rooms, newGroupId: input.newGroupId, room })),
         createAndSwitch: (room) =>
             rooms.changeRoom(() =>
                 createAndSwitchRoom({
                     ...rooms,
-                    nowMs: input.presence.nowMs,
                     newGroupId: input.newGroupId,
                     room,
                     leaveRoom
@@ -401,8 +397,7 @@ function createRoomEntryOperations(
 }
 
 function createRoomMembershipOperations(
-    input: CreateBrowserRallarRoomsInput,
-    nowMs: () => number
+    input: CreateBrowserRallarRoomsInput
 ): Pick<
     BrowserRallarRooms,
     | 'invite'
@@ -420,7 +415,7 @@ function createRoomMembershipOperations(
     return {
         invite: async (room, principalId, options = {}) =>
             await createRoomInvite({ ...input, room, principalId, options }),
-        acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, nowMs, room, options }),
+        acceptInvite: async (room, options = {}) => await acceptRoomInvite({ ...input, room, options }),
         revokeInvite: async (room, principalId, options = {}) =>
             await revokeRoomInvite({ ...input, room, principalId, options }),
         rotateJoinCode: async (room, options = {}) => await rotateRoomJoinCode({ ...input, room, options }),

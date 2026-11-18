@@ -4,6 +4,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { createDefaultBrowserServerClockFixture } from '../../connection/browser-server-clock-fixture.ts';
 
 import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
@@ -32,14 +33,16 @@ afterEach(() => {
 
 function fixture(groupPresence?: RallarGroupPresencePolicy) {
     configureApiClient({ apiBaseUrl: '' });
+    const timers = createManualTimers(0);
+    const serverTime = createDefaultBrowserServerClockFixture(() => timers.nowMs());
     let ctx = createDefaultApiMiddlewareTestDouble({
+        serverTime,
         session: { clientId: 'watcher', sessionId: 'watcher' },
         middleware: { heartbeat: { groupPresence } }
     });
     let selected: GroupRef | undefined = room;
     let session = ctx.session;
     const adopted: GroupSnapshot[] = [];
-    const timers = createManualTimers(0);
     const owner = new SelectedRoomRecovery({
         selected: () => selected,
         timers,
@@ -55,7 +58,11 @@ function fixture(groupPresence?: RallarGroupPresencePolicy) {
     });
     return {
         owner,
+        get context() {
+            return ctx;
+        },
         adopted,
+        serverTime,
         timers,
         select(ref: GroupRef | undefined) {
             selected = ref;
@@ -65,6 +72,7 @@ function fixture(groupPresence?: RallarGroupPresencePolicy) {
         },
         replaceSession() {
             ctx = createDefaultApiMiddlewareTestDouble({
+                serverTime,
                 session: { clientId: 'watcher', sessionId: 'replacement' },
                 middleware: { heartbeat: { groupPresence } }
             });
@@ -128,7 +136,7 @@ it('restores only the selected spectator presence before a concurrent departure 
     ]);
 });
 
-it.each(['revoked', 'logout', 'same-room-reselected'] as const)('refuses presence after %s during the point read', async (reason) => {
+it.each(['revoked', 'logout', 'clock closed', 'same-room-reselected'] as const)('refuses presence after %s during the point read', async (reason) => {
     const test = fixture();
     const issued = Promise.withResolvers<void>();
     const response = Promise.withResolvers<Response>();
@@ -141,6 +149,9 @@ it.each(['revoked', 'logout', 'same-room-reselected'] as const)('refuses presenc
     test.owner.onSocket('close');
     test.owner.onSocket('open');
     await issued.promise;
+    if (reason === 'clock closed') {
+        await test.serverTime.close();
+    }
     if (reason === 'logout') {
         test.logout();
     }
@@ -184,7 +195,7 @@ it('restores an authorized selected room after silent expiry without a socket-cl
         });
     });
     test.owner.onSocket('connected');
-    test.owner.observePresence(snapshot);
+    test.owner.observePresence(snapshot, test.context);
     await test.owner.changeRoom(async () => {});
     expect(methods).toEqual(['GET', 'PUT']);
     expect(test.adopted.at(-1)?.activeSessions.some((row) => row.principalId === 'watcher')).toBe(true);
@@ -219,9 +230,9 @@ it.each(['delayed receipt', 'lost receipt', 'expired rejection'] as const)('reso
         });
     });
     test.owner.onSocket('connected');
-    test.owner.observePresence(snapshot);
+    test.owner.observePresence(snapshot, test.context);
     await issued.promise;
-    await test.timers.advance(9_000);
+    await test.timers.advance(8_000);
     release.resolve();
     await test.owner.changeRoom(async () => {});
     expect(test.adopted).toEqual([]);
@@ -232,7 +243,7 @@ it.each(['delayed receipt', 'lost receipt', 'expired rejection'] as const)('reso
     await test.owner.changeRoom(async () => {});
     expect(requests.at(-1)?.url).not.toBe(requests[0].url);
     const restored = test.adopted.at(-1)?.activeSessions.find((row) => row.principalId === 'watcher');
-    expect(restored?.expiresAtEpochMs).toBe(18_000);
+    expect(restored?.expiresAtEpochMs).toBe(17_000);
 });
 
 it('aborts a stalled presence write at the configured deadline without adopting it', async () => {
@@ -257,7 +268,7 @@ it('aborts a stalled presence write at the configured deadline without adopting 
         });
     });
     test.owner.onSocket('connected');
-    test.owner.observePresence(snapshot);
+    test.owner.observePresence(snapshot, test.context);
     await aborted.promise;
     test.select(undefined);
     await test.owner.changeRoom(async () => {});
@@ -298,7 +309,7 @@ it.each(['selection', 'session'] as const)('does not let an unresolved receipt b
         });
     });
     test.owner.onSocket('connected');
-    test.owner.observePresence(snapshot);
+    test.owner.observePresence(snapshot, test.context);
     await issued.promise;
     await expect(test.owner.changeRoom(async () => {})).rejects.toMatchObject({ status: 503 });
     unavailable = false;
@@ -316,7 +327,7 @@ it.each(['selection', 'session'] as const)('does not let an unresolved receipt b
         test.replaceSession();
     }
     await test.owner.changeRoom(async () => {});
-    test.owner.observePresence(current);
+    test.owner.observePresence(current, test.context);
     await test.timers.advance(1_000);
     await test.owner.changeRoom(async () => {});
     const restored = test.adopted.at(-1);

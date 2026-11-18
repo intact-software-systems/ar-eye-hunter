@@ -320,7 +320,6 @@ describe('Quick Join through the browser facade and HTTP workflow', () => {
 
         const rejected = quickJoinRoom({
             newPresenceGenerationId: () => crypto.randomUUID(),
-            nowMs: () => Date.now(),
             options: { scope },
             stateStore,
             connect,

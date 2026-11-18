@@ -86,8 +86,10 @@ export function createBrowserRoomsComposition(
     });
     input.realtime.wsController.facade.onLifecycle((event) => recovery.onSocket(event.kind), { emitCurrent: false });
     input.state.stateStore.onAfterEmit(() => {
-        if (input.session.readMiddleware()?.middleware.heartbeat.groupPresence) {
-            recovery.observePresence(input.state.roomStateStore.findGroupSnapshot(input.state.selectedForRecovery()));
+        const context = input.session.readMiddleware();
+        if (context?.middleware.heartbeat.groupPresence) {
+            const snapshot = input.state.roomStateStore.findGroupSnapshot(input.state.selectedForRecovery());
+            recovery.observePresence(snapshot, context);
         }
     });
     const rooms = createBrowserRallarRooms({

@@ -25,6 +25,8 @@ import {
     createGroupSnapshotFixture
 } from '../authoritative-group-fixtures.ts';
 
+const serverTime = { creationEpochMs: () => Date.now(), expiryEpochMs: () => Date.now() };
+
 const START = 1_000_000;
 const scope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 const session: AuthSession = {
@@ -103,6 +105,7 @@ describe('heartbeat group recovery', () => {
         server.install();
         groupSnapshots.setGroupStateSnapshots(server.groups);
         const handle = await initHeartbeat(client, {
+            ...serverTime,
             publicationKey: null,
             authSession: session,
             scope,
@@ -147,6 +150,7 @@ describe('heartbeat group recovery', () => {
         });
         groupSnapshots.setGroupStateSnapshots(server.groups);
         await initHeartbeat(client, {
+            ...serverTime,
             publicationKey: null,
             authSession: session,
             scope,
@@ -180,6 +184,7 @@ describe('heartbeat group recovery', () => {
         });
         try {
             await initHeartbeat(client, {
+                ...serverTime,
                 publicationKey: null,
                 authSession: session,
                 scope,
@@ -207,7 +212,7 @@ describe('heartbeat group recovery', () => {
         const server = new HeartbeatServer();
         server.install();
         groupSnapshots.setGroupStateSnapshots(server.groups);
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
 
         // Move wall time without dispatching timers, then deliver the overdue first callback.
         vi.setSystemTime(START + 65_000);
@@ -227,7 +232,7 @@ describe('heartbeat group recovery', () => {
         const server = new HeartbeatServer();
         server.install();
         groupSnapshots.setGroupStateSnapshots(server.groups);
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await vi.advanceTimersByTimeAsync(90_000);
         expect(server.requests.filter((request) => request.method === 'GET')).toEqual([]);
         expect(server.requests.filter((request) => request.path.includes('/groups/private-room/sessions/')))
@@ -244,7 +249,7 @@ describe('heartbeat group recovery', () => {
         server.install();
         const joined = server.groups[0];
         groupSnapshots.setGroupStateSnapshot(joined);
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await vi.advanceTimersByTimeAsync(50_000);
         groupSnapshots.setGroupStateSnapshot({
             ...joined,
@@ -274,7 +279,7 @@ describe('heartbeat group recovery', () => {
         const joined = server.groups[0];
         server.groups = [];
         server.install();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await vi.advanceTimersByTimeAsync(70_000);
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
         expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
@@ -310,7 +315,7 @@ describe('heartbeat group recovery', () => {
             }
         });
         try {
-            await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+            await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
             await vi.advanceTimersByTimeAsync(50_000);
             vi.setSystemTime(START + 115_000);
             observer.resolve();
@@ -336,7 +341,7 @@ describe('heartbeat group recovery', () => {
             sessionId: session.sessionId,
             readOwnClientSnapshot: () => connection.promise
         });
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
         await vi.advanceTimersByTimeAsync(50_000);
         vi.setSystemTime(START + 115_000);
         connection.resolve(createClientSnapshotFixture({ ...scope, principalId: 'alice' }));
@@ -362,7 +367,7 @@ describe('heartbeat group recovery', () => {
                 return unavailable ? stalled.promise : Promise.resolve(createSocketClientSnapshot());
             }
         });
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
         await vi.advanceTimersByTimeAsync(55_000);
         expect(lookupSignal?.aborted).toBe(true);
         unavailable = false;
@@ -387,13 +392,14 @@ describe('heartbeat group recovery', () => {
             readOwnClientSnapshot: () => stalled.promise
         });
         const onAuthInvalid = vi.fn();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration, onAuthInvalid });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope, ownWsConnectionGeneration, onAuthInvalid });
         await vi.advanceTimersByTimeAsync(50_000);
         if (action === 'stop') {
             stopHeartbeat();
         }
         else {
             await initHeartbeat({ clientId: 'bob', sessionId: 'bob', isOnline: true }, {
+                ...serverTime,
                 publicationKey: null,
                 authSession: { ...session, clientId: 'bob', sessionId: 'bob', accessToken: 'replacement-token' },
                 scope
@@ -412,7 +418,7 @@ describe('heartbeat group recovery', () => {
         server.install();
         const joined = server.groups[0];
         groupSnapshots.setGroupStateSnapshots([joined]);
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         server.groups = reason === 'removed' ? [] : [{ ...joined, activeSessions: [], onlineMemberCount: 0 }];
         await deliverDelayedFirstHeartbeat();
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
@@ -435,7 +441,7 @@ describe('heartbeat group recovery', () => {
             }))
         };
         server.groups = [otherSession, otherPrincipal];
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
         expect(server.requests.filter((request) => request.path.startsWith(`${groupsPath}/`))).toEqual([]);
@@ -448,7 +454,7 @@ describe('heartbeat group recovery', () => {
         server.install();
         const joined = server.groups[0];
         groupSnapshots.setGroupStateSnapshots([joined]);
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests.filter((request) => request.method === 'GET')).toHaveLength(1);
         const left: GroupSnapshot = {
@@ -479,7 +485,7 @@ describe('heartbeat group recovery', () => {
                 return createClientSnapshotFixture({ ...scope, principalId: 'alice' });
             }
         });
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope, ownWsConnectionGeneration });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests).toHaveLength(1);
         if (action === 'stop') {
@@ -487,6 +493,7 @@ describe('heartbeat group recovery', () => {
         }
         else {
             await initHeartbeat({ clientId: 'bob', sessionId: 'bob', isOnline: true }, {
+                ...serverTime,
                 publicationKey: null,
                 authSession: { ...session, clientId: 'bob', sessionId: 'bob', accessToken: 'new-token' },
                 scope
@@ -505,7 +512,7 @@ describe('heartbeat group recovery', () => {
         const server = new HeartbeatServer();
         server.readGroups = () => new Response('Unavailable', { status: 503 });
         server.install();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests).toHaveLength(1);
         server.readGroups = () => Response.json(server.groups);
@@ -521,7 +528,7 @@ describe('heartbeat group recovery', () => {
         const stalled = Promise.withResolvers<Response>();
         server.readGroups = () => stalled.promise;
         server.install();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         await vi.advanceTimersByTimeAsync(5_000);
         server.readGroups = () => Response.json(server.groups);
@@ -542,7 +549,7 @@ describe('heartbeat group recovery', () => {
             return Response.json([joined]);
         };
         server.install();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests.filter((request) => request.path.includes('/groups/private-room/sessions/')))
             .toHaveLength(1);
@@ -555,6 +562,7 @@ describe('heartbeat group recovery', () => {
         server.install();
         let invalidated = false;
         await initHeartbeat(client, {
+            ...serverTime,
             publicationKey: null,
             authSession: session,
             scope,
@@ -579,7 +587,7 @@ describe('heartbeat group recovery', () => {
             sessionIds: ['alice']
         })];
         server.install();
-        await initHeartbeat(client, { publicationKey: null, authSession: session, scope });
+        await initHeartbeat(client, { ...serverTime, publicationKey: null, authSession: session, scope });
         await deliverDelayedFirstHeartbeat();
         expect(server.requests).toEqual([{ method: 'GET', path: groupsPath, authorization: 'Bearer test-token' }]);
         expect(groupSnapshots.getAllGroupStateSnapshots()).toEqual([]);
