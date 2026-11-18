@@ -7,6 +7,7 @@ import type {
     ResourceInboxReleaseDisposition,
     ResourceInboxWorkPage
 } from '../../queuebox/queue-box-types.ts';
+import { compareResourceEntriesByDue } from '../../queuebox/resource-inbox/resource-inbox-claim-order.ts';
 import {
     EntityStatus,
     isKeysEqual,
@@ -52,10 +53,12 @@ export interface ReadALWorkPageInput {
 export interface ReadALWorkPageScanInput {
     readonly status: EntityStatus;
     readonly maxToRead: number;
+    /** `due` reads the status's earliest rows across every work type; `key` reads whole pages in work-type order. */
+    readonly order: ResourceInboxWorkPage.Order;
 }
 
 export interface ALWorkPageScan {
-    /** The merged page `readPage` would have returned for this status, in work-type order. */
+    /** At most `maxToRead` rows of this status, in the order the scan named. */
     readonly entries: readonly ResourceEntry[];
     /** The queue holds more rows of this status than the cap returned. */
     readonly hasMoreEntries: boolean;
@@ -324,10 +327,10 @@ function toReleaseDisposition(
 }
 
 /**
- * Reads every status of a scan across every type in `workTypes` from one repository call. Each status
- * keeps the page `readPage` would have produced -- whole per-type pages in type order, cut at
- * `maxToRead` -- and reports whether the queue held more rows than that cap returned, which is what
- * the single-page read expressed as a cursor it never resumed from.
+ * Reads every status of a scan across every type in `workTypes` from one repository call, each type's page in the
+ * order the scan names. A `due` status merges its types' pages by due time before the cut, so the page holds the
+ * status's earliest rows whatever their type; a `key` status keeps whole per-type pages in type order. Either way
+ * it reports whether the queue held more rows than the cap returned.
  */
 async function readMergedALWorkPageScans(
     queue: QueueBoxResourceEntryRepository,
@@ -341,7 +344,7 @@ async function readMergedALWorkPageScans(
                 typeId,
                 status: input.status,
                 maxToRead: input.maxToRead,
-                order: 'key',
+                order: input.order,
                 cursor: null
             }))
         )
@@ -349,7 +352,8 @@ async function readMergedALWorkPageScans(
     return inputs.map((input, index) => {
         const entries = pages.slice(index * types.length, (index + 1) * types.length)
             .flatMap((page) => page.entries);
-        return { entries: entries.slice(0, input.maxToRead), hasMoreEntries: entries.length >= input.maxToRead };
+        const ordered = input.order === 'due' ? entries.sort(compareResourceEntriesByDue) : entries;
+        return { entries: ordered.slice(0, input.maxToRead), hasMoreEntries: entries.length >= input.maxToRead };
     });
 }
 

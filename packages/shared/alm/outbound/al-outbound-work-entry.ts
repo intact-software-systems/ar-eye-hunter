@@ -23,7 +23,15 @@ import { decodeALOutboundEffectPayload, type ALOutboundPreparedRead } from './al
 export const AL_OUTBOUND_WORK_LEASE_MS = 10_000;
 export const AL_OUTBOUND_WORK_PAGE_SIZE = 16;
 
-const AL_OUTBOUND_SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERVED] as const;
+/**
+ * Pending rows are read in due order, so the page holds the earliest of them. A reserved row is due at its lease end,
+ * which no store orders by: its page stays in key order.
+ */
+const AL_OUTBOUND_SCANS = [
+    { status: EntityStatus.NEW, order: 'due' },
+    { status: EntityStatus.RETRY, order: 'due' },
+    { status: EntityStatus.RESERVED, order: 'key' }
+] as const;
 
 export interface ALOutboundWorkEntryInput<TPrepared> {
     readonly namespace: string;
@@ -155,7 +163,7 @@ export async function readALOutboundWorkReadyAt(
     deferral: ALOutboundWorkDeferral
 ): Promise<number | undefined> {
     const scans = await port.readPages(
-        AL_OUTBOUND_SCAN_STATUSES.map((status) => ({ status, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
+        AL_OUTBOUND_SCANS.map((scan) => ({ ...scan, maxToRead: AL_OUTBOUND_WORK_PAGE_SIZE }))
     );
     let readyAtMs: number | undefined;
     for (const scan of scans) {

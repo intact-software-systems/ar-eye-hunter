@@ -714,8 +714,10 @@ async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offs
 
 /**
  * Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. Each round drains
- * until a batch claims nothing, as a page's engine runs work as soon as it is written: a repair hint a timer commits
- * runs in its own batch, not beside the next timer a whole timeout later.
+ * until a batch claims nothing, as a page's engine does: the readiness probe advertises a row that is due now behind
+ * any number of rows due later, so a repair hint a timer commits runs in a batch of its own, not beside the next timer
+ * a whole timeout later. One drain runs one batch, so one drain does not reach that hint: a round takes two to four,
+ * the last of them claiming nothing.
  */
 async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
     const before = await readPendingAckOrThrow(sender, msgId);
