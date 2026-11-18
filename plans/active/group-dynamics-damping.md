@@ -368,7 +368,7 @@ limit). Thresholds are read from that configuration, never assumed.
   keeps the tree. The skewed matrix rebuilds the tree in every room. It keeps none of the formed tree's links,
   and about one of a tree the uniform matrix refined (1 of 7 in a room of 8). The uniform phase's measurements
   live 60 s and occupy endpoint degree, so while they live the server refuses some skewed reports as over-degree
-  (about 5 % over 200 sampled rooms).
+  (about 5 % of the skewed reports over 200 sampled rooms, refused as over-degree).
 - Live timing, a derivation and not a run figure: a refinement lands at the repeat send, 32 s after the first,
   and no room refines more than once per 30 s.
 - Mesh: consecutive shifting rounds make the planner rebuild the mesh with different links each time. The live
@@ -387,12 +387,86 @@ limit). Thresholds are read from that configuration, never assumed.
   session. While the accepted layout still holds that member, the measurement neither reports from it nor
   reports a pair that includes it, since the server would refuse such a pair (`no-shared-active-group`).
 - A joiner during churn has no socket, so it reports nothing.
-- The RTT-refresh publication id now carries a digest of the resource id, so it stays within the 256-character
-  contract.
 - Drift is read once per room, at its end. It is measured for star, tree and mesh with the room's own k, and
   has no status of its own. It is signed: the fresh no-RTT plan is the planner's reference layout, not the
   shortest one, so an evolved layout can be shorter and the difference negative.
 - Still needing browsers: edge setup time, real RTT, and the cost of a reshape to a browser.
+
+### What the reshape measurement found
+
+Two runs of `npm run perf:api-v1:topology-reshapes` on the head `eb0340275`, 2026-11-18, local Postgres, a managed
+three-process cluster. Run 1 is report `d8ebab469b7c4a4fbb11dc0e`, run 2 is `9901776c88174aa0bbb7978a`. Both
+passed: ten rooms formed, ran their phases and converged, and no plan fell outside a phase in any room. In the same
+session the medium-scale Postgres black-box passed (2842 operations, 0 failures) and the standard Postgres
+black-box passed (api-v1 75, cluster 13). The churn command's six rooms (report `651158195fba4bb599c985bd`) read
+15 attaches, 15 repairs and 0 reshapes in every room.
+
+Each cell reads run 1 / run 2; one value means both runs agree. "Rerouted" is sessions rerouted per reshape, median
+(max). "Inside" is promoted plans that landed inside the replaced layout's overlap window. Every row's reason is the
+one named; there is no other reason in any phase.
+
+| Room and phase                       | Mode      | Plans   | Reshapes | Per min   | Rerouted          | Appointments | RTT sent  | Inside  |
+| ------------------------------------ | --------- | ------- | -------- | --------- | ----------------- | ------------ | --------- | ------- |
+| 4 members, `ramp-up`                 | auto      | 13      | 2        | 3.1       | 3 (15) / 4 (15)   | 0            | 0         | 13      |
+| 4 members, `ramp-up`                 | debounced | 13      | 2        | 3.1       | 4 (14) / 4 (15)   | 0            | 0         | 13      |
+| 4 members, `ramp-down`               | auto      | 13      | 2        | 3.1       | 2 (10)            | 0            | 0         | 13      |
+| 4 members, `ramp-down`               | debounced | 13      | 2        | 3.1       | 0 (10) / 2 (9)    | 0            | 0         | 13      |
+| 4 members, `flap`                    | both      | 30      | 30       | 20.0      | 3 (4)             | 0            | 0         | 30      |
+| 8 members, `leader`                  | auto      | 3       | 3        | 4.5       | 7 (7) / 5 (5)     | 4            | 0         | 2       |
+| 8 members, `leader`                  | debounced | 0 / 1   | 0 / 1    | 0 / 1.5   | none / 7 (7)      | 4            | 0         | 0       |
+| 12 members, `leader`                 | auto      | 4       | 4        | 6.0       | 9 (10) / 11 (11)  | 4            | 0         | 4       |
+| 12 members, `leader`                 | debounced | 4       | 4        | 6.0       | 7 (12) / 11 (11)  | 4            | 0         | 4       |
+| 8 members, `leader-churn`            | auto      | 19      | 4        | 5.3       | 7 (9) / 9 (9)     | 4            | 0         | 19      |
+| 8 members, `leader-churn`            | debounced | 18      | 3        | 4.0       | 7 (7) / 6 (8)     | 4            | 0         | 17      |
+| 12 members, `leader-churn`           | auto      | 17 / 19 | 2 / 4    | 2.7 / 5.3 | 13 (13) / 11 (12) | 4            | 0         | 17 / 19 |
+| 12 members, `leader-churn`           | debounced | 18 / 19 | 3 / 4    | 4.0 / 5.3 | 10 (11) / 11 (12) | 4            | 0         | 18 / 19 |
+| 8 members, RTT, `rtt-uniform`        | auto      | 1 / 0   | 1 / 0    | 1.6 / 0   | 7 (7) / none      | 0            | 38 / 38   | 0       |
+| 8 members, RTT, `rtt-uniform`        | debounced | 0       | 0        | 0         | none              | 0            | 40 / 38   | 0       |
+| 8 members, RTT, `rtt-skewed`         | auto      | 1       | 1        | 1.6       | 8 (8)             | 0            | 38 / 38   | 0       |
+| 8 members, RTT, `rtt-skewed`         | debounced | 1       | 1        | 1.6       | 8 (8)             | 0            | 40 / 38   | 0       |
+| 20 members, RTT, `rtt-shift` (120 s) | auto      | 3       | 3        | 1.5       | 8 (8) / 10 (11)   | 0            | 537 / 545 | 0       |
+| 20 members, RTT, `rtt-shift` (120 s) | debounced | 3       | 3        | 1.5       | 7 (10) / 8 (14)   | 0            | 550 / 548 | 0       |
+| 20 members, RTT, `rtt-churn` (45 s)  | auto      | 15      | 0        | 0         | none              | 0            | 156 / 152 | 14      |
+| 20 members, RTT, `rtt-churn` (45 s)  | debounced | 15      | 0        | 0         | none              | 0            | 160 / 172 | 14      |
+
+The reason is `kind-change` in the 4-member room, `leader-rooting` in the led rooms and `refinement` in the RTT
+rooms. The other plans in `ramp-up`, `ramp-down`, `leader-churn` and `rtt-churn` are attaches and repairs: 11
+attaches in `ramp-up`, 11 repairs in `ramp-down`, 8 attaches and 7 repairs in each churn phase.
+
+**What met the expectation.**
+
+- Kind changes: two in `ramp-up` and two in `ramp-down` in both modes and both runs, and all 30 `flap` plans were
+  kind changes (20.0 a minute, each rerouting a median 3 and at most 4 sessions).
+- Leader re-roots: `leader-rooting` appeared in `leader-churn` in every led room and in `leader` in every led room but the debounced room of 8 in run 1, 2 to 4 per room
+  in `leader-churn` next to its 8 attaches and 7 repairs. In `leader`, of four appointments the auto room of 8
+  re-rooted 3 and 3, the auto room of 12 4 and 4, and the debounced room of 12 4 and 4.
+- RTT tree: `rtt-skewed` refined exactly once in all four room-runs, rerouting 7 to 8 of 8 sessions. No tree
+  refinement landed inside the overlap window.
+- RTT mesh: `rtt-shift` refined three times in 120 s (1.5 a minute) in all four room-runs, within the claim bound
+  of at most four, rerouting a median 7 to 10 (at most 14). No mesh refinement landed inside the overlap window.
+- Both runs agree on which phase produces which reason.
+- Overlap: every kind change landed inside the replaced layout's overlap window. A leader plan landed outside it
+  when the appointment followed a layout older than 15 s: 2 of 3 plans in the auto room of 8, 0 of 1 in the
+  debounced room of 8. The other `leader` phases landed 4 of 4 inside.
+
+**What missed, and why.**
+
+- The debounced room of 8 re-rooted 0 of 4 appointments in run 1 and 1 of 4 in run 2. This is the nearest-weight
+  case described above: a leader whose fresh tree is no shallower keeps the kept tree, and an unchanged plan
+  publishes nothing. It is consistent with the sampled 58 % for a room of 8 and is not a fault.
+- `rtt-uniform` refined once in four room-runs (the auto room, run 1). The expectation was about half of rooms of
+  8, so one of four is a small sample and inside it. The other three did not refine.
+- `rtt-churn` refined zero times in all four room-runs. Churn re-plans every 3 s, so every report met a layout
+  younger than 15 s and was dropped; the membership race, a report claiming between two membership plans, did not
+  occur. The expectation named that race as the only way to refine, so zero is within it.
+
+**What the gate slices can start from.** Per minute: a `kind-change` reshape every 3 s under `flap` (20.0 a
+minute), 3.1 a minute across a 39 s ramp, `leader-rooting` 4.0 to 6.0 a minute when four appointments or churn
+drive it (0 to 1.5 in the debounced room of 8's `leader`, 2.7 in one room-run of `leader-churn`), and `refinement` 1.5 a minute for a mesh of 20 under a shifting matrix and 1.6 in
+the 38 s the tree phases run. Sessions rerouted per reshape: a median 0 to 4 for a kind change (at most 15 on a
+ramp, at most 4 on a flap), 5 to 13 for a leader re-root, 7 to 8 for a tree of 8 refined by RTT and 7 to 10 for a
+mesh of 20. Run to run, the figures that varied were the rerouted counts, the led rooms' re-root counts and the
+uniform phase's single refinement; the kind-change counts and the RTT mesh rates did not.
 
 ### What the measurement found
 
@@ -519,7 +593,7 @@ browsers.
    planner's own fresh no-RTT plan, after 30 attaches and repairs: a star 0, a tree 0 or 1 (0 in one
    run, 1 in the other: accepted 4, fresh plan 3). The difference is signed. The fresh plan is the
    planner's reference layout, not the shortest one, so an evolved layout can be shorter: a later
-   live run read -1 in 3 of 6 rooms. A mesh's drift is computed with the room's own k, read from the room's
+   live run read -1 in 3 of 6 rooms (the auto room of 8 and both rooms of 20). A mesh's drift is computed with the room's own k, read from the room's
    effective configuration. RTT drift stays unmeasured against real RTT: the reshape measurement sends
    RTT reports, but the values are made up, and the drift read compares with a no-RTT plan.
 3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
