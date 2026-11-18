@@ -229,6 +229,12 @@ class RelicBrowserBackend {
         ) {
             await this.respondTournamentCatalog(route);
         }
+        else if (path === '/api/time' && route.request().method() === 'GET') {
+            await route.fulfill({
+                headers: { 'cache-control': 'no-store' },
+                json: { serverPeerId: 'default-qbox-server', serverNowEpochMs: Date.now() }
+            });
+        }
         else if (path.startsWith('/api/state/')) {
             await this.respondPlatformState(route, path);
         }

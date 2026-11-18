@@ -218,6 +218,9 @@ async function installDirectoryFixture(page: Page, directory: (route: Route) => 
                 }
             });
         }
+        if (path === '/api/time') {
+            return route.fulfill({ json: { serverPeerId: 'directory-test-server', serverNowEpochMs: Date.now() } });
+        }
         if (path.startsWith('/api/auth/login/requests/')) {
             return route.fulfill({ json: session });
         }

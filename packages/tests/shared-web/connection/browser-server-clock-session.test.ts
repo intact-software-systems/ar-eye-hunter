@@ -13,13 +13,25 @@ const clockConfig = {
 };
 
 describe('browser server clock connection lifetime', () => {
-    it.each([1, 2])('discards %i slow startup samples before allowing clock reads', async (slowSamples) => {
+    it.each(
+        [
+            ['slow', 1],
+            ['slow', 2],
+            ['timeout', 1],
+            ['timeout', 2]
+        ] as const
+    )('bounds startup recovery after %s samples (%i failures)', async (failure, failedSamples) => {
         let now = 0;
         let requests = 0;
         const clock = new BrowserServerClock(clockConfig, {
             nowMonotonicMs: () => now,
-            fetch: async () => {
-                if (++requests <= slowSamples) {
+            fetch: async (_url, init) => {
+                if (++requests <= failedSamples) {
+                    if (failure === 'timeout') {
+                        return new Promise<Response>((_resolve, reject) => {
+                            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+                        });
+                    }
                     now += clockConfig.policy.maxRoundTripMs + 1;
                 }
                 return Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000 + now });
@@ -33,8 +45,8 @@ describe('browser server clock connection lifetime', () => {
         });
         const result = await session.start();
         expect(requests).toBe(2);
-        expect(result.right !== undefined).toBe(slowSamples === 1);
-        expect(session.signal.aborted).toBe(slowSamples === 2);
+        expect(result.right !== undefined).toBe(failedSamples === 1);
+        expect(session.signal.aborted).toBe(failedSamples === 2);
         await session.close();
     });
 
