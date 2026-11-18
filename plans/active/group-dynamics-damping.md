@@ -437,17 +437,19 @@ attaches in `ramp-up`, 11 repairs in `ramp-down`, 8 attaches and 7 repairs in ea
 
 - Kind changes: two in `ramp-up` and two in `ramp-down` in both modes and both runs, and all 30 `flap` plans were
   kind changes (20.0 a minute, each rerouting a median 3 and at most 4 sessions).
-- Leader re-roots: `leader-rooting` appeared in `leader-churn` in every led room and in `leader` in every led room but the debounced room of 8 in run 1, 2 to 4 per room
-  in `leader-churn` next to its 8 attaches and 7 repairs. In `leader`, of four appointments the auto room of 8
+- Leader re-roots: `leader-rooting` appeared in `leader-churn` in every led room and in `leader` in every led room
+  but the debounced room of 8 in run 1, 2 to 4 per room in `leader-churn` next to its 8 attaches and 7 repairs. In `leader`, of four appointments the auto room of 8
   re-rooted 3 and 3, the auto room of 12 4 and 4, and the debounced room of 12 4 and 4.
-- RTT tree: `rtt-skewed` refined exactly once in all four room-runs, rerouting 7 to 8 of 8 sessions. No tree
+- RTT tree: `rtt-skewed` refined exactly once in all four room-runs, rerouting 8 of 8 sessions each time. No tree
   refinement landed inside the overlap window.
 - RTT mesh: `rtt-shift` refined three times in 120 s (1.5 a minute) in all four room-runs, within the claim bound
   of at most four, rerouting a median 7 to 10 (at most 14). No mesh refinement landed inside the overlap window.
 - Both runs agree on which phase produces which reason.
 - Overlap: every kind change landed inside the replaced layout's overlap window. A leader plan landed outside it
-  when the appointment followed a layout older than 15 s: 2 of 3 plans in the auto room of 8, 0 of 1 in the
-  debounced room of 8. The other `leader` phases landed 4 of 4 inside.
+  when the appointment followed a layout older than 15 s: in the auto room of 8 only 2 of 3 plans landed inside, in
+  both runs, and in the debounced room of 8's run 2 the one plan landed outside. The other `leader` phases landed 4
+  of 4 inside. Under churn one plan per room-run landed outside in the debounced room of 8's `leader-churn` (17 of
+  18) and in each mesh room's `rtt-churn` (14 of 15).
 
 **What missed, and why.**
 
@@ -462,8 +464,8 @@ attaches in `ramp-up`, 11 repairs in `ramp-down`, 8 attaches and 7 repairs in ea
 
 **What the gate slices can start from.** Per minute: a `kind-change` reshape every 3 s under `flap` (20.0 a
 minute), 3.1 a minute across a 39 s ramp, `leader-rooting` 4.0 to 6.0 a minute when four appointments or churn
-drive it (0 to 1.5 in the debounced room of 8's `leader`, 2.7 in one room-run of `leader-churn`), and `refinement` 1.5 a minute for a mesh of 20 under a shifting matrix and 1.6 in
-the 38 s the tree phases run. Sessions rerouted per reshape: a median 0 to 4 for a kind change (at most 15 on a
+drive it (0 to 1.5 in the debounced room of 8's `leader`, 2.7 in one room-run of `leader-churn`), and
+`refinement` 1.5 a minute for a mesh of 20 under a shifting matrix and 1.6 in the 38 s the tree phases run. Sessions rerouted per reshape: a median 0 to 4 for a kind change (at most 15 on a
 ramp, at most 4 on a flap), 5 to 13 for a leader re-root, 7 to 8 for a tree of 8 refined by RTT and 7 to 10 for a
 mesh of 20. Run to run, the figures that varied were the rerouted counts, the led rooms' re-root counts and the
 uniform phase's single refinement; the kind-change counts and the RTT mesh rates did not.
@@ -593,8 +595,8 @@ browsers.
    planner's own fresh no-RTT plan, after 30 attaches and repairs: a star 0, a tree 0 or 1 (0 in one
    run, 1 in the other: accepted 4, fresh plan 3). The difference is signed. The fresh plan is the
    planner's reference layout, not the shortest one, so an evolved layout can be shorter: a later
-   live run read -1 in 3 of 6 rooms (the auto room of 8 and both rooms of 20). A mesh's drift is computed with the room's own k, read from the room's
-   effective configuration. RTT drift stays unmeasured against real RTT: the reshape measurement sends
+   live run read -1 in 3 of 6 rooms (the auto room of 8 and both rooms of 20). A mesh's drift is computed with the room's own k, read from the
+   room's effective configuration. RTT drift stays unmeasured against real RTT: the reshape measurement sends
    RTT reports, but the values are made up, and the drift read compares with a no-RTT plan.
 3. **What an attach batch is worth.** Joiners per plan were 0 or 1 in churn (one event per 3 s) and
    3, 8 and 20 in the formation plan. What a batch costs the members that accept the new edges
