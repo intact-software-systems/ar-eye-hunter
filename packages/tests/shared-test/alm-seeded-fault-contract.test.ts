@@ -16,7 +16,7 @@ const loss = { loss: { ratio: 0.1, seed: 7 } };
 const jitter = { jitter: { minDelayMs: 20, maxDelayMs: 80, seed: 7 } };
 
 /** The three boundaries a `fault.inject` command crosses before a page arms it. */
-function readBoundaries(candidate: object) {
+function readBoundaries(candidate: Readonly<Record<string, unknown>>) {
     return {
         schema: validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, candidate).ok,
         command: validateAlmControlCommand(candidate, 'fault.inject').length === 0,
