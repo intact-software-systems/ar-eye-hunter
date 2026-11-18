@@ -1,6 +1,27 @@
 import { expect, type Page } from '@playwright/test';
 
-/** Delivers overdue timers, verifies renewal without admission, then restores agreement with the live server clock. */
+/** Drive timer deadlines and cached expiry while measurements and rendering share the live browser's time. */
+export async function installRoomCacheClock(page: Page): Promise<void> {
+    await page.context().addInitScript(() => {
+        const elapsed = window.performance;
+        const requestFrame = window.requestAnimationFrame.bind(window);
+        const cancelFrame = window.cancelAnimationFrame.bind(window);
+        document.addEventListener('room-cache-clock-installed', () => {
+            Object.defineProperty(window, 'performance', { configurable: true, value: elapsed });
+            window.requestAnimationFrame = requestFrame;
+            window.cancelAnimationFrame = cancelFrame;
+        }, { once: true });
+    });
+    await page.clock.install();
+    await page.addInitScript(() => document.dispatchEvent(new Event('room-cache-clock-installed')));
+}
+
+/** Deliver overdue timer callbacks while the actual server lease is still live. */
+export async function expireRoomSnapshots(page: Page): Promise<void> {
+    await page.clock.fastForward(65_000);
+}
+
+/** Verify the next heartbeat recovers expired snapshots without another admission. */
 export async function renewRoomAfterDelayedCallbacks(page: Page, roomLink: string): Promise<void> {
     const fields = new URLSearchParams(new URL(roomLink).hash.slice('#rallar-room?'.length));
     const applicationId = fields.get('applicationId');
@@ -24,8 +45,7 @@ export async function renewRoomAfterDelayedCallbacks(page: Page, roomLink: strin
         response.request().method() === 'POST' && response.url().includes(`${groupPath}/sessions/`) &&
         response.url().includes('/heartbeat/requests/')
     );
-    // This expires browser snapshots while the real server lease stays live; it is not an OS suspension test.
-    await page.clock.fastForward(65_000);
+    await expireRoomSnapshots(page);
     const [recovered, renewed] = await Promise.all([recovery, renewal]);
     expect(recovered.ok()).toBe(true);
     expect(renewed.ok()).toBe(true);
