@@ -85,11 +85,17 @@ function isAuthoredBuildPath(repositoryPath) {
     );
 }
 
+/**
+ * The listing holds one line per file of the repository. At about 8 200 files it passed 1 MiB, Node's default
+ * buffer for a child's output, where the read fails with ENOBUFS.
+ */
+const TREE_LISTING_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
 function readTreeEntries(repoRoot, headSha) {
     const source = execFileSync(
         'git',
         ['ls-tree', '-r', '-z', '--full-tree', '--end-of-options', headSha],
-        { cwd: repoRoot, encoding: 'utf8' }
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: TREE_LISTING_MAX_BUFFER_BYTES }
     );
     return source
         .split('\0')
