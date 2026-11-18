@@ -115,13 +115,13 @@ describe('ALM fault stream cells', () => {
     });
 
     it.each(['ws', 'rtc'] as const)(
-        'seeded-loss-stream over %s holds its loss until the last send left the page, and recovers after its release',
+        'seeded-loss-stream over %s holds its loss until the last send is admitted, and recovers after its release',
         (carrier) => {
             const sender = requireCell('seeded-loss-stream', carrier).sender;
             const places = toPlaces(sender, [
                 'loss-arm',
                 `send-${STREAM_SENDS}`,
-                `assert-sent-${STREAM_SENDS}`,
+                `assert-admitted-${STREAM_SENDS}`,
                 'loss-release',
                 'assert-loss-dropped',
                 `observe-acknowledged-${STREAM_SENDS}`

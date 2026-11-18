@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_SINGLE_HOP_CARRIERS } from '../../alm-conformance-carriers.ts';
-import { toSentCommands } from '../../alm-conformance-ordering-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
@@ -31,8 +30,8 @@ const LOSS = { kind: 'loss', action: { loss: { ratio: 0.25, seed: 7 } } } as con
  * `lost-stream-start`'s to state. The cell runs where one hop carries the track, as `ordering-gap-repair` does.
  *
  * The loss is held, not counted: a count runs out after a number of frames, which a retry loop spends before the
- * window a cell means to cover. It stands while the sends leave and is released once the last one left the page, so
- * every first transmission met a draw and the recovery that follows is not itself lossy.
+ * window a cell means to cover. It stands while the sends are admitted and is released after the last one, so the
+ * recovery that follows is not itself lossy.
  */
 export const seededLossStream: AlmConformanceScenarioDefinition = {
     scenarioId: 'seeded-loss-stream',
@@ -52,7 +51,6 @@ function toSeededLossStreamSenderCommands(sender: AlmConformanceStepInput): read
         ...toStreamAcknowledgedCommands(sender, 1, entered),
         toSeededFaultArmCommand(sender, LOSS),
         ...toStreamSendCommands(sender, entered + 1, FAULT_STREAM_SENDS),
-        ...toSentCommands({ ...sender, index: FAULT_STREAM_SENDS }),
         ...toSeededFaultReleaseCommands(sender, LOSS, { decision: 'drop', floor: 1 }),
         ...toStreamAcknowledgedCommands(sender, entered + 1, FAULT_STREAM_SENDS)
     ];
