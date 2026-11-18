@@ -234,6 +234,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         callerSignal?.throwIfAborted();
         const cancelStartup = (): void => lifetime.abort(callerSignal?.reason);
         callerSignal?.addEventListener('abort', cancelStartup, { once: true, signal: lifetime.signal });
+        const releaseCallerSignal = (): void => callerSignal?.removeEventListener('abort', cancelStartup);
         this.connectionLifetime = lifetime;
         const { durableWork, epoch } = this.openConnectionOwnership({
             session,
@@ -249,7 +250,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
-            .then((connected) => this.acceptConnection(connected, connection))
+            .then((connected) => this.acceptConnection(connected, connection, releaseCallerSignal))
             .catch((error) => {
                 if (this.connectionLifetime === lifetime) {
                     this.connectionLifetime = undefined;
@@ -263,7 +264,6 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                 throw error;
             })
             .finally(() => {
-                callerSignal?.removeEventListener('abort', cancelStartup);
                 if (this.pendingConnection === pendingConnection) {
                     this.pendingConnection = undefined;
                 }
@@ -272,7 +272,8 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
 
     private acceptConnection(
         connected: BrowserTransportRuntime.Construction,
-        connection: BrowserTransportRuntime.PendingConnection
+        connection: BrowserTransportRuntime.PendingConnection,
+        releaseCallerSignal: () => void
     ): BrowserTransportRuntime.Connection {
         const currentSession = readSession();
         if (
@@ -292,6 +293,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             diagnosticsPorts: connected.diagnosticsPorts,
             rtcCapture: Object.freeze({ status: 'observed', value: connected.rtcCaptureReceipt })
         });
+        releaseCallerSignal();
         this.activeConnection = connectionResult;
         this.activeDurableWork = connection.durableWork;
         this.activePageLifecycle = new BrowserPageLifecycleFlush({

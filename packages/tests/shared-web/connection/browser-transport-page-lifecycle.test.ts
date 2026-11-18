@@ -106,9 +106,15 @@ describe('the page lifecycle of a connected browser transport', () => {
         const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
         onTestFinished(() => transport.shutdown());
         const roomOperation = new AbortController();
-        const accepted = await transport.init({ ...toInitOptions(), signal: roomOperation.signal });
-
+        const connecting = transport.init({ ...toInitOptions(), signal: roomOperation.signal });
+        // Observe publication between promise reactions, as another consumer of the shared transport can.
+        const deadline = performance.now() + 1_000;
+        while (!transport.isReady() && performance.now() < deadline) {
+            await Promise.resolve();
+        }
+        expect(transport.isReady()).toBe(true);
         roomOperation.abort();
+        const accepted = await connecting;
 
         expect(transport.readConnection()).toBe(accepted);
         expect(accepted.serverClock.readWindow().right).toBeDefined();
@@ -116,7 +122,7 @@ describe('the page lifecycle of a connected browser transport', () => {
         expect(accepted.serverClock.signal.aborted).toBe(true);
     });
 
-    it('cancels a pending clock request when the transport shuts down', async () => {
+    it.each(['caller', 'transport'] as const)('cancels a pending clock request when the %s ends startup', async (owner) => {
         const entered = Promise.withResolvers<AbortSignal>();
         const response = Promise.withResolvers<Response>();
         vi.stubGlobal('fetch', (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -139,7 +145,8 @@ describe('the page lifecycle of a connected browser transport', () => {
             })
         }));
         const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
-        const cancelled = expect(transport.init(toInitOptions())).rejects.toBeInstanceOf(Error);
+        const caller = new AbortController();
+        const cancelled = expect(transport.init({ ...toInitOptions(), signal: caller.signal })).rejects.toBeInstanceOf(Error);
         const requestSignal = await entered.promise;
         onTestFinished(async () => {
             response.resolve(Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() }));
@@ -147,7 +154,12 @@ describe('the page lifecycle of a connected browser transport', () => {
             transport.shutdown();
         });
 
-        transport.shutdown();
+        if (owner === 'caller') {
+            caller.abort();
+        }
+        else {
+            transport.shutdown();
+        }
 
         expect(requestSignal.aborted).toBe(true);
         await cancelled;
