@@ -1,0 +1,325 @@
+import {
+    DEFAULT_MESH_EXIT_WIDTH,
+    DEFAULT_TREE_EXIT_WIDTH,
+    resolveTopologyKindWithHysteresis
+} from '@shared-server/rallar-system/topology/planning/topology-kind-hysteresis.ts';
+import {
+    computeTopologyChurnPhaseSchedule,
+    type TopologyChurnPhaseSpec
+} from '@shared-test/black-box-runner/topology-churn/phases/compute-topology-churn-phase-schedule.ts';
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
+import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import { describe, expect, it } from 'vitest';
+
+// The server's defaults, as the room's topology-config read serves them: a tree from 5 members, a mesh from 16.
+const SERVED_TOPOLOGY_CONFIG: EffectiveGroupTopologyConfig = {
+    topologyKind: 'auto',
+    degreeLimit: 5,
+    treeMinSize: 5,
+    meshMinSize: 16,
+    meshParamK: 2
+};
+
+const RAMP_UP: TopologyChurnPhaseSpec = { name: 'ramp-up', shape: 'ramp', toMemberCount: 'one-past-mesh-entry' };
+const RAMP_DOWN: TopologyChurnPhaseSpec = { name: 'ramp-down', shape: 'ramp', toMemberCount: 'one-below-tree-entry' };
+
+describe('computeTopologyChurnPhaseSchedule', () => {
+    it('alternates join and leave every interval from the phase\'s start, starting with a join', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'churn', shape: 'alternate', durationMs: 90_000, interleaved: 'none' },
+            presentMemberCount: 8,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // 90 s at one step every 3 s: 30 steps, at 0, 3 000, …, 87 000.
+        expect(schedule.name).toBe('churn');
+        expect(schedule.durationMs).toBe(90_000);
+        expect(schedule.steps).toHaveLength(30);
+        expect(schedule.steps.slice(0, 4)).toEqual([
+            { offsetMs: 0, action: { kind: 'join' } },
+            { offsetMs: 3_000, action: { kind: 'leave' } },
+            { offsetMs: 6_000, action: { kind: 'join' } },
+            { offsetMs: 9_000, action: { kind: 'leave' } }
+        ]);
+        expect(schedule.steps.at(-1)).toEqual({ offsetMs: 87_000, action: { kind: 'leave' } });
+        expect(schedule.steps.map((step) => step.action.kind)).toEqual(
+            Array.from({ length: 15 }, () => ['join', 'leave']).flat()
+        );
+    });
+
+    it('places no step at the phase\'s end', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'churn', shape: 'alternate', durationMs: 9_000, interleaved: 'none' },
+            presentMemberCount: 8,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // 9 000 itself is the phase's end, so the last step is at 6 000.
+        expect(schedule).toEqual({
+            name: 'churn',
+            durationMs: 9_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'join' } },
+                { offsetMs: 3_000, action: { kind: 'leave' } },
+                { offsetMs: 6_000, action: { kind: 'join' } }
+            ]
+        });
+    });
+
+    it('places a step in a phase\'s last partial interval', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'churn', shape: 'alternate', durationMs: 10_000, interleaved: 'none' },
+            presentMemberCount: 8,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // 9 000 lies before the phase's end at 10 000, so it is a step.
+        expect(schedule.steps.map((step) => step.offsetMs)).toEqual([0, 3_000, 6_000, 9_000]);
+        expect(schedule.durationMs).toBe(10_000);
+    });
+
+    it('flaps like churn, under its own name', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' },
+            presentMemberCount: 4,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        expect(schedule.name).toBe('flap');
+        expect(schedule.durationMs).toBe(90_000);
+        expect(schedule.steps).toEqual(
+            Array.from({ length: 30 }, (_, index) => ({
+                offsetMs: index * 3_000,
+                action: { kind: index % 2 === 0 ? 'join' : 'leave' }
+            }))
+        );
+    });
+
+    it('ramps up one join per interval to one member past the mesh entry', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: RAMP_UP,
+            presentMemberCount: 4,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // From 4 to 17 members: 13 joins, at 0, 3 000, …, 36 000; the phase lasts 13 intervals.
+        expect(schedule.name).toBe('ramp-up');
+        expect(schedule.durationMs).toBe(39_000);
+        expect(schedule.steps).toEqual(
+            Array.from({ length: 13 }, (_, index) => ({ offsetMs: index * 3_000, action: { kind: 'join' } }))
+        );
+        expect(schedule.steps.at(-1)?.offsetMs).toBe(36_000);
+    });
+
+    it('ramps down one leave per interval to one member below the tree entry', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: RAMP_DOWN,
+            presentMemberCount: 17,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // From 17 to 4 members: 13 leaves, at 0, 3 000, …, 36 000.
+        expect(schedule.name).toBe('ramp-down');
+        expect(schedule.durationMs).toBe(39_000);
+        expect(schedule.steps).toEqual(
+            Array.from({ length: 13 }, (_, index) => ({ offsetMs: index * 3_000, action: { kind: 'leave' } }))
+        );
+    });
+
+    it('has no step and no duration for a ramp already at its target', () => {
+        expect(computeTopologyChurnPhaseSchedule({
+            spec: RAMP_UP,
+            presentMemberCount: 17,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        })).toEqual({ name: 'ramp-up', steps: [], durationMs: 0 });
+        expect(computeTopologyChurnPhaseSchedule({
+            spec: RAMP_DOWN,
+            presentMemberCount: 4,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        })).toEqual({ name: 'ramp-down', steps: [], durationMs: 0 });
+    });
+
+    it('appoints the creator first, then the deepest member every interval', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'leader', shape: 'appointments', count: 4, intervalMs: 10_000 },
+            presentMemberCount: 12,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // Four appointments ten seconds apart; the phase lasts four intervals.
+        expect(schedule).toEqual({
+            name: 'leader',
+            durationMs: 40_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'appoint', candidate: 'creator' } },
+                { offsetMs: 10_000, action: { kind: 'appoint', candidate: 'deepest' } },
+                { offsetMs: 20_000, action: { kind: 'appoint', candidate: 'deepest' } },
+                { offsetMs: 30_000, action: { kind: 'appoint', candidate: 'deepest' } }
+            ]
+        });
+    });
+
+    it('interleaves an appointment half an interval after every fourth membership slot', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'leader-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'appoint-deepest' },
+            presentMemberCount: 12,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+        const deepest = { kind: 'appoint', candidate: 'deepest' };
+
+        // 45 s holds 15 membership slots, at 0, 3 000, …, 42 000; slots 0, 4, 8 and 12 are followed by an appointment.
+        expect(schedule.name).toBe('leader-churn');
+        expect(schedule.durationMs).toBe(45_000);
+        expect(schedule.steps).toHaveLength(19);
+        expect(schedule.steps.slice(0, 7)).toEqual([
+            { offsetMs: 0, action: { kind: 'join' } },
+            { offsetMs: 1_500, action: deepest },
+            { offsetMs: 3_000, action: { kind: 'leave' } },
+            { offsetMs: 6_000, action: { kind: 'join' } },
+            { offsetMs: 9_000, action: { kind: 'leave' } },
+            { offsetMs: 12_000, action: { kind: 'join' } },
+            { offsetMs: 13_500, action: deepest }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind === 'appoint').map((step) => step.offsetMs)).toEqual([
+            1_500,
+            13_500,
+            25_500,
+            37_500
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind !== 'appoint')).toEqual(
+            Array.from({ length: 15 }, (_, index) => ({
+                offsetMs: index * 3_000,
+                action: { kind: index % 2 === 0 ? 'join' : 'leave' }
+            }))
+        );
+        expect(schedule.steps.map((step) => step.offsetMs)).toEqual(
+            [...schedule.steps.map((step) => step.offsetMs)].sort((left, right) => left - right)
+        );
+    });
+
+    it('sends the matrix at the start and again after the refinement interval', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-skewed', shape: 'rtt-repeat', matrix: 'skewed' },
+            presentMemberCount: 8,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // The server claims one refinement per room every 30 s; the repeat comes 2 s after that, and the phase lasts
+        // one settle of 6 s longer.
+        expect(schedule).toEqual({
+            name: 'rtt-skewed',
+            durationMs: 38_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'skewed', round: 0 } },
+                { offsetMs: 32_000, action: { kind: 'report-rtt', matrix: 'skewed', round: 0 } }
+            ]
+        });
+    });
+
+    it('a round every interval below the duration, numbered from 0', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 35_000 },
+            presentMemberCount: 20,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+
+        // 35 s at one round every 10 s: rounds at 0, 10 000, 20 000 and 30 000; 40 000 lies past the end.
+        expect(schedule).toEqual({
+            name: 'rtt-shift',
+            durationMs: 35_000,
+            steps: [
+                { offsetMs: 0, action: { kind: 'report-rtt', matrix: 'shifting', round: 0 } },
+                { offsetMs: 10_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 1 } },
+                { offsetMs: 20_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 2 } },
+                { offsetMs: 30_000, action: { kind: 'report-rtt', matrix: 'shifting', round: 3 } }
+            ]
+        });
+        // The duration itself is no round: 120 s at 10 s holds twelve rounds, 0 to 11.
+        expect(
+            computeTopologyChurnPhaseSchedule({
+                spec: { name: 'rtt-shift', shape: 'rtt-rounds', roundIntervalMs: 10_000, durationMs: 120_000 },
+                presentMemberCount: 20,
+                topologyConfig: SERVED_TOPOLOGY_CONFIG
+            }).steps.map((step) => [step.offsetMs, step.action.kind === 'report-rtt' ? step.action.round : null])
+        ).toEqual(
+            Array.from({ length: 12 }, (_, index) => [index * 10_000, index])
+        );
+    });
+
+    it('interleaves a shifting report half an interval after every fourth membership slot', () => {
+        const schedule = computeTopologyChurnPhaseSchedule({
+            spec: { name: 'rtt-churn', shape: 'alternate', durationMs: 45_000, interleaved: 'report-rtt' },
+            presentMemberCount: 20,
+            topologyConfig: SERVED_TOPOLOGY_CONFIG
+        });
+        const toShift = (round: number) => ({ kind: 'report-rtt', matrix: 'shifting', round });
+
+        // 45 s holds 15 membership slots; slots 0, 4, 8 and 12 are followed by a report, numbered in offset order.
+        expect(schedule.name).toBe('rtt-churn');
+        expect(schedule.durationMs).toBe(45_000);
+        expect(schedule.steps).toHaveLength(19);
+        expect(schedule.steps.slice(0, 7)).toEqual([
+            { offsetMs: 0, action: { kind: 'join' } },
+            { offsetMs: 1_500, action: toShift(0) },
+            { offsetMs: 3_000, action: { kind: 'leave' } },
+            { offsetMs: 6_000, action: { kind: 'join' } },
+            { offsetMs: 9_000, action: { kind: 'leave' } },
+            { offsetMs: 12_000, action: { kind: 'join' } },
+            { offsetMs: 13_500, action: toShift(1) }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind === 'report-rtt')).toEqual([
+            { offsetMs: 1_500, action: toShift(0) },
+            { offsetMs: 13_500, action: toShift(1) },
+            { offsetMs: 25_500, action: toShift(2) },
+            { offsetMs: 37_500, action: toShift(3) }
+        ]);
+        expect(schedule.steps.filter((step) => step.action.kind !== 'report-rtt')).toEqual(
+            Array.from({ length: 15 }, (_, index) => ({
+                offsetMs: index * 3_000,
+                action: { kind: index % 2 === 0 ? 'join' : 'leave' }
+            }))
+        );
+    });
+});
+
+describe('computeTopologyChurnPhaseSchedule against the planner\'s kind selection', () => {
+    it('the kind room crosses the planner\'s kind thresholds at 5 and 16 going up, 11 and 4 going down, and at every flap step', () => {
+        const flap: TopologyChurnPhaseSpec = { name: 'flap', shape: 'alternate', durationMs: 90_000, interleaved: 'none' };
+
+        expect(computeKindChangeSizes(RAMP_UP, 4)).toEqual([5, 16]);
+        // The mesh holds down to 12 (16 less the exit width 4) and the tree down to 5 (no exit width).
+        expect(computeKindChangeSizes(RAMP_DOWN, 17)).toEqual([11, 4]);
+        // A tree from 5 and a star at 4: every join and every leave of the flap changes the kind.
+        expect(computeKindChangeSizes(flap, 4)).toEqual(Array.from({ length: 15 }, () => [5, 4]).flat());
+    });
+});
+
+/** The member counts at which the planner's kind changes, walking the schedule from the present count. */
+function computeKindChangeSizes(spec: TopologyChurnPhaseSpec, presentMemberCount: number): readonly number[] {
+    const schedule = computeTopologyChurnPhaseSchedule({
+        spec,
+        presentMemberCount,
+        topologyConfig: SERVED_TOPOLOGY_CONFIG
+    });
+    const resolveKind = (activeSize: number, previousKind: RallarRtcTopologyKind | undefined): RallarRtcTopologyKind =>
+        resolveTopologyKindWithHysteresis({
+            activeSize,
+            treeMinSize: SERVED_TOPOLOGY_CONFIG.treeMinSize,
+            meshMinSize: SERVED_TOPOLOGY_CONFIG.meshMinSize,
+            meshExitWidth: DEFAULT_MESH_EXIT_WIDTH,
+            treeExitWidth: DEFAULT_TREE_EXIT_WIDTH,
+            previousKind
+        });
+    let size = presentMemberCount;
+    let kind = resolveKind(size, undefined);
+    const changeSizes: number[] = [];
+    for (const step of schedule.steps) {
+        size += step.action.kind === 'join' ? 1 : -1;
+        const nextKind = resolveKind(size, kind);
+        if (nextKind !== kind) {
+            changeSizes.push(size);
+        }
+        kind = nextKind;
+    }
+    return changeSizes;
+}

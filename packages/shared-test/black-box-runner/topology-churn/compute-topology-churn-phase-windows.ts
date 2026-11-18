@@ -1,5 +1,11 @@
-import type { TopologyChurnPhaseWindow } from './compute-topology-churn-report.ts';
+import type { TopologyChurnPhaseName, TopologyChurnPhaseWindow } from './compute-topology-churn-report.ts';
 import type { TopologyChurnEvent } from './resolve-topology-churn-event.ts';
+
+export interface TopologyChurnPhaseRun {
+    readonly name: Exclude<TopologyChurnPhaseName, 'formation'>;
+    readonly endedAtEpochMs: number;
+    readonly events: readonly TopologyChurnEvent[];
+}
 
 interface ComputeTopologyChurnPhaseWindowsInput {
     readonly formationStartedAtEpochMs: number;
@@ -7,28 +13,35 @@ interface ComputeTopologyChurnPhaseWindowsInput {
     /** Every member joins during formation, the creator included. */
     readonly memberCount: number;
     readonly settleMs: number;
-    readonly churnEndedAtEpochMs: number;
-    readonly churnEvents: readonly TopologyChurnEvent[];
+    readonly runs: readonly TopologyChurnPhaseRun[];
 }
 
 export function computeTopologyChurnPhaseWindows(
     input: ComputeTopologyChurnPhaseWindowsInput
 ): readonly TopologyChurnPhaseWindow[] {
     const formationEndedAtEpochMs = input.lastPresenceAnsweredAtEpochMs + input.settleMs;
+    const runStartsAtEpochMs = [formationEndedAtEpochMs, ...input.runs.map((run) => run.endedAtEpochMs)];
     return [
         {
             name: 'formation',
             startedAtEpochMs: input.formationStartedAtEpochMs,
             endedAtEpochMs: formationEndedAtEpochMs,
             joinCount: input.memberCount,
-            leaveCount: 0
+            leaveCount: 0,
+            appointmentCount: 0,
+            rttReportCount: 0
         },
-        {
-            name: 'churn',
-            startedAtEpochMs: formationEndedAtEpochMs,
-            endedAtEpochMs: input.churnEndedAtEpochMs,
-            joinCount: input.churnEvents.filter((event) => event.kind === 'join').length,
-            leaveCount: input.churnEvents.filter((event) => event.kind === 'leave').length
-        }
+        ...input.runs.map((run, index) => ({
+            name: run.name,
+            startedAtEpochMs: runStartsAtEpochMs[index],
+            endedAtEpochMs: run.endedAtEpochMs,
+            joinCount: run.events.filter((event) => event.kind === 'join').length,
+            leaveCount: run.events.filter((event) => event.kind === 'leave').length,
+            appointmentCount: run.events.filter((event) => event.kind === 'appoint').length,
+            rttReportCount: run.events.reduce(
+                (count, event) => event.kind === 'rtt-reports' ? count + event.reportCount : count,
+                0
+            )
+        }))
     ];
 }

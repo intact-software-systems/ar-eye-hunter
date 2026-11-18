@@ -5,7 +5,7 @@ import {
     type TopologyReshapeReason
 } from '@shared/api/topology-plan/topology-plan-change.ts';
 
-import { computeCountsByKey } from './compute-counts-by-key.ts';
+import { computeValuesByKey } from './compute-values-by-key.ts';
 
 interface TopologyChurnKindCounts {
     readonly attach: number;
@@ -32,7 +32,7 @@ export function computeTopologyChurnKindFigures(input: ComputeTopologyChurnKindF
         reroutingPlansByKind: computeKindCounts(
             input.records.filter((record) => record.delta.reroutedSessionCount > 0)
         ),
-        reshapesByReason: computeCountsByKey(
+        reshapesByReason: computeValuesByKey(
             TOPOLOGY_RESHAPE_REASONS,
             (reason) =>
                 input.records.filter((record) => record.change?.kind === 'reshape' && record.change.reason === reason)
