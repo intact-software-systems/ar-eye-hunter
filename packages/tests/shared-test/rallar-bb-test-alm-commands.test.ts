@@ -97,6 +97,8 @@ const CONTROL_SUBMISSION = {
     traceId: 'trace-acked-received'
 };
 
+const FAULT_ACTED_COUNTS = { drop: 1, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 };
+
 const SEND_DIAGNOSTICS = {
     handleId: 'handle-1',
     msgId: 'msg-1',
@@ -220,7 +222,7 @@ function createAlmBrowserRuntimeFake(
         },
         injectFault: async (input) => {
             captures.injectFault.push(input);
-            return undefined;
+            return input.carrier === 'ws' || input.carrier === 'rtc' ? FAULT_ACTED_COUNTS : null;
         },
         readStorageCounters: async (input) => {
             captures.readStorageCounters.push(input);
@@ -1466,7 +1468,7 @@ describe('ALM browser adapter execution', () => {
         });
 
         expect(injected.ok, injected.error?.message).toBe(true);
-        expect(injected.value).toEqual({ faultId: 'drop-first-ack', injected: true });
+        expect(injected.value).toEqual({ faultId: 'drop-first-ack', injected: true, acted: FAULT_ACTED_COUNTS });
         expect(captures.injectFault[0]).toMatchObject({
             faultId: 'drop-first-ack',
             carrier: 'ws',
@@ -1491,6 +1493,30 @@ describe('ALM browser adapter execution', () => {
                 'rallar.bb.agent.reload_requested'
             ])
         );
+    });
+
+    it.each([
+        ['no counts', null],
+        ['counts that miss a decision', { drop: 1, delay: 0, rewrite: 0, 'not-ready': 0 }]
+    ])('fails a transport fault injection whose page answers %s', async (_label, answer) => {
+        const captures = createAlmRuntimeCaptures();
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: { ...createAlmBrowserRuntimeFake(captures), injectFault: async () => answer }
+        });
+
+        const injected = await runtime.execute({
+            kind: 'fault.inject',
+            commandId: 'alm-fault',
+            faultId: 'lose-some',
+            carrier: 'rtc',
+            match: { typeId: 'alm.conformance' },
+            action: { loss: { ratio: 0.2, seed: 7 } },
+            remaining: 0
+        });
+
+        expect(injected.ok).toBe(false);
+        expect(injected.error?.message).toContain('fault.inject result');
     });
 
     it('awaits a reply through the page runtime, ending the page wait before the command budget so a timeout is its value', async () => {

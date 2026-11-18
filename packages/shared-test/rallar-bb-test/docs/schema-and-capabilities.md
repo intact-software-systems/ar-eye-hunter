@@ -1167,9 +1167,17 @@ The matcher reads the
 `payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
 repair, against the original message id parsed out of the control payload's own
 `resource` JSON — and `match.controlType` selects the ACK, NACK or repair type
-id. A top-level `typeId` never matches. The fault's observations are not
-readable from a recipe in this release, so a fault's effect can only be inferred
-from what the receiver did or did not get.
+id. A top-level `typeId` never matches.
+
+A transport `fault.inject` returns `{ faultId, injected, acted }`. `acted` counts
+the frames the fault of that `faultId` has acted on so far, by decision: `drop`,
+`delay`, `rewrite`, `not-ready` and `backpressure`, each a whole number, zero
+when none. It is read after the injection, so the release of a fault
+(`remaining: 0`) reads the fault's totals, and a recipe proves its fault acted by
+asserting a floor on `resultCache.<release>.value.acted.drop`. The counts live
+with the page's connection: a close or a reload starts them again. `acted`
+carries no frame and no payload. A storage or product-socket injection returns
+`{ faultId, injected }` alone.
 
 On the `rtc` carrier, `action: { rewrite }` writes each matching frame in place of the frame the page signed:
 `'strip-proof'` deletes its publication proof, and `{ forgeSender: { principal } }` names that principal's one

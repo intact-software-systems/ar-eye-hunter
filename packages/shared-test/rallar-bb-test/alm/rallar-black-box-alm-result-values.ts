@@ -8,6 +8,7 @@ import type {
     ALDeliveryRefusalReason,
     ALDeliveryState
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { TransportFaultActedCounts } from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 
 import type { RallarBlackBoxTestMessagesCarrier } from '../rallar-black-box-test-contracts.ts';
 
@@ -107,6 +108,16 @@ export interface RallarBlackBoxTestMessagesReceivedResultValue {
     readonly absent: boolean;
     /** Every matched copy in arrival order. */
     readonly received: readonly AlmReceivedMessageIdentity[];
+}
+
+/**
+ * `acted` is what the fault of this `faultId` has acted on so far, read after this injection: a release
+ * (`remaining: 0`) therefore reads the fault's totals. Present for a transport fault only.
+ */
+export interface RallarBlackBoxTestFaultInjectResultValue {
+    readonly faultId: string;
+    readonly injected: true;
+    readonly acted?: TransportFaultActedCounts;
 }
 
 export interface RallarBlackBoxTestStorageCountersResultValue {

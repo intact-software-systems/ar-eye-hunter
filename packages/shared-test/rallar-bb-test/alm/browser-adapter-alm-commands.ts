@@ -13,6 +13,7 @@ import type {
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
+import { decodeAlmFaultInjectResultValue } from './decode-alm-fault-inject-result.ts';
 import { decodeAlmRuntimeRecord } from './decode-alm-runtime-record.ts';
 import {
     ALM_INVALID_RUNTIME_RESULT_CODE,
@@ -398,10 +399,8 @@ function injectAlmFault(
         invoke: async (runtime) =>
             match.fold(
                 (message) => Promise.reject(new TypeError(message)),
-                async (resolved) => {
-                    await runtime.injectFault({ ...fault, ...resolved });
-                    return { faultId: command.faultId, injected: true };
-                }
+                async (resolved) =>
+                    decodeAlmFaultInjectResultValue(await runtime.injectFault({ ...fault, ...resolved }), command)
             )
     });
 }

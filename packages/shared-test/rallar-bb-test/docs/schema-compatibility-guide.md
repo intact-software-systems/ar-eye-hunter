@@ -1194,3 +1194,39 @@ schema-and-capabilities.md describes both actions and how the carriers differ.
 Verification:
 npx vitest run packages/tests/shared-test/alm-seeded-fault-contract.test.ts packages/tests/shared/transport-faults
 ```
+
+```text
+Title: a transport fault.inject result says what its fault acted on
+Date: 2026-11-18
+Owner: ALM fault proofs
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RallarBlackBoxTestFaultInjectResultValue (the fault.inject command result)
+- BlackBoxRallarRuntime.injectFault (the page runtime's answer)
+
+Old shape:
+fault.inject returned { faultId, injected: true } on every carrier, and the page runtime's injectFault answered nothing.
+No recipe could read what a fault did.
+
+New shape:
+A transport fault.inject (ws or rtc) returns { faultId, injected: true, acted }, where acted is
+{ drop, delay, rewrite, "not-ready", backpressure }: how many frames the fault of that faultId has acted on so far, read
+after the injection. A storage or product-socket fault.inject returns { faultId, injected: true } as before. The page
+runtime's injectFault answers the counts for a transport fault and null for the two others.
+
+Migration:
+None for recipes. A browser Rallar runtime provider must answer the counts from injectFault for a transport fault: an
+answer without them fails the command as an invalid runtime result.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes acted and how a recipe asserts a floor on a release.
+
+Verification:
+npx vitest run packages/tests/shared/transport-faults/to-transport-fault-acted-counts.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts packages/tests/shared-test/rallar-browser-runtime/messaging.test.ts
+```
