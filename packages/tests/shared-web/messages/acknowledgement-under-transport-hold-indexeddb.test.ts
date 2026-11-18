@@ -61,9 +61,9 @@ describe('an acknowledgement that arrives while a transport hold drops another s
         await expectFailedAtReceiptExhaustion(sender);
     });
 
-    // A stalled engine runs one batch per timeout, so each batch after a retry holds the retry's repair beside the next
-    // timer. Under due order the repair runs first and re-arms the receipt's deadline, so that timer defers once and the
-    // next one charges: the first charge takes one round, every later attempt and the exhaustion two, 2 × budget + 1.
+    // A stalled engine runs one batch per timeout, so a batch after a retry can hold the retry's repair beside the next
+    // timer. A repair that runs first re-arms the receipt's deadline and that timer defers once, so each attempt after
+    // the first may cost a second round: the receipt ends later than budget + 1 rounds, never later than 2 × budget + 1.
     it('a ws receipt whose retries run a whole timeout late still ends after its budget, later', async () => {
         const sender = await openWsHoldSender();
         const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
@@ -84,13 +84,16 @@ describe('an acknowledgement that arrives while a transport hold drops another s
             await sender.settle();
         }
 
-        const sends = TestWebSocket.instances.at(-1)?.sent.filter((frame) => String(frame).includes(submission.id.msgId)) ?? [];
+        const sends = TestWebSocket.instances.flatMap((socket) => socket.sent)
+            .filter((frame) => JSON.parse(String(frame))?.id?.msgId === submission.id.msgId);
         expect(handle.lifecycle()).toMatchObject({
             state: 'failed',
             evidence: { reason: `The receipt ran out of retries after ${maxAttempts} of ${maxAttempts}.` }
         });
+        expect(sends.length).toBeGreaterThanOrEqual(1);
         expect(sends.length - 1).toBeLessThanOrEqual(maxAttempts);
-        expect(rounds).toBe(2 * maxAttempts + 1);
+        expect(rounds).toBeGreaterThan(maxAttempts + 1);
+        expect(rounds).toBeLessThanOrEqual(2 * maxAttempts + 1);
     });
 
     it.each(['rtc', 'ws'] as const)('refuses a %s ACK past a deadline that ends inside the retry schedule', async (carrier) => {

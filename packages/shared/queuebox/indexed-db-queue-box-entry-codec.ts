@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
+import { toCreatedAtEpochMs } from './resource-inbox/resource-inbox-claim-order.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -255,7 +256,7 @@ function toFairnessDueEpochMs(
         return Number(timestamps.nextTs.epochMilliseconds);
     }
     return INDEXED_DB_QUEUE_PENDING_STATUSES.has(status)
-        ? Number(timestamps.createdTs.toZonedDateTime('UTC').epochMilliseconds)
+        ? toCreatedAtEpochMs(timestamps.createdTs)
         : undefined;
 }
 

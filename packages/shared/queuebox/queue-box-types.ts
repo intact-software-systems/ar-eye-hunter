@@ -28,9 +28,11 @@ export namespace ResourceInboxWorkPage {
 
     /**
      * `key` pages a type and status in the store's own order, resumed by cursor. `due` reads the type and status's
-     * earliest rows in due order (`compareResourceEntriesByDue`), due yet or not, and answers `nextCursor: null`; a
-     * `due` request that carries a cursor is a programmer error and is refused. Rows without a next time tie, so a
-     * status whose rows carry none reads in the store's own order.
+     * earliest rows in due order, due yet or not, and answers `nextCursor: null`; a `due` request that carries a
+     * cursor is a programmer error and is refused. Where a row without a next time falls among dated rows is the
+     * store's own (`resource-inbox-claim-order.ts`): IndexedDB places a pending one at its creation instant
+     * (`compareResourceEntriesByDue`). A status whose rows carry no next time, such as RESERVED, reads in the store's
+     * own order.
      */
     export type Order = 'key' | 'due';
 

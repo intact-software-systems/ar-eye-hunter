@@ -97,6 +97,7 @@ interface IndexedDbReservationCandidateRead {
 
 interface IndexedDbClaimCandidateRead extends IndexedDbReservationCandidateRead {
     readonly statusIds: ReadonlySet<EntityStatus>;
+    readonly maxAttempts: number;
 }
 
 export interface IndexedDbQueueCleanupResult {
@@ -429,8 +430,9 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
             dueAtOrBeforeEpochMs: Number(now.epochMilliseconds),
             allowedTopicIds: input.allowedTopicIds,
-            // An expired row is swept by the claim's write, so it never takes a live row's place.
-            isCounted: (stored) => !isStoredQueueEntryExpired(stored, now)
+            // An expired row is swept by the claim's write and a spent row is never claimed: neither takes a due row's place.
+            isCounted: (stored) =>
+                !isStoredQueueEntryExpired(stored, now) && stored.dequeueAudit.attempts < input.maxAttempts
         });
     }
 
@@ -507,6 +509,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                 allowedTopicIds,
                 typeIds,
                 statusIds,
+                maxAttempts,
                 maxToReadPerCombination: contextClaim === undefined ? maxToReserve : Number.MAX_SAFE_INTEGER
             }, now);
             const selection = computeIndexedDbReservation({

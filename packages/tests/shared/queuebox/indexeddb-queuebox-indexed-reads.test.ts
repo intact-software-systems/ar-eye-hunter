@@ -384,17 +384,40 @@ describe('IndexedDbQueueBox due order', () => {
         expect(toResourceIds(claimed.values()).toSorted()).toEqual(['z-0', 'z-1']);
     });
 
-    it('claims an undated pending row as due from its creation instant and reads its next time back undated', async () => {
+    it('claims an undated pending row as due and reads its next time back undated', async () => {
         const queue = createQueueAt('undated');
         const undated = createDueEntry('undated', { nextTs: undefined });
-        const createdLater = createDueEntry('created-later', { nextTs: undefined, createdAt: DUE_NOW.add({ seconds: 1 }) });
         await queue.enqueue(undated);
-        await queue.enqueue(createdLater);
 
         const pending = await queue.getItem(undated.key);
         const claimed = await claimDue(queue, { maxToReserve: 16 });
 
         expect([pending?.dequeueAudit.nextTs, toResourceIds(claimed)]).toEqual([undefined, ['undated']]);
+    });
+
+    it('reads past due rows whose attempts are spent, so they do not hide a reservable due row', async () => {
+        const queue = createQueueAt('exhausted');
+        for (const [index, id] of toDueIds(16, 'a').entries()) {
+            await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 60 - index }), attempts: 3 }));
+        }
+        await queue.enqueue(createDueEntry('z-reservable', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set([DUE_TYPE_ID]),
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: { maxToReserve: 16, maxAttempts: 3 }
+        });
+
+        expect(toResourceIds(claimed.values())).toEqual(['z-reservable']);
+    });
+
+    it('a fairness reservation of an undated RETRY row selects it at its creation instant', async () => {
+        const queue = createQueueAt('fairness-undated');
+        await queue.enqueue(createDueEntry('undated-retry', { nextTs: undefined, status: EntityStatus.RETRY }));
+
+        const selected = await queue.reserveOverdueRetryEntries(new Set([DUE_TYPE_ID]), Number(DUE_NOW.epochMilliseconds), 1);
+
+        expect([...selected.values()].map((selection) => selection.selectedDueTs?.toString())).toEqual([DUE_CREATED_AT.toString()]);
     });
 
     it('a NEW-only claim reads its first sixteen rows by key', async () => {
@@ -471,6 +494,7 @@ function createDueEntry(
         status?: EntityStatus;
         expiryTs?: Temporal.Instant;
         createdAt?: Temporal.Instant;
+        attempts?: number;
     }>
 ): ResourceEntry {
     const createdAt = (options.createdAt ?? DUE_CREATED_AT).toZonedDateTimeISO('UTC');
@@ -485,7 +509,7 @@ function createDueEntry(
             startTs: status === EntityStatus.RESERVED ? DUE_NOW : undefined,
             endTs: undefined,
             nextTs: options.nextTs,
-            attempts: status === EntityStatus.RESERVED ? 1 : 0
+            attempts: options.attempts ?? (status === EntityStatus.RESERVED ? 1 : 0)
         },
         db: undefined
     };
