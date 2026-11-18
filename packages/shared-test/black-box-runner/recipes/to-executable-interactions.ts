@@ -227,6 +227,19 @@ function nextInteractionExecutionNumber(state: ExecutableBuildState): number {
     return value;
 }
 
+/** The first prefix a step's type starts with names its technology; a type that starts with none is HTTP. */
+const STEP_TECHNOLOGY_BY_TYPE_PREFIX = [
+    ['assert', 'ASSERT'],
+    ['set', 'SET'],
+    ['derive', 'SET'],
+    ['parallel', 'PARALLEL'],
+    ['ws', 'WS'],
+    ['server', 'SERVER'],
+    ['crdt', 'CRDT'],
+    ['rtc', 'RTC'],
+    ['webrtc', 'RTC']
+] as const;
+
 function toExecutableStep(
     step: Record<string, unknown>,
     interactionExecutionNumber: number,
@@ -236,21 +249,7 @@ function toExecutableStep(
     const expect = asRecord(step.expect || step.response);
 
     const stepType = String(step.type || 'http').toLowerCase();
-    const technology = stepType.startsWith('assert')
-        ? 'ASSERT'
-        : stepType.startsWith('set') || stepType.startsWith('derive')
-        ? 'SET'
-        : stepType.startsWith('parallel')
-        ? 'PARALLEL'
-        : stepType.startsWith('ws')
-        ? 'WS'
-        : stepType.startsWith('server')
-        ? 'SERVER'
-        : stepType.startsWith('crdt')
-        ? 'CRDT'
-        : stepType.startsWith('rtc') || stepType.startsWith('webrtc')
-        ? 'RTC'
-        : 'HTTP';
+    const technology = STEP_TECHNOLOGY_BY_TYPE_PREFIX.find(([prefix]) => stepType.startsWith(prefix))?.[1] ?? 'HTTP';
 
     const action = toRecipeStepAction(step);
 

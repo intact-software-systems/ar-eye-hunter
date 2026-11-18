@@ -39,8 +39,8 @@ export type ServerFaultReply =
     | Readonly<{ outcome: 'refused'; refusal: ServerFaultRefusal; }>
     | Readonly<{ outcome: 'invalid'; issue: string; }>;
 
-function findMember<Member extends string>(value: unknown, members: readonly Member[]): Member | undefined {
-    return members.find((candidate) => candidate === value);
+function decodeMember<Member extends string>(value: unknown, members: readonly Member[]): Member | undefined {
+    return typeof value === 'string' ? members.find((candidate) => candidate === value) : undefined;
 }
 
 export function decodeServerFaultCommand(value: unknown): Either<string, ServerFaultCommand> {
@@ -50,17 +50,17 @@ export function decodeServerFaultCommand(value: unknown): Either<string, ServerF
     if (value.action === 'restore') {
         return Either.ofRight({ action: 'restore' });
     }
-    const target = findMember(value.target, SERVER_FAULT_TARGETS);
+    const target = decodeMember(value.target, SERVER_FAULT_TARGETS);
     if (target === undefined) {
         return Either.ofLeft(`target must be one of ${SERVER_FAULT_TARGETS.join(', ')}`);
     }
     if (value.action === 'stop') {
-        const mode = findMember(value.mode, SERVER_FAULT_STOP_MODES);
+        const mode = decodeMember(value.mode, SERVER_FAULT_STOP_MODES);
         return mode === undefined
             ? Either.ofLeft(`mode must be one of ${SERVER_FAULT_STOP_MODES.join(', ')}`)
             : Either.ofRight({ action: 'stop', target, mode });
     }
-    const action = findMember(value.action, SERVER_FAULT_TARGET_ACTIONS);
+    const action = decodeMember(value.action, SERVER_FAULT_TARGET_ACTIONS);
     return action === undefined
         ? Either.ofLeft(`action must be one of stop, restore, ${SERVER_FAULT_TARGET_ACTIONS.join(', ')}`)
         : Either.ofRight({ action, target });
@@ -86,11 +86,11 @@ function decodeServerFaultApplied(value: unknown): ServerFaultApplied | undefine
     }
     if (value.action === 'restore') {
         const restored = Array.isArray(value.restored)
-            ? value.restored.flatMap((target) => findMember(target, SERVER_FAULT_TARGETS) ?? [])
+            ? value.restored.flatMap((target) => decodeMember(target, SERVER_FAULT_TARGETS) ?? [])
             : undefined;
         return restored === undefined ? undefined : { action: value.action, restored };
     }
-    const action = findMember(value.action, ['stop', 'restart', 'suspend', 'resume'] as const);
+    const action = decodeMember(value.action, ['stop', 'restart', 'suspend', 'resume'] as const);
     return action === undefined ? undefined : { action };
 }
 
@@ -100,7 +100,7 @@ export function decodeServerFaultReply(value: unknown): Either<string, ServerFau
     if (reply.outcome === 'applied' && applied !== undefined) {
         return Either.ofRight({ outcome: 'applied', applied });
     }
-    const refusal = findMember(reply.refusal, SERVER_FAULT_REFUSALS);
+    const refusal = decodeMember(reply.refusal, SERVER_FAULT_REFUSALS);
     if (reply.outcome === 'refused' && refusal !== undefined) {
         return Either.ofRight({ outcome: 'refused', refusal });
     }

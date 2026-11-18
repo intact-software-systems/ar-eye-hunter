@@ -6,12 +6,12 @@ import {
     isALControlTypeId
 } from '../al-contracts/al-control-type-ids.ts';
 import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
-import { createSeededRandom } from '../random/create-seeded-random.ts';
 import {
-    validateSeededTransportFaultAction,
+    isSeededTransportFaultAction,
     type TransportFaultJitter,
     type TransportFaultLoss
 } from './seeded-transport-fault-action.ts';
+import { SeededTransportFaultDraws } from './seeded-transport-fault-draws.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -106,20 +106,16 @@ export function createScriptedTransportFaultPort(): ScriptedTransportFaultPort {
 
 class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     private readonly faults = new Map<string, ScriptedTransportFault>();
-    private readonly seededDraws = new Map<string, () => number>();
+    private readonly seededDraws = new SeededTransportFaultDraws();
     private readonly observations: TransportFaultObservation[] = [];
 
     inject(fault: ScriptedTransportFault): void {
         assertTransportFaultCarrierAction(fault);
-        assertSeededTransportFaultAction(fault);
+        this.seededDraws.rearm(
+            fault.faultId,
+            isSeededTransportFaultAction(fault.action) ? fault.action : undefined
+        );
         this.faults.set(fault.faultId, fault);
-        const seed = toTransportFaultSeed(fault.action);
-        if (seed === undefined) {
-            this.seededDraws.delete(fault.faultId);
-        }
-        else {
-            this.seededDraws.set(fault.faultId, createSeededRandom(seed));
-        }
     }
 
     clear(): void {
@@ -145,7 +141,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
         const fault = this.findMatchingFault(carrier, toSerializedFrameFacts(serialized), 'frame');
         const decision: TransportFaultDecision = fault === undefined
             ? { kind: 'pass' }
-            : toFrameFaultDecision(fault, serialized, this.seededDraws.get(fault.faultId));
+            : toFrameFaultDecision(fault, serialized, this.seededDraws);
         if (fault !== undefined && decision.kind !== 'pass') {
             this.consumeFault(fault, decision.kind);
         }
@@ -194,31 +190,11 @@ function assertTransportFaultCarrierAction(fault: ScriptedTransportFault): void 
     }
 }
 
-function assertSeededTransportFaultAction({ faultId, action }: ScriptedTransportFault): void {
-    if (typeof action === 'string' || !('loss' in action || 'jitter' in action)) {
-        return;
-    }
-    const issues = validateSeededTransportFaultAction(action);
-    if (issues.length > 0) {
-        throw new TypeError(`Transport fault ${faultId} cannot be injected: ${issues.join('; ')}.`);
-    }
-}
-
-function toTransportFaultSeed(action: ScriptedTransportFault['action']): number | undefined {
-    if (typeof action === 'string') {
-        return undefined;
-    }
-    if ('loss' in action) {
-        return action.loss.seed;
-    }
-    return 'jitter' in action ? action.jitter.seed : undefined;
-}
-
-/** `draw` is the fault's own seeded sequence; only a seeded action reads it, one number per matching frame. */
+/** A seeded action reads the next number of its own sequence in `seededDraws`; no other action reads it. */
 function toFrameFaultDecision(
     fault: ScriptedTransportFault,
     serialized: string,
-    draw: (() => number) | undefined
+    seededDraws: SeededTransportFaultDraws
 ): TransportFaultDecision {
     const { faultId, action } = fault;
     if (action === 'drop') {
@@ -227,20 +203,13 @@ function toFrameFaultDecision(
     if (typeof action === 'string') {
         return { kind: 'pass' };
     }
-    if ('rewrite' in action) {
-        return { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) };
+    if (isSeededTransportFaultAction(action)) {
+        const effect = seededDraws.decideFrame(faultId, action);
+        return effect.kind === 'pass' ? effect : { ...effect, faultId };
     }
-    if ('delayMs' in action) {
-        return { kind: 'delay', faultId, delayMs: action.delayMs };
-    }
-    if (draw === undefined) {
-        throw new Error(`Transport fault ${faultId} is seeded and holds no sequence.`);
-    }
-    if ('loss' in action) {
-        return draw() < action.loss.ratio ? { kind: 'drop', faultId } : { kind: 'pass' };
-    }
-    const { minDelayMs, maxDelayMs } = action.jitter;
-    return { kind: 'delay', faultId, delayMs: minDelayMs + Math.floor(draw() * (maxDelayMs - minDelayMs + 1)) };
+    return 'rewrite' in action
+        ? { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) }
+        : { kind: 'delay', faultId, delayMs: action.delayMs };
 }
 
 /** The frame matched as an AL envelope, so it parses to a record; every field the rewrite does not name stays. */

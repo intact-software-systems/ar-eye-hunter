@@ -4,6 +4,7 @@ import { decodeBlackBoxRallarFaultInput } from '@shared-test/black-box-runner/br
 import { validateAlmControlCommand } from '@shared-test/rallar-bb-test/alm/validate-alm-control-command.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 const command = {
     kind: 'fault.inject',
@@ -16,7 +17,7 @@ const loss = { loss: { ratio: 0.1, seed: 7 } };
 const jitter = { jitter: { minDelayMs: 20, maxDelayMs: 80, seed: 7 } };
 
 /** The three boundaries a `fault.inject` command crosses before a page arms it. */
-function readBoundaries(candidate: Readonly<Record<string, unknown>>) {
+function readBoundaries(candidate: ApiJsonObject) {
     return {
         schema: validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, candidate).ok,
         command: validateAlmControlCommand(candidate, 'fault.inject').length === 0,

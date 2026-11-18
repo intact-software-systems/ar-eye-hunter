@@ -25,8 +25,13 @@ function validateFields(record: ApiJsonObject, fields: readonly string[], path: 
     ];
 }
 
-function validateSeed(seed: unknown, path: string): readonly string[] {
+function validateSeed(seed: number, path: string): readonly string[] {
     return Number.isSafeInteger(seed) ? [] : [`${path}.seed must be an integer`];
+}
+
+/** Whether a fault action is one of the two seeded ones. */
+export function isSeededTransportFaultAction(action: string | object): action is SeededTransportFaultAction {
+    return typeof action === 'object' && ('loss' in action || 'jitter' in action);
 }
 
 /** Every issue of a seeded action; none when the action can be injected. */

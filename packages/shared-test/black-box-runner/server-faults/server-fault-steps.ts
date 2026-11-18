@@ -1,3 +1,4 @@
+import type { ApiJsonObject, ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toError } from '../../../shared/resilience/to-error.ts';
 import { toCorrelationReportFields } from '../execution/black-box-run-correlation.ts';
@@ -17,19 +18,19 @@ export namespace ServerFaultSteps {
         readonly fetch: BlackBoxFetch;
     }
 
+    /** A recipe step as the runner resolved it: JSON the recipe wrote. */
     export interface Interaction {
-        readonly request: Readonly<Record<string, unknown>>;
-        readonly response: unknown;
+        readonly request: ApiJsonObject;
+        /** Absent when the step states no expectation. */
+        readonly response?: ApiJsonValue;
     }
 
+    /** The step's report row; the fields beside these are the step's correlation and output declarations. */
     export interface Status {
         readonly name: string;
         readonly status: 'SUCCESS' | 'FAILURE';
         readonly transport: 'SERVER';
-        readonly action: unknown;
-        readonly expected: unknown;
-        readonly actual: unknown;
-        readonly [field: string]: unknown;
+        readonly [field: string]: ApiJsonValue | undefined;
     }
 }
 
@@ -37,12 +38,13 @@ interface StepOutcome {
     readonly status: ServerFaultSteps.Status['status'];
     /** Absent on a step that succeeded. */
     readonly result?: string;
-    readonly actual: unknown;
+    /** What the run answered; absent when the step ended before a request. */
+    readonly actual?: ApiJsonObject;
 }
 
 const UNMANAGED_RUN = 'This run manages no API servers, so a server step has nothing to act on.';
 
-function toFailure(result: string, actual: unknown = undefined): StepOutcome {
+function toFailure(result: string, actual?: ApiJsonObject): StepOutcome {
     return { status: 'FAILURE', result, actual };
 }
 

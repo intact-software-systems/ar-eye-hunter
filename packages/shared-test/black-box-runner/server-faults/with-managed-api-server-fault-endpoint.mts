@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import type { ManagedApiServerFaults } from './managed-api-server-faults.mts';
 import { decodeServerFaultCommand, type ServerFaultReply } from './server-fault-command.ts';
 
@@ -11,7 +12,7 @@ function toServerFaultResponse(reply: ServerFaultReply): Response {
     return Response.json(reply, { status: STATUS_BY_OUTCOME[reply.outcome] });
 }
 
-async function readJsonBody(request: Request): Promise<unknown> {
+async function readJsonBody(request: Request): Promise<ApiJsonValue | undefined> {
     const text = await request.text();
     try {
         return JSON.parse(text);

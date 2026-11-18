@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 const FAULTS_URL = 'http://127.0.0.1:49152';
 
 interface PostedFault {
     readonly url: string;
-    readonly body: unknown;
+    readonly body: ApiJsonValue;
 }
 
-function toServerStep(name: string, request: Record<string, unknown>, executionNumber: number) {
+function toServerStep(name: string, request: ApiJsonObject, executionNumber: number) {
     return {
         SERVER: {
             request: { ...request, scenarioExecutionNumber: 1, interactionExecutionNumber: executionNumber },
