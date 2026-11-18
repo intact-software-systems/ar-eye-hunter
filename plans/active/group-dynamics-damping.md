@@ -150,11 +150,12 @@ reshape a restless room at that rate for ever, and would queue reshapes of which
 matters. The work here is coalesced, never queued.
 
 **Stored, not held in memory.** Any server of the cluster may run a room's planning work, so the
-gate cannot be an object in one process. Its state is stored beside the room's coalesced re-plan
-work, where `replanNotBeforeEpochMs` already carries the layout-age floor: per gate, the instant
-before which nothing is due and the interval in force. One pure function computes the next state
-from the previous state, the request, the last result and the clock, in the style of
-`computeTopologyReplanDueAt`.
+gate cannot be an object in one process. Its state is one runtime-state record per room, as the
+input fingerprint is: when the last pass went through, how many passes in a row had been held
+first, when a pass was first held since the last one, and the reasons still wanted. Neither the
+instant the gate opens nor the interval in force is stored; both are computed from that state and
+the policy's bounds as read. Pure functions compute the next state from the previous state, the
+plan's outcome, the bounds and the clock.
 
 **Shared primitives.** `packages/shared/resilience` already owns a token bucket
 (`rate-limiter.ts`), a sliding-window counter (`sliding-window-counter.ts`) and a back-off
@@ -613,10 +614,22 @@ no trace, that room would be reshaped about every 15 s for ever. With the rule a
 at about 0, 15 to 18, 45 to 51 and then every 60 to 63 s. A room that was held once and is reshaped
 ten minutes later is calm: its layout is far older than twice its interval.
 
+**Where the gate applies.** The gate exists to spare browsers dials and overlap, so it applies only
+while the room's stage follows the replanning policy (`consultsReplanningPolicy`, which is true for
+`active` alone). In `planned` and `reconfiguring` nobody dials the planned layout, and a hold would
+only make `connect` freeze a layout the room did not want: automatic work there plans with the
+ungated permission, and the gate is neither consulted nor advanced (no hold, no period start, no
+want cleared, no wake-up row), except that a first layout still resets a used gate. The rule is one
+pure place, `planning/reshape-gate/topology-reshape-gate-stage.ts`, which the topology work calls.
+In a `commanded` room automatic work on the active layout is frozen, so an owed reshape waits for
+the command.
+
 **What a closed gate does to each reason.** The planner takes one new input: reshape `held`, or
-`allowed` with the reasons still wanted. Commanded work is always `allowed`; a row that merged
-automatic changes into a command is commanded, and the command rebuilds the room in any case. With
-`held` and an active previous layout:
+`allowed` with the reasons still wanted. Commanded work is always `allowed`, with the reasons
+still wanted; a row that merged automatic changes into a command is commanded. A commanded row
+plans as a membership delta and can evolve in place, so it checks the wanted reasons as automatic
+work does, and the want is cleared only when the gate is open and no wanted reason still applies.
+With `held` and an active previous layout:
 
 | Reason                | With the gate closed                                                                                                                                       | Counts as held |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
@@ -649,7 +662,10 @@ with the gate's state as read. The input-fingerprint skip does not apply to it: 
 members, the leader and the configuration are what they were when the reshape was held, and the skip
 would end the work without planning. It plans whenever the stored state still owes a reshape. A row
 that is early by the local clock is retried, as the formation timer does; a row whose period has ended
-or that finds nothing wanted completes without planning.
+or that finds nothing wanted completes without planning. A wake-up that finds the room frozen, or
+held by a `commanded` or unreadable policy, completes with the want kept; so a change-gated re-plan
+does not take the input-fingerprint skip while the gate applies, is open and a reshape is wanted,
+and the next re-plan of the room releases the reshape.
 
 **A hold can be the whole outcome.** A leader appointed in a quiet room with the gate closed changes
 no layout. Today that work ends with nothing to store. It now writes the gate state and the wake-up
@@ -699,6 +715,11 @@ the presets, the decoders and their tests.
 - The gate record is never deleted; the work that establishes a first layout resets it.
 - The gate record has its own revision and its own typed conflict.
 - Automatic changes merged into a commanded row pass with the command.
+- The gate applies only in the stage that follows the replanning policy (`active`); in another
+  planning stage automatic work plans ungated and the gate is not advanced, except that a first
+  layout resets it.
+- Commanded work passes with the stored wants, so the planner checks them and a want is not
+  cleared unchecked.
 - A commanded reshape starts a period like any other, so the state is no longer cleared when the
   room's topology configuration changes, as this plan first said.
 - A join whose in-place attach fails is rebuilt at once, as today, until the forced edge is built.

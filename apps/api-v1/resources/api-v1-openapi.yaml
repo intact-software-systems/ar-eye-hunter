@@ -8764,11 +8764,12 @@ components:
             the first change of a burst; `auto` carries no policy window and
             replans on the server's first opportunity after a change.
             `reshapeMinIntervalMs` is the shortest time an automatic optional
-            reshape must wait after the room's previous reshape (default
-            15000, range 15000 to 600000; a lower value is raised to 15000).
-            `reshapeMaxIntervalMs` is the longest that wait grows to as
-            reshapes keep coming (default 60000, range 15000 to 600000, and
-            not below `reshapeMinIntervalMs`).
+            reshape of an `active` room must wait after the room's previous
+            reshape (default 15000). `reshapeMaxIntervalMs` is the longest
+            that wait grows to as reshapes keep coming (default 60000, not
+            below `reshapeMinIntervalMs`). Both have the range 15000 to
+            600000: a lower value is raised to 15000 and a higher one lowered
+            to 600000.
           properties:
             replanning:
               type: string

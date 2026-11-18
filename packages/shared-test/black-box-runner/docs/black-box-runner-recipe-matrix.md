@@ -142,7 +142,10 @@ room entry carrying its effective `topologyConfig`) under
 `tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`; figures are recorded,
 never judged. The `rtt reports` column counts reports sent, not reports the server
 accepted. The `held` column counts the plans of a phase that held a reshape, then the
-held reasons that are not zero, and the `closest reshapes (s)` column is the smallest gap
+held reasons that are not zero. A hold that publishes no plan, such as a leader appointed in a
+quiet room while the gate is closed, has no plan record: the `held` column does not count it, and
+the work's timing line prints `reshape: 'held'` with no held reason. The `closest reshapes (s)`
+column is the smallest gap
 between two reshapes planned in that phase; a line under the table gives the closest two
 reshapes of the whole room, phase boundaries included. Each room entry also carries its
 `reshapeGate` as read once it converged. Before it reads convergence the measurement waits,

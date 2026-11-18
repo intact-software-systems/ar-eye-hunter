@@ -304,14 +304,19 @@ constructed directly; there is no broad topology-management facade.
 A tree is rooted at the group's appointed director when the director is a member: the weighted and
 the no-RTT tree both use it as their source, and so does the no-RTT seed that completes a sparse
 weighted room graph. The director's session id is part of the topology input fingerprint, so an
-appointment after the first plan produces work. A tree plans a full rebuild rather than an
-incremental one when the leader is one of the joined sessions. When the membership did not change,
-the tree's undirected next hops are re-rooted in place at the leader, unchanged or newly appointed
-alike since a snapshot carries no root, and the tree is rebuilt only when the leader's eccentricity
-in it exceeds its depth in the no-RTT tree rooted at it. A group without a leader omits the key, so
-its fingerprint and plan are as before. A tree attaches joins incrementally whatever their number;
-any other delta, a mesh's joins included, falls back to a full rebuild when it exceeds
+appointment after the first plan produces work. The rebuild rules that follow hold while the
+reshape gate is open or does not apply (see "Reshape Gate"). A tree plans a full rebuild rather than an incremental
+one when the leader is one of the joined sessions. When the membership did not change, the tree's
+undirected next hops are re-rooted in place at the leader, unchanged or newly appointed alike since
+a snapshot carries no root, and the tree is rebuilt only when the leader's eccentricity in it
+exceeds its depth in the no-RTT tree rooted at it. The same depth check runs with a membership
+delta when a re-root the gate held is still wanted. A group without a leader omits the key, so its
+fingerprint and plan are as before. A tree attaches joins incrementally whatever their number; any
+other delta, a mesh's joins included, falls back to a full rebuild when it exceeds
 `max(2, ceil(previous members / 4))` changes, and the invariant validator judges every evolved tree.
+While the gate is closed the room is evolved in place whatever the size of its delta, a leader that
+joins is attached first and the other joiners breadth-first from it, and a leader that is too deep
+keeps the tree's root.
 A leave is repaired in place by shared-graph's cheapest-links remove, for a tree and a mesh alike, and a result
 the validator rejects is rebuilt.
 With a leader, joins attach breadth-first from the leader, each to the shallowest session with spare
@@ -328,12 +333,16 @@ Every work item reads the current durable group snapshot. `group-revision`
 work carries only its `groupRef` and the `sourceGroupStateCausalRevision` that
 asked (D290), so it plans from the current durable snapshot, which is at or past
 that revision; a later revision folded into that plan leaves its own queued
-row nothing new to publish. `rtt-refresh` work embeds the snapshot it measured
-and adopts a dominating current snapshot. A dominated current snapshot never
+row nothing new to publish. `reshape-due` work, the wake-up of a held reshape,
+carries the `groupRef` and the gate period it was queued under, and plans from
+the current durable snapshot as `group-revision` work does. `rtt-refresh` work
+embeds the snapshot it measured and adopts a dominating current snapshot. A dominated current snapshot never
 replaces the embedded one, and an incomparable tuple fails. Graph planning occurs outside the runtime-state transaction. `readTopologyMutation`, `computeTopologyMutation`,
 `validateTopologyMutation`, and `writeTopologyMutation` implement the current
 commit path. The write transaction CAS-guards the snapshot first, then inserts
-the compact work claim and immutable publication. A conflict persists nothing
+the compact work claim and immutable publication, then writes the reshape gate
+record conditionally on the revision the work read, then inserts the rows the
+commit wakes, a held reshape's `reshape-due` row among them. A conflict persists nothing
 and returns to its ResourceInbox/QueueBox attempt boundary. AppInbox owns
 incoming HTTP/WS mutation retries. Downstream `APP_OUTBOX` work such as
 the RTC topology work handler repeats the full read/compute/validate/write sequence on
@@ -368,6 +377,52 @@ If B's planning snapshot is now causally older, B completes without
 publishing. If it is newer, B conditionally commits one exact publication for
 its work identity. At no point is a rejected candidate returned as
 authoritative or sent to browsers.
+
+## Reshape Gate
+
+The reshape gate keeps an automatic optional reshape of a room's RTC graph from
+landing closer than an interval to the room's previous reshape. A reshape is a
+published plan whose change is a rebuild, for any reason, and every reshape
+starts a new period of the gate. The interval starts at the lifecycle policy's
+`topology.reshapeMinIntervalMs` (15 000 ms by default). It doubles, up to
+`topology.reshapeMaxIntervalMs` (60 000 ms by default), when a reshape had been
+held first in the period and the period is younger than twice its interval; a
+reshape through an open gate otherwise puts it back to the lower bound, and one
+through a closed gate with nothing held leaves it as it is. The arithmetic is
+the shared back-off gate (`packages/shared/resilience/backoff-gate.ts`); the
+topology mapping lives in `topology/planning/reshape-gate/`.
+
+The gate applies only while the room's stage follows the replanning policy,
+which is `active`. In `planned` and `reconfiguring` nobody dials the planned
+layout, so automatic work plans ungated there and the gate is neither consulted
+nor advanced; the work that establishes a first layout still resets a used gate,
+so a room that forms again starts with an open gate. Commanded work passes a
+closed gate, with the reasons still wanted. In a `commanded` room automatic work
+on the active layout is frozen, so an owed reshape waits for the command.
+
+While the gate is closed the planner holds a kind change (the previous kind is
+kept and the room is evolved in place) and a leader re-root (the tree keeps its
+root), and records them as wanted. A too-large delta is evolved in place and
+owes nothing; an RTT refresh keeps the stored layout. An in-place update that
+fails is still rebuilt at once.
+
+The state is one runtime-state record per room in the
+`rtc-topology:reshape-gates` namespace, with its own revision. The topology
+work reads it, the planner plans with the permission it gives, and the work
+writes the next state conditionally on the revision it read, in the work's one
+transaction, also when no layout is written. A lost race is a
+`RuntimeStateWriteConflictError`, and the redelivered work starts from its read.
+
+A hold is released in three ways. The first hold of a period inserts one
+`reshape-due` row due when the gate opens; any server that takes it plans the
+room as a membership delta and is not stopped by an unchanged input
+fingerprint. A row whose period has ended, or whose room no longer wants a
+reshape, completes without planning, and a row that is early by the local clock
+is retried. Any other work that plans the room while the gate is open takes the
+owed reshape too, or clears a want that no longer applies, and a change-gated
+re-plan with an unchanged fingerprint still plans while an open gate owes one,
+so a wake-up that found the room frozen does not strand the want. Commanded
+work takes an owed reshape that still applies at once, gate open or closed.
 
 ## Durable Publications
 

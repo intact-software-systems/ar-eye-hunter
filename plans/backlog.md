@@ -780,6 +780,15 @@ and it has no status list.
   (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
   the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
   (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
+- Reshape gate leftovers (pull request #844):
+  - The plan record's `changeGated` input is overloaded for a `reshape-due` row, so a wake-up's plan has empty
+    `causes`; naming a cause for it would change the plan record contract.
+  - The work codec does not tie a `reshape-due` row's resource id to its payload.
+  - The OpenAPI schema has no `uniqueItems` or `maxItems` on `wantedReasons` and `heldReshapeReasons`.
+  - Bounds raised after a period's wake-up has run leave a later hold of that period without a row until the next
+    work.
+  - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
+  - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

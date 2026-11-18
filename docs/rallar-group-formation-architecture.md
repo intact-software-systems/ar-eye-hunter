@@ -159,6 +159,10 @@ and initiator choices plus six policy sections. Every field is required once nor
 | `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`, `reshapeMinIntervalMs`, `reshapeMaxIntervalMs` |
 | `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                                           |
 
+`topology.reshapeMinIntervalMs` and `topology.reshapeMaxIntervalMs` bound the reshape gate of an
+`active` room: what it holds, where it applies and how a hold is released are in
+[the reshape gate section](rallar-convergent-state-and-rtc-topology.md#reshape-gate).
+
 `topology.replanning` is enforced at two gates that take the planner's decision on the same stored
 facts. The planner (`resolveTopologyPlanAction`) freezes automatic work for an `active` group whose
 planned slot holds an active layout when the mode is `commanded` or the policy is unreadable. The
@@ -601,10 +605,11 @@ command it asks for — `activateGroup` with `observedRate` and a `degraded` fla
 
 **The evidence leg** is the RTC topology work handler (`create-rtc-topology-work-handler.ts`).
 After every topology work item commits — a published layout, an unchanged or frozen plan, a held
-RTT replan (`held-young-layout`), or a fingerprint skip, for group-revision and RTT-refresh work
-alike — it petitions the criterion with the
+RTT replan (`held-young-layout`), or a fingerprint skip, for group-revision, RTT-refresh and
+reshape-due work alike — it petitions the criterion with the
 planned row the commit made durable and the authority's evidence, then the stage trigger and the
-activation-status observer. It costs nothing while no work arrives; RTT-refresh items the refinement
+activation-status observer. A reshape-due row that completes without planning
+(`skipped-reshape-settled`) does not petition it. It costs nothing while no work arrives; RTT-refresh items the refinement
 gate defers reach the criterion only through the damped edge-trigger below.
 
 **The threshold edge-trigger.** RTT-refresh work whose replan the refinement gate defers
