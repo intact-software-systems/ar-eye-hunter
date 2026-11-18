@@ -1230,3 +1230,39 @@ schema-and-capabilities.md describes acted and how a recipe asserts a floor on a
 Verification:
 npx vitest run packages/tests/shared/transport-faults/to-transport-fault-acted-counts.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts packages/tests/shared-test/rallar-browser-runtime/messaging.test.ts
 ```
+
+```text
+Title: messages.received may claim that a payload field ascends
+Date: 2026-11-18
+Owner: ALM fault proofs
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (messages.received branch)
+- validateRallarBlackBoxTestCommand messages.received
+- RallarBlackBoxTestMessagesReceivedResultValue
+
+Old shape:
+messages.received named connection, typeId, msgId, count, absent and windowMs, and reported a count and each copy's
+identity. No recipe could claim the order in which copies arrived.
+
+New shape:
+messages.received may also name ascendingBy, a field of each copy's payload. The command then also requires that field
+to be a finite number in every matched copy and to ascend strictly in arrival order; its result and diagnostic carry
+ascending (boolean). A met count with a failed order ends RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING. ascendingBy is
+refused when blank and beside absent: true.
+
+Migration:
+None: a command that names no ascendingBy validates, runs and reports as before.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes the claim and its failure code.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-received-order-contract.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts
+```

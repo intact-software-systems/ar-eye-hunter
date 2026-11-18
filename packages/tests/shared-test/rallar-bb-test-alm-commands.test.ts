@@ -1353,6 +1353,66 @@ describe('ALM browser adapter execution', () => {
         expect(JSON.stringify(diagnostic)).not.toContain('trace-first');
     });
 
+    it.each([
+        ['ascends', [1, 2, 3], true],
+        ['skips a value and still ascends', [1, 2, 5], true],
+        ['arrives out of order', [1, 3, 2], false],
+        ['repeats a value', [1, 2, 2], false],
+        ['lacks the field in one copy', [1, undefined, 3], false],
+        ['holds a text where a number belongs', [1, '2', 3], false]
+    ])('claims that a payload field ascends in arrival order when it %s', async (_label, sequence, ascending) => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        sequence.forEach((seq, index) => {
+            const event = inboundMessageEvent(`msg-${index}`);
+            runtime.receiveRallarBrowserEvent({
+                ...event,
+                data: { ...event.data, payload: seq === undefined ? { other: index } : { seq } }
+            });
+        });
+
+        const ordered = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-ordered',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 3,
+            ascendingBy: 'seq',
+            windowMs: 40
+        });
+
+        expect(ordered.ok).toBe(ascending);
+        expect(ordered.value).toMatchObject({ count: 3, observed: 3, ascending });
+        expect(ordered.error?.code).toBe(ascending ? undefined : 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING');
+        const diagnostic = runtime.state().events.find((event) => event.commandId === 'alm-received-ordered' && event.topic === 'rallar.bb.messages.received');
+        expect(isJsonRecordValue(diagnostic?.payload) ? diagnostic.payload.data : undefined).toMatchObject({ ascending });
+    });
+
+    it('reports a short count before an order, and still says whether the copies it saw ascend', async () => {
+        const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
+            readSession: () => undefined,
+            rallarRuntime: createAlmBrowserRuntimeFake(createAlmRuntimeCaptures())
+        });
+        const event = inboundMessageEvent('msg-1');
+        runtime.receiveRallarBrowserEvent({ ...event, data: { ...event.data, payload: { seq: 1 } } });
+
+        const short = await runtime.execute({
+            kind: 'messages.received',
+            commandId: 'alm-received-short-ordered',
+            connection: 'aliceRtc',
+            typeId: 'alm.conformance',
+            count: 2,
+            ascendingBy: 'seq',
+            windowMs: 40
+        });
+
+        expect(short.ok).toBe(false);
+        expect(short.error?.code).toBe('RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED');
+        expect(short.value).toMatchObject({ count: 2, observed: 1, ascending: true });
+    });
+
     it('fails a matched copy whose trace is outside the grammar as an invalid runtime result', async () => {
         const runtime = createDefaultRallarBlackBoxBrowserTestRuntime({
             readSession: () => undefined,

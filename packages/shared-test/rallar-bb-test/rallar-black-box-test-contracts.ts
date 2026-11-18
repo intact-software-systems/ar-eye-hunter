@@ -449,6 +449,11 @@ export type RallarBlackBoxTestMessagesReceivedCommand =
         msgId?: string;
         count: number;
         absent?: boolean;
+        /**
+         * A field of each copy's payload that must be a number and strictly ascend in arrival order. Absent claims no
+         * order; an absence claim (`absent: true`) takes none.
+         */
+        ascendingBy?: string;
         windowMs: number;
     }>;
 

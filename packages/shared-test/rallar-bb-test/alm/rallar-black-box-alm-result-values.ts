@@ -106,6 +106,11 @@ export interface RallarBlackBoxTestMessagesReceivedResultValue {
     readonly count: number;
     readonly observed: number;
     readonly absent: boolean;
+    /**
+     * Present only when the command named `ascendingBy`: whether that payload field is a number in every matched
+     * copy and strictly ascends in arrival order.
+     */
+    readonly ascending?: boolean;
     /** Every matched copy in arrival order. */
     readonly received: readonly AlmReceivedMessageIdentity[];
 }

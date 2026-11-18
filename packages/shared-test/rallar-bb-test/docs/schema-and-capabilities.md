@@ -1147,6 +1147,15 @@ diagnostic carries only `typeId`, `msgId`, `count`, `observed` and `absent`,
 never the copies. A matched copy whose `traceId` is missing or outside the trace
 grammar fails the command as an invalid runtime result.
 
+`ascendingBy` names a field of each copy's payload and claims an order: the
+field is a finite number in every matched copy and strictly ascends in arrival
+order, so a copy out of order, a repeated value and a copy without the field all
+fail the claim. The count is judged first; a count that is met with the claim
+failed ends `RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING`. The result and the
+diagnostic then carry `ascending`, a boolean, and neither is present when no
+order was claimed. An absence claim has no order: `ascendingBy` beside
+`absent: true` is refused by the schema and by command validation.
+
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
 (the `rtc` carrier accepts `drop` and `backpressure`), and `not-ready` answers a
