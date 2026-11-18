@@ -2,6 +2,7 @@ import { toStateGroupHttpPath, toStateScopeHttpPath } from '@shared-web/browser/
 import { decodeApiConfigResponse } from '@shared-web/browser/connection/decode-api-config-response.ts';
 import {
     ADMIN_ROOM_TOPOLOGY_PLANS_MAX_LIMIT,
+    type AdminRoomReshapeGate,
     type AdminRoomTopologyPlan,
     type AdminRoomTopologyPlansResponse
 } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
@@ -52,6 +53,12 @@ export interface TopologyChurnSession {
     readonly clientId: string;
     readonly sessionId: string;
     readonly accessToken: string;
+}
+
+export interface TopologyChurnRoomTopologyPlans {
+    readonly plans: readonly AdminRoomTopologyPlan[];
+    /** The room's gate as the last page read it; null when the room stores none. */
+    readonly reshapeGate: AdminRoomReshapeGate | null;
 }
 
 interface CreateTopologyChurnRoomInput {
@@ -223,8 +230,9 @@ export class TopologyChurnApi {
     async readRoomTopologyPlans(
         administrator: TopologyChurnSession,
         roomRef: GroupRef
-    ): Promise<readonly AdminRoomTopologyPlan[]> {
+    ): Promise<TopologyChurnRoomTopologyPlans> {
         const plans: AdminRoomTopologyPlan[] = [];
+        let reshapeGate: AdminRoomReshapeGate | null = null;
         let afterPublicationId: string | null = null;
         do {
             const page: AdminRoomTopologyPlansResponse = requireRight(decodeAdminRoomTopologyPlans(
@@ -234,10 +242,11 @@ export class TopologyChurnApi {
                 })
             ));
             plans.push(...page.plans);
+            reshapeGate = page.reshapeGate;
             afterPublicationId = page.nextAfterPublicationId;
         }
         while (afterPublicationId !== null);
-        return plans;
+        return { plans, reshapeGate };
     }
 
     async #login(member: TopologyChurnMember, password: string): Promise<TopologyChurnSession> {

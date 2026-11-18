@@ -8,6 +8,7 @@ import type {
     TopologyReplanCause
 } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan-change.ts';
+import type { HeldTopologyReshapeReason } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../shared/api/topology-plan/empty-topology-layout-delta.ts';
 
@@ -21,6 +22,7 @@ interface TopologyChurnTestPlanInput {
     readonly change?: TopologyPlanChange;
     readonly longestPathHops?: number;
     readonly degreeLimit?: number;
+    readonly heldReshapeReasons?: readonly HeldTopologyReshapeReason[];
 }
 
 export function toTopologyChurnLayout(version: number): GroupLayoutIdentity {
@@ -44,7 +46,7 @@ export function createTopologyChurnPlan(input: TopologyChurnTestPlanInput): Admi
             delta,
             longestPathHops: input.longestPathHops ?? 1,
             change: isEmptyTopologyLayoutDelta(delta) ? null : input.change ?? { kind: 'attach' },
-            heldReshapeReasons: []
+            heldReshapeReasons: input.heldReshapeReasons ?? []
         }
     };
 }
