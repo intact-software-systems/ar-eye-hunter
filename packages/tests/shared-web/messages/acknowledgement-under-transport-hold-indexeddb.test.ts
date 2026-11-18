@@ -1,12 +1,15 @@
 import '../../setup-browser-indexeddb.ts';
 
-import { afterEach, describe, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 
 import {
     ACK_AFTER_RECEIPT_EXHAUSTED_CASES,
     ACK_AGAINST_RETRY_SCHEDULE_CASES,
     ACK_UNDER_CONCURRENT_EVICTION_CASES,
     ACK_UNDER_HOLD_CASES,
+    ACK_UNDER_HOLD_MESSAGE_TTL_MS,
     expectAckIgnoredAfterReceiptExhausted,
     expectAcknowledgedUnderHold,
     expectFailedAtReceiptExhaustion,
@@ -56,6 +59,38 @@ describe('an acknowledgement that arrives while a transport hold drops another s
     it.each(['rtc', 'ws'] as const)('ends a %s send failed when its receipt runs out of retries, and keeps it failed past the deadline', async (carrier) => {
         const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
         await expectFailedAtReceiptExhaustion(sender);
+    });
+
+    // A stalled engine runs one batch per timeout, so each batch after a retry holds the retry's repair beside the next
+    // timer. Under due order the repair runs first and re-arms the receipt's deadline, so that timer defers once and the
+    // next one charges: the first charge takes one round, every later attempt and the exhaustion two, 2 × budget + 1.
+    it('a ws receipt whose retries run a whole timeout late still ends after its budget, later', async () => {
+        const sender = await openWsHoldSender();
+        const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
+        const handle = await sender.send(submission);
+        await sender.drain();
+        const receipt = await sender.readPendingAck(submission.id.msgId);
+        if (receipt === undefined) {
+            throw new Error('The submission must leave a receipt');
+        }
+        const { timeoutMs, maxAttempts } = receipt;
+        const roundLimit = 4 * (maxAttempts + 1);
+
+        let rounds = 0;
+        while (handle.lifecycle().state !== 'failed' && rounds < roundLimit) {
+            rounds += 1;
+            await sender.advance(timeoutMs + 1);
+            await sender.drain();
+            await sender.settle();
+        }
+
+        const sends = TestWebSocket.instances.at(-1)?.sent.filter((frame) => String(frame).includes(submission.id.msgId)) ?? [];
+        expect(handle.lifecycle()).toMatchObject({
+            state: 'failed',
+            evidence: { reason: `The receipt ran out of retries after ${maxAttempts} of ${maxAttempts}.` }
+        });
+        expect(sends.length - 1).toBeLessThanOrEqual(maxAttempts);
+        expect(rounds).toBe(2 * maxAttempts + 1);
     });
 
     it.each(['rtc', 'ws'] as const)('refuses a %s ACK past a deadline that ends inside the retry schedule', async (carrier) => {

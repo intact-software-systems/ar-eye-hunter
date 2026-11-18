@@ -30,6 +30,7 @@ import { ALWAYS_OWNED_AL_DURABLE_WORK } from '@shared/alm/work/al-durable-work-o
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WebRtcOverlayMulticastManager } from '@shared/multicast/web-rtc-overlay-multicast-manager.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
@@ -711,13 +712,38 @@ async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offs
     await sender.advance(Math.max(0, endMs + offsetMs - Date.now()));
 }
 
-/** Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. */
+/**
+ * Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. Each round drains
+ * until a batch claims nothing, as a page's engine runs work as soon as it is written: a repair hint a timer commits
+ * runs in its own batch, not beside the next timer a whole timeout later.
+ */
 async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
     const before = await readPendingAckOrThrow(sender, msgId);
     for (let claim = 0; claim <= before.maxAttempts; claim += 1) {
         await sender.advance(before.timeoutMs + 1);
-        await sender.drain();
+        await drainUntilNoWorkIsClaimed(sender);
         await sender.settle();
+    }
+}
+
+/** Drains a round may run before it gives up on reaching a batch that claims nothing. */
+const ACK_UNDER_HOLD_DRAINS_PER_ROUND = 8;
+
+async function drainUntilNoWorkIsClaimed(sender: HoldSender): Promise<void> {
+    const reserve = vi.spyOn(IndexedDbQueueBox.prototype, 'reserveEntries');
+    try {
+        for (let drain = 0; drain < ACK_UNDER_HOLD_DRAINS_PER_ROUND; drain += 1) {
+            const claimsBefore = reserve.mock.results.length;
+            await sender.drain();
+            const claimed = await Promise.all(reserve.mock.results.slice(claimsBefore).map((result) => result.value));
+            if (claimed.every((reserved) => (reserved instanceof Map ? reserved : reserved.entries).size === 0)) {
+                return;
+            }
+        }
+        throw new Error(`Work was still claimed after ${ACK_UNDER_HOLD_DRAINS_PER_ROUND} drains in one round`);
+    }
+    finally {
+        reserve.mockRestore();
     }
 }
 
