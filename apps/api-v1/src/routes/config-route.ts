@@ -5,8 +5,7 @@ import type { AuthPasswordDerivationAdmission } from '@shared-server/rallar-syst
 import type { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { ApiConfigResponse } from '@shared/api/api-config.ts';
-import type { ServerTimeResponse } from '@shared/api/server-time.ts';
+import type { ApiConfigResponse, ServerTimeResponse } from '@shared/api/api-config.ts';
 
 import type {
     ApiV1AuthenticationConfiguration,

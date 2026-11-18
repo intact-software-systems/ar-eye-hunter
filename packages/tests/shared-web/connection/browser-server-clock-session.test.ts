@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { BrowserServerClockSession, readBrowserServerCreationEpochMs } from '@shared-web/browser/connection/browser-server-clock-session.ts';
-import { BrowserServerClock } from '@shared-web/browser/connection/browser-server-clock.ts';
+import { BrowserServerClockSession, readBrowserServerCreationEpochMs } from '@shared-web/browser/connection/server-clock/browser-server-clock-session.ts';
+import { BrowserServerClock } from '@shared-web/browser/connection/server-clock/browser-server-clock.ts';
 
 import { createManualTimers } from '../../shared/resilience/manual-timers.ts';
 
@@ -13,6 +13,31 @@ const clockConfig = {
 };
 
 describe('browser server clock connection lifetime', () => {
+    it.each([1, 2])('discards %i slow startup samples before allowing clock reads', async (slowSamples) => {
+        let now = 0;
+        let requests = 0;
+        const clock = new BrowserServerClock(clockConfig, {
+            nowMonotonicMs: () => now,
+            fetch: async () => {
+                if (++requests <= slowSamples) {
+                    now += clockConfig.policy.maxRoundTripMs + 1;
+                }
+                return Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000 + now });
+            }
+        });
+        const session = new BrowserServerClockSession({
+            clock,
+            timers: createManualTimers(0),
+            page: { document: undefined, window: undefined },
+            refreshIntervalMs: 50
+        });
+        const result = await session.start();
+        expect(requests).toBe(2);
+        expect(result.right !== undefined).toBe(slowSamples === 1);
+        expect(session.signal.aborted).toBe(slowSamples === 2);
+        await session.close();
+    });
+
     it('keeps work time aligned with tighter active calibration and freezes it only for retirement', async () => {
         const timers = createManualTimers(0);
         let monotonicNow = 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { startDefaultBrowserServerClockSession } from '@shared-web/browser/connection/start-default-browser-server-clock-session.ts';
+import { startDefaultBrowserServerClockSession } from '@shared-web/browser/connection/server-clock/start-default-browser-server-clock-session.ts';
 
 describe('default browser clock acquisition', () => {
     it('preserves the caller abort reason while a time request ignores cancellation', async () => {

@@ -1,3 +1,4 @@
+import { isApiJsonObject, type ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RemoteClockObservation } from '@shared/resilience/remote-clock.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -37,12 +38,11 @@ export async function readServerClockSample(
                 cause: new Error(`Server clock request returned HTTP ${response.status}.`)
             });
         }
-        const value: unknown = await response.json();
+        const value: ApiJsonValue = await response.json();
         input.signal?.throwIfAborted();
         if (
-            value === null || typeof value !== 'object' ||
-            !('serverPeerId' in value) || value.serverPeerId !== input.expectedServerPeerId ||
-            !('serverNowEpochMs' in value) || typeof value.serverNowEpochMs !== 'number' ||
+            !isApiJsonObject(value) || value.serverPeerId !== input.expectedServerPeerId ||
+            typeof value.serverNowEpochMs !== 'number' ||
             !Number.isSafeInteger(value.serverNowEpochMs) || value.serverNowEpochMs < 0
         ) {
             return Either.ofLeft({

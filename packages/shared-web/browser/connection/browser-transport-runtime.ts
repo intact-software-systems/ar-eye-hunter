@@ -33,7 +33,6 @@ import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
-import type { BrowserServerClockSession } from './browser-server-clock-session.ts';
 import {
     closeBrowserTransportResources,
     reportBrowserConnectionCleanupFailure
@@ -41,6 +40,7 @@ import {
 import { readIceCandidates } from './connection-http-api.ts';
 import { createBrowserConnectionReservation } from './create-browser-connection-reservation.ts';
 import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
+import type { BrowserServerClockSession } from './server-clock/browser-server-clock-session.ts';
 
 /** The middleware's options with this tab's delivery observers, which the transport fences per connect. */
 export interface BrowserTransportInitOptions extends Omit<MiddlewareInitOptions, 'deliverySettlements'> {
@@ -230,18 +230,21 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         const generation = this.generation;
         const apiBaseUrl = readApiBaseUrl();
         const lifetime = new AbortController();
-        const signal = options.signal ? AbortSignal.any([options.signal, lifetime.signal]) : lifetime.signal;
+        const callerSignal = options.signal;
+        callerSignal?.throwIfAborted();
+        const cancelStartup = (): void => lifetime.abort(callerSignal?.reason);
+        callerSignal?.addEventListener('abort', cancelStartup, { once: true, signal: lifetime.signal });
         this.connectionLifetime = lifetime;
         const { durableWork, epoch } = this.openConnectionOwnership({
             session,
             scope: options.scope ?? defaultStateScope(),
             observers: options.deliverySettlements,
-            signal
+            signal: lifetime.signal
         });
         const connection: BrowserTransportRuntime.PendingConnection = { session, generation, apiBaseUrl, durableWork };
         return this.createMiddleware(session, {
             ...options,
-            signal,
+            signal: lifetime.signal,
             readIceCandidates: (signal) => this.readConnectionIceCandidates(connection, signal),
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
@@ -260,6 +263,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
                 throw error;
             })
             .finally(() => {
+                callerSignal?.removeEventListener('abort', cancelStartup);
                 if (this.pendingConnection === pendingConnection) {
                     this.pendingConnection = undefined;
                 }

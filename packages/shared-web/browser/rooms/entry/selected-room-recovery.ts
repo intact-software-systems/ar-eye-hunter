@@ -1,7 +1,4 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { isSameGroupRef, toStateScope } from '@shared/api/api-type-utils.ts';
-import { isGroupActive } from '@shared/api/group-client-views.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
+import { toStateScope } from '@shared/api/api-type-utils.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { FailureBackoff } from '@shared/resilience/failure-backoff.ts';
 import type { Timers } from '@shared/resilience/timers.ts';
@@ -10,19 +7,26 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { ApiHttpError } from '../../api/http-error.ts';
 import { isRetryableApiViewFailure } from '../../api/read-api-view.ts';
 import { toAuthSessionKey } from '../../auth/to-auth-session-key.ts';
-import type { ApiMiddleware } from '../../rallar-connection-facade.ts';
 import type { RallarWsLifecycleKind } from '../../rallar-realtime-facade.ts';
 import { readStateGroupSnapshot } from '../../state-read/point-read.ts';
 import type { CreateBrowserRallarRoomsInput } from '../browser-rallar-rooms.ts';
-import { requireOwnWsConnectionGenerationId } from '../require-own-ws-connection-generation-id.ts';
 import {
     toRoomPresenceLeaseExpiresAtEpochMs,
     type GroupRef,
     type GroupSnapshot
 } from '../room-group-state-translation.ts';
-import { createStateGroupPresenceCommand, type StateGroupWorkflowValue } from '../room-group-state-workflows.ts';
-import { readSummarisedRoomPresence } from '../room-presence.ts';
-import { captureRoomSession, type RoomSessionFence } from '../room-session-fence.ts';
+import { createStateGroupPresenceCommand } from '../room-group-state-workflows.ts';
+import { captureRoomSession } from '../room-session-fence.ts';
+import {
+    isActiveMember,
+    isConfirmedPresence,
+    needsPresenceRestore,
+    readRestoreSnapshot,
+    RestoredPresenceExpiredError,
+    sendPresenceReconnect,
+    type PresenceReconnect,
+    type PresenceRestore
+} from './presence-reconnect.ts';
 
 export namespace SelectedRoomRecovery {
     export interface Input
@@ -36,30 +40,6 @@ export namespace SelectedRoomRecovery {
         selected(): GroupRef | undefined;
     }
 }
-
-/** One restore attempt is owned by the selected room, its socket epoch and its session. */
-interface PresenceRestore {
-    readonly room: GroupRef;
-    readonly scope: StateScope;
-    readonly epoch: number;
-    readonly fence: RoomSessionFence;
-    readonly context: ApiMiddleware;
-}
-
-interface PresenceReconnect extends PresenceRestore {
-    readonly expiresAtEpochMs: number;
-    readonly generationId: string;
-    readonly connectionGenerationId: string;
-    readonly command: Command<StateGroupWorkflowValue>;
-}
-
-interface RestoreSnapshot {
-    readonly connectionGenerationId: string;
-    readonly snapshot: GroupSnapshot;
-}
-
-/** The previous immutable request has resolved, but a new lease is needed before arrival. */
-class RestoredPresenceExpiredError extends TypeError {}
 
 /** Restores expired or disconnected presence only in the same explicitly selected room. */
 export class SelectedRoomRecovery {
@@ -84,14 +64,7 @@ export class SelectedRoomRecovery {
             return;
         }
         const session = this.input.requireSession();
-        if (snapshot && (!isSameGroupRef(room, snapshot.group) || !isActiveMember(snapshot, session))) {
-            return;
-        }
-        const present = snapshot?.activeSessions.some((row) =>
-            row.principalId === session.clientId && row.sessionId === session.sessionId &&
-            row.expiresAtEpochMs > this.input.timers.nowMs()
-        );
-        if (!present) {
+        if (needsPresenceRestore({ room, session, snapshot, timers: this.input.timers })) {
             this.interrupted = room;
             this.resume();
         }
@@ -188,7 +161,10 @@ export class SelectedRoomRecovery {
             await this.confirmPresence(this.unconfirmed);
             return;
         }
-        const { connectionGenerationId, snapshot } = await this.readRestoreSnapshot(restore);
+        const { connectionGenerationId, snapshot } = await readRestoreSnapshot(
+            restore,
+            () => this.assertCurrent(restore)
+        );
         this.assertCurrent(restore);
         if (!isActiveMember(snapshot, fence.session)) {
             return;
@@ -204,24 +180,6 @@ export class SelectedRoomRecovery {
             return;
         }
         await this.reconnect(restore, connectionGenerationId);
-    }
-
-    private async readRestoreSnapshot(restore: PresenceRestore): Promise<RestoreSnapshot> {
-        return await new Command(async (signal) => {
-            this.assertCurrent(restore);
-            const connectionGenerationId = await requireOwnWsConnectionGenerationId(restore.context, signal);
-            this.assertCurrent(restore);
-            const { snapshot } = await readStateGroupSnapshot(restore.room.groupId, restore.scope, {
-                authSession: restore.fence.session,
-                signal
-            });
-            return { connectionGenerationId, snapshot };
-        }, {
-            maxAttempts: restore.context.middleware.heartbeat.groupPresence ? 1 : 3,
-            timeoutMs: restore.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000,
-            shouldRetry: (error) => isRetryableApiViewFailure(toError(error))
-        })
-            .run();
     }
 
     private async reconnect(restore: PresenceRestore, connectionGenerationId: string): Promise<void> {
@@ -278,29 +236,11 @@ export class SelectedRoomRecovery {
     }
 
     private async sendPresence(reconnect: PresenceReconnect): Promise<void> {
-        const result = await reconnect.command.run().catch((error) => {
-            if (
-                error instanceof ApiHttpError && error.status === 400 &&
-                reconnect.expiresAtEpochMs <= this.input.timers.nowMs()
-            ) {
-                throw new RestoredPresenceExpiredError('Expired presence request was definitively rejected.');
-            }
-            throw error;
-        });
-        this.assertCurrent(reconnect);
-        if (!result || !isSameGroupRef(reconnect.room, result.group)) {
-            throw new Error('Selected room did not confirm presence on the replacement socket.');
-        }
-        if (reconnect.expiresAtEpochMs <= this.input.timers.nowMs()) {
-            throw new RestoredPresenceExpiredError('Presence request resolved after its lease expired.');
-        }
-        const confirmed = await readSummarisedRoomPresence({
-            snapshot: result,
-            fence: { session: reconnect.fence.session, assertCurrent: () => this.assertCurrent(reconnect) },
-            context: reconnect.context,
-            options: { timeoutMs: reconnect.context.middleware.heartbeat.groupPresence?.requestTimeoutMs ?? 15000 },
-            isSummarised: (snapshot) => isConfirmedPresence(reconnect, snapshot, this.input.timers.nowMs())
-        });
+        const confirmed = await sendPresenceReconnect(
+            reconnect,
+            () => this.assertCurrent(reconnect),
+            this.input.timers
+        );
         await this.accept(reconnect, confirmed);
     }
 
@@ -365,19 +305,4 @@ export class SelectedRoomRecovery {
             throw new DOMException('Socket or room selection changed', 'AbortError');
         }
     }
-}
-
-function isActiveMember(snapshot: GroupSnapshot, session: AuthSession): boolean {
-    return isGroupActive(snapshot) &&
-        snapshot.members.some((member) => member.principalId === session.clientId && member.status === 'active');
-}
-
-function isConfirmedPresence(reconnect: PresenceReconnect, snapshot: GroupSnapshot, nowEpochMs: number): boolean {
-    const { session } = reconnect.fence;
-    return isSameGroupRef(reconnect.room, snapshot.group) &&
-        snapshot.activeSessions.some((row) =>
-            row.principalId === session.clientId && row.sessionId === session.sessionId &&
-            row.generationId === reconnect.generationId &&
-            row.connectionGenerationId === reconnect.connectionGenerationId && row.expiresAtEpochMs > nowEpochMs
-        );
 }

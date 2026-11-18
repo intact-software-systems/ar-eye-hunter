@@ -1,4 +1,4 @@
-import { expect, it, onTestFinished } from 'vitest';
+import { expect, it, onTestFinished, vi } from 'vitest';
 
 import {
     AL_WORK_READINESS_MEMORY_MS,
@@ -63,13 +63,9 @@ it.each(['selection', 'exhaustion'] as const)('releases claims returned after di
 it('starts no reservation if the first work-clock read retires the handler', async () => {
     let disposing: Promise<void> | undefined;
     let reservations = 0;
+    const nowMs = vi.fn(() => 1_000);
     const handler = createHandler({
-        clock: {
-            nowMs: () => {
-                disposing ??= handler.dispose();
-                return 1_000;
-            }
-        },
+        clock: { nowMs },
         port: {
             ...fakePort({ claims: [], onRelease: () => {} }),
             finalizeExhausted: async () => {
@@ -77,6 +73,10 @@ it('starts no reservation if the first work-clock read retires the handler', asy
                 return [];
             }
         }
+    });
+    nowMs.mockImplementationOnce(() => {
+        disposing = handler.dispose();
+        return 1_000;
     });
     await handler.ready();
     await disposing;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readServerClockSample } from '@shared-web/browser/connection/read-server-clock-sample.ts';
+import { readServerClockSample } from '@shared-web/browser/connection/server-clock/read-server-clock-sample.ts';
 
 const input = { baseUrl: 'https://api.example.test', expectedServerPeerId: 'server-a', signal: undefined };
 
