@@ -315,8 +315,23 @@ function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): rea
         ...validateStringField(command, 'msgId', path),
         ...validateIntegerField({ record: command, key: 'count', path, minimum: 0 }),
         ...validateBooleanField(command, 'absent', path),
+        ...validateMessagesReceivedOrderField(command),
         ...validateIntegerField({ record: command, key: 'windowMs', path, minimum: 0 })
     ];
+}
+
+function validateMessagesReceivedOrderField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const field = command.ascendingBy;
+    const path = 'messages.received.ascendingBy';
+    if (typeof field !== 'string') {
+        return validateStringField(command, 'ascendingBy', 'messages.received');
+    }
+    if (field.trim() === '') {
+        return [toControlCommandIssue(`${path} must name a payload field.`)];
+    }
+    return command.absent === true
+        ? [toControlCommandIssue(`${path} claims an order, which an absence claim (absent: true) has none of.`)]
+        : [];
 }
 
 function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {

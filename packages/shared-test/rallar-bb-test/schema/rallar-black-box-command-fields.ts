@@ -131,7 +131,10 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     },
     'messages.observe': { required: ['handleId', 'state'], optional: ['connection'] },
     'messages.cancel': { required: ['handleId'], optional: ['connection'] },
-    'messages.received': { required: ['typeId', 'count', 'windowMs'], optional: ['connection', 'msgId', 'absent'] },
+    'messages.received': {
+        required: ['typeId', 'count', 'windowMs'],
+        optional: ['connection', 'msgId', 'absent', 'ascendingBy']
+    },
     'messages.receipts': { required: ['handleId'], optional: ['connection'] },
     'messages.control': {
         required: ['carrier', 'typeId', 'msgId', 'ackedMsgId', 'toPeerId'],

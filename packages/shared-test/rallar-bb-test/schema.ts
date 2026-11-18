@@ -797,6 +797,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         msgId: stringSchema,
         count: { type: 'integer', minimum: 0 },
         absent: booleanSchema,
+        ascendingBy: nonEmptyStringSchema,
         windowMs: { type: 'integer', minimum: 0 }
     }),
     'messages.receipts': strictCommandSchema('messages.receipts', {

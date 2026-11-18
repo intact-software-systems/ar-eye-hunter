@@ -144,7 +144,7 @@ function createSenderPage(page: SenderPage): RallarBlackBoxBrowserRallarRuntime 
             state: Array.isArray(input.state) && input.state.length === 1 ? input.state[0] : 'accepted'
         }),
         readReceipts: async () => observation,
-        injectFault: async () => undefined,
+        injectFault: async () => ({ drop: 0, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 }),
         awaitReply: async () => page.replyOutcome,
         refreshRoom: async () => undefined,
         close: async () => ({ closed: true }),

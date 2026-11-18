@@ -3147,6 +3147,41 @@
       "description": "No-browser API-v1 database session loss on the three-server cluster. Alice's socket is on the primary and Bob's on the secondary. After one delivered broadcast, a server step ends every database session of the secondary, its notification listener among them, and reports at least one ended. The next at-least-once broadcast still reaches Bob on the secondary and its receipt completes, so the process re-established its sessions without a restart."
     },
     {
+      "id": "api-v1-cluster-subscriber-instance-loss",
+      "recipe": "tests/api-v1/api-v1-cluster-subscriber-instance-loss.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cluster-subscriber-instance-loss",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 loss of a subscriber's server on the three-server cluster. Alice's socket is on the primary, Bob's on the secondary and Carol's on the tertiary. The secondary is crashed, and Alice sends an at-least-once room broadcast with a receiver receipt. Its admitted receipt expects Bob and Carol: the audience is frozen from the room's presence, which still holds Bob. Carol receives and acknowledges; the receipt ends timed-out with Carol alone confirmed and Bob expected and unconfirmed, and no complete receipt arrives. The secondary is restarted and Dave registers, joins and opens his socket on it. The next broadcast reaches Carol and Dave, who acknowledge; its receipt also ends timed-out, confirming both and still expecting Bob, whose presence stands because nothing ended it."
+    },
+    {
       "id": "api-v1-admin-authorization-boundary",
       "recipe": "tests/api-v1/api-v1-admin-authorization-boundary.json",
       "category": "api-v1-black-box",

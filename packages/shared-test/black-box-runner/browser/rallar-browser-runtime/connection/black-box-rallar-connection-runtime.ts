@@ -4,6 +4,10 @@ import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-f
 import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { IndexedDbOperationCounts } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault } from '@shared/persistence/storage-fault-port.ts';
+import {
+    toTransportFaultActedCounts,
+    type TransportFaultActedCounts
+} from '@shared/transport-faults/to-transport-fault-acted-counts.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 
 import { BlackBoxRallarCrdtController } from '../black-box-rallar-crdt-controller.ts';
@@ -280,33 +284,39 @@ export class BlackBoxRallarConnectionRuntime {
         });
     }
 
+    /** A storage or product-socket fault acts on no frame, so it answers `null`. */
     async #injectFault(
         fault:
             | ScriptedTransportFault
             | BlackBoxRallarRewriteFault
             | ScriptedStorageFault
             | BlackBoxRallarProductSocketFault
-    ): Promise<void> {
+    ): Promise<TransportFaultActedCounts | null> {
         this.#requireScriptedPorts('fault.inject');
         const { diagnostics, productSocket } = this.#foundation.rallar;
         if ('rewrite' in fault) {
-            diagnostics.faults.inject(this.#resolveRewriteFault(fault));
-            return;
+            return this.#injectTransportFault(this.#resolveRewriteFault(fault));
         }
         switch (fault.carrier) {
             case 'storage':
                 diagnostics.storageFaults.inject(fault);
-                return;
+                return null;
             case 'product-socket':
                 if (fault.action === 'close') {
                     productSocket.close();
-                    return;
+                    return null;
                 }
                 await productSocket.reopen();
-                return;
+                return null;
             default:
-                diagnostics.faults.inject(fault);
+                return this.#injectTransportFault(fault);
         }
+    }
+
+    #injectTransportFault(fault: ScriptedTransportFault): TransportFaultActedCounts {
+        const { faults } = this.#foundation.rallar.diagnostics;
+        faults.inject(fault);
+        return toTransportFaultActedCounts(faults.getObservations(), fault.faultId);
     }
 
     /**

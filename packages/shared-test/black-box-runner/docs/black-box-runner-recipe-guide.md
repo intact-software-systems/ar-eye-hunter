@@ -581,8 +581,10 @@ Rules:
 - Capture `actual.terminatedSessions` with `request.outputs` and assert a floor
   on it, so a cut that found no session does not pass as a fault.
 
-Examples: `tests/api-v1/api-v1-cluster-instance-loss.json` and
-`tests/api-v1/api-v1-cluster-database-session-loss.json`.
+Examples: `tests/api-v1/api-v1-cluster-instance-loss.json`,
+`tests/api-v1/api-v1-cluster-database-session-loss.json` and
+`tests/api-v1/api-v1-cluster-subscriber-instance-loss.json`, which crashes the
+server that holds a subscriber's socket and reads how the receipt ends.
 
 ## Safe Transforms
 
