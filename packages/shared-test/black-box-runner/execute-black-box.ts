@@ -49,7 +49,7 @@ import { SafeOutputTransformError } from './scenario-transform/safe-output-trans
 
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
-const INTERACTION_TRANSPORTS = ['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'];
+const INTERACTION_TRANSPORTS = ['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL', 'SERVER'];
 
 interface InteractionFailureStatusInput {
     readonly config: any;
@@ -127,6 +127,7 @@ export async function executeBlackBox(interactions: any[], index = 0, options: a
     finally {
         await closeAllWsConnections(context);
         await closeAllRtcConnections(context);
+        await context.serverFaults.restore();
     }
     const endedAtEpochMs = context.dependencies.now();
     return toReport({ context, options, startedAtEpochMs, endedAtEpochMs });
@@ -238,15 +239,7 @@ function toInteractionExecutionConfig(interactionWithConfig: any, interaction: a
 }
 
 function toExecutableInteraction(interaction: any): any {
-    return interaction?.HTTP ||
-        interaction?.MQ ||
-        interaction?.WS ||
-        interaction?.RTC ||
-        interaction?.WEBRTC ||
-        interaction?.CRDT ||
-        interaction?.ASSERT ||
-        interaction?.SET ||
-        interaction?.PARALLEL;
+    return INTERACTION_TRANSPORTS.map((transport) => interaction?.[transport]).find(Boolean);
 }
 
 function toSetSuccessStatus(config: any, interaction: any, value: any): any {
@@ -703,6 +696,12 @@ function executeTransportInteraction(transport: string, input: TransportInteract
             });
         case 'WS':
             return executeWsInteraction(interaction, config, context);
+        case 'SERVER':
+            return context.serverFaults.execute(
+                interaction,
+                config.interactionName,
+                isDryRunExecution(interaction, config, context)
+            );
         case 'CRDT':
             return executeCrdtInteraction(interaction, config, context);
         case 'RTC':

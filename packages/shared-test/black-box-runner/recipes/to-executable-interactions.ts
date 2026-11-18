@@ -244,6 +244,8 @@ function toExecutableStep(
         ? 'PARALLEL'
         : stepType.startsWith('ws')
         ? 'WS'
+        : stepType.startsWith('server')
+        ? 'SERVER'
         : stepType.startsWith('crdt')
         ? 'CRDT'
         : stepType.startsWith('rtc') || stepType.startsWith('webrtc')
