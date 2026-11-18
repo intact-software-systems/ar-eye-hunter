@@ -21,6 +21,7 @@ import type { GroupSessionPage } from '@shared/api/group-sessions/group-session-
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { MatchmakingSnapshot } from '@shared/api/matchmaking/matchmaking-snapshot.ts';
 import type { PartyView } from '@shared/api/parties/party-view.ts';
+import type { ConnectGroupPresenceSessionRequest } from '@shared/api/state-types.ts';
 import type { TournamentCatalogPage } from '@shared/api/tournaments/tournament-catalog.ts';
 import {
     createRallarAiJsonResult,
@@ -303,7 +304,10 @@ class RelicBrowserBackend {
             await route.fulfill({ json: this.rooms });
         }
         else if (path.includes('/groups/')) {
-            const room = this.rooms[0] ?? createGroupSnapshot({ onlineMemberCount: 1 });
+            const previous = this.rooms[0] ?? createGroupSnapshot({ onlineMemberCount: 1 });
+            const room = route.request().method() === 'PUT' && path.includes(`/sessions/${session.sessionId}/requests/`)
+                ? connectRelicBrowserPresence(previous, route.request().postDataJSON())
+                : previous;
             this.rooms = [room];
             await route.fulfill({
                 headers: {
@@ -401,6 +405,27 @@ function createClientSnapshot(): ClientSnapshot {
         isOnline: true,
         activeSessionCount: 1,
         lastSeenAtEpochMs: now
+    };
+}
+
+function connectRelicBrowserPresence(room: GroupSnapshot, request: ConnectGroupPresenceSessionRequest): GroupSnapshot {
+    const presenceRevision = room.causalRevision.presenceRevision + 1;
+    return {
+        ...room,
+        causalRevision: { ...room.causalRevision, presenceRevision },
+        group: { ...room.group, presenceVersion: presenceRevision },
+        activeSessions: room.activeSessions.map((row) =>
+            row.sessionId === session.sessionId
+                ? {
+                    ...row,
+                    principalId: request.principalId,
+                    generationId: request.generationId,
+                    connectionGenerationId: request.connectionGenerationId,
+                    publicationKey: request.publicationKey,
+                    expiresAtEpochMs: request.expiresAtEpochMs ?? row.expiresAtEpochMs
+                }
+                : row
+        )
     };
 }
 
