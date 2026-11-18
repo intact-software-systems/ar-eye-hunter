@@ -649,11 +649,11 @@ row in one transaction of the same shape as a publication, without a publication
 
 **The policy.** The lifecycle policy's `topology` section gains `reshapeMinIntervalMs` and
 `reshapeMaxIntervalMs`, 15 000 and 60 000 in all four presets. Sparse input takes the preset's values.
-The lower bound in force is the larger of the policy's and the server's replaced-layout overlap
-(`rtcReplacedLayoutOverlapMs`), and the upper bound is never below it. The overlap is api-v1
-configuration today; it reaches the work through the planning authority, as the RTT minimum layout
-age does. The policy's validation sees only its own two numbers: a policy whose upper bound is below
-its lower is refused with its own issue code. The bounds apply to `auto` and `debounced` rooms;
+A server's replaced-layout overlap is at most `MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS` (15 000,
+`packages/shared/api/api-config.ts`), so the policy refuses a lower bound below that constant and no
+server configuration has to reach the gate: a reshape can then never land inside the previous
+reshape's overlap. A policy whose upper bound is below its lower is refused too. Each refusal has its
+own issue code. The bounds apply to `auto` and `debounced` rooms;
 a `commanded` room's automatic work is already held. This changes the contract: the OpenAPI schema,
 the presets, the decoders and their tests.
 
