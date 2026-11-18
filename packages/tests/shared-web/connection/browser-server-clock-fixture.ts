@@ -1,5 +1,5 @@
-import type { BrowserServerClockSession } from '@shared-web/browser/connection/browser-server-clock-session.ts';
-import type { BrowserServerClock } from '@shared-web/browser/connection/browser-server-clock.ts';
+import type { BrowserServerClockSession } from '@shared-web/browser/connection/server-clock/browser-server-clock-session.ts';
+import type { BrowserServerClock } from '@shared-web/browser/connection/server-clock/browser-server-clock.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { RemoteClockWindow } from '@shared/resilience/remote-clock.ts';
 

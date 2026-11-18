@@ -1,14 +1,14 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
-import type { BrowserServerClockSession } from '@shared-web/browser/connection/browser-server-clock-session.ts';
 import {
     BrowserTransportRuntime,
     type BrowserTransportInitOptions
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import { startDefaultBrowserServerClockSession } from '@shared-web/browser/connection/start-default-browser-server-clock-session.ts';
+import type { BrowserServerClockSession } from '@shared-web/browser/connection/server-clock/browser-server-clock-session.ts';
+import { startDefaultBrowserServerClockSession } from '@shared-web/browser/connection/server-clock/start-default-browser-server-clock-session.ts';
 import type { ALCheckpointPort } from '@shared/alm/checkpoint/al-checkpoint.ts';
 import type { ALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 
@@ -89,6 +89,33 @@ describe('the page lifecycle of a connected browser transport', () => {
         }
     });
 
+    it('keeps the accepted transport when its caller cancels subsequent room work', async () => {
+        vi.stubGlobal('fetch', async () => Response.json({ serverPeerId: 'server', serverNowEpochMs: 10_000 }));
+        const middleware = createDefaultApiMiddlewareTestDouble();
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => ({
+            middleware: middleware.middleware,
+            rtcCaptureReceipt,
+            checkpoints: [],
+            serverClock: await startDefaultBrowserServerClockSession({
+                baseUrl: 'https://test',
+                serverPeerId: 'server',
+                signal: options.signal
+            })
+        }));
+        const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
+        onTestFinished(() => transport.shutdown());
+        const roomOperation = new AbortController();
+        const accepted = await transport.init({ ...toInitOptions(), signal: roomOperation.signal });
+
+        roomOperation.abort();
+
+        expect(transport.readConnection()).toBe(accepted);
+        expect(accepted.serverClock.readWindow().right).toBeDefined();
+        transport.shutdown();
+        expect(accepted.serverClock.signal.aborted).toBe(true);
+    });
+
     it('cancels a pending clock request when the transport shuts down', async () => {
         const entered = Promise.withResolvers<AbortSignal>();
         const response = Promise.withResolvers<Response>();
@@ -112,18 +139,18 @@ describe('the page lifecycle of a connected browser transport', () => {
             })
         }));
         const transport = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
-        const outcome = transport.init(toInitOptions()).catch((error: unknown) => error);
+        const cancelled = expect(transport.init(toInitOptions())).rejects.toBeInstanceOf(Error);
         const requestSignal = await entered.promise;
         onTestFinished(async () => {
             response.resolve(Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() }));
-            await outcome;
+            await cancelled;
             transport.shutdown();
         });
 
         transport.shutdown();
 
         expect(requestSignal.aborted).toBe(true);
-        expect(await outcome).toBeInstanceOf(Error);
+        await cancelled;
         expect(transport.isReady()).toBe(false);
     });
 

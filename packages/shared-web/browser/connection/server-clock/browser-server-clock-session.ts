@@ -91,7 +91,11 @@ export class BrowserServerClockSession {
             await this.close(new Error('Cannot calibrate a hidden browser connection.'));
             return this.#input.clock.readWindow();
         }
-        const acquired = await this.#input.clock.refresh();
+        // A slow first round trip can exceed the precision bound even on a healthy connection.
+        let acquired = await this.#input.clock.refresh();
+        if (acquired.left?.code === 'invalid-observation' && !this.signal.aborted) {
+            acquired = await this.#input.clock.refresh();
+        }
         if (acquired.left !== undefined) {
             await this.close(acquired.left.cause);
             return acquired;

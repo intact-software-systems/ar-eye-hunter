@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { BrowserServerClock } from '@shared-web/browser/connection/browser-server-clock.ts';
+import { BrowserServerClock } from '@shared-web/browser/connection/server-clock/browser-server-clock.ts';
 
 const configuration = {
     baseUrl: 'https://api.example.test',

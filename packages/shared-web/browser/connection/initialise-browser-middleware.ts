@@ -104,11 +104,6 @@ import {
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 import type { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 import {
-    readBrowserServerCreationEpochMs,
-    readBrowserServerExpiryEpochMs,
-    type BrowserServerClockSession
-} from './browser-server-clock-session.ts';
-import {
     closeBrowserTransportResources,
     reportBrowserConnectionCleanupFailure
 } from './close-browser-transport-resources.ts';
@@ -116,7 +111,12 @@ import {
     createBrowserRtcHeldOfferReleases,
     createBrowserRtcPeerAdmission
 } from './create-browser-rtc-peer-admission.ts';
-import { startDefaultBrowserServerClockSession } from './start-default-browser-server-clock-session.ts';
+import {
+    readBrowserServerCreationEpochMs,
+    readBrowserServerExpiryEpochMs,
+    type BrowserServerClockSession
+} from './server-clock/browser-server-clock-session.ts';
+import { startDefaultBrowserServerClockSession } from './server-clock/start-default-browser-server-clock-session.ts';
 import { toBrowserHeartbeatOptions } from './to-browser-heartbeat-options.ts';
 
 export interface MiddlewareInitOptions {
