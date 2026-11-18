@@ -715,14 +715,40 @@ and it has no status list.
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
   `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
   campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
-- No lane cell runs under a seeded loss or a seeded jitter (D667). The two
-  actions reach a page through `fault.inject`; the cells that read them, an
-  ordered receipted stream repaired under a `ws` loss and resubmitted under an
-  `rtc` loss, come with receipt truth and the held-send path.
-- The instance-loss recipe (D666) crashes an API instance that holds no socket
-  of its room. A crash of the instance that holds the publisher's or a
-  subscriber's socket mid-publication, and what the receipt then says, is
-  unproven: it is the receipt-truth slice's question.
+- An ordered receipted stream does not reliably recover from a seeded loss, on
+  `ws` or on `rtc` (D670): after three to six dropped frames in about 190 ms a
+  stream can stall, and a send the receiver delivered can read `failed`,
+  `receipt-exhausted`. No lane cell runs under a seeded loss, and a catalog
+  test pins that. Next slice by the maintainer's ruling (2026-11-18); the
+  `seeded-loss-stream` cell returns with the fix.
+- Three candidate causes of that stall, read from the code and not proven by
+  a test (D670): a repair attempt is named by its gap, so a lost repair frame
+  is never written again (`to-al-outbound-effect-id.ts`); ending a receipt
+  deletes the sender's repair-attempt row, so a receiver still behind a gap
+  is refused (`to-al-outbound-end-receipt-bundle.ts`); a conflicted control is
+  replayed on the generic backoff of up to 16 s while a receipt's budget is
+  three 2 s retries (`ResourceInboxRetryPolicy.ts`). Not determined: why sends
+  10 to 20 did not reach the `rtc` receiver for 28 s, and why a timed-out
+  handle shows one `sent` attempt.
+- Over `rtc`, the first send of a new ordered track is lost for good when a
+  later send reaches the receiver before it (D669, `lost-stream-start`): the
+  receiver enters at the first frame it sees and refuses the earlier one as
+  `before-entry`. It widens D646's one-frame limit. Recorded by ruling
+  (2026-11-18); a fix changes how a receiver enters a track and is its own
+  slice.
+- An ordered at-least-once send that names no `ack` takes receipt mode
+  `receiver` over `rtc`, from its channel's `command` purpose (D670). A caller
+  that meant an unreceipted stream gets handles that can end
+  `receipt-exhausted`. Whether that default is wanted is unruled.
+- A crash of the instance that holds the publisher's socket mid-publication,
+  and what the publisher reads after it reconnects, is unproven. The
+  subscriber's case is (D669); this one belongs with the held-send path.
+- A session whose server crashed stays in the room's presence: the receipt of
+  a later broadcast still expects it and ends `timed-out` (D669,
+  `api-v1-cluster-subscriber-instance-loss`). What ends such a presence, and
+  when, is not read by any recipe.
+- Unread: in an exploratory run of that recipe a second `admitted` receipt for
+  one broadcast reached the publisher after the first was consumed.
 - The database-session recipe (D666) proves delivery to the cut process's
   socket resumes; it does not say by which path. The secondary's log shows one
   `listener-subscribe`, at start, and no error after the cut, so whether the
@@ -730,6 +756,9 @@ and it has no status list.
 - A black-box recipe has no cleanup phase: `cleanupSteps` is in the recipe
   schema and nothing executes it. The runner restores faulted servers itself
   (D666); any other leftover of a failed recipe stays.
+- A fault's `acted` counts (D668) live with the page's connection: a reload
+  starts them again, so a cell that reloads between arming and release reads
+  only the frames since.
 - A seeded loss over `rtc` is a drop the channel reports to its sender, not a
   silent wire loss, and the channel applies no delay (D667). A silent RTC loss
   and an RTC delay need the data channel to honour both decisions.

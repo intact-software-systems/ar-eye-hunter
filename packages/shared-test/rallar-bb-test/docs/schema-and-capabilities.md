@@ -827,6 +827,17 @@ requester of its gaps, so a held frame's repeated reports are one attempt, the s
 the frame arrives on the hold's release. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
+Two fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.
+Every send of both names `ack: 'receiver'` and the cell's ordering key. `lost-stream-start` runs over `rtc` alone and
+pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
+the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
+`before-entry` for seq 1 and proves the absence of a third; the sender observes handle 1 `failed` with
+`failure.kind: 'receipt-exhausted'`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no
+delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twenty sends are sent and each read
+acknowledged, its release must read at least ten delayed frames (`acted.delay`), and the receiver reads twenty
+arrivals in sequence order and proves the absence of a twenty-first. No cell runs under a seeded loss: an ordered
+receipted stream does not reliably recover from one (D670), and a catalog test pins that none claims it.
+
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
 `rtc` and `rtc-with-ws-fallback`. Its receiver first waits for its own RTC
 `admission-outcome` refusing the send as `rejected` with a reason starting
