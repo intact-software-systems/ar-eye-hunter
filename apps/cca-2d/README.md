@@ -256,9 +256,7 @@ CDN script or image API is required. Scene disposal releases Babylon resources;
 input listeners belong to abortable lifetimes. Context loss shows a reopen link.
 
 This entry replaces the earlier Phaser practice. That entry's collection,
-banking and online UI are removed from this trial. The separate historical
-`cca-server` / `packages/cca-game` prototype is outside the local renderer and is
-not a dependency. The local chase/freeze/rescue slice is implemented with a labelled bot companion.
+banking and online UI are removed from this trial. The local chase/freeze/rescue slice is implemented with a labelled bot companion.
 The optional Rallar player-hosted match now runs alongside solo, with normal-clock
 host recovery verified through real browser trials. Physical-phone qualification
 and the deferred clock work remain outside the completed local-trial scope.

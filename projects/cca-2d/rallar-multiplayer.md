@@ -169,8 +169,6 @@ emulated browser results must not be represented as those measurements.
 
 ## Legacy and boundaries
 
-The older `packages/cca-game` cash/banking model and historical CCA server are
-independent of this Grumpy Town entry. Do not wire them into the new match.
 The existing local bot remains a deliberate solo feature; remove that assumption
 from multiplayer paths. New multiplayer rules must consume the current town rules,
 not maintain a parallel version. Any Rallar capability gap that blocks the
