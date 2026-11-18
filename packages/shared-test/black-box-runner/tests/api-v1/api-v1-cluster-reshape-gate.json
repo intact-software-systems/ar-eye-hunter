@@ -800,10 +800,10 @@
           "x-client-id": "{adminClientId}"
         },
         "poll": {
-          "maxAttempts": 60,
+          "maxAttempts": 100,
           "maxDurationMs": 20000,
           "backoffMs": 200,
-          "backoffMultiplier": 1.2
+          "backoffMultiplier": 1
         },
         "outputs": {
           "firstReshapeAt": "body.reshapeGate.gate.lastPassAtEpochMs",
