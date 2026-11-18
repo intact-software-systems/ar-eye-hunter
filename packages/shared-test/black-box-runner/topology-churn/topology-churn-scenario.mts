@@ -112,7 +112,10 @@ interface ConvergedRoom extends TopologyChurnRoomTopologyPlans {
     readonly outcome: TopologyChurnOutcome;
 }
 
-/** Liveness only: a failed or timed-out request, a room without a plan or a late convergence fails the run unreported. */
+/**
+ * Liveness only: a failed or timed-out request, a room without a plan, a held reshape still owed or a late convergence
+ * fails the run unreported.
+ */
 export class TopologyChurnScenario {
     readonly #input: TopologyChurnScenario.Input;
     readonly #runToken = crypto.randomUUID().slice(0, 8);
@@ -406,13 +409,10 @@ export class TopologyChurnScenario {
                 return;
             }
             if (this.#input.clock.nowEpochMs() >= deadlineEpochMs) {
-                const opensAt = reshapeGate.opensAtEpochMs === null
-                    ? 'no instant, as no reshape has passed it'
-                    : new Date(reshapeGate.opensAtEpochMs).toISOString();
                 throw new Error(
                     `the room ${room.roomRef.groupId} still wanted the reshapes ` +
                         `${reshapeGate.wantedReasons.join(', ')} ${RESHAPE_GATE_SETTLE_BOUND_MS} ms after its last ` +
-                        `phase ended; its gate opens at ${opensAt}`
+                        `phase ended; its gate opens at epoch ms ${String(reshapeGate.opensAtEpochMs)}`
                 );
             }
             await this.#sleepUntil(this.#input.clock.nowEpochMs() + TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS, room.signal);
