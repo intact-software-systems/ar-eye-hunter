@@ -7,6 +7,11 @@ import {
 } from '../al-contracts/al-control-type-ids.ts';
 import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
 import { createSeededRandom } from '../random/create-seeded-random.ts';
+import {
+    validateSeededTransportFaultAction,
+    type TransportFaultJitter,
+    type TransportFaultLoss
+} from './seeded-transport-fault-action.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -37,19 +42,6 @@ export interface TransportFaultMatch {
     readonly controlType: 'ack' | 'nack' | 'repair' | undefined;
     readonly typeId: string | undefined;
     readonly msgId: string | undefined;
-}
-
-/** Drops the share `ratio`, in (0, 1], of the matching frames; which ones depends on the seed alone. */
-export interface TransportFaultLoss {
-    readonly ratio: number;
-    readonly seed: number;
-}
-
-/** Delays every matching frame by a whole number of milliseconds within the bounds, drawn from the seed. */
-export interface TransportFaultJitter {
-    readonly minDelayMs: number;
-    readonly maxDelayMs: number;
-    readonly seed: number;
 }
 
 export interface ScriptedTransportFault {
@@ -203,16 +195,12 @@ function assertTransportFaultCarrierAction(fault: ScriptedTransportFault): void 
 }
 
 function assertSeededTransportFaultAction({ faultId, action }: ScriptedTransportFault): void {
-    if (typeof action === 'string') {
+    if (typeof action === 'string' || !('loss' in action || 'jitter' in action)) {
         return;
     }
-    if ('loss' in action && !(action.loss.ratio > 0 && action.loss.ratio <= 1)) {
-        throw new TypeError(`Transport fault ${faultId} loses a share of frames outside (0, 1].`);
-    }
-    if (
-        'jitter' in action && !(action.jitter.minDelayMs >= 0 && action.jitter.maxDelayMs >= action.jitter.minDelayMs)
-    ) {
-        throw new TypeError(`Transport fault ${faultId} jitters within bounds that are not 0 <= minimum <= maximum.`);
+    const issues = validateSeededTransportFaultAction(action);
+    if (issues.length > 0) {
+        throw new TypeError(`Transport fault ${faultId} cannot be injected: ${issues.join('; ')}.`);
     }
 }
 
@@ -252,8 +240,7 @@ function toFrameFaultDecision(
         return draw() < action.loss.ratio ? { kind: 'drop', faultId } : { kind: 'pass' };
     }
     const { minDelayMs, maxDelayMs } = action.jitter;
-    const span = Math.floor(maxDelayMs) - Math.ceil(minDelayMs) + 1;
-    return { kind: 'delay', faultId, delayMs: Math.ceil(minDelayMs) + Math.floor(draw() * span) };
+    return { kind: 'delay', faultId, delayMs: minDelayMs + Math.floor(draw() * (maxDelayMs - minDelayMs + 1)) };
 }
 
 /** The frame matched as an AL envelope, so it parses to a record; every field the rewrite does not name stays. */

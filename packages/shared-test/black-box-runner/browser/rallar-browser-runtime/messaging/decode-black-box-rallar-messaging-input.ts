@@ -9,6 +9,7 @@ import {
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import type { ScriptedStorageFault, StorageFaultMatch } from '@shared/persistence/storage-fault-port.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { decodeSeededTransportFaultAction } from '@shared/transport-faults/seeded-transport-fault-action.ts';
 import type {
     ScriptedTransportFault,
     TransportFaultCarrier,
@@ -35,6 +36,11 @@ const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType
 
 const FAULT_RTC_ACTIONS: readonly ScriptedTransportFault['action'][] = ['drop', 'backpressure'];
 
+/** A seeded loss is a drop some frames meet, so `rtc` offers it too; a jitter is a delay, which `rtc` does not apply. */
+function isRtcFaultAction(action: ScriptedTransportFault['action']): boolean {
+    return FAULT_RTC_ACTIONS.includes(action) || (typeof action === 'object' && 'loss' in action);
+}
+
 const PRODUCT_SOCKET_ACTIONS: readonly BlackBoxRallarProductSocketFault['action'][] = ['close', 'reopen'];
 
 /**
@@ -42,7 +48,7 @@ const PRODUCT_SOCKET_ACTIONS: readonly BlackBoxRallarProductSocketFault['action'
  * either there would be inert.
  */
 const FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE =
-    'fault.inject.action must be "drop", "backpressure" or an object naming rewrite on the rtc carrier.';
+    'fault.inject.action must be "drop", "backpressure" or an object naming loss or rewrite on the rtc carrier.';
 
 export function decodeBlackBoxRallarDeliveryHandleInput(
     value: unknown
@@ -156,7 +162,7 @@ function decodeTransportFault(
     return decodeFaultAction(value.action).flatMap(
         (issue) => Either.ofLeft(issue),
         (action) => {
-            if (carrier === 'rtc' && !FAULT_RTC_ACTIONS.includes(action)) {
+            if (carrier === 'rtc' && !isRtcFaultAction(action)) {
                 return toInputIssue(FAULT_RTC_ACTION_UNSUPPORTED_MESSAGE);
             }
             const faultId = decodeBlackBoxCommandString(value.faultId);
@@ -221,10 +227,21 @@ function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, Scr
     if (value === 'drop' || value === 'not-ready' || value === 'backpressure') {
         return Either.ofRight(value);
     }
-    const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
-    return delayMs === undefined
-        ? toInputIssue('fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs.')
-        : Either.ofRight({ delayMs });
+    return decodeSeededTransportFaultAction(value).flatMap(
+        (issue) => toInputIssue(`fault.inject.action.${issue}.`),
+        (seeded) => {
+            if (seeded !== null) {
+                return Either.ofRight(seeded);
+            }
+            const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
+            return delayMs === undefined
+                ? toInputIssue(
+                    'fault.inject.action must be "drop", "not-ready", "backpressure" or an object naming delayMs, ' +
+                        'loss or jitter.'
+                )
+                : Either.ofRight({ delayMs });
+        }
+    );
 }
 
 function decodeStorageFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedStorageFault['action']> {

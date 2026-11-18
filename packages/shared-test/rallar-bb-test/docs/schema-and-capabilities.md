@@ -1153,7 +1153,16 @@ frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
 matching submission not ready. `backpressure` (either transport carrier)
 makes the carrier read its channel at its high watermark when it plans a
 matching origination and when it submits a matching frame; each such read
-consumes one of `remaining`. The matcher reads the
+consumes one of `remaining`. Two actions are seeded, so a run repeats on every
+machine: `{ loss: { ratio, seed } }` (either transport carrier) drops the share
+`ratio`, above 0 and at most 1, of the matching frames, and
+`{ jitter: { minDelayMs, maxDelayMs, seed } }` (`ws` only) delays every matching
+frame by a whole number of milliseconds within its bounds. Each injected fault
+draws from its own sequence, one number per matching frame; `remaining` counts
+the frames the fault acted on, so a frame a loss let pass consumes nothing and
+leaves no observation. A loss over `rtc` is a drop the channel reports to its
+sender, whose owner resubmits the frame 50 ms later; a loss over `ws` is silent.
+The matcher reads the
 **AL envelope**, not the recipe's own fields: `match.typeId` compares against
 `payload.typeId`, `match.msgId` against `id.msgId` — or, for an ACK, NACK or
 repair, against the original message id parsed out of the control payload's own

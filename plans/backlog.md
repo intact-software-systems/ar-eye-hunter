@@ -710,11 +710,29 @@ and it has no status list.
   three whose sides alternated in time, and both whose sides were taken one after the other. The run duration read as
   noise in all five. Open for the maintainer: require a quiet machine, make alternating runs the protocol, or compare another
   figure. The band is not widened.
-- The platform fault steps of D642 reach only managed API processes of a
+- The platform fault steps (D666) reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
   `scripts/hosted-rallar/controller/rallar-controller-role.sh`). The first
   campaign rung's replica stop (D643: one of three replicas for 30 s) needs it.
+- No lane cell runs under a seeded loss or a seeded jitter (D667). The two
+  actions reach a page through `fault.inject`; the cells that read them, an
+  ordered receipted stream repaired under a `ws` loss and resubmitted under an
+  `rtc` loss, come with receipt truth and the held-send path.
+- The instance-loss recipe (D666) crashes an API instance that holds no socket
+  of its room. A crash of the instance that holds the publisher's or a
+  subscriber's socket mid-publication, and what the receipt then says, is
+  unproven: it is the receipt-truth slice's question.
+- The database-session recipe (D666) proves delivery to the cut process's
+  socket resumes; it does not say by which path. The secondary's log shows one
+  `listener-subscribe`, at start, and no error after the cut, so whether the
+  notification listener was re-established or a poll delivered is unread.
+- A black-box recipe has no cleanup phase: `cleanupSteps` is in the recipe
+  schema and nothing executes it. The runner restores faulted servers itself
+  (D666); any other leftover of a failed recipe stays.
+- A seeded loss over `rtc` is a drop the channel reports to its sender, not a
+  silent wire loss, and the channel applies no delay (D667). A silent RTC loss
+  and an RTC delay need the data channel to honour both decisions.
 - A relay partition, one RTC edge cut while the others stay, has no fault
   step: `TransportFaultPort.decideSend` sees a carrier and a message, not an
   edge. It needs per-edge control in the transport fault port.

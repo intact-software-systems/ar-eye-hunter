@@ -1538,10 +1538,11 @@ for those modes is its measurement half (§9) and the maintainer's adoption
 histogram and the local half of a same-regime baseline (D650 to D652; §9, "As
 applied (publication figures)"), and so are make-before-break routing (D644 to
 D646), the baseline over several runs per side (D664) and congestion duration
-(D665). The next outcome is a platform fault vocabulary, with an API instance
-stopped, paused or restarted, its database sessions cut, and seeded loss and
-delay on a browser carrier, that recipes can name. Receipt truth and the
-held-send path follow, proven with those steps; a
+(D665). The platform fault vocabulary is built too (D666, D667): a recipe's
+`server` step stops, pauses or restarts an API instance of its run or cuts its
+database sessions, and a `fault.inject` command names a seeded loss or a seeded
+jitter on a browser carrier. The next outcome is receipt truth and the
+held-send path, proven with those steps; a
 retained admission then starts its `admitted` receipt only once its replay
 commits. With the figures in place and the contracts adopted, the addendum is
 complete for its advertised modes. The later outcomes below that no
@@ -1589,7 +1590,9 @@ owners and a first campaign on the three-replica fleet.
   D665; admission-to-native-submission age remains); the local half of a
   same-regime baseline (built, D652, over several runs per side, D664; the
   hosted half remains); a
-  fault-step vocabulary for the platform; a publication workload family on the scale
+  fault-step vocabulary for the platform (built for a local run's managed
+  servers and a browser carrier, D666 and D667; a hosted leg remains); a
+  publication workload family on the scale
   builder; bottleneck probes at the owners; and a first campaign on the
   three-replica fleet.
 

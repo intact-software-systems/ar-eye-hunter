@@ -1158,3 +1158,39 @@ schema-and-capabilities.md describes the figures; alm-observation-artifact.md th
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-runtime/stats.test.ts
 ```
+
+```text
+Title: fault.inject may name a seeded loss or a seeded jitter
+Date: 2026-11-18
+Owner: ALM platform fault steps
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA (fault.inject branch)
+- validateRallarBlackBoxTestCommand fault.inject action
+
+Old shape:
+A transport fault.inject named action "drop", "not-ready" (ws only), "backpressure", { delayMs } (ws only) or
+{ rewrite } (rtc only).
+
+New shape:
+A transport fault.inject may also name { loss: { ratio, seed } } on either carrier, which drops the share ratio (above
+0, at most 1) of the matching frames, or { jitter: { minDelayMs, maxDelayMs, seed } } on ws, which delays every
+matching frame by a whole number of milliseconds within its bounds (D667). The seed alone decides which frames and how
+long. remaining counts the frames the fault acted on.
+
+Migration:
+None: existing recipes validate and read as before. Two validation messages now name loss and jitter among the
+actions.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md describes both actions and how the carriers differ.
+
+Verification:
+npx vitest run packages/tests/shared-test/alm-seeded-fault-contract.test.ts packages/tests/shared/transport-faults
+```
