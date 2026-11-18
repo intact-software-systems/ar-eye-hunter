@@ -101,11 +101,13 @@ its range at now, at most `maxToReserve` rows per type and status, and merges th
 read, so no row can hide another.
 
 That index holds only rows with a next time, and `by-type-status-key` holds every row, so a row with no next time
-cannot be read apart from the others without a scan. The store therefore keeps one invariant: **a pending row
-always has a next time.** A row enqueued without one is stored as due at its creation instant. Reservation still
-clears the next time, as today, and a reserved row is not pending. No caller enqueues such a row in this store
-today: its only users are ALM's admission backend and its cleanup, and ALM's inbound and outbound rows always name
-a next time. The codec, the indexes and the schema do not change.
+cannot be read apart from the others without a scan. The store therefore keeps one invariant in its derived index
+field: **every pending row is in the due index.** `fairnessDueEpochMs` is the row's next time when it has one, and
+the creation instant of a pending row (`NEW` or `RETRY`) that has none. The row itself is stored and read back as
+its caller wrote it, undated rows included, as on the other stores. The decode check follows the same derivation,
+strictly. The record's shape, the indexes and the schema do not change. No caller enqueues an undated pending row in
+this store today: its only users are ALM's admission backend and its cleanup, and ALM's inbound and outbound rows
+always name a next time.
 
 The context claim and the observed-entries path keep their meaning. The fairness pass
 (`reserveOverdueRetryEntries`) stays: it is a method of every store and the resource-inbox dequeuer's fairness lane
@@ -163,7 +165,12 @@ report of what remains.
 - `maxToReserve` is a total across the claim's types and statuses, merged by next time.
 - The page read's order is a required field; existing callers name `key`.
 - The fairness pass stays.
-- On IndexedDB a pending row always has a next time (section 2).
+- On IndexedDB every pending row is in the due index through the store's derived field; a row reads back as
+  written (section 2). First built as a next time written into the row, which made this store read back differently
+  from the others and broke a resource-inbox suite; revised during the build.
+- Three ALM tests drove the engine with one batch per timeout and leaned on key order for a receipt's exhaustion.
+  Their driver now drains until nothing is due, and one test states what a stalled engine does under due order: the
+  receipt still ends after its budget of retries, in 2M+1 timeouts instead of M+1.
 
 ## Decisions (maintainer, 2026-11-18)
 
