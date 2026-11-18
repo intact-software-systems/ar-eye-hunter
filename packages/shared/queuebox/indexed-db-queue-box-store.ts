@@ -7,7 +7,9 @@ import {
     decodeStoredResourceEntryValue,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
+import { INDEXED_DB_QUEUE_PENDING_STATUSES } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
+import { readNextIndexedDbDueEntries } from './read-indexed-db-due-entries.ts';
 import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
 import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
@@ -116,15 +118,29 @@ export async function readStoredQueueWorkPages(
         return [];
     }
     const transaction = db.transaction(storeName, 'readonly');
-    const pages = await readIndexedDbTransaction(transaction, async () => {
-        const index = transaction.objectStore(storeName).index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
-        return await Promise.all(
-            requests.map((request) =>
-                readIndexedDbRequest(index.getAll(toStoredQueueWorkPageRange(request), request.maxToRead))
-            )
-        );
+    return await readIndexedDbTransaction(transaction, async () => {
+        const store = transaction.objectStore(storeName);
+        const keyIndex = store.index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
+        const dueIndex = store.index(INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME);
+        return await Promise.all(requests.map(async (request) =>
+            isDueIndexedWorkPage(request)
+                ? await readNextIndexedDbDueEntries({
+                    index: dueIndex,
+                    typeId: request.typeId,
+                    status: request.status,
+                    dueAtOrBeforeEpochMs: Infinity,
+                    maxToRead: request.maxToRead,
+                    after: undefined
+                })
+                : (await readIndexedDbRequest(keyIndex.getAll(toStoredQueueWorkPageRange(request), request.maxToRead)))
+                    .map(decodeStoredResourceEntryValue)
+        ));
     });
-    return pages.map((values) => values.map(decodeStoredResourceEntryValue));
+}
+
+/** A pending row always has a next time; a row of any other status has none, so it ties and keeps key order. */
+function isDueIndexedWorkPage(request: ResourceInboxWorkPage.Request): boolean {
+    return request.order === 'due' && INDEXED_DB_QUEUE_PENDING_STATUSES.has(request.status);
 }
 
 function toStoredQueueWorkPageRange(request: ResourceInboxWorkPage.Request): IDBKeyRange {

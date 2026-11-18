@@ -65,7 +65,7 @@ export function computeIndexedDbQueuePut(
         kind: 'put',
         keyString: toKeyAsString(entry.key),
         expected,
-        value: encodeStoredResourceEntry(entry, nextRevision)
+        value: encodeStoredResourceEntry(toDatedPendingEntry(entry), nextRevision)
     };
 }
 
@@ -97,8 +97,26 @@ export function computeIndexedDbQueueUnconditionalPut(entry: ResourceEntry): Com
     return {
         kind: 'put-unconditionally',
         keyString: toKeyAsString(entry.key),
-        value: encodeStoredResourceEntry(entry, 0)
+        value: encodeStoredResourceEntry(toDatedPendingEntry(entry), 0)
     };
+}
+
+/** The statuses whose rows the store keeps dated; every other status's rows carry no next time. */
+export const INDEXED_DB_QUEUE_PENDING_STATUSES: ReadonlySet<EntityStatus> = new Set([
+    EntityStatus.NEW,
+    EntityStatus.RETRY
+]);
+
+/**
+ * The store keeps a pending row dated, so `by-type-status-next-key` holds every row a claim may take: a pending row
+ * written with no next time is stored as due at its creation instant.
+ */
+function toDatedPendingEntry(entry: ResourceEntry): ResourceEntry {
+    if (entry.dequeueAudit.nextTs !== undefined || !INDEXED_DB_QUEUE_PENDING_STATUSES.has(entry.status)) {
+        return entry;
+    }
+    const createdAt = Temporal.PlainDateTime.from(entry.audit.createdTs).toZonedDateTime('UTC').toInstant();
+    return { ...entry, dequeueAudit: { ...entry.dequeueAudit, nextTs: createdAt } };
 }
 
 export function validateComputedIndexedDbQueueMutations(

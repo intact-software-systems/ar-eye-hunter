@@ -105,9 +105,10 @@ export function describeQueueDueOrderContract(
                 ...['z-0', 'z-1', 'z-2'].map((id) => newRow(scope, id, 0))
             ]);
 
+            const claimedAt = Temporal.Now.instant();
             const claimed = await claimDue(scope);
 
-            const expected = toRuleDueOrder(scope.written, Temporal.Now.instant()).slice(0, CLAIM_LIMIT);
+            const expected = toRuleDueOrder(scope.written, claimedAt).slice(0, CLAIM_LIMIT);
             expect(toResourceIds(claimed).sort()).toEqual(toResourceIds(expected).sort());
         });
 
@@ -160,6 +161,7 @@ export function describeQueueDueOrderContract(
                 newRow(scope, 'z-due', 0)
             ]);
 
+            const readAt = Temporal.Now.instant();
             const page = await scope.queue.readWorkPage({
                 typeId: scope.typeA,
                 status: EntityStatus.NEW,
@@ -168,7 +170,7 @@ export function describeQueueDueOrderContract(
                 cursor: null
             });
 
-            const [earliest] = toRuleDueOrder(scope.written, Temporal.Now.instant());
+            const [earliest] = toRuleDueOrder(scope.written, readAt);
             expect({ first: page.entries[0]?.key.resourceId, nextCursor: page.nextCursor })
                 .toEqual({ first: earliest.key.resourceId, nextCursor: null });
         });

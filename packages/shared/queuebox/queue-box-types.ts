@@ -28,7 +28,9 @@ export namespace ResourceInboxWorkPage {
 
     /**
      * `key` pages a type and status in the store's own order, resumed by cursor. `due` reads the type and status's
-     * earliest rows in due order (`compareResourceEntriesByDue`), takes no cursor and answers no next cursor.
+     * earliest rows in due order (`compareResourceEntriesByDue`), due yet or not, and answers `nextCursor: null`; a
+     * `due` request that carries a cursor is a programmer error and is refused. Rows without a next time tie, so a
+     * status whose rows carry none reads in the store's own order.
      */
     export type Order = 'key' | 'due';
 
@@ -37,13 +39,13 @@ export namespace ResourceInboxWorkPage {
         readonly status: Resource.EntityStatus;
         readonly maxToRead: number;
         readonly order: Order;
-        /** Restart with null to discover work inserted or moved behind the previous cursor; always null for `due`. */
+        /** Restart with null to discover work inserted or moved behind the previous cursor; must be null for `due`. */
         readonly cursor: Cursor | null;
     }
 }
 
 export interface ResourceInboxWorkPage {
-    /** Observations in backend order, including expired entries; reading never claims, releases or removes work. */
+    /** Observations in the requested order, expired entries included; reading never claims, releases or removes work. */
     readonly entries: readonly ResourceEntry[];
     /** A full page may require one final empty read to discover the end. */
     readonly nextCursor: ResourceInboxWorkPage.Cursor | null;

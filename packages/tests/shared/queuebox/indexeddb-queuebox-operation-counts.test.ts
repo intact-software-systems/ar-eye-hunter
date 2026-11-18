@@ -122,9 +122,9 @@ function createEntry(
         resource: JSON.stringify({ typeId }),
         typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO(),
+            date: Temporal.Now.plainTimeISO('UTC'),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: Temporal.Now.plainDateTimeISO('UTC'),
             expiryTs: NEVER_EXPIRE_TS
         },
         status: dequeue.status,

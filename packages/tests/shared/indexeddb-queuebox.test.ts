@@ -237,7 +237,7 @@ describe('IndexedDbQueueBox', () => {
             dbName: `indexeddb-claim-order-types-${crypto.randomUUID()}`,
             observer: createPassThroughIndexedDbOperationObserver()
         });
-        const createdTs = Temporal.Now.plainDateTimeISO();
+        const createdTs = Temporal.Now.plainDateTimeISO('UTC');
         await queue.enqueue(createEntry('first.type', 'younger', { createdTs }));
         await queue.enqueue(createEntry('second.type', 'older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
         const claim = { typeIds: new Set(['first.type', 'second.type']), statusIds: new Set([EntityStatus.NEW]) };
@@ -254,7 +254,7 @@ describe('IndexedDbQueueBox', () => {
             dbName: `indexeddb-claim-order-keys-${crypto.randomUUID()}`,
             observer: createPassThroughIndexedDbOperationObserver()
         });
-        const createdTs = Temporal.Now.plainDateTimeISO();
+        const createdTs = Temporal.Now.plainDateTimeISO('UTC');
         await queue.enqueue(createEntry('chat.message.v1', 'a-younger', { createdTs }));
         await queue.enqueue(createEntry('chat.message.v1', 'b-older', { createdTs: createdTs.subtract({ seconds: 10 }) }));
 
@@ -1206,9 +1206,9 @@ function createEntry(
         resource: options.resource ?? JSON.stringify({ typeId, resourceId }),
         typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO(),
+            date: Temporal.Now.plainTimeISO('UTC'),
             createdBy: 'test',
-            createdTs: options.createdTs ?? Temporal.Now.plainDateTimeISO(),
+            createdTs: options.createdTs ?? Temporal.Now.plainDateTimeISO('UTC'),
             expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS
         },
         status: options.status ?? EntityStatus.NEW,

@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { readIndexedDbFairnessEntries } from './read-indexed-db-fairness-entries.ts';
+import { readIndexedDbDueEntries, readIndexedDbFairnessEntries } from './read-indexed-db-due-entries.ts';
 import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
 
 import { EnqueuedType } from '../api/api-config.ts';
@@ -93,6 +93,10 @@ interface IndexedDbReservationCandidateRead {
     readonly typeIds: Iterable<string>;
     readonly statusIds: Iterable<EntityStatus>;
     readonly maxToReadPerCombination: number;
+}
+
+interface IndexedDbClaimCandidateRead extends IndexedDbReservationCandidateRead {
+    readonly statusIds: ReadonlySet<EntityStatus>;
 }
 
 export interface IndexedDbQueueCleanupResult {
@@ -404,6 +408,32 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         );
     }
 
+    /**
+     * A claim's candidates in its claim order: an observed claim's rows as observed; a due claim's due rows only,
+     * earliest first; a creation claim's key pages, ordered by creation.
+     */
+    async #readClaimCandidates(
+        input: IndexedDbClaimCandidateRead,
+        now: Temporal.Instant
+    ): Promise<readonly StoredResourceEntry[]> {
+        if (input.observations !== undefined) {
+            return await this.#readReservationCandidates(input);
+        }
+        if (resolveResourceInboxClaimOrder(input.statusIds) === 'creation') {
+            const read = await this.#readReservationCandidates(input);
+            return toCreationOrderedEntries(read, (stored) => Temporal.PlainDateTime.from(stored.audit.createdTs));
+        }
+        return await readIndexedDbDueEntries({
+            ...input,
+            storeName: this.#storeName,
+            indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
+            dueAtOrBeforeEpochMs: Number(now.epochMilliseconds),
+            allowedTopicIds: input.allowedTopicIds,
+            // An expired row is swept by the claim's write, so it never takes a live row's place.
+            isCounted: (stored) => !isStoredQueueEntryExpired(stored, now)
+        });
+    }
+
     async reserveTimeoutEntries(
         { typeIds, reservationInput, timeSinceStartTs, observedEntries, excludedContextIds }:
             ResourceInboxTimeoutReservationRequest
@@ -471,18 +501,16 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             }
             const db = await operation.open();
             const now = this.#now();
-            // The index pages a claim in keyString order, not in readiness order; overdue rows that
-            // ordering would strand are reached by reserveOverdueRetryEntries' own fairness pass.
-            const read = await this.#readReservationCandidates({
+            const candidates = await this.#readClaimCandidates({
                 db,
                 observations,
                 allowedTopicIds,
                 typeIds,
                 statusIds,
                 maxToReadPerCombination: contextClaim === undefined ? maxToReserve : Number.MAX_SAFE_INTEGER
-            });
+            }, now);
             const selection = computeIndexedDbReservation({
-                candidates: observations === undefined ? toIndexedDbClaimOrder(read, statusIds) : read,
+                candidates,
                 contextClaim,
                 observations,
                 maxToReserve,
@@ -932,19 +960,6 @@ interface ComputeIndexedDbReservationInput {
     readonly isReservable: (stored: StoredResourceEntry) => boolean;
 }
 
-/**
- * The rows a claim read, in its claim order; creation ties keep the order read, so its oldest row goes first whichever
- * work type or key the read reached first. A due-order claim keeps the order read.
- */
-function toIndexedDbClaimOrder(
-    candidates: readonly StoredResourceEntry[],
-    statusIds: ReadonlySet<EntityStatus>
-): readonly StoredResourceEntry[] {
-    return resolveResourceInboxClaimOrder(statusIds) === 'due'
-        ? candidates
-        : toCreationOrderedEntries(candidates, (stored) => Temporal.PlainDateTime.from(stored.audit.createdTs));
-}
-
 /** Turns one page of candidates into the rows a claim reserves and the rows its predicate refused. */
 function computeIndexedDbReservation(input: ComputeIndexedDbReservationInput): IndexedDbReservationSelection {
     const reserved = new Map<Key, ResourceEntry>();
@@ -1037,7 +1052,7 @@ function toResourceInboxWorkPage(
 ): ResourceInboxWorkPage {
     return {
         entries: stored.map(decodeStoredResourceEntry),
-        nextCursor: stored.length === request.maxToRead
+        nextCursor: request.order === 'key' && stored.length === request.maxToRead
             ? { typeId: request.typeId, status: request.status, position: stored[stored.length - 1].keyString }
             : null
     };

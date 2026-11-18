@@ -44,7 +44,8 @@ function captureFrom(fixture: CaptureFixture, writeToken: string) {
 describe('computeALCheckpointMutations', () => {
     it('writes the current value of each dirty row once, in the existing row formats', async () => {
         const fixture = createFixture();
-        const work = createCheckpointTestEntry('work');
+        // Dated, as every ALM work row is: the IndexedDB store dates an undated pending row on write.
+        const work = { ...createCheckpointTestEntry('work'), dequeueAudit: { nextTs: Temporal.Instant.from('2026-10-02T12:00:00Z'), attempts: 0 } };
         await fixture.backend.write(async (tx) => {
             await tx.set('row', '1', 60_000);
         });

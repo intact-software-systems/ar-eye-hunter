@@ -339,6 +339,173 @@ describe('IndexedDbQueueBox indexed reads', () => {
     });
 });
 
+describe('IndexedDbQueueBox due order', () => {
+    it('claims a row due exactly at the store\'s now past a full claim of rows due a millisecond later', async () => {
+        const queue = createQueueAt('boundary');
+        for (const id of toDueIds(16, 'a')) {
+            await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.add({ milliseconds: 1 }) }));
+        }
+        await queue.enqueue(createDueEntry('z-at-now', { nextTs: DUE_NOW }));
+        await queue.enqueue(createDueEntry('z-after-now', { nextTs: DUE_NOW.add({ nanoseconds: 1 }) }));
+
+        const claimed = await claimDue(queue, { maxToReserve: 16 });
+
+        expect(toResourceIds(claimed)).toEqual(['z-at-now']);
+    });
+
+    it('a context claim takes each admitted context\'s earliest due row', async () => {
+        const queue = createQueueAt('context-claim');
+        await queue.enqueue(createDueEntry('a-later', { nextTs: DUE_NOW.subtract({ seconds: 10 }), contextId: 'ctx-1' }));
+        await queue.enqueue(createDueEntry('b-earlier', { nextTs: DUE_NOW.subtract({ seconds: 30 }), contextId: 'ctx-1' }));
+        await queue.enqueue(createDueEntry('c-only', { nextTs: DUE_NOW.subtract({ seconds: 20 }), contextId: 'ctx-2' }));
+        await queue.enqueue(createDueEntry('d-excluded', { nextTs: DUE_NOW.subtract({ seconds: 40 }), contextId: 'ctx-3' }));
+
+        const claimed = await claimDue(queue, { maxToReserve: 16, excludedContextIds: new Set(['ctx-3']) });
+
+        expect(toResourceIds(claimed)).toEqual(['b-earlier', 'c-only']);
+    });
+
+    it('an observed claim reserves exactly the rows it observed, wherever they fall in due order', async () => {
+        const queue = createQueueAt('observed');
+        for (const [index, id] of toDueIds(20, 'a').entries()) {
+            await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 60 - index }) }));
+        }
+        await queue.enqueue(createDueEntry('z-0', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+        await queue.enqueue(createDueEntry('z-1', { nextTs: DUE_NOW.subtract({ seconds: 2 }) }));
+        const observed = await Promise.all(['z-0', 'z-1'].map((id) => queue.getItem(createDueEntry(id, { nextTs: DUE_NOW }).key)));
+
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set([DUE_TYPE_ID]),
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: 16,
+            observedEntries: observed.filter((entry) => entry !== undefined)
+        });
+
+        expect(toResourceIds(claimed.values()).toSorted()).toEqual(['z-0', 'z-1']);
+    });
+
+    it('stores a pending row written with no next time as due at its creation instant, and a claim clears it', async () => {
+        const queue = createQueueAt('undated');
+        const undated = createDueEntry('undated', { nextTs: undefined });
+        await queue.enqueue(undated);
+
+        const pending = await queue.getItem(undated.key);
+        await claimDue(queue, { maxToReserve: 1 });
+        const reserved = await queue.getItem(undated.key);
+
+        expect(pending?.dequeueAudit.nextTs?.toString()).toBe(DUE_CREATED_AT.toString());
+        expect([reserved?.status, reserved?.dequeueAudit.nextTs]).toEqual([EntityStatus.RESERVED, undefined]);
+    });
+
+    it('a NEW-only claim reads its first sixteen rows by key', async () => {
+        // The recorded gap (plans/backlog.md, the IndexedDB creation-order claim): this asserts today's behaviour.
+        const queue = createQueueAt('creation-gap');
+        for (const id of toDueIds(20, 'a')) {
+            await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.add({ seconds: 2 }) }));
+        }
+        await queue.enqueue(createDueEntry('z-due', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set([DUE_TYPE_ID]),
+            statusIds: new Set([EntityStatus.NEW]),
+            reservationInput: 16
+        });
+
+        expect(claimed.size).toBe(0);
+    });
+
+    it('a due page holds expired and not-yet-due rows in due order, with no next cursor', async () => {
+        const queue = createQueueAt('due-page');
+        await queue.enqueue(createDueEntry('a-later', { nextTs: DUE_NOW.add({ seconds: 2 }) }));
+        await queue.enqueue(createDueEntry('b-expired', { nextTs: DUE_NOW.subtract({ seconds: 5 }), expiryTs: DUE_NOW.subtract({ seconds: 1 }) }));
+        await queue.enqueue(createDueEntry('c-due', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+
+        const page = await queue.readWorkPage({ typeId: DUE_TYPE_ID, status: EntityStatus.NEW, maxToRead: 3, order: 'due', cursor: null });
+
+        expect({ ids: toResourceIds(page.entries), nextCursor: page.nextCursor })
+            .toEqual({ ids: ['b-expired', 'c-due', 'a-later'], nextCursor: null });
+    });
+
+    it('a due page of reserved rows, which carry no next time, holds them in key order', async () => {
+        const queue = createQueueAt('due-page-reserved');
+        for (const id of ['b', 'a']) {
+            await queue.enqueue(createDueEntry(id, { nextTs: undefined, status: EntityStatus.RESERVED }));
+        }
+
+        const page = await queue.readWorkPage({ typeId: DUE_TYPE_ID, status: EntityStatus.RESERVED, maxToRead: 16, order: 'due', cursor: null });
+
+        expect(toResourceIds(page.entries)).toEqual(['a', 'b']);
+    });
+
+    it('refuses a due page request that carries a cursor', async () => {
+        const queue = createQueueAt('due-page-cursor');
+
+        await expect(queue.readWorkPage({
+            typeId: DUE_TYPE_ID,
+            status: EntityStatus.NEW,
+            maxToRead: 16,
+            order: 'due',
+            cursor: { typeId: DUE_TYPE_ID, status: EntityStatus.NEW, position: 'a' }
+        })).rejects.toThrow(TypeError);
+    });
+});
+
+const DUE_TYPE_ID = 'due.order.v1';
+/** Sub-millisecond, so a row one nanosecond later shares the index's millisecond and only the instant decides. */
+const DUE_NOW = Temporal.Instant.from('2026-11-18T12:00:00.000000500Z');
+const DUE_CREATED_AT = DUE_NOW.subtract({ minutes: 1 }).round({ smallestUnit: 'millisecond', roundingMode: 'floor' });
+
+function createQueueAt(name: string): IndexedDbQueueBox {
+    return new IndexedDbQueueBox({
+        dbName: `indexeddb-due-order-${name}-${crypto.randomUUID()}`,
+        observer: createPassThroughIndexedDbOperationObserver(),
+        now: () => DUE_NOW
+    });
+}
+
+function createDueEntry(
+    resourceId: string,
+    options: Readonly<{ nextTs: Temporal.Instant | undefined; contextId?: string; status?: EntityStatus; expiryTs?: Temporal.Instant; }>
+): ResourceEntry {
+    const createdAt = DUE_CREATED_AT.toZonedDateTimeISO('UTC');
+    const status = options.status ?? EntityStatus.NEW;
+    return {
+        key: { topicId: DUE_TYPE_ID, resourceId, contextId: options.contextId ?? 'ctx-1' },
+        resource: resourceId,
+        typeId: DUE_TYPE_ID,
+        audit: { date: createdAt.toPlainTime(), createdBy: 'test', createdTs: createdAt.toPlainDateTime(), expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS },
+        status,
+        dequeueAudit: {
+            startTs: status === EntityStatus.RESERVED ? DUE_NOW : undefined,
+            endTs: undefined,
+            nextTs: options.nextTs,
+            attempts: status === EntityStatus.RESERVED ? 1 : 0
+        },
+        db: undefined
+    };
+}
+
+async function claimDue(
+    queue: IndexedDbQueueBox,
+    claim: Readonly<{ maxToReserve: number; excludedContextIds?: ReadonlySet<string>; }>
+): Promise<ResourceEntry[]> {
+    const claimed = await queue.reserveEntries({
+        typeIds: new Set([DUE_TYPE_ID]),
+        statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+        reservationInput: claim.maxToReserve,
+        contextClaim: claim.excludedContextIds === undefined ? undefined : { excludedContextIds: claim.excludedContextIds }
+    });
+    return [...claimed.values()];
+}
+
+function toDueIds(count: number, prefix: string): string[] {
+    return Array.from({ length: count }, (_, index) => `${prefix}-${String(index).padStart(2, '0')}`);
+}
+
+function toResourceIds(entries: Iterable<ResourceEntry>): string[] {
+    return [...entries].map((entry) => entry.key.resourceId);
+}
+
 async function seedMixedTypeAndStatusEntries(queue: IndexedDbQueueBox): Promise<void> {
     const now = Temporal.Now.instant();
     const entries: ResourceEntry[] = [];
@@ -429,9 +596,9 @@ function createEntry(
         resource: options.resource ?? JSON.stringify({ typeId, resourceId }),
         typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO(),
+            date: Temporal.Now.plainTimeISO('UTC'),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO(),
+            createdTs: Temporal.Now.plainDateTimeISO('UTC'),
             expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS
         },
         status: options.status ?? EntityStatus.NEW,
