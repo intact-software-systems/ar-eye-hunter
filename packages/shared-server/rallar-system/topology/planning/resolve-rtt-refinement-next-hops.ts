@@ -2,6 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 
 import { toCanonicalRtcTopologyPairIdentity } from '../persistence/rtc-topology-identifiers.ts';
 import { computeEvolvedTopologyNextHops, type EvolvePlannedTopologyInput } from './evolve-planned-topology.ts';
+import type { DerivedRtcTopologyNextHops } from './plan-record/rtc-topology-plan-derivation.ts';
 
 /**
  * A rebuild replaces most edges of a tree that formed incrementally, and every
@@ -31,25 +32,26 @@ interface FarthestTreeSession {
 }
 
 /** Keeps the accepted tree, evolved to the current members, unless the weighted rebuild is worth its churn. */
-export function resolveRttRefinementNextHops(
-    input: ResolveRttRefinementNextHopsInput
-): Record<string, readonly string[]> {
+export function resolveRttRefinementNextHops(input: ResolveRttRefinementNextHopsInput): DerivedRtcTopologyNextHops {
+    const rebuilt = input.rebuiltNextHopsBySessionId;
     if (input.evolve.kind !== 'tree') {
-        return input.rebuiltNextHopsBySessionId;
+        return { nextHopsBySessionId: rebuilt, derivation: { method: 'rebuilt', reason: 'refinement' } };
     }
     const evolved = computeEvolvedTopologyNextHops(input.evolve);
     if (evolved.outcome === 'full-rebuild') {
-        return input.rebuiltNextHopsBySessionId;
+        return { nextHopsBySessionId: rebuilt, derivation: { method: 'rebuilt', reason: evolved.reason } };
     }
 
     const weights = computeRttLinkWeights(input.rttMeasurements);
     const { leaderSessionId } = input.evolve;
     const keptPathMs = computeSlowestTreePathMs(weights, evolved.nextHopsBySessionId, leaderSessionId);
-    const rebuiltPathMs = computeSlowestTreePathMs(weights, input.rebuiltNextHopsBySessionId, leaderSessionId);
+    const rebuiltPathMs = computeSlowestTreePathMs(weights, rebuilt, leaderSessionId);
     const gainMs = keptPathMs - rebuiltPathMs;
     const worthRebuilding = gainMs >= RTT_REFINEMENT_MIN_ABSOLUTE_GAIN_MS &&
         gainMs >= keptPathMs * RTT_REFINEMENT_MIN_RELATIVE_GAIN;
-    return worthRebuilding ? input.rebuiltNextHopsBySessionId : evolved.nextHopsBySessionId;
+    return worthRebuilding
+        ? { nextHopsBySessionId: rebuilt, derivation: { method: 'rebuilt', reason: 'refinement' } }
+        : { nextHopsBySessionId: evolved.nextHopsBySessionId, derivation: { method: 'incremental' } };
 }
 
 /** A link nobody measured weighs the slowest measured RTT, never less. */

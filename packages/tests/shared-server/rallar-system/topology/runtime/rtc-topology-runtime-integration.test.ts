@@ -190,7 +190,9 @@ describe('RTC topology process runtime integration', () => {
             updatesWithoutRttMeasurementCount: 1,
             noRttTreePlanCount: 1,
             weightedPlanCount: 1,
-            weightedRoomGraphBuildCount: 1,
+            // The measured rebuild of the same-kind tree builds the sparse graph it plans over and the complete graph
+            // the kept tree is evolved over, to weigh the rebuild against keeping it.
+            weightedRoomGraphBuildCount: 2,
             topologyPublishAttemptCount: 2,
             topologyPublishedCount: 2,
             topologyPublishSkippedUnchangedCount: 0,

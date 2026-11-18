@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
 import { readWorkflowRunsEnvelope } from './validation-evidence-selection.mjs';
 
 export function readGithubWorkflowRuns({ repository, workflowPath, branch }) {
@@ -11,7 +12,7 @@ export function readGithubWorkflowRuns({ repository, workflowPath, branch }) {
         `?branch=${encodeURIComponent(branch)}&event=pull_request&status=success&per_page=100`;
     const source = execFileSync('gh', ['api', '--paginate', '--slurp', endpoint], {
         encoding: 'utf8',
-        maxBuffer: 10 * 1024 * 1024
+        maxBuffer: commandOutputMaxBuffer
     });
     return readWorkflowRunsEnvelope(source);
 }

@@ -230,8 +230,8 @@ function validateResult(input: RtcRoomGraphRttInput, result: RtcRoomGraphRttResu
         input.sparseDegree
     );
     const validMeasurements = JSON.stringify(result.measurements) === JSON.stringify(expectedMeasurements);
-    const validEdgeCount = result.edgePairs.length >= input.sessions - 1 &&
-        result.edgePairs.length <= Math.floor((input.sessions * 5) / 2);
+    // Every accepted room size selects a mesh, whose rebuild plans over the complete room graph: each pair once.
+    const validEdgeCount = result.edgePairs.length === (input.sessions * (input.sessions - 1)) / 2;
     return JSON.stringify(result.sessionIds) === JSON.stringify(expectedSessions) &&
             validEdgeCount &&
             hasValidTopology(result) &&
@@ -248,9 +248,6 @@ function hasValidTopology(result: RtcRoomGraphRttResult): boolean {
         }
         neighbors.get(from)?.add(to);
         neighbors.get(to)?.add(from);
-    }
-    if ([...neighbors.values()].some((peers) => peers.size > 5)) {
-        return false;
     }
     const visited = new Set<string>();
     const pending = [result.sessionIds[0]];

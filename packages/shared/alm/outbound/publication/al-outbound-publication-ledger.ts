@@ -2,6 +2,12 @@ import type {
     ALPublicationStageLimit,
     ALPublicationStageLimits
 } from '../../../al-contracts/publication/al-publication-stage-limits.ts';
+import {
+    computeALOutboundPublicationFiguresAfterSelection,
+    computeALOutboundPublicationFiguresAfterSubmission,
+    toIdleALOutboundPublicationFigures,
+    type ALOutboundPublicationFigures
+} from './al-outbound-publication-figures.ts';
 
 /** Cumulative over the stage's lifetime: each outcome it settled, and what its opportunities admitted and deferred. */
 export interface ALOutboundPublicationCounters {
@@ -23,6 +29,7 @@ export interface ALOutboundPublicationLedgerReport {
     readonly stagedBytes: number;
     readonly limits: ALPublicationStageLimits;
     readonly counters: ALOutboundPublicationCounters;
+    readonly figures: ALOutboundPublicationFigures;
 }
 
 interface ALOutboundPublicationTotals {
@@ -47,7 +54,7 @@ const IDLE_COUNTERS: ALOutboundPublicationCounters = {
 export function toIdleALOutboundPublicationLedgerReport(
     limits: ALPublicationStageLimits
 ): ALOutboundPublicationLedgerReport {
-    return { ...IDLE_TOTALS, limits, counters: IDLE_COUNTERS };
+    return { ...IDLE_TOTALS, limits, counters: IDLE_COUNTERS, figures: toIdleALOutboundPublicationFigures() };
 }
 
 export namespace ALOutboundPublicationLedger {
@@ -77,6 +84,7 @@ export class ALOutboundPublicationLedger {
     private readonly limits: ALPublicationStageLimits;
     private totals: ALOutboundPublicationTotals = IDLE_TOTALS;
     private counters: ALOutboundPublicationCounters = IDLE_COUNTERS;
+    private figures: ALOutboundPublicationFigures = toIdleALOutboundPublicationFigures();
 
     constructor(limits: ALPublicationStageLimits) {
         this.limits = limits;
@@ -117,8 +125,16 @@ export class ALOutboundPublicationLedger {
         this.counters = { ...this.counters, [outcome]: this.counters[outcome] + values };
     }
 
+    recordSelection(selection: ALOutboundPublicationFigures.Selection): void {
+        this.figures = computeALOutboundPublicationFiguresAfterSelection(this.figures, selection);
+    }
+
+    recordSubmission(submission: ALOutboundPublicationFigures.Submission): void {
+        this.figures = computeALOutboundPublicationFiguresAfterSubmission(this.figures, submission);
+    }
+
     readReport(): ALOutboundPublicationLedgerReport {
-        return { ...this.totals, limits: this.limits, counters: this.counters };
+        return { ...this.totals, limits: this.limits, counters: this.counters, figures: this.figures };
     }
 
     private computeTotalsAfter(change: ALOutboundPublicationLedger.StreamChange): ALOutboundPublicationTotals {

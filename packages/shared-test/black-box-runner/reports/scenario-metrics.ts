@@ -1,3 +1,5 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
+
 import { decodeScenarioNumber, decodeScenarioText } from '../scenario-value-decoding.ts';
 
 export interface ScenarioOutcomeMetrics {
@@ -87,14 +89,6 @@ function latencyMetric(values: number[]): ScenarioLatencyMetrics {
         };
     }
 
-    const percentile = (p: number): number => {
-        const index = Math.min(
-            sorted.length - 1,
-            Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)
-        );
-        return sorted[index];
-    };
-
     const sum = sorted.reduce((acc, value) => acc + value, 0);
 
     return {
@@ -102,9 +96,9 @@ function latencyMetric(values: number[]): ScenarioLatencyMetrics {
         min: sorted[0],
         max: sorted[sorted.length - 1],
         avg: Number((sum / sorted.length).toFixed(2)),
-        p50: percentile(50),
-        p95: percentile(95),
-        p99: percentile(99)
+        p50: computeNearestRank(sorted, 0.5),
+        p95: computeNearestRank(sorted, 0.95),
+        p99: computeNearestRank(sorted, 0.99)
     };
 }
 

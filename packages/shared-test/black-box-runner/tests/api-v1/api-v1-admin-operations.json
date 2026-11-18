@@ -1291,6 +1291,71 @@
       }
     },
     {
+      "name": "readRoomTopologyPlans",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/groups/adminops-group-{runId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "roomRef": {
+            "applicationId": "{scopeApplicationId}",
+            "workspaceId": "{scopeWorkspaceId}",
+            "groupId": "adminops-group-{runId}"
+          },
+          "observedAtEpochMs": "integer",
+          "nextAfterPublicationId": null,
+          "plans": [
+            {
+              "publicationId": "string",
+              "layout": {
+                "groupRevision": "integer",
+                "presenceRevision": "integer",
+                "version": "integer",
+                "state": "active"
+              },
+              "topology": "string",
+              "memberCount": "integer",
+              "degreeLimit": "integer",
+              "plan": {
+                "plannedAtEpochMs": "integer",
+                "causes": ["any"],
+                "delta": {
+                  "joinedSessionCount": "integer"
+                },
+                "change": {
+                  "kind": "attach|reshape"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rejectPlayerTopologyPlansInspection",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{scopeApplicationId}/workspaces/{scopeWorkspaceId}/groups/adminops-group-{runId}/topology-plans",
+        "headers": {
+          "Authorization": "{scopeAuthHeader}",
+          "x-client-id": "{scopeClientId}"
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
       "name": "theStateReadSeesOnlyThePopulatedScope",
       "type": "http",
       "connection": "api",

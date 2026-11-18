@@ -1,6 +1,7 @@
 import { PSqlResourceInboxEntryReader } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-reader.ts';
 import type { AdminOperationUseCases } from '@shared-server/rallar-system/admin-operations/admin-operation-use-cases.ts';
 import { ReadAdminRoomDirectory } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-directory.ts';
+import { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-plans.ts';
 import { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type {
     AdminSupportTopologyQuery,
@@ -19,6 +20,7 @@ import type {
 } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-status.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -46,6 +48,7 @@ export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperation
 export interface ApiV1AdminServices {
     readonly rooms: ReadAdminRoomDirectory;
     readonly topologyWork: ReadAdminRoomTopologyWork;
+    readonly topologyPlans: ReadAdminRoomTopologyPlans;
     readonly operations: AdminOperationUseCases;
     readonly support: AdminSupportUseCases;
     readonly statistics: SpaStatisticsUseCases;
@@ -61,6 +64,10 @@ export function createApiV1AdminServices(
         }),
         topologyWork: new ReadAdminRoomTopologyWork({
             repository: new PSqlResourceInboxEntryReader(input.database, () => new Date(input.nowEpochMs())),
+            nowEpochMs: input.nowEpochMs
+        }),
+        topologyPlans: new ReadAdminRoomTopologyPlans({
+            publications: new RtcTopologyPublicationRepository(new PSqlRuntimeStateRepository(input.database)),
             nowEpochMs: input.nowEpochMs
         }),
         operations: createApiV1AdminOperationUseCases(input),

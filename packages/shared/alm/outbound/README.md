@@ -1209,10 +1209,13 @@ values, then bytes, is refused `capacity` with that `limit` and settles nothing 
 stream's oldest, which settles `superseded` with the new value's `msgId` as `replacementMsgId`; the stage appends
 the value and keeps the newest `retainNewest` with [`retainNewest`](../../cache/retain-newest.ts), the primitive the
 motion buffer's per-entity window shares. Staging on an idle lane
-opens an opportunity at once and wakes the engine; on a scheduled lane the value waits for that lane's boundary.
+opens an opportunity at once: the stage runs it itself after the staging returns, rather than waiting for an engine
+round, whose readiness probes include the durable lanes' storage reads, and hands it to the engine with
+`retainSettlingWork`, so a failure is reported and `stop` joins it. On a scheduled lane the value waits for that
+lane's boundary.
 
-The stage registers one task, at most one runnable at a time, on the session's `InboxOutboxEngine`; its `isWork`
-is "a lane is due" on the injected `Clock`. Each due lane runs one opportunity:
+The stage registers one task on the session's `InboxOutboxEngine`; its `isWork` is "a lane is due" on the injected
+`Clock`, and its opportunities run one at a time whichever path started them. Each due lane runs one opportunity:
 [`computeALPublicationSelection`](./publication/compute-al-publication-selection.ts) settles the values whose
 deadline passed `expired`, then takes the streams from the lane's cursor (`startIndex`), each oldest first, until the
 next value would pass `drain.messages` or `drain.bytes`; the rest wait, and the lane's cursor moves to the returned
@@ -1236,7 +1239,12 @@ cadence after the last, never a second dispatch (D479). Each value's outcome (`s
 `refused` with a capacity refusal's `limit`, `cancelled`) writes one payload-free `publication-staging` diagnostic
 (`laneKey`, `msgId`, `traceId`, `atMs`, `outcome`, `limit`) and counts in the ledger; `readReport()` returns the
 stage's `lanes`, the ledger's holdings and limits, and its cumulative counters, with `admitted` and `deferred` from
-the opportunities (D480). A value still staged at `dispose()` settles `skipped`/`disposed` with no event.
+the opportunities (D480), and its `figures` (D651): the bounded histograms `selectionAgeMs`, `selectionToAdmissionMs`,
+`drainMessagesPercent` and `drainBytesPercent`, and the counts `submittedOpportunities`, `missedOpportunities` and
+`unrecordedSamples`. Whenever `unrecordedSamples` is 0, `selectionAgeMs.count` equals the `admitted` counter and the
+other three histogram counts equal `submittedOpportunities`; a sample a histogram refuses is counted in
+`unrecordedSamples`, never thrown or clamped. `selectionToAdmissionMs` ends at carrier admission, because `submit`
+settles there. A value still staged at `dispose()` settles `skipped`/`disposed` with no event.
 
 The stage never sends and never admits: what `submit` hands to a carrier enters today's admission unchanged, so the
 frozen audience, fallback, supersedence and receipts apply to it as to any send.

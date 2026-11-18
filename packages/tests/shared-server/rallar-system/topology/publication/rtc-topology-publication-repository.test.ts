@@ -8,6 +8,7 @@ import {
 } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     describe,
     expect,
@@ -24,7 +25,7 @@ import {
 } from '../rtc-topology-repository-test-fixtures.ts';
 
 describe('RTC topology publication repository', () => {
-    it('validates publication and work direct, list, and page rows before expiry', async () => {
+    it('refuses a corrupt publication row direct and by room page, and a corrupt work claim row direct, before judging their expiry', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
@@ -63,21 +64,12 @@ describe('RTC topology publication repository', () => {
             ).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
-            await expect(repository.listPublicationEntries()).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listPublicationEntriesPage({ limit: 10 })).rejects.toMatchObject({
+            await expect(repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 })).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
             await expect(
                 repository.findWorkClaimEntry(groupRef, publication.workId)
             ).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listWorkClaimEntries()).rejects.toMatchObject({
-                code: 'rtc-topology-repository-invariant-corruption'
-            });
-            await expect(repository.listWorkClaimEntriesPage({ limit: 10 })).rejects.toMatchObject({
                 code: 'rtc-topology-repository-invariant-corruption'
             });
             expect(
@@ -159,8 +151,8 @@ describe('RTC topology publication repository', () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
         try {
-            const defects = ['snapshot', 'expiresAtEpochMs', 'workId'] as const;
-            const surfaces = ['direct', 'list', 'page'] as const;
+            const defects = ['snapshot', 'expiresAtEpochMs', 'workId', 'traceId'] as const;
+            const surfaces = ['direct', 'page'] as const;
             for (const defect of defects) {
                 for (const surface of surfaces) {
                     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -181,11 +173,7 @@ describe('RTC topology publication repository', () => {
 
                     const read = surface === 'direct'
                         ? repository.findPublication(groupRef, publication.publicationId)
-                        : surface === 'list'
-                        ? repository.listPublicationEntries()
-                        : repository.listPublicationEntriesPage({
-                            limit: 10
-                        });
+                        : repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
                     await expect(read).rejects.toMatchObject({
                         code: 'rtc-topology-repository-invariant-corruption'
                     });
@@ -200,47 +188,7 @@ describe('RTC topology publication repository', () => {
         }
     });
 
-    it('skips a pre-v4 publication row on every listing and reads it as unsupported, never as corruption', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
-        const groupRef = createGroupRef();
-        const preV4 = createPublication(createTopologySnapshot(groupRef, 1), 'work-pre-v4');
-        const current = createPublication(createTopologySnapshot(groupRef, 2), 'work-v4');
-        const { traceId: _traceId, ...preV4Row } = preV4;
-        await runtimeRepository.upsert(
-            {
-                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                key: repository.publicationKey(groupRef, preV4.publicationId),
-                value: JSON.stringify(preV4Row),
-                expireAtTimestamp: Date.now() + 60_000
-            }
-        );
-        await runtimeRepository.upsert(
-            {
-                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
-                key: repository.publicationKey(groupRef, current.publicationId),
-                value: JSON.stringify(current),
-                expireAtTimestamp: Date.now() + 60_000
-            }
-        );
-
-        expect((await repository.listPublicationEntries()).map((entry) => entry.value)).toEqual([current]);
-        expect((await repository.listPublicationEntriesPage({ limit: 10 })).map((entry) => entry.value)).toEqual([
-            current
-        ]);
-        await expect(repository.readPublication(groupRef, preV4.publicationId)).resolves.toEqual({
-            status: 'unsupported',
-            message: 'RTC topology publication predates AL envelope version 4'
-        });
-        await expect(repository.findPublication(groupRef, preV4.publicationId)).resolves.toBeUndefined();
-        await expect(repository.readPublication(groupRef, current.publicationId)).resolves.toEqual({
-            status: 'found',
-            publication: current
-        });
-        await expect(repository.readPublication(groupRef, 'work-absent:1:1:1')).resolves.toEqual({ status: 'absent' });
-    });
-
-    it.each(['direct', 'read', 'list', 'page'] as const)(
+    it.each(['direct', 'page'] as const)(
         'keeps a malformed v4 publication trace as corruption on the %s surface',
         async (surface) => {
             const runtimeRepository = new FakeRuntimeStateRepository();
@@ -258,16 +206,112 @@ describe('RTC topology publication repository', () => {
 
             const read = surface === 'direct'
                 ? repository.findPublication(groupRef, publication.publicationId)
-                : surface === 'read'
-                ? repository.readPublication(groupRef, publication.publicationId)
-                : surface === 'list'
-                ? repository.listPublicationEntries()
-                : repository.listPublicationEntriesPage({ limit: 10 });
+                : repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
             await expect(read).rejects.toMatchObject({ code: 'rtc-topology-repository-invariant-corruption' });
         }
     );
+
+    it('lists only the room\'s own publications, never a room whose id extends it', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        const extendingRef = { ...groupRef, groupId: `${groupRef.groupId}:publication=x` };
+        const siblingRef = { ...groupRef, groupId: `${groupRef.groupId}-2` };
+        for (const [ref, workId] of [[groupRef, 'work-own'], [extendingRef, 'work-extending'], [siblingRef, 'work-sibling']] as const) {
+            const publication = createPublication(createTopologySnapshot(ref, 1), workId);
+            await runtimeRepository.upsert({
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(ref, publication.publicationId),
+                value: JSON.stringify(publication),
+                expireAtTimestamp: Date.now() + 60_000
+            });
+        }
+
+        const entries = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
+
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-own']);
+    });
+
+    it('walks past expired rows to the live ones, naming each live publication once', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        await storePublicationsInKeyOrder(runtimeRepository, repository, groupRef, [
+            ['work-1', 'live'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired'],
+            ['work-4', 'live'],
+            ['work-5', 'live']
+        ]);
+
+        const first = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 2 });
+        const second = await repository.listGroupPublicationEntriesPage(groupRef, {
+            limit: 2,
+            afterKey: repository.publicationKey(groupRef, first[1]!.value.publicationId)
+        });
+
+        expect(first.map((entry) => entry.value.workId)).toEqual(['work-1', 'work-4']);
+        expect(second.map((entry) => entry.value.workId)).toEqual(['work-5']);
+    });
+
+    it('lists nothing from a room whose publications are all expired, and from a trailing run of expired ones', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        await storePublicationsInKeyOrder(runtimeRepository, repository, groupRef, [
+            ['work-1', 'expired'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired']
+        ]);
+        expect(await repository.listGroupPublicationEntriesPage(groupRef, { limit: 2 })).toEqual([]);
+
+        const trailing = { ...groupRef, groupId: 'room-trailing' };
+        await storePublicationsInKeyOrder(runtimeRepository, repository, trailing, [
+            ['work-1', 'live'],
+            ['work-2', 'expired'],
+            ['work-3', 'expired']
+        ]);
+        const entries = await repository.listGroupPublicationEntriesPage(trailing, { limit: 2 });
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-1']);
+    });
+
+    it('an expired publication is not listed', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyPublicationRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        for (const [workId, expireAtTimestamp] of [['work-live', Date.now() + 60_000], ['work-expired', Date.now() - 1]] as const) {
+            const publication = createPublication(createTopologySnapshot(groupRef, 1), workId);
+            await runtimeRepository.upsert({
+                namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+                key: repository.publicationKey(groupRef, publication.publicationId),
+                value: JSON.stringify(publication),
+                expireAtTimestamp
+            });
+        }
+
+        const entries = await repository.listGroupPublicationEntriesPage(groupRef, { limit: 10 });
+
+        expect(entries.map((entry) => entry.value.workId)).toEqual(['work-live']);
+    });
 });
 
-function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId') {
+async function storePublicationsInKeyOrder(
+    runtimeRepository: FakeRuntimeStateRepository,
+    repository: RtcTopologyPublicationRepository,
+    groupRef: GroupRef,
+    rows: readonly (readonly [workId: string, liveness: 'live' | 'expired'])[]
+): Promise<void> {
+    for (const [workId, liveness] of rows) {
+        const publication = createPublication(createTopologySnapshot(groupRef, 1), workId);
+        await runtimeRepository.upsert({
+            namespace: RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            key: repository.publicationKey(groupRef, publication.publicationId),
+            value: JSON.stringify(publication),
+            expireAtTimestamp: liveness === 'live' ? Date.now() + 60_000 : Date.now() - 1
+        });
+    }
+}
+
+function omitPublicationField(publication: RtcTopologyPublication, defect: 'snapshot' | 'expiresAtEpochMs' | 'workId' | 'traceId') {
     return Object.fromEntries(Object.entries(publication).filter(([key]) => key !== defect));
 }

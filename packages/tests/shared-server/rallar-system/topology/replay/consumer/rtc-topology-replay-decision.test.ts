@@ -75,12 +75,12 @@ describe('decideRtcTopologyReplayEntry', () => {
 
     it('distinguishes missing unexpired references from a retention gap', () => {
         const fixture = createRtcTopologyReplayFixture();
-        expect(() => decideRtcTopologyReplayEntry({ ...toDecisionInput(fixture), publication: { status: 'absent' } }))
+        expect(() => decideRtcTopologyReplayEntry({ ...toDecisionInput(fixture), publication: undefined }))
             .toThrow(RtcTopologyDeliveryCorruptionError);
         expect(
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: { status: 'absent' },
+                publication: undefined,
                 databaseNowEpochMs: fixture.entry.retainUntilEpochMs
             })
         ).toEqual({ status: 'gap' });
@@ -92,26 +92,16 @@ describe('decideRtcTopologyReplayEntry', () => {
         ).toEqual({ status: 'gap' });
     });
 
-    it('takes the gap path for an unexpired publication that predates envelope version 4', () => {
+    it('keeps an unexpired publication without a trace id as corruption', () => {
         const fixture = createRtcTopologyReplayFixture();
-        const { traceId: _traceId, ...preV4Publication } = fixture.publication;
+        const { traceId: _traceId, ...publicationWithoutTrace } = fixture.publication;
 
-        expect(
+        expect(() =>
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: {
-                    status: 'unsupported',
-                    message: 'RTC topology publication predates AL envelope version 4'
-                },
-                outbox: undefined
+                publication: publicationWithoutTrace as RtcTopologyPublication
             })
-        ).toEqual({ status: 'gap' });
-        expect(
-            decideRtcTopologyReplayEntry({
-                ...toDecisionInput(fixture),
-                publication: { status: 'found', publication: preV4Publication as RtcTopologyPublication }
-            })
-        ).toEqual({ status: 'gap' });
+        ).toThrow(RtcTopologyDeliveryCorruptionError);
     });
 
     it('keeps a v4 publication with a malformed trace as corruption', () => {
@@ -120,7 +110,7 @@ describe('decideRtcTopologyReplayEntry', () => {
         expect(() =>
             decideRtcTopologyReplayEntry({
                 ...toDecisionInput(fixture),
-                publication: { status: 'found', publication: { ...fixture.publication, traceId: 'not a trace' } }
+                publication: { ...fixture.publication, traceId: 'not a trace' }
             })
         ).toThrow(RtcTopologyDeliveryCorruptionError);
     });
@@ -129,7 +119,7 @@ describe('decideRtcTopologyReplayEntry', () => {
 function toDecisionInput(fixture: RtcTopologyReplayFixture): RtcTopologyReplayEntryDecisionInput {
     return {
         entry: fixture.entry,
-        publication: { status: 'found', publication: fixture.publication },
+        publication: fixture.publication,
         outbox: fixture.outbox,
         currentSnapshot: fixture.currentSnapshot,
         databaseNowEpochMs: fixture.databaseNowEpochMs

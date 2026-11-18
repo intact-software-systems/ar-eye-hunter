@@ -2,7 +2,7 @@ import { TreeGraph, VertexId } from '../graph-props.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
 import { degreeLimitOf, degreeOf, edgeWeightOf } from './remove-dynamics-helpers.ts';
 import type { ConnectContext, ConnectResult, DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
-import { findMCEdge, findMDEdge, worstCaseDist } from './tree-dynamics-search.ts';
+import { findMCEdge, findMDEdge, withInsertedEdge, worstCaseDist } from './tree-dynamics-search.ts';
 
 export function connectMCE(
     ctx: ConnectContext,
@@ -73,11 +73,7 @@ export function connectMCE(
             }
         }
         else {
-            graph.addEdge(best.from, best.to, {
-                from: best.from,
-                to: best.to,
-                weight: best.weight
-            });
+            graph = withInsertedEdge(graph, ctx.globalGraph, best.from, best.to);
             connected.add(chosenTarget);
             remaining.delete(chosenTarget);
         }
@@ -155,11 +151,7 @@ export function connectSearchMCE(
             }
         }
         else {
-            graph.addEdge(best.from, best.to, {
-                from: best.from,
-                to: best.to,
-                weight: best.weight
-            });
+            graph = withInsertedEdge(graph, ctx.globalGraph, best.from, best.to);
             connected.add(chosenTarget);
             remaining.delete(chosenTarget);
         }
@@ -236,11 +228,7 @@ export function connectMDE(
             }
         }
         else {
-            graph.addEdge(best.from, best.to, {
-                from: best.from,
-                to: best.to,
-                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to)
-            });
+            graph = withInsertedEdge(graph, ctx.globalGraph, best.from, best.to);
 
             remaining.delete(bestTarget);
             connected.add(bestTarget);
@@ -314,11 +302,7 @@ export function connectSearchMDE(
             }
         }
         else {
-            graph.addEdge(best.from, best.to, {
-                from: best.from,
-                to: best.to,
-                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to)
-            });
+            graph = withInsertedEdge(graph, ctx.globalGraph, best.from, best.to);
 
             remaining.delete(bestTarget);
             connected.add(bestTarget);

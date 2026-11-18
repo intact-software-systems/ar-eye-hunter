@@ -1,4 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 
 import type {
     RallarBlackBoxTestRtcStreamCommand,
@@ -300,9 +301,9 @@ function computeStreamDuration(
         .map((observation) => observation.durationMs);
     return {
         minMs: durations.length > 0 ? Math.min(...durations) : undefined,
-        p50Ms: computePercentile(durations, 0.5),
-        p95Ms: computePercentile(durations, 0.95),
-        p99Ms: computePercentile(durations, 0.99),
+        p50Ms: computeNearestRank(durations, 0.5),
+        p95Ms: computeNearestRank(durations, 0.95),
+        p99Ms: computeNearestRank(durations, 0.99),
         maxMs: computeMaximum(durations),
         averageMs: computeAverage(durations)
     };
@@ -343,15 +344,6 @@ function computeStreamThresholdFailures(
 
 function computeFrameRate(frames: number, elapsedMs: number): number | undefined {
     return elapsedMs > 0 ? toRoundedMetric((frames * 1000) / elapsedMs) : undefined;
-}
-
-function computePercentile(values: readonly number[], percentileValue: number): number | undefined {
-    if (values.length === 0) {
-        return undefined;
-    }
-    const sorted = [...values].sort((left, right) => left - right);
-    const index = Math.min(sorted.length - 1, Math.ceil(percentileValue * sorted.length) - 1);
-    return sorted[index];
 }
 
 function computeAverage(values: readonly number[]): number | undefined {

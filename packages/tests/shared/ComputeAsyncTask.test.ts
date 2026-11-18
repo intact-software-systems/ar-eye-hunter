@@ -251,4 +251,72 @@ describe('ComputeAsyncTask', () => {
         // Task-2 should stop after maxConsecutiveFailures + 1 attempts (same as your Java assertion)
         expect(failCount).toBe(maxConsecutiveFailures + 1);
     });
+    test('runLoopsWhileWork starts a ready task while a sibling task has not yet answered its readiness', async () => {
+        const slowReadiness = Promise.withResolvers<boolean>();
+        const started: string[] = [];
+        const computed = runLoopsWhileWork({
+            tasks: [
+                {
+                    name: 'durable-lane',
+                    maxConcurrency: () => 1,
+                    isWork: () => slowReadiness.promise,
+                    runnable: async () => {
+                        started.push('durable-lane');
+                    },
+                    ongoingTasks: []
+                },
+                {
+                    name: 'publication-stage',
+                    maxConcurrency: () => 1,
+                    isWork: () => true,
+                    runnable: async () => {
+                        started.push('publication-stage');
+                    },
+                    ongoingTasks: []
+                }
+            ],
+            maxBackoffMs: 10,
+            maxIsWorkIterations: 1,
+            maxSuccessiveNoTasksCreated: 0,
+            sleep: async () => {}
+        });
+        await sleep(0);
+
+        expect(started).toEqual(['publication-stage']);
+        slowReadiness.resolve(false);
+        expect((await computed).totalNumTasksCreated).toBe(1);
+    });
+
+    test('runLoopsWhileWork fails a round with a rejected readiness after starting the tasks that answered ready', async () => {
+        const started: string[] = [];
+        const computed = runLoopsWhileWork({
+            tasks: [
+                {
+                    name: 'failing',
+                    maxConcurrency: () => 1,
+                    isWork: () => Promise.reject(new Error('readiness storage unavailable')),
+                    runnable: async () => {
+                        started.push('failing');
+                    },
+                    ongoingTasks: []
+                },
+                {
+                    name: 'publication-stage',
+                    maxConcurrency: () => 1,
+                    isWork: () => true,
+                    runnable: async () => {
+                        started.push('publication-stage');
+                    },
+                    ongoingTasks: []
+                }
+            ],
+            maxBackoffMs: 10,
+            maxIsWorkIterations: 1,
+            maxSuccessiveNoTasksCreated: 0,
+            sleep: async () => {}
+        });
+
+        await expect(computed).rejects.toThrow('readiness storage unavailable');
+        expect(started).toEqual(['publication-stage']);
+    });
 });

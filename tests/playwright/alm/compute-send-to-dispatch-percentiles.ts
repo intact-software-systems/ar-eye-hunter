@@ -1,3 +1,5 @@
+import { computeNearestRank } from '../../../packages/shared/measurement/compute-nearest-rank.ts';
+
 export interface SendToDispatchPercentiles {
     readonly p50Ms: number;
     readonly p95Ms: number;
@@ -18,9 +20,7 @@ export function computePercentile(
     fraction: number,
     roundingScale: number
 ): number {
-    const sorted = [...samples].sort((left, right) => left - right);
-    const index = Math.max(0, Math.ceil(fraction * sorted.length) - 1);
-    return Math.round((sorted[index] ?? Number.NaN) * roundingScale) / roundingScale;
+    return Math.round((computeNearestRank(samples, fraction) ?? Number.NaN) * roundingScale) / roundingScale;
 }
 
 export function computeMedian(values: readonly number[], roundingScale: number): number {

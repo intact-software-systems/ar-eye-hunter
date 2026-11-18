@@ -521,7 +521,7 @@ describe('the granted rtc cells', () => {
         const topology = toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'));
 
         expect(topology.map(({ request }) => [request.method, request.body])).toEqual([
-            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
+            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 } }],
             ['DELETE', undefined]
         ]);
         expect(toStepIndex(receiver, '-start-grant-receiver-s-request')).toBeLessThan(toStepIndex(receiver, '-topology-tree'));
@@ -641,7 +641,7 @@ describe('the granted rtc cells', () => {
             toRequests(receiver).filter(({ request }) => request.path?.includes('/topology/config/requests/'))
                 .map(({ request }) => [request.method, request.body])
         ).toEqual([
-            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 2 } }],
+            ['PUT', { config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 } }],
             ['DELETE', undefined]
         ]);
         expect(
@@ -669,15 +669,16 @@ describe('the granted rtc cells', () => {
             const { receiver } = toGrantedRtcScenario(scenarioId);
             return JSON.stringify(toNestedRecipeCommands(receiver).find((command) => command.commandId?.endsWith(suffix) === true));
         };
-        // Recorded at deeb93218, before the command moved beside the receipted relay-path cell.
+        // Recorded at deeb93218, before the command moved beside the receipted relay-path cell; its meshParamK is 1
+        // since a mesh parameter must stay below the degree limit.
         expect(toTopologyCommand('granted-rtc-relay-only', '-topology-tree')).toBe(
-            '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-relay-only-receiver-topology-tree","timeoutMs":5000,"request":{"method":"PUT","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-relay-only-receiver-topology-tree","body":{"config":{"topologyKind":"tree","degreeLimit":2,"meshParamK":2}}},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s tree of the room\'s topology config."}}'
+            '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-relay-only-receiver-topology-tree","timeoutMs":5000,"request":{"method":"PUT","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-relay-only-receiver-topology-tree","body":{"config":{"topologyKind":"tree","degreeLimit":2,"meshParamK":1}}},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s tree of the room\'s topology config."}}'
         );
         expect(toTopologyCommand('granted-rtc-relay-only', '-topology-reset')).toBe(
             '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-relay-only-receiver-topology-reset","timeoutMs":5000,"request":{"method":"DELETE","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-relay-only-receiver-topology-reset"},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s reset of the room\'s topology config."}}'
         );
         expect(toTopologyCommand('granted-rtc-ordered-relay', '-topology-tree')).toBe(
-            '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-ordered-relay-receiver-topology-tree","timeoutMs":5000,"request":{"method":"PUT","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-ordered-relay-receiver-topology-tree","body":{"config":{"topologyKind":"tree","degreeLimit":2,"meshParamK":2}}},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s tree of the room\'s topology config."}}'
+            '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-ordered-relay-receiver-topology-tree","timeoutMs":5000,"request":{"method":"PUT","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-ordered-relay-receiver-topology-tree","body":{"config":{"topologyKind":"tree","degreeLimit":2,"meshParamK":1}}},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s tree of the room\'s topology config."}}'
         );
         expect(toTopologyCommand('granted-rtc-ordered-relay', '-topology-reset')).toBe(
             '{"kind":"http.request","commandId":"alm-rtc-granted-rtc-ordered-relay-receiver-topology-reset","timeoutMs":5000,"request":{"method":"DELETE","path":"/api/state/apps/app/workspaces/ws/groups/room-alm/topology/config/requests/alm-topology-{runtimeIdentity}-rtc-granted-rtc-ordered-relay-receiver-topology-reset"},"response":{"body":"json","acceptedStatusCodes":[200]},"metadata":{"purpose":"The room owner\'s reset of the room\'s topology config."}}'

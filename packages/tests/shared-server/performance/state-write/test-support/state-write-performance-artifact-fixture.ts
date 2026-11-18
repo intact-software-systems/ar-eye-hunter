@@ -1,4 +1,5 @@
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-contract.mjs';
 import {
     STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
@@ -458,9 +459,13 @@ function countAttempts(sample: StateWritePerformanceSample, outcome: StateWriteA
 }
 
 function toPercentiles(values: readonly number[]): StateWritePercentiles {
-    const sorted = [...values].sort((left, right) => left - right);
-    const at = (ratio: number) => sorted[Math.ceil(sorted.length * ratio) - 1];
-    return { p50: at(0.5), p95: at(0.95), p99: at(0.99) };
+    const p50 = computeNearestRank(values, 0.5);
+    const p95 = computeNearestRank(values, 0.95);
+    const p99 = computeNearestRank(values, 0.99);
+    if (p50 === undefined || p95 === undefined || p99 === undefined) {
+        throw new TypeError('State-write percentiles need at least one value');
+    }
+    return { p50, p95, p99 };
 }
 
 function createCounterSources(): Record<string, string> {

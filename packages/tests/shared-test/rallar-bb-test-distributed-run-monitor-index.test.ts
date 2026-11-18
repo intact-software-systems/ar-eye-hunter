@@ -4,6 +4,7 @@ import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../sh
 import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-test/distributed-run-analysis/distributed-run-analysis-report.ts';
 import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
 import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { computeDistributedRunLatencySummary } from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-latency-summary.ts';
 import {
     computeDistributedRunCorrelatedFailureKeys,
     createDistributedRunMonitorFailureIndex
@@ -1749,3 +1750,9 @@ function windowDiagnostic(atEpochMs: number): Omit<DistributedRunRuntimeDiagnost
         identitySummary: ''
     };
 }
+
+describe('distributed run latency summary', () => {
+    it('summarises p50 and p95 by nearest rank', () => {
+        expect(computeDistributedRunLatencySummary([5, 1, 4, 2, 3])).toMatchObject({ count: 5, p50Ms: 3, p95Ms: 5 });
+    });
+});

@@ -31,7 +31,7 @@ const acceptedConfig = {
     degreeLimit: 2,
     treeMinSize: 5,
     meshMinSize: 16,
-    meshParamK: 2
+    meshParamK: 1
 };
 const topologyReceipt = {
     commandId,

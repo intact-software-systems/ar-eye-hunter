@@ -96,7 +96,7 @@ describe('RTT refinement of a leaderless tree', () => {
             rebuiltNextHopsBySessionId
         });
 
-        expect(refined).toEqual(PATH_NEXT_HOPS);
+        expect(refined).toEqual({ nextHopsBySessionId: PATH_NEXT_HOPS, derivation: { method: 'incremental' } });
     });
 
     it('rebuilds when the rebuild shortens the slowest path between any two members by a quarter and 10 ms', () => {
@@ -106,7 +106,10 @@ describe('RTT refinement of a leaderless tree', () => {
             rebuiltNextHopsBySessionId: STAR_NEXT_HOPS
         });
 
-        expect(refined).toEqual(STAR_NEXT_HOPS);
+        expect(refined).toEqual({
+            nextHopsBySessionId: STAR_NEXT_HOPS,
+            derivation: { method: 'rebuilt', reason: 'refinement' }
+        });
     });
 
     it('weighs an unmeasured rebuilt link at the slowest measured RTT, so a rebuild over unmeasured links is kept out', () => {
@@ -128,7 +131,7 @@ describe('RTT refinement of a leaderless tree', () => {
             rebuiltNextHopsBySessionId: STAR_NEXT_HOPS
         });
 
-        expect(refined).toEqual(PATH_NEXT_HOPS);
+        expect(refined).toEqual({ nextHopsBySessionId: PATH_NEXT_HOPS, derivation: { method: 'incremental' } });
     });
 
     it('returns the rebuild when the membership change is too large to evolve the accepted tree', () => {
@@ -145,7 +148,10 @@ describe('RTT refinement of a leaderless tree', () => {
             rebuiltNextHopsBySessionId
         });
 
-        expect(refined).toEqual(rebuiltNextHopsBySessionId);
+        expect(refined).toEqual({
+            nextHopsBySessionId: rebuiltNextHopsBySessionId,
+            derivation: { method: 'rebuilt', reason: 'delta-too-large' }
+        });
     });
 });
 

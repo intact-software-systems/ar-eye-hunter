@@ -233,9 +233,7 @@ function createHandler(
     return {
         handler: new RtcTopologyReplayEntryHandlerService({
             publications: {
-                readPublication: vi.fn(async () =>
-                    fixture.publication ? { status: 'found' as const, publication: fixture.publication } : { status: 'absent' as const }
-                )
+                findPublication: vi.fn(async () => fixture.publication)
             },
             outbox: {
                 getItem: vi.fn(async (key) => fixture.outbox?.find((page) => isKeysEqual(page.key, key)))

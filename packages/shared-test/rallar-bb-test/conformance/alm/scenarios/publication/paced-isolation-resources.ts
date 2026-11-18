@@ -5,6 +5,7 @@ import { SMOKE_TAGS, type AlmConformanceScenarioDefinition } from '../../alm-con
 import {
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationTtlMs,
     toPublicationVerdictCommands
@@ -44,7 +45,8 @@ export const pacedIsolationResources: AlmConformanceScenarioDefinition = {
         }),
         ...ISOLATED_INDEXES.flatMap((index) =>
             toPublicationVerdictCommands({ step: sender, index, state: 'transport-accepted', facts: [] })
-        )
+        ),
+        ...toPublicationFigureInvariantCommands(sender)
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1, 0),

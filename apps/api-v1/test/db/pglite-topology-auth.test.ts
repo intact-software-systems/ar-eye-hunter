@@ -442,7 +442,7 @@ test(
                     'topology-clear-override-base',
                     {
                         operation: 'putOverride',
-                        config: { meshParamK: 4 },
+                        config: { meshParamK: 3 },
                         ttlMs: 60_000,
                         expiresAtEpochMs: null
                     }
@@ -467,7 +467,7 @@ test(
             const afterClear = await topologyRuntimeOwners.query.readConfig(groupRef);
             assert.equal(afterClear.durable?.config.degreeLimit, 5);
             assert.equal(afterClear.effective.degreeLimit, 4);
-            assert.equal(afterClear.effective.meshParamK, 4);
+            assert.equal(afterClear.effective.meshParamK, 3);
 
             assert.ok(
                 (await processCommand(

@@ -676,6 +676,43 @@ and it has no status list.
   workload family, not by ALM (D642): a receiver cannot compute it from the
   envelope, which carries only `expiresAtMs`
   (`packages/shared/al-contracts/al-contract.ts`).
+- Congestion duration has no measurable end (D651): the outbound runtime
+  decides congestion per attempt (`drop`, `defer`, `hand-over`), the
+  `congestion` diagnostic carries no instant and no clear action, and only the
+  RTC channel's own queue flush knows when its backpressure ended. Measuring it
+  needs a defined episode (for example a message's first `defer` to its
+  attempt's settlement) and an instant on the diagnostic. The maintainer ruled the episode (D656): a message's
+  first deferral to the settlement of its attempt, as a histogram and a count of episodes still open, with one
+  instant added to the congestion diagnostic; it is not built.
+- Admission to native submission is not a stage figure (D651); it needs the
+  carriers' `attempt-started` instant beside the stage's admission settlement.
+- The interpolating medians (two middle values averaged) stay in five
+  TypeScript files, outside `packages/shared/measurement` (D650):
+  `apps/api-v1/scripts/perf/state-write/state-write-measurement.ts`,
+  `apps/rallar-black-box/scripts/rallar-recipe-console-scale-bench.ts`,
+  `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-statistics.ts`,
+  `packages/shared-test/rallar-bb-test/alm/growth-proof/growth-series.ts` and
+  `packages/shared-test/rallar-bb-test/conformance/alm/observation/compute-alm-observation-page-regime.ts`.
+  They fold when a shared interpolating median is wanted.
+- `computeTimerLagWindow` (`packages/shared/runtime-health/start-timer-lag-sampling.ts`)
+  keeps a `?? 0` on its median that can never be taken, since a window holds at
+  least one sample (D650).
+- Three records describe a measured run: the RTC bench's
+  `RtcBaselineRuntimeObservationDto`, the distributed run's
+  `DistributedRunEnvironment`, and the workflow's inline "Record runner
+  provenance" step (`.github/workflows/github-free-distributed-recipe.yml`),
+  which duplicates commit, runtime, cpu and memory facts. They converge when the
+  hosted half of the baseline lands (D652).
+- A lane cell cannot assert a difference of two stats reads (no delta
+  operator), so the paced cells assert connect-wide invariants; per-cell figure
+  counts need one (D652).
+- The bounded histogram has no quantile reader and no merge; the workload
+  family adds them with its first reader (D650).
+- The local baseline's median command time is not stable inside its declared
+  band between two runs of the same commit (71, 54, 67 and 66 ms), so it cannot
+  tell a regression from noise; the band or the figure for the median is the
+  maintainer's to set (D652). Ruled (D656): each side is several runs and the comparison uses the median of the
+  medians, in the same band, re-checked with a same-commit pair; it is not built.
 - The platform fault steps of D642 reach only managed API processes of a
   local black-box run. A hosted leg needs a controller step over the api
   role's systemd units (`RALLAR_ROLE_APP_SERVICES` in
@@ -735,6 +772,37 @@ and it has no status list.
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
   rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+- What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
+  established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
+  rate, the only read of "absorbed".
+- Mesh drift: done for the mesh parameter. The measurement reads each room's effective topology configuration
+  after the room is created (D655), so mesh drift is computed with the room's own k and the churn report no longer
+  assumes one. Still open: RTT refinements are provoked only with made-up values (the reshape measurement,
+  `npm run perf:api-v1:topology-reshapes`); real RTT needs browsers.
+- Restoring k after a leave: nothing in shared-graph restores a mesh member's k links; the churn report counts the
+  members under k; if meshes thin under churn it is its own slice, taken to the maintainer (D657).
+- The departed peer as a time-limited forwarder: a leaver that stays online could forward for the room for a bounded
+  time; the Steiner-keeping removes exist for that setting, and the server has no signal for "left the room but
+  still online".
+- The four `REMOVE_TRY_REPLACE_PRUNE_*` removes throw when the leaver is absent from the global graph
+  (`Graph.edge: could not find the … target node`, from `kCenterNodes`), which was the planner's input for every
+  leave until its in-place graph kept the plan's leavers (D662); they were not run against that graph.
+- The minimum-diameter removes exceed the degree limit (degree 6 at a limit of 5 in 4 of 30 tree leaves and in 4 to
+  8 mesh leaves) through the reconnect step's `degInc` relaxation.
+- The capacity rule and `getAvailableOutDegree` exist in three files of `packages/shared-graph/remove/`
+  (`remove-dynamics-mc.ts`, `remove-dynamics-md.ts`, `tree-dynamics-connect.ts`).
+- `packages/shared-graph/architecture.md` still names files that do not exist: `GroupGraphService.ts`,
+  `GroupGraphReadService.ts`, `graph-vivaldi-service.ts`, `crdt-graph.ts`.
+- A leave in a led room is not covered by the planner sweep (its fixture rooms have no director): in a led tree of
+  8 a reviewer measured 2 of 7 non-leader leaves followed by a `leader-rooting` rebuild at the next quiet plan,
+  none in led trees of 12 and 30; the leader's own leave is unmeasured.
+- The planner's `createNextHopMap` ignores the `.success` of `createGroupMesh` and `createGroupTree` and turns a
+  failed build into empty next hops. No failing path is known after D659 and D660, but the masking remains.
+- A mesh membership-delta fallback builds the complete room graph twice, once for the evolution and once for the
+  rebuild.
+- The hang guard in the planner's tests (a single leave from a measured room) cannot fail by name: a synchronous
+  loop ignores Vitest's timeout and stalls the run. `packages/tests/hetzner/owned-test-process.ts` could run it in
+  a killable child.
 - Relay forward observability gaps (the event is D646): a pending relayed forward that later ends refused is not reported; a first
   forward dropped on the inbound side (`planForwarding` returns undefined) is not reported, while a retried forward with no
   forwarding plan is reported as `unroutable` / `no-route`; the `admission-outcome`

@@ -369,8 +369,9 @@ describe('outbound local-checkpoint send IndexedDB volume', () => {
 // The first use runs the durable owner's lazy bootstrap batch (`enqueueIfAbsent` awaits
 // `ready()`); empty finalize, claim, and timeout-claim reads are probes.
 describe('an idle durable outbound owner beside a volatile send', () => {
-    // The cold runtime pays bootstrap inside the first send's window, and never again.
-    it('spends only probes on a cold runtime\'s first volatile send and nothing on its second', async () => {
+    // The cold runtime pays its durable bootstrap once, beside the first sends, which do not wait for it: the bootstrap's
+    // one follow-up read runs on the next engine wake. It never pays again.
+    it('spends only probes on a cold runtime\'s bootstrap beside its first volatile sends and nothing once warm', async () => {
         const observer = createCountingIndexedDbOperationObserver();
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
@@ -390,16 +391,19 @@ describe('an idle durable outbound owner beside a volatile send', () => {
 
         await runtime.enqueueIfAbsent(createOutboundMessage('msg-cold-volatile-first'));
         await vi.waitFor(() => expect(sent).toHaveLength(1));
-        const first = observer.getCounts();
-        observer.reset();
+        await runtime.ready();
         await runtime.enqueueIfAbsent(createOutboundMessage('msg-cold-volatile-second'));
         await vi.waitFor(() => expect(sent).toHaveLength(2));
-        const second = observer.getCounts();
+        const cold = observer.getCounts();
+        observer.reset();
+        await runtime.enqueueIfAbsent(createOutboundMessage('msg-warm-volatile'));
+        await vi.waitFor(() => expect(sent).toHaveLength(3));
+        const warm = observer.getCounts();
 
-        expect(first.byOwner['al-admission'], 'the bootstrap reads no admission row').toBe(0);
-        expect(first.byKind['work-probe'] ?? 0, 'the bootstrap inspects the empty queue').toBeGreaterThan(0);
-        expect(computeNonProbeWorkOperations(first), 'the bootstrap changes nothing').toBe(0);
-        expect(second.total, 'a warm runtime spends nothing on a volatile send').toBe(0);
+        expect(cold.byOwner['al-admission'], 'the bootstrap reads no admission row').toBe(0);
+        expect(cold.byKind['work-probe'] ?? 0, 'the bootstrap inspects the empty queue').toBeGreaterThan(0);
+        expect(computeNonProbeWorkOperations(cold), 'the bootstrap changes nothing').toBe(0);
+        expect(warm.total, 'a warm runtime spends nothing on a volatile send').toBe(0);
         await runtime.dispose();
     });
 

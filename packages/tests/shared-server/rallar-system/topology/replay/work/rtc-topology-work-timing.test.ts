@@ -50,11 +50,23 @@ describe('RTC topology recompute timing line', () => {
                 decision: 'accepted',
                 outcome: 'write',
                 reason: 'no-active-layout',
-                overlayVersion: 1
+                overlayVersion: 1,
+                planChange: 'attach'
             })
         })]);
         expect(events[0]?.details).not.toHaveProperty('layoutAgeMs', expect.anything());
+        expect(events[0]?.details).not.toHaveProperty('reshapeReason', expect.anything());
         expect(events.map((event) => event.traceId)).toEqual(['trace-rtc-topology-work-timing']);
+    });
+
+    it('names no kind for an accepted work that publishes nothing', async () => {
+        const events: RallarTimingEvent[] = [];
+
+        await runFirstRttRefresh({ timing: (event) => events.push(event), refinement: 'none', publish: false });
+
+        expect(events).toEqual([expect.objectContaining({ details: expect.objectContaining({ decision: 'accepted' }) })]);
+        expect(events[0]?.details).not.toHaveProperty('planChange', expect.anything());
+        expect(events[0]?.details).not.toHaveProperty('reshapeReason', expect.anything());
     });
 
     it('records no line for a refresh the refinement gate skips, even while timing is on', async () => {
@@ -70,6 +82,7 @@ describe('RTC topology recompute timing line', () => {
 interface RunFirstRttRefreshInput {
     readonly timing: RallarTimingSink | undefined;
     readonly refinement: 'none' | 'refusing';
+    readonly publish?: boolean;
 }
 
 interface FirstRttRefreshRun {
@@ -97,7 +110,7 @@ async function runFirstRttRefresh(input: RunFirstRttRefreshInput): Promise<First
         ...(input.refinement === 'refusing' ? { rttRefinementService: createRefusingRefinementService() } : {}),
         timing: input.timing
     });
-    const entry = await enqueueAndReserveRttRefresh(queue, outboxQueueReader);
+    const entry = await enqueueAndReserveRttRefresh(queue, outboxQueueReader, input.publish ?? true);
     const timingClockReads: string[] = [];
     const readClock = Date.now;
     vi.spyOn(Date, 'now').mockImplementation(() => {
@@ -111,7 +124,7 @@ async function runFirstRttRefresh(input: RunFirstRttRefreshInput): Promise<First
     return { timingClockReads: timingClockReads.length };
 }
 
-async function enqueueAndReserveRttRefresh(queue: InMemoryQueueBox, outboxQueueReader: OutboxQueueReader) {
+async function enqueueAndReserveRttRefresh(queue: InMemoryQueueBox, outboxQueueReader: OutboxQueueReader, publish: boolean) {
     const group = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6));
     const rtt = createRtcTopologyRttMeasurement({ sessionIdFrom: 'peer-1', sessionIdTo: 'peer-2', rttMs: 40, version: 1 });
     const receiptId = toRtcRttMutationReceiptId(rtt);
@@ -129,7 +142,7 @@ async function enqueueAndReserveRttRefresh(queue: InMemoryQueueBox, outboxQueueR
             senderId: 'topology-service',
             resourceId,
             requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-            publish: true,
+            publish,
             payloadKind: 'rtt-refresh',
             rtt,
             refinementObservationId: receiptId

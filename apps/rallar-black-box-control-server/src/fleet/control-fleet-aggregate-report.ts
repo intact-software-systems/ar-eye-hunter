@@ -1,9 +1,9 @@
+import { deriveFleetReportTimingDistribution } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import type { ControlFleetAggregateReport, ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
 
 import { computeAggregateFleetFailureSignatures } from './control-fleet-failure-signatures.ts';
 import {
     toFleetRegionSummaries,
-    toFleetTimingDistribution,
     toRatio,
     toSortedUniqueValues
 } from './control-fleet-statistics.ts';
@@ -39,10 +39,10 @@ export function createControlFleetAggregateReport(
         flakyAgentCount: toFlakyAgentIds(reports).length,
         failureGroupCount: failures.length,
         timing: {
-            runs: toFleetTimingDistribution(
+            runs: deriveFleetReportTimingDistribution(
                 reports.flatMap((report) => report.runDurationMs === undefined ? [] : [report.runDurationMs])
             ),
-            commands: toFleetTimingDistribution(reports.flatMap((report) => toCommandTimingSamples(report)))
+            commands: deriveFleetReportTimingDistribution(reports.flatMap((report) => toCommandTimingSamples(report)))
         },
         regions,
         failureSignatures: failures

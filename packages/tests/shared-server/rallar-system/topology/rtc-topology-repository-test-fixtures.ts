@@ -13,6 +13,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import { FakeRuntimeStateRepository } from '../../runtime-state/test-support/fake-runtime-state-repository.ts';
+import { createRtcTopologyPublicationPlan } from './rtc-topology-test-fixtures.ts';
 
 export function createGroupRef(): GroupRef {
     return {
@@ -140,6 +141,7 @@ export function createPublication(
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: 10000,
         createdAtEpochMs: 10
     };

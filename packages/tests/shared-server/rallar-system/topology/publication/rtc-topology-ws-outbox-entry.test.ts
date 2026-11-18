@@ -10,6 +10,7 @@ import {
     it
 } from 'vitest';
 import { assembleStateSnapshotMessages } from '../../../../shared/state-snapshot-test-fixture.ts';
+import { createRtcTopologyPublicationPlan } from '../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology publication WS outbox pages', () => {
     it('bounds routes and physical keys while preserving full scoped snapshot identity', () => {
@@ -111,6 +112,7 @@ function createPublication(workId: string, count = 1): RtcTopologyPublication {
         targetGroupSnapshotVersion: 101,
         recipientSessionIds: activeSessionIds,
         snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         createdAtEpochMs: 1000,
         expiresAtEpochMs: 2000
     };
