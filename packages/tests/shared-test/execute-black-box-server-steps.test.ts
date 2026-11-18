@@ -83,6 +83,37 @@ describe('a recipe\'s server steps', () => {
         ]);
     });
 
+    it('asks again when the recipe\'s own restore was refused', async () => {
+        let restores = 0;
+        const endpoint = createEndpoint((body) => {
+            if (body.action !== 'restore') {
+                return applied(body);
+            }
+            restores += 1;
+            return restores === 1 ? Response.json({ outcome: 'invalid', issue: 'busy' }, { status: 400 }) : applied(body);
+        });
+
+        const report = await executeBlackBox(
+            [
+                toServerStep('suspendTertiary', { action: 'suspend', target: 'tertiary' }, 1),
+                toServerStep('restoreAll', { action: 'restore' }, 2)
+            ],
+            0,
+            {
+                dependencies: endpoint.dependencies,
+                environment: { RALLAR_BB_SERVER_FAULTS_URL: FAULTS_URL },
+                failFast: false
+            }
+        );
+
+        expect(report.resultsByName.restoreAll[0].status).toBe('FAILURE');
+        expect(endpoint.posted.map((fault) => fault.body)).toEqual([
+            { action: 'suspend', target: 'tertiary' },
+            { action: 'restore' },
+            { action: 'restore' }
+        ]);
+    });
+
     it('fails the step, without a request, in a run that manages no API servers', async () => {
         const endpoint = createEndpoint(applied);
 

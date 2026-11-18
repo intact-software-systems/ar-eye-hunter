@@ -112,9 +112,13 @@ export class ServerFaultSteps {
         if (this.input.url === undefined) {
             return toFailure(UNMANAGED_RUN);
         }
-        this.faulted = command.action !== 'restore';
+        this.faulted = true;
         const reply = await this.post(this.input.url, command);
-        return reply.fold((issue) => toFailure(issue), toReplyOutcome);
+        const outcome = reply.fold((issue) => toFailure(issue), toReplyOutcome);
+        if (command.action === 'restore' && outcome.status === 'SUCCESS') {
+            this.faulted = false;
+        }
+        return outcome;
     }
 
     private async post(url: string, command: ServerFaultCommand): Promise<Either<string, ServerFaultReply>> {
