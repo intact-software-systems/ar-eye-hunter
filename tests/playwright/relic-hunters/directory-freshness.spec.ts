@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { installRoomCacheClock } from '../delayed-room-heartbeat.ts';
 import type { GroupDirectoryEntry } from '../../../packages/shared/api/group-directory/group-directory-types.ts';
 import {
     createGroupSnapshot,
@@ -13,7 +14,7 @@ const DIRECTORY_URL = '**/api/state/apps/rallar-server/workspaces/default/group-
 test(
     'discovers and removes public rooms automatically, retries failures, and preserves the selected expedition',
     async ({ page }) => {
-        await page.clock.install();
+        await installRoomCacheClock(page);
         await initBrowserTestTransport(page);
         await startRelicBrowserBackend(page, {
             rooms: [createGroupSnapshot({ onlineMemberCount: 2 })],
