@@ -251,29 +251,7 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
     ) {
         numIsWorkIterations++;
 
-        // one "round" across all tasks
-        let createdThisRound = 0;
-        const readiness = await readRoundReadiness(tasks);
-
-        for (const [index, ct] of tasks.entries()) {
-            const { maxConc, ready } = readiness[index]!;
-
-            if (ready) {
-                const computed = submitAsyncTasks({
-                    runnable: ct.inputTask.runnable,
-                    ongoingTasks: ct.tasksInFlight,
-                    maxConcurrency: maxConc,
-                    executor: ct.inputTask.executor
-                });
-                ct.tasksInFlight = computed.tasksInFlight;
-                ct.tasksCreated = computed.tasksCreated;
-                createdThisRound += computed.tasksCreated;
-            }
-            else {
-                ct.tasksInFlight = filterOutFinishedTasks(ct.tasksInFlight);
-                ct.tasksCreated = 0;
-            }
-        }
+        const createdThisRound = await runRound(tasks);
 
         totalNumTasksCreated += createdThisRound;
 
@@ -301,25 +279,38 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
     };
 }
 
-interface LoopsTaskReadiness {
-    readonly maxConc: number;
-    readonly ready: boolean;
+/**
+ * Every task of a round answers its readiness at once, so probes that share a store can share one read. A task that
+ * answers ready starts as soon as it answers: an in-memory answer never waits for another task's storage probe. The
+ * first failure in task order is the round's failure, after the tasks that answered ready have started.
+ */
+async function runRound(tasks: readonly LoopsComputedTaskDto[]): Promise<number> {
+    let created = 0;
+    const settled = await Promise.allSettled(tasks.map(async (ct) => {
+        const maxConc = await ct.inputTask.maxConcurrency();
+        const ready = isAllowedToAddTask(ct.tasksInFlight, maxConc) && await ct.inputTask.isWork();
+        created += submitReadyTask(ct, maxConc, ready);
+    }));
+    const failure = settled.find((result) => result.status === 'rejected');
+    if (failure?.status === 'rejected') {
+        throw failure.reason;
+    }
+    return created;
 }
 
-/**
- * Every task of a round answers its readiness at once, so probes that share a store can share one read;
- * the round still submits in task order, and the first failure in task order is the round's failure.
- */
-async function readRoundReadiness(tasks: readonly LoopsComputedTaskDto[]): Promise<readonly LoopsTaskReadiness[]> {
-    const settled = await Promise.allSettled(tasks.map(async (ct): Promise<LoopsTaskReadiness> => {
-        const maxConc = await ct.inputTask.maxConcurrency();
-        const allowed = isAllowedToAddTask(ct.tasksInFlight, maxConc);
-        return { maxConc, ready: allowed && await ct.inputTask.isWork() };
-    }));
-    return settled.map((result) => {
-        if (result.status === 'rejected') {
-            throw result.reason;
-        }
-        return result.value;
+function submitReadyTask(ct: LoopsComputedTaskDto, maxConc: number, ready: boolean): number {
+    if (!ready) {
+        ct.tasksInFlight = filterOutFinishedTasks(ct.tasksInFlight);
+        ct.tasksCreated = 0;
+        return 0;
+    }
+    const computed = submitAsyncTasks({
+        runnable: ct.inputTask.runnable,
+        ongoingTasks: ct.tasksInFlight,
+        maxConcurrency: maxConc,
+        executor: ct.inputTask.executor
     });
+    ct.tasksInFlight = computed.tasksInFlight;
+    ct.tasksCreated = computed.tasksCreated;
+    return computed.tasksCreated;
 }

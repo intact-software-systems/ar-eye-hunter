@@ -1,9 +1,16 @@
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { computeRtcTopologyPlanRecord } from '@shared-server/rallar-system/topology/planning/plan-record/compute-rtc-topology-plan-record.ts';
+import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/topology/planning/plan-record/rtc-topology-plan-derivation.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { createRallarGroupDirectorAppointment, mergeRallarGroupDirectorMetadata } from '@shared/api/group-director.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
+
+/** The derivation a test passes where the planner's own derivation is not under test. */
+export const RTC_TOPOLOGY_ESTABLISHED_DERIVATION: RtcTopologyPlanDerivation = { method: 'established' };
 
 interface CreateRtcTopologyRttMeasurementInput {
     readonly sessionIdFrom: string;
@@ -179,6 +186,21 @@ export function createComputedRtcTopologyOutbox(): ComputedRtcTopologyOutbox {
         createdAtEpochMs: 1_800_000_000_000,
         expireAtEpochMs: 1_800_000_060_000
     };
+}
+
+/** The record a publication of this layout carries when it is a first layout planned at the layout's own instant. */
+export function createRtcTopologyPublicationPlan(snapshot: RallarOverlayTopologySnapshot): RtcTopologyPlanRecord | null {
+    if (snapshot.state === 'removed') {
+        return null;
+    }
+    return computeRtcTopologyPlanRecord({
+        stored: null,
+        planned: snapshot,
+        rttRefresh: false,
+        changeGated: true,
+        derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
+        nowEpochMs: snapshot.updatedAtEpochMs
+    });
 }
 
 function createAuditStamp(atEpochMs: number): AuditStamp {

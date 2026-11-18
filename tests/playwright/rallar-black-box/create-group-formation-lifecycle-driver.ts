@@ -786,7 +786,7 @@ async function configureMeshTopology(
                 body: {
                     config: {
                         topologyKind: 'mesh',
-                        degreeLimit: 2
+                        degreeLimit: 3
                     }
                 }
             },

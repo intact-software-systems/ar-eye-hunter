@@ -165,8 +165,8 @@ describe('RTC topology complete write computation', () => {
         const publication = decodeRtcTopologyPublication(
             JSON.parse(transaction.mutation.persistence.publication.value),
             returned.group
-        ).fold((refusal) => {
-            throw new Error(refusal.message);
+        ).fold((message) => {
+            throw new Error(message);
         }, (decoded) => decoded);
         expect(publication.sourceGroupStateCausalRevision).toEqual({ groupRevision: 43, presenceRevision: 37 });
         expect(publication.snapshot).toEqual(stored);

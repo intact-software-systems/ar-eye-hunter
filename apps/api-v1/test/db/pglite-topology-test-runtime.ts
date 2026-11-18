@@ -68,6 +68,7 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
 
+import { createRtcTopologyPublicationPlan } from '../../../../packages/tests/shared-server/rallar-system/topology/rtc-topology-test-fixtures.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { readPGliteDatabaseEpochMs } from './pglite-app-inbox-test-runtime.ts';
 import {
@@ -335,6 +336,7 @@ async function planTopologyWorkPublication(
         targetGroupSnapshotVersion: groupSnapshot.group.snapshotVersion,
         recipientSessionIds: topology.activeSessionIds,
         snapshot: topology,
+        plan: createRtcTopologyPublicationPlan(topology),
         expiresAtEpochMs,
         createdAtEpochMs: nowEpochMs
     };

@@ -12,6 +12,8 @@ import { createBrowserMessageSenderFixture, toQueuedMessageAdmission } from '../
 const START_MS = 1_760_000_000_000;
 /** A cadence no test outlives, so every value staged after a lane's first opportunity waits for the next one. */
 const LIVE_POLICY: ALPublicationPolicy = { cadenceMs: 60_000, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
+/** A boundary inside a live value's 1 s deadline, for a test that runs the lane's next opportunity. */
+const NEXT_BOUNDARY_POLICY: ALPublicationPolicy = { ...LIVE_POLICY, cadenceMs: 500 };
 
 interface LiveSendFixture extends ReturnType<typeof createBrowserMessageSenderFixture> {
     readonly engine: InboxOutboxEngine;
@@ -57,19 +59,39 @@ async function runEnginePass(engine: InboxOutboxEngine): Promise<void> {
     await engine.stop();
 }
 
+function admittedMsgIds(fixture: LiveSendFixture): readonly string[] {
+    return fixture.admitted.map((message) => message.id.msgId);
+}
+
+/**
+ * A lane admits the value that finds it idle at once (D469); a lead value of another stream opens it, so the value a
+ * test sends next stays staged until the lane's next boundary.
+ */
+async function openLaneWithLead(fixture: LiveSendFixture, channel: BrowserTypedChannelPolicy): Promise<string> {
+    const lead = await fixture.sender.sendRtc(toPoseSend('lead', 0), channel);
+    await vi.waitFor(() => expect(admittedMsgIds(fixture)).toEqual([lead.msgId]));
+    return lead.msgId;
+}
+
 describe('a live channel send', () => {
-    it('stages the send and admits nothing until its lane\'s opportunity runs', async () => {
+    it('admits the send that finds its lane idle without an engine pass, and stages the next until the lane\'s next boundary', async () => {
         const fixture = createLiveSendFixture();
+        const channel = toLiveChannel(NEXT_BOUNDARY_POLICY);
 
-        const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), toLiveChannel(LIVE_POLICY));
+        const first = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), channel);
+        await vi.waitFor(() => expect(first.lifecycle().state).toBe('queued'));
+        expect(admittedMsgIds(fixture)).toEqual([first.msgId]);
 
-        expect(handle.lifecycle().state).toBe('staged');
-        expect(fixture.admitted).toEqual([]);
+        const next = await fixture.sender.sendRtc(toPoseSend('entity-2', 1), channel);
+        await runEnginePass(fixture.engine);
+        expect(next.lifecycle().state).toBe('staged');
+        expect(admittedMsgIds(fixture)).toEqual([first.msgId]);
 
+        vi.setSystemTime(START_MS + NEXT_BOUNDARY_POLICY.cadenceMs);
         await runEnginePass(fixture.engine);
 
-        expect(fixture.admitted.map((message) => message.id.msgId)).toEqual([handle.msgId]);
-        expect(handle.lifecycle().state).toBe('queued');
+        expect(admittedMsgIds(fixture)).toEqual([first.msgId, next.msgId]);
+        expect(next.lifecycle().state).toBe('queued');
     });
 
     it('admits the envelope latest-wins on its stream key, best-effort, unreceipted, volatile and short-lived', async () => {
@@ -90,7 +112,8 @@ describe('a live channel send', () => {
 
     it('leaves a value displaced within the cadence superseded, and admits only the newest at the opportunity', async () => {
         const fixture = createLiveSendFixture();
-        const channel = toLiveChannel(LIVE_POLICY);
+        const channel = toLiveChannel(NEXT_BOUNDARY_POLICY);
+        const lead = await openLaneWithLead(fixture, channel);
 
         const first = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), channel);
         const second = await fixture.sender.sendRtc(toPoseSend('entity-1', 2), channel);
@@ -101,15 +124,18 @@ describe('a live channel send', () => {
         });
         expect(second.lifecycle().state).toBe('staged');
 
+        vi.setSystemTime(START_MS + NEXT_BOUNDARY_POLICY.cadenceMs);
         await runEnginePass(fixture.engine);
 
-        expect(fixture.admitted.map((message) => message.id.msgId)).toEqual([second.msgId]);
+        expect(admittedMsgIds(fixture)).toEqual([lead, second.msgId]);
     });
 
     it('settles a staged value failed, skipped as disposed, when its session ends, and never admits it', async () => {
         const fixture = createLiveSendFixture();
+        const channel = toLiveChannel(LIVE_POLICY);
+        const lead = await openLaneWithLead(fixture, channel);
 
-        const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), toLiveChannel(LIVE_POLICY));
+        const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), channel);
         fixture.sessionDeliveries.endSession(fixture.middleware.session);
         await runEnginePass(fixture.engine);
 
@@ -117,13 +143,15 @@ describe('a live channel send', () => {
             state: 'failed',
             evidence: { failure: { kind: 'skipped', reason: 'disposed' } }
         });
-        expect(fixture.admitted).toEqual([]);
+        expect(admittedMsgIds(fixture)).toEqual([lead]);
     });
 
     it('settles a staged value skipped as disposed when its connect closes, and its stopped engine never admits it', async () => {
         const fixture = createLiveSendFixture();
+        const channel = toLiveChannel(LIVE_POLICY);
+        const lead = await openLaneWithLead(fixture, channel);
 
-        const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), toLiveChannel(LIVE_POLICY));
+        const handle = await fixture.sender.sendRtc(toPoseSend('entity-1', 1), channel);
         fixture.replaceTransport();
         await fixture.engine.stop();
 
@@ -131,7 +159,7 @@ describe('a live channel send', () => {
             state: 'failed',
             evidence: { failure: { kind: 'skipped', reason: 'disposed' } }
         });
-        expect(fixture.admitted).toEqual([]);
+        expect(admittedMsgIds(fixture)).toEqual([lead]);
     });
 
     it('refuses a value heavier than its channel\'s drain budget oversized, without staging it', async () => {

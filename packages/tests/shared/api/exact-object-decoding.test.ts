@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getOwnNumber } from '@shared/api/exact-object-decoding.ts';
+import { decodePlainRecord, getOwnNumber, hasExactKeys } from '@shared/api/exact-object-decoding.ts';
 
 describe('getOwnNumber', () => {
     it('reads an own number along a path', () => {
@@ -26,5 +26,25 @@ describe('getOwnNumber', () => {
             }
         };
         expect(getOwnNumber(source, ['a'], 5)).toBe(5);
+    });
+});
+
+describe('hasExactKeys', () => {
+    it('is true for the same key set in any order and false for a missing or extra key', () => {
+        expect(hasExactKeys({ a: 1, b: 2 }, ['b', 'a'])).toBe(true);
+        expect(hasExactKeys({ a: 1 }, ['a', 'b'])).toBe(false);
+        expect(hasExactKeys({ a: 1, b: 2, c: 3 }, ['a', 'b'])).toBe(false);
+        expect(hasExactKeys({}, [])).toBe(true);
+    });
+});
+
+describe('decodePlainRecord', () => {
+    it('accepts a plain object and refuses null, an array, a scalar and a non-plain prototype', () => {
+        expect(decodePlainRecord({ a: 1 }).right).toBeDefined();
+        expect(decodePlainRecord(null).left).toBeTypeOf('string');
+        expect(decodePlainRecord([]).left).toBeTypeOf('string');
+        expect(decodePlainRecord('a').left).toBeTypeOf('string');
+        expect(decodePlainRecord(new Date()).left).toBeTypeOf('string');
+        expect(decodePlainRecord(Object.create(null)).left).toBeTypeOf('string');
     });
 });

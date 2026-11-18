@@ -4,6 +4,7 @@ import type {
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import { deriveFleetReportTimingDistribution } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import {
     RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION,
     type ControlFleetAgentLabel,
@@ -21,7 +22,6 @@ import {
 } from './control-fleet-failure-signatures.ts';
 import {
     toFleetRegionSummaries,
-    toFleetTimingDistribution,
     toRatio,
     toSortedUniqueValues,
     UNLABELED_REGION
@@ -73,8 +73,8 @@ export function createControlFleetRunReport(input: CreateControlFleetRunReportIn
         runDurationMs,
         summary: toFleetRunSummary(outcomes, failures.signatures.length),
         timing: {
-            run: toFleetTimingDistribution(runDurationMs === undefined ? [] : [runDurationMs]),
-            commands: toFleetTimingDistribution(toLinkedCommandDurations(distributedRun, controlRun))
+            run: deriveFleetReportTimingDistribution(runDurationMs === undefined ? [] : [runDurationMs]),
+            commands: deriveFleetReportTimingDistribution(toLinkedCommandDurations(distributedRun, controlRun))
         },
         agents: outcomes,
         regions: toFleetRegionSummaries(outcomes),

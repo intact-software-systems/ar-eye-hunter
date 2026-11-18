@@ -14,6 +14,8 @@ import {
     it
 } from 'vitest';
 
+import { createRtcTopologyPublicationPlan } from '../rtc-topology-test-fixtures.ts';
+
 const RTT_COMMAND_HASH = `sha256:${'a'.repeat(64)}`;
 
 describe('RTC topology publication mutation phases', () => {
@@ -484,6 +486,7 @@ function topologyPublication(snapshot: RallarOverlayTopologySnapshot, workId: st
         targetGroupSnapshotVersion: 1,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot: snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: 10000,
         createdAtEpochMs,
         traceId: 'trace-rtc-topology-mutations'

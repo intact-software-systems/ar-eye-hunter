@@ -14,7 +14,7 @@ import {
     type GraphProp,
     type VertexProp
 } from './graph-props.ts';
-import { diameterDistance } from './graph/graph-algs.ts';
+import { diameterDistance, isValidMesh } from './graph/graph-algs.ts';
 import { generateSizeOfSteinerSet } from './graph/graph-size-algorithms.ts';
 import { PruneGraphAlgo } from './graph/prune-graph.ts';
 import { CoreSelectionAlgo, findWCNodes } from './graph/steiner-core-algorithms.ts';
@@ -22,8 +22,12 @@ import { validateGroupTopology, type GroupTopologyValidationResult } from './gro
 import { DynamicMeshAlgo } from './mesh/group-dynamics-mesh-types.ts';
 import { InsertToMeshComputedDto, InsertToMeshInputDto } from './mesh/insert-mesh-algs.ts';
 import { kMDDLOTTCTree } from './mesh/k-mddl-ottc.ts';
+import { rvLeaf } from './remove/remove-dynamics-basic.ts';
 import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
-import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
+import { hasReconnectCapacity } from './remove/remove-dynamics-mc.ts';
+import { cleanupRemoveResult } from './remove/remove-dynamics-registry.ts';
+import type { RemoveServiceResult } from './remove/remove-dynamics-service.ts';
+import type { DynamicTreeAlgo, RemoveDynamicsContext } from './remove/remove-dynamics-types.ts';
 
 export type GlobalMeshArgs = {
     meshParamK: number;
@@ -208,27 +212,7 @@ export function updateGroupMesh(
         }
 
         case MessageType.TO_SERVER_LEAVE: {
-            const treeAlgo = meshRemoveAlgoToTreeAlgo(input.globalArgs.removeAlgo);
-            const result = removeVertexFromTree({
-                globalGraph: input.globalGraph,
-                groupGraph: input.groupGraph,
-                actionVertexId: input.fromNode,
-                treeAlgo,
-                steinerCandidates: new Set(input.globalGraph.nodes() as string[]),
-                coreSelectionAlgo: CoreSelectionAlgo.CENTER_SELECTION,
-                selectSteinerCandidate: (ctx, adjacent) => {
-                    const candidates = findWCNodes(
-                        ctx.globalGraph,
-                        ctx.steinerCandidates,
-                        adjacent,
-                        new Set(ctx.groupGraph.nodes() as string[]),
-                        1,
-                        CoreSelectionAlgo.CENTER_SELECTION
-                    );
-
-                    return candidates[0];
-                }
-            });
+            const result = removeVertexFromMesh(input);
 
             updatedMesh = result.graph;
             removeAttemptedAlgo = result.attemptedAlgo;
@@ -254,6 +238,39 @@ export function updateGroupMesh(
         removeUsedFallback,
         reconfigReason: reconfigured.right !== undefined ? undefined : 'not-needed-or-failed'
     };
+}
+
+function removeVertexFromMesh(input: UpdateGroupMeshInputDto): RemoveServiceResult {
+    const remove: RemoveDynamicsContext = {
+        globalGraph: input.globalGraph,
+        groupGraph: input.groupGraph,
+        actionVertexId: input.fromNode,
+        treeAlgo: meshRemoveAlgoToTreeAlgo(input.globalArgs.removeAlgo),
+        steinerCandidates: new Set(input.globalGraph.nodes() as string[])
+    };
+    if (remove.treeAlgo === 'REMOVE_MINIMUM_COST_EDGE' && !hasReconnectCapacity(remove)) {
+        const dropped = rvLeaf(remove);
+        if (isValidMesh(dropped.graph)) {
+            return {
+                ...cleanupRemoveResult({ ...remove, groupGraph: dropped.graph }),
+                attemptedAlgo: remove.treeAlgo,
+                usedFallback: false
+            };
+        }
+    }
+    return removeVertexFromTree({
+        ...remove,
+        coreSelectionAlgo: CoreSelectionAlgo.CENTER_SELECTION,
+        selectSteinerCandidate: (ctx, adjacent) =>
+            findWCNodes(
+                ctx.globalGraph,
+                ctx.steinerCandidates,
+                adjacent,
+                new Set(ctx.groupGraph.nodes() as string[]),
+                1,
+                CoreSelectionAlgo.CENTER_SELECTION
+            )[0]
+    });
 }
 
 export function doReconfigMesh(

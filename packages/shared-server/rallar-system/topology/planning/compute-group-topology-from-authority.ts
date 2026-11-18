@@ -117,6 +117,7 @@ function computeRemovedTopology(
     return {
         action: 'planned',
         planningObservation: null,
+        derivation: null,
         snapshot: {
             sourceGroupStateCausalRevision: group.causalRevision,
             state: 'removed',

@@ -68,7 +68,11 @@ export function validateWorkClaim(
 }
 
 export function childKey(groupRef: GroupRef, name: string, value: string): string {
-    return `${groupStateGroupStorageKey(groupRef)}:${name}=${encodeURIComponent(value)}`;
+    return `${childKeyPrefix(groupRef, name)}${encodeURIComponent(value)}`;
+}
+
+export function childKeyPrefix(groupRef: GroupRef, name: string): string {
+    return `${groupStateGroupStorageKey(groupRef)}:${name}=`;
 }
 
 export function decodeChildKey(
@@ -162,10 +166,6 @@ export function publicationCorruption(
     message: string
 ): RtcTopologyRepositoryInvariantCorruptionError {
     return new RtcTopologyRepositoryInvariantCorruptionError(storageKey, message);
-}
-
-export function compact<T>(values: readonly (T | undefined)[]): readonly T[] {
-    return values.filter((value): value is T => value !== undefined);
 }
 
 function validateCausalRevision(

@@ -115,6 +115,38 @@ HEADs, C cursor pairs at those HEADs, later advancement of both publishers, a
 new C' stream seeded at the advanced HEADs, and current-state hydration for the
 same N5/N6 authenticated sessions without a mutation after C' starts.
 
+The topology-churn measurement is a managed scenario, not a recipe-matrix
+entry. It needs PostgreSQL and ports 18880–18882, runs no browser, and drives
+one room per replanning mode (`auto`, `debounced`) and size (3, 8, 20 members)
+through a formation burst and 90 s of join/leave churn with presence over HTTP.
+It reads each room's retained plans through the operator route and writes
+`topology-churn-report.json` under
+`tmp/api-v1-black-box/postgres-topology-churn/<run token>/`; figures are recorded, never
+judged. `promotedPlanCount` counts the plans whose layout the 250 ms sampler saw accepted, so a
+layout promoted and replaced between two samples reads as unpromoted:
+
+```bash
+npm run perf:api-v1:topology-churn
+```
+
+The topology-reshape measurement is the second command over the same scenario; its
+room specs live in `topology-churn/phases/topology-churn-room-specs.ts`. It
+needs PostgreSQL and ports 18890–18892, runs no browser, and drives ten rooms: five
+room shapes (4, 8, 12, 8 and 20 members) under both replanning modes, with group ids
+`churn-<index>-<replanning>-<memberCount>`. The phases provoke kind changes (a ramp
+past the mesh entry and below the tree entry, then 90 s of flapping), leader re-roots
+(appointments of the deepest member through an admin role), and RTT refinements (made-up
+RTT reports over ticketed WebSockets, as uniform, skewed and shifting matrices). It
+writes `topology-reshape-report.json` (schema `rallar.topology-churn.report.v2`, each
+room entry carrying its effective `topologyConfig`) under
+`tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`; figures are recorded,
+never judged. The `rtt reports` column counts reports sent, not reports the server
+accepted. Run it with:
+
+```bash
+npm run perf:api-v1:topology-reshapes
+```
+
 The `api-v1-idempotency-contract` matrix entry is the focused three-node
 strict-mutation gate. Run it against an already provisioned cluster with:
 

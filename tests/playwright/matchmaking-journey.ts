@@ -1,22 +1,15 @@
-import {
-    expect,
-    type Locator,
-    type Page,
-    type Request
-} from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { assertIdleViewReads } from './assert-idle-view-reads.ts';
-import {
-    openArenaOperations,
-    playTogetherInRoom,
-    signInRoomPlayer,
-    toGroupId
-} from './room-player-journey.ts';
+import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+import { signInIdleSocialPlayers } from './sign-in-idle-social-players.ts';
 
 /** The API owns reservations; both browsers reach it only through visible game controls. */
 export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    await signInIdleMatchmakingPlayers(host, guest, game);
+    await signInIdleSocialPlayers(host, guest, game);
     const hostPanel = panel(host);
     const guestPanel = panel(guest);
+    await expect(hostPanel).toBeVisible();
+    await expect(guestPanel).toBeVisible();
     await assertIdleViewReads(host, 'social');
     await hostPanel.getByRole('button', { name: /Find a game|Find an expedition/ }).click();
     await expect(hostPanel).toContainText('Searching for players');
@@ -55,47 +48,6 @@ export async function matchmakingPlayJourney(host: Page, guest: Page, game: 'are
     await expect(host.getByText(`Entered ${roomId}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(guest.getByText(`Entered ${roomId}.`, { exact: true })).toBeVisible({ timeout: 30000 });
     await playTogetherInRoom(host, guest, game);
-}
-
-/** Authentication mounts social panels before the connection-recovery reads have finished. */
-async function signInIdleMatchmakingPlayers(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    const pending = new Set<Request>();
-    let lastActivityAt = Date.now();
-    const started = (request: Request): void => {
-        if (
-            request.method() === 'GET' &&
-            /^\/api\/(friends|parties|matchmaking)\/apps\//.test(new URL(request.url()).pathname)
-        ) {
-            pending.add(request);
-            lastActivityAt = Date.now();
-        }
-    };
-    const finished = (request: Request): void => {
-        if (pending.delete(request)) {
-            lastActivityAt = Date.now();
-        }
-    };
-    host.on('request', started);
-    host.on('requestfinished', finished);
-    host.on('requestfailed', finished);
-    try {
-        await signInRoomPlayer(host, 'alice', game);
-        await signInRoomPlayer(guest, 'bob', game);
-        for (const player of [host, guest]) {
-            await expect(panel(player)).toBeVisible();
-            await expect(player.getByRole('button', { name: 'Refresh sessions', exact: true })).toBeEnabled();
-        }
-        // Start a fresh quiet window after connection; old navigation idleness cannot prove this.
-        lastActivityAt = Date.now();
-        await expect.poll(() => pending.size === 0 && Date.now() - lastActivityAt >= 500, {
-            message: 'connection-recovery social reads must settle before measuring idle reads'
-        }).toBe(true);
-    }
-    finally {
-        host.off('request', started);
-        host.off('requestfinished', finished);
-        host.off('requestfailed', finished);
-    }
 }
 
 async function confirmMatch(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {

@@ -1,12 +1,12 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { assertIdleViewReads } from './assert-idle-view-reads.ts';
-import { openArenaOperations, playTogetherInRoom, signInRoomPlayer, toGroupId } from './room-player-journey.ts';
+import { openArenaOperations, playTogetherInRoom, toGroupId } from './room-player-journey.ts';
 import { scheduleThroughControls } from './scheduled-session-journey.ts';
+import { signInIdleSocialPlayers } from './sign-in-idle-social-players.ts';
 
 /** Two independent accounts, visible controls, real API and actual shared gameplay. */
 export async function friendsPlayJourney(host: Page, guest: Page, game: 'arena' | 'relic'): Promise<void> {
-    await signInRoomPlayer(host, 'alice', game);
-    await signInRoomPlayer(guest, 'bob', game);
+    await signInIdleSocialPlayers(host, guest, game);
     await openFriends(host);
     await openFriends(guest);
     await expect(friendsPanel(host)).toContainText('No friends or pending requests');

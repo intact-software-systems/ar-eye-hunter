@@ -583,7 +583,8 @@
                   "requestId": "body-only-config-{groupId}-{runId}",
                   "config": {
                     "topologyKind": "tree",
-                    "degreeLimit": 2
+                    "degreeLimit": 2,
+                    "meshParamK": 1
                   }
                 }
               },
@@ -612,7 +613,8 @@
                 "body": {
                   "config": {
                     "topologyKind": "tree",
-                    "degreeLimit": 2
+                    "degreeLimit": 2,
+                    "meshParamK": 1
                   }
                 }
               },
@@ -642,7 +644,8 @@
                   "requestId": "body-config-{groupId}-{runId}",
                   "config": {
                     "topologyKind": "tree",
-                    "degreeLimit": 2
+                    "degreeLimit": 2,
+                    "meshParamK": 1
                   }
                 }
               },
@@ -670,7 +673,8 @@
                 "body": {
                   "config": {
                     "topologyKind": "tree",
-                    "degreeLimit": 2
+                    "degreeLimit": 2,
+                    "meshParamK": 1
                   }
                 }
               },
@@ -771,7 +775,8 @@
         "body": {
           "config": {
             "topologyKind": "tree",
-            "degreeLimit": 2
+            "degreeLimit": 2,
+            "meshParamK": 1
           }
         }
       },
@@ -782,7 +787,8 @@
             "version": "integer",
             "config": {
               "topologyKind": "tree",
-              "degreeLimit": 2
+              "degreeLimit": 2,
+              "meshParamK": 1
             }
           },
           "receipt": {

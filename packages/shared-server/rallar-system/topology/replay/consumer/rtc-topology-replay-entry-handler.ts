@@ -12,7 +12,7 @@ import type {
 
 import { computeStateSnapshotPages } from '@shared/api/state-snapshot-page.ts';
 import { toCanonicalRtcTopologyGroupIdentity } from '../../persistence/rtc-topology-identifiers.ts';
-import type { RtcTopologyPublicationRead } from '../../publication/rtc-topology-publication-repository-contracts.ts';
+import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import { computeRtcTopologyPublicationOutbox } from '../../publication/rtc-topology-ws-outbox-entry.ts';
 import { toDeliverableTopologySnapshot } from '../deliverable-topology-snapshot.ts';
 import type { RtcTopologyDeliveryLogEntry } from '../delivery/rtc-topology-delivery-contracts.ts';
@@ -23,10 +23,10 @@ import type {
 import { decideRtcTopologyReplayEntry } from './rtc-topology-replay-decision.ts';
 
 interface RtcTopologyReplayPublicationReader {
-    readPublication(
+    findPublication(
         groupRef: GroupRef,
         publicationId: string
-    ): Promise<RtcTopologyPublicationRead>;
+    ): Promise<RtcTopologyPublication | undefined>;
 }
 
 interface RtcTopologyReplayOutboxReader {
@@ -79,14 +79,12 @@ export class RtcTopologyReplayEntryHandlerService implements RtcTopologyReplayEn
         // asynchronously promoted accepted row may trail the log and is read
         // only when the rare repair branch needs delivery content.
         const [publication, plannedSnapshot] = await Promise.all([
-            this.#publications.readPublication(entry.groupRef, entry.publicationId),
+            this.#publications.findPublication(entry.groupRef, entry.publicationId),
             this.#snapshots.findSnapshot(entry.groupRef)
         ]);
-        const outbox = publication.status === 'found'
+        const outbox = publication
             ? await Promise.all(
-                computeRtcTopologyPublicationOutbox(publication.publication).map((page) =>
-                    this.#outbox.getItem(page.key)
-                )
+                computeRtcTopologyPublicationOutbox(publication).map((page) => this.#outbox.getItem(page.key))
             )
             : undefined;
         throwIfAborted(signal);

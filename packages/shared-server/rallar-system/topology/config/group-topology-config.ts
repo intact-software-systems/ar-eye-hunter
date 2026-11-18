@@ -16,6 +16,10 @@ const DEFAULT_DEGREE_LIMIT = 5;
 const DEFAULT_TREE_MIN_SIZE = 5;
 const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
+const MIN_DEGREE_LIMIT = 2;
+const INTEGER_FIELDS = ['degreeLimit', 'treeMinSize', 'meshMinSize', 'meshParamK'] as const;
+
+type GroupTopologyConfigIntegerField = (typeof INTEGER_FIELDS)[number];
 
 export class GroupTopologyConfigValidationError extends Error {
     readonly status = 422;
@@ -59,72 +63,121 @@ export function resolveDefaultGroupTopologyConfig(
     };
 }
 
+/** A room topology configuration issue with the fields the rule that raised it reads. */
+export interface GroupTopologyConfigRuleIssue {
+    readonly fields: readonly (keyof EffectiveGroupTopologyConfig)[];
+    readonly issue: GroupTopologyValidationIssue;
+}
+
 export function validateGroupTopologyConfigPatch(
     patch: GroupTopologyConfigPatch
 ): readonly GroupTopologyValidationIssue[] {
-    const issues: GroupTopologyValidationIssue[] = [];
+    return validateGroupTopologyConfigPatchRules(patch).map((ruleIssue) => ruleIssue.issue);
+}
 
-    for (const key of ['degreeLimit', 'treeMinSize', 'meshMinSize', 'meshParamK'] as const) {
-        const value = patch[key];
-        if (value === undefined || value === null) {
-            continue;
-        }
+export function validateEffectiveGroupTopologyConfig(
+    config: EffectiveGroupTopologyConfig
+): readonly GroupTopologyValidationIssue[] {
+    return validateEffectiveGroupTopologyConfigRules(config).map((ruleIssue) => ruleIssue.issue);
+}
 
-        if (!Number.isInteger(value) || value <= 0) {
-            issues.push({
-                code: 'invalid-positive-integer',
-                path: [key],
-                message: `${key} must be a positive integer`,
-                details: { value }
-            });
-        }
+/**
+ * Every issue of the room rule with the fields its rule reads, so a caller that refused a field on its own can drop
+ * the issues that read it.
+ */
+export function validateEffectiveGroupTopologyConfigRules(
+    config: EffectiveGroupTopologyConfig
+): readonly GroupTopologyConfigRuleIssue[] {
+    return [
+        ...validateGroupTopologyConfigPatchRules(config),
+        ...validateMeshMinSizeRule(config),
+        ...validateMeshParamKRule(config)
+    ];
+}
+
+function validateMeshMinSizeRule(config: EffectiveGroupTopologyConfig): readonly GroupTopologyConfigRuleIssue[] {
+    if (config.meshMinSize >= config.treeMinSize) {
+        return [];
     }
+    return [{
+        fields: ['meshMinSize', 'treeMinSize'],
+        issue: {
+            code: 'mesh-min-size-before-tree-min-size',
+            path: ['meshMinSize'],
+            message: 'meshMinSize must be greater than or equal to treeMinSize',
+            details: { meshMinSize: config.meshMinSize, treeMinSize: config.treeMinSize }
+        }
+    }];
+}
 
+function validateMeshParamKRule(config: EffectiveGroupTopologyConfig): readonly GroupTopologyConfigRuleIssue[] {
+    if (config.meshParamK < config.degreeLimit) {
+        return [];
+    }
+    return [{
+        fields: ['meshParamK', 'degreeLimit'],
+        issue: {
+            code: 'mesh-param-k-not-below-degree-limit',
+            path: ['meshParamK'],
+            message: 'meshParamK must be less than degreeLimit',
+            details: { meshParamK: config.meshParamK, degreeLimit: config.degreeLimit }
+        }
+    }];
+}
+
+function validateGroupTopologyConfigPatchRules(
+    patch: GroupTopologyConfigPatch
+): readonly GroupTopologyConfigRuleIssue[] {
+    const issues = INTEGER_FIELDS.flatMap((field) => validateIntegerFieldRule(field, patch[field]));
     if (
         patch.topologyKind !== undefined &&
         patch.topologyKind !== null &&
         !['auto', 'star', 'tree', 'mesh'].includes(patch.topologyKind)
     ) {
         issues.push({
-            code: 'invalid-topology-kind',
-            path: ['topologyKind'],
-            message: 'topologyKind must be auto, star, tree, or mesh',
-            details: { value: patch.topologyKind }
+            fields: ['topologyKind'],
+            issue: {
+                code: 'invalid-topology-kind',
+                path: ['topologyKind'],
+                message: 'topologyKind must be auto, star, tree, or mesh',
+                details: { value: patch.topologyKind }
+            }
         });
     }
-
     return issues;
 }
 
-export function validateEffectiveGroupTopologyConfig(
-    config: EffectiveGroupTopologyConfig
-): readonly GroupTopologyValidationIssue[] {
-    const issues = [...validateGroupTopologyConfigPatch(config)];
-    if (config.meshMinSize < config.treeMinSize) {
-        issues.push({
-            code: 'mesh-min-size-before-tree-min-size',
-            path: ['meshMinSize'],
-            message: 'meshMinSize must be greater than or equal to treeMinSize',
-            details: {
-                meshMinSize: config.meshMinSize,
-                treeMinSize: config.treeMinSize
-            }
-        });
+function validateIntegerFieldRule(
+    field: GroupTopologyConfigIntegerField,
+    value: number | null | undefined
+): readonly GroupTopologyConfigRuleIssue[] {
+    if (value === undefined || value === null) {
+        return [];
     }
-
-    if (config.meshParamK > config.degreeLimit) {
-        issues.push({
-            code: 'mesh-param-k-exceeds-degree-limit',
-            path: ['meshParamK'],
-            message: 'meshParamK must be less than or equal to degreeLimit',
-            details: {
-                meshParamK: config.meshParamK,
-                degreeLimit: config.degreeLimit
-            }
-        });
+    if (!Number.isInteger(value) || value <= 0) {
+        return [toFieldRuleIssue(field, {
+            code: 'invalid-positive-integer',
+            path: [field],
+            message: `${field} must be a positive integer`,
+            details: { value }
+        })];
     }
+    if (field === 'degreeLimit' && value < MIN_DEGREE_LIMIT) {
+        return [toFieldRuleIssue(field, {
+            code: 'degree-limit-below-two',
+            path: [field],
+            message: `${field} must be at least ${MIN_DEGREE_LIMIT}`,
+            details: { value }
+        })];
+    }
+    return [];
+}
 
-    return issues;
+function toFieldRuleIssue(
+    field: GroupTopologyConfigIntegerField,
+    issue: GroupTopologyValidationIssue
+): GroupTopologyConfigRuleIssue {
+    return { fields: [field], issue };
 }
 
 export function resolveGroupTopologyConfig(

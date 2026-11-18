@@ -222,6 +222,15 @@ same current harness on both source revisions. Existing artifacts retain their
 original source/harness identity; they are not current validation or evidence of
 an improvement from this fixture closure.
 
+RTC-B03's RTT room graph times `RallarRtcTopologyService.createRoomGraph`, which
+returns the graph the planner's weighted rebuild plans over for the kind it
+selects: the complete room graph for a mesh, and the sparse measured graph,
+capped at the reporting limit, for a tree. Every accepted room size (30, 100 and
+300 sessions) selects a mesh, so each sample builds and validates the complete
+graph, every pair once, whether the measurements are sparse or complete.
+Earlier RTC-B03 room-graph baselines timed the sparse measured graph and are not
+comparable for mesh rooms.
+
 ## Executable catalog
 
 | Program class              | Capability                   | Command entry                                                                        | Root/package command                                                  | Inputs                                                                                                                                                                                                                                                                           | Production symbol measured                                                             | Setup owner                                                    | Timing boundary                                                              | Validation owner                                                             | Output/artifact class                                           | Owning test                                                                     | Status                                          |

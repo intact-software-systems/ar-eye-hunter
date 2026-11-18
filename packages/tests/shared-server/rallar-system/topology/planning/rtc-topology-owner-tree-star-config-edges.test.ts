@@ -21,13 +21,13 @@ import {
  * layouts are compared as undirected edge sets, planned the way the server plans an owner-issued config change: a
  * `group-revision` work row, planned with the `membership-delta` intent against the stored layout.
  *
- * The live-RTC matrix driver forms the room with the durable config { topologyKind: 'mesh', degreeLimit: 2 }, which
+ * The live-RTC matrix driver forms the room with the durable config { topologyKind: 'mesh', degreeLimit: 3 }, which
  * for three sessions is a complete graph. The owner then writes, in this order:
  *   1. { "config": { "topologyKind": "tree" } }  the break side: the edge between the two leaves leaves the layout
  *   2. { "config": { "topologyKind": "star" } }  the add side: that edge is added back, nothing leaves
  * Route (apps/api-v1/src/routes/graph-topology-routes.ts, PUT `config`, owner or admin only):
  *   PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config/requests/:requestId
- * The PUT replaces the whole durable config, so the tree write drops degreeLimit 2 and plans with the server default.
+ * The PUT replaces the whole durable config, so the tree write drops degreeLimit 3 and plans with the server default.
  */
 
 type RoleName = 'owner' | 'second' | 'third';
@@ -46,7 +46,7 @@ const ROLE_NAMES: readonly RoleName[] = ['owner', 'second', 'third'];
 const SERVER_DEFAULTS: RallarRtcTopologyServiceOptions = readServerPlanningDefaults();
 
 /** What the live-RTC matrix driver's owner writes before the room forms. */
-const MATRIX_ROOM_CONFIG: Partial<RallarRtcTopologyServiceOptions> = { topologyKind: 'mesh', degreeLimit: 2 };
+const MATRIX_ROOM_CONFIG: Partial<RallarRtcTopologyServiceOptions> = { topologyKind: 'mesh', degreeLimit: 3 };
 
 const SORTED_SESSION_IDS = ['session-a', 'session-b', 'session-c'] as const;
 
@@ -334,13 +334,15 @@ function toFourSessionRttReports(sessionIds: readonly string[]): readonly RttMea
 }
 
 describe('RTC topology: a mesh write then a tree write for four sessions', () => {
-    it('leaves the fourth session without an edge under the matrix driver config', () => {
+    it('links the fourth session to two of the three others under the matrix driver config', () => {
         const matrix = planSessions({ sessionIds: FIXTURE_FOUR_SESSION_IDS, config: MATRIX_ROOM_CONFIG });
 
         expect(toEdges(matrix.nextHopsBySessionId)).toEqual([
             'session-a - session-b',
             'session-a - session-c',
-            'session-b - session-c'
+            'session-a - session-d',
+            'session-b - session-c',
+            'session-c - session-d'
         ]);
     });
 

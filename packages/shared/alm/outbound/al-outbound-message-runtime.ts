@@ -815,13 +815,13 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
         }
-        await this.ready();
-        if (this.disposed) {
-            return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
-        }
         const admission = dispatchPlan === undefined
             ? this.planAdmission(msg)
             : { lane: this.resolveLaneForPlan(dispatchPlan), planner: () => dispatchPlan };
+        await admission.lane.ready();
+        if (this.disposed) {
+            return ALOutboundMessageRuntime.toDisposedEnqueueResult(msg);
+        }
         const computed = await admission.lane.commit(
             this.toEnqueueDispatch(msg, admission.planner, dispatchPlan !== undefined)
         );
@@ -856,15 +856,16 @@ export class ALOutboundMessageRuntime<TPrepared> {
         if (this.disposed) {
             return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
         }
-        await this.ready();
-        if (this.disposed) {
-            return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
-        }
         const planned = msgs.map((msg) => {
             const { lane, planner } = this.planAdmission(msg);
             return { lane, dispatch: this.toEnqueueDispatch(msg, planner, false) };
         });
         const lanes = [...new Set(planned.map(({ lane }) => lane))];
+        // A batch waits for the lanes its messages are admitted to; an empty one names none and waits for them all.
+        await (lanes.length === 0 ? this.ready() : Promise.all(lanes.map((lane) => lane.ready())));
+        if (this.disposed) {
+            return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
+        }
         const members = lanes.map((lane) =>
             planned.filter((member) => member.lane === lane).map(({ dispatch }) => dispatch)
         );

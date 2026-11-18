@@ -33,7 +33,20 @@ const SEND_WINDOW_MS = 28_000;
 /** Two cadences past the last expected arrival, so a value a later opportunity carried would arrive inside it. */
 const NO_FURTHER_ARRIVAL_WINDOW_MS = 4_000;
 
-type PacedScenarioId = (typeof PACED_SCENARIO_IDS)[number];
+const ALL_PACED_SCENARIO_IDS = [...PACED_SCENARIO_IDS, 'paced-isolation-lists'] as const;
+const FIGURE_READ = 'stats-publication-figures';
+const FIGURE_ASSERTS = [
+    'assert-figure-selection-age-count',
+    'assert-figure-unrecorded-samples',
+    'assert-figure-selection-to-admission-count',
+    'assert-figure-drain-messages-count',
+    'assert-figure-drain-bytes-count',
+    'assert-figure-submitted-opportunities'
+] as const;
+const FIGURE_COMMANDS = [FIGURE_READ, ...FIGURE_ASSERTS] as const;
+const FIGURES_PATH = 'rallar.alm.publication.figures';
+
+type PacedScenarioId = (typeof ALL_PACED_SCENARIO_IDS)[number];
 
 function findScenario(carrier: AlmConformanceCarrier, scenarioId: PacedScenarioId): AlmConformanceScenario {
     const scenario = createAlmConformanceRecipes(toConformanceInput(carrier))
@@ -211,6 +224,7 @@ describe('paced-latest', () => {
                 ...SENDS_PROLOGUE,
                 ...[1, 2, 3, 4].flatMap((index) => toObserveNames(index, 'superseded', ['attempts', 'reason'])),
                 ...toObserveNames(5, 'transport-accepted', []),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expect(findCommand(scenario.sender, 'assert-attempts-3')).toMatchObject({
@@ -280,6 +294,7 @@ describe('paced-newest-n', () => {
                 ...toObserveNames(1, 'superseded', ['attempts', 'reason']),
                 'two-selected-one-deferred',
                 ...[2, 3, 4].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expect(findCommand(scenario.sender, 'observe-staged-4')).toMatchObject({ state: ['staged'] });
@@ -304,6 +319,7 @@ describe('paced-expiry', () => {
                 ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(1, 'expired', ['failure-kind', 'attempts']),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expect(findCommand(scenario.sender, 'assert-failure-kind-1')).toMatchObject({
@@ -350,6 +366,7 @@ describe('paced-capacity', () => {
                 ...SENDS_PROLOGUE,
                 ...toObserveNames(3, 'rejected', ['failure-kind', 'failure-reason', 'failure-limit', 'attempts']),
                 ...[1, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
+                ...FIGURE_COMMANDS,
                 'delivery-settles',
                 'close-before-restored',
                 'connect-restored',
@@ -436,6 +453,7 @@ describe('paced-fairness', () => {
                 'send-2',
                 'send-3',
                 ...[1, 3, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expect([1, 2, 3].map((index) => findCommand(scenario.sender, `send-${index}`))).toEqual([
@@ -510,6 +528,7 @@ describe('paced-cancel', () => {
                 'cancel-1',
                 ...toObserveNames(1, 'cancelled', ['attempts']),
                 ...toObserveNames(2, 'transport-accepted', []),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expect(findCommand(sender, 'cancel-1')).toMatchObject({
@@ -559,6 +578,7 @@ describe('paced-isolation-resources', () => {
                 ...(carrier === 'ws' ? [] : ['publication-layout-stable']),
                 ...SENDS_PROLOGUE,
                 ...[1, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
         }
@@ -627,6 +647,7 @@ describe('paced-isolation-lists', () => {
                 'send-1',
                 'send-2',
                 ...[1, 2].flatMap((index) => toObserveNames(index, 'transport-accepted', [])),
+                ...FIGURE_COMMANDS,
                 'stats'
             ]);
             expectLead(scenario, carrier, publication);
@@ -690,5 +711,93 @@ describe('paced-isolation-lists', () => {
             absent: true,
             windowMs: NO_FURTHER_ARRIVAL_WINDOW_MS
         });
+    });
+});
+
+describe('the paced cells\' publication figures', () => {
+    const ROLE_CELLS = ALL_PACED_SCENARIO_IDS.flatMap((scenarioId) => ALM_CONFORMANCE_CARRIERS.map((carrier) => [scenarioId, carrier] as const));
+
+    it.each(ROLE_CELLS)(
+        'every paced cell ends its publishing roles with one stats read and the figure invariants: %s over %s',
+        (scenarioId, carrier) => {
+            const scenario = findScenario(carrier, scenarioId);
+            const names = toCommandNames(scenario.sender);
+            const read = names.indexOf(FIGURE_READ);
+            const verdictIndexes = names.flatMap((name, index) =>
+                (name.startsWith('observe-') || name.startsWith('assert-')) && !FIGURE_COMMANDS.includes(name as never)
+                    ? [index]
+                    : []
+            );
+
+            expect(names.filter((name) => name === FIGURE_READ)).toHaveLength(1);
+            expect(read).toBeGreaterThan(Math.max(...verdictIndexes));
+            expect(names.slice(read, read + FIGURE_COMMANDS.length)).toEqual(FIGURE_COMMANDS);
+            expect(names.slice(read + FIGURE_COMMANDS.length)).toEqual(
+                scenarioId === 'paced-capacity'
+                    ? ['delivery-settles', 'close-before-restored', 'connect-restored', 'stats']
+                    : ['stats']
+            );
+
+            const source = (field: string): string => `resultCache.${scenario.sender.recipeId}-${FIGURE_READ}.value.${FIGURES_PATH}.${field}`;
+            expect(findCommand(scenario.sender, FIGURE_READ)).toMatchObject({ kind: 'stats' });
+            expect(findCommand(scenario.sender, FIGURE_ASSERTS[0])).toMatchObject({
+                kind: 'assert',
+                source: source('selectionAgeMs.count'),
+                operator: 'equals',
+                comparisonSource: `resultCache.${scenario.sender.recipeId}-${FIGURE_READ}.value.rallar.alm.publication.counters.admitted`
+            });
+            expect(findCommand(scenario.sender, FIGURE_ASSERTS[1])).toMatchObject({
+                kind: 'assert',
+                source: source('unrecordedSamples'),
+                operator: 'equals',
+                expected: 0
+            });
+            expect(FIGURE_ASSERTS.slice(2, 5).map((name) => findCommand(scenario.sender, name))).toEqual(
+                ['selectionToAdmissionMs.count', 'drainMessagesPercent.count', 'drainBytesPercent.count'].map((field) =>
+                    expect.objectContaining({
+                        kind: 'assert',
+                        source: source(field),
+                        operator: 'equals',
+                        comparisonSource: source('submittedOpportunities')
+                    })
+                )
+            );
+            expect(findCommand(scenario.sender, FIGURE_ASSERTS[5])).toMatchObject({
+                kind: 'assert',
+                source: source('submittedOpportunities'),
+                operator: 'gte',
+                expected: 1
+            });
+            for (const command of scenario.sender.commands) {
+                expect(validateRallarBlackBoxTestCommand(command), command.commandId).toEqual({ ok: true });
+            }
+        }
+    );
+
+    it.each(ROLE_CELLS)(
+        'no paced cell asserts a figure against a latency, a lateness or a drain percent: %s over %s',
+        (scenarioId, carrier) => {
+            const scenario = findScenario(carrier, scenarioId);
+            const figureSources = scenario.sender.commands.flatMap((command) =>
+                command.kind === 'assert'
+                    ? [command.source, ...('comparisonSource' in command && command.comparisonSource !== undefined ? [command.comparisonSource] : [])]
+                        .filter((path) => path.includes(`${FIGURES_PATH}.`))
+                    : []
+            );
+
+            expect(figureSources.length).toBeGreaterThan(0);
+            for (const path of figureSources) {
+                expect(path, path).not.toMatch(/figures\.[A-Za-z]*(Ms|Percent)(?!\.count$)(\.|$)/);
+                expect(path, path).not.toContain('missedOpportunities');
+            }
+            expect(scenario.receiver.commands.some((command) => command.commandId?.endsWith(FIGURE_READ))).toBe(false);
+        }
+    );
+
+    it('gives a receiving-only recipient no figure read in the three-agent cell', () => {
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            const scenario = findScenario(carrier, 'paced-isolation-lists');
+            expect(toCommandNames(scenario.recipientB!)).not.toContain(FIGURE_READ);
+        }
     });
 });

@@ -9,6 +9,7 @@ import {
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
 
 const ITERATIONS = readPositiveInteger('--iterations', 1_000);
 const CONCURRENCY = readPositiveInteger('--concurrency', 32);
@@ -206,16 +207,11 @@ function summarize(
         durableReads: input.durableReads,
         cacheReads: input.cacheReads,
         latencyMs: {
-            p50: percentile(input.samples, 0.5),
-            p95: percentile(input.samples, 0.95),
-            p99: percentile(input.samples, 0.99)
+            p50: computeNearestRank(input.samples, 0.5) ?? 0,
+            p95: computeNearestRank(input.samples, 0.95) ?? 0,
+            p99: computeNearestRank(input.samples, 0.99) ?? 0
         }
     };
-}
-
-function percentile(samples: readonly number[], value: number): number {
-    const sorted = [...samples].sort((left, right) => left - right);
-    return sorted[Math.max(0, Math.ceil(sorted.length * value) - 1)] ?? 0;
 }
 
 function clientSnapshot(stateRevision: number): ClientSnapshot {

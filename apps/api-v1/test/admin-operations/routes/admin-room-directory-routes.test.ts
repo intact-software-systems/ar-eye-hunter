@@ -27,6 +27,7 @@ function createApp(input: {
     registerAdminRoomRoutes(app, {
         adminClientIds: ['admin'],
         topologyWork: { read: () => Promise.reject(new Error('Topology work must not be read')) },
+        topologyPlans: { read: () => Promise.reject(new Error('Topology plans must not be read')) },
         requireApiAuthSession: input.requireSession,
         directory: input.directory ?? new ReadAdminRoomDirectory({
             repository: { findEntriesByPrefixPage: () => Promise.resolve([]) },

@@ -4,6 +4,8 @@ import type { GroupRef, GroupStateCausalRevision } from './group-types.ts';
 
 export type RallarRtcTopologyKind = 'star' | 'tree' | 'mesh';
 
+export const RALLAR_RTC_TOPOLOGY_KINDS = ['star', 'tree', 'mesh'] as const satisfies readonly RallarRtcTopologyKind[];
+
 export type RallarOverlayTopologySnapshot = Readonly<{
     sourceGroupStateCausalRevision: GroupStateCausalRevision;
     state: 'active' | 'removed';

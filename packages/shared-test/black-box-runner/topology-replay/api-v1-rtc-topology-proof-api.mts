@@ -283,15 +283,16 @@ export type ProofGroupInput = Readonly<{
     groupId: string;
 }>;
 
-type RequestOptions = Readonly<{
+export type RequestOptions = Readonly<{
     method: string;
     session?: ProofSession;
     body?: object;
     headers?: Readonly<Record<string, string>>;
     expectedStatus?: number;
+    signal?: AbortSignal;
 }>;
 
-async function requestJson(
+export async function requestJson(
     baseUrl: string,
     path: string,
     options: RequestOptions
@@ -308,7 +309,8 @@ async function requestJson(
                 : {}),
             ...options.headers
         },
-        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
+        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+        ...(options.signal === undefined ? {} : { signal: options.signal })
     });
     const expectedStatus = options.expectedStatus ?? 200;
     if (response.status !== expectedStatus) {

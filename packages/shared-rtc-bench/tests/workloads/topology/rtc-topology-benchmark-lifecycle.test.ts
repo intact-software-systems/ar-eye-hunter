@@ -226,8 +226,9 @@ it('RTC-B03 accepts the exact graph and inactive matrices with deterministic evi
         expectGraph(star, (sessions * (sessions - 1)) / 2, sessions - 1);
         expectGraph(tree, sessions - 1, 5);
         expectGraph(mesh, sessions * 2 - 3, 5);
+        // A room of every accepted size is a mesh, whose rebuild graph links every pair whatever was measured.
         for (const graph of [sparse, complete]) {
-            expectGraph(graph, graph.edgePairs.length, 5);
+            expectGraph(graph, (sessions * (sessions - 1)) / 2, sessions - 1);
         }
         expectGraph(
             {

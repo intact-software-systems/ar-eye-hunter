@@ -6,6 +6,7 @@ import {
     NEVER_ATTEMPTED,
     PUBLICATION_CADENCE_MS,
     PUBLICATION_DRAIN_BYTES,
+    toPublicationFigureInvariantCommands,
     toPublicationSendCommands,
     toPublicationVerdictCommands
 } from './publication-commands.ts';
@@ -44,7 +45,8 @@ export const pacedExpiry: AlmConformanceScenarioDefinition = {
             index: 1,
             state: 'expired',
             facts: [['failure.kind', 'expired'], NEVER_ATTEMPTED]
-        })
+        }),
+        ...toPublicationFigureInvariantCommands(sender)
     ],
     toRecipientCommands: (receiver) => [
         toArrivalCountCommand(receiver, 1, 0),

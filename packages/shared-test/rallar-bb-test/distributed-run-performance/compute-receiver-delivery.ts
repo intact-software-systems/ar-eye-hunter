@@ -1,3 +1,5 @@
+import { computeNearestRank } from '@shared/measurement/compute-nearest-rank.ts';
+import { computeNumberExtrema } from '@shared/measurement/compute-number-extrema.ts';
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunLowestReceiver, DistributedRunReceiverDelivery } from '../distributed-artifact-analysis.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
@@ -5,12 +7,7 @@ import {
     decodeReceiverDeliverySpecsByCommandId,
     type ReceiverDeliverySpec
 } from '../distributed-artifact-analysis/decode-receiver-delivery-spec.ts';
-import {
-    computeNearestRank,
-    computeNumberExtrema,
-    computePercentile,
-    toRoundedMetric
-} from './compute-timing-summary.ts';
+import { toRoundedMetric } from './compute-timing-summary.ts';
 
 export interface ReceiverDeliverySources {
     readonly distributedRun: ControlDistributedRunSnapshot;
@@ -31,10 +28,12 @@ const LOWEST_RECEIVER_LIMIT = 5;
 /** Absent when no stats result carries a message count with a receiver delivery bound. */
 export function computeReceiverDelivery(sources: ReceiverDeliverySources): DistributedRunReceiverDelivery | undefined {
     const samples = toReceiverDeliverySamples(sources);
-    if (samples.length === 0) {
+    const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
+    const medianReceivedMessages = computeNearestRank(sortedReceivedMessages, 0.5);
+    const p95ReceivedMessages = computeNearestRank(sortedReceivedMessages, 0.95);
+    if (medianReceivedMessages === undefined || p95ReceivedMessages === undefined) {
         return undefined;
     }
-    const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
     const deliveryRatios = samples.flatMap((sample) => toDeliveryRatio(sample) ?? []);
     return {
         sampleCount: samples.length,
@@ -42,12 +41,12 @@ export function computeReceiverDelivery(sources: ReceiverDeliverySources): Distr
         minExpectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.minExpectedInboundMessages)),
         minReceiveRatio: toFirstFiniteNumber(samples.map((sample) => sample.minReceiveRatio)),
         minReceivedMessages: sortedReceivedMessages[0],
-        medianReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.5),
-        p95ReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.95),
+        medianReceivedMessages,
+        p95ReceivedMessages,
         maxReceivedMessages: sortedReceivedMessages[sortedReceivedMessages.length - 1],
         minDeliveryRatio: computeNumberExtrema(deliveryRatios)?.min,
-        medianDeliveryRatio: computePercentile(deliveryRatios, 0.5),
-        p95DeliveryRatio: computePercentile(deliveryRatios, 0.95),
+        medianDeliveryRatio: computeNearestRank(deliveryRatios, 0.5),
+        p95DeliveryRatio: computeNearestRank(deliveryRatios, 0.95),
         lowestAgents: toLowestReceivers(samples)
     };
 }

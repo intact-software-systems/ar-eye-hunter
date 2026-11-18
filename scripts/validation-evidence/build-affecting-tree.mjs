@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+
 const authoredRoots = ['apps/', 'examples/', 'packages/', 'scripts/', 'tests/'];
 const markdownDocumentation = /\.mdx?$/u;
 export const exactBuildContractPaths = new Set([
@@ -89,7 +91,7 @@ function readTreeEntries(repoRoot, headSha) {
     const source = execFileSync(
         'git',
         ['ls-tree', '-r', '-z', '--full-tree', '--end-of-options', headSha],
-        { cwd: repoRoot, encoding: 'utf8' }
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: commandOutputMaxBuffer }
     );
     return source
         .split('\0')

@@ -1055,9 +1055,10 @@ Recorded at the scale tiers and not fixed, because real heartbeat-cadence report
 - Planned mesh edges grow linearly, not quadratically: the planner builds the mesh by k-insert
   (`K_INSERT_MC`: in canonical member order each session after the first attaches to its
   `meshParamK` best-ranked already-inserted members under the degree limit; `meshParamK` defaults
-  to `2`), so the plan carries 2N − 3 edges — 37 at 20 sessions and 97 at 50. The tiers still
-  exercise planning, acceptance, and readiness bookkeeping at those session counts, and all-pairs
-  _reporting_ remains the coverage guarantee.
+  to `2`, and configuration requires it below the degree limit, because a mesh whose `meshParamK`
+  equals the limit cannot be planned), so the plan carries 2N − 3 edges — 37 at 20 sessions and 97
+  at 50. The tiers still exercise planning, acceptance, and readiness bookkeeping at those session
+  counts, and all-pairs _reporting_ remains the coverage guarantee.
 - An all-pairs RTT burst can exhaust the 20-attempt optimistic retry schedule of one RTT mutation
   under 19-writer endpoint contention.
 - Before the edge-trigger landed, threshold activation under bursty evidence waited for the

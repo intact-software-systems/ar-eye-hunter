@@ -1,7 +1,5 @@
-import { type CappedFrameLoop } from '@shared/resilience/timing/capped-frame-loop.ts';
-
 import { type RelicCameraMode } from '../relic-scene-model.ts';
-import { startCappedRenderLoop } from '../start-capped-render-loop.ts';
+import { startCappedRenderLoop, type CappedRenderLoop } from '../start-capped-render-loop.ts';
 import { computeRelicTerminalPresentationKey } from './compute-relic-terminal-presentation-key.ts';
 import { readRelicFrameReadiness } from './read-relic-frame-readiness.ts';
 import { changeRuntimeCameraMode, updateCamera } from './relic-camera.ts';
@@ -19,7 +17,7 @@ import { syncRelicAvatarPresentation } from './sync-relic-avatar-presentation.ts
 /** Owns one graphics lifetime; React and room/network state stay subscribed outside it. */
 export class RelicSceneLifecycle {
     readonly runtime: RelicSceneRuntime;
-    private readonly loop: CappedFrameLoop;
+    private readonly loop: CappedRenderLoop;
     private readonly input: RelicSceneInput;
     private disposed = false;
     private readonly resize = () => {
@@ -27,7 +25,7 @@ export class RelicSceneLifecycle {
         this.loop.invalidate();
     };
 
-    constructor(runtime: RelicSceneRuntime, loop: CappedFrameLoop, input: RelicSceneInput) {
+    constructor(runtime: RelicSceneRuntime, loop: CappedRenderLoop, input: RelicSceneInput) {
         this.runtime = runtime;
         this.loop = loop;
         this.input = input;
@@ -111,12 +109,13 @@ export function createRelicSceneLifecycle(input: RelicSceneRuntime.Input): Relic
     return lifecycle;
 }
 
-function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
+function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedRenderLoop {
     try {
         return startCappedRenderLoop({
             engine: runtime.engine,
+            gpu: runtime.canvas.getContext('webgl2'),
             frameIntervalMs: 1000 / 45,
-            renderFrame: () => renderRelicFrame(runtime)
+            renderFrame: (frameTimeMs) => renderRelicFrame(runtime, frameTimeMs)
         });
     }
     catch (error) {
@@ -127,7 +126,7 @@ function startRelicSceneRendering(runtime: RelicSceneRuntime): CappedFrameLoop {
     }
 }
 
-export function renderRelicFrame(runtime: RelicSceneRuntime): 'ready' | 'pending' {
+export function renderRelicFrame(runtime: RelicSceneRuntime, frameTimeMs: number): 'ready' | 'pending' {
     if (runtime.terminal) {
         for (const avatar of runtime.avatars.values()) {
             avatar.root.position.copyFrom(avatar.target);
@@ -136,7 +135,7 @@ export function renderRelicFrame(runtime: RelicSceneRuntime): 'ready' | 'pending
         updateCamera(runtime);
     }
     else {
-        updateRelicSceneMotion(runtime);
+        updateRelicSceneMotion(runtime, frameTimeMs);
     }
     syncRelicAvatarPresentation({
         avatars: runtime.avatars,

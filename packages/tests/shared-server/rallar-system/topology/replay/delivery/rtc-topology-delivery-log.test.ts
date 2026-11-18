@@ -18,6 +18,7 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { PGliteSql } from '../../../../../../../apps/api-v1/src/db/pglite-sql-adapter.ts';
 import { createApiV1SchemaPGliteSql, initApiV1SchemaPGliteTemplate } from '../../../../../api-v1/create-api-v1-schema-pglite-sql.ts';
+import { createRtcTopologyPublicationPlan } from '../../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology delivery log boundary', () => {
     initApiV1SchemaPGliteTemplate();
@@ -510,6 +511,7 @@ function topologyPublication(
         targetGroupSnapshotVersion: 10,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: expiresAtMs,
         createdAtEpochMs
     };

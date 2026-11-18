@@ -11,7 +11,10 @@ import {
     readControlServerSnapshot
 } from '../../../control-run-manager/control-run-endpoints.ts';
 import { deriveDistributedDiagnosticSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
-import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import {
+    DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+    RUN_MANAGER_SNAPSHOT_BOUNDS
+} from '../shared/control-snapshot-bounds.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import type { DistributedRecipeBuilderModel } from './use-distributed-recipe-builder.ts';
 import type { DistributedRecipesRemoteStateModel } from './use-distributed-recipes-remote-state.ts';
@@ -117,7 +120,7 @@ export function useDistributedRecipesSelectionActions({
                 ? await readControlRunSnapshot({
                     ...controlEndpoint,
                     runId: nextRunId,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
+                    bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
                 })
                 : undefined;
             if (!request.isCurrent()) {
@@ -171,7 +174,7 @@ export function useDistributedRecipesSelectionActions({
             const loadOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
+                bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
                 return;
@@ -226,7 +229,7 @@ export function useDistributedRecipesSelectionActions({
             const controlRunOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId: loaded.controlRunId,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
+                bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
                 return;

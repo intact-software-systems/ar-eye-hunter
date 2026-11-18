@@ -1534,9 +1534,10 @@ The nine slices deliver the advertised modes: browser publications over `ws`,
 `rtc` and `rtc-with-ws-fallback`, with grants, subscriptions, signed
 publishers and receipts, ordered entry and pacing. What the addendum still owes
 for those modes is its measurement half (§9) and the maintainer's adoption
-(§6). The next outcomes, in this order, are make-before-break routing (D644);
-publication figures in the stage, with one shared histogram and the local half
-of a same-regime baseline; and a platform fault vocabulary, with an API instance stopped, paused or restarted,
+(§6). The publication figures in the stage are built, with one shared
+histogram and the local half of a same-regime baseline (D650 to D652; §9, "As
+applied (publication figures)"). The next outcomes, in this order, are
+make-before-break routing (D644) and a platform fault vocabulary, with an API instance stopped, paused or restarted,
 its database sessions cut, and seeded loss and delay on a browser carrier, that recipes can
 name. Receipt truth and the held-send path follow, proven with those steps; a
 retained admission then starts its `admitted` receipt only once its replay
@@ -1582,7 +1583,9 @@ owners and a first campaign on the three-replica fleet.
   ordered sends are measured by the 6b probe on room rows (counts in the Release 14
   record; the principal path is unmeasured). The path to it, as outcomes in
   order: a full-scope lane green on every carrier; publication figures in the
-  stage with one shared histogram; a same-regime baseline protocol; a
+  stage with one shared histogram (built, D650 to D652; congestion duration and
+  admission-to-native-submission age remain); the local half of a same-regime
+  baseline (built, D652; the hosted half and the median's band remain); a
   fault-step vocabulary for the platform; a publication workload family on the scale
   builder; bottleneck probes at the owners; and a first campaign on the
   three-replica fleet.
@@ -1713,6 +1716,73 @@ active keys/subscriptions, retained/admitted/buffered bytes, drain usage,
 congestion duration, authority-refresh delay, and cleanup/recovery outcomes.
 Diagnostics are payload-free and use bounded metric dimensions; identifiers
 belong in approved logs/traces, not metric labels.
+
+As applied (publication figures): the publication stage reports, per session
+and payload-free, `selectionAgeMs` (a selected value's age at its opportunity
+from its staging), `selectionToAdmissionMs` (the opportunity to its submit
+settling), `drainMessagesPercent` and `drainBytesPercent` (the share of the
+lane's drain message and byte budget a submitted opportunity used), and the
+counts `submittedOpportunities`, `missedOpportunities` and
+`unrecordedSamples` (`ALOutboundPublicationFigures`). The four distributions
+are `BoundedHistogram`s of `packages/shared/measurement` on fixed bounds
+(`AL_PUBLICATION_FIGURE_AGE_BOUNDS_MS`, fifteen bounds from 1 ms to 60 s;
+`AL_PUBLICATION_FIGURE_PERCENT_BOUNDS`, 10 to 100), so they stay bounded in
+memory and comparable bucket by bucket; the report reaches
+`rallar.messages.readUsage().publication.figures` and the harness's
+`stats.rallar.alm.publication.figures`, and the harness refuses figures on any
+other bounds (D651). The age that selection to admission measures ends at
+carrier admission, because the stage's `submit` settles there; admission to
+native submission is not a stage figure. A missed opportunity is a cadence
+boundary that passed unserved, charged from the later of the lane's due instant
+and the staging instant of the oldest value the lane held when the opportunity
+ran, so a lane misses no boundary that passed before it held a value; an
+opportunity whose values all expired still counts from the due instant. Whenever
+`unrecordedSamples` is 0, `selectionAgeMs.count` equals the `admitted` counter
+and the other three counts equal `submittedOpportunities`; a sample a histogram
+refuses (a negative duration) is counted in `unrecordedSamples`, never thrown
+or clamped. The eight paced conformance cells end their sender with one stats
+read and assert those equalities and `submittedOpportunities` of at least 1,
+counts only, since a lane cell cannot assert a difference of two reads (D652).
+Congestion duration is not measured: the outbound runtime decides congestion
+per attempt and the `congestion` diagnostic carries no instant and no clear
+action, so the figure has no defined end (backlog). Delivered sample age is the
+workload family's, taken from payload timestamps (D642); a receiver cannot
+compute it from the envelope.
+
+The local half of a same-regime baseline is built on the all-local run of
+manifest 19 (15 agents). Each such run writes the run's environment as the
+`environment` of `provenance.json`: the regime key holds the effective API mode,
+the database freshness, the profile, pub/sub, ICE mode, every field of the
+topology planning configuration, retention, the RTC capture mode, the manifest
+digest, the agent count, the runtime versions and the host's platform, release,
+cpu count, available parallelism and memory. The commit, the dirty flag, the
+load reading and the disk readings are recorded but are not in the key. The
+figures compared are the median command time and the run duration; the 95th and
+99th percentiles are not used because for this workload they are the one or two
+commands that span the run. The band is 10 % relative or 5 ms absolute,
+declared before any run (`DISTRIBUTED_RUN_LOCAL_BASELINE_BAND`). `node --import
+tsx apps/rallar-black-box/scripts/compare-distributed-run-baseline.ts
+<baseline-recorder-dir> <candidate-recorder-dir>` compares two recorder
+directories with `computeSameRegimeComparison` and exits 1 on a decode failure,
+a refusal (`different-regime`, `different-figures`, `non-finite-figures`, in that
+order) or a regression (D652). A passing all-local observation takes under a
+minute on the maintainer's machine.
+
+The same commit measured four times (all-local, manifest 19, same regime key,
+commit `d467ccfd4`) gave a median command time of 71, 54, 67 and 66 ms and a run
+duration of 38 770, 38 401, 39 023 and 41 825 ms. The run duration read as noise
+in every pair compared (1 to 2, 2 to 3, 3 to 4, 1 to 4). The median command time
+read outside the band in two of the four pairs, 71 to 54 as an improvement and 54
+to 67 as a regression, and as noise in 67 to 66 and 71 to 66; the first and the
+last runs agree, so it is not a warm-up effect. On this machine and this workload
+the median command time is not stable inside the declared band between two runs
+of the same commit, so one pair cannot tell a regression from noise on that
+figure. The run duration read as noise in every one of the four pairs
+compared; the largest spread among the four runs is 8.9 % (38 401 to 41 825 ms,
+a pair not compared) against the 10 % band, and its sensitivity to a real
+regression is untested. The band was not widened and no figure dropped
+after the result; what the band or the figure should be for the median is open
+(D652). The local baseline is therefore not a regression gate for the median.
 
 The workload varies publication rate above/below cadence, N, drain
 message/byte budgets, payload size, key/group/consumer count, subscription and

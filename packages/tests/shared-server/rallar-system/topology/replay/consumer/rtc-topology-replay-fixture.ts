@@ -6,6 +6,8 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import { createRtcTopologyPublicationPlan } from '../../rtc-topology-test-fixtures.ts';
+
 export interface RtcTopologyReplayFixture {
     readonly entry: RtcTopologyDeliveryLogEntry;
     readonly publication: RtcTopologyPublication;
@@ -79,6 +81,7 @@ function topologyPublication(sessionCount: number): RtcTopologyPublication {
         targetGroupSnapshotVersion: 10,
         recipientSessionIds: snapshot.activeSessionIds,
         snapshot,
+        plan: createRtcTopologyPublicationPlan(snapshot),
         expiresAtEpochMs: expiresAtMs,
         createdAtEpochMs
     };

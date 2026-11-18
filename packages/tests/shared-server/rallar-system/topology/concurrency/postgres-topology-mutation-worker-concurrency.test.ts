@@ -60,7 +60,7 @@ describe('Postgres topology mutation worker concurrency', () => {
                     releaseFilePath: path.join(tmpDirPath, 'release')
                 },
                 request: {
-                    config: { topologyKind: 'tree', degreeLimit: 2 },
+                    config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 },
                     updatedByPrincipalId: 'owner'
                 }
             };
@@ -121,7 +121,7 @@ describe('Postgres topology mutation worker concurrency', () => {
                         releaseFilePath
                     },
                     request: {
-                        config: { topologyKind: 'tree', degreeLimit: 2 },
+                        config: { topologyKind: 'tree', degreeLimit: 2, meshParamK: 1 },
                         updatedByPrincipalId: 'owner',
                         requestId: `${applicationId}-put`
                     }
@@ -198,7 +198,7 @@ describe('Postgres topology mutation worker concurrency', () => {
                                 degreeLimit: 2,
                                 treeMinSize: 5,
                                 meshMinSize: 16,
-                                meshParamK: 2
+                                meshParamK: 1
                             },
                             updatedByPrincipalId: 'owner'
                         })

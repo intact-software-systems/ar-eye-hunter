@@ -1,11 +1,21 @@
+import { Either } from '../resilience/Either.ts';
+
+export function decodePlainRecord(value: unknown): Either<string, object> {
+    return !!value && typeof value === 'object' && !Array.isArray(value) &&
+            Object.getPrototypeOf(value) === Object.prototype
+        ? Either.ofRight(value)
+        : Either.ofLeft('Expected an exact object');
+}
+
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
-    if (
-        !value || typeof value !== 'object' || Array.isArray(value) ||
-        Object.getPrototypeOf(value) !== Object.prototype
-    ) {
+    if (decodePlainRecord(value).right === undefined) {
         throw new TypeError(`${label} must be an exact object`);
     }
     return value as Record<string, unknown>;
+}
+
+export function hasExactKeys(value: object, keys: readonly string[]): boolean {
+    return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
 }
 
 export function requireExactKeys(
@@ -13,7 +23,7 @@ export function requireExactKeys(
     keys: readonly string[],
     label: string
 ): void {
-    if (Object.keys(value).sort().join('\0') !== [...keys].sort().join('\0')) {
+    if (!hasExactKeys(value, keys)) {
         throw new TypeError(`${label} fields are invalid`);
     }
 }

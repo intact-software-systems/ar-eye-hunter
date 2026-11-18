@@ -293,8 +293,8 @@ identity and does not accept the group-revision coalescing metadata.
 ## Topology Calculation And Latest State
 
 `RallarRtcTopologyService` owns the process-lifecycle boundary.
-`RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, and weighted-path selection;
-`createRtcRoomGraph` owns weighted sparse/complete graph decisions; and
+`RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, weighted-path, and sparse/complete
+room-graph selection; `create-rtc-room-graph.ts` builds the sparse and the complete room graph; and
 `planRallarRtcTopologySnapshot(...)` owns the caller-visible changed/version/timestamp planning
 result. `RtcTopologySnapshotRegistry` and `RtcTopologyMetrics` own accepted process observations
 and mutable counters respectively.
@@ -312,6 +312,8 @@ in it exceeds its depth in the no-RTT tree rooted at it. A group without a leade
 its fingerprint and plan are as before. A tree attaches joins incrementally whatever their number;
 any other delta, a mesh's joins included, falls back to a full rebuild when it exceeds
 `max(2, ceil(previous members / 4))` changes, and the invariant validator judges every evolved tree.
+A leave is repaired in place by shared-graph's cheapest-links remove, for a tree and a mesh alike, and a result
+the validator rejects is rebuilt.
 With a leader, joins attach breadth-first from the leader, each to the shallowest session with spare
 degree (depth, then canonical order), so the leader stays within the depth bound as the tree grows.
 An RTT refinement of a tree keeps the accepted tree, evolved to the current members, unless the
