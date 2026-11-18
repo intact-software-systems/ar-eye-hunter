@@ -568,20 +568,27 @@ unconditional upsert is not the model for this write.
 **The stored state**, one record per room in the runtime state store under its own namespace (the
 input fingerprint is the precedent, `rtc-topology-execution-repository.ts`):
 
-- `lastReshapeAtEpochMs`: when the room's last reshape was published; null before the first.
-- `intervalMs`: the wait in force after that reshape.
-- `heldAtEpochMs`: the instant a reshape was first held in this period; null when none was. It stays
-  until the next reshape, also when the want goes.
+- `gate`, the state of a shared back-off gate (`packages/shared/resilience/backoff-gate.ts`):
+  - `lastPassAtEpochMs`: when the room's last reshape was published; null before the first.
+  - `consecutiveHeldPasses`: the reshapes in a row that had been held first. The wait in force is the
+    lower bound doubled once per held pass, capped at the upper bound, computed from the bounds as
+    read; it is not stored, so a policy whose bounds change applies at once.
+  - `heldAtEpochMs`: the instant a reshape was first held in this period; null when none was. It
+    stays until the next reshape, also when the want goes.
 - `wantedReasons`: the reasons held and still owed; empty when nothing is wanted.
 
+The back-off gate is a reusable primitive with no topology vocabulary: the stored-state, pure form of
+`failure-backoff.ts`, using the same doubling (`toExponentialBackoffMs`). The topology folder only maps
+a plan's outcome onto it and keeps the wanted reasons.
+
 A period runs from one reshape to the next. The gate is closed while
-`now < lastReshapeAtEpochMs + intervalMs`. A room with no stored state has an open gate and the lower
+`now < lastPassAtEpochMs + interval`. A room with no stored state has an open gate and the lower
 bound as its interval. Nothing deletes the record: a layout is never deleted, only replaced by a
 tombstone on the group-state path, and this slice does not widen that path. The work that establishes
 a first layout writes a fresh state instead, so a room that forms again starts with an open gate.
 
-**The rule**, one pure function in `topology/planning/`, from the previous state, the bounds, the
-clock and what the plan did:
+**The rule**, pure functions over the previous state, the bounds, the clock and what the plan did
+(the gate's arithmetic in the shared primitive, the mapping in `topology/planning/reshape-gate/`):
 
 1. The plan publishes a reshape, for any reason and from any origin. The interval for the new period
    is decided first:
@@ -590,7 +597,7 @@ clock and what the plan did:
    - otherwise, the gate was open: the room is calm, and the interval returns to the lower bound;
    - otherwise (a reshape that passed a closed gate with nothing held): unchanged.
 
-   Then `lastReshapeAtEpochMs` becomes now, `heldAtEpochMs` null and `wantedReasons` empty.
+   Then `lastPassAtEpochMs` becomes now, `heldAtEpochMs` null and `wantedReasons` empty.
 2. The gate is closed and the planner reports a held reshape: `heldAtEpochMs` is set if it was null,
    and the reasons are added to `wantedReasons`. The first hold of a period queues the wake-up.
 3. The gate is open, the plan is no reshape and the planner finds no wanted reason still applies:
@@ -633,8 +640,8 @@ whatever the size of the delta. Today it checks only when nobody joined or left,
 that opens the gate would attach, count as no reshape, and the owed re-root would be forgotten.
 
 **The wake-up.** A held reshape in a room where nothing else happens would never run, so the first
-hold of a period inserts one APP_OUTBOX row due at `lastReshapeAtEpochMs + intervalMs`. Its identity
-is derived from the room and `lastReshapeAtEpochMs`, so there is one per period and the insert-only
+hold of a period inserts one APP_OUTBOX row due at `lastPassAtEpochMs` plus the interval. Its identity
+is derived from the room and `lastPassAtEpochMs`, so there is one per period and the insert-only
 rule holds. Membership changes do not merge into it and do not delay it: the room's coalesced re-plan
 row keeps its own window. When it is due any server takes it and plans the room as a membership delta
 with the gate's state as read. The input-fingerprint skip does not apply to it: in a quiet room the
