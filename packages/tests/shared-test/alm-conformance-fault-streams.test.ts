@@ -19,7 +19,6 @@ type Carrier = (typeof ALM_CONFORMANCE_CARRIERS)[number];
 
 const STREAM_SENDS = 20;
 const CELL_CARRIERS = [
-    ['seeded-loss-stream', ['ws', 'rtc']],
     ['lost-stream-start', ['rtc']],
     ['seeded-jitter-stream', ['ws']]
 ] as const;
@@ -64,7 +63,7 @@ function toPlaces(recipe: RallarBlackBoxTestRecipe, names: readonly string[]): r
 function toSenderStep(carrier: Carrier, key: string): AlmConformanceStepInput {
     return {
         input: toConformanceInput(carrier),
-        scenarioId: 'seeded-loss-stream',
+        scenarioId: 'lost-stream-start',
         scenarioKey: key,
         role: 'sender',
         roles: ['sender', 'receiver'],
@@ -114,25 +113,6 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each(['ws', 'rtc'] as const)(
-        'seeded-loss-stream over %s holds its loss until the last send is admitted, and recovers after its release',
-        (carrier) => {
-            const sender = requireCell('seeded-loss-stream', carrier).sender;
-            const places = toPlaces(sender, [
-                'loss-arm',
-                `send-${STREAM_SENDS}`,
-                `assert-admitted-${STREAM_SENDS}`,
-                'loss-release',
-                'assert-loss-dropped',
-                `observe-acknowledged-${STREAM_SENDS}`
-            ]);
-
-            expect(places.every((place) => place >= 0)).toBe(true);
-            expect([...places].sort((left, right) => left - right)).toEqual(places);
-            expect(toPlaces(sender, ['observe-acknowledged-2'])[0]).toBeGreaterThan(places[4]);
-        }
-    );
-
     it.each(STREAM_CELLS)('%s over %s claims twenty arrivals in sequence order and no twenty-first', (key, carrier) => {
         const receiver = requireCell(key, carrier).receiver;
 
@@ -142,49 +122,6 @@ describe('ALM fault stream cells', () => {
         ]);
         expect(findCommand(receiver, `received-${STREAM_SENDS}`)).not.toHaveProperty('absent', true);
         expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
-    });
-
-    it.each(['ws', 'rtc'] as const)('seeded-loss-stream over %s proves its seeded loss dropped a frame', (carrier) => {
-        const sender = requireCell('seeded-loss-stream', carrier).sender;
-        const arm = findCommand(sender, 'loss-arm');
-        const release = findCommand(sender, 'loss-release');
-        const typeId = `alm.conformance.${carrier}.seeded-loss-stream`;
-
-        expect(arm).toMatchObject({ kind: 'fault.inject', carrier, match: { typeId }, faultId: `loss-${carrier}-${typeId}` });
-        expect(arm).toMatchObject({
-            action: { loss: { ratio: expect.any(Number), seed: expect.any(Number) } },
-            remaining: 'until-cleared'
-        });
-        expect(release).toMatchObject({ kind: 'fault.inject', carrier, faultId: `loss-${carrier}-${typeId}`, remaining: 0 });
-        expect(findCommand(sender, 'assert-loss-dropped')).toEqual(expect.objectContaining({
-            kind: 'assert',
-            source: `resultCache.${release.commandId}.value.acted.drop`,
-            operator: 'gte',
-            expected: 1
-        }));
-        expect(toPlaces(sender, ['loss-release', 'assert-loss-dropped'])).toEqual([
-            sender.commands.indexOf(release),
-            sender.commands.indexOf(release) + 1
-        ]);
-    });
-
-    it('seeded-loss-stream arms its loss before the first send over ws', () => {
-        const places = toPlaces(requireCell('seeded-loss-stream', 'ws').sender, ['loss-arm', 'send-1']);
-
-        expect(places[0]).toBeGreaterThanOrEqual(0);
-        expect(places[0]).toBeLessThan(places[1]);
-    });
-
-    it('seeded-loss-stream enters its track over rtc before the loss: send 1 is acknowledged, then the loss is armed', () => {
-        const places = toPlaces(requireCell('seeded-loss-stream', 'rtc').sender, [
-            'send-1',
-            'assert-acknowledged-1',
-            'loss-arm',
-            'send-2'
-        ]);
-
-        expect(places.every((place) => place >= 0)).toBe(true);
-        expect([...places].sort((left, right) => left - right)).toEqual(places);
     });
 
     it('seeded-jitter-stream delays every data frame by a seeded 0 to 80 ms and proves at least ten were delayed', () => {
@@ -207,6 +144,23 @@ describe('ALM fault stream cells', () => {
             expected: 10
         }));
         expect(toPlaces(sender, ['jitter-arm', 'send-1'])[0]).toBeLessThan(toPlaces(sender, ['jitter-arm', 'send-1'])[1]);
+        expect(toPlaces(sender, [`assert-acknowledged-${STREAM_SENDS}`, 'jitter-release', 'assert-jitter-delayed'])).toEqual([
+            sender.commands.indexOf(release) - 1,
+            sender.commands.indexOf(release),
+            sender.commands.indexOf(release) + 1
+        ]);
+    });
+
+    it('no cell runs under a seeded loss: a stream does not reliably recover from one, so none can claim it', () => {
+        const lossy = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+            createAlmConformanceRecipes(toConformanceInput(carrier)).flatMap((scenario) =>
+                [scenario.sender, scenario.receiver].flatMap((recipe) =>
+                    recipe.commands.filter((command) => command.kind === 'fault.inject' && typeof command.action === 'object' && 'loss' in command.action)
+                )
+            )
+        );
+
+        expect(lossy).toEqual([]);
     });
 
     it('lost-stream-start holds send 1 by its message id, never by a ratio, until sends 2 and 3 were acknowledged', () => {

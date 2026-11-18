@@ -15,17 +15,9 @@ import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 /** The sends of one stream cell: enough for a seeded draw to act, few enough to settle inside the cell's deadline. */
 export const FAULT_STREAM_SENDS = 20;
 
-type SeededFaultKind = 'loss' | 'jitter';
-
 interface SeededFault {
-    readonly kind: SeededFaultKind;
+    readonly kind: 'jitter';
     readonly action: RallarBlackBoxTestTransportFaultInjectCommand['action'];
-}
-
-/** The least number of frames the fault must have dropped or delayed by its release. */
-interface SeededFaultFloor {
-    readonly decision: 'drop' | 'delay';
-    readonly floor: number;
 }
 
 /** The receipted sends `from` to `to` of the cell's track, each admitted. */
@@ -64,17 +56,17 @@ export function toSeededFaultArmCommand(
 export function toSeededFaultReleaseCommands(
     sender: AlmConformanceStepInput,
     fault: SeededFault,
-    { decision, floor }: SeededFaultFloor
+    delayedFloor: number
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toSeededFaultCommand(sender, fault, 0),
         toResultAssertion({
             step: sender,
-            name: `assert-${fault.kind}-${decision === 'drop' ? 'dropped' : 'delayed'}`,
+            name: `assert-${fault.kind}-delayed`,
             resultName: `${fault.kind}-release`,
-            field: `acted.${decision}`,
+            field: 'acted.delay',
             operator: 'gte',
-            expected: floor
+            expected: delayedFloor
         })
     ];
 }

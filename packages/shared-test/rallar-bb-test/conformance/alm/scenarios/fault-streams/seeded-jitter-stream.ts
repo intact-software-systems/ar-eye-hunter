@@ -45,6 +45,6 @@ function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): re
         toSeededFaultArmCommand(sender, JITTER),
         ...toStreamSendCommands(sender, 1, FAULT_STREAM_SENDS),
         ...toStreamAcknowledgedCommands(sender, 1, FAULT_STREAM_SENDS),
-        ...toSeededFaultReleaseCommands(sender, JITTER, { decision: 'delay', floor: JITTER_DELAYED_FLOOR })
+        ...toSeededFaultReleaseCommands(sender, JITTER, JITTER_DELAYED_FLOOR)
     ];
 }
