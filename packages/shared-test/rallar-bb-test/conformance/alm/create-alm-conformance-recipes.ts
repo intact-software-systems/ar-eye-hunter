@@ -64,6 +64,9 @@ import { bufferedTrackDrains } from './scenarios/fairness/buffered-track-drains.
 import { churnBoundedTracks } from './scenarios/fairness/churn-bounded-tracks.ts';
 import { ownShareUnderInbound } from './scenarios/fairness/own-share-under-inbound.ts';
 import { fallbackWithinDeadline } from './scenarios/fallback-within-deadline.ts';
+import { lostStreamStart } from './scenarios/fault-streams/lost-stream-start.ts';
+import { seededJitterStream } from './scenarios/fault-streams/seeded-jitter-stream.ts';
+import { seededLossStream } from './scenarios/fault-streams/seeded-loss-stream.ts';
 import { grantedRtcDelivered } from './scenarios/granted-rtc/granted-rtc-delivered.ts';
 import { grantedRtcForgedSender } from './scenarios/granted-rtc/granted-rtc-forged-sender.ts';
 import { grantedRtcListDelivered } from './scenarios/granted-rtc/granted-rtc-list-delivered.ts';
@@ -223,6 +226,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     orderingResync,
     orderingGapRepair,
     repairExhausted,
+    seededLossStream,
+    lostStreamStart,
+    seededJitterStream,
     ...crossCarrierDuplicate,
     notYetInSync,
     fallbackWithinDeadline,
