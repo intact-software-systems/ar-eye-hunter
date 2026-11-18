@@ -61,11 +61,6 @@ const DEFAULT_DEGREE_LIMIT = 5;
 const DEFAULT_TREE_MIN_SIZE = 5;
 const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
-/** A held room whose in-place update failed is rebuilt at once, so the rebuild takes the kind and root it wants. */
-const HELD_TOPOLOGY_REBUILD_RESHAPE: TopologyReshapePermission = {
-    reshape: 'allowed',
-    wantedReasons: HELD_TOPOLOGY_RESHAPE_REASONS
-};
 
 interface RtcTopologyPlanInput {
     readonly group: GroupSnapshot;
@@ -325,7 +320,7 @@ export class RtcTopologyPlanner {
             const fallback = { topology: selected.topology, reason: evolved.reason };
             return this.computeCanonicalNextHops(
                 input,
-                { reshape: HELD_TOPOLOGY_REBUILD_RESHAPE, heldFallback: fallback },
+                { reshape: UNGATED_TOPOLOGY_RESHAPE_PERMISSION, heldFallback: fallback },
                 publicDispatch
             );
         }

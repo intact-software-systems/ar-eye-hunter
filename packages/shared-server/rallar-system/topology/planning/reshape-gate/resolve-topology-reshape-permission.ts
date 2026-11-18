@@ -1,7 +1,6 @@
-import {
-    UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
-    type TopologyReshapeGateState,
-    type TopologyReshapePermission
+import type {
+    TopologyReshapeGateState,
+    TopologyReshapePermission
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { isBackoffGateOpen, type BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
 
@@ -14,13 +13,14 @@ export interface ResolveTopologyReshapePermissionInput {
     readonly nowEpochMs: number;
 }
 
+/** Commanded work passes a closed gate with the reasons still wanted, so the planner checks them as for automatic work. */
 export function resolveTopologyReshapePermission(
     input: ResolveTopologyReshapePermissionInput
 ): TopologyReshapePermission {
-    if (input.workOrigin === 'commanded') {
-        return UNGATED_TOPOLOGY_RESHAPE_PERMISSION;
-    }
-    if (!isBackoffGateOpen(input.state?.gate ?? null, input.bounds, input.nowEpochMs)) {
+    if (
+        input.workOrigin === 'automatic' &&
+        !isBackoffGateOpen(input.state?.gate ?? null, input.bounds, input.nowEpochMs)
+    ) {
         return { reshape: 'held' };
     }
     return { reshape: 'allowed', wantedReasons: input.state?.wantedReasons ?? [] };

@@ -40,9 +40,18 @@ describe('resolveTopologyReshapePermission', () => {
         })).toEqual({ reshape: 'allowed', wantedReasons: ['leader-rooting'] });
     });
 
-    it('allows commanded work while the gate is closed, owing nothing', () => {
+    it('allows commanded work while the gate is closed, with the reasons still wanted', () => {
         expect(resolveTopologyReshapePermission({
             state: HELD_STATE,
+            bounds: BOUNDS,
+            workOrigin: 'commanded',
+            nowEpochMs: 5_000
+        })).toEqual({ reshape: 'allowed', wantedReasons: ['leader-rooting'] });
+    });
+
+    it('allows commanded work in a room with no gate state, owing nothing', () => {
+        expect(resolveTopologyReshapePermission({
+            state: null,
             bounds: BOUNDS,
             workOrigin: 'commanded',
             nowEpochMs: 5_000

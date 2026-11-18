@@ -114,9 +114,16 @@ export function toRtcTopologyQueueContextId(groupRef: GroupRef): string {
     return groupStateGroupStorageKey(groupRef);
 }
 
-/** The group a work row plans for: membership and reshape-due work name it, an RTT refresh carries its snapshot. */
+/**
+ * The group a work row plans for: membership and reshape-due work name it, an RTT refresh carries its snapshot. A new
+ * work kind fails the anchor below instead of silently reading a group reference.
+ */
 export function toRtcTopologyWorkGroupRef(work: PersistedRtcTopologyWork): GroupRef {
-    return work.kind === 'rtt-refresh' ? toCanonicalGroupRef(work.groupSnapshot.group) : work.groupRef;
+    if (work.kind === 'rtt-refresh') {
+        return toCanonicalGroupRef(work.groupSnapshot.group);
+    }
+    work.kind satisfies 'group-revision' | 'reshape-due';
+    return work.groupRef;
 }
 
 function readPersistedRtcTopologyWorkEnvelope(

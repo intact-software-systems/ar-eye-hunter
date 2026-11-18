@@ -26,7 +26,10 @@ export namespace ReadAdminRoomTopologyPlans {
             'listGroupPublicationEntriesPage' | 'publicationKey'
         >;
         readonly reshapeGates: Pick<RtcTopologyExecutionRepository, 'readTopologyReshapeGate'>;
-        /** The bounds the room's lifecycle policy sets on its reshapes, read as the planner reads them. */
+        /**
+         * The bounds the room's stored lifecycle policy sets on its reshapes: the bounds the planner applies in the one
+         * stage the gate applies in, which is the stage that reads the stored policy.
+         */
         readonly readReshapeBounds: (roomRef: GroupRef) => Promise<BackoffGateBounds>;
         readonly nowEpochMs: () => number;
     }

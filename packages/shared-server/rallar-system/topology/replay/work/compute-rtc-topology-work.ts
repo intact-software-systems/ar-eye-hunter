@@ -32,21 +32,23 @@ import {
 import { computeRtcTopologyPlanRecord } from '../../planning/plan-record/compute-rtc-topology-plan-record.ts';
 import type { RtcTopologyPlanDerivation } from '../../planning/plan-record/rtc-topology-plan-derivation.ts';
 import {
-    computeTopologyReshapeGate,
     UNCHANGED_TOPOLOGY_RESHAPE_GATE,
     type ComputedTopologyReshapeGate,
     type TopologyReshapeGatePlanOutcome
 } from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
+import type { TopologyReshapeDue } from '../../planning/reshape-gate/resolve-topology-reshape-due.ts';
 import {
-    resolveTopologyReshapeDue,
-    type TopologyReshapeDue
-} from '../../planning/reshape-gate/resolve-topology-reshape-due.ts';
-import { resolveTopologyReshapePermission } from '../../planning/reshape-gate/resolve-topology-reshape-permission.ts';
+    computeStagedTopologyReshapeGate,
+    resolveStagedTopologyReshapeDue,
+    resolveStagedTopologyReshapePermission,
+    type TopologyReshapeGateStage
+} from '../../planning/reshape-gate/topology-reshape-gate-stage.ts';
 import {
     resolveRttReplanPromotion,
     type HeldRttReplan,
     type PromotedRttReplan
 } from '../../planning/resolve-rtt-replan-promotion.ts';
+import type { RtcTopologyPlanningIntent } from '../../runtime/rallar-rtc-topology-service.ts';
 import {
     computeRtcTopologyWorkWrite,
     type AcceptedRtcTopologyWork,
@@ -238,11 +240,11 @@ function computeAcceptedRtcTopologyWork(
         return Either.ofRight(settled);
     }
     const inputFingerprint = computeAuthorityTopologyInputFingerprint(input.read.authority);
-    const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
+    const reshape = resolveWorkReshapePermission(input);
+    const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint, reshape);
     if (fingerprintSkip !== null) {
         return Either.ofRight(fingerprintSkip);
     }
-    const reshape = resolveWorkReshapePermission(input);
     const computedTopology = computeWorkTopology(input, reshape);
     if (computedTopology.action === 'frozen') {
         return Either.ofRight(toFrozenTopologyWork(input, computedTopology.current));
@@ -278,12 +280,17 @@ export function resolveRtcTopologyWorkReshapeDue(input: ComputeRtcTopologyWorkIn
 }
 
 function resolveReshapeDueWork(read: RtcTopologyWorkRead, work: RtcTopologyReshapeDueWork): TopologyReshapeDue {
-    return resolveTopologyReshapeDue({
-        state: read.reshapeGate?.state ?? null,
-        bounds: read.authority.reshapeBounds,
-        nowEpochMs: read.authority.nowEpochMs,
-        periodStartedAtEpochMs: work.periodStartedAtEpochMs
-    });
+    return resolveStagedTopologyReshapeDue(toWorkReshapeGateStage(read), work.periodStartedAtEpochMs);
+}
+
+function toWorkReshapeGateStage(read: RtcTopologyWorkRead): TopologyReshapeGateStage {
+    const { authority, reshapeGate } = read;
+    return {
+        lifecycleState: authority.group.group.lifecycleState,
+        state: reshapeGate?.state ?? null,
+        bounds: authority.reshapeBounds,
+        nowEpochMs: authority.nowEpochMs
+    };
 }
 
 /** The handler releases a reshape-due row that is not due before computing it, so compute sees settled or due. */
@@ -302,13 +309,10 @@ function computeSettledReshapeDueWork(input: ComputeRtcTopologyWorkInput): Settl
 }
 
 function resolveWorkReshapePermission(input: ComputeRtcTopologyWorkInput): TopologyReshapePermission {
-    const { authority, reshapeGate } = input.read;
-    return resolveTopologyReshapePermission({
-        state: reshapeGate?.state ?? null,
-        bounds: authority.reshapeBounds,
-        workOrigin: toTopologyWorkOrigin(input.facts.workEnvelope.data),
-        nowEpochMs: authority.nowEpochMs
-    });
+    return resolveStagedTopologyReshapePermission(
+        toWorkReshapeGateStage(input.read),
+        toTopologyWorkOrigin(input.facts.workEnvelope.data)
+    );
 }
 
 function computeWorkTopology(
@@ -317,22 +321,35 @@ function computeWorkTopology(
 ): ReconcileGroupTopologyResult {
     const work = input.facts.workEnvelope.data;
     return computeGroupTopologyFromAuthority(input.read.authority, input.read.mutation.snapshot?.value, {
-        intent: work.kind === 'rtt-refresh' ? 'full-rebuild' : 'membership-delta',
+        intent: toWorkPlanningIntent(work),
         origin: toTopologyWorkOrigin(work),
         reshape
     });
+}
+
+/** A new work kind fails the anchor below instead of silently planning as a membership delta. */
+function toWorkPlanningIntent(work: PersistedRtcTopologyWork): RtcTopologyPlanningIntent {
+    if (work.kind === 'rtt-refresh') {
+        return 'full-rebuild';
+    }
+    work.kind satisfies 'group-revision' | 'reshape-due';
+    return 'membership-delta';
+}
+
+/** Whether a plan equal to the stored layout ends the work; a new work kind fails the anchor below. */
+function isUnchangedGatedWork(work: PersistedRtcTopologyWork): boolean {
+    if (work.kind === 'group-revision') {
+        return isChangeGatedGroupRevisionWork(work);
+    }
+    work.kind satisfies 'rtt-refresh' | 'reshape-due';
+    return true;
 }
 
 function computeWorkReshapeGate(
     read: RtcTopologyWorkRead,
     outcome: TopologyReshapeGatePlanOutcome
 ): ComputedTopologyReshapeGate {
-    return computeTopologyReshapeGate({
-        previous: read.reshapeGate?.state ?? null,
-        bounds: read.authority.reshapeBounds,
-        nowEpochMs: read.authority.nowEpochMs,
-        outcome
-    });
+    return computeStagedTopologyReshapeGate(toWorkReshapeGateStage(read), outcome);
 }
 
 function toFrozenTopologyWork(
@@ -359,9 +376,8 @@ function computeUnchangedTopologyWork(input: ComputeUnchangedTopologyWorkInput):
     const { authority, mutation, promotion: promotionRead } = read;
     const work = input.work.facts.workEnvelope.data;
     const stored = mutation.snapshot;
-    const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
     if (
-        !unchangedGated || stored === null || planned.changed ||
+        !isUnchangedGatedWork(work) || stored === null || planned.changed ||
         !hasRequiredPresenceCoverage(stored.value, authority.group.causalRevision.presenceRevision)
     ) {
         return null;
@@ -423,14 +439,20 @@ function toHeldTopologyWork(
     };
 }
 
+/**
+ * Unchanged inputs end the work without planning, unless an open gate owes a reshape: when a period's wake-up found
+ * the room frozen or held by its policy, a later re-plan is the only work that releases the reshape.
+ */
 function computeFingerprintSkip(
     input: ComputeRtcTopologyWorkInput,
-    inputFingerprint: string
+    inputFingerprint: string,
+    reshape: TopologyReshapePermission
 ): Extract<AcceptedRtcTopologyWork, { decision: 'skipped-fingerprint'; }> | null {
     const { authority, promotion: promotionRead, storedInputFingerprint } = input.read;
     const work = input.facts.workEnvelope.data;
     const snapshot = input.read.mutation.snapshot;
-    if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active') {
+    const owesReshape = reshape.reshape === 'allowed' && reshape.wantedReasons.length > 0;
+    if (!isChangeGatedGroupRevisionWork(work) || snapshot?.value.state !== 'active' || owesReshape) {
         return null;
     }
     return storedInputFingerprint === inputFingerprint &&
