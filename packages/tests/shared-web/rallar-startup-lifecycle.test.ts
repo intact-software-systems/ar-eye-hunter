@@ -367,9 +367,39 @@ describe('Rallar startup lifecycle behavior', () => {
         await expect(facade.connect({ rtcCaptureMode: 'native' })).rejects.toMatchObject({ code: 'new-connection-required' });
         expect(facade.rtcCapture()?.configuration).toEqual(selection.expectedConfiguration);
         expect(facade.isConnected()).toBe(true);
-        const reason = new Error('Caller cancelled startup ownership');
-        controller.abort(reason);
-        expect(mocks.initialiseMiddleware.mock.calls[0]?.[2].signal?.reason).toBe(reason);
+    });
+
+    it('cancels an outstanding startup refresh and keeps the accepted transport until disconnect', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+        const caller = new AbortController();
+        const reading = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        mocks.refreshStateSnapshots.mockImplementationOnce(async (_scope, policies) => {
+            reading.resolve();
+            await release.promise;
+            policies?.command?.signal?.throwIfAborted();
+            return { clients: [], groups: [] };
+        });
+        onTestFinished(() => {
+            release.resolve();
+            return facade.disconnect();
+        });
+
+        const startup = facade.start({ signal: caller.signal, refreshRooms: true });
+        await reading.promise;
+        const transportSignal = mocks.initialiseMiddleware.mock.calls[0]?.[2].signal;
+        const reason = new Error('Caller cancelled room refresh');
+        caller.abort(reason);
+        release.resolve();
+
+        await expect(startup).rejects.toBe(reason);
+        expect(facade.isConnected()).toBe(true);
+        expect(transportSignal?.aborted).toBe(false);
+
+        await facade.disconnect();
+        expect(facade.isConnected()).toBe(false);
+        expect(transportSignal?.aborted).toBe(true);
     });
 
     it('leaves the facade idle when middleware initialization fails', async () => {
