@@ -66,6 +66,7 @@ export type {
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export type { ALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
 export type { ALInboundResyncCursor } from '@shared/alm/inbound/al-inbound-resync-required.ts';
+export type { ALOutboundCongestionEpisodes } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 export type { ALOutboundPublicationFigures } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 export type { ALOutboundPublicationCounters } from '@shared/alm/outbound/publication/al-outbound-publication-ledger.ts';
 export type { ALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';

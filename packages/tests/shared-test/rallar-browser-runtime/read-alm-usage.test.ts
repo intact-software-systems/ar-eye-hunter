@@ -3,6 +3,7 @@ import { beforeEach, expect, it } from 'vitest';
 import type { RallarMessagesUsage } from '@shared-web/browser/rallar-messages.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationStageReport } from '@shared/alm/outbound/publication/al-outbound-publication-stage.ts';
 import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import { AL_VOLATILE_SESSION_LIMITS } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
@@ -18,7 +19,8 @@ const REPORT: RallarMessagesUsage = {
     repliesHeld: 3,
     replyWaitsOpen: 1,
     publication: toIdleALOutboundPublicationStageReport(AL_PUBLICATION_STAGE_LIMITS),
-    ordering: createALInboundOrderingCounters()
+    ordering: createALInboundOrderingCounters(),
+    congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
 };
 
 const CONNECTION = {

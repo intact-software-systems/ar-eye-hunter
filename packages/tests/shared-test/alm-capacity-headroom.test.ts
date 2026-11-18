@@ -5,6 +5,7 @@ import type { RallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/rall
 import { createDefaultRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { AL_PUBLICATION_STAGE_LIMITS } from '@shared/al-contracts/publication/al-publication-stage-limits.ts';
 import { createALInboundOrderingCounters } from '@shared/alm/inbound/admission/al-inbound-ordering-counters.ts';
+import { toIdleALOutboundCongestionEpisodeFigures } from '@shared/alm/outbound/congestion/al-outbound-congestion-episodes.ts';
 import { toIdleALOutboundPublicationFigures } from '@shared/alm/outbound/publication/al-outbound-publication-figures.ts';
 import { AL_VOLATILE_SESSION_LIMITS, ALVolatileSessionBudget } from '@shared/alm/volatile-budget/al-volatile-session-budget.ts';
 
@@ -49,7 +50,8 @@ function createCapacitySetup(continuous: boolean): CapacitySetupFixture {
                     counters: { staged: 0, superseded: 0, expired: 0, refused: 0, cancelled: 0, admitted: 0, deferred: 0 },
                     figures: toIdleALOutboundPublicationFigures()
                 },
-                ordering: createALInboundOrderingCounters()
+                ordering: createALInboundOrderingCounters(),
+                congestionEpisodes: toIdleALOutboundCongestionEpisodeFigures()
             };
         }
     });

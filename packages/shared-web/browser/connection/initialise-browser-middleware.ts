@@ -14,6 +14,7 @@ import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { createWebSocketTicket } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
+import { BrowserOutboundCongestionEpisodesSink } from '@shared-web/browser/connection/browser-outbound-congestion-episodes-sink.ts';
 import { BrowserOwnWsConnectionGeneration } from '@shared-web/browser/connection/browser-own-ws-connection-generation.ts';
 import { readApiConfig } from '@shared-web/browser/connection/connection-http-api.ts';
 import {
@@ -199,6 +200,7 @@ export interface InitialiseBrowserTransportInput {
     readonly volatileBound: BrowserSessionVolatileBound;
     /** Built once per connect over the session's port; both carriers' runtimes report through it. */
     readonly inboundOrderingCounters: BrowserInboundOrderingCountersSink;
+    readonly congestionEpisodes: BrowserOutboundCongestionEpisodesSink;
     readonly publicationStageLimits: ALPublicationStageLimits;
     /** Built once per connect, under its claim; the WS client and the RTC overlay each take their own. */
     readonly checkpointStores: BrowserALCheckpointStores;
@@ -402,6 +404,10 @@ export function createBrowserTransportInput(
         ),
         volatileBound,
         inboundOrderingCounters: new BrowserInboundOrderingCountersSink(options.diagnosticsPorts.inboundDiagnostics),
+        congestionEpisodes: new BrowserOutboundCongestionEpisodesSink({
+            diagnostics: options.diagnosticsPorts.outboundDiagnostics,
+            settlements: options.deliverySettlements
+        }),
         publicationStageLimits: options.readPublicationStageLimits(),
         checkpointStores: resolveBrowserALCheckpointStores(clientData.sessionId, options.durableWorkOwnership),
         ...dependencies,
@@ -470,6 +476,7 @@ export function toBrowserMiddleware(
         RallarBrowserMiddleware,
         | 'volatileBudget'
         | 'orderingCounters'
+        | 'congestionEpisodes'
         | 'publicationStageLimits'
         | 'outboundDiagnostics'
         | 'groupStateDiagnostics'
@@ -479,8 +486,9 @@ export function toBrowserMiddleware(
         ...carriers,
         volatileBudget: input.volatileBound.budget,
         orderingCounters: input.inboundOrderingCounters,
+        congestionEpisodes: input.congestionEpisodes,
         publicationStageLimits: input.publicationStageLimits,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
+        outboundDiagnostics: input.congestionEpisodes.diagnostics,
         groupStateDiagnostics: input.options.diagnosticsPorts.groupStateDiagnostics
     };
 }
@@ -505,8 +513,8 @@ export function toBrowserWebSocketQueueBoxInput(
         connectTimeoutMs: input.options.timeoutMs ??
             DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS.connectTimeoutMsecs,
         newConnectionRequestId: input.creation.newConnectionRequestId,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.ws,
+        outboundDiagnostics: input.congestionEpisodes.diagnostics,
+        outboundSettlements: input.congestionEpisodes.settlements.ws,
         inboundDiagnostics: input.inboundOrderingCounters.sink,
         onResyncRequired: input.options.onResyncRequired
     };
@@ -524,8 +532,8 @@ export function toRtcOverlayMulticastManagerInput(
         volatileBudget: input.volatileBound.budget,
         checkpointStores: input.checkpointStores.rtcOverlay,
         durableWorkOwnership: input.options.durableWorkOwnership,
-        outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
-        outboundSettlements: input.options.deliverySettlements.rtc,
+        outboundDiagnostics: input.congestionEpisodes.diagnostics,
+        outboundSettlements: input.congestionEpisodes.settlements.rtc,
         faultPort: input.options.diagnosticsPorts.transportFaultPort,
         grantedTopics: input.options.grantedTopics,
         publicationCrypto: input.publicationCrypto,

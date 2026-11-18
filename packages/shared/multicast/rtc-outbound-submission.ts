@@ -118,6 +118,7 @@ export class RtcOutboundSubmission {
             diagnostics: this.dependencies.diagnostics,
             carrier: 'rtc',
             message: msg,
+            atMs: this.dependencies.clock.nowMs(),
             selfPeerId: this.dependencies.connectionService.input.sessionId,
             qosProvider: this.dependencies.qosProvider
         });

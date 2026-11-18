@@ -508,6 +508,71 @@ describe('the ordering counters a connect keeps beside its inbound diagnostics p
     });
 });
 
+describe('the congestion episodes a connect measures across its diagnostics and settlement ports', () => {
+    it('hands both carriers the measuring tee over the session\'s ports and the middleware its report', () => {
+        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
+        const qboxEngine = new InboxOutboxEngine();
+        onTestFinished(() => qboxEngine.stop());
+        const forwardedDiagnostics: string[] = [];
+        const forwardedSettlements: string[] = [];
+        const input = createBrowserTransportInput(
+            SESSION,
+            {
+                ...OPTIONS,
+                diagnosticsPorts: toRallarDiagnosticsPorts({
+                    outboundDiagnostics: (event) => forwardedDiagnostics.push(event.kind)
+                }),
+                deliverySettlements: {
+                    ws: (settlement) => forwardedSettlements.push(`ws ${settlement.kind}`),
+                    rtc: (settlement) => forwardedSettlements.push(`rtc ${settlement.kind}`)
+                }
+            },
+            KEYLESS_PUBLICATION
+        );
+        const ws = toBrowserWebSocketQueueBoxInput(input, {
+            qboxEngine,
+            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
+            serverPeerId: 'server'
+        });
+        const middleware = toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware);
+        const trace = { traceId: 'trace-1', corrId: 'corr-1' };
+
+        ws.outboundDiagnostics?.({
+            kind: 'congestion',
+            carrier: 'ws',
+            cause: 'backpressured',
+            action: 'defer',
+            priority: 5,
+            msgId: 'm1',
+            atMs: 1_000,
+            ...trace
+        });
+        // The dispatch reports its hand-overs through the middleware's sink, which is the same tee.
+        middleware.outboundDiagnostics({ kind: 'rtc-queued-bytes-high-water', queuedBytes: 1 });
+        ws.outboundSettlements?.({
+            kind: 'attempt-settled',
+            msgId: 'm1',
+            traceId: 'trace-1',
+            carrier: 'ws',
+            lane: 'volatile',
+            atMs: 1_075,
+            attemptId: 'attempt-2',
+            outcome: 'sent',
+            submissionAttempted: true,
+            detail: undefined,
+            willRetry: false
+        });
+
+        expect(forwardedDiagnostics).toEqual(['congestion', 'rtc-queued-bytes-high-water']);
+        expect(forwardedSettlements).toEqual(['ws attempt-settled']);
+        expect(middleware.congestionEpisodes.readReport()).toMatchObject({
+            openEpisodes: 0,
+            unrecordedSamples: 0,
+            durationMs: { count: 1, sum: 75 }
+        });
+    });
+});
+
 describe('the durable work claim a connect hands its carriers', () => {
     it('gives the WS client and the RTC overlay the connect\'s claim', () => {
         configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
@@ -681,25 +746,6 @@ describe('the page publication crypto stays off the public middleware', () => {
             .not.toHaveProperty('publicationCrypto');
         expectTypeOf<ReturnType<RallarFacade['advanced']['middleware']>['middleware']>()
             .not.toHaveProperty('publicationCrypto');
-    });
-});
-
-describe('the outbound diagnostics sink a connect hands its middleware', () => {
-    it('gives the middleware the connect\'s own sink, which its carriers report to', () => {
-        configureBrowserALRuntimeStores(SESSION.sessionId, { scope: defaultStateScope(), diagnosticsPorts: OPTIONS.diagnosticsPorts });
-        const input = createBrowserTransportInput(SESSION, OPTIONS, TRANSPORT_DEPENDENCIES);
-        const qboxEngine = new InboxOutboxEngine();
-        onTestFinished(() => qboxEngine.stop());
-
-        const ws = toBrowserWebSocketQueueBoxInput(input, {
-            qboxEngine,
-            socket: new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort()),
-            serverPeerId: 'server'
-        });
-        const middleware = toBrowserMiddleware(input, createDefaultApiMiddlewareTestDouble().middleware);
-
-        expect(middleware.outboundDiagnostics).toBe(OPTIONS.diagnosticsPorts.outboundDiagnostics);
-        expect(ws.outboundDiagnostics).toBe(middleware.outboundDiagnostics);
     });
 });
 

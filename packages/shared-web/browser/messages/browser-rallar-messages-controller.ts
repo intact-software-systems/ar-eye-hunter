@@ -98,7 +98,8 @@ export class BrowserRallarMessagesController {
                     ...context.middleware.volatileBudget.readReport(input.nowMs()),
                     ...input.deliveries.getReplyCounts(),
                     publication: input.publicationStages.readReport(context),
-                    ordering: context.middleware.orderingCounters.readReport()
+                    ordering: context.middleware.orderingCounters.readReport(),
+                    congestionEpisodes: context.middleware.congestionEpisodes.readReport()
                 };
             }
         );

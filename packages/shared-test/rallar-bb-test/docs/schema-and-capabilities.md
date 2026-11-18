@@ -1097,7 +1097,7 @@ only, in `relayRejection`.
 `failure` is present once the send ended `rejected`, `failed` or `expired`, and says why, typed:
 `refused` with the carrier's `reason` (`capacity`, a session over its volatile bound, never hands
 the send over; `congested`, a carrier at its high watermark with no fallback carrier left), `relay-rejected` with its `rejection`, `admission-failed`, `storage-unavailable` with
-its `cause` (`missing`, `open-failed`, `reset-blocked`, `quota`, `closed`, `evicted` or
+its `cause` (`missing`, `open-failed`, `quota`, `closed`, `evicted` or
 `transaction-failed`: the durable store wrote nothing), `skipped` with its
 `reason`, `unroutable` with its `reason`, `attempt-failed` with its `outcome`, `receipt-exhausted`
 with its `cause` (`budget`, or `hop-refused` with `hopPeerId` and `nackReason`), or `expired`.
@@ -1698,6 +1698,11 @@ buckets, fails the stats command.
 `ordering` is `readUsage().ordering`, required: `{ entered, omitted, witnessed, beforeEntry }`, the
 `ordering-position` events the connect's inbound admissions stated on either carrier, cumulative over the
 connect and counted per event, not per distinct copy.
+`congestionEpisodes` is `readUsage().congestionEpisodes`, required: `durationMs`, a bounded histogram on
+`AL_CONGESTION_EPISODE_BOUNDS_MS` of how long each message a carrier deferred waited, from its first deferral to the
+settlement of the attempt that was not deferred again; `openEpisodes`, the deferred messages no settlement has ended;
+and `unrecordedSamples`, the episodes the connect could not measure. It is cumulative over the connect and across both
+carriers. A page answer whose histogram has other bounds, or whose counts are not counts, fails the stats command.
 `orderingTracks` is the page's own, not the facade's: the sum of the latest
 `ordering-tracks` count each inbound store stated on the `storage` diagnostics
 port since the page's last `close` (D191; 0 before a store opened a track) — the same block reaches

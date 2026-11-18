@@ -274,6 +274,7 @@ export interface ALOutboundCongestionDiagnostic extends ALMessageTrace {
     readonly action: 'drop' | 'defer' | 'hand-over';
     readonly priority: number;
     readonly msgId: string;
+    readonly atMs: number;
 }
 
 /**
@@ -293,6 +294,7 @@ export interface WriteALOutboundCongestionDeferralInput {
     readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     readonly carrier: ALDeliveryCarrier;
     readonly message: ALMessage;
+    readonly atMs: number;
     readonly selfPeerId: string;
     /** The carrier's provider, so the deferral names the priority its planner read. */
     readonly qosProvider: ALQosInputProvider;
@@ -932,6 +934,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 action: 'drop',
                 priority: plan.congestionDrop.priority,
                 msgId: msg.id.msgId,
+                atMs: this.dependencies.clock.nowMs(),
                 ...toALMessageTrace(msg)
             });
         }
@@ -1097,6 +1100,7 @@ export function writeALOutboundCongestionDeferral(input: WriteALOutboundCongesti
         action: 'defer',
         priority: policy.effective.congestion.opts.priority,
         msgId: message.id.msgId,
+        atMs: input.atMs,
         ...toALMessageTrace(message)
     });
 }

@@ -195,10 +195,12 @@ function observeConsumedDiagnosticsPorts(): RallarDiagnosticsPorts[] {
     vi.spyOn(middleware, 'initialiseMiddleware').mockImplementation(async (...args) => {
         const connected = await initialise(...args);
         const ports = args[2].diagnosticsPorts;
-        expect(connected.middleware.outboundDiagnostics).toBe(ports.outboundDiagnostics);
         expect(storage.mock.calls[0]?.[1].diagnosticsPorts.storage).toBe(ports.storage);
         expect(volatileStorage.mock.calls[0]?.[2].storage).toBe(ports.storage);
-        expect(wsClient.mock.calls[0]?.[0].outboundDiagnostics).toBe(ports.outboundDiagnostics);
+        // The middleware and both carriers report through the connect's one congestion-measuring tee over the port.
+        const carrierOutbound = wsClient.mock.calls[0]?.[0].outboundDiagnostics;
+        expect(carrierOutbound).toEqual(expect.any(Function));
+        expect(connected.middleware.outboundDiagnostics).toBe(carrierOutbound);
         // Both carriers report through the connect's one ordering-counting tee over the port, which keeps its capture.
         const carrierInbound = wsClient.mock.calls[0]?.[0].inboundDiagnostics;
         expect(carrierInbound).toEqual(expect.any(Function));

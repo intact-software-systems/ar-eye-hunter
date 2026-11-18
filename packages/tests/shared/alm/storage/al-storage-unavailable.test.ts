@@ -65,11 +65,6 @@ describe('toALStorageUnavailable', () => {
         });
     });
 
-    it('classifies a supplied reset-blocked descriptor without an opener reset engine', () => {
-        const error = new ALStorageUnavailableError({ cause: 'reset-blocked', detail: 'External reset was blocked' });
-        expect(toALStorageUnavailable(error)).toEqual({ cause: 'reset-blocked', detail: 'External reset was blocked' });
-    });
-
     // fake-indexeddb has no storage quota, so the classification reads a constructed DOMException.
     it('reads quota from a QuotaExceededError', () => {
         expect(
