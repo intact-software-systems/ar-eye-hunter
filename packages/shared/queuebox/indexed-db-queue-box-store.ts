@@ -5,9 +5,9 @@ import {
 import type { IndexedDbStoreDefinition } from '../persistence/open-indexed-db.ts';
 import {
     decodeStoredResourceEntryValue,
+    INDEXED_DB_QUEUE_PENDING_STATUSES,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
-import { INDEXED_DB_QUEUE_PENDING_STATUSES } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
 import { readNextIndexedDbDueEntries } from './read-indexed-db-due-entries.ts';
 import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
@@ -138,7 +138,7 @@ export async function readStoredQueueWorkPages(
     });
 }
 
-/** A pending row always has a next time; a row of any other status has none, so it ties and keeps key order. */
+/** Every pending row is in the due index; a row of any other status has no next time, so it ties and keeps key order. */
 function isDueIndexedWorkPage(request: ResourceInboxWorkPage.Request): boolean {
     return request.order === 'due' && INDEXED_DB_QUEUE_PENDING_STATUSES.has(request.status);
 }

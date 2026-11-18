@@ -161,7 +161,7 @@ function toStoredResourceEntry(
     return {
         keyString: toKeyAsString(entry.key),
         revision,
-        fairnessDueEpochMs: toOptionalEpochMs(nextTs),
+        fairnessDueEpochMs: toFairnessDueEpochMs(entry.status, timestamps),
         key: { ...entry.key },
         resource: entry.resource,
         typeId: entry.typeId,
@@ -200,7 +200,7 @@ function decodeStoredResourceEntryTimestamps(
         throw new TypeError('IndexedDB queue end timestamp (ms) differs from its dequeue audit');
     }
     const nextTs = toOptionalInstant(stored.dequeueAudit.nextTs);
-    if (stored.fairnessDueEpochMs !== toOptionalEpochMs(nextTs)) {
+    if (stored.fairnessDueEpochMs !== toFairnessDueEpochMs(stored.status, { createdTs, nextTs })) {
         throw new TypeError('IndexedDB queue fairness timestamp differs from its next timestamp');
     }
     return { date, createdTs, expiryTs, startTs, endTs, nextTs };
@@ -237,8 +237,26 @@ function toExpectedEndEpochMs(
     return COMPLETED_STATUSES.has(status) ? 0 : null;
 }
 
-function toOptionalEpochMs(instant: Temporal.Instant | undefined): number | undefined {
-    return instant === undefined ? undefined : Number(instant.epochMilliseconds);
+/** The statuses of a pending row: `by-type-status-next-key` holds every one of them, dated or not. */
+export const INDEXED_DB_QUEUE_PENDING_STATUSES: ReadonlySet<EntityStatus> = new Set([
+    EntityStatus.NEW,
+    EntityStatus.RETRY
+]);
+
+/**
+ * The due index time: a row's next time; for an undated pending row, its creation instant (stored as UTC wall time),
+ * so a due claim reads it as due; for any other undated row, none, which keeps it out of the index.
+ */
+function toFairnessDueEpochMs(
+    status: EntityStatus,
+    timestamps: Pick<StoredResourceEntryTimestamps, 'createdTs' | 'nextTs'>
+): number | undefined {
+    if (timestamps.nextTs !== undefined) {
+        return Number(timestamps.nextTs.epochMilliseconds);
+    }
+    return INDEXED_DB_QUEUE_PENDING_STATUSES.has(status)
+        ? Number(timestamps.createdTs.toZonedDateTime('UTC').epochMilliseconds)
+        : undefined;
 }
 
 function toPlainTime(value: string | Temporal.PlainTime): Temporal.PlainTime {

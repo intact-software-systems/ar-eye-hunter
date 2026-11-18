@@ -384,17 +384,17 @@ describe('IndexedDbQueueBox due order', () => {
         expect(toResourceIds(claimed.values()).toSorted()).toEqual(['z-0', 'z-1']);
     });
 
-    it('stores a pending row written with no next time as due at its creation instant, and a claim clears it', async () => {
+    it('claims an undated pending row as due from its creation instant and reads its next time back undated', async () => {
         const queue = createQueueAt('undated');
         const undated = createDueEntry('undated', { nextTs: undefined });
+        const createdLater = createDueEntry('created-later', { nextTs: undefined, createdAt: DUE_NOW.add({ seconds: 1 }) });
         await queue.enqueue(undated);
+        await queue.enqueue(createdLater);
 
         const pending = await queue.getItem(undated.key);
-        await claimDue(queue, { maxToReserve: 1 });
-        const reserved = await queue.getItem(undated.key);
+        const claimed = await claimDue(queue, { maxToReserve: 16 });
 
-        expect(pending?.dequeueAudit.nextTs?.toString()).toBe(DUE_CREATED_AT.toString());
-        expect([reserved?.status, reserved?.dequeueAudit.nextTs]).toEqual([EntityStatus.RESERVED, undefined]);
+        expect([pending?.dequeueAudit.nextTs, toResourceIds(claimed)]).toEqual([undefined, ['undated']]);
     });
 
     it('a NEW-only claim reads its first sixteen rows by key', async () => {
@@ -465,9 +465,15 @@ function createQueueAt(name: string): IndexedDbQueueBox {
 
 function createDueEntry(
     resourceId: string,
-    options: Readonly<{ nextTs: Temporal.Instant | undefined; contextId?: string; status?: EntityStatus; expiryTs?: Temporal.Instant; }>
+    options: Readonly<{
+        nextTs: Temporal.Instant | undefined;
+        contextId?: string;
+        status?: EntityStatus;
+        expiryTs?: Temporal.Instant;
+        createdAt?: Temporal.Instant;
+    }>
 ): ResourceEntry {
-    const createdAt = DUE_CREATED_AT.toZonedDateTimeISO('UTC');
+    const createdAt = (options.createdAt ?? DUE_CREATED_AT).toZonedDateTimeISO('UTC');
     const status = options.status ?? EntityStatus.NEW;
     return {
         key: { topicId: DUE_TYPE_ID, resourceId, contextId: options.contextId ?? 'ctx-1' },
@@ -596,9 +602,9 @@ function createEntry(
         resource: options.resource ?? JSON.stringify({ typeId, resourceId }),
         typeId,
         audit: {
-            date: Temporal.Now.plainTimeISO('UTC'),
+            date: Temporal.Now.plainTimeISO(),
             createdBy: 'test',
-            createdTs: Temporal.Now.plainDateTimeISO('UTC'),
+            createdTs: Temporal.Now.plainDateTimeISO(),
             expiryTs: options.expiryTs ?? NEVER_EXPIRE_TS
         },
         status: options.status ?? EntityStatus.NEW,
