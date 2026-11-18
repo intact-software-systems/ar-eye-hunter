@@ -25,6 +25,7 @@ export const RTC_TOPOLOGY_OUTBOX_TOPIC = 'app-outbox.rtc-topology';
 export const RTC_TOPOLOGY_OUTBOX_TYPE = 'RTC_TOPOLOGY_RECOMPUTE';
 
 const ENTRY_STATUSES = new Set<string>(Object.values(EntityStatus));
+const RTC_TOPOLOGY_WORK_KINDS = ['group-revision', 'rtt-refresh', 'reshape-due'] as const;
 const ENVELOPE_KEYS = [
     'type',
     'topicId',
@@ -117,7 +118,7 @@ function requireRtcTopologyWorkIdentity(entry: ResourceEntry, message: ALMessage
         message.audit?.createdBy !== senderId ||
         message.audit.createdTs !== message.id.ts ||
         entry.audit.createdBy !== senderId ||
-        (data.kind !== 'group-revision' && data.kind !== 'rtt-refresh')
+        !RTC_TOPOLOGY_WORK_KINDS.some((kind) => kind === data.kind)
     ) {
         throw new TypeError('RTC topology work identity is invalid');
     }

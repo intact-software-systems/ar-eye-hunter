@@ -20,6 +20,7 @@ import {
     type RtcTopologyMutationInput,
     type RtcTopologyMutationRead
 } from '../../mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyReshapeDueWork } from '../../mutation/rtc-topology-outbox-entry.ts';
 import {
     computeGroupTopologyFromAuthority,
     validateComputedTopologySnapshot
@@ -36,6 +37,10 @@ import {
     type ComputedTopologyReshapeGate,
     type TopologyReshapeGatePlanOutcome
 } from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
+import {
+    resolveTopologyReshapeDue,
+    type TopologyReshapeDue
+} from '../../planning/reshape-gate/resolve-topology-reshape-due.ts';
 import { resolveTopologyReshapePermission } from '../../planning/reshape-gate/resolve-topology-reshape-permission.ts';
 import {
     resolveRttReplanPromotion,
@@ -62,6 +67,8 @@ export interface RtcTopologyWorkFacts {
      * window from the attempt, so a row derived from a long-lived row near its expiry still lives its window.
      */
     readonly derivedExpireAtEpochMs: number;
+    /** How long past its due time a reshape-due row this attempt derives lives at least (`appInbox.finishedRetentionMs`). */
+    readonly finishedRetentionMs: number;
     /** From the retained work row's envelope, never re-minted, so retries and recomputes reproduce the same rows. */
     readonly traceId: string;
 }
@@ -126,6 +133,8 @@ type UnchangedRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'sk
 
 type HeldRtcTopologyWork = Extract<AcceptedRtcTopologyWork, { decision: 'held-young-layout'; }>;
 
+type SettledReshapeDueWork = Extract<AcceptedRtcTopologyWork, { decision: 'skipped-reshape-settled'; }>;
+
 interface ToTopologyPublicationInput {
     readonly group: GroupSnapshot;
     readonly snapshot: RallarOverlayTopologySnapshot;
@@ -160,7 +169,7 @@ export function validateRtcTopologyWork(
 function validateAcceptedTopologyDecision(
     accepted: AcceptedRtcTopologyWork
 ): readonly RtcTopologyWorkValidationIssue[] {
-    if (accepted.decision === 'skipped-rtt-refinement') {
+    if (accepted.decision === 'skipped-rtt-refinement' || accepted.decision === 'skipped-reshape-settled') {
         return [];
     }
     if (accepted.decision === 'accepted') {
@@ -211,6 +220,7 @@ function toRtcTopologyWorkWriteInput(
         entry: input.entry,
         sourceWorkId: input.facts.workId,
         derivedExpireAtEpochMs: input.facts.derivedExpireAtEpochMs,
+        finishedRetentionMs: input.facts.finishedRetentionMs,
         reservationFinish: input.reservationFinish,
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,
@@ -223,6 +233,10 @@ function toRtcTopologyWorkWriteInput(
 function computeAcceptedRtcTopologyWork(
     input: ComputeRtcTopologyWorkInput
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
+    const settled = computeSettledReshapeDueWork(input);
+    if (settled !== null) {
+        return Either.ofRight(settled);
+    }
     const inputFingerprint = computeAuthorityTopologyInputFingerprint(input.read.authority);
     const fingerprintSkip = computeFingerprintSkip(input, inputFingerprint);
     if (fingerprintSkip !== null) {
@@ -257,6 +271,36 @@ function computeAcceptedRtcTopologyWork(
     });
 }
 
+/** What a reshape-due row finds when it runs; null for every other work kind. */
+export function resolveRtcTopologyWorkReshapeDue(input: ComputeRtcTopologyWorkInput): TopologyReshapeDue | null {
+    const work = input.facts.workEnvelope.data;
+    return work.kind === 'reshape-due' ? resolveReshapeDueWork(input.read, work) : null;
+}
+
+function resolveReshapeDueWork(read: RtcTopologyWorkRead, work: RtcTopologyReshapeDueWork): TopologyReshapeDue {
+    return resolveTopologyReshapeDue({
+        state: read.reshapeGate?.state ?? null,
+        bounds: read.authority.reshapeBounds,
+        nowEpochMs: read.authority.nowEpochMs,
+        periodStartedAtEpochMs: work.periodStartedAtEpochMs
+    });
+}
+
+/** The handler releases a reshape-due row that is not due before computing it, so compute sees settled or due. */
+function computeSettledReshapeDueWork(input: ComputeRtcTopologyWorkInput): SettledReshapeDueWork | null {
+    const work = input.facts.workEnvelope.data;
+    if (work.kind !== 'reshape-due') {
+        return null;
+    }
+    const due = resolveReshapeDueWork(input.read, work);
+    if (due.decision === 'not-due') {
+        throw new TypeError('A reshape-due row whose gate is still closed is released before it is computed');
+    }
+    return due.decision === 'settled'
+        ? { decision: 'skipped-reshape-settled', work, group: input.read.authority.group }
+        : null;
+}
+
 function resolveWorkReshapePermission(input: ComputeRtcTopologyWorkInput): TopologyReshapePermission {
     const { authority, reshapeGate } = input.read;
     return resolveTopologyReshapePermission({
@@ -273,7 +317,7 @@ function computeWorkTopology(
 ): ReconcileGroupTopologyResult {
     const work = input.facts.workEnvelope.data;
     return computeGroupTopologyFromAuthority(input.read.authority, input.read.mutation.snapshot?.value, {
-        intent: work.kind === 'group-revision' ? 'membership-delta' : 'full-rebuild',
+        intent: work.kind === 'rtt-refresh' ? 'full-rebuild' : 'membership-delta',
         origin: toTopologyWorkOrigin(work),
         reshape
     });
@@ -502,7 +546,8 @@ function computeAcceptedPlanRecord(input: ComputeAcceptedTopologyMutationInput):
         stored: input.read.mutation.snapshot?.value ?? null,
         planned: planned.snapshot,
         rttRefresh: work.kind === 'rtt-refresh',
-        changeGated: isChangeGatedGroupRevisionWork(work),
+        // A held reshape's wake-up carries no configuration intent, so its plan is not caused by config.
+        changeGated: isChangeGatedGroupRevisionWork(work) || work.kind === 'reshape-due',
         derivation: planned.derivation,
         heldReshapeReasons: planned.heldReshapeReasons,
         nowEpochMs: input.read.authority.nowEpochMs

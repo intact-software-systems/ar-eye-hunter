@@ -79,6 +79,9 @@ function readPublishedPlan(accepted: TimedRtcTopologyWork): RtcTopologyPlanRecor
 
 /** The layout version the decision left stored; a superseded attempt committed none of its own. */
 function readCommittedOverlayVersion(accepted: TimedRtcTopologyWork): number | undefined {
+    if (accepted.decision === 'skipped-reshape-settled') {
+        return undefined;
+    }
     if (accepted.decision !== 'accepted') {
         return accepted.criterionPetition?.planned.version;
     }

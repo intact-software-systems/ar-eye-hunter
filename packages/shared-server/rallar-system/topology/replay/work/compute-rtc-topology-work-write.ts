@@ -6,14 +6,18 @@ import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, type AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import {
     computeTopologyMutation,
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput
 } from '../../mutation/rtc-topology-mutations.ts';
-import type { RtcTopologyRttRefreshWork } from '../../mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyReshapeDueEntry,
+    type RtcTopologyReshapeDueWork,
+    type RtcTopologyRttRefreshWork
+} from '../../mutation/rtc-topology-outbox-entry.ts';
 import {
     computeRtcTopologyReshapeGateWrite,
     type RtcTopologyReshapeGateWrite
@@ -108,6 +112,12 @@ export type AcceptedRtcTopologyWork =
         decision: 'skipped-rtt-refinement';
         work: RtcTopologyRttRefreshWork;
         group: GroupSnapshot;
+    }>
+    | Readonly<{
+        /** A held reshape's wake-up that found its period ended or nothing wanted: it completes without planning. */
+        decision: 'skipped-reshape-settled';
+        work: RtcTopologyReshapeDueWork;
+        group: GroupSnapshot;
     }>;
 
 export type AcceptedRtcTopologyWorkWrite =
@@ -143,6 +153,8 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly sourceWorkId: string;
     /** The expiry of the promotion and connect-trigger rows the write derives. */
     readonly derivedExpireAtEpochMs: number;
+    /** How long past its due time a reshape-due row the write derives lives at least. */
+    readonly finishedRetentionMs: number;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
@@ -154,7 +166,7 @@ export interface ComputeRtcTopologyWorkWriteInput {
 
 type TransactedRtcTopologyWork = Exclude<
     AcceptedRtcTopologyWork,
-    { decision: 'skipped-rtt-refinement' | 'skipped-fingerprint'; }
+    { decision: 'skipped-rtt-refinement' | 'skipped-fingerprint' | 'skipped-reshape-settled'; }
 >;
 
 export function computeRtcTopologyWorkWrite(
@@ -164,6 +176,7 @@ export function computeRtcTopologyWorkWrite(
     if (
         accepted.decision === 'skipped-rtt-refinement' ||
         accepted.decision === 'skipped-fingerprint' ||
+        accepted.decision === 'skipped-reshape-settled' ||
         (accepted.decision === 'accepted' && accepted.computed.outcome === 'superseded')
     ) {
         return { kind: 'completion-only', reservationFinish };
@@ -200,7 +213,7 @@ function computeTopologyWorkTransaction(
         }).map(computeAppOutboxInsert),
         fingerprint: computeFingerprintWrite(accepted),
         reshapeGate: computeReshapeGateWrite(accepted, input.storedReshapeGateRevision),
-        reshapeDueWrite: null,
+        reshapeDueWrite: computeReshapeDueWrite(accepted, input),
         delivery: accepted.decision === 'accepted' && accepted.publication
             ? computeRtcTopologyPublicationDeliveryWrite(accepted.publication, input.publisherStreamId)
             : null,
@@ -227,6 +240,34 @@ function computeReshapeGateWrite(
     return reshapeGate.decision === 'write'
         ? computeRtcTopologyReshapeGateWrite(accepted.group.group, reshapeGate.state, storedRevision)
         : null;
+}
+
+/** The first hold of a gate period queues the row that wakes the room when the gate opens. */
+function computeReshapeDueWrite(
+    accepted: TransactedRtcTopologyWork,
+    input: ComputeRtcTopologyWorkWriteInput
+): AppOutboxInsert | null {
+    if (accepted.decision !== 'accepted' && accepted.decision !== 'skipped-unchanged') {
+        return null;
+    }
+    const { reshapeGate } = accepted;
+    if (reshapeGate.decision !== 'write' || reshapeGate.wakeUpDueAtEpochMs === null) {
+        return null;
+    }
+    const { lastPassAtEpochMs, heldAtEpochMs } = reshapeGate.state.gate;
+    if (lastPassAtEpochMs === null || heldAtEpochMs === null) {
+        throw new TypeError('A reshape gate wake-up requires a period and its first hold');
+    }
+    const notBeforeEpochMs = reshapeGate.wakeUpDueAtEpochMs;
+    return computeAppOutboxInsert(computeRtcTopologyReshapeDueEntry({
+        groupRef: accepted.group.group,
+        periodStartedAtEpochMs: lastPassAtEpochMs,
+        notBeforeEpochMs,
+        requestedAtEpochMs: heldAtEpochMs,
+        expireAtEpochMs: Math.max(input.derivedExpireAtEpochMs, notBeforeEpochMs + input.finishedRetentionMs),
+        senderId: input.entry.audit.createdBy,
+        traceId: input.traceId
+    }));
 }
 
 export function validateRtcTopologyWorkWrite(

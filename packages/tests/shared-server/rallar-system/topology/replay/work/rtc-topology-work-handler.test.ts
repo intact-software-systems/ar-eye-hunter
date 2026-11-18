@@ -21,10 +21,20 @@ import {
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import { computeRtcTopologyOutboxInsert, type ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    computeRtcTopologyReshapeDueEntry,
+    type ComputedRtcTopologyOutbox
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import {
+    computeRtcTopologyReshapeGateWrite,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
@@ -54,6 +64,7 @@ import {
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
@@ -923,6 +934,72 @@ describe('RTC topology APP_OUTBOX work', () => {
             planned
         );
         expect(observedRttVersions).toEqual([1]);
+    });
+});
+
+describe('RTC topology reshape-due work', () => {
+    it('a reshape-due row whose gate is still closed at this server\'s clock is released for retry', async () => {
+        const group = createGroupSnapshot(4);
+        const runtime = new FakeRuntimeStateRepository();
+        const heldGate = computeRtcTopologyReshapeGateWrite(group.group, {
+            gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 0, heldAtEpochMs: 103_000 },
+            wantedReasons: ['kind-change']
+        }, null);
+        await runtime.upsert({
+            namespace: RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
+            key: heldGate.key,
+            value: heldGate.value,
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+        });
+        const before = [...runtime.data];
+        const queue = new InMemoryQueueBox();
+        // The queue held the row until 115 000 by its own clock; this server's clock still reads 114 000.
+        const readTopologyPlanningAuthority = async () => ({
+            group,
+            config: resolveGroupTopologyConfig({}),
+            kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
+            rttReportingDegreeLimit: 5,
+            rttMeasurements: [],
+            rttReplanMinimumLayoutAgeMs: 15_000,
+            replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
+            nowEpochMs: 114_000
+        });
+        const handler = createRtcTopologyWorkHandler({
+            nowEpochMs: () => 114_000,
+            finishedRetentionMs: 3_600_000,
+            outboxQueueReader: new OutboxQueueReader(queue),
+            database: createAppInboxTestDatabase(queue, { replace: async (entry) => entry }, { runtimeRepository: runtime }),
+            executionRepository: new RtcTopologyExecutionRepository(runtime),
+            topologyPlanning: {
+                readTopologyPlanningAuthority,
+                readTopologyPlanningAuthorityIfPresent: readTopologyPlanningAuthority,
+                readDurationNowMs: () => 0,
+                observeCommittedTopology: vi.fn(),
+                recordTopologyPlanningObservation: vi.fn(),
+                recordTopologyPublication: vi.fn(),
+                recordTopologyPlanFrozen: vi.fn(),
+                recordTopologyRebuildSkippedFingerprint: vi.fn()
+            }
+        });
+        const queued = computeRtcTopologyReshapeDueEntry({
+            groupRef: group.group,
+            periodStartedAtEpochMs: 100_000,
+            notBeforeEpochMs: 115_000,
+            requestedAtEpochMs: 103_000,
+            expireAtEpochMs: 4_102_444_800_000,
+            senderId: 'server-1',
+            traceId: 'trace-rtc-topology-work-handler'
+        });
+        const entry = { ...queued, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+        await queue.enqueueIfAbsent(entry);
+
+        const released = handler.onMessage(decodePersistedALMessage(entry.resource), entry);
+
+        await expect(released).rejects.toBeInstanceOf(NotReadyException);
+        await expect(released).rejects.toMatchObject({ delayMs: 1_000 });
+        expect([...runtime.data]).toEqual(before);
+        expect((await queue.getItem(entry.key))?.status).toBe(EntityStatus.RESERVED);
     });
 });
 

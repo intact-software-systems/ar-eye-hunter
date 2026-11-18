@@ -7,7 +7,10 @@ import {
     toRtcRttTopologyOutboxId
 } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
-import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    computeRtcTopologyReshapeDueEntry
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import {
     decodeStoredTopologyReshapeGate,
     type StoredTopologyReshapeGate
@@ -382,7 +385,7 @@ describe('RTC topology work reshape gate', () => {
             gate: { lastPassAtEpochMs: NOW_EPOCH_MS - 5_000, consecutiveHeldPasses: 0, heldAtEpochMs: NOW_EPOCH_MS },
             wantedReasons: ['kind-change']
         });
-        expect(transaction.reshapeDueWrite).toBeNull();
+        expect(transaction.reshapeDueWrite?.entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(NOW_EPOCH_MS + 10_000);
     });
 
     it('the same join with the gate open reshapes and starts a period', () => {
@@ -553,6 +556,100 @@ describe('RTC topology work reshape gate', () => {
     });
 });
 
+describe('RTC topology reshape-due work', () => {
+    const PERIOD_STARTED_AT_EPOCH_MS = 100_000;
+    const GATE_OPENS_AT_EPOCH_MS = 115_000;
+    const HELD_GATE: BackoffGateState = {
+        lastPassAtEpochMs: PERIOD_STARTED_AT_EPOCH_MS,
+        consecutiveHeldPasses: 0,
+        heldAtEpochMs: 103_000
+    };
+
+    it('a reshape-due row at an open gate reshapes the room and doubles the interval', () => {
+        const replan = computeRtcTopologyFixtureRebuild('kind-change');
+        const held = computeGatedWork(withReshapeGate(toFixtureReplanWorkInput(replan), toClosedReshapeGate(17_000)));
+        const attached = held.accepted.decision === 'accepted' ? held.accepted.mutationInput.candidate : null;
+        if (attached === null) {
+            throw new Error('The held join must attach the joiner');
+        }
+        const workInput = withReshapeGate(
+            atNow(
+                toFixtureReplanWorkInput(
+                    { previous: attached, replanInput: replan.replanInput },
+                    (current) => toReservedReshapeDueEntry(current, PERIOD_STARTED_AT_EPOCH_MS)
+                ),
+                GATE_OPENS_AT_EPOCH_MS
+            ),
+            toStoredReshapeGate(HELD_GATE, 3, ['kind-change'])
+        );
+
+        const { accepted, transaction } = computeGatedWork(workInput);
+
+        expect(accepted.decision === 'accepted' ? accepted.publication?.plan?.change : null)
+            .toEqual({ kind: 'reshape', reason: 'kind-change' });
+        expect(readWrittenReshapeGateState(transaction)).toEqual({
+            gate: { lastPassAtEpochMs: GATE_OPENS_AT_EPOCH_MS, consecutiveHeldPasses: 1, heldAtEpochMs: null },
+            wantedReasons: []
+        });
+        expect(transaction.reshapeDueWrite).toBeNull();
+    });
+
+    it('a reshape-due row whose want has gone clears the want and publishes nothing', () => {
+        const leaderless = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(30));
+        const current = toLaterGroupRevision(leaderless);
+        const workInput = withReshapeGate(
+            toWorkInput({
+                entry: toReservedReshapeDueEntry(current, PERIOD_STARTED_AT_EPOCH_MS),
+                stored: acceptPlannedLayout(leaderless),
+                authority: createPlanningAuthority(current, GATE_OPENS_AT_EPOCH_MS)
+            }),
+            toStoredReshapeGate(HELD_GATE, 3, ['kind-change'])
+        );
+
+        const { accepted, transaction } = computeGatedWork(workInput);
+
+        expect(accepted.decision).toBe('skipped-unchanged');
+        expect(transaction).toMatchObject({ mutation: null, delivery: null, reshapeDueWrite: null });
+        expect(readWrittenReshapeGateState(transaction)).toEqual({ gate: HELD_GATE, wantedReasons: [] });
+    });
+
+    it('a reshape-due row of an earlier period completes without planning', () => {
+        const group = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(6));
+        const workInput = withReshapeGate(
+            toWorkInput({
+                entry: toReservedReshapeDueEntry(group, PERIOD_STARTED_AT_EPOCH_MS),
+                stored: acceptPlannedLayout(group),
+                authority: createPlanningAuthority(group, GATE_OPENS_AT_EPOCH_MS)
+            }),
+            toStoredReshapeGate({ lastPassAtEpochMs: 110_000, consecutiveHeldPasses: 1, heldAtEpochMs: null }, 4)
+        );
+
+        const computed = computeRtcTopologyWork(workInput).right;
+
+        expect(computed?.accepted.decision).toBe('skipped-reshape-settled');
+        expect(computed?.write).toEqual({ kind: 'completion-only', reservationFinish: workInput.reservationFinish });
+        expect(validateRtcTopologyWork(workInput, computeRtcTopologyWork(workInput))).toEqual([]);
+    });
+
+    it('a reshape-due row in a quiet room is not skipped by an unchanged input fingerprint', () => {
+        const leaderless = createRtcTopologyGroupSnapshot('group-1', createRtcTopologyMemberIds(30));
+        const appointed = toAppointedRevision(leaderless, 'peer-12');
+        const authority = createPlanningAuthority(appointed, GATE_OPENS_AT_EPOCH_MS);
+        const stored = { ...acceptPlannedLayout(leaderless), inputFingerprint: computeAuthorityTopologyInputFingerprint(authority) };
+        const reshapeGate = toStoredReshapeGate(HELD_GATE, 3, ['leader-rooting']);
+        const toQuietWork = (entry: ResourceEntry) => withReshapeGate(toWorkInput({ entry, stored, authority }), reshapeGate);
+
+        const membership = computeRtcTopologyWork(toQuietWork(toReservedGroupRevisionEntry(appointed, 'automatic'))).right;
+        const reshapeDue = computeAcceptedWork(
+            toPublishingWorkInput(toQuietWork(toReservedReshapeDueEntry(appointed, PERIOD_STARTED_AT_EPOCH_MS)))
+        );
+
+        expect(membership?.accepted.decision).toBe('skipped-fingerprint');
+        expect(reshapeDue.publication?.plan?.change).toEqual({ kind: 'reshape', reason: 'leader-rooting' });
+        expect(reshapeDue.publication?.plan?.causes).toEqual(['leader-change']);
+    });
+});
+
 describe('RTC topology RTT-refresh work', () => {
     it('holds an RTT-only replan while the accepted layout is younger than the minimum age', () => {
         const held = computeRttRefreshDecision({
@@ -703,6 +800,7 @@ describe('RTC topology RTT-refresh work', () => {
             entry: workInput.entry,
             sourceWorkId: workInput.facts.workId,
             derivedExpireAtEpochMs: workInput.facts.derivedExpireAtEpochMs,
+            finishedRetentionMs: workInput.facts.finishedRetentionMs,
             reservationFinish: workInput.reservationFinish,
             formationAutomationEnabled: workInput.formationAutomationEnabled,
             serviceId: workInput.serviceId,
@@ -916,7 +1014,8 @@ function toWorkInput(input: ToWorkInput): ComputeRtcTopologyWorkInput {
             workEnvelope,
             workId: toRtcTopologyExecutionId(workEnvelope, message.id.ts),
             attemptCount: 1,
-            derivedExpireAtEpochMs: PUBLICATION_EXPIRE_AT_EPOCH_MS
+            derivedExpireAtEpochMs: PUBLICATION_EXPIRE_AT_EPOCH_MS,
+            finishedRetentionMs: 3_600_000
         },
         read: {
             mutation: {
@@ -1072,6 +1171,24 @@ function toMergedCommandedGroupRevisionEntry(current: GroupSnapshot): ResourceEn
         previousEntry: commanded
     }).entryWrite.entry;
     return { ...merged, status: reserved.status, dequeueAudit: reserved.dequeueAudit };
+}
+
+/** A held reshape's wake-up row, queued for the period that started at the given instant, as a server reserves it. */
+function toReservedReshapeDueEntry(current: GroupSnapshot, periodStartedAtEpochMs: number): ResourceEntry {
+    const queued = computeRtcTopologyReshapeDueEntry({
+        groupRef: current.group,
+        periodStartedAtEpochMs,
+        notBeforeEpochMs: periodStartedAtEpochMs + 15_000,
+        requestedAtEpochMs: periodStartedAtEpochMs + 3_000,
+        expireAtEpochMs: PUBLICATION_EXPIRE_AT_EPOCH_MS,
+        senderId: 'topology-service',
+        traceId: 'trace-compute-rtc-topology-work'
+    });
+    return { ...queued, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } };
+}
+
+function atNow(input: ComputeRtcTopologyWorkInput, nowEpochMs: number): ComputeRtcTopologyWorkInput {
+    return { ...input, read: { ...input.read, authority: { ...input.read.authority, nowEpochMs } } };
 }
 
 function withReshapeGate(
