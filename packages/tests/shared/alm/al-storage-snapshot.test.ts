@@ -304,12 +304,15 @@ function createInboundUpdate(
     input: Readonly<{ payloadBytes: number; update: number; peerId: string; }>
 ): ALMessage {
     return newALUnicastMessage(
-        input.peerId,
-        { topicId: 'snapshot', resourceId: `size-${input.payloadBytes}`, contextId: 'conversation-1' },
-        SELF_PEER_ID,
-        'snapshot.update.v1',
-        toPayloadResource(input.payloadBytes, input.update),
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: input.peerId,
+            route: { topicId: 'snapshot', resourceId: `size-${input.payloadBytes}`, contextId: 'conversation-1' },
+            toPeerId: SELF_PEER_ID,
+            typeId: 'snapshot.update.v1',
+            resource: toPayloadResource(input.payloadBytes, input.update),
+            options: { ttlMs: 300_000 }
+        }
     );
 }
 
@@ -407,12 +410,15 @@ function toPayloadResource(payloadBytes: number, update: number): Readonly<{ tex
 
 function createUpdate(input: Readonly<{ payloadBytes: number; update: number; peerId: string; }>): ALMessage {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'snapshot', resourceId: `size-${input.payloadBytes}`, contextId: 'conversation-1' },
-        input.peerId,
-        'snapshot.update.v1',
-        toPayloadResource(input.payloadBytes, input.update),
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'snapshot', resourceId: `size-${input.payloadBytes}`, contextId: 'conversation-1' },
+            toPeerId: input.peerId,
+            typeId: 'snapshot.update.v1',
+            resource: toPayloadResource(input.payloadBytes, input.update),
+            options: { ttlMs: 300_000 }
+        }
     );
 }
 

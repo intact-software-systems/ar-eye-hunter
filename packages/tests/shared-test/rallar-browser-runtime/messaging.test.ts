@@ -117,7 +117,14 @@ it('applies a command-injected hold through the configured readiness owner and r
     if (!ports?.submissionReadinessFaultPort || !ports.transportFaultPort) {
         throw new Error('Scoped connection must install both fault capabilities.');
     }
-    const message = newALUnicastMessage('sender', { topicId: 'topic', contextId: 'room', resourceId: 'one' }, 'receiver', 'held', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'topic', contextId: 'room', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'held',
+        resource: {}
+    });
     const serialized = JSON.stringify(message);
     const fault = { faultId: 'hold', carrier: 'ws', action: 'not-ready', match: { msgId: message.id.msgId }, remaining: 2 };
     await runtime.injectFault(fault);
@@ -139,7 +146,14 @@ it('forges a sender by the principal the page resolves in its room snapshot, and
         ...createGroupSnapshotFixture({ ...roomRef, sessionIds: [] }),
         activeSessions: [charlie]
     });
-    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'granted',
+        resource: {}
+    });
     const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
     const fault = {
         faultId: 'forge',
@@ -175,7 +189,14 @@ it('releases a forging fault without resolving its principal again, even once th
     } as const;
     const room = createGroupSnapshotFixture({ ...roomRef, sessionIds: [] });
     facade.behavior.getRoomSnapshot.mockReturnValue({ ...room, activeSessions: [charlie] });
-    const message = newALUnicastMessage('sender', { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' }, 'receiver', 'granted', {});
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: { topicId: 'room.granted', contextId: 'bb-group', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'granted',
+        resource: {}
+    });
     const frame = JSON.stringify({ ...message, proof: { alg: 'ES256', keyId: 'sender-key', signature: 'signature' } });
     const fault = {
         faultId: 'forge',

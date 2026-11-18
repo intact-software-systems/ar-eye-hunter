@@ -375,14 +375,17 @@ function createMessageContext(
     enqueue: AppInboxEnqueue
 ): AppInboxMessageContext<TopologyAppInboxResult> {
     const message = newALUntargetedMessage(
-        'topology-handler-test',
-        newALRoute(
-            enqueue.topicId ?? 'app-inbox.group-state',
-            enqueue.contextId ?? 'topology-handler-context',
-            requireResourceId(enqueue.resourceId)
-        ),
-        enqueue.type,
-        enqueue
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'topology-handler-test',
+            route: newALRoute(
+                enqueue.topicId ?? 'app-inbox.group-state',
+                enqueue.contextId ?? 'topology-handler-context',
+                requireResourceId(enqueue.resourceId)
+            ),
+            typeId: enqueue.type,
+            resource: enqueue
+        }
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, Temporal.Now.instant());
     return {

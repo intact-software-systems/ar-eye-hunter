@@ -148,12 +148,15 @@ describe('a granted RTC publication at its relays and receivers', () => {
         const chain = await createOriginRelayChain({ ...GRANTS_WITH_UNSUBSCRIBED_RELAY, r: SUBSCRIBE_ONLY });
         const relay = createRelayHop(chain, { selfPeerId: 'r', subscribed: true, grantedTopicId: APP_TOPIC_ID });
         const forged = newALUnicastMessage(
-            'a',
-            { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
-            'r',
-            GRANTED_TYPE_ID,
-            { text: 'forged' },
-            { ttlMs: 30_000, traceId: 'trace-forged' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: APP_TOPIC_ID, resourceId: 'forged-1', contextId: ORIGIN_ROOM.groupId },
+                toPeerId: 'r',
+                typeId: GRANTED_TYPE_ID,
+                resource: { text: 'forged' },
+                options: { ttlMs: 30_000, traceId: 'trace-forged' }
+            }
         );
 
         await relay.receive({ ...forged, targets: toTargets(forged) }, 'a');
@@ -477,17 +480,20 @@ async function admitAt(
 ): Promise<ALOutboundEnqueueResult> {
     const admitted = await origin.manager.enqueueLegIfAbsent(
         newALMulticastMessage(
-            'a',
-            { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
-            ORIGIN_ROOM,
-            GRANTED_TYPE_ID,
-            { text: `feed ${resourceId}` },
             {
-                ack,
-                reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
-                ttlMs: 30_000,
-                traceId: `trace-${resourceId}`,
-                ...(durability === 'durable' ? { qos: { durability: { algo: 'local-outbox' } } } : {})
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: PUBLICATION_TOPIC_ID, resourceId, contextId: ORIGIN_ROOM.groupId },
+                groupRef: ORIGIN_ROOM,
+                typeId: GRANTED_TYPE_ID,
+                resource: { text: `feed ${resourceId}` },
+                options: {
+                    ack,
+                    reliability: ack === 'none' ? 'best-effort' : 'at-least-once',
+                    ttlMs: 30_000,
+                    traceId: `trace-${resourceId}`,
+                    ...(durability === 'durable' ? { qos: { durability: { algo: 'local-outbox' } } } : {})
+                }
             }
         ),
         'hold'
@@ -508,12 +514,15 @@ function toRepairControl(message: ALMessage, fromPeerId: string, toPeerId = 'a')
 /** A members-topic room multicast as the origin's transport copy to `r`. */
 function createMembersTransportCopy(): ALMessage {
     return toTransportCopy(newALMulticastMessage(
-        'a',
-        { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
-        ORIGIN_ROOM,
-        MEMBERS_TYPE_ID,
-        { text: 'hello' },
-        { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'room.chat', resourceId: 'chat-1', contextId: ORIGIN_ROOM.groupId },
+            groupRef: ORIGIN_ROOM,
+            typeId: MEMBERS_TYPE_ID,
+            resource: { text: 'hello' },
+            options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000, traceId: 'trace-members' }
+        }
     ));
 }
 

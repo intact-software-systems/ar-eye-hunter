@@ -69,7 +69,12 @@ describe('WS retained-work faults', () => {
         const socket = new JsonWebSocketClient('ws://test', faults);
         const engine = new InboxOutboxEngine();
         const drain = captureOutboundWorkRunnable(engine);
-        const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
+        const registry = new BrowserRallarDeliveryRegistry({
+            nowMs: Date.now,
+            maxEntries: 10,
+            retainTerminalMs: 60_000,
+            cancel: () => {}
+        });
         const connecting = createBrowserWebSocketQueueBox({
             nowEpochMs: Date.now,
             workNowEpochMs: Date.now,
@@ -121,19 +126,35 @@ describe('WS retained-work faults', () => {
             ...snapshot,
             activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
         });
-        const original = newALMulticastMessage(sessionId, { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' }, room, 'alm.lifecycle', {
-            marker: 'delivery-lifecycle',
-            specimen: 'supersedence'
-        }, { ack: 'receiver', reliability: 'at-least-once', seq: 1 });
-        const replacement = newALMulticastMessage(sessionId, { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'new' }, room, 'alm.lifecycle', {
-            marker: 'delivery-lifecycle',
-            specimen: 'supersedence'
-        }, { ack: 'receiver', reliability: 'at-least-once', seq: 2 });
-        const oldHandle = registry.open(original, 'ws');
+        const original = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' },
+            groupRef: room,
+            typeId: 'alm.lifecycle',
+            resource: {
+                marker: 'delivery-lifecycle',
+                specimen: 'supersedence'
+            },
+            options: { ack: 'receiver', reliability: 'at-least-once', seq: 1 }
+        });
+        const replacement = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'new' },
+            groupRef: room,
+            typeId: 'alm.lifecycle',
+            resource: {
+                marker: 'delivery-lifecycle',
+                specimen: 'supersedence'
+            },
+            options: { ack: 'receiver', reliability: 'at-least-once', seq: 2 }
+        });
+        const oldHandle = registry.open({ message: original, carrier: 'ws', readDeadlineEpochMs: Date.now });
         await service.enqueueOutboxIfAbsent(original);
         await drain();
         expect(native.sent).toEqual([]);
-        registry.open(replacement, 'ws');
+        registry.open({ message: replacement, carrier: 'ws', readDeadlineEpochMs: Date.now });
         await service.enqueueOutboxIfAbsent(replacement);
         await vi.advanceTimersByTimeAsync(100);
         await drain();
@@ -207,8 +228,16 @@ describe('WS retained-work faults', () => {
             }
         });
         const message = {
-            ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId: 'original' }, 'receiver', 'held.message', { original: true }, {
-                ttlMs: 60_000
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: sessionId,
+                route: { topicId: 'held', contextId: 'room', resourceId: 'original' },
+                toPeerId: 'receiver',
+                typeId: 'held.message',
+                resource: { original: true },
+                options: {
+                    ttlMs: 60_000
+                }
             }),
             delivery: { reliability: 'at-least-once', ack: 'receiver' },
             // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's. The retained

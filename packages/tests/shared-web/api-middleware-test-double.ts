@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { createDefaultBrowserServerClockFixture } from './connection/browser-server-clock-fixture.ts';
 
 import { BrowserALStorageAvailability } from '@shared-web/browser/al-runtime/browser-al-storage-availability.ts';
 import { BrowserInboundOrderingCountersSink } from '@shared-web/browser/connection/browser-inbound-ordering-counters-sink.ts';
@@ -42,6 +43,7 @@ export type MiddlewareTestOverrides =
     };
 
 export interface ApiMiddlewareTestOverrides {
+    readonly serverTime?: ApiMiddleware['serverTime'];
     readonly session?: Partial<AuthSession>;
     readonly middleware?: MiddlewareTestOverrides;
 }
@@ -54,6 +56,7 @@ export function createDefaultApiMiddlewareTestDouble(
 
     return {
         session,
+        serverTime: overrides.serverTime ?? createDefaultBrowserServerClockFixture(),
         middleware: {
             qboxEngine: createQboxEngineDouble(middlewareOverrides.qboxEngine),
             webSocketQueueBox: createWebSocketQueueBoxDouble(

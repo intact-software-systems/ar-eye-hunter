@@ -1613,11 +1613,14 @@ function noRecipientLiveSendResult(message: ALMessage): WsServerLiveSendResult {
 function createWsEntry(): ResourceEntry {
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.todo', 'all', 'todo-1'),
-            'all',
-            'todo.item.updated.v1',
-            { title: 'Ship bridge' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.todo', 'all', 'todo-1'),
+                scope: 'all',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Ship bridge' }
+            }
         ),
         EnqueuedType.WS_INBOX,
         Temporal.Now.instant()
@@ -1627,17 +1630,20 @@ function createWsEntry(): ResourceEntry {
 function createWsOutboxEntry(): ResourceEntry {
     return QueueBoxUtilities.toResourceEntryFromMsg(
         newALBroadcastMessage(
-            'rallar-server',
-            newALRoute('rallar.overlay-topology.v1', 'room-1', 'topology-1'),
-            'room',
-            'rallar.overlay-topology.v1',
-            { version: 1 },
             {
-                ttlMs: 60_000,
-                groupRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-1'
+                createdAtEpochMs: Date.now(),
+                senderId: 'rallar-server',
+                route: newALRoute('rallar.overlay-topology.v1', 'room-1', 'topology-1'),
+                scope: 'room',
+                typeId: 'rallar.overlay-topology.v1',
+                resource: { version: 1 },
+                options: {
+                    ttlMs: 60_000,
+                    groupRef: {
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'room-1'
+                    }
                 }
             }
         ),
@@ -1649,14 +1655,17 @@ function createWsOutboxEntry(): ResourceEntry {
 /** A room broadcast stored under its canonical outbound key, as the server's outbound owner stores it. */
 function createCanonicalRoomOutboxEntry(nowMs: number): ResourceEntry {
     const message = newALBroadcastMessage(
-        'rallar-server',
-        newALRoute('room.snapshot', 'room-1', 'snapshot-1'),
-        'room',
-        'room.snapshot.v1',
-        { version: 1 },
         {
-            ttlMs: 60_000,
-            groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            createdAtEpochMs: Date.now(),
+            senderId: 'rallar-server',
+            route: newALRoute('room.snapshot', 'room-1', 'snapshot-1'),
+            scope: 'room',
+            typeId: 'room.snapshot.v1',
+            resource: { version: 1 },
+            options: {
+                ttlMs: 60_000,
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            }
         }
     );
     return createCanonicalOutboxEntry(message, nowMs);
@@ -1664,8 +1673,16 @@ function createCanonicalRoomOutboxEntry(nowMs: number): ResourceEntry {
 
 /** A client's world broadcast stored under its canonical outbound key. */
 function createCanonicalWorldOutboxEntry(nowMs: number): ResourceEntry {
-    const message = newALBroadcastMessage('peer-1', newALRoute('app.news', 'world', 'news-1'), 'world', 'news.v1', { version: 1 }, {
-        ttlMs: 60_000
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: newALRoute('app.news', 'world', 'news-1'),
+        scope: 'world',
+        typeId: 'news.v1',
+        resource: { version: 1 },
+        options: {
+            ttlMs: 60_000
+        }
     });
     return createCanonicalOutboxEntry(message, nowMs);
 }

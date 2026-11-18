@@ -675,11 +675,14 @@ async function seedCanonicalStock(status: 'pending' | 'completed', result: JsonW
         creationNow: Temporal.Now.instant,
         createMessage: ({ key, enqueue: { traceId, ...command } }) =>
             newALUntargetedMessage(
-                'existing-inventory-worker',
-                newALRoute(key.topicId, key.contextId, key.resourceId),
-                command.type,
-                command,
-                { traceId }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'existing-inventory-worker',
+                    route: newALRoute(key.topicId, key.contextId, key.resourceId),
+                    typeId: command.type,
+                    resource: command,
+                    options: { traceId }
+                }
             )
     });
     const repositories = createPSqlResourceInboxRepository(storage.sql, () => new Date());

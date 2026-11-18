@@ -35,6 +35,7 @@ import { BrowserMessageReplySlot } from './reply/browser-message-reply-slot.ts';
 
 /** The mutable observation of one message; the handle handed to the sender closes over exactly this object. */
 interface DeliveryObservation {
+    readonly readDeadlineEpochMs: () => number | undefined;
     readonly rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
     readonly msgId: string;
     readonly corrId: string;
@@ -74,6 +75,13 @@ interface DeliveryDeadlineTimer {
 }
 
 export namespace BrowserRallarDeliveryRegistry {
+    export interface Open {
+        readonly message: ALMessage;
+        readonly carrier: ALDeliveryCarrier;
+        readonly readDeadlineEpochMs: () => number | undefined;
+        readonly rtcCapture?: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>;
+    }
+
     export interface Input {
         readonly nowMs: () => number;
         /** Terminal entries are kept this long so a late `wait()` still reads its evidence. */
@@ -101,24 +109,18 @@ export class BrowserRallarDeliveryRegistry {
 
     constructor(input: BrowserRallarDeliveryRegistry.Input) {
         this.input = input;
-        this.fallback = new BrowserMessageFallbackController({ nowMs: input.nowMs });
+        this.fallback = new BrowserMessageFallbackController();
     }
 
     /** Returns the existing handle for the same msgId, because a fallback re-sends the same envelope. */
-    open(
-        message: ALMessage,
-        carrier: ALDeliveryCarrier,
-        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt> = Object.freeze({
-            status: 'unavailable',
-            reason: 'absent'
-        })
-    ): RallarMessageHandle {
+    open(input: BrowserRallarDeliveryRegistry.Open): RallarMessageHandle {
+        const { message } = input;
         const existing = this.entries.get(message.id.msgId);
         if (existing !== undefined) {
             return existing.handle;
         }
 
-        const observation = this.createObservation(message, carrier, rtcCapture);
+        const observation = this.createObservation(input);
         const entry: DeliveryEntry = { observation, handle: this.createHandle(observation) };
         this.entries.set(observation.msgId, entry);
         this.retainEntries();
@@ -134,9 +136,12 @@ export class BrowserRallarDeliveryRegistry {
         ) {
             return;
         }
+        const now = observation.readDeadlineEpochMs();
         this.publishLifecycle(
             observation,
-            computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, this.input.nowMs())
+            now === undefined
+                ? { ...observation.lifecycle, expiresAtMs }
+                : computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, now)
         );
         for (const wait of observation.waits.values()) {
             wait.updateDeadline();
@@ -212,12 +217,12 @@ export class BrowserRallarDeliveryRegistry {
         return this.entries.size;
     }
 
-    private createObservation(
-        message: ALMessage,
-        carrier: ALDeliveryCarrier,
-        rtcCapture: RtcSignalingDiagnostics.Readout<RtcSignalingDiagnostics.CaptureReceipt>
-    ): DeliveryObservation {
+    private createObservation({
+        message, carrier, readDeadlineEpochMs,
+        rtcCapture = Object.freeze({ status: 'unavailable', reason: 'absent' })
+    }: BrowserRallarDeliveryRegistry.Open): DeliveryObservation {
         return {
+            readDeadlineEpochMs,
             rtcCapture,
             msgId: message.id.msgId,
             corrId: toALCorrId(message),
@@ -232,7 +237,7 @@ export class BrowserRallarDeliveryRegistry {
                 ackMode: message.delivery?.ack ?? 'none',
                 receiptAlgo: resolveALDeliveryReceiptAlgo(message),
                 expiresAtMs: message.constraints?.expiresAtMs,
-                submittedAtMs: this.input.nowMs()
+                submittedAtMs: message.id.ts
             }),
             carrier,
             terminalAtMs: undefined,
@@ -273,7 +278,13 @@ export class BrowserRallarDeliveryRegistry {
 
     /** No owner emits the deadline, so a read applies it before answering. */
     private readLifecycle(observation: DeliveryObservation): ALDeliveryLifecycle {
-        const deadlined = computeALDeliveryDeadline(observation.lifecycle, this.input.nowMs());
+        if (isALDeliveryTerminal(observation.lifecycle)) {
+            return observation.lifecycle;
+        }
+        const now = observation.readDeadlineEpochMs();
+        const deadlined = now === undefined
+            ? observation.lifecycle
+            : computeALDeliveryDeadline(observation.lifecycle, now);
         if (deadlined !== observation.lifecycle) {
             this.publishLifecycle(observation, deadlined);
         }
@@ -394,11 +405,16 @@ export class BrowserRallarDeliveryRegistry {
         if (expiresAtMs === undefined) {
             return;
         }
+        const now = deadline.observation.readDeadlineEpochMs();
+        if (now === undefined) {
+            // Disconnected observations may still receive settlement evidence for durable work.
+            return;
+        }
         deadline.timerId = setTimeout(() => {
             if (!isALDeliveryTerminal(this.readLifecycle(deadline.observation))) {
                 this.scheduleDeadlineTimer(deadline);
             }
-        }, Math.max(1, expiresAtMs - this.input.nowMs()));
+        }, Math.min(2_147_483_647, Math.max(1, expiresAtMs - now)));
     }
 
     /**

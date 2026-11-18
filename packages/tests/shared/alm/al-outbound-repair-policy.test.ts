@@ -160,12 +160,15 @@ interface RoomSendRuntimeInput {
 
 function createRoomSend() {
     return newALBroadcastMessage(
-        'self',
-        { topicId: 'room.chat', resourceId: 'repair-policy-room', contextId: 'room-1' },
-        'room',
-        'chat.message.v1',
-        { text: 'room' },
-        { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.chat', resourceId: 'repair-policy-room', contextId: 'room-1' },
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { text: 'room' },
+            options: { groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' }, ttlMs: 30_000 }
+        }
     );
 }
 

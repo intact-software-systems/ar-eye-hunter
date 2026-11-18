@@ -302,11 +302,14 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
         const message = newALUnicastMessage(
-            INBOUND_TEST_SENDER_PEER_ID,
-            { topicId: 'chat', resourceId: 'no-deadline', contextId: 'room' },
-            INBOUND_TEST_SELF_PEER_ID,
-            'chat.private-text.v1',
-            { text: 'no-deadline' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: INBOUND_TEST_SENDER_PEER_ID,
+                route: { topicId: 'chat', resourceId: 'no-deadline', contextId: 'room' },
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                typeId: 'chat.private-text.v1',
+                resource: { text: 'no-deadline' }
+            }
         );
         const admittedAtMs = Date.now();
 
@@ -324,11 +327,14 @@ describe('the owner row a volatile inbound message keeps (D74)', () => {
 function createPermanentMessage(resourceId: string): ALMessage {
     return {
         ...newALUnicastMessage(
-            INBOUND_TEST_SENDER_PEER_ID,
-            { topicId: 'state', resourceId, contextId: 'room' },
-            INBOUND_TEST_SELF_PEER_ID,
-            'state.snapshot',
-            { revision: 1 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: INBOUND_TEST_SENDER_PEER_ID,
+                route: { topicId: 'state', resourceId, contextId: 'room' },
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                typeId: 'state.snapshot',
+                resource: { revision: 1 }
+            }
         ),
         constraints: { expiresAtMs: NEVER_EXPIRE_AT_TIMESTAMP },
         delivery: { ownership: 'shared', reliability: 'at-least-once', ack: 'none' }
@@ -438,11 +444,14 @@ describe('the acknowledgement history a volatile relay row keeps (D74)', () => {
         useFakeDate();
         const pairs = await createReadyObservedPairs();
         const tracked = newALUnicastMessage(
-            INBOUND_TEST_SENDER_PEER_ID,
-            { topicId: 'chat', resourceId: 'relayed-no-deadline', contextId: 'room' },
-            INBOUND_TEST_SELF_PEER_ID,
-            'chat.private-text.v1',
-            { text: 'relayed-no-deadline' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: INBOUND_TEST_SENDER_PEER_ID,
+                route: { topicId: 'chat', resourceId: 'relayed-no-deadline', contextId: 'room' },
+                toPeerId: INBOUND_TEST_SELF_PEER_ID,
+                typeId: 'chat.private-text.v1',
+                resource: { text: 'relayed-no-deadline' }
+            }
         );
         await seedRelayRow(pairs.volatileStore, tracked, undefined);
         const acknowledgedAtMs = Date.now();

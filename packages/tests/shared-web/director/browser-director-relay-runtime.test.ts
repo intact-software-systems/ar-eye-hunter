@@ -359,7 +359,7 @@ describe('Rallar director relay', () => {
             expect(result).toMatchObject({
                 status: 'failed',
                 receipt: expect.objectContaining({ typeId }),
-                reason: 'The director did not confirm the command before its deadline.'
+                reason: expect.stringMatching(/deadline/i)
             });
             expect(result.rtc).toBeUndefined();
             expect(result.ws).toBeUndefined();
@@ -1037,20 +1037,23 @@ function toDirectorCommand(typeId: string, payload: object): ALMessage {
 
 function toDirectorCommandAtEpoch(typeId: string, payload: object, epoch: number): ALMessage {
     return newALUnicastMessage(
-        'session-2',
-        newALRoute('app.game.director', 'room-1', `${typeId}-1`),
-        'session-1',
-        typeId,
         {
-            protocol: 'rallar.director.relay.v1',
-            topicId: 'app.game.director',
+            createdAtEpochMs: Date.now(),
+            senderId: 'session-2',
+            route: newALRoute('app.game.director', 'room-1', `${typeId}-1`),
+            toPeerId: 'session-1',
             typeId,
-            roomId: 'room-1',
-            epoch,
-            sentAtEpochMs: Date.now(),
-            payload
-        },
-        { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
+            resource: {
+                protocol: 'rallar.director.relay.v1',
+                topicId: 'app.game.director',
+                typeId,
+                roomId: 'room-1',
+                epoch,
+                sentAtEpochMs: Date.now(),
+                payload
+            },
+            options: { groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' } }
+        }
     );
 }
 

@@ -75,8 +75,16 @@ describe('Postgres resource inbox NEW claim order', () => {
 
 function toAppInboxEntry(resourceId: string, createdAt: Temporal.Instant): ResourceEntry {
     const route = { topicId: 'app-inbox.test', resourceId, contextId: 'context-1' };
-    const message = newALUnicastMessage('server-1', route, 'server-1', 'app-inbox.test.v1', { resourceId }, {
-        ttlMs: 60_000
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server-1',
+        route,
+        toPeerId: 'server-1',
+        typeId: 'app-inbox.test.v1',
+        resource: { resourceId },
+        options: {
+            ttlMs: 60_000
+        }
     });
     return QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX, createdAt);
 }

@@ -140,12 +140,15 @@ function createFacadeDouble() {
 
 function toRoomMessage(event: RelicRoundTransitionEvent, roomId: string): RallarMessage<RelicRoundTransitionEvent> {
     const raw = newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute(RELIC_TOPICS.event, roomId, `${event.gameId}:${event.round}`),
-        'room',
-        RELIC_TYPES.event,
-        event,
-        { groupRef: { ...ROOM_REF, groupId: roomId } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute(RELIC_TOPICS.event, roomId, `${event.gameId}:${event.round}`),
+            scope: 'room',
+            typeId: RELIC_TYPES.event,
+            resource: event,
+            options: { groupRef: { ...ROOM_REF, groupId: roomId } }
+        }
     );
     return {
         transport: 'ws',

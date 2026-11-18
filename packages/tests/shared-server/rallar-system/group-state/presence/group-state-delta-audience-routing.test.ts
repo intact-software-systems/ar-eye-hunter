@@ -67,15 +67,18 @@ function connectionIds(
 
 function createEnvelopeMessage(envelope: GroupStateDeltaEnvelope) {
     return newALBroadcastMessage(
-        'server-1',
-        newALEventRoute(
-            AppTopics.groupStateEvent,
-            envelope.event.groupId,
-            envelope.event.eventId
-        ),
-        'room',
-        AppTopics.groupStateEvent,
-        envelope,
-        { groupRef: envelope.event }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server-1',
+            route: newALEventRoute(
+                AppTopics.groupStateEvent,
+                envelope.event.groupId,
+                envelope.event.eventId
+            ),
+            scope: 'room',
+            typeId: AppTopics.groupStateEvent,
+            resource: envelope,
+            options: { groupRef: envelope.event }
+        }
     );
 }

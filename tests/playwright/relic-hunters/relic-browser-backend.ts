@@ -480,20 +480,23 @@ function toServerAckFrame(command: ALMessage): string {
 function toSnapshotFrame(snapshot: RelicPublicSnapshot): string {
     const roomId = String(snapshot.roomId);
     return JSON.stringify(newALBroadcastMessage(
-        'default-qbox-server',
-        newALRoute('room.relic.snapshot', roomId, `${String(snapshot.gameId)}:${String(snapshot.round)}`),
-        'room',
-        'relic.snapshot.v1',
-        { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
         {
-            groupRef: {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: roomId
-            },
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            ttlMs: 15_000
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute('room.relic.snapshot', roomId, `${String(snapshot.gameId)}:${String(snapshot.round)}`),
+            scope: 'room',
+            typeId: 'relic.snapshot.v1',
+            resource: { protocolVersion: snapshot.protocolVersion, gameId: snapshot.gameId, snapshot },
+            options: {
+                groupRef: {
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    groupId: roomId
+                },
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                ttlMs: 15_000
+            }
         }
     ));
 }
@@ -529,14 +532,17 @@ function toHunterRefusalFrame(command: RelicCommand, text: string): string {
         text
     };
     return JSON.stringify(newALPrincipalBroadcastMessage(
-        'default-qbox-server',
-        newALRoute('room.relic.hunter', command.gameId, `refusal:${command.gameId}`),
         {
-            groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: command.gameId },
-            principalRef: { applicationId: 'rallar-server', workspaceId: 'default', principalId: session.clientId }
-        },
-        'relic.hunter.v1',
-        event,
-        { reliability: 'at-least-once', ack: 'receiver', ttlMs: 15_000 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'default-qbox-server',
+            route: newALRoute('room.relic.hunter', command.gameId, `refusal:${command.gameId}`),
+            target: {
+                groupRef: { applicationId: 'rallar-server', workspaceId: 'default', groupId: command.gameId },
+                principalRef: { applicationId: 'rallar-server', workspaceId: 'default', principalId: session.clientId }
+            },
+            typeId: 'relic.hunter.v1',
+            resource: event,
+            options: { reliability: 'at-least-once', ack: 'receiver', ttlMs: 15_000 }
+        }
     ));
 }

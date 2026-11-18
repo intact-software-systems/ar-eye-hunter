@@ -557,10 +557,13 @@ function timerEntry(work: Pick<GroupFormationTimerWork, 'kind' | 'formationEpoch
 
 function timerMessage() {
     return newALUntargetedMessage(
-        'formation-timer-test',
-        newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
-        AppOutboxType.FORMATION_TIMER,
-        {}
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'formation-timer-test',
+            route: newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
+            typeId: AppOutboxType.FORMATION_TIMER,
+            resource: {}
+        }
     );
 }
 

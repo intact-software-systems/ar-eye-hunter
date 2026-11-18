@@ -21,17 +21,20 @@ const CONTEXT = {
 
 function commandToServer(): ALMessage {
     return newALUnicastMessage(
-        'self',
-        { topicId: 'room.command', resourceId: 'command-1', contextId: ROOM.groupId },
-        'server',
-        'command.v1',
-        {},
         {
-            groupRef: ROOM,
-            ttlMs: 30_000,
-            reliability: 'at-least-once',
-            ack: 'receiver',
-            qos: { durability: { algo: 'local-outbox' } }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.command', resourceId: 'command-1', contextId: ROOM.groupId },
+            toPeerId: 'server',
+            typeId: 'command.v1',
+            resource: {},
+            options: {
+                groupRef: ROOM,
+                ttlMs: 30_000,
+                reliability: 'at-least-once',
+                ack: 'receiver',
+                qos: { durability: { algo: 'local-outbox' } }
+            }
         }
     );
 }
@@ -84,12 +87,15 @@ describe('the WS client dispatch plan', () => {
 
 function roomSend(reliability: 'best-effort' | 'at-least-once'): ALMessage {
     return newALMulticastMessage(
-        'self',
-        { topicId: 'chat', resourceId: `room-${reliability}`, contextId: ROOM.groupId },
-        ROOM,
-        'chat.message.v1',
-        {},
-        { reliability, ack: 'none', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId: `room-${reliability}`, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { reliability, ack: 'none', ttlMs: 30_000 }
+        }
     );
 }
 

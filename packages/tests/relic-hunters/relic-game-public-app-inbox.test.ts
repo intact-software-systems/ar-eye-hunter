@@ -47,11 +47,14 @@ describe('Relic public application AppInbox', () => {
                 creationNow: () => Temporal.Instant.fromEpochMilliseconds(fixture.nowEpochMs),
                 createMessage: ({ key, enqueue: { traceId, ...retained } }) =>
                     newALUntargetedMessage(
-                        'retained-api',
-                        newALRoute(key.topicId, key.contextId, key.resourceId),
-                        retained.type,
-                        retained,
-                        { traceId }
+                        {
+                            createdAtEpochMs: Date.now(),
+                            senderId: 'retained-api',
+                            route: newALRoute(key.topicId, key.contextId, key.resourceId),
+                            typeId: retained.type,
+                            resource: retained,
+                            options: { traceId }
+                        }
                     )
             });
             await fixture.resources.entries.writeMaterializedIfAbsentOrReplaceExpired(entry, async () => entry);
@@ -106,12 +109,15 @@ describe('Relic public application AppInbox', () => {
             });
             const move = { protocolVersion: RELIC_PROTOCOL_VERSION, kind: 'join-expedition' as const, gameId: fixture.ref.groupId, username: 'ignored' };
             const raw = newALBroadcastMessage(
-                fixture.owner.sessionId,
-                newALRoute(RELIC_TOPICS.command, fixture.ref.groupId, 'join'),
-                'room',
-                RELIC_TYPES.command,
-                move,
-                { groupRef: fixture.ref }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: fixture.owner.sessionId,
+                    route: newALRoute(RELIC_TOPICS.command, fixture.ref.groupId, 'join'),
+                    scope: 'room',
+                    typeId: RELIC_TYPES.command,
+                    resource: move,
+                    options: { groupRef: fixture.ref }
+                }
             );
             const message = { payload: move, raw, receivedAtEpochMs: fixture.nowEpochMs };
             const context = { senderId: fixture.owner.sessionId, roomId: fixture.ref.groupId, roomRef: fixture.ref };

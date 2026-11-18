@@ -1208,32 +1208,38 @@ describe('ALOutboundMessageRuntime', () => {
         });
 
         const first = newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-1',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: true
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-1',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    online: true
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
         const second = newALUnicastMessage(
-            'self',
             {
-                topicId: 'presence',
-                resourceId: 'presence-2',
-                contextId: 'room-1'
-            },
-            'peer-1',
-            'presence.state.v1',
-            {
-                online: false
-            },
-            { ttlMs: 30_000 }
+                createdAtEpochMs: Date.now(),
+                senderId: 'self',
+                route: {
+                    topicId: 'presence',
+                    resourceId: 'presence-2',
+                    contextId: 'room-1'
+                },
+                toPeerId: 'peer-1',
+                typeId: 'presence.state.v1',
+                resource: {
+                    online: false
+                },
+                options: { ttlMs: 30_000 }
+            }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime, first);
@@ -1268,18 +1274,21 @@ describe('ALOutboundMessageRuntime', () => {
 
         const first = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'presence',
-                    resourceId: 'presence-1',
-                    contextId: 'room-1'
-                },
-                'peer-1',
-                'presence.state.v1',
-                {
-                    online: true
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'presence-1',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        online: true
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'presence',
@@ -1289,18 +1298,21 @@ describe('ALOutboundMessageRuntime', () => {
         };
         const second = {
             ...newALUnicastMessage(
-                'self',
                 {
-                    topicId: 'presence',
-                    resourceId: 'presence-2',
-                    contextId: 'room-1'
-                },
-                'peer-1',
-                'presence.state.v1',
-                {
-                    online: false
-                },
-                { ttlMs: 30_000 }
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'self',
+                    route: {
+                        topicId: 'presence',
+                        resourceId: 'presence-2',
+                        contextId: 'room-1'
+                    },
+                    toPeerId: 'peer-1',
+                    typeId: 'presence.state.v1',
+                    resource: {
+                        online: false
+                    },
+                    options: { ttlMs: 30_000 }
+                }
             ),
             ordering: {
                 orderingKey: 'presence',

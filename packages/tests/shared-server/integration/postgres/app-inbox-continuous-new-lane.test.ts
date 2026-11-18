@@ -298,11 +298,14 @@ async function seedRows(reader: InboxQueueReader): Promise<void> {
 
 async function enqueue(reader: InboxQueueReader, contextId: string, resourceId: string): Promise<void> {
     await reader.enqueueIfAbsent(newALUntargetedMessage(
-        'api-v1',
-        newALRoute('app-inbox.continuous-new-lane', contextId, resourceId),
-        TYPE,
-        { resourceId },
-        { ttlMs: 300_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute('app-inbox.continuous-new-lane', contextId, resourceId),
+            typeId: TYPE,
+            resource: { resourceId },
+            options: { ttlMs: 300_000 }
+        }
     ));
 }
 

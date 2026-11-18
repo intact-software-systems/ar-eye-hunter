@@ -67,9 +67,17 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
                 forwardMessage: undefined,
                 canForwardMessage: undefined
             });
-            const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'deadline', contextId: 'room' }, 'receiver', 'chat', {}, {
-                ttlMs: 1_000,
-                qos: { ack: { algo: 'hop' } }
+            const message = newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'deadline', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {},
+                options: {
+                    ttlMs: 1_000,
+                    qos: { ack: { algo: 'hop' } }
+                }
             });
             const deadline = message.constraints!.expiresAtMs!;
             const write = backend.write.bind(backend);

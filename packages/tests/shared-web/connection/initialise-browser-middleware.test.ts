@@ -527,7 +527,7 @@ describe('the congestion episodes a connect measures across its diagnostics and 
                     rtc: (settlement) => forwardedSettlements.push(`rtc ${settlement.kind}`)
                 }
             },
-            KEYLESS_PUBLICATION
+            TRANSPORT_DEPENDENCIES
         );
         const ws = toBrowserWebSocketQueueBoxInput(input, {
             qboxEngine,
@@ -683,16 +683,23 @@ describe('the checkpoint stores a connect hands its carriers', () => {
 });
 
 function toHeldOfferEnvelope(senderId: string): ALMessage {
-    const message = newALUnicastMessage(senderId, newALEventRoute('rtc', SESSION.sessionId), SESSION.sessionId, 'rtc', {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: senderId,
-        toId: SESSION.sessionId,
-        sessionId: senderId,
-        token: 'test-token',
-        signalType: 'Offer',
-        offerId: 'offer-1',
-        payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute('rtc', SESSION.sessionId),
+        toPeerId: SESSION.sessionId,
+        typeId: 'rtc',
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: senderId,
+            toId: SESSION.sessionId,
+            sessionId: senderId,
+            token: 'test-token',
+            signalType: 'Offer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'offer', sdp: 'held-offer-sdp' }, candidate: null }
+        }
     });
     return { ...message, id: { ...message.id, msgId: 'held-offer' } };
 }

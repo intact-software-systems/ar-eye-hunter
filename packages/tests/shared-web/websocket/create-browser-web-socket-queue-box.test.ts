@@ -359,11 +359,14 @@ describe('createBrowserWebSocketQueueBox', () => {
         await vi.advanceTimersByTimeAsync(0);
         const native = readCreatedSocket();
         const msg = newALUnicastMessage(
-            'server',
-            { topicId: 'chat', resourceId: 'early-delivery', contextId: 'conversation' },
-            'session-1',
-            'chat.message.v1',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: { topicId: 'chat', resourceId: 'early-delivery', contextId: 'conversation' },
+                toPeerId: 'session-1',
+                typeId: 'chat.message.v1',
+                resource: { text: 'hello' }
+            }
         );
 
         native.receive(JSON.stringify(msg));
@@ -480,12 +483,15 @@ describe('the checkpoint lane on the WS client', () => {
         const service = await openWsClient({ budget, checkpointStores });
 
         const sent = await service.enqueueOutboxIfAbsent(newALUnicastMessage(
-            'session-1',
-            { topicId: 'chat', resourceId: 'checkpointed', contextId: 'conversation' },
-            'peer',
-            'chat.message.v1',
-            { text: 'checkpointed' },
-            { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: { topicId: 'chat', resourceId: 'checkpointed', contextId: 'conversation' },
+                toPeerId: 'peer',
+                typeId: 'chat.message.v1',
+                resource: { text: 'checkpointed' },
+                options: { ttlMs: 30_000, qos: { durability: { algo: 'local-checkpoint' } } }
+            }
         ));
 
         expect(sent.verdict).toMatchObject({ kind: 'admitted', durable: true });
@@ -582,23 +588,29 @@ function collectChatArrivals(service: WsQueueBoxClientService): readonly string[
 
 function createChatArrival(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'server',
-        { topicId: 'chat', resourceId, contextId: 'conversation' },
-        clientData.sessionId,
-        'chat.message.v1',
-        { text: resourceId },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'server',
+            route: { topicId: 'chat', resourceId, contextId: 'conversation' },
+            toPeerId: clientData.sessionId,
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 
 function createChatSend(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        clientData.sessionId,
-        { topicId: 'chat', resourceId, contextId: 'conversation' },
-        'peer',
-        'chat.message.v1',
-        { text: resourceId },
-        { ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: clientData.sessionId,
+            route: { topicId: 'chat', resourceId, contextId: 'conversation' },
+            toPeerId: 'peer',
+            typeId: 'chat.message.v1',
+            resource: { text: resourceId },
+            options: { ttlMs: 30_000 }
+        }
     );
 }
 

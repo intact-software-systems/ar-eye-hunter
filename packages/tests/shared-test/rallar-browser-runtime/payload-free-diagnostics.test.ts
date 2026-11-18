@@ -89,7 +89,14 @@ it('keeps every application payload out of the publication staging and opportuni
     });
     const policy = { cadenceMs: 100, retainNewest: 1, drain: { messages: 8, bytes: 65_536 } };
     for (const resourceId of ['entity-1', 'entity-1', 'entity-2']) {
-        const msg = newALUnicastMessage('self', { topicId: 'room.pose', resourceId, contextId: 'bb-group' }, 'peer-1', 'room.pose.v1', secretPayload);
+        const msg = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'room.pose', resourceId, contextId: 'bb-group' },
+            toPeerId: 'peer-1',
+            typeId: 'room.pose.v1',
+            resource: secretPayload
+        });
         stage.stage({ msg: { ...msg, constraints: { expiresAtMs: Date.now() + 60_000 } }, carrier: 'rtc', policy, bytes: 96, context: resourceId });
     }
     await engine.executeOnce();

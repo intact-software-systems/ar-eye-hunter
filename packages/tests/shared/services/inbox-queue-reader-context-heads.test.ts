@@ -325,11 +325,14 @@ async function enqueue(reader: InboxQueueReader, contextIds: readonly string[]):
     for (const [index, contextId] of contextIds.entries()) {
         entries.push(
             await reader.enqueueIfAbsent(newALUntargetedMessage(
-                'api-v1',
-                newALRoute('app-inbox.context-heads', contextId, `row-${index}`),
-                TYPE,
-                { index },
-                { ttlMs: 300_000 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'api-v1',
+                    route: newALRoute('app-inbox.context-heads', contextId, `row-${index}`),
+                    typeId: TYPE,
+                    resource: { index },
+                    options: { ttlMs: 300_000 }
+                }
             ))
         );
     }

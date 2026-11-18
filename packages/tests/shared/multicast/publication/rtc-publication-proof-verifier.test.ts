@@ -43,7 +43,7 @@ describe('RtcPublicationProofVerifier', () => {
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
 
         expect(fixture.verifier.getVerifiedSignature(signed)).toBe(false);
-        expect(await fixture.verifier.verifyPublicationProof(signed)).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now })).toBe(true);
         expect(fixture.verifier.getVerifiedSignature(signed)).toBe(true);
         expect(fixture.verifier.getVerifiedSignature(structuredClone(signed))).toBe(false);
     });
@@ -56,8 +56,14 @@ describe('RtcPublicationProofVerifier', () => {
             const forged: ALMessage = { ...signed, payload: { ...signed.payload, resource: '{"text":"forged"}' } };
 
             const verdicts = arrival === 'before'
-                ? [await fixture.verifier.verifyPublicationProof(forged), await fixture.verifier.verifyPublicationProof(signed)]
-                : [await fixture.verifier.verifyPublicationProof(signed), await fixture.verifier.verifyPublicationProof(forged)];
+                ? [
+                    await fixture.verifier.verifyPublicationProof(forged, { nowMs: Date.now }),
+                    await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now })
+                ]
+                : [
+                    await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now }),
+                    await fixture.verifier.verifyPublicationProof(forged, { nowMs: Date.now })
+                ];
 
             expect(verdicts).toEqual(arrival === 'before' ? [false, true] : [true, false]);
             expect(fixture.verifier.getVerifiedSignature(forged)).toBe(false);
@@ -78,22 +84,22 @@ describe('RtcPublicationProofVerifier', () => {
         });
         const relayed: ALMessage = { ...signed, ordering: { ...signed.ordering, priorSeqByRecipient: record } };
 
-        expect(await fixture.verifier.verifyPublicationProof(signed)).toBe(true);
-        expect(await fixture.verifier.verifyPublicationProof(relayed)).toBe(false);
+        expect(await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now })).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(relayed, { nowMs: Date.now })).toBe(false);
         expect(fixture.verifier.getVerifiedSignature(relayed)).toBe(false);
     });
 
     it('answers a second, equal message object from its verdict: one digest, no key and no verify', async () => {
         const fixture = await createVerifierFixture();
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
-        await fixture.verifier.verifyPublicationProof(signed);
+        await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now });
         const before = { ...fixture.calls };
         // Without its key in the snapshot, only a verdict hit can still answer the copy.
         fixture.groups.accept('room', createRoom({}));
 
         const copy = structuredClone(signed);
 
-        expect(await fixture.verifier.verifyPublicationProof(copy)).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(copy, { nowMs: Date.now })).toBe(true);
         expect(fixture.verifier.getVerifiedSignature(copy)).toBe(true);
         expect({ digest: fixture.calls.digest - before.digest, verify: fixture.calls.verify - before.verify }).toEqual({
             digest: 1,
@@ -107,13 +113,13 @@ describe('RtcPublicationProofVerifier', () => {
             Array.from({ length: 1025 }, async (_, index) => await signPublication(fixture.sender, createFeed(`feed-${index}`)))
         );
         for (const message of signed) {
-            await fixture.verifier.verifyPublicationProof(message);
+            await fixture.verifier.verifyPublicationProof(message, { nowMs: Date.now });
         }
         fixture.groups.accept('room', createRoom({}));
 
-        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[0]!))).toBe(false);
-        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[1]!))).toBe(true);
-        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[1024]!))).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[0]!), { nowMs: Date.now })).toBe(false);
+        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[1]!), { nowMs: Date.now })).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed[1024]!), { nowMs: Date.now })).toBe(true);
     });
 
     it('refuses a registration whose keyId is not its key\'s thumbprint', async () => {
@@ -129,19 +135,47 @@ describe('RtcPublicationProofVerifier', () => {
             createFeed('feed-1')
         );
 
-        expect(await fixture.verifier.verifyPublicationProof(signed)).toBe(false);
+        expect(await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now })).toBe(false);
+    });
+
+    it.each([-20_000, 20_000])('uses the connection deadline for cached and decoded proofs with device offset %i', async (offsetMs) => {
+        const fixture = await createVerifierFixture();
+        const signed = await signPublication(fixture.sender, createFeed('deadline'));
+        const expiresAtMs = signed.constraints!.expiresAtMs!;
+        let latest = expiresAtMs - 1;
+        const clock = { nowMs: () => latest };
+        vi.setSystemTime(latest + offsetMs);
+        expect(await fixture.verifier.verifyPublicationProof(signed, clock)).toBe(true);
+        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed), clock)).toBe(true);
+
+        latest = expiresAtMs;
+        expect(await fixture.verifier.verifyPublicationProof(signed, clock)).toBe(false);
+        expect(await fixture.verifier.verifyPublicationProof(structuredClone(signed), clock)).toBe(false);
+        expect(fixture.verifier.getVerifiedSignature(signed)).toBe(true);
+    });
+
+    it('refuses a cold proof when verification crosses the signed deadline', async () => {
+        const fixture = await createVerifierFixture();
+        const signed = await signPublication(fixture.sender, createFeed('in-flight'));
+        const deadline = signed.constraints!.expiresAtMs!;
+        let latest = deadline - 1;
+        const verdict = fixture.verifier.verifyPublicationProof(signed, { nowMs: () => latest });
+        latest = deadline;
+
+        expect(await verdict).toBe(false);
+        expect(fixture.verifier.getVerifiedSignature(signed)).toBe(false);
     });
 
     it('lets a verdict expire at the frame\'s own expiry', async () => {
         const fixture = await createVerifierFixture();
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
-        await fixture.verifier.verifyPublicationProof(signed);
+        await fixture.verifier.verifyPublicationProof(signed, { nowMs: Date.now });
         fixture.groups.accept('room', createRoom({}));
 
         vi.setSystemTime(signed.constraints!.expiresAtMs! - 1);
-        const live = await fixture.verifier.verifyPublicationProof(structuredClone(signed));
+        const live = await fixture.verifier.verifyPublicationProof(structuredClone(signed), { nowMs: Date.now });
         vi.setSystemTime(signed.constraints!.expiresAtMs!);
-        const expired = await fixture.verifier.verifyPublicationProof(structuredClone(signed));
+        const expired = await fixture.verifier.verifyPublicationProof(structuredClone(signed), { nowMs: Date.now });
 
         expect([live, expired]).toEqual([true, false]);
     });
@@ -153,8 +187,8 @@ describe('RtcPublicationProofVerifier', () => {
         const unregistered = await createVerifierFixture({});
 
         expect([
-            await fixture.verifier.verifyPublicationProof(unsigned),
-            await unregistered.verifier.verifyPublicationProof(await signPublication(unregistered.sender, createFeed('feed-2')))
+            await fixture.verifier.verifyPublicationProof(unsigned, { nowMs: Date.now }),
+            await unregistered.verifier.verifyPublicationProof(await signPublication(unregistered.sender, createFeed('feed-2')), { nowMs: Date.now })
         ]).toEqual([false, false]);
     });
 
@@ -170,11 +204,10 @@ describe('RtcPublicationProofVerifier', () => {
         const signed = await signPublication(fixture.sender, createFeed('feed-1'));
         const keyless = new RtcPublicationProofVerifier({
             crypto: toPublicationVerificationCrypto(undefined),
-            findGroupSnapshot: () => fixture.groups.read('room'),
-            nowEpochMs: Date.now
+            findGroupSnapshot: () => fixture.groups.read('room')
         });
 
-        expect(await keyless.verifyPublicationProof(signed)).toBe(false);
+        expect(await keyless.verifyPublicationProof(signed, { nowMs: Date.now })).toBe(false);
         expect(keyless.getVerifiedSignature(signed)).toBe(false);
     });
 });
@@ -188,8 +221,7 @@ async function createVerifierFixture(keys?: Readonly<Record<string, GroupPresenc
     const calls = { digest: 0, verify: 0 };
     const verifier = new RtcPublicationProofVerifier({
         crypto: toCountingCrypto(receiver, calls),
-        findGroupSnapshot: () => groups.read('room'),
-        nowEpochMs: Date.now
+        findGroupSnapshot: () => groups.read('room')
     });
     return { verifier, groups, sender, calls };
 }

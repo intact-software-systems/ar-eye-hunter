@@ -888,21 +888,37 @@ interface FeedMessageInput {
 
 /** An at-least-once receiver-acknowledged room broadcast, on the granted feed unless another topic is named. */
 function feedMessage({ senderId, msgId, minSnapshotVersion, topicId = FEED }: FeedMessageInput): ALMessage {
-    const base = newALBroadcastMessage(senderId, newALEventRoute(topicId, ROOM.groupId, msgId), 'room', 'feed.v1', { msgId }, {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 30_000,
-        ...(minSnapshotVersion === undefined ? {} : { minSnapshotVersion }),
-        traceId: 'trace-ws-room-granted-delivery'
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute(topicId, ROOM.groupId, msgId),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: { msgId },
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 30_000,
+            ...(minSnapshotVersion === undefined ? {} : { minSnapshotVersion }),
+            traceId: 'trace-ws-room-granted-delivery'
+        }
     });
     return { ...base, id: { ...base.id, msgId } };
 }
 
 /** A server's world broadcast with a deadline, as another node publishes it live. */
 function worldMessage(topicId: string): ALMessage {
-    const base = newALBroadcastMessage(SERVER_PEER_ID, newALEventRoute(topicId, 'world', 'broad-notice'), 'world', 'feed.v1', {}, {
-        ttlMs: 30_000
+    const base = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: SERVER_PEER_ID,
+        route: newALEventRoute(topicId, 'world', 'broad-notice'),
+        scope: 'world',
+        typeId: 'feed.v1',
+        resource: {},
+        options: {
+            ttlMs: 30_000
+        }
     });
     return { ...base, id: { ...base.id, msgId: `broad-${topicId}` } };
 }

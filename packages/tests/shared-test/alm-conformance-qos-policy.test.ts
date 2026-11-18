@@ -14,9 +14,16 @@ import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-deliver
 import { computeALOutboundAckRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
-const specimen = newALMulticastMessage('sender', { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' }, room, 'alm.lifecycle', {
-    marker: 'delivery-lifecycle',
-    specimen: 'supersedence'
+const specimen = newALMulticastMessage({
+    createdAtEpochMs: Date.now(),
+    senderId: 'sender',
+    route: { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' },
+    groupRef: room,
+    typeId: 'alm.lifecycle',
+    resource: {
+        marker: 'delivery-lifecycle',
+        specimen: 'supersedence'
+    }
 });
 const provider = { defaultsForMessage: computeAlmConformanceQosDefaults };
 

@@ -55,11 +55,14 @@ export function createAppInboxResourceEntry(
 export function createDefaultAppInboxQueueMessage(creation: AppInboxQueueMessageCreationDto): ALMessage {
     const { traceId, ...command } = creation.enqueue;
     return newALUntargetedMessage(
-        toAppQueueCreatedBy(creation.serviceId),
-        newALRoute(creation.key.topicId, creation.key.contextId, creation.key.resourceId),
-        command.type,
-        command,
-        { traceId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: toAppQueueCreatedBy(creation.serviceId),
+            route: newALRoute(creation.key.topicId, creation.key.contextId, creation.key.resourceId),
+            typeId: command.type,
+            resource: command,
+            options: { traceId }
+        }
     );
 }
 

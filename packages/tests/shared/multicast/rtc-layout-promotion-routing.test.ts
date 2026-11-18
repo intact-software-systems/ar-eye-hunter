@@ -44,12 +44,15 @@ function readNextHops(tree: SessionNextHops, sessionId: string): readonly string
  */
 function createPositionFrame(seq: number, reliability: FrameReliability): ALMessage {
     return newALMulticastMessage(
-        'a',
-        { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
-        ORIGIN_ROOM,
-        'position.frame.v1',
-        { seq },
-        { reliability, ack: 'none', ttlMs: 30_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: { topicId: 'position', resourceId: `frame-${seq}`, contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'position.frame.v1',
+            resource: { seq },
+            options: { reliability, ack: 'none', ttlMs: 30_000 }
+        }
     );
 }
 

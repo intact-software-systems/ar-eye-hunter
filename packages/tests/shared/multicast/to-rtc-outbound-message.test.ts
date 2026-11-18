@@ -8,12 +8,15 @@ import { toRtcOutboundMessage } from '@shared/multicast/to-rtc-outbound-message.
 import { ORIGIN_ROOM } from './rtc-origin-overlay-fixture.ts';
 
 const MESSAGE = newALMulticastMessage(
-    'a',
-    { topicId: 'room.granted-feed', resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
-    ORIGIN_ROOM,
-    'room.granted-feed.v1',
-    {},
-    { ack: 'none', reliability: 'best-effort', ttlMs: 30_000 }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: { topicId: 'room.granted-feed', resourceId: 'feed-1', contextId: ORIGIN_ROOM.groupId },
+        groupRef: ORIGIN_ROOM,
+        typeId: 'room.granted-feed.v1',
+        resource: {},
+        options: { ack: 'none', reliability: 'best-effort', ttlMs: 30_000 }
+    }
 );
 
 describe('toRtcOutboundMessage', () => {

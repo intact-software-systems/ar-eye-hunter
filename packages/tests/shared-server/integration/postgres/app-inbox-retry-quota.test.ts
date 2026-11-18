@@ -103,11 +103,14 @@ function createReader(queue: PSqlQueueBox, claimed: string[]): InboxQueueReader 
 async function seedRows(reader: InboxQueueReader, sql: PSqlSql): Promise<void> {
     for (const resourceId of [...NEW_ROWS, ...MOVED_ROWS.map((row) => row.resourceId)]) {
         await reader.enqueueIfAbsent(newALUntargetedMessage(
-            'api-v1',
-            newALRoute('app-inbox.retry-quota', `context-${resourceId}`, resourceId),
-            TYPE,
-            { resourceId },
-            { ttlMs: 3_600_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'api-v1',
+                route: newALRoute('app-inbox.retry-quota', `context-${resourceId}`, resourceId),
+                typeId: TYPE,
+                resource: { resourceId },
+                options: { ttlMs: 3_600_000 }
+            }
         ));
     }
     for (const row of MOVED_ROWS) {

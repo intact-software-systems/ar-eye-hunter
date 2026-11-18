@@ -366,7 +366,13 @@ function createOutboxAttempt(resourceId: string, messageTypeId: string): Resourc
     const createdTs = Temporal.PlainDateTime.from('2026-07-22T12:00:00');
     const entry: ResourceEntry = {
         key,
-        resource: JSON.stringify(newALUntargetedMessage('api-v1', newALRoute(key.topicId, key.contextId, resourceId), messageTypeId, {})),
+        resource: JSON.stringify(newALUntargetedMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'api-v1',
+            route: newALRoute(key.topicId, key.contextId, resourceId),
+            typeId: messageTypeId,
+            resource: {}
+        })),
         typeId: 'APP_OUTBOX',
         status: EntityStatus.RESERVED,
         audit: {

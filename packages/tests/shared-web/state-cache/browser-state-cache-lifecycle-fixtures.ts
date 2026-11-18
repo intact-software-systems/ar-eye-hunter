@@ -240,9 +240,24 @@ export function newCurrentStateTopologyMessage(
         resourceId
     );
     if (deliveryKind === 'rtc-topology-current-repair') {
-        return newALBroadcastMessage(senderId, route, 'room', AppTopics.overlayTopology, topology, { groupRef: group.group });
+        return newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId,
+            route,
+            scope: 'room',
+            typeId: AppTopics.overlayTopology,
+            resource: topology,
+            options: { groupRef: group.group }
+        });
     }
-    const message = newALUnicastMessage(senderId, route, 'session-a', AppTopics.overlayTopology, topology);
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route,
+        toPeerId: 'session-a',
+        typeId: AppTopics.overlayTopology,
+        resource: topology
+    });
     return { ...message, id: { ...message.id, sessionId: 'session-a' } };
 }
 

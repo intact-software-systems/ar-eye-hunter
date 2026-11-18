@@ -757,12 +757,15 @@ async function publishEvent(
 /** Client `a`'s keyed room event at the sequence `a` stated, as the server relays it. */
 function browserEvent(seq: number, msgId = `a-event-${seq}`): ALMessage {
     const message = newALBroadcastMessage(
-        'a',
-        newALRoute('room.round.event', ROOM.groupId, msgId),
-        'room',
-        'round.event.v1',
-        { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'a',
+            route: newALRoute('room.round.event', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: { msgId },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack: 'receiver', ttlMs: EVENT_TTL_MS, ordering: { ...ORDERING, seq } }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }
@@ -776,12 +779,15 @@ function producerEvent(seq: number, msgId = `s-event-${seq}`): ALMessage {
 /** The server's own keyed round event; `ack: 'none'` asks no receipt of its recipients. */
 function roundEvent(msgId: string, ack: 'receiver' | 'none' = 'receiver'): ALMessage {
     const message = newALBroadcastMessage(
-        SERVER_ID,
-        newALRoute('room.round.event', ROOM.groupId, msgId),
-        'room',
-        'round.event.v1',
-        { msgId },
-        { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: SERVER_ID,
+            route: newALRoute('room.round.event', ROOM.groupId, msgId),
+            scope: 'room',
+            typeId: 'round.event.v1',
+            resource: { msgId },
+            options: { groupRef: ROOM, reliability: 'at-least-once', ack, ttlMs: EVENT_TTL_MS, ordering: ORDERING }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }

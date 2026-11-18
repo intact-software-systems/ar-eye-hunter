@@ -180,11 +180,14 @@ describe('RTC group-snapshot refresh', () => {
 
 function roomMessage(minSnapshotVersion: number, rosterVersion?: number) {
     return newALMulticastMessage(
-        'sender',
-        { topicId: 'room.chat', resourceId: 'message-1', contextId: roomRef.groupId },
-        roomRef,
-        'chat.message',
-        { text: 'hello' },
-        { minSnapshotVersion, rosterVersion }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'room.chat', resourceId: 'message-1', contextId: roomRef.groupId },
+            groupRef: roomRef,
+            typeId: 'chat.message',
+            resource: { text: 'hello' },
+            options: { minSnapshotVersion, rosterVersion }
+        }
     );
 }

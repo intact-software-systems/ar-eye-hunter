@@ -103,9 +103,17 @@ describe('Relic transport admission', () => {
         const fixture = createTransportFixture();
         installRelicHunterGame(fixture.rallar, fixture.options);
         expect(fixture.state.topic).toMatchObject({ topicId: RELIC_TOPICS.command, typeId: RELIC_TYPES.command, scope: 'room', fanout: 'none' });
-        const raw = newALBroadcastMessage(SESSION.sessionId, newALRoute(RELIC_TOPICS.command, REF.groupId, 'move'), 'room', RELIC_TYPES.command, JOIN, {
-            groupRef: REF,
-            traceId: 'trace-relic-ws-command'
+        const raw = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: SESSION.sessionId,
+            route: newALRoute(RELIC_TOPICS.command, REF.groupId, 'move'),
+            scope: 'room',
+            typeId: RELIC_TYPES.command,
+            resource: JOIN,
+            options: {
+                groupRef: REF,
+                traceId: 'trace-relic-ws-command'
+            }
         });
         if (fixture.state.handler === null) {
             throw new Error('Expected the installed command handler');
@@ -160,9 +168,17 @@ test('a Relic WS command publishes under the trace of the envelope that carried 
             readSession: (sessionId) => stack.sessions.findBySessionId(sessionId)
         });
         const join: RelicCommand = { ...JOIN, gameId: ref.groupId };
-        const raw = newALBroadcastMessage(stack.owner.sessionId, newALRoute(RELIC_TOPICS.command, ref.groupId, 'move'), 'room', RELIC_TYPES.command, join, {
-            groupRef: ref,
-            traceId: 'trace-relic-ws-join'
+        const raw = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: stack.owner.sessionId,
+            route: newALRoute(RELIC_TOPICS.command, ref.groupId, 'move'),
+            scope: 'room',
+            typeId: RELIC_TYPES.command,
+            resource: join,
+            options: {
+                groupRef: ref,
+                traceId: 'trace-relic-ws-join'
+            }
         });
         const handler = installed.handler;
         if (handler === null) {

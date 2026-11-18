@@ -430,12 +430,15 @@ describe('a true receipt control at an RTC origin (S8-R5, S8-R7)', () => {
             publicationCrypto: chain.keys.a
         });
         const message = newALMulticastMessage(
-            'a',
-            { topicId: 'chat', resourceId: 'leader-outsider', contextId: 'room' },
-            ORIGIN_ROOM,
-            'chat.message.v1',
-            {},
-            { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'a',
+                route: { topicId: 'chat', resourceId: 'leader-outsider', contextId: 'room' },
+                groupRef: ORIGIN_ROOM,
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { ack: 'group-leader', reliability: 'at-least-once', ttlMs: 30_000 }
+            }
         );
         expect((await enqueueAndDrain(origin.manager, message)).verdict.kind).toBe('admitted');
         // `b` is in the room but neither the director, nor the next hop toward it, nor a peer a repair may come from.
@@ -539,10 +542,18 @@ describe('the channel binding a hop fact rests on (S8-R1)', () => {
             neighbourPeerIds: ['a', 'c'],
             publicationCrypto: chain.keys.r
         });
-        const message = newALMulticastMessage('r', { topicId: 'chat', resourceId: 'bound', contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', {}, {
-            ack: 'all-logical-recipients',
-            reliability: 'at-least-once',
-            ttlMs: 30_000
+        const message = newALMulticastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'r',
+            route: { topicId: 'chat', resourceId: 'bound', contextId: 'room' },
+            groupRef: ORIGIN_ROOM,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                ack: 'all-logical-recipients',
+                reliability: 'at-least-once',
+                ttlMs: 30_000
+            }
         });
         expect((await origin.enqueue(message)).verdict.kind).toBe('admitted');
         const toHopEnd = (fromPeerId: string) =>
@@ -793,10 +804,18 @@ describe('a logical receipt never expects a peer its message does not count (S8-
             nextHopPeerIds: ['b', 'c'],
             nextHopsBySessionId: { a: ['b', 'c'], b: ['a'], c: ['a', 'd'], d: ['c'] },
             message: (): ALMessage =>
-                newALMulticastMessage('a', { topicId: 'chat', resourceId: 'expected-leader', contextId: 'room' }, ORIGIN_ROOM, 'chat.message.v1', {}, {
-                    ack: 'group-leader',
-                    reliability: 'at-least-once',
-                    ttlMs: 30_000
+                newALMulticastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route: { topicId: 'chat', resourceId: 'expected-leader', contextId: 'room' },
+                    groupRef: ORIGIN_ROOM,
+                    typeId: 'chat.message.v1',
+                    resource: {},
+                    options: {
+                        ack: 'group-leader',
+                        reliability: 'at-least-once',
+                        ttlMs: 30_000
+                    }
                 })
         },
         {
@@ -805,11 +824,19 @@ describe('a logical receipt never expects a peer its message does not count (S8-
             nextHopPeerIds: ['b', 'c'],
             nextHopsBySessionId: undefined,
             message: (): ALMessage =>
-                newALUnicastMessage('a', { topicId: 'chat', resourceId: 'expected-unicast', contextId: 'room' }, 'b', 'chat.message.v1', {}, {
-                    groupRef: ORIGIN_ROOM,
-                    ack: 'all-logical-recipients',
-                    reliability: 'at-least-once',
-                    ttlMs: 30_000
+                newALUnicastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'a',
+                    route: { topicId: 'chat', resourceId: 'expected-unicast', contextId: 'room' },
+                    toPeerId: 'b',
+                    typeId: 'chat.message.v1',
+                    resource: {},
+                    options: {
+                        groupRef: ORIGIN_ROOM,
+                        ack: 'all-logical-recipients',
+                        reliability: 'at-least-once',
+                        ttlMs: 30_000
+                    }
                 })
         }
     ])('$plan', async ({ snapshot, nextHopPeerIds, nextHopsBySessionId, message }) => {

@@ -65,7 +65,14 @@ describe('inbound durable effect worker lifecycle', () => {
             selfPeerId: 'receiver',
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: { text: 'hello' }
+        });
         await resources.admissionStore.commitBundle({
             admissionExpiresAtMs: null,
             senderId: message.id.senderId,
@@ -154,11 +161,14 @@ describe('inbound durable effect worker lifecycle', () => {
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'corrupt-delivery', contextId: 'room' },
-            'receiver',
-            'chat',
-            { text: 'hello' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'corrupt-delivery', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: { text: 'hello' }
+            }
         );
         await resources.admissionStore.commitBundle({
             admissionExpiresAtMs: null,
@@ -273,7 +283,14 @@ describe('inbound durable effect worker lifecycle', () => {
             queueEngine: engine,
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
-        const missingSource = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' }, 'receiver', 'chat', {});
+        const missingSource = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'missing-source', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         const work = computeALInboundWorkEntry({
             signsForRecipient: false,
             carrier: 'ws',
@@ -300,7 +317,14 @@ describe('inbound durable effect worker lifecycle', () => {
             diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());
-        const valid = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'valid-source', contextId: 'room' }, 'receiver', 'chat', {});
+        const valid = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'valid-source', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         await runtime.admitIncomingMessage(valid, INBOUND_TEST_SOURCE);
         await expect.poll(async () => {
             await engine.executeOnce();
@@ -318,7 +342,14 @@ describe('inbound durable effect worker lifecycle', () => {
             selfPeerId: 'receiver',
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'buffered', contextId: 'room' }, 'receiver', 'chat', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'buffered', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         await resources.admissionStore.commitBundle({
             admissionExpiresAtMs: null,
             senderId: 'sender',
@@ -391,7 +422,14 @@ describe('inbound durable effect worker lifecycle', () => {
         const runtime = new ALInboundMessageRuntime(dependencies);
         onTestFinished(() => runtime.dispose());
         const message = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'completed', contextId: 'room' }, 'receiver', 'chat', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'completed', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }),
             ordering: { orderingKey: 'stream', seq: 1 }
         };
         const trackKey = toALOrderingTrackKey(message)!;
@@ -437,7 +475,14 @@ describe('inbound durable effect worker lifecycle', () => {
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const message = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'crash', contextId: 'room' }, 'receiver', 'chat', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'crash', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }),
             ordering: { orderingKey: 'stream', seq: 1 }
         };
         // The delivery commits its progress, then the process dies before the claim is released:
@@ -508,7 +553,14 @@ describe('inbound durable effect worker lifecycle', () => {
             releaseDispatch.resolve();
             return runtime.dispose();
         });
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'unawaited', contextId: 'room' }, 'receiver', 'chat', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'unawaited', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
 
         const acceptance = await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
 
@@ -570,11 +622,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
         const tracked = newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'tracked', contextId: 'room' },
-            'receiver',
-            'chat',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'tracked', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
         const ack = newALAckControlMessage(
@@ -655,11 +710,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
         const tracked = newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'partially-acknowledged', contextId: 'room' },
-            'receiver',
-            'chat',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'partially-acknowledged', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }
         );
         // Two peers owe this obligation, so one peer's acknowledgement completes none of it; the relay still
         // forwards the recipient's own ACK upward at once, and that row is work the commit announces.
@@ -753,12 +811,15 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         await resources.workQueue.enqueueIfAbsent(forwarded.entry);
         const message = newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'expired-retention', contextId: 'room' },
-            'receiver',
-            'chat',
-            {},
-            { ttlMs: 1_000 }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'expired-retention', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {},
+                options: { ttlMs: 1_000 }
+            }
         );
         // The losing attempt writes nothing, and the message outlives its own deadline before the
         // retention that would have kept it: `retainPending` rejects it and retains no row at all.
@@ -821,11 +882,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         onTestFinished(() => runtime.dispose());
         const tracked = newALUnicastMessage(
-            'sender',
-            { topicId: 'chat', resourceId: 'retained-control', contextId: 'room' },
-            'receiver',
-            'chat',
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'retained-control', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }
         );
         await seedTrackedAcknowledgement(resources.admissionStore, tracked);
         await resources.workQueue.enqueueIfAbsent(
@@ -847,7 +911,14 @@ describe('inbound durable effect worker lifecycle', () => {
         });
         const store = resources.admissionStore;
         const buffered = {
-            ...newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'sender',
+                route: { topicId: 'chat', resourceId: 'second', contextId: 'room' },
+                toPeerId: 'receiver',
+                typeId: 'chat',
+                resource: {}
+            }),
             ordering: { orderingKey: 'stream', seq: 2 }
         };
         const read = await readAdmission(store, buffered);
@@ -927,8 +998,22 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessages: async () => {},
             diagnostics: undefined
         });
-        const first = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'first', contextId: 'room' }, 'receiver', 'chat', {});
-        const second = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'second', contextId: 'room' }, 'receiver', 'chat', {});
+        const first = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'first', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
+        const second = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'second', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         try {
             const firstAdmission = runtime.admitIncomingMessage(first, INBOUND_TEST_SOURCE);
             await finalizationStarted.promise;
@@ -1013,7 +1098,14 @@ describe('inbound durable effect worker lifecycle', () => {
             }
         });
         await readStarted.promise;
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'overlapping-read', contextId: 'room' }, 'receiver', 'chat', {});
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'overlapping-read', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         const admission = runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
         void admission.catch(() => {});
         onTestFinished(async () => {
@@ -1039,7 +1131,14 @@ describe('inbound durable effect worker lifecycle', () => {
         for (let cycle = 0; cycle < 6; cycle += 1) {
             await engine.executeOnce();
         }
-        const external = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'external-work', contextId: 'room' }, 'receiver', 'chat', {});
+        const external = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'external-work', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {}
+        });
         const expireAtTimestamp = Math.max(
             Date.now() + 60_000,
             QueueBoxUtilities.toResourceEntryFromMsg(external, 'inbox', Temporal.Now.instant()).audit.expiryTs.epochMilliseconds
@@ -1091,7 +1190,14 @@ describe('inbound durable effect worker lifecycle', () => {
             sendControlMessages: async () => {},
             diagnostics: undefined
         });
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', { text: 'hello' });
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: 'message', contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: { text: 'hello' }
+        });
         try {
             await runtime.admitIncomingMessage(message, INBOUND_TEST_SOURCE);
             await expect.poll(() => attempts).toBe(1);
@@ -1116,7 +1222,15 @@ describe('inbound durable effect worker lifecycle', () => {
             toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant())
         });
         const store = resources.admissionStore;
-        const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: stage, contextId: 'room' }, 'receiver', 'chat', {}, { ttlMs: 60_000 });
+        const message = newALUnicastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender',
+            route: { topicId: 'chat', resourceId: stage, contextId: 'room' },
+            toPeerId: 'receiver',
+            typeId: 'chat',
+            resource: {},
+            options: { ttlMs: 60_000 }
+        });
         const work = computeALInboundWorkEntry({
             signsForRecipient: false,
             carrier: 'ws',

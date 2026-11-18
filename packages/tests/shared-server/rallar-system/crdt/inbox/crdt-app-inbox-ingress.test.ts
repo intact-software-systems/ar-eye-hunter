@@ -119,12 +119,15 @@ describe('CRDT WS mutation ingress', () => {
         })));
         const envelope = update('ws-update');
         const raw = newALBroadcastMessage(
-            'session-1',
-            newALRoute('room.crdt', 'group-1', envelope.updateId),
-            'room',
-            'rallar.crdt.update.v1',
-            envelope,
-            { groupRef: DOCUMENT.roomRef, traceId: 'trace-crdt-ws-update' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'session-1',
+                route: newALRoute('room.crdt', 'group-1', envelope.updateId),
+                scope: 'room',
+                typeId: 'rallar.crdt.update.v1',
+                resource: envelope,
+                options: { groupRef: DOCUMENT.roomRef, traceId: 'trace-crdt-ws-update' }
+            }
         );
 
         await ingress.enqueueUpdate({

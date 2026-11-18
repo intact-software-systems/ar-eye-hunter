@@ -14,13 +14,16 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
             nowEpochMs: Date.now
         });
         const message = newALBroadcastMessage(
-            'server',
-            newALRoute('room.snapshot', snapshot.group.groupId, 'r1'),
-            'room',
-            'snapshot.v1',
-            {},
             {
-                groupRef: snapshot.group
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: newALRoute('room.snapshot', snapshot.group.groupId, 'r1'),
+                scope: 'room',
+                typeId: 'snapshot.v1',
+                resource: {},
+                options: {
+                    groupRef: snapshot.group
+                }
             }
         );
 
@@ -79,12 +82,15 @@ describe('the room audience a server publish reads (D58, Q7)', () => {
             nowEpochMs: Date.now
         });
         const message = newALBroadcastMessage(
-            'server',
-            newALRoute('room.snapshot', snapshot.group.groupId, 'r1'),
-            'room',
-            'snapshot.v1',
-            {},
-            { groupRef: snapshot.group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server',
+                route: newALRoute('room.snapshot', snapshot.group.groupId, 'r1'),
+                scope: 'room',
+                typeId: 'snapshot.v1',
+                resource: {},
+                options: { groupRef: snapshot.group }
+            }
         );
         const topic = { participation: 'granted', serverProducerIds: ['snapshot-producer'] } as const;
 

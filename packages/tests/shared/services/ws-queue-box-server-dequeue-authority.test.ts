@@ -40,7 +40,15 @@ function createAuthority(
 }
 
 function feedEvent(): ALMessage {
-    return newALBroadcastMessage('a', newALRoute('room.feed', ROOM.groupId, 'event-1'), 'room', 'feed.v1', {}, { groupRef: ROOM });
+    return newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'a',
+        route: newALRoute('room.feed', ROOM.groupId, 'event-1'),
+        scope: 'room',
+        typeId: 'feed.v1',
+        resource: {},
+        options: { groupRef: ROOM }
+    });
 }
 
 describe('the audience one dequeue attempt finds for a row', () => {

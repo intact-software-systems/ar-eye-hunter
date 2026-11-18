@@ -32,7 +32,7 @@ describe('browser delivery settlement relay', () => {
         const sender = createTab('session-1');
         const owner = createTab('session-1');
         const bystander = createTab('session-1');
-        const handle = sender.registry.open(createMessage('durable-send'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('durable-send'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-1'));
         await flushChannel();
@@ -47,7 +47,7 @@ describe('browser delivery settlement relay', () => {
         const wire = listenOnSessionChannel('session-1');
         const sender = createTab('session-1');
         const owner = createTab('session-1');
-        const handle = sender.registry.open(createMessage('checkpoint-send'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('checkpoint-send'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.epoch.settlements.ws({ ...toAttemptStarted(handle.msgId, 'attempt-1'), lane: 'checkpoint' });
         await flushChannel();
@@ -62,7 +62,7 @@ describe('browser delivery settlement relay', () => {
         const wire = listenOnSessionChannel('session-1');
         const sender = createTab('session-1');
         const owner = createTab('session-1');
-        const handle = sender.registry.open(createMessage('volatile-send'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('volatile-send'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.epoch.settlements.ws({ ...toAttemptStarted(handle.msgId, 'attempt-1'), lane: 'volatile' });
         owner.epoch.settlements.ws({ kind: 'cancelled', msgId: handle.msgId, carrier: 'ws', atMs: 1, traceId: 'trace-browser-delivery-settlement-relay' });
@@ -76,7 +76,7 @@ describe('browser delivery settlement relay', () => {
         const wire = listenOnSessionChannel('session-1');
         const sender = createTab('session-1');
         createTab('session-1');
-        const handle = sender.registry.open(createMessage('own-send'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('own-send'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         sender.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-1'));
         await flushChannel();
@@ -88,7 +88,7 @@ describe('browser delivery settlement relay', () => {
     it('never relays to another session', async () => {
         const otherSession = createTab('session-2');
         const owner = createTab('session-1');
-        const handle = otherSession.registry.open(createMessage('same-id-elsewhere'), 'ws');
+        const handle = otherSession.registry.open({ message: createMessage('same-id-elsewhere'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-1'));
         await flushChannel();
@@ -99,7 +99,7 @@ describe('browser delivery settlement relay', () => {
     it('stops relaying when the connect epoch closes', async () => {
         const sender = createTab('session-1');
         const owner = createTab('session-1');
-        const handle = sender.registry.open(createMessage('after-close'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('after-close'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.feed.close();
         owner.epoch.settlements.ws(toAttemptStarted(handle.msgId, 'attempt-1'));
@@ -114,7 +114,7 @@ describe('browser delivery settlement relay', () => {
         const sender = createTab('session-1');
         const owner = createTab('session-1');
         createTab('session-1');
-        const handle = sender.registry.open(createMessage('expired-then-late'), 'ws');
+        const handle = sender.registry.open({ message: createMessage('expired-then-late'), carrier: 'ws', readDeadlineEpochMs: () => 0 });
 
         owner.epoch.settlements.ws({
             kind: 'expired',
@@ -141,7 +141,11 @@ interface RelayTab {
 
 /** One tab of a session: its own registry and connect epoch, joined to the others only by the session channel. */
 function createTab(sessionId: string): RelayTab {
-    const registry = new BrowserRallarDeliveryRegistry({ nowMs: () => 0, ...BROWSER_DELIVERY_RETENTION, cancel: () => {} });
+    const registry = new BrowserRallarDeliveryRegistry({
+        nowMs: () => 0,
+        ...BROWSER_DELIVERY_RETENTION,
+        cancel: () => {}
+    });
     const middleware = createDefaultApiMiddlewareTestDouble();
     const feed = new BrowserDeliverySettlements();
     const sessionDeliveries = new BrowserSessionDeliveries(registry, {
@@ -164,12 +168,15 @@ function createTab(sessionId: string): RelayTab {
 
 function createMessage(msgId: string): ALMessage {
     const message = newALUnicastMessage(
-        'sender-peer',
-        { topicId: 'chat', resourceId: msgId, contextId: 'room' },
-        'receiver-peer',
-        'chat.private-text.v1',
-        { text: msgId },
-        { ttlMs: 60_000, qos: { ack: { algo: 'hop' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'sender-peer',
+            route: { topicId: 'chat', resourceId: msgId, contextId: 'room' },
+            toPeerId: 'receiver-peer',
+            typeId: 'chat.private-text.v1',
+            resource: { text: msgId },
+            options: { ttlMs: 60_000, qos: { ack: { algo: 'hop' } } }
+        }
     );
     return { ...message, id: { ...message.id, msgId } };
 }

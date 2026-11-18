@@ -322,10 +322,13 @@ describe('group-state AppInbox transaction result boundary', () => {
             enqueue,
             entry,
             message: newALUntargetedMessage(
-                'server-1',
-                newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
-                entry.typeId,
-                enqueue
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALRoute(entry.key.topicId, entry.key.contextId, entry.key.resourceId),
+                    typeId: entry.typeId,
+                    resource: enqueue
+                }
             ),
             attemptTelemetry: computeResourceInboxAttempt({
                 entry: entry,

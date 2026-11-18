@@ -54,16 +54,23 @@ describe('RTC signaling route authority', () => {
 });
 
 function createSignal(replacement: Readonly<Record<string, unknown>>): ALMessage {
-    return newALUnicastMessage('sender', newALEventRoute('rtc', 'receiver'), 'receiver', 'rtc', {
-        channel: 'RtcSignal',
-        type: 'Signal',
-        fromId: 'sender',
-        toId: 'receiver',
-        sessionId: 'sender',
-        token: 'ticket',
-        signalType: 'Offer',
-        offerId: 'offer-1',
-        payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null },
-        ...replacement
+    return newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'sender',
+        route: newALEventRoute('rtc', 'receiver'),
+        toPeerId: 'receiver',
+        typeId: 'rtc',
+        resource: {
+            channel: 'RtcSignal',
+            type: 'Signal',
+            fromId: 'sender',
+            toId: 'receiver',
+            sessionId: 'sender',
+            token: 'ticket',
+            signalType: 'Offer',
+            offerId: 'offer-1',
+            payload: { description: { type: 'offer', sdp: 'sdp' }, candidate: null },
+            ...replacement
+        }
     });
 }

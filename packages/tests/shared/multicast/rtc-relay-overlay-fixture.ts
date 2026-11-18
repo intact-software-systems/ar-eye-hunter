@@ -438,8 +438,7 @@ function createDefaultRelayOverlayResources(
         publicationCrypto,
         publicationVerifier: new RtcPublicationProofVerifier({
             crypto: toPublicationVerificationCrypto(publicationCrypto.kind === 'available' ? publicationCrypto.subtle : undefined),
-            findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef),
-            nowEpochMs: Date.now
+            findGroupSnapshot: (groupRef) => readRtcGroupSnapshotByRef(groups, groupRef)
         }),
         topicSubscriptions: input.topicSubscriptions ?? NO_RTC_TOPIC_SUBSCRIPTIONS,
         selfPrincipalId: input.selfPeerId

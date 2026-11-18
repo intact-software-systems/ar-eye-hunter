@@ -220,7 +220,7 @@ export class RtcGrantedPublicationCarrier {
      */
     async verifyPublicationProof(msg: ALMessage): Promise<boolean> {
         return this.isGrantedPublication(msg) &&
-            await this.#dependencies.publicationVerifier.verifyPublicationProof(msg);
+            await this.#dependencies.publicationVerifier.verifyPublicationProof(msg, this.#dependencies.clock);
     }
 
     /**

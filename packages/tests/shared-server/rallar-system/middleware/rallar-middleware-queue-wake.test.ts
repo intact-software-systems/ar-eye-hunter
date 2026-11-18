@@ -132,12 +132,15 @@ async function readOutboxEntry(
 
 function createOutboundMessage(): ALMessage {
     return newALUnicastMessage(
-        'rallar-server',
-        newALEventRoute('chat.message.v1', 'remote-peer'),
-        'remote-peer',
-        'chat.message.v1',
-        { text: 'written straight into the queue' },
-        { ttlMs: 60_000, qos: { durability: { algo: 'local-outbox' } } }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'rallar-server',
+            route: newALEventRoute('chat.message.v1', 'remote-peer'),
+            toPeerId: 'remote-peer',
+            typeId: 'chat.message.v1',
+            resource: { text: 'written straight into the queue' },
+            options: { ttlMs: 60_000, qos: { durability: { algo: 'local-outbox' } } }
+        }
     );
 }
 

@@ -45,12 +45,19 @@ function fixture(resource: ViewInvalidation['resource'] = 'party'): Invalidation
 }
 
 function notice(principalId = 'alice'): ALMessage {
-    const message = newALBroadcastMessage('another-api-node', newALRoute(AppTopics.viewInvalidated, 'change', 'all'), 'all', AppTopics.viewInvalidated, {
-        version: 1,
-        resource: 'party',
-        scope,
-        principalId,
-        changeId: 'change'
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'another-api-node',
+        route: newALRoute(AppTopics.viewInvalidated, 'change', 'all'),
+        scope: 'all',
+        typeId: AppTopics.viewInvalidated,
+        resource: {
+            version: 1,
+            resource: 'party',
+            scope,
+            principalId,
+            changeId: 'change'
+        }
     });
     return { ...message, targets: { mode: 'broadcast', scope: 'principal', principalRef: { ...scope, principalId } } };
 }
@@ -89,7 +96,14 @@ describe('private view push subscriptions', () => {
     it('recovers on socket reopen and server subscriber resync without accepting malformed resync', () => {
         const test = fixture();
         test.reopen();
-        const resync = newALBroadcastMessage('api', newALRoute(AppTopics.viewResync, 'resync', 'all'), 'all', AppTopics.viewResync, { version: 1 });
+        const resync = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'api',
+            route: newALRoute(AppTopics.viewResync, 'resync', 'all'),
+            scope: 'all',
+            typeId: AppTopics.viewResync,
+            resource: { version: 1 }
+        });
         test.deliver(resync);
         expect(test.changed).toHaveBeenCalledTimes(2);
         test.deliver({ ...resync, payload: { ...resync.payload, resource: '{"version":2}' } });

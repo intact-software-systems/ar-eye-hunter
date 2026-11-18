@@ -1,3 +1,4 @@
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import {
     describe,
     expect,
@@ -27,6 +28,10 @@ describe('required capture at final message admission', () => {
         (replaced, phase) => {
             const queued: string[] = [];
             const context = createDefaultApiMiddlewareTestDouble({
+                serverTime: createDefaultBrowserServerClockFixture(() => {
+                    if (phase === 'clock') replace();
+                    return 1;
+                }),
                 middleware: {
                     webSocketQueueBox: {
                         enqueueOutboxIfAbsent: async (message) => {
@@ -74,26 +79,23 @@ describe('required capture at final message admission', () => {
             const dispatch = new BrowserRallarMessageDispatch({
                 deliveries,
                 sessionDeliveries,
-                publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-                nowMs: () => {
-                    if (phase === 'clock') {
-                        replace();
-                    }
-                    return 1;
-                },
+                publicationStages: new BrowserPublicationStages(),
                 readPublicationPermissions: () => undefined,
                 grantedTopics: NO_RTC_GRANTED_TOPICS
             });
             const message = newALBroadcastMessage(
-                context.session.sessionId,
-                { topicId: 'app.capture', contextId: 'all', resourceId: 'one' },
-                'all',
-                'test',
-                {},
-                { ttlMs: 100 }
+                {
+                    createdAtEpochMs: 1,
+                    senderId: context.session.sessionId,
+                    route: { topicId: 'app.capture', contextId: 'all', resourceId: 'one' },
+                    scope: 'all',
+                    typeId: 'test',
+                    resource: {},
+                    options: { ttlMs: 100 }
+                }
             );
             const rtcCapture = sessionDeliveries.readRtcCapture(context);
-            const handle = deliveries.open(message, 'ws', rtcCapture);
+            const handle = deliveries.open({ message: message, carrier: 'ws', readDeadlineEpochMs: () => 1, rtcCapture: rtcCapture });
             expect(() =>
                 dispatch.send({
                     context,
@@ -115,7 +117,15 @@ describe('required capture at final message admission', () => {
     );
     it('keeps an ordinary admission callback exception as the existing failed handle outcome', async () => {
         const queued: string[] = [];
+        let clockFailed = false;
         const context = createDefaultApiMiddlewareTestDouble({
+            serverTime: createDefaultBrowserServerClockFixture(() => {
+                if (!clockFailed) {
+                    clockFailed = true;
+                    throw new Error('admission clock failed');
+                }
+                return 1;
+            }),
             middleware: {
                 webSocketQueueBox: {
                     enqueueOutboxIfAbsent: async (message) => {
@@ -125,7 +135,12 @@ describe('required capture at final message admission', () => {
                 }
             }
         });
-        const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: () => 1, retainTerminalMs: 100, maxEntries: 8, cancel: () => {} });
+        const deliveries = new BrowserRallarDeliveryRegistry({
+            nowMs: () => 1,
+            retainTerminalMs: 100,
+            maxEntries: 8,
+            cancel: () => {}
+        });
         const feed = new BrowserDeliverySettlements();
         const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
             readMiddleware: () => context,
@@ -134,25 +149,25 @@ describe('required capture at final message admission', () => {
         }, () => context.session);
         sessionDeliveries.beginSession(context.session);
         feed.open(sessionDeliveries.observers, { relaySettlement: () => {} });
-        let clockFailed = false;
         const dispatch = new BrowserRallarMessageDispatch({
             deliveries,
             sessionDeliveries,
-            publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-            nowMs: () => {
-                if (!clockFailed) {
-                    clockFailed = true;
-                    throw new Error('admission clock failed');
-                }
-                return 1;
-            },
+            publicationStages: new BrowserPublicationStages(),
             readPublicationPermissions: () => undefined,
             grantedTopics: NO_RTC_GRANTED_TOPICS
         });
-        const message = newALBroadcastMessage(context.session.sessionId, { topicId: 'app.capture', contextId: 'all', resourceId: 'one' }, 'all', 'test', {}, {
-            ttlMs: 100
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: 1,
+            senderId: context.session.sessionId,
+            route: { topicId: 'app.capture', contextId: 'all', resourceId: 'one' },
+            scope: 'all',
+            typeId: 'test',
+            resource: {},
+            options: {
+                ttlMs: 100
+            }
         });
-        const handle = deliveries.open(message, 'ws');
+        const handle = deliveries.open({ message: message, carrier: 'ws', readDeadlineEpochMs: () => 1 });
         expect(() =>
             dispatch.send({
                 context,
@@ -197,6 +212,7 @@ describe('required capture at final message admission', () => {
             });
             const owner = { middleware: initial, session: initial.session };
             const context = createDefaultApiMiddlewareTestDouble({
+                serverTime: createDefaultBrowserServerClockFixture(() => 1),
                 middleware: {
                     rtcRxStreamer: {
                         enqueueOutboxIfAbsent: async (message) => ({
@@ -228,7 +244,12 @@ describe('required capture at final message admission', () => {
             });
             owner.middleware = context;
             owner.session = context.session;
-            const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: () => 1, retainTerminalMs: 100, maxEntries: 8, cancel: () => {} });
+            const deliveries = new BrowserRallarDeliveryRegistry({
+                nowMs: () => 1,
+                retainTerminalMs: 100,
+                maxEntries: 8,
+                cancel: () => {}
+            });
             const sessionDeliveries = new BrowserSessionDeliveries(deliveries, {
                 readMiddleware: () => owner.middleware,
                 readRtcCaptureReceipt: () => receipt,
@@ -239,21 +260,23 @@ describe('required capture at final message admission', () => {
             const dispatch = new BrowserRallarMessageDispatch({
                 deliveries,
                 sessionDeliveries,
-                publicationStages: new BrowserPublicationStages({ nowMs: Date.now }),
-                nowMs: () => 1,
+                publicationStages: new BrowserPublicationStages(),
                 readPublicationPermissions: () => undefined,
                 grantedTopics: NO_RTC_GRANTED_TOPICS
             });
             const message = newALMulticastMessage(
-                context.session.sessionId,
-                { topicId: 'app.capture', contextId: 'room', resourceId: 'congested' },
-                { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-                'test',
-                {},
-                { ttlMs: 100, minSnapshotVersion: 9, rosterVersion: 4, traceId: 'trace-congested-capture' }
+                {
+                    createdAtEpochMs: 1,
+                    senderId: context.session.sessionId,
+                    route: { topicId: 'app.capture', contextId: 'room', resourceId: 'congested' },
+                    groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+                    typeId: 'test',
+                    resource: {},
+                    options: { ttlMs: 100, minSnapshotVersion: 9, rosterVersion: 4, traceId: 'trace-congested-capture' }
+                }
             );
             const rtcCapture = sessionDeliveries.readRtcCapture(context);
-            const handle = deliveries.open(message, 'rtc', rtcCapture);
+            const handle = deliveries.open({ message: message, carrier: 'rtc', readDeadlineEpochMs: () => 1, rtcCapture: rtcCapture });
             dispatch.send({
                 context,
                 message,

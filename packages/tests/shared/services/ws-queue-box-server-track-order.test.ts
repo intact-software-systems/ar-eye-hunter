@@ -30,8 +30,16 @@ const LIVE_UNTIL_MS = NOW_MS + 60_000;
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 
 function trackedMessage(seq: number): ALMessage {
-    const message = newALBroadcastMessage('server', newALRoute('room.round.event', ROOM.groupId, `event-${seq}`), 'room', 'round.event.v1', {}, {
-        groupRef: ROOM
+    const message = newALBroadcastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: newALRoute('room.round.event', ROOM.groupId, `event-${seq}`),
+        scope: 'room',
+        typeId: 'round.event.v1',
+        resource: {},
+        options: {
+            groupRef: ROOM
+        }
     });
     return { ...message, ordering: { orderingKey: 'game-1', epoch: 1, seq } };
 }

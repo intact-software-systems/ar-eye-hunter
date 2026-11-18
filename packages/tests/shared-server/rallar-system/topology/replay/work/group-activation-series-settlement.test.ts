@@ -256,11 +256,14 @@ describe('activation status series settlement', () => {
             traceId: 'trace-activation-clock-entry'
         });
         const message = newALUntargetedMessage(
-            'activation-clock-test',
-            newALRoute('activation-clock-test', 'activation-clock-test', 'activation-clock-test'),
-            AppOutboxType.ACTIVATION_STATUS_CLOCK,
-            {},
-            { traceId: 'trace-activation-clock-1' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'activation-clock-test',
+                route: newALRoute('activation-clock-test', 'activation-clock-test', 'activation-clock-test'),
+                typeId: AppOutboxType.ACTIVATION_STATUS_CLOCK,
+                resource: {},
+                options: { traceId: 'trace-activation-clock-1' }
+            }
         );
 
         await handler.onMessage(message, entry);

@@ -132,10 +132,13 @@ describe('formation timer work handler', () => {
             nowEpochMs: () => nowEpochMs
         });
         const message = newALUntargetedMessage(
-            'formation-timer-test',
-            newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
-            AppOutboxType.FORMATION_TIMER,
-            {}
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'formation-timer-test',
+                route: newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
+                typeId: AppOutboxType.FORMATION_TIMER,
+                resource: {}
+            }
         );
 
         await handler.onMessage(message, entry);
@@ -344,11 +347,14 @@ function unusedTopologyPlanning(group: ReturnType<typeof formationGroup>, nowEpo
 
 function formationTimerMessage(traceId?: string) {
     return newALUntargetedMessage(
-        'formation-timer-test',
-        newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
-        AppOutboxType.FORMATION_TIMER,
-        {},
-        { traceId }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'formation-timer-test',
+            route: newALRoute('formation-timer-test', 'formation-timer-test', 'formation-timer-test'),
+            typeId: AppOutboxType.FORMATION_TIMER,
+            resource: {},
+            options: { traceId }
+        }
     );
 }
 

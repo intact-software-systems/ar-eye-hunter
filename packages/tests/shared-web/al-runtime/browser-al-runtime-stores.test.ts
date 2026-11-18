@@ -931,12 +931,15 @@ async function commitMintedRoomSend(
     resourceId: string
 ): Promise<ALMessage> {
     const message = newALMulticastMessage(
-        sessionId,
-        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
-        { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-        'chat.message.v1',
-        { resourceId },
-        { ttlMs: 60_000, orderingKey: 'chat' }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+            typeId: 'chat.message.v1',
+            resource: { resourceId },
+            options: { ttlMs: 60_000, orderingKey: 'chat' }
+        }
     );
     const bundle = await readOutboundTestAdmission({
         store: admissionStore,
@@ -970,16 +973,19 @@ async function sendReceiptedRoomBroadcast(
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
     const message = newALBroadcastMessage(
-        sessionId,
-        { topicId: 'room.chat', resourceId, contextId: 'room-1' },
-        'room',
-        'chat.message.v1',
-        { resourceId },
         {
-            groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
-            ttlMs: 60_000,
-            ack: 'all-logical-recipients',
-            ordering: { orderingKey: 'chat' }
+            createdAtEpochMs: Date.now(),
+            senderId: sessionId,
+            route: { topicId: 'room.chat', resourceId, contextId: 'room-1' },
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: { resourceId },
+            options: {
+                groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' },
+                ttlMs: 60_000,
+                ack: 'all-logical-recipients',
+                ordering: { orderingKey: 'chat' }
+            }
         }
     );
     const sent = await ws.enqueueIfAbsent(message);
@@ -1001,18 +1007,21 @@ function createSentSnapshot(msgId: string): ALOutboundSentMessageSnapshot {
 
 function createOutboundUnicastMessage(resourceId: string): ALMessage {
     return newALUnicastMessage(
-        'self',
         {
-            topicId: 'chat',
-            resourceId,
-            contextId: 'conversation-1'
-        },
-        'peer-1',
-        'chat.private-text.v1',
-        {
-            text: resourceId
-        },
-        { ttlMs: 20 }
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: {
+                topicId: 'chat',
+                resourceId,
+                contextId: 'conversation-1'
+            },
+            toPeerId: 'peer-1',
+            typeId: 'chat.private-text.v1',
+            resource: {
+                text: resourceId
+            },
+            options: { ttlMs: 20 }
+        }
     );
 }
 

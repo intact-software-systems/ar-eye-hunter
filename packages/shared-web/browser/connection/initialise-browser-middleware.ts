@@ -276,16 +276,19 @@ export function createBrowserRttHeartbeatMessage(
     createMessage: typeof newALUntargetedMessage
 ): ALMessage {
     return createMessage<RttMeasurementInfo>(
-        sessionId,
-        newALRoute(
-            AppTopics.rtt,
-            pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
-            `${rtt.version}`
-        ),
-        AppTopics.rtt,
-        rtt,
         {
-            ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS
+            createdAtEpochMs: rtt.createdAtEpochMs,
+            senderId: sessionId,
+            route: newALRoute(
+                AppTopics.rtt,
+                pairKey(rtt.sessionIdFrom, rtt.sessionIdTo),
+                `${rtt.version}`
+            ),
+            typeId: AppTopics.rtt,
+            resource: rtt,
+            options: {
+                ttlMs: BROWSER_RTT_HEARTBEAT_TTL_MS
+            }
         }
     );
 }
@@ -784,6 +787,7 @@ async function initialiseBrowserRtcConnection(
 ): Promise<BrowserRtcConnection> {
     const groupPeerLedger = createBrowserGroupPeerLedger(input);
     const initialization = await rtcEngine.initialiseRtcConnectionService({
+        creationEpochMs: input.rttCreationNowEpochMs,
         rtcCaptureConfiguration: input.options.rtcCaptureConfiguration,
         connectionId: input.connectionId,
         webSocketQueueBox: input.webSocketTransport.webSocketQueueBox,

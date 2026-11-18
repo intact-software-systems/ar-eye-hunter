@@ -45,12 +45,15 @@ const ADMISSION_EVENT_KINDS: ReadonlySet<ALInboundRuntimeDiagnosticsEvent['kind'
 ]);
 
 const MESSAGE_TO_ANOTHER_PEER = newALUnicastMessage(
-    'peer-1',
-    { topicId: 'test', resourceId: 'misaddressed', contextId: 'inbound' },
-    'another-peer',
-    'received',
-    {},
-    { ttlMs: 30_000 }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'peer-1',
+        route: { topicId: 'test', resourceId: 'misaddressed', contextId: 'inbound' },
+        toPeerId: 'another-peer',
+        typeId: 'received',
+        resource: {},
+        options: { ttlMs: 30_000 }
+    }
 );
 
 describe('RTC receiver admission of data-channel messages', () => {
@@ -109,7 +112,14 @@ describe('RTC receiver admission of data-channel messages', () => {
             dispose: () => {}
         });
         const message = {
-            ...newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'refresh', contextId: 'inbound' }, 'self', 'received', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: { topicId: 'test', resourceId: 'refresh', contextId: 'inbound' },
+                toPeerId: 'self',
+                typeId: 'received',
+                resource: {}
+            }),
             constraints: { expiresAtMs: 10_000_100 }
         };
         const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -128,7 +138,14 @@ describe('RTC receiver admission of data-channel messages', () => {
         vi.spyOn(Date, 'now').mockImplementation(() => serverNow + offsetMs);
         const endpoint = createReceivingEndpoint(() => serverNow);
         const live = {
-            ...newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'live', contextId: 'inbound' }, 'self', 'received', {}),
+            ...newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: { topicId: 'test', resourceId: 'live', contextId: 'inbound' },
+                toPeerId: 'self',
+                typeId: 'received',
+                resource: {}
+            }),
             constraints: { expiresAtMs: 10_000_100 }
         };
 

@@ -96,12 +96,12 @@ afterEach(() => {
 function openShot(payload: ScaleWirePayload, starts: ShotStart[]): RallarMessageHandle {
     const msgId = `shot-${starts.length + 1}`;
     const registry = facade.deliveries;
-    const handle = registry.open({
+    const handle = registry.open({ message: {
         id: { v: 4, msgId, ts: Date.now(), senderId: facade.session.sessionId, traceId: 'trace-alm-scale-cadence' },
         route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
         payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload.payload) },
         delivery: { ack: 'group-leader', reliability: 'at-least-once' }
-    }, 'rtc');
+    }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
     starts.push({ atMs: Date.now(), msgId, payload });
     registry.record({
         kind: 'admission',
@@ -264,7 +264,12 @@ class ScaleActor {
     readonly index: number;
     readonly role: 'director' | 'player';
     readonly session: AuthSession;
-    readonly registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 1_000, cancel: () => undefined });
+    readonly registry = new BrowserRallarDeliveryRegistry({
+        nowMs: Date.now,
+        retainTerminalMs: 60_000,
+        maxEntries: 1_000,
+        cancel: () => undefined
+    });
     readonly native: BlackBoxRallarRuntime;
     readonly runtime: RallarBlackBoxBrowserTestRuntime;
     readonly recipe: RallarBlackBoxTestRecipe;
@@ -697,13 +702,13 @@ class ScaleCohort {
 
     send(actor: ScaleActor, payload: ScaleWirePayload): RallarMessageHandle {
         const msgId = `${actor.agentId}-message-${actor.starts.length + 1}`;
-        const handle = actor.registry.open({
+        const handle = actor.registry.open({ message: {
             id: { v: 4, msgId, ts: Date.now(), senderId: actor.session.sessionId, traceId: 'trace-alm-scale-cadence' },
             route: { topicId: 'room.ar-eye-hunter.director', contextId: GROUP.groupId, resourceId: GROUP.groupId },
             payload: { typeId: payload.typeId, contentType: 'application/json', resource: JSON.stringify(payload) },
             delivery: { ack: actor.role === 'player' ? 'group-leader' : 'all-logical-recipients', reliability: 'at-least-once' },
             constraints: { expiresAtMs: Date.now() + 30_000 }
-        }, 'rtc');
+        }, carrier: 'rtc', readDeadlineEpochMs: Date.now });
         actor.starts.push({ atMs: Date.now(), msgId, payload });
         const admit = () => {
             actor.registry.record({

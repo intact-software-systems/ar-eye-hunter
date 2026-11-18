@@ -73,7 +73,14 @@ describe('RallarServerWsRouter', () => {
             delivered.push(message.raw.id.msgId);
         });
         fixture.router.install();
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'world'), 'world', 'app.deadline.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: newALRoute('app.deadline', 'message', 'world'),
+            scope: 'world',
+            typeId: 'app.deadline.v1',
+            resource: {}
+        });
 
         await fixture.socket.receive(message);
         const keys = await stores.workQueue.getAllKeys();
@@ -123,7 +130,14 @@ describe('RallarServerWsRouter', () => {
                 }
             });
         }
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.retry', 'message', 'world'), 'world', 'app.retry.v1', {});
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: newALRoute('app.retry', 'message', 'world'),
+            scope: 'world',
+            typeId: 'app.retry.v1',
+            resource: {}
+        });
 
         await fixture.socket.receive(message);
 
@@ -161,7 +175,15 @@ describe('RallarServerWsRouter', () => {
         fixture.router.on({ topicId: 'app.deadline' }, async (message) => {
             delivered.push(message.raw.id.msgId);
         });
-        const message = newALBroadcastMessage('peer-1', newALRoute('app.deadline', 'message', 'all'), 'all', 'app.deadline.v1', {}, { ttlMs: 1_000 });
+        const message = newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: newALRoute('app.deadline', 'message', 'all'),
+            scope: 'all',
+            typeId: 'app.deadline.v1',
+            resource: {},
+            options: { ttlMs: 1_000 }
+        });
 
         if (offsetMs < 0) {
             await expect(fixture.router.route(message)).resolves.toBeUndefined();
@@ -189,11 +211,14 @@ describe('RallarServerWsRouter', () => {
             fanout: 'outbox'
         });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.todo', 'all', 'forged-state-sync'),
-            'all',
-            AppTopics.groupStateSnapshot,
-            { forged: true }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.todo', 'all', 'forged-state-sync'),
+                scope: 'all',
+                typeId: AppTopics.groupStateSnapshot,
+                resource: { forged: true }
+            }
         );
 
         await router.route(message);
@@ -215,13 +240,16 @@ describe('RallarServerWsRouter', () => {
     it('fans out implicit app topics to their declared targets', async () => {
         const { router, socket } = createRouter();
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.cursor', 'all', 'cursor-1'),
-            'all',
-            'cursor.position.v1',
-            { x: 1, y: 2 },
             {
-                exceptPeerIds: ['peer-1']
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.cursor', 'all', 'cursor-1'),
+                scope: 'all',
+                typeId: 'cursor.position.v1',
+                resource: { x: 1, y: 2 },
+                options: {
+                    exceptPeerIds: ['peer-1']
+                }
             }
         );
 
@@ -239,12 +267,15 @@ describe('RallarServerWsRouter', () => {
     it('reserves rallar topics for system middleware and sends a NACK under the rejected message\'s trace', async () => {
         const { router, socket } = createRouter();
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('rallar.internal', 'all', 'secret-1'),
-            'all',
-            'internal.message.v1',
-            { ok: false },
-            { traceId: 'trace-reserved-topic-message' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('rallar.internal', 'all', 'secret-1'),
+                scope: 'all',
+                typeId: 'internal.message.v1',
+                resource: { ok: false },
+                options: { traceId: 'trace-reserved-topic-message' }
+            }
         );
 
         await router.route(message);
@@ -264,11 +295,14 @@ describe('RallarServerWsRouter', () => {
             validate: (value) => typeof value === 'object' && value !== null && 'title' in value
         });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.todo', 'all', 'todo-1'),
-            'all',
-            'todo.item.updated.v1',
-            { done: true }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.todo', 'all', 'todo-1'),
+                scope: 'all',
+                typeId: 'todo.item.updated.v1',
+                resource: { done: true }
+            }
         );
 
         await router.route(message);
@@ -295,11 +329,14 @@ describe('RallarServerWsRouter', () => {
             }
         );
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.todo', 'all', 'todo-1'),
-            'all',
-            'todo.item.updated.v1',
-            { title: 'Ship router', done: false }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.todo', 'all', 'todo-1'),
+                scope: 'all',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Ship router', done: false }
+            }
         );
 
         await router.route(message);
@@ -325,14 +362,17 @@ describe('RallarServerWsRouter', () => {
             fanout: 'outbox'
         });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.todo', 'all', 'todo-1'),
-            'all',
-            'todo.item.updated.v1',
-            { title: 'Durable fanout', done: false },
             {
-                reliability: 'at-least-once',
-                ack: 'none'
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.todo', 'all', 'todo-1'),
+                scope: 'all',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Durable fanout', done: false },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'none'
+                }
             }
         );
 
@@ -360,19 +400,25 @@ describe('RallarServerWsRouter', () => {
             handled.push(message.raw.id.msgId);
         });
         const liveOnly = newALUnicastMessage(
-            'peer-1',
-            newALRoute('app.command', 'all', 'command-1'),
-            router.serverPeerId,
-            'app.command.v1',
-            { go: true }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.command', 'all', 'command-1'),
+                toPeerId: router.serverPeerId,
+                typeId: 'app.command.v1',
+                resource: { go: true }
+            }
         );
         const durable = newALUnicastMessage(
-            'peer-1',
-            newALRoute('app.durable', 'all', 'command-2'),
-            router.serverPeerId,
-            'app.command.v1',
-            { go: true },
-            { reliability: 'at-least-once', ack: 'none' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.durable', 'all', 'command-2'),
+                toPeerId: router.serverPeerId,
+                typeId: 'app.command.v1',
+                resource: { go: true },
+                options: { reliability: 'at-least-once', ack: 'none' }
+            }
         );
 
         await router.route(liveOnly);
@@ -392,20 +438,26 @@ describe('RallarServerWsRouter', () => {
             handled.push(message.raw.id.msgId);
         });
         const roomUnicast = newALUnicastMessage(
-            'peer-1',
-            newALRoute('room.command', 'room-1', 'command-1'),
-            'peer-2',
-            'app.command.v1',
-            { go: true },
-            { groupRef: createGroupSnapshot('room-1', ['peer-1', 'peer-2'], 1).group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('room.command', 'room-1', 'command-1'),
+                toPeerId: 'peer-2',
+                typeId: 'app.command.v1',
+                resource: { go: true },
+                options: { groupRef: createGroupSnapshot('room-1', ['peer-1', 'peer-2'], 1).group }
+            }
         );
         const durable = newALUnicastMessage(
-            'peer-1',
-            newALRoute('app.durable', 'all', 'command-2'),
-            'peer-2',
-            'app.command.v1',
-            { go: true },
-            { reliability: 'at-least-once', ack: 'none' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.durable', 'all', 'command-2'),
+                toPeerId: 'peer-2',
+                typeId: 'app.command.v1',
+                resource: { go: true },
+                options: { reliability: 'at-least-once', ack: 'none' }
+            }
         );
 
         const source = { kind: 'ws-client' as const, peerId: 'peer-1', authenticatedScope: AUDIENCE_SCOPE };
@@ -432,12 +484,15 @@ describe('RallarServerWsRouter', () => {
             fanout: 'live-only'
         });
         const misattributed = newALUnicastMessage(
-            'peer-1',
-            newALRoute('room.chat', 'room-2', 'unicast-naming-room-2'),
-            'peer-2',
-            'chat.message.v1',
-            { text: 'for room 2?' },
-            { groupRef: AUDIENCE_ROOM }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('room.chat', 'room-2', 'unicast-naming-room-2'),
+                toPeerId: 'peer-2',
+                typeId: 'chat.message.v1',
+                resource: { text: 'for room 2?' },
+                options: { groupRef: AUDIENCE_ROOM }
+            }
         );
 
         await fixture.sockets['peer-1']!.receive(misattributed);
@@ -457,12 +512,15 @@ describe('RallarServerWsRouter', () => {
             groupId: 'proxy-room'
         };
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('app.proxy', 'original-context', 'proxy-message'),
-            'all',
-            'proxy.message.v1',
-            { text: 'scoped delivery' },
-            { reliability: 'at-least-once', ack: 'receiver' }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('app.proxy', 'original-context', 'proxy-message'),
+                scope: 'all',
+                typeId: 'proxy.message.v1',
+                resource: { text: 'scoped delivery' },
+                options: { reliability: 'at-least-once', ack: 'receiver' }
+            }
         );
         router.defineTopic({ participation: 'members', topicId: 'app.proxy', fanout: 'none' });
         router.on({ topicId: 'app.proxy' }, async (_message, context) => {
@@ -519,10 +577,26 @@ describe('RallarServerWsRouter', () => {
             const route = newALRoute('room.chat', 'room-1', 'msg-1');
             const floors = { minSnapshotVersion: 4, rosterVersion: 2 };
             const message = mode === 'multicast'
-                ? newALMulticastMessage('peer-1', route, group, 'chat.message.v1', { text: 'after join' }, floors)
-                : newALBroadcastMessage('peer-1', route, 'room', 'chat.message.v1', { text: 'after join' }, {
+                ? newALMulticastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route,
                     groupRef: group,
-                    ...floors
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'after join' },
+                    options: floors
+                })
+                : newALBroadcastMessage({
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route,
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'after join' },
+                    options: {
+                        groupRef: group,
+                        ...floors
+                    }
                 });
 
             await router.route(message);
@@ -555,14 +629,17 @@ describe('RallarServerWsRouter', () => {
                 })
             });
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'room-1', 'msg-1'),
-                'room',
-                'chat.message.v1',
-                { text: 'after join' },
                 {
-                    groupRef: snapshot.group,
-                    minSnapshotVersion: 4
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'room-1', 'msg-1'),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'after join' },
+                    options: {
+                        groupRef: snapshot.group,
+                        minSnapshotVersion: 4
+                    }
                 }
             );
 
@@ -606,16 +683,19 @@ describe('RallarServerWsRouter', () => {
             });
             router.install();
             const message = newALBroadcastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'room-1', 'msg-pre-admission'),
-                'room',
-                'chat.message.v1',
-                { text: 'too new' },
                 {
-                    groupRef: snapshot.group,
-                    minSnapshotVersion: 4,
-                    reliability: 'at-least-once',
-                    ack: 'receiver'
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'room-1', 'msg-pre-admission'),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'too new' },
+                    options: {
+                        groupRef: snapshot.group,
+                        minSnapshotVersion: 4,
+                        reliability: 'at-least-once',
+                        ack: 'receiver'
+                    }
                 }
             );
 
@@ -643,12 +723,15 @@ describe('RallarServerWsRouter', () => {
         router.install();
         const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute(AppTopics.groupStateSnapshot, 'room-1', 'reserved-room-message'),
-            'room',
-            AppTopics.groupStateSnapshot,
-            { snapshot: 'system-owned' },
-            { groupRef: group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute(AppTopics.groupStateSnapshot, 'room-1', 'reserved-room-message'),
+                scope: 'room',
+                typeId: AppTopics.groupStateSnapshot,
+                resource: { snapshot: 'system-owned' },
+                options: { groupRef: group }
+            }
         );
 
         await socket.receive(message);
@@ -705,21 +788,27 @@ describe('RallarServerWsRouter', () => {
         try {
             router.install();
             const first = newALBroadcastMessage(
-                'peer-1',
-                newALRoute('room.chat', 'room-1', 'shared-id'),
-                'room',
-                'chat.message.v1',
-                { text: 'first' },
-                { groupRef: group }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'peer-1',
+                    route: newALRoute('room.chat', 'room-1', 'shared-id'),
+                    scope: 'room',
+                    typeId: 'chat.message.v1',
+                    resource: { text: 'first' },
+                    options: { groupRef: group }
+                }
             );
             const second = {
                 ...newALBroadcastMessage(
-                    'peer-1',
-                    newALRoute('room.chat', 'room-1', 'second-id'),
-                    'room',
-                    'chat.message.v1',
-                    { text: 'second' },
-                    { groupRef: group }
+                    {
+                        createdAtEpochMs: Date.now(),
+                        senderId: 'peer-1',
+                        route: newALRoute('room.chat', 'room-1', 'second-id'),
+                        scope: 'room',
+                        typeId: 'chat.message.v1',
+                        resource: { text: 'second' },
+                        options: { groupRef: group }
+                    }
                 ),
                 id: first.id
             };
@@ -763,8 +852,16 @@ describe('RallarServerWsRouter', () => {
         });
         router.install();
         const message: ALMessage = {
-            ...newALBroadcastMessage('peer-1', newALRoute('room.chat', 'room-1', 'stamp-1'), 'room', 'chat.message.v1', {}, {
-                groupRef: group
+            ...newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('room.chat', 'room-1', 'stamp-1'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: {
+                    groupRef: group
+                }
             }),
             delivery: { reliability: 'at-least-once', ack: 'receiver' }
         };
@@ -945,12 +1042,15 @@ describe('RallarServerWsRouter', () => {
     it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {
         const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
         const message = newALBroadcastMessage(
-            'peer-1',
-            newALRoute('room.chat', 'room-1', 'retained-audience'),
-            'room',
-            'chat.message.v1',
-            { text: 'original audience only' },
-            { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('room.chat', 'room-1', 'retained-audience'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: { text: 'original audience only' },
+                options: { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group }
+            }
         );
 
         await router.route(message, {
@@ -968,13 +1068,16 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('returns the live-only send count and sends to resolved targets', async () => {
         const { server, socket } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.cursor', 'all', 'cursor-1'),
-            'all',
-            'cursor.position.v1',
-            { x: 1, y: 2 },
             {
-                exceptPeerIds: ['peer-1']
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.cursor', 'all', 'cursor-1'),
+                scope: 'all',
+                typeId: 'cursor.position.v1',
+                resource: { x: 1, y: 2 },
+                options: {
+                    exceptPeerIds: ['peer-1']
+                }
             }
         );
 
@@ -1007,11 +1110,14 @@ describe('RallarServer.ws.publish current behavior', () => {
                 }
             });
             const message = newALBroadcastMessage(
-                'server-1',
-                newALRoute('app.cursor', 'all', 'cursor-1'),
-                'all',
-                'cursor.position.v1',
-                { x: 1, y: 2 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALRoute('app.cursor', 'all', 'cursor-1'),
+                    scope: 'all',
+                    typeId: 'cursor.position.v1',
+                    resource: { x: 1, y: 2 }
+                }
             );
 
             const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'live-only' });
@@ -1041,11 +1147,14 @@ describe('RallarServer.ws.publish current behavior', () => {
                 failingConnectionIds: ['conn-2']
             });
             const message = newALBroadcastMessage(
-                'server-1',
-                newALRoute('app.cursor', 'all', 'cursor-1'),
-                'all',
-                'cursor.position.v1',
-                { x: 1, y: 2 }
+                {
+                    createdAtEpochMs: Date.now(),
+                    senderId: 'server-1',
+                    route: newALRoute('app.cursor', 'all', 'cursor-1'),
+                    scope: 'all',
+                    typeId: 'cursor.position.v1',
+                    resource: { x: 1, y: 2 }
+                }
             );
 
             const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'live-only' });
@@ -1083,15 +1192,18 @@ describe('RallarServer.ws.publish current behavior', () => {
             groupId: 'room-1'
         };
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.todo', 'room-1', 'todo-1'),
-            'room',
-            'todo.item.updated.v1',
-            { title: 'Durable fanout', done: false },
             {
-                groupRef,
-                reliability: 'at-least-once',
-                ack: 'receiver'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.todo', 'room-1', 'todo-1'),
+                scope: 'room',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Durable fanout', done: false },
+                options: {
+                    groupRef,
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             }
         );
 
@@ -1119,15 +1231,18 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('maps a deferred admission verdict to skipped status', async () => {
         const { server, socket, service, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.todo', 'room-1', 'todo-deferred'),
-            'room',
-            'todo.item.updated.v1',
-            { title: 'Deferred fanout', done: false },
             {
-                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-                reliability: 'at-least-once',
-                ack: 'receiver'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.todo', 'room-1', 'todo-deferred'),
+                scope: 'room',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Deferred fanout', done: false },
+                options: {
+                    groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             }
         );
         const verdict: ALDeliveryAdmissionVerdict = {
@@ -1156,15 +1271,18 @@ describe('RallarServer.ws.publish current behavior', () => {
     ])('maps a refused admission verdict with reason $reason to status $expectedStatus', async ({ reason, expectedStatus }) => {
         const { server, socket, service, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.todo', 'room-1', `todo-refused-${reason}`),
-            'room',
-            'todo.item.updated.v1',
-            { title: 'Refused fanout', done: false },
             {
-                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
-                reliability: 'at-least-once',
-                ack: 'receiver'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.todo', 'room-1', `todo-refused-${reason}`),
+                scope: 'room',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Refused fanout', done: false },
+                options: {
+                    groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             }
         );
         const verdict: ALDeliveryAdmissionVerdict = {
@@ -1190,14 +1308,17 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {
         const { server, socket, outbox, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.todo', 'room-1', 'todo-invalid-room'),
-            'room',
-            'todo.item.updated.v1',
-            { title: 'Invalid durable fanout', done: false },
             {
-                reliability: 'at-least-once',
-                ack: 'receiver'
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.todo', 'room-1', 'todo-invalid-room'),
+                scope: 'room',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'Invalid durable fanout', done: false },
+                options: {
+                    reliability: 'at-least-once',
+                    ack: 'receiver'
+                }
             }
         );
 
@@ -1213,11 +1334,14 @@ describe('RallarServer.ws.publish current behavior', () => {
     it('returns none metadata without sending or enqueueing', async () => {
         const { server, socket, outbox } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
-            'server-1',
-            newALRoute('app.todo', 'room-1', 'todo-1'),
-            'room',
-            'todo.item.updated.v1',
-            { title: 'No fanout', done: false }
+            {
+                createdAtEpochMs: Date.now(),
+                senderId: 'server-1',
+                route: newALRoute('app.todo', 'room-1', 'todo-1'),
+                scope: 'room',
+                typeId: 'todo.item.updated.v1',
+                resource: { title: 'No fanout', done: false }
+            }
         );
 
         const result = await server.ws.publish({ message, scope: AUDIENCE_SCOPE, fanout: 'none' });
@@ -1468,8 +1592,16 @@ function createLargeOutboxRoom(sessionIds: readonly string[]): Omit<AudienceRout
 
 function createReceiverRoomBroadcast(resourceId: string): ALMessage {
     return {
-        ...newALBroadcastMessage('peer-1', newALRoute('room.chat', 'room-1', resourceId), 'room', 'chat.message.v1', {}, {
-            groupRef: AUDIENCE_ROOM
+        ...newALBroadcastMessage({
+            createdAtEpochMs: Date.now(),
+            senderId: 'peer-1',
+            route: newALRoute('room.chat', 'room-1', resourceId),
+            scope: 'room',
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: {
+                groupRef: AUDIENCE_ROOM
+            }
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };

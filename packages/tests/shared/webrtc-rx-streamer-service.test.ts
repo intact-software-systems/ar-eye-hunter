@@ -246,7 +246,15 @@ describe('RTC receiver owned inbound completion', () => {
             throw new Error('Real receiver must register its peer admission callback');
         }
         await receive.onMessage(
-            newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'owned', contextId: 'inbound' }, 'self', 'received', {}, { ttlMs: 30_000 }),
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: { topicId: 'test', resourceId: 'owned', contextId: 'inbound' },
+                toPeerId: 'self',
+                typeId: 'received',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }),
             new MessageEvent('message')
         );
         await entered.promise;
@@ -271,7 +279,15 @@ describe('RTC receiver owned inbound completion', () => {
         );
         const keysBeforeDisposedAdmission = await resources.workQueue.getAllKeys();
         await receive.onMessage(
-            newALUnicastMessage('peer-1', { topicId: 'test', resourceId: 'after-dispose', contextId: 'inbound' }, 'self', 'received', {}, { ttlMs: 30_000 }),
+            newALUnicastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: { topicId: 'test', resourceId: 'after-dispose', contextId: 'inbound' },
+                toPeerId: 'self',
+                typeId: 'received',
+                resource: {},
+                options: { ttlMs: 30_000 }
+            }),
             new MessageEvent('message')
         );
         expect(await resources.workQueue.getAllKeys()).toEqual(keysBeforeDisposedAdmission);

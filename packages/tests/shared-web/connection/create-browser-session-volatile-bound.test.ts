@@ -12,12 +12,15 @@ import {
 
 const NOW_MS = 1_700_000_000_000;
 const MESSAGE = newALUnicastMessage(
-    'self',
-    { topicId: 'chat', resourceId: 'planned', contextId: 'room' },
-    'peer',
-    'chat.message.v1',
-    { text: 'planned' },
-    { ttlMs: 30_000 }
+    {
+        createdAtEpochMs: Date.now(),
+        senderId: 'self',
+        route: { topicId: 'chat', resourceId: 'planned', contextId: 'room' },
+        toPeerId: 'peer',
+        typeId: 'chat.message.v1',
+        resource: { text: 'planned' },
+        options: { ttlMs: 30_000 }
+    }
 );
 
 function toAdmission(msgId: string, bytes = 1): ALVolatileSessionBudget.Admission {

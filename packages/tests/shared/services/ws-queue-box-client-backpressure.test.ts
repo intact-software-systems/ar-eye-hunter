@@ -81,12 +81,15 @@ function roomSend(
     qos?: ALQosPolicyRequest
 ): ALMessage {
     return newALMulticastMessage(
-        'self',
-        { topicId: 'chat', resourceId, contextId: ROOM.groupId },
-        ROOM,
-        'chat.message.v1',
-        {},
-        { reliability, ack: 'none', ttlMs: 30_000, qos, traceId: `trace-${resourceId}` }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'self',
+            route: { topicId: 'chat', resourceId, contextId: ROOM.groupId },
+            groupRef: ROOM,
+            typeId: 'chat.message.v1',
+            resource: {},
+            options: { reliability, ack: 'none', ttlMs: 30_000, qos, traceId: `trace-${resourceId}` }
+        }
     );
 }
 

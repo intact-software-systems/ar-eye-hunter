@@ -43,16 +43,19 @@ import { TestWebSocket } from '../../../../shared/websocket/test-web-socket.ts';
 
 const ROOM = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-1' };
 const NOTIFICATION = newALBroadcastMessage(
-    'server',
-    newALRoute('room.snapshot', 'room-1', 'round-1'),
-    'room',
-    'snapshot.v1',
-    {},
     {
-        groupRef: ROOM,
-        reliability: 'at-least-once',
-        ack: 'receiver',
-        ttlMs: 15_000
+        createdAtEpochMs: Date.now(),
+        senderId: 'server',
+        route: newALRoute('room.snapshot', 'room-1', 'round-1'),
+        scope: 'room',
+        typeId: 'snapshot.v1',
+        resource: {},
+        options: {
+            groupRef: ROOM,
+            reliability: 'at-least-once',
+            ack: 'receiver',
+            ttlMs: 15_000
+        }
     }
 );
 /** A publish on a `members` topic, for the sender or producer its message names. */

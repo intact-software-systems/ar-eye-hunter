@@ -666,12 +666,15 @@ function withCausalRevision(
 
 function createRoomMessage() {
     return newALMulticastMessage(
-        'origin',
-        newALEventRoute('room.chat', roomRef.groupId, 'message-1'),
-        roomRef,
-        'chat.v1',
-        {},
-        { ttlMs: 240_000 }
+        {
+            createdAtEpochMs: Date.now(),
+            senderId: 'origin',
+            route: newALEventRoute('room.chat', roomRef.groupId, 'message-1'),
+            groupRef: roomRef,
+            typeId: 'chat.v1',
+            resource: {},
+            options: { ttlMs: 240_000 }
+        }
     );
 }
 

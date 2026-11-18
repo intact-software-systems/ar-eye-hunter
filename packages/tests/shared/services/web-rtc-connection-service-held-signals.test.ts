@@ -171,8 +171,16 @@ function toSignalEnvelope(senderId: string, msgId: string): ALMessage {
         offerId: msgId,
         payload: { description: { type: 'offer', sdp: `${msgId}-sdp` }, candidate: null }
     };
-    const message = newALUnicastMessage(senderId, newALEventRoute('rtc', SELF), SELF, 'rtc', signal, {
-        ttlMs: SIGNAL_TTL_MS
+    const message = newALUnicastMessage({
+        createdAtEpochMs: Date.now(),
+        senderId,
+        route: newALEventRoute('rtc', SELF),
+        toPeerId: SELF,
+        typeId: 'rtc',
+        resource: signal,
+        options: {
+            ttlMs: SIGNAL_TTL_MS
+        }
     });
     return { ...message, id: { ...message.id, msgId } };
 }
