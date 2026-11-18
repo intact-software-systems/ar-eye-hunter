@@ -20,9 +20,9 @@ subscriber's server. Nothing of the spike is in the tree.
 | Probe                                       | What happened                                                                                              |
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Receipted ordered stream over `ws`          | All 20 arrived; all 20 handles ended `acknowledged`; the server's gap NACKs were served.                   |
-| Unreceipted ordered stream over `ws`        | All 20 arrived.                                                                                            |
+| Ordered stream naming no `ack`, `ws`        | All 20 arrived (handles read only to `transport-accepted`).                                                |
 | Receipted ordered stream over `rtc`         | 18 arrived. Sends 1 and 2 did not; their handles ended `failed`, `receipt-exhausted`.                      |
-| Unreceipted ordered stream over `rtc`       | 18 arrived; 7 handles of sends that arrived ended `failed`, `receipt-exhausted`; 5 gap NACKs were refused. |
+| Ordered stream naming no `ack`, `rtc`       | 18 arrived; 7 handles of sends that arrived ended `failed`, `receipt-exhausted`; 5 gap NACKs were refused. |
 | A subscriber's server crashed, cluster of 3 | The admitted receipt named both subscribers; the receipt ended `timed-out` after 2 s naming the lost one.  |
 
 Two findings over `rtc`:
@@ -33,11 +33,13 @@ Two findings over `rtc`:
    resubmitted. This is the entry rule that lets a late subscriber join a running stream; a receiver
    cannot tell a late join from lost first frames. D646 lists the one-frame case as a known limit. The
    receipts were truthful: the two handles ended `failed`.
-2. **An unreceipted send that arrived can read `failed`.** In the unreceipted cell, handles 11 to 13 and
-   17 to 20 carried receipt mode `receiver` and ended `failed`, `receipt-exhausted`, although the send
-   asked for no receipt and the receiver delivered those sequences. The sender refused 5 gap NACKs as
-   "AL repair sender has no retained outbound obligation", and the receiver saw 12 duplicates. The cause
-   is not yet read.
+2. **A send that arrived can read `failed`.** The second cell named no `ack`, so each send took its
+   channel's default, which over `rtc` gave it receipt mode `receiver`: it was a receipted cell too, not
+   an unreceipted one as the spike intended. Its handles 11 to 13 and 17 to 20 ended `failed`,
+   `receipt-exhausted`, although the receiver delivered those sequences. The sender refused 5 gap NACKs
+   as "AL repair sender has no retained outbound obligation", and the receiver saw 12 duplicates. The
+   first cell, which named `ack: 'receiver'`, showed none of this: its 18 arrived sends all ended
+   `acknowledged`. Why the two differ is not yet read.
 
 One gap in the harness: no recipe can read what a fault did. The spike could tell frames were dropped
 only from the NACKs that followed.
@@ -73,7 +75,8 @@ only from the NACKs that followed.
 
 ## Constraints
 
-- The lane cell deadline is 18 s (`CONFORMANCE_DEADLINE_MS`); a non-expiring send's budget is 10 s.
+- The lane cell deadline is 18 s (`CONFORMANCE_DEADLINE_MS` in the lane spec, `ALM_CONFORMANCE_DEADLINE_MS`
+  in the catalog and the manifests); a non-expiring send's budget is 10 s.
 - A message has one repair per gap by default (`maxRepairs`), and a receipted send also retries on ACK
   timeout up to its attempt budget.
 - Over `rtc` a dropped frame is reported to its sender, whose owner resubmits it 50 ms later; over `ws`
@@ -108,10 +111,12 @@ only, no frame content.
 All are `full` scope, in the two-agent family, in the family's shared room. `N` is 20 sends. Each loss
 is bounded with `remaining` so the stream's tail is clean and recovery ends inside the cell's deadline;
 the builder picks the bound from a run (the spike's unbounded 10 % recovered in about 11 s over `ws`).
+The lane's fault helpers take `'until-cleared'` or `0` today; a positive count, which the command
+contract already allows, is helper work of this part.
 
 | Cell                   | Carrier | What it does                                                                                                  | What it claims                                                                                                                                                            |
 | ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seeded-loss-stream`   | `ws`    | 20 ordered receipted sends under a seeded loss of the cell's own data frames.                                 | The loss dropped at least one frame. All 20 arrive in sequence order and no 21st does. Every handle ends `acknowledged`. The sender committed at least one gap NACK.      |
+| `seeded-loss-stream`   | `ws`    | 20 ordered receipted sends under a seeded loss of the cell's own data frames.                                 | The loss dropped at least one frame. All 20 arrive in sequence order and no 21st does. Every handle ends `acknowledged`.                                                  |
 | `seeded-loss-stream`   | `rtc`   | The same stream, with send 1 sent and reached before the loss is armed, so the track is entered at its start. | The loss dropped at least one frame. All 20 arrive in sequence order. Every handle ends `acknowledged`.                                                                   |
 | `lost-stream-start`    | `rtc`   | Send 1 is held by message id, sends 2 and 3 are sent and reached, then the hold is released.                  | A stated limit: the receiver enters at 2, send 1 is rejected `before-entry`, exactly 2 arrive, and handle 1 ends `failed` with `receipt-exhausted`, never `acknowledged`. |
 | `seeded-jitter-stream` | `ws`    | 20 ordered receipted sends, each data frame delayed by a seeded 0 to 80 ms, so frames leave out of order.     | The jitter delayed at least 10 frames. All 20 arrive in sequence order. Every handle ends `acknowledged`.                                                                 |
@@ -126,8 +131,13 @@ Notes on the claims:
   cell removes that by entering the track first. If sends still fail to arrive or to be acknowledged,
   that is a third finding: stop and report.
 - **`seeded-jitter-stream`** is not spiked at all. Same rule.
-- **The unreceipted stream** gets no cell over `rtc` until finding 2 is explained. Over `ws` it adds
-  nothing the receipted cell does not show, so it gets none there either.
+- **A stream that names no `ack`** gets no cell until finding 2 is explained. Every cell here names
+  `ack: 'receiver'`.
+- **No claim depends on which frames a draw hit.** The draw moves once per matching frame,
+  retransmissions and ACK-timeout retries included, so after the first retry the seed no longer fixes
+  which frames are lost. Each claim above therefore holds for any pattern of drops the bound allows,
+  and the pinned seed only makes a run repeat as far as timing lets it. The spike's gap NACKs are
+  recorded from the run snapshot, not asserted: a loss at the stream's tail raises none.
 
 ### 3. Cluster recipe
 
@@ -137,7 +147,11 @@ secondary is crashed. Alice sends one at-least-once room broadcast with a receiv
 receives it and ACKs.
 
 Claims: the `admitted` receipt expects Bob and Carol; the terminal receipt reads `timed-out`, confirms
-Carol and no one else, and leaves Bob expected and unconfirmed; no `complete` receipt arrives. Then
+Carol and no one else, and leaves Bob expected and unconfirmed; no `complete` receipt arrives. These
+are pinned as correct, not as a limit: `admitted` means the server accepted the send and froze the
+audience from the room's presence, which still holds Bob, and `timed-out` reports delivery (the
+maintainer's ruling of 2026-11-13). Part B's withheld `admitted` concerns a conflicted admission
+retained for replay and does not change this recipe. Then
 the secondary is restarted and a second broadcast, with Bob on a new socket, ends `complete` with both
 confirmed, so the room is whole again. If reopening Bob's socket for the same session is not
 something the product offers a no-browser client, the second half uses a fourth client enrolled on
@@ -145,9 +159,10 @@ the restarted server, as `api-v1-cluster-instance-loss` does.
 
 ### 4. Finding 2's cause
 
-Read from the code, not fixed: why an ordered at-least-once send over `rtc` that asked for no receipt
-comes to carry receipt mode `receiver`, why its handle ends `receipt-exhausted` after the frame was
-delivered, and why the sender holds no obligation for a gap its receiver reports. The answer is
+Read from the code, not fixed: which `ack` an ordered at-least-once send takes over `rtc` when it names
+none, why its handle ends `receipt-exhausted` after the frame was delivered when the same send with
+`ack: 'receiver'` ends `acknowledged`, and why the sender holds no obligation for a gap its receiver
+reports. The answer is
 written into the decision row. If the cause is a one-line slip rather than a design question, it is
 still reported, not fixed here.
 
@@ -155,10 +170,10 @@ still reported, not fixed here.
 
 - Decision rows from D668: the fault read; the cells and what each claims; the lost stream start as a
   stated limit that widens D646's; finding 2 with its cause.
-- Backlog: the lost stream start and finding 2 as their own lines; the three part-A lines written with
-  D666 and D667 ("no lane cell runs under a seeded loss", "the instance-loss recipe crashes a server
-  that holds no socket", "by which path the cut process delivered") updated or removed where this
-  part answers them.
+- Backlog: the lost stream start and finding 2 as their own lines; the two lines written with D666 and
+  D667 that this part answers ("no lane cell runs under a seeded loss", "the instance-loss recipe
+  crashes a server that holds no socket") updated or removed. The line on by which path the cut
+  process delivered again stays as it is: nothing here reads it.
 - `schema-and-capabilities.md` (the fault result, the cells), `schema-compatibility-guide.md` (the
   result's new field, and the `messages.received` ordering field if added), the runner README's server
   faults section (the third recipe), the addendum's "After Slice 9".
@@ -169,8 +184,10 @@ still reported, not fixed here.
 - Unit: the fault read through the port, the page runtime and the control validator; the catalog tests
   that pin the lane's cells (`alm-conformance-recipes` and its neighbours) updated for four new cells.
 - Lane, full scope, ports of this session: the new cells alone, three runs per carrier; then the whole
-  two-agent family once per carrier, to show the cells disturb no neighbour in the shared room. A cell
-  that passed is also read in the run snapshot for a `control-admission` with `outcome: rejected`.
+  two-agent family once per carrier, to show the cells disturb no neighbour in the shared room.
+- Every `control-admission` with `outcome: rejected` in a new cell's run snapshot is read and
+  explained in the pull request. It is a record, not a cell assertion; one that cannot be explained
+  from the documents is a finding, reported before the work goes on.
 - Stand-ins: each new cell and the recipe is shown to fail once (a floor above what the fault can
   drop; the receiver placed so that it cannot receive), as D666's recipes were.
 - Cluster profile on PostgreSQL: `passed=16`.
