@@ -27,6 +27,7 @@ import {
 
 import {
     createDueEntry,
+    describeQueueDueOrderBrowserStoreCases,
     describeQueueDueOrderStoreCases,
     DUE_CREATED_AT,
     DUE_NOW,
@@ -349,7 +350,8 @@ describe('IndexedDbQueueBox indexed reads', () => {
     });
 });
 
-describeQueueDueOrderStoreCases('IndexedDB', createQueueAt);
+describeQueueDueOrderBrowserStoreCases('IndexedDB', async (queueName) => createQueueAt(queueName));
+describeQueueDueOrderStoreCases('IndexedDB', async (queueName) => createQueueAt(queueName));
 
 describe('IndexedDbQueueBox due order', () => {
     it('a fairness reservation of an undated RETRY row selects it at its creation instant', async () => {

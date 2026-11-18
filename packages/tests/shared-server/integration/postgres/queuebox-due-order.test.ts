@@ -5,6 +5,7 @@ import { createPSqlResourceInboxRepository } from '@shared-server/queuebox/postg
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 
 import { describeQueueDueOrderContract } from '../../../shared/queuebox/queue-due-order-contract.ts';
+import { describeQueueDueOrderStoreCases, DUE_NOW } from '../../../shared/queuebox/queue-due-order-store-cases.ts';
 import { createResourceInboxTestStorage, type ResourceInboxTestStorage } from '../../queuebox/resource-inbox-test-storage.ts';
 
 const openStorages: ResourceInboxTestStorage[] = [];
@@ -13,10 +14,13 @@ afterEach(async () => {
     await Promise.all(openStorages.splice(0).map(async (storage) => await storage.close()));
 });
 
+async function createQueue(now: () => Temporal.Instant): Promise<PSqlQueueBox> {
+    const storage = await createResourceInboxTestStorage('queuebox_due_order', 1, 'postgres');
+    openStorages.push(storage);
+    return new PSqlQueueBox(createPSqlResourceInboxRepository(storage.sql, () => new Date()), now);
+}
+
 describe.skipIf(process.env.RALLAR_POSTGRES_INTEGRATION !== '1')('Postgres QueueBox due order', () => {
-    describeQueueDueOrderContract('PostgreSQL', async () => {
-        const storage = await createResourceInboxTestStorage('queuebox_due_order', 1, 'postgres');
-        openStorages.push(storage);
-        return new PSqlQueueBox(createPSqlResourceInboxRepository(storage.sql, () => new Date()), Temporal.Now.instant);
-    });
+    describeQueueDueOrderContract('PostgreSQL', async () => await createQueue(Temporal.Now.instant));
+    describeQueueDueOrderStoreCases('PostgreSQL', async () => await createQueue(() => DUE_NOW));
 });

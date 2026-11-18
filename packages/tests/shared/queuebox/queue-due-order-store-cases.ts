@@ -66,17 +66,17 @@ export function toResourceIds(entries: Iterable<ResourceEntry>): string[] {
     return [...entries].map((entry) => entry.key.resourceId);
 }
 
+/** `createQueueAt` answers a new, empty queue whose clock reads `DUE_NOW`. */
+export type DueOrderQueueFactory = (name: string) => Promise<QueueBoxResourceEntryRepository>;
+
 /**
- * The due-order guarantees a store gives under its own clock, beyond the rule's contract: `createQueueAt` answers a
- * new, empty queue whose clock reads `DUE_NOW`.
+ * Cases only the browser stores can be set up for: a claim clock the test sets (PostgreSQL's claims read the
+ * database's clock), and pending rows that carry spent attempts (PostgreSQL refuses a NEW row with attempts as corrupt).
  */
-export function describeQueueDueOrderStoreCases(
-    storeName: string,
-    createQueueAt: (name: string) => QueueBoxResourceEntryRepository
-): void {
-    describe(`the ${storeName} queue's due order under its own clock`, () => {
+export function describeQueueDueOrderBrowserStoreCases(storeName: string, createQueueAt: DueOrderQueueFactory): void {
+    describe(`the ${storeName} queue's due order at its own clock and with spent attempts`, () => {
         it('claims a row due exactly at the store\'s now past a full claim of rows due a millisecond later', async () => {
-            const queue = createQueueAt('boundary');
+            const queue = await createQueueAt('boundary');
             for (const id of toDueIds(16, 'a')) {
                 await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.add({ milliseconds: 1 }) }));
             }
@@ -88,8 +88,29 @@ export function describeQueueDueOrderStoreCases(
             expect(toResourceIds(claimed)).toEqual(['z-at-now']);
         });
 
+        it('reads past due rows whose attempts are spent, so they do not hide a reservable due row', async () => {
+            const queue = await createQueueAt('exhausted');
+            for (const [index, id] of toDueIds(16, 'a').entries()) {
+                await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 60 - index }), attempts: 3 }));
+            }
+            await queue.enqueue(createDueEntry('z-reservable', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+
+            const claimed = await queue.reserveEntries({
+                typeIds: new Set([DUE_TYPE_ID]),
+                statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+                reservationInput: { maxToReserve: 16, maxAttempts: 3 }
+            });
+
+            expect(toResourceIds(claimed.values())).toEqual(['z-reservable']);
+        });
+    });
+}
+
+/** The due-order guarantees every store gives beyond the rule's contract; every row the cases claim is due by `DUE_NOW`. */
+export function describeQueueDueOrderStoreCases(storeName: string, createQueueAt: DueOrderQueueFactory): void {
+    describe(`the ${storeName} queue's due order beyond the contract`, () => {
         it('a context claim takes each admitted context\'s earliest due row', async () => {
-            const queue = createQueueAt('context-claim');
+            const queue = await createQueueAt('context-claim');
             await queue.enqueue(createDueEntry('a-later', { nextTs: DUE_NOW.subtract({ seconds: 10 }), contextId: 'ctx-1' }));
             await queue.enqueue(createDueEntry('b-earlier', { nextTs: DUE_NOW.subtract({ seconds: 30 }), contextId: 'ctx-1' }));
             await queue.enqueue(createDueEntry('c-only', { nextTs: DUE_NOW.subtract({ seconds: 20 }), contextId: 'ctx-2' }));
@@ -101,7 +122,7 @@ export function describeQueueDueOrderStoreCases(
         });
 
         it('an observed claim reserves exactly the rows it observed, wherever they fall in due order', async () => {
-            const queue = createQueueAt('observed');
+            const queue = await createQueueAt('observed');
             for (const [index, id] of toDueIds(20, 'a').entries()) {
                 await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 60 - index }) }));
             }
@@ -122,7 +143,7 @@ export function describeQueueDueOrderStoreCases(
         });
 
         it('claims an undated pending row as due and reads its next time back undated', async () => {
-            const queue = createQueueAt('undated');
+            const queue = await createQueueAt('undated');
             const undated = createDueEntry('undated', { nextTs: undefined });
             await queue.enqueue(undated);
 
@@ -132,24 +153,8 @@ export function describeQueueDueOrderStoreCases(
             expect([pending?.dequeueAudit.nextTs, toResourceIds(claimed)]).toEqual([undefined, ['undated']]);
         });
 
-        it('reads past due rows whose attempts are spent, so they do not hide a reservable due row', async () => {
-            const queue = createQueueAt('exhausted');
-            for (const [index, id] of toDueIds(16, 'a').entries()) {
-                await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 60 - index }), attempts: 3 }));
-            }
-            await queue.enqueue(createDueEntry('z-reservable', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
-
-            const claimed = await queue.reserveEntries({
-                typeIds: new Set([DUE_TYPE_ID]),
-                statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
-                reservationInput: { maxToReserve: 16, maxAttempts: 3 }
-            });
-
-            expect(toResourceIds(claimed.values())).toEqual(['z-reservable']);
-        });
-
         it('a due page holds expired and not-yet-due rows in due order, with no next cursor', async () => {
-            const queue = createQueueAt('due-page');
+            const queue = await createQueueAt('due-page');
             await queue.enqueue(createDueEntry('a-later', { nextTs: DUE_NOW.add({ seconds: 2 }) }));
             await queue.enqueue(createDueEntry('b-expired', {
                 nextTs: DUE_NOW.subtract({ seconds: 5 }),
@@ -170,7 +175,7 @@ export function describeQueueDueOrderStoreCases(
         });
 
         it('refuses a due page request that carries a cursor', async () => {
-            const queue = createQueueAt('due-page-cursor');
+            const queue = await createQueueAt('due-page-cursor');
 
             await expect(queue.readWorkPage({
                 typeId: DUE_TYPE_ID,

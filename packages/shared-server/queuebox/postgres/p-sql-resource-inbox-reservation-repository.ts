@@ -115,6 +115,9 @@ export class PSqlResourceInboxReservationRepository {
         if (validated.left) {
             throw validated.left;
         }
+        if (request.order === 'due') {
+            return await this.readDueWorkPage(request);
+        }
         const validatedPosition = resolveResourceInboxWorkPosition(request.cursor?.position ?? null);
         if (validatedPosition.left) {
             throw validatedPosition.left;
@@ -146,6 +149,16 @@ export class PSqlResourceInboxReservationRepository {
                 }
                 : null
         };
+    }
+
+    private async readDueWorkPage(request: ResourceInboxWorkPage.Request): Promise<ResourceInboxWorkPage> {
+        const rows = await this.sql<ResourceInboxRow[]>`
+            select * from resource_inbox
+            where ri_type_id = ${request.typeId} and ri_status = ${request.status}
+            order by next_ts asc nulls first, ri_row_id asc
+            limit ${request.maxToRead}
+        `;
+        return { entries: rows.map(toDomain), nextCursor: null };
     }
 
     /**

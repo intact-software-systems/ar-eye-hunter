@@ -6,6 +6,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import {
     claimDue,
     createDueEntry,
+    describeQueueDueOrderBrowserStoreCases,
     describeQueueDueOrderStoreCases,
     DUE_CREATED_AT,
     DUE_NOW,
@@ -17,7 +18,8 @@ function createQueueAt(): InMemoryQueueBox {
     return new InMemoryQueueBox(new Map(), () => DUE_NOW);
 }
 
-describeQueueDueOrderStoreCases('memory', createQueueAt);
+describeQueueDueOrderBrowserStoreCases('memory', async () => createQueueAt());
+describeQueueDueOrderStoreCases('memory', async () => createQueueAt());
 
 it('places an undated row among dated rows by its creation instant, ties in arrival order', async () => {
     const queue = createQueueAt();
