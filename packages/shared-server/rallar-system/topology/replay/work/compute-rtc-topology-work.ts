@@ -238,7 +238,8 @@ function computeWorkTopology(input: ComputeRtcTopologyWorkInput): ReconcileGroup
     const work = input.facts.workEnvelope.data;
     return computeGroupTopologyFromAuthority(input.read.authority, input.read.mutation.snapshot?.value, {
         intent: work.kind === 'group-revision' ? 'membership-delta' : 'full-rebuild',
-        origin: toTopologyWorkOrigin(work)
+        origin: toTopologyWorkOrigin(work),
+        reshape: { reshape: 'allowed', wantedReasons: [] }
     });
 }
 

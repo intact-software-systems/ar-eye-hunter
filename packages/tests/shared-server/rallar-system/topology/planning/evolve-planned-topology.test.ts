@@ -307,6 +307,32 @@ describe('evolve a tree through formation and director appointment', () => {
     });
 });
 
+describe('evolve a tree with the reshape held', () => {
+    it('attaches a joining director by the tree\'s insert and hangs the other joiners breadth-first from it', () => {
+        const memberSessionIds = createRtcTopologyMemberIds(9);
+        const formed = planTree({ group: createRtcTopologyGroupSnapshot('evolve-held-director', memberSessionIds.slice(0, 6)), previous: undefined });
+        const group = toRtcTopologyGroupWithDirector(createRtcTopologyGroupSnapshot('evolve-held-director', memberSessionIds), 'peer-7');
+
+        const joined = computeRtcTopologyPlan(
+            { topologyKind: 'tree', degreeLimit: 5, rttReportingDegreeLimit: 5 },
+            {
+                group,
+                rttMeasurements: [],
+                previous: formed.snapshot,
+                updateOptions: { planningIntent: 'membership-delta', reshape: { reshape: 'held' } },
+                nowEpochMs: 100
+            }
+        );
+
+        expect(joined.planningObservation).toMatchObject({ incrementalPlanCount: 1, incrementalFallbackReasons: [] });
+        expect(joined.heldReshapeReasons).toEqual(['leader-rooting']);
+        expect(joined.snapshot.nextHopsBySessionId['peer-7']).toHaveLength(3);
+        expect(joined.snapshot.nextHopsBySessionId['peer-8']).toEqual(['peer-7']);
+        expect(joined.snapshot.nextHopsBySessionId['peer-9']).toEqual(['peer-7']);
+        expectValidPlan(joined);
+    });
+});
+
 interface PlanTreeInput {
     readonly group: GroupSnapshot;
     readonly previous: RallarOverlayTopologySnapshot | undefined;

@@ -182,7 +182,8 @@ function createLeaderlessEvolveInput(
         globalGraph: roomGraph.graph,
         kind: 'tree',
         degreeLimit: 5,
-        meshParamK: 2
+        meshParamK: 2,
+        reshape: { reshape: 'allowed', wantedReasons: [] }
     };
 }
 

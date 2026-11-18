@@ -73,7 +73,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(result.snapshot.state, 'removed');
@@ -97,7 +97,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -124,7 +124,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -151,7 +151,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'archived');
@@ -262,7 +262,8 @@ test(
 
             const filtered = requirePlannedTopology(computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
-                origin: 'automatic'
+                origin: 'automatic',
+                reshape: { reshape: 'allowed', wantedReasons: [] }
             }));
 
             assert.equal(filtered.planningObservation?.relevantRttMeasurementCount, 0);
@@ -292,7 +293,8 @@ test(
 
             const withReportingRtt = requirePlannedTopology(computeGroupTopologyFromAuthority(mixedAuthority, previous, {
                 intent: 'full-rebuild',
-                origin: 'automatic'
+                origin: 'automatic',
+                reshape: { reshape: 'allowed', wantedReasons: [] }
             }));
 
             assert.equal(withReportingRtt.planningObservation?.relevantRttMeasurementCount, 1);

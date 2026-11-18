@@ -102,7 +102,11 @@ describe('activation status series settlement', () => {
             topologySnapshotRepository: snapshots
         }).planning;
         const authority = await planning.readTopologyPlanningAuthority({ groupRef: toCanonicalGroupRef(current.group) });
-        const plan = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
+        const plan = computeGroupTopologyFromAuthority(authority, undefined, {
+            intent: 'full-rebuild',
+            origin: 'automatic',
+            reshape: { reshape: 'allowed', wantedReasons: [] }
+        });
         if (plan.action !== 'planned') {
             throw new Error('Expected persisted initial layout');
         }
@@ -340,6 +344,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): Ac
         group: authority.group,
         topology: 'star',
         derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
+        heldReshapeReasons: [],
         degreeLimit: 25,
         nextHopsBySessionId: { center: spokes, ...Object.fromEntries(spokes.map((sessionId) => [sessionId, ['center']])) },
         nowEpochMs: 2_000

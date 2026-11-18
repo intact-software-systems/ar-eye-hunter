@@ -177,7 +177,8 @@ export class GroupTopologyPlanningService {
         const startedAtMs = this.readDurationNowMs();
         const computed = computeGroupTopologyFromAuthority(authority, previous, {
             intent: 'full-rebuild',
-            origin: 'automatic'
+            origin: 'automatic',
+            reshape: { reshape: 'allowed', wantedReasons: [] }
         });
         this.validateComputedGroupTopology(computed);
         return {

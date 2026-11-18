@@ -525,7 +525,11 @@ interface AcceptedLayout {
 function acceptPathLayout(memberSessionIds: readonly string[]): AcceptedLayout {
     const group = createRtcTopologyGroupSnapshot('group-1', memberSessionIds);
     const authority = createPlanningAuthority(group, ACCEPTED_AT_EPOCH_MS);
-    const planned = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
+    const planned = computeGroupTopologyFromAuthority(authority, undefined, {
+        intent: 'full-rebuild',
+        origin: 'automatic',
+        reshape: { reshape: 'allowed', wantedReasons: [] }
+    });
     if (planned.action !== 'planned') {
         throw new Error('The accepted layout fixture must plan');
     }
@@ -538,7 +542,11 @@ function acceptPathLayout(memberSessionIds: readonly string[]): AcceptedLayout {
 /** The tree the planner forms for a leaderless room before any RTT is reported. */
 function acceptPlannedLayout(group: GroupSnapshot): AcceptedLayout {
     const authority = createPlanningAuthority(group, ACCEPTED_AT_EPOCH_MS);
-    const planned = computeGroupTopologyFromAuthority(authority, undefined, { intent: 'full-rebuild', origin: 'automatic' });
+    const planned = computeGroupTopologyFromAuthority(authority, undefined, {
+        intent: 'full-rebuild',
+        origin: 'automatic',
+        reshape: { reshape: 'allowed', wantedReasons: [] }
+    });
     if (planned.action !== 'planned') {
         throw new Error('The accepted layout fixture must plan');
     }
