@@ -771,7 +771,13 @@ and it has no status list.
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
-  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+  rebuild: the reshape gate of the group dynamics damping plan (pull request #844) holds them in time; their
+  quality bound is still open.
+- A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
+  reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
+  (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
+  the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
+  (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

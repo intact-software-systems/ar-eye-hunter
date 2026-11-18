@@ -141,7 +141,12 @@ writes `topology-reshape-report.json` (schema `rallar.topology-churn.report.v2`,
 room entry carrying its effective `topologyConfig`) under
 `tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`; figures are recorded,
 never judged. The `rtt reports` column counts reports sent, not reports the server
-accepted. Run it with:
+accepted. The `held` column counts the plans of a phase that held a reshape, then the
+held reasons that are not zero, and the `closest reshapes (s)` column is the smallest gap
+between two reshapes planned in that phase; a line under the table gives the closest two
+reshapes of the whole room, phase boundaries included. Each room entry also carries its
+`reshapeGate` as read once it converged. Before it reads convergence the measurement waits,
+for at most 75 s, until the room owes no held reshape. Run it with:
 
 ```bash
 npm run perf:api-v1:topology-reshapes
@@ -161,6 +166,21 @@ bun run packages/shared-test/black-box-runner/recipe-matrix.mts \
 It uses the existing state-write evidence collector; its request-ID selector
 is non-secret, while authentication tokens and one-time tickets remain marked
 secret in runner outputs.
+
+The `api-v1-cluster-reshape-gate` matrix entry is the cluster proof of the reshape
+gate, in the same profile. An `auto` room fills to a star of four members on the
+primary; a fifth member joining on the secondary makes a kind-change reshape that
+passes the open gate. The fifth leaves on the primary straight away, so the kind
+change back to a star is held: the leave is a repair of the tree whose
+`heldReshapeReasons` is `["kind-change"]`, and the gate wants `kind-change`. When the
+gate opens, a `reshape-due` row publishes the star. The recipe reads the join's and
+the leave's outcomes through `GET /api/admin/operations/rooms/.../topology-plans` on
+nodes that did not take those writes, and asserts that the second reshape is planned at least
+15 000 ms after the first and that the gate then reads one held pass, a 30 000 ms
+interval and nothing wanted. Each reshape's `plannedAtEpochMs` equals the gate's
+`lastPassAtEpochMs` of that pass, which is how the recipe captures both instants
+without depending on the order of the plans. The hold depends on the leave landing
+inside the first 15 s, and the recipe needs a fresh `runId`.
 
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
 the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper

@@ -9,9 +9,9 @@ words it is back pressure on the joiners, and its strength must follow what the 
 Slices 1 and 2 are built (pull request #827): the server records each plan and names it an attach, a
 repair or a reshape, and nothing acts on that yet. A leave is repaired in place instead of rebuilt (pull
 request #837, on top of #827). The optional reshapes are measured (pull request #840). The reshape
-gate is designed (see "The reshape gate") and neither gate is built. The maintainer decided the
-plan's shape on 2026-11-14 (see "Decisions"). What the measurement answered and what it left open
-is listed at the end.
+gate is built (pull request #844, see "The reshape gate"); the attach gate is not. The maintainer
+decided the plan's shape on 2026-11-14 (see "Decisions"). What the measurement answered and what it
+left open is listed at the end.
 
 ## Why
 
@@ -525,8 +525,9 @@ plans as attaches, repairs and reshapes and the reshapes by reason: both are met
 
 ### The reshape gate
 
-Designed, not built. This is the next slice. It builds the reshape gate of "Mechanism" and nothing else:
-the attach gate, the forced edge and the quality bound stay in "Later".
+Built (pull request #844). This slice builds the reshape gate of "Mechanism" and nothing else: the
+attach gate, the forced edge and the quality bound stay in "Later". The cluster proof is the
+`api-v1-cluster-reshape-gate` recipe of the `api-v1-black-box-cluster` profile.
 
 **What it is for.** The reshape measurement read a kind change every 3 s under a flapping room (20 a
 minute) and a leader re-root on most of four appointments 10 s apart. Each rebuilds the room's graph
@@ -712,9 +713,9 @@ read; how the measurement counts holds.
 reshapes within 15 s of each other now sees the second one held. The builder lists each one found and
 what it becomes; none is loosened without being named in the pull request. A survey of the tests,
 recipes and lanes found none: each sees one automatic reshape after the first layout, or gets its
-reshape from a topology-config write. One risk stays open and goes to the backlog: a held reshape
-publishes nothing, so a lane's wait for a stable layout can pass while a reshape is owed, and the room
-is then reshaped when the gate opens, possibly inside the lane's traffic window.
+reshape from a topology-config write. One risk stays open and is recorded in `plans/backlog.md`: a held
+reshape publishes nothing, so a lane's wait for a stable layout can pass while a reshape is owed, and the
+room is then reshaped when the gate opens, possibly inside the lane's traffic window.
 
 **Done when.**
 
@@ -730,6 +731,10 @@ is then reshaped when the gate opens, possibly inside the lane's traffic window.
   `npm run perf:api-v1:topology-churn` still reads 15 / 15 / 0.
 - `test:api-v1:black-box:postgres:medium-scale` passes unweakened.
 
+### What the reshape gate measured
+
+The figures follow the controller's runs of the cluster recipe and the two measurements.
+
 ### Later, decided after slice 2
 
 - Answered: what a leave that forces a rebuild does under the reshape gate. A leave is repaired at
@@ -739,8 +744,9 @@ is then reshaped when the gate opens, possibly inside the lane's traffic window.
 - The forced edge for a joiner that cannot be attached cheaply while the reshape gate is far from
   opening.
 - The quality bound that asks for a reshape of a patched graph.
-- Folding in the two server paths that re-plan without the tree-keeping gate (leader rooting
-  after a failed update, the mesh rebuild), which #823 leaves for a follow-up.
+- The two server paths that re-plan without the tree-keeping gate (leader rooting after a failed
+  update, the mesh rebuild), which #823 left for a follow-up: the reshape gate (pull request #844)
+  holds them in time; their quality bound is still open.
 
 ## Validation
 
