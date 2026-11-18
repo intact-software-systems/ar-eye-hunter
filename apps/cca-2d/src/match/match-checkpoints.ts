@@ -22,6 +22,10 @@ export namespace TownMatchCheckpoints {
         readonly acknowledgements: readonly string[];
         readonly commitReceived: boolean;
     }
+    export interface RecoveryReport {
+        readonly checkpoint: TownCheckpoint;
+        readonly committed: boolean;
+    }
     export interface State {
         readonly authority: TownMatchAuthority;
         readonly pending: Pending | undefined;
@@ -68,6 +72,16 @@ export class TownMatchCheckpoints {
                 recoveryMembers.some((member) => member.sessionId === this.authority.sessionId) &&
                 recoveryMembers.every((member) => this.recoverySessions.has(member.sessionId))
         };
+    }
+
+    recoveryReport(confirmationStalled: boolean): TownMatchCheckpoints.RecoveryReport | undefined {
+        // Peers can observe different roster transitions while holding the same certified state.
+        const checkpoint = this.recoveryRequired
+            ? this.recoveryCheckpoint
+            : confirmationStalled
+            ? this.committed
+            : undefined;
+        return checkpoint ? { checkpoint, committed: checkpoint === this.committed } : undefined;
     }
 
     propose(checkpoint: TownCheckpoint, senderId: string): Either<string, boolean> {

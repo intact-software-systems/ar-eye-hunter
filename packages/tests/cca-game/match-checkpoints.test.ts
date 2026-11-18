@@ -52,6 +52,33 @@ describe('match checkpoint agreement', () => {
         expect(checkpoints.getState().committed?.state.tick).toBe(20);
     });
 
+    it('recovers when only the host observed a temporary roster change', () => {
+        const pair = { ...authority, members: members.slice(0, 2) };
+        const host = new TownMatchCheckpoints(pair, 'alice-session');
+        const guest = new TownMatchCheckpoints(pair, 'bob-session');
+        const countdown = {
+            ...proposal,
+            state: { ...createTownMatch('round', pair.members).right!, phase: 'countdown' as const, countdownTicks: 50 }
+        };
+        for (const peer of [host, guest]) {
+            peer.propose(countdown, 'alice-session');
+            peer.acknowledge(countdown, 'alice-session');
+            peer.acknowledge(countdown, 'bob-session');
+            peer.commit(countdown, 'alice-session');
+        }
+        const unconfirmed = { ...countdown, sequence: 2, digest: 'b'.repeat(64) };
+        guest.propose(unconfirmed, 'alice-session');
+        host.changeAuthority({ ...pair, members: pair.members.slice(0, 1) });
+        host.changeAuthority(pair);
+
+        expect(guest.recoveryReport(false)).toBeUndefined();
+        const report = guest.recoveryReport(true);
+        expect(report).toEqual({ checkpoint: countdown, committed: true });
+        host.recover('alice-session', countdown, true);
+        expect(host.recover('bob-session', report!.checkpoint, report!.committed).right).toBe(true);
+        expect(host.propose(unconfirmed, 'alice-session').right).toBe(true);
+    });
+
     it('accepts current director progress after a socket interruption without confirming abandoned work', () => {
         const checkpoints = new TownMatchCheckpoints(authority, 'carol-session');
         checkpoints.propose(proposal, 'alice-session');

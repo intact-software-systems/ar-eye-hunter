@@ -64,9 +64,11 @@ now and it looks good."
 On 18 November the three-account browser trial isolated a lost Ready retry during
 a membership change. The app preserves the choice within its original session,
 epoch and lobby, clears the transient recovery error on recovery, and reuses the
-confirmed checkpoint in an idle lobby. The next two slices are a same-room roster
-retest on the iPhone and a timed trace of the intermittent countdown interruption.
-The trace needs visibility, presence freshness and checkpoint progress. Broad
+confirmed checkpoint in an idle lobby. A separate two-browser trace reproduced
+a countdown stall when only the host temporarily lost sight of the guest. A
+stalled peer now supplies its last committed checkpoint for recovery. The next
+two slices are same-room roster and interrupted-round retests on the iPhone.
+Retain visibility, presence freshness and checkpoint progress if either recurs. Broad
 clock qualification remains in [#836](https://github.com/intact-software-systems/ar-eye-hunter/issues/836).
 Measurements and reproduction steps are in [the trial report](babylon-local-trial.md).
 

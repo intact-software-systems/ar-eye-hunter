@@ -272,7 +272,7 @@ export class TownMatchSession {
             // New rosters, commands and unsettled checkpoints use the normal exchange interval.
             if (now - this.lastExchange >= (settledLobby ? 1000 : 100)) {
                 this.lastExchange = now;
-                await this.exchangeCheckpoints();
+                await this.exchangeCheckpoints(view.recovering);
             }
             this.changes.publishLatest(undefined);
         }
@@ -443,19 +443,20 @@ export class TownMatchSession {
         }
     }
 
-    private async exchangeCheckpoints(): Promise<void> {
+    private async exchangeCheckpoints(confirmationStalled: boolean): Promise<void> {
         if (!this.checkpoints) {
             return;
         }
         const state = this.checkpoints.getState();
-        if (state.recoveryRequired && state.recoveryCheckpoint) {
-            const recovery = state.recoveryCheckpoint;
+        const report = this.checkpoints.recoveryReport(confirmationStalled);
+        if (report) {
+            const recovery = report.checkpoint;
             await this.write(this.createFrame(recovery.state.matchId, {
                 kind: 'recover',
                 digest: recovery.digest,
                 proposalSequence: recovery.sequence,
                 checkpointEpoch: recovery.epoch,
-                committed: recovery === state.committed
+                committed: report.committed
             }));
         }
         if (this.intent && this.intent.sessionId === this.dependencies.browser.session()?.sessionId) {

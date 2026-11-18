@@ -227,16 +227,27 @@ RTC with per-peer WebSocket fallback.
 
 Two consecutive injected heartbeat timeouts alone did not interrupt an established
 foreground pair. Under concurrent browser load, timeouts and a countdown
-interruption also occurred before fault injection. The original phone interruption
-still needs a trace that distinguishes presence expiry from a delayed checkpoint.
+interruption also occurred before fault injection. One two-browser trace isolated an interruption after both players confirmed the
+countdown. Only the host briefly observed the guest missing from the roster.
+Both pages stayed visible and both sessions returned in the same appointment
+epoch. The host then waited for a recovery report while the guest continued
+sending ordinary checkpoint acknowledgements. After eight seconds of restored
+membership the round still interrupted.
+
+A controlled repeat held both sockets open and varied only the host's roster
+observation. Confirmed ticks stopped advancing in both baseline runs. A stalled
+guest now offers its last locally committed checkpoint as recovery evidence.
+The host still checks the sender, epoch, roster and checkpoint digest. Three
+consecutive browser trials resumed progress after restoring the host's view.
+The original iPhone interruption still needs a physical-device retest.
 
 ### Next two useful slices
 
 1. Repeat Ready, guest reload and round start on Bob's iPhone and Alice's
    browser. Compare both rosters before starting and after returning to the lobby.
-2. Capture heartbeat timing, page visibility, lease freshness and the last
-   confirmed checkpoint together during a loaded countdown and an iPhone round.
-   Use the first divergent event to choose the next fix.
+2. Repeat a round across a brief connection interruption with both pages in
+   the foreground. Record checkpoint progress, lease freshness and visibility
+   if either device stalls or shows an interrupted round.
 
 ## Responsiveness correction — 16 November 2026
 
