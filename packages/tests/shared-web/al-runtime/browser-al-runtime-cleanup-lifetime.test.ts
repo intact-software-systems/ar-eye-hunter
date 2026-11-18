@@ -60,23 +60,6 @@ describe('owned cleanup lifetime', () => {
         }
     });
 
-    it('moves the sweep to the replacement clock and stops when its calibration closes', async () => {
-        vi.stubGlobal('indexedDB', undefined);
-        vi.useFakeTimers();
-        const first = new AbortController();
-        const second = new AbortController();
-        const earlier = vi.fn(() => 1000);
-        const later = vi.fn(() => 2000);
-        await initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage, intervalMs: 50, signal: first.signal, nowMs: earlier });
-        await initBrowserALRuntimeExpiryEviction({ currentScope: scope, storage, intervalMs: 50, signal: second.signal, nowMs: later });
-        first.abort();
-        await vi.advanceTimersByTimeAsync(50);
-        expect(earlier).toHaveBeenCalledTimes(1);
-        expect(later).toHaveBeenCalledTimes(2);
-        second.abort();
-        expect(vi.getTimerCount()).toBe(0);
-    });
-
     it('does not re-arm when a stopped browser cleanup completes its in-flight database listing', async () => {
         const factory = new FakeIndexedDb.IDBFactory();
         vi.stubGlobal('indexedDB', factory);

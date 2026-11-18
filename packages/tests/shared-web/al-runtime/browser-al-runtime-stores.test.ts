@@ -705,7 +705,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         });
     });
 
-    it('initialises repeated browser AL runtime expiry eviction over every scope\'s database', async () => {
+    it('uses the current connection clock to sweep every scope and stops on retirement', async () => {
         vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
@@ -724,14 +724,25 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
         await persistSentMessage(admissionStore, 'initial-expired');
         await persistSentMessage(otherScopeAdmissionStore, 'other-scope-expired');
+        const original = new AbortController();
+        const replacement = new AbortController();
+        const earlier = Date.now();
         await vi.advanceTimersByTimeAsync(21);
+        await initBrowserALRuntimeExpiryEviction({
+            currentScope: SCOPE, storage: diagnosticsPorts.storage, intervalMs: 50,
+            signal: original.signal, nowMs: () => earlier
+        });
+        expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:initial-expired`]);
 
         const stop = await initBrowserALRuntimeExpiryEviction({
             currentScope: SCOPE,
             storage: diagnosticsPorts.storage,
-            intervalMs: 50
+            intervalMs: 50,
+            signal: replacement.signal,
+            nowMs: () => Date.now()
         });
         try {
+            original.abort();
             expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]);
             expect(await readBrowserALRuntimeEntryKeys(sentPrefix, OTHER_SCOPE_DB_NAME)).toEqual([]);
 
@@ -743,6 +754,10 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
             await vi.advanceTimersByTimeAsync(29);
             await vi.waitFor(async () => expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([]));
+            replacement.abort();
+            await persistSentMessage(admissionStore, 'after-close');
+            await vi.advanceTimersByTimeAsync(100);
+            expect(await readBrowserALRuntimeEntryKeys(sentPrefix)).toEqual([`${sentPrefix}:after-close`]);
         }
         finally {
             stop();
