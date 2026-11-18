@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+
 const authoredRoots = ['apps/', 'examples/', 'packages/', 'scripts/', 'tests/'];
 const markdownDocumentation = /\.mdx?$/u;
 export const exactBuildContractPaths = new Set([
@@ -85,17 +87,11 @@ function isAuthoredBuildPath(repositoryPath) {
     );
 }
 
-/**
- * The listing holds one line per file of the repository. At about 8 200 files it passed 1 MiB, Node's default
- * buffer for a child's output, where the read fails with ENOBUFS.
- */
-const TREE_LISTING_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
-
 function readTreeEntries(repoRoot, headSha) {
     const source = execFileSync(
         'git',
         ['ls-tree', '-r', '-z', '--full-tree', '--end-of-options', headSha],
-        { cwd: repoRoot, encoding: 'utf8', maxBuffer: TREE_LISTING_MAX_BUFFER_BYTES }
+        { cwd: repoRoot, encoding: 'utf8', maxBuffer: commandOutputMaxBuffer }
     );
     return source
         .split('\0')

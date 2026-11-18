@@ -129,6 +129,24 @@ layout promoted and replaced between two samples reads as unpromoted:
 npm run perf:api-v1:topology-churn
 ```
 
+The topology-reshape measurement is the second command over the same scenario; its
+room specs live in `topology-churn/phases/topology-churn-room-specs.ts`. It
+needs PostgreSQL and ports 18890–18892, runs no browser, and drives ten rooms: five
+room shapes (4, 8, 12, 8 and 20 members) under both replanning modes, with group ids
+`churn-<index>-<replanning>-<memberCount>`. The phases provoke kind changes (a ramp
+past the mesh entry and below the tree entry, then 90 s of flapping), leader re-roots
+(appointments of the deepest member through an admin role), and RTT refinements (made-up
+RTT reports over ticketed WebSockets, as uniform, skewed and shifting matrices). It
+writes `topology-reshape-report.json` (schema `rallar.topology-churn.report.v2`, each
+room entry carrying its effective `topologyConfig`) under
+`tmp/api-v1-black-box/postgres-topology-reshapes/<run token>/`; figures are recorded,
+never judged. The `rtt reports` column counts reports sent, not reports the server
+accepted. Run it with:
+
+```bash
+npm run perf:api-v1:topology-reshapes
+```
+
 The `api-v1-idempotency-contract` matrix entry is the focused three-node
 strict-mutation gate. Run it against an already provisioned cluster with:
 

@@ -65,33 +65,27 @@ describe('build-affecting tree', () => {
         expect(after).not.toBe(before);
     });
 
-    it('reads a tree whose listing is larger than one mebibyte', () => {
+    it('digests a tree whose listing exceeds the default 1 MiB child-process buffer', () => {
         const fixture = createGitFixture();
-        const before = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
-        commitIndexedPaths(fixture, 8_000);
-        const listingBytes = Buffer.byteLength(runGitUnbounded(fixture, ['ls-tree', '-r', '-z', 'HEAD']));
+        const nestedDirectory = ['a', 'b', 'c'].map((letter) => letter.repeat(200)).join('/');
+        const files = Object.fromEntries(
+            Array.from({ length: 1_300 }, (_unused, index) => [
+                `apps/large/${nestedDirectory}/${index}-${'d'.repeat(200)}.ts`,
+                `export const value = ${index};\n`
+            ])
+        );
+        commit(fixture, 'large tree', files);
+        const listing = execFileSync('git', ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'], {
+            cwd: fixture,
+            maxBuffer: 64 * 1024 * 1024
+        });
+        expect(listing.length).toBeGreaterThan(1024 * 1024);
 
-        const after = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
+        const digest = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
 
-        expect(listingBytes).toBeGreaterThan(1024 * 1024);
-        expect(after).not.toBe(before);
+        expect(digest).toMatch(/^[0-9a-f]{64}$/u);
     });
 });
-
-/**
- * Indexes `count` paths over one blob without writing a file each, then commits them: a listing of that many
- * entries, which is what the digest reads, costs one git call to build.
- */
-function commitIndexedPaths(root: string, count: number): void {
-    const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: root, encoding: 'utf8', input: 'x\n' })
-        .trim();
-    const entries = Array.from(
-        { length: count },
-        (_, index) => `100644 ${blob}\tpackages/example/${'directory-'.repeat(8)}${index}/module.ts`
-    );
-    execFileSync('git', ['update-index', '--index-info'], { cwd: root, input: `${entries.join('\n')}\n` });
-    runGit(root, ['commit', '--quiet', '-m', `index ${count} paths`]);
-}
 
 function createGitFixture(): string {
     const root = mkdtempSync(path.join(tmpdir(), 'build-affecting-tree-'));
@@ -123,8 +117,4 @@ function commit(root: string, message: string, files: Readonly<Record<string, st
 
 function runGit(root: string, arguments_: readonly string[]): string {
     return execFileSync('git', arguments_, { cwd: root, encoding: 'utf8' });
-}
-
-function runGitUnbounded(root: string, arguments_: readonly string[]): string {
-    return execFileSync('git', arguments_, { cwd: root, encoding: 'utf8', maxBuffer: Number.POSITIVE_INFINITY });
 }

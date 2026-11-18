@@ -1,5 +1,7 @@
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
 
 import type { TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import type {
@@ -14,7 +16,7 @@ export interface TopologyChurnRoomEntry {
     readonly topology: readonly RallarRtcTopologyKind[];
     readonly report: TopologyChurnReport;
     readonly drift: TopologyChurnDrift;
-    readonly assumedMeshParamK: number;
+    readonly topologyConfig: EffectiveGroupTopologyConfig;
 }
 
 const NO_FIGURE = '—';
@@ -24,6 +26,8 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['duration s', (phase) => (phase.durationMs / 1_000).toFixed(1)],
     ['joins', (phase) => String(phase.joinCount)],
     ['leaves', (phase) => String(phase.leaveCount)],
+    ['appointments', (phase) => String(phase.appointmentCount)],
+    ['rtt reports', (phase) => String(phase.rttReportCount)],
     ['plans', (phase) => String(phase.planCount)],
     ['plans/min', (phase) => toFixedFigure(phase.plansPerMinute, 1)],
     ['promoted', (phase) => String(phase.promotedPlanCount)],
@@ -43,7 +47,12 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['promoted kinds attach/repair/reshape', (phase) => toKindFigure(phase.promotedPlansByKind)],
     ['rerouting kinds attach/repair/reshape', (phase) => toKindFigure(phase.reroutingPlansByKind)],
     ['reshape reasons', (phase) => toReshapeReasonFigure(phase.reshapesByReason)],
+    ['reshapes/min', (phase) => toFixedFigure(phase.reshapesPerMinute, 1)],
     ['rerouted per reshape min/p50/p90/max', (phase) => toDistributionFigure(phase.reroutedSessionsPerReshape)],
+    [
+        'rerouted per reshape by reason p50/max',
+        (phase) => toReroutesByReasonFigure(phase.reroutedSessionsPerReshapeByReason)
+    ],
     ['causes join/leave/leader-change/config/rtt', (phase) => toCauseFigure(phase.plansByCause)],
     ['uncaused', (phase) => String(phase.uncausedPlanCount)],
     ['longest path hops first/last/max', (phase) => toLongestPathFigure(phase.longestPathHops)],
@@ -60,9 +69,8 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         toMarkdownRow(COLUMNS.map(() => '---')),
         ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
         '',
-        `Plans outside both phases: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
-        `Members under k links: k = ${entry.assumedMeshParamK} is assumed, the planner's default mesh parameter; ` +
-        `no typed read serves the room's own.`
+        `Plans outside every phase: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
+        toConfigurationLine(entry.topologyConfig)
     ].join('\n');
 }
 
@@ -94,13 +102,27 @@ function toReshapeReasonFigure(reshapesByReason: TopologyChurnPhaseReport['resha
     return reasons.length === 0 ? NO_FIGURE : reasons.map(([reason, count]) => `${reason}: ${count}`).join(', ');
 }
 
+function toReroutesByReasonFigure(
+    reroutesByReason: TopologyChurnPhaseReport['reroutedSessionsPerReshapeByReason']
+): string {
+    const reasons = TOPOLOGY_RESHAPE_REASONS.flatMap((reason) => {
+        const distribution = reroutesByReason[reason];
+        return distribution === null ? [] : [`${reason}: ${distribution.median}/${distribution.max}`];
+    });
+    return reasons.length === 0 ? NO_FIGURE : reasons.join(', ');
+}
+
 function toLongestPathFigure(hops: TopologyChurnPhaseReport['longestPathHops']): string {
     return hops === null ? NO_FIGURE : [hops.first, hops.last, hops.max].join(' / ');
 }
 
 function toDriftFigure(drift: TopologyChurnDrift): string {
-    return drift.status === 'measured'
-        ? `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
-            `extra ${drift.extraHops}.`
-        : `${NO_FIGURE} (${drift.reason})`;
+    const shorterNote = drift.hopDifference < 0 ? ' (negative: the accepted layout is shorter)' : '';
+    return `accepted ${drift.acceptedLongestPathHops} hops, fresh no-RTT plan ${drift.freshLongestPathHops} hops, ` +
+        `difference ${drift.hopDifference}${shorterNote}.`;
+}
+
+function toConfigurationLine(config: EffectiveGroupTopologyConfig): string {
+    return `Room configuration: kind ${config.topologyKind}, tree from ${config.treeMinSize} members, ` +
+        `mesh from ${config.meshMinSize}, k = ${config.meshParamK}, degree limit ${config.degreeLimit}.`;
 }
