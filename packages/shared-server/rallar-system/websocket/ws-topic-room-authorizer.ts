@@ -225,7 +225,9 @@ function toRoomAuthorizationDecision(
             serverSnapshotVersion: audience.snapshotVersion
         };
     }
-    return { authorized: true, audience };
+    return input.message.proof === undefined
+        ? { authorized: true, audience }
+        : { authorized: true, audience, verifiedPublication: input.message };
 }
 
 function toRoomPublicationNackReason(code: RoomPublicationAdmission.RefusalCode): ALNackReason {

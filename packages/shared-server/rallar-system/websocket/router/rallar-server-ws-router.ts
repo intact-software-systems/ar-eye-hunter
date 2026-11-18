@@ -1,7 +1,6 @@
 import {
     AL_MESSAGE_ENVELOPE_VERSION,
     isRoomScopedALMessage,
-    readALTargetGroupRef,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
@@ -242,21 +241,14 @@ export class RallarServerWsRouter {
     }
 
     private async authorizeBeforeAdmission(message: ALMessage): Promise<WsServerInboundAuthorization> {
-        const middlewareOwned = this.isMiddlewareOwnedMessage(message);
-        if (
-            message.proof !== undefined &&
-            (readALTargetGroupRef(message) === undefined || middlewareOwned)
-        ) {
-            return {
+        if (this.isMiddlewareOwnedMessage(message)) {
+            return message.proof === undefined ? { authorized: true } : {
                 authorized: false,
                 reason: 'unauthorized',
                 rejectionCode: 'unauthorized',
                 logMessage: 'A sender publication proof requires room authorization.',
                 sendNack: this.sendNacks
             };
-        }
-        if (middlewareOwned) {
-            return { authorized: true };
         }
         const admitted = await this.readAuthorizedIngress(message);
         if (admitted.left) {

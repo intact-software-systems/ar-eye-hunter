@@ -376,7 +376,7 @@ describe('WS server outbound planning', () => {
         expect(planOf('dequeue', undefined).recordsSentPositions).toBeUndefined();
     });
 
-    it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
+    it('retains the signed expiry when planning a WS server recipient copy', () => {
         const planning = new WsQueueBoxServerOutboundPlanning({
             serverPeerId: 'server',
             qosProvider: toALCarrierQosInputProvider(AL_WS_SERVER_CAPABILITIES, undefined),
@@ -410,8 +410,8 @@ describe('WS server outbound planning', () => {
 
         const plan = planOf({ ...message, proof });
 
-        expect(plan.msg.qos?.expiry).toBeDefined();
-        expect(plan.msg).toEqual({ ...planOf(message).msg, proof });
+        expect(plan.msg.qos?.expiry).toEqual(message.qos?.expiry);
+        expect(plan.msg.constraints?.expiresAtMs).toBe(message.constraints?.expiresAtMs);
     });
 
     it('keeps a volatile at-least-once room broadcast waiting to resolve its recipients at dequeue', () => {

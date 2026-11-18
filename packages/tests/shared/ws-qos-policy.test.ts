@@ -1,5 +1,6 @@
 import { decodeALControlMessage, type ALNackPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toALPublicationProofSigningInput } from '@shared/al-contracts/publication-proof/al-publication-proof.ts';
 import {
     createDefaultInMemoryALInboundRuntimeStores,
     createVolatileALOutboundRuntimeStores
@@ -22,6 +23,8 @@ import {
 } from 'vitest';
 import { createOutboundRuntimeWithWorkTask, runOutboundWorkTask } from './alm/outbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './alm/work/al-work-batch-test-observer.ts';
+import { signPublication } from './multicast/rtc-publication-proof-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from './signature/publication-crypto-fixtures.ts';
 
 beforeEach(() =>
     onTestFinished(() => {
@@ -977,12 +980,16 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         onTestFinished(() => service.close());
 
         const later = await enqueueOutboxAndDrain(service, createKeyedRoomSend('keyed-2', { seq: 2 }));
-        const handedOver = await service.enqueueHandedOverIfAbsent(createKeyedRoomSend('keyed-1', { seq: 1 }));
+        const signed = await signPublication(ROOM_PUBLICATION_CRYPTO, createKeyedRoomSend('keyed-1', { seq: 1 }));
+        const handedOver = await service.enqueueHandedOverIfAbsent(signed);
         await runOutboundWorkTask(service);
 
         expect(later.verdict).toMatchObject({ kind: 'admitted' });
         expect(handedOver.verdict).toMatchObject({ kind: 'admitted' });
-        expect(socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent).ordering?.seq)).toEqual([2, 1]);
+        const delivered = socket.sentJsonStrings.map((sent) => decodePersistedALMessage(sent));
+        expect(delivered.map((frame) => frame.ordering?.seq)).toEqual([2, 1]);
+        expect(delivered[1]!.proof).toEqual(signed.proof);
+        expect(toALPublicationProofSigningInput(delivered[1]!)).toBe(toALPublicationProofSigningInput(signed));
     });
 });
 

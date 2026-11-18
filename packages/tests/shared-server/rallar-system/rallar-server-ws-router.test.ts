@@ -6,6 +6,8 @@ import {
     onTestFinished,
     vi
 } from 'vitest';
+import { signPublication } from '../../shared/multicast/rtc-publication-proof-fixtures.ts';
+import { ROOM_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
 
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
@@ -615,6 +617,24 @@ describe('RallarServerWsRouter', () => {
             );
         }
     );
+
+    it('requires explicit proof verification from a host room authorizer for signed ingress', async () => {
+        const { router, socket } = createRouter({ authorizeRoomMessage: () => true });
+        const signed = await signPublication(
+            ROOM_PUBLICATION_CRYPTO,
+            newALBroadcastMessage({
+                createdAtEpochMs: Date.now(),
+                senderId: 'peer-1',
+                route: newALRoute('room.chat', 'room-1', 'signed'),
+                scope: 'room',
+                typeId: 'chat.message.v1',
+                resource: {},
+                options: { groupRef: createGroupSnapshot('room-1', ['peer-1'], 1).group, ttlMs: 1_000 }
+            })
+        );
+        await router.route(signed);
+        expect(socket.sent.map(({ data }) => parseALControlMessage(data)?.type)).toEqual(['nack']);
+    });
 
     it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

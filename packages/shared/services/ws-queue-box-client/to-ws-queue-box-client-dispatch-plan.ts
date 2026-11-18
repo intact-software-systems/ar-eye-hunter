@@ -21,7 +21,7 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../../alm/outbound/al-outbound-transport-message.ts';
-import { toALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
+import { toProofPreservingALOutboundMessage } from '../../alm/outbound/to-al-outbound-message.ts';
 import { Either } from '../../resilience/Either.ts';
 import { toWsQueueBoxClientAckTrackingPlan } from './ws-queue-box-client-receipt-tracking.ts';
 
@@ -54,7 +54,7 @@ export function toWsQueueBoxClientDispatchPlan(
         context.qosProvider
     );
     const normalized = normalizeALQosPolicy(msg, normalizationInput);
-    const message = toALOutboundMessage(msg, normalized.effective);
+    const message = toProofPreservingALOutboundMessage(msg, normalized.effective);
     const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
         msg: message,
         carrier: 'ws',

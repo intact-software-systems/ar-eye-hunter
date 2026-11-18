@@ -60,14 +60,14 @@ describe('the WS client dispatch plan', () => {
         expect(plan.preparedMessages).toHaveLength(1);
     });
 
-    it('normalizes the expiry of a message carrying a publication proof as it does any other', () => {
+    it('preserves the original signed envelope when WS selects its local expiry policy', () => {
         const message = roomSend('best-effort');
         const proven: ALMessage = { ...message, proof: PROOF };
 
         const plan = toWsQueueBoxClientDispatchPlan(proven, CONTEXT);
 
-        expect(plan.msg.qos?.expiry).toBeDefined();
-        expect(plan.msg).toEqual({ ...toWsQueueBoxClientDispatchPlan(message, CONTEXT).msg, proof: PROOF });
+        expect(plan.msg).toEqual(proven);
+        expect(toWsQueueBoxClientDispatchPlan(message, CONTEXT).msg.qos?.expiry).toBeDefined();
     });
 
     it('tracks no server hop while the server names no peer id', () => {
