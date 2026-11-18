@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
+import { commandOutputMaxBuffer } from './command-output-max-buffer.mjs';
+
 const observationRoot = 'performance-observations/';
 const archivePathPattern =
     /^performance-observations\/(rtc-b05|rtc-b06)\/(\d{4})\/(\d{2})\/(\d{2})\/\d{8}T\d{6}Z-[0-9a-f]{12}-(e2-browser|e3-memory)-gh[1-9]\d*-a[1-9]\d*\.zip$/u;
@@ -115,7 +117,7 @@ function readNameStatus(repoRoot, base, head) {
         const output = execFileSync(
             'git',
             ['diff', '--name-status', '-z', '--no-renames', base, head, '--'],
-            { cwd: repoRoot }
+            { cwd: repoRoot, maxBuffer: commandOutputMaxBuffer }
         );
         const source = output.toString('utf8');
         if (!source.endsWith('\0')) {
@@ -146,6 +148,7 @@ function readRevisionFile(repoRoot, revision, path) {
         return execFileSync('git', ['show', `${revision}:${path}`], {
             cwd: repoRoot,
             encoding: 'utf8',
+            maxBuffer: commandOutputMaxBuffer,
             stdio: ['ignore', 'pipe', 'ignore']
         });
     }

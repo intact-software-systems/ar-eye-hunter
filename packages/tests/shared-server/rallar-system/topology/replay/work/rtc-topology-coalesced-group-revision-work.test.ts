@@ -151,8 +151,9 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             dueAtEpochMs: BASE_EPOCH_MS + DEBOUNCE_MS,
             reasons: ['group-revision']
         });
+        // The sha256 of the canonical JSON of [topicId, contextId, resourceId].
         expect(toRtcTopologyExecutionId(envelope, BASE_EPOCH_MS)).toBe(
-            `${envelope.topicId}:${envelope.contextId}:${envelope.resourceId}:${BASE_EPOCH_MS}:1`
+            `cd1d3dac72518ca47457e94c9200cac70c29634fae8363c69a600011c9b39a74:${BASE_EPOCH_MS}:1`
         );
     });
 

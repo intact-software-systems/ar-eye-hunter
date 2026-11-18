@@ -11,17 +11,21 @@ import {
     validateAuthoritativeGroupSnapshot,
     validateAuthoritativeOverlayTopologySnapshot
 } from '@shared/api/authoritative-state-validation.ts';
+import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupRole, GroupSnapshot } from '@shared/api/group-types.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { getOwnField } from '@shared/encoding/get-own-field.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import {
     requestJson,
+    requireString,
     type ProofJsonObject,
     type RequestOptions
 } from '../topology-replay/api-v1-rtc-topology-proof-api.mts';
+import { decodeEffectiveGroupTopologyConfig } from './decode-effective-group-topology-config.ts';
 
 export namespace TopologyChurnApi {
     export interface Config {
@@ -60,6 +64,13 @@ interface TopologyChurnPresenceInput {
     readonly session: TopologyChurnSession;
     readonly roomRef: GroupRef;
     readonly leaseExpiresAtEpochMs: number;
+}
+
+interface TopologyChurnMemberRoleInput {
+    readonly owner: TopologyChurnSession;
+    readonly roomRef: GroupRef;
+    readonly principalId: string;
+    readonly role: GroupRole;
 }
 
 interface TopologyChurnMutation {
@@ -154,6 +165,28 @@ export class TopologyChurnApi {
         });
     }
 
+    async writeMemberRole(input: TopologyChurnMemberRoleInput): Promise<void> {
+        await this.#mutate(input.owner, {
+            method: 'PUT',
+            path: `${toGroupPath(input.roomRef)}/members/${encodeURIComponent(input.principalId)}/role`,
+            body: { role: input.role }
+        });
+    }
+
+    /** Appoints the session itself as the room's director. */
+    async writeDirectorAppointment(session: TopologyChurnSession, roomRef: GroupRef): Promise<void> {
+        await this.#mutate(session, { method: 'POST', path: `${toGroupPath(roomRef)}/director/appoint`, body: {} });
+    }
+
+    /** A one-use ticket that authenticates the session's WebSocket upgrade. */
+    async writeWebSocketTicket(session: TopologyChurnSession): Promise<string> {
+        const body = await this.#mutate(session, { method: 'POST', path: '/api/auth/ws-ticket', body: {} });
+        if (requireString(body.sessionId, 'ticket session id') !== session.sessionId) {
+            throw new TypeError(`The WebSocket ticket of ${session.member.username} names another session.`);
+        }
+        return requireString(body.ticket, 'WebSocket ticket');
+    }
+
     async readRoom(session: TopologyChurnSession, roomRef: GroupRef): Promise<GroupSnapshot> {
         const body = await this.#request(session.member.apiBaseUrl, toGroupPath(roomRef), {
             method: 'GET',
@@ -174,6 +207,17 @@ export class TopologyChurnApi {
         }
         validateAuthoritativeOverlayTopologySnapshot(acceptedSnapshot, roomRef);
         return acceptedSnapshot;
+    }
+
+    async readEffectiveTopologyConfig(
+        session: TopologyChurnSession,
+        roomRef: GroupRef
+    ): Promise<EffectiveGroupTopologyConfig> {
+        const body = await this.#request(session.member.apiBaseUrl, `${toGroupPath(roomRef)}/topology/config`, {
+            method: 'GET',
+            headers: toSessionHeaders(session)
+        });
+        return requireRight(decodeEffectiveGroupTopologyConfig(getOwnField(body, 'effective')));
     }
 
     async readRoomTopologyPlans(
@@ -213,12 +257,16 @@ export class TopologyChurnApi {
         return { member, clientId, sessionId, accessToken };
     }
 
-    async #mutate(session: TopologyChurnSession, mutation: TopologyChurnMutation): Promise<void> {
-        await this.#request(session.member.apiBaseUrl, toApiMutationRequestPath(mutation.path, crypto.randomUUID()), {
-            method: mutation.method,
-            headers: toSessionHeaders(session),
-            body: mutation.body
-        });
+    async #mutate(session: TopologyChurnSession, mutation: TopologyChurnMutation): Promise<ProofJsonObject> {
+        return await this.#request(
+            session.member.apiBaseUrl,
+            toApiMutationRequestPath(mutation.path, crypto.randomUUID()),
+            {
+                method: mutation.method,
+                headers: toSessionHeaders(session),
+                body: mutation.body
+            }
+        );
     }
 
     async #request(baseUrl: string, path: string, options: RequestOptions): Promise<ProofJsonObject> {
