@@ -650,10 +650,11 @@ row in one transaction of the same shape as a publication, without a publication
 **The policy.** The lifecycle policy's `topology` section gains `reshapeMinIntervalMs` and
 `reshapeMaxIntervalMs`, 15 000 and 60 000 in all four presets. Sparse input takes the preset's values.
 A server's replaced-layout overlap is at most `MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS` (15 000,
-`packages/shared/api/api-config.ts`), so the policy refuses a lower bound below that constant and no
-server configuration has to reach the gate: a reshape can then never land inside the previous
-reshape's overlap. A policy whose upper bound is below its lower is refused too. Each refusal has its
-own issue code. The bounds apply to `auto` and `debounced` rooms;
+`packages/shared/api/api-config.ts`), so a lower bound below that constant is raised to it on input,
+as the policy's other numbers are clamped, and a stored policy below it does not decode. No server
+configuration has to reach the gate: a reshape can then never land inside the previous reshape's
+overlap. A policy whose upper bound is below its lower is refused with its own issue code. The bounds
+apply to `auto` and `debounced` rooms;
 a `commanded` room's automatic work is already held. This changes the contract: the OpenAPI schema,
 the presets, the decoders and their tests.
 
@@ -663,8 +664,9 @@ the presets, the decoders and their tests.
 - The topology-plans read returns the room's gate state beside the page of records: the last reshape,
   the interval, the instant the gate opens and what is wanted.
 - The work's timing line prints the gate's decision.
-- `npm run perf:api-v1:topology-reshapes` reports, per phase, the reshapes held and the longest
-  interval, and waits until nothing is wanted before it reads convergence.
+- `npm run perf:api-v1:topology-reshapes` reports the plans that held a reshape per phase, the closest
+  two reshapes of each room and the gate as read once the room has converged, and waits until nothing
+  is wanted before it reads convergence.
 
 **Approaches considered.**
 
@@ -701,7 +703,11 @@ read; how the measurement counts holds.
 
 **Existing expectations that move.** A test, recipe or browser lane that expects two automatic
 reshapes within 15 s of each other now sees the second one held. The builder lists each one found and
-what it becomes; none is loosened without being named in the pull request.
+what it becomes; none is loosened without being named in the pull request. A survey of the tests,
+recipes and lanes found none: each sees one automatic reshape after the first layout, or gets its
+reshape from a topology-config write. One risk stays open and goes to the backlog: a held reshape
+publishes nothing, so a lane's wait for a stable layout can pass while a reshape is owed, and the room
+is then reshaped when the gate opens, possibly inside the lane's traffic window.
 
 **Done when.**
 
