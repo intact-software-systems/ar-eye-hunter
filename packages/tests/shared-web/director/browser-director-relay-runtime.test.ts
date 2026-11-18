@@ -238,6 +238,7 @@ describe('Rallar director relay', () => {
                 activeSessions: rejoined.activeSessions.map((presence) => ({
                     ...presence,
                     generationId: input.generationId,
+                    connectionGenerationId: input.connectionGenerationId,
                     expiresAtEpochMs: Date.now() + 120_000
                 }))
             };

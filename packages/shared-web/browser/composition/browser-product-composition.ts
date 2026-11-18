@@ -177,7 +177,7 @@ export function createBrowserDirectorComposition(
     input: CreateBrowserDirectorCompositionInput
 ): BrowserDirectorComposition {
     const directorStatus = new BrowserDirectorStatusRuntime({
-        nowMs: Date.now,
+        readWindow: () => input.session.readMiddleware()?.serverTime.readWindow().right,
         roomStateStore: input.state.roomStateStore,
         readSession,
         resolveDefaultRoom: input.state.resolveDefaultRoom
