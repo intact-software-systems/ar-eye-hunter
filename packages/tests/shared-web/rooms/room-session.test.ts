@@ -163,6 +163,26 @@ it('conditionally cleans a targeted 404 and rethrows the original HTTP error', a
     expect(session.snapshot()).toBeUndefined();
 });
 
+it('preserves cached room state when an obsolete session receives a delayed 404', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const observed = createRoomSnapshot('room-1', ['session-1']);
+    seedRoomSnapshots([observed]);
+    const requested = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    vi.stubGlobal('fetch', async () => {
+        requested.resolve();
+        return await response.promise;
+    });
+    const session = createRallarFacade().rooms.session(observed.group);
+    const completion = session.refresh().then(() => undefined, toError);
+    await requested.promise;
+    const runtime = getRoomWorkflowMocks();
+    runtime.readSession.mockReturnValue({ ...runtime.session, sessionId: 'replacement-session' });
+    response.resolve(new Response('missing', { status: 404 }));
+    expect(await completion).toMatchObject({ name: 'AbortError' });
+    expect(findGroupStateSnapshotByRef(observed.group)).toBe(observed);
+});
+
 it('preserves a newer publication that races targeted 404 cleanup', async () => {
     const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
     configureApiClient({ apiBaseUrl: 'https://api.example.test' });

@@ -26,6 +26,7 @@ export interface DefaultALOutboundRuntimeResourceInput<TPrepared> {
     readonly checkpointStores?: ALCheckpointOutboundRuntimeStores<TPrepared>;
     readonly canonicalQueue?: QueueBoxResourceEntryRepository;
     readonly nowMs?: () => number;
+    readonly workNowMs?: () => number;
     readonly random?: () => number;
     readonly queueEngine?: InboxOutboxEngine;
     /** The browser's per-connect session claim; absent, the runtime owns its durable work. */
@@ -110,6 +111,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         throw new TypeError('Persistent outbound QueueBox requires its coordinated admission store');
     }
     const nowMs = input.nowMs ?? Date.now;
+    const workNowMs = input.workNowMs ?? nowMs;
     const stores = input.stores ?? createDefaultInMemoryALOutboundRuntimeStores({
         nowMs,
         decodePrepared: input.decodePrepared,
@@ -117,7 +119,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
             createInMemoryALAdmissionState(
                 input.canonicalQueue instanceof InMemoryQueueBox
                     ? input.canonicalQueue
-                    : new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(nowMs()))
+                    : new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(workNowMs()))
             ),
             nowMs
         )
@@ -132,6 +134,7 @@ export function createDefaultALOutboundRuntimeResources<TPrepared>(
         checkpointStores: input.checkpointStores,
         effectWorkerId: `al-outbound:${crypto.randomUUID()}`,
         clock: { nowMs },
+        workClock: { nowMs: workNowMs },
         random: input.random ?? Math.random,
         queueEngine: input.queueEngine ?? new InboxOutboxEngine(),
         ownsQueueEngine: input.queueEngine === undefined,

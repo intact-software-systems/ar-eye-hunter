@@ -1,8 +1,15 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it, onTestFinished, vi } from 'vitest';
+
+import { createVolatileALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+
 import {
     createDefaultOutboundTestRuntime,
-    createDefaultOutboundTestStores
+    createDefaultOutboundTestStores,
+    createOutboundMessage
 } from '../outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from '../outbound-test-payload.ts';
 
 afterEach(() => {
     vi.useRealTimers();
@@ -47,4 +54,68 @@ it('default outbound disposal joins an owned engine readiness read with no batch
     }
     expect(readFinished).toBe(true);
     expect(disposed).toBe(true);
+});
+
+it('releases an outbound claim after authority time ends during its transport attempt', async () => {
+    vi.useFakeTimers();
+    const epochMs = Date.now();
+    let calibrated = true;
+    const nowMs = (): number => {
+        if (!calibrated) {
+            throw new Error('Authority clock expired');
+        }
+        return epochMs;
+    };
+    const volatileStores = createVolatileALOutboundRuntimeStores({
+        nowMs,
+        workNowMs: () => epochMs,
+        decodePrepared: decodeOutboundTestPayload,
+        namespace: 'retiring-outbound'
+    }, undefined);
+    const queue = volatileStores.workQueue;
+    if (!(queue instanceof InMemoryQueueBox)) {
+        throw new Error('Volatile work must use its memory queue');
+    }
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let attempts = 0;
+    const settlements: ALDeliverySettlement[] = [];
+    const runtime = createDefaultOutboundTestRuntime({
+        nowMs,
+        workNowMs: () => epochMs,
+        volatileStores,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: (msg) => ({
+            msg,
+            dropReasonCode: undefined,
+            lane: 'volatile',
+            preparedMessages: [{ resourceId: msg.route.resourceId }]
+        }),
+        sendPreparedMessage: async () => {
+            attempts += 1;
+            entered.resolve();
+            await release.promise;
+            return { status: 'sent', submissionAttempted: true };
+        }
+    });
+    onTestFinished(() => {
+        release.resolve();
+    });
+    const admission = await runtime.enqueueIfAbsent(createOutboundMessage('retiring'));
+    expect(admission.verdict.kind).toBe('admitted');
+    await entered.promise;
+    const reservedKeys = queue.peekKeys().filter((key) => queue.peek(key)?.status === 'RESERVED');
+    expect(reservedKeys).toHaveLength(1);
+
+    calibrated = false;
+    const disposal = runtime.dispose();
+    release.resolve();
+    await disposal;
+    const rows = reservedKeys.map((key) => queue.peek(key));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).not.toBe('RESERVED');
+    expect(attempts).toBe(1);
+    expect(settlements).toContainEqual(expect.objectContaining({ kind: 'attempt-settled', atMs: epochMs }));
+    expect((await runtime.enqueueIfAbsent(createOutboundMessage('after-retirement'))).verdict)
+        .toMatchObject({ kind: 'skipped', reason: 'disposed' });
 });

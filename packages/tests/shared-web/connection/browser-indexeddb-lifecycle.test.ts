@@ -1,5 +1,5 @@
-import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import {
+    beforeEach,
     describe,
     expect,
     it,
@@ -7,6 +7,7 @@ import {
     vi
 } from 'vitest';
 
+import { createDefaultBrowserSessionQosInputs } from '@shared-web/browser/composition/browser-session-composition.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import * as connectionHttp from '@shared-web/browser/connection/connection-http-api.ts';
 import { initialiseMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
@@ -23,6 +24,18 @@ import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-
 import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publication-proof-verifier-fixtures.ts';
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+
+beforeEach(() => {
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+        if (String(url).endsWith('/api/time')) {
+            return Response.json({ serverPeerId: 'server', serverNowEpochMs: Date.now() });
+        }
+        throw new Error(`Unexpected HTTP request: ${url}`);
+    });
+    onTestFinished(() => {
+        vi.unstubAllGlobals();
+    });
+});
 
 describe('browser IndexedDB terminal ownership', () => {
     it('retires each successful connection while a fresh connection keeps persisted rows usable', async () => {

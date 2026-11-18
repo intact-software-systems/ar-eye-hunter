@@ -18,6 +18,7 @@ import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/gr
 import type * as OverlaysRepositoryModule from '@shared/repository/overlays-repository.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
+import { createDefaultBrowserServerClockFixture } from './connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from './data/rallar-data-test-runtime.ts';
 import { createRoomTransportFixture, type RoomTransportFixture } from './realtime/create-room-transport-fixture.ts';
 import { createNativeRealtimeLaneFixture } from './realtime/native-realtime-lane-fixture.ts';
@@ -31,7 +32,7 @@ const mocks = await vi.hoisted(async () => {
         context,
         hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
         initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() =>
-            Promise.resolve({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] })
+            Promise.resolve({ middleware: context.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] })
         ),
         onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
         readSession: vi.fn<typeof AuthModule.readSession>(() => context.session),
@@ -119,7 +120,12 @@ describe('Rallar facade default scope behavior', () => {
         mocks.getAllGroupStateSnapshots.mockReturnValue([]);
         mocks.findAcceptedOverlayById.mockReturnValue(undefined);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.initialiseMiddleware.mockResolvedValue({ middleware: mocks.context.middleware, rtcCaptureReceipt, checkpoints: [] });
+        mocks.initialiseMiddleware.mockImplementation(async () => ({
+            middleware: mocks.context.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }));
         mocks.readSession.mockReturnValue(mocks.context.session);
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         connection.ensurePeerLaneOpen.mockReset().mockImplementation(async (peerId, laneId = 'reliable') => ({

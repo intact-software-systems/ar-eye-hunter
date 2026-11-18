@@ -1,12 +1,11 @@
 import { defaultStateScope } from '@shared-web/browser/api/state-http-path.ts';
 import { roomGroupStateHttpApi } from '@shared-web/browser/rooms/room-group-state-http-api.ts';
-import {
-    requireStateWorkflowResult,
-    toApiMutationWorkflowRequestId
-} from '@shared-web/browser/state-read/state-workflow-support.ts';
+import { toApiMutationWorkflowRequestId } from '@shared-web/browser/state-read/state-workflow-support.ts';
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
 import { Command, type CommandOptions } from '@shared/cache/Command.ts';
-import { CommandsOrchestrator, type CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
+import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
+
+import type { RallarGroupPresencePolicy } from '../session/group-presence-policy.ts';
 
 import {
     toAcceptRoomInviteGroupStateRequest,
@@ -55,6 +54,8 @@ export interface RevokeStateGroupInviteWorkflowInput extends TargetRoomActorWork
 }
 
 export interface AcceptStateGroupInviteWorkflowInput extends RoomActorWorkflowInput {
+    readonly nowMs: () => number;
+    readonly groupPresence?: RallarGroupPresencePolicy;
     readonly generationId: string;
     readonly connectionGenerationId: string;
     readonly publicationKey: GroupPresencePublicationKey | null;
@@ -125,47 +126,39 @@ export async function acceptStateGroupInvite(
 ): Promise<GroupSnapshot> {
     const scope = input.scope ?? defaultStateScope();
     const acceptRequestId = toApiMutationWorkflowRequestId();
-    const presenceRequestId = toApiMutationWorkflowRequestId();
     const acceptRequest = toAcceptRoomInviteGroupStateRequest({
         actorPrincipalId: input.actorPrincipalId,
         actorSessionId: input.sessionId
     });
+    await new Command<GroupSnapshot>((signal) => {
+        input.assertCurrent?.();
+        return roomGroupStateHttpApi.acceptInvite({
+            groupId: input.groupId,
+            request: acceptRequest,
+            options: { requestId: acceptRequestId, signal },
+            scope
+        });
+    }, input.policies?.command).run();
+    const presenceRequestId = toApiMutationWorkflowRequestId();
     const presenceRequest = toConnectRoomPresenceGroupStateRequest({
         principalId: input.actorPrincipalId,
         generationId: input.generationId,
         connectionGenerationId: input.connectionGenerationId,
         publicationKey: input.publicationKey,
-        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(Date.now()),
+        expiresAtEpochMs: toRoomPresenceLeaseExpiresAtEpochMs(input.nowMs(), input.groupPresence?.leaseMs),
         actorPrincipalId: input.actorPrincipalId,
         actorSessionId: input.sessionId
     });
-    const flow = CommandsOrchestrator.withPolicies<'accepted' | 'joined', GroupSnapshot>(
-        input.policies ?? {}
-    );
-    const results = await flow
-        .sequential(
-            flow.commandStep('accepted', (signal) => {
-                input.assertCurrent?.();
-                return roomGroupStateHttpApi.acceptInvite({
-                    groupId: input.groupId,
-                    request: acceptRequest,
-                    options: { requestId: acceptRequestId, signal },
-                    scope
-                });
-            }),
-            flow.commandStep('joined', (signal) => {
-                input.assertCurrent?.();
-                return roomGroupStateHttpApi.connectPresence({
-                    groupId: input.groupId,
-                    sessionId: input.sessionId,
-                    request: presenceRequest,
-                    options: { requestId: presenceRequestId, signal },
-                    scope
-                });
-            })
-        )
-        .run();
-    return requireStateWorkflowResult(results, 'joined');
+    return await new Command<GroupSnapshot>((signal) => {
+        input.assertCurrent?.();
+        return roomGroupStateHttpApi.connectPresence({
+            groupId: input.groupId,
+            sessionId: input.sessionId,
+            request: presenceRequest,
+            options: { requestId: presenceRequestId, signal },
+            scope
+        });
+    }, input.policies?.command).run();
 }
 
 export async function rotateStateGroupJoinCode(

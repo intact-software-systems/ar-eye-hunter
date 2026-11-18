@@ -266,7 +266,11 @@ export class InboxOutboxEngine {
             this.timer = NOT_SET;
         }
         this.scheduledAtMs = undefined;
+        const generation = this.generation;
         const nowMs = this.dependencies.nowEpochMs();
+        if (generation !== this.generation) {
+            return Promise.resolve(false);
+        }
         for (const [taskId, readyAtMs] of this.readyAtByTask) {
             if (readyAtMs <= nowMs) {
                 this.readyAtByTask.delete(taskId);
@@ -311,6 +315,9 @@ export class InboxOutboxEngine {
             clearTimeout(this.timer);
         }
         const nowMs = this.dependencies.nowEpochMs();
+        if (!this.running) {
+            return;
+        }
         let scheduledAtMs = nowMs + delayMs;
         for (const readyAtMs of this.readyAtByTask.values()) {
             scheduledAtMs = Math.min(scheduledAtMs, readyAtMs);
@@ -325,11 +332,14 @@ export class InboxOutboxEngine {
 
     private async executeTaskEngine(): Promise<boolean> {
         try {
+            const generation = this.generation;
             if (!this.circuitBreaker.allowAt(this.dependencies.nowEpochMs())) {
                 return false;
             }
+            if (generation !== this.generation) {
+                return false;
+            }
             const registrations = new Map(this.tasks);
-            const generation = this.generation;
             const computedDto = await ComputeAsyncTask.runLoopsWhileWork(
                 InboxOutboxEngine.toAsyncTaskInput(
                     [...registrations.values()].map((task) => this.toTaskPass(task, generation))

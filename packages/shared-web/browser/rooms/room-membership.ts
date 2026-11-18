@@ -1,4 +1,5 @@
 import type { GroupPresencePublicationKey } from '@shared/api/group-types.ts';
+
 import type {
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
@@ -20,12 +21,40 @@ import {
 } from './room-membership-group-state-workflows.ts';
 import { runRoomTargetMutation, type RunRoomTargetMutationInput } from './update-room.ts';
 
-type RoomMembershipInput = Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> & {
+interface RoomMembershipInput extends Omit<RunRoomTargetMutationInput, 'room' | 'options' | 'execute'> {
     readonly room: string | GroupRef | RallarRoomTargetInput;
-};
+}
+
+interface RoomMemberGovernanceInput extends RoomMembershipInput {
+    readonly principalId: string;
+    readonly options?: RallarRoomGovernanceOptions;
+}
+
+interface RotateRoomJoinCodeInput extends RoomMembershipInput {
+    readonly options?: RallarRoomJoinCodeOptions;
+}
+
+interface CreateRoomInviteInput extends RoomMembershipInput {
+    readonly principalId: string;
+    readonly options?: RallarRoomInviteOptions;
+}
+
+interface AcceptRoomInviteInput extends RoomMembershipInput {
+    readonly nowMs: () => number;
+    readonly options?: RallarRoomGovernanceOptions;
+    readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
+}
+
+interface SetRoomMemberRoleInput extends RoomMemberGovernanceInput {
+    readonly role: GroupRole;
+}
+
+interface GovernRoomMemberInput extends RoomMemberGovernanceInput {
+    readonly action: 'remove' | 'ban' | 'unban';
+}
 
 export async function revokeRoomInvite(
-    input: RoomMembershipInput & { readonly principalId: string; readonly options?: RallarRoomGovernanceOptions; }
+    input: RoomMemberGovernanceInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     return await runRoomTargetMutation({
@@ -46,7 +75,7 @@ export async function revokeRoomInvite(
 }
 
 export async function rotateRoomJoinCode(
-    input: RoomMembershipInput & { readonly options?: RallarRoomJoinCodeOptions; }
+    input: RotateRoomJoinCodeInput
 ): Promise<GroupJoinCodeResponse> {
     const options = input.options ?? {};
     return await runRoomTargetMutation<GroupJoinCodeResponse>({
@@ -70,10 +99,7 @@ export async function rotateRoomJoinCode(
 }
 
 export async function createRoomInvite(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomInviteOptions;
-    }
+    input: CreateRoomInviteInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     const request = {
@@ -100,16 +126,15 @@ export async function createRoomInvite(
 }
 
 export async function acceptRoomInvite(
-    input: RoomMembershipInput & {
-        readonly options?: RallarRoomGovernanceOptions;
-        readonly readPublicationKey: () => Promise<GroupPresencePublicationKey | null>;
-    }
+    input: AcceptRoomInviteInput
 ): Promise<GroupSnapshot> {
     return await runRoomTargetMutation({
         ...input,
         options: input.options ?? {},
         execute: async ({ roomId, session, scope, policies, generationId, context, signal, assertCurrent }) =>
             await acceptStateGroupInvite({
+                nowMs: input.nowMs,
+                groupPresence: context.middleware.heartbeat.groupPresence,
                 groupId: roomId,
                 actorPrincipalId: session.clientId,
                 sessionId: session.sessionId,
@@ -124,38 +149,25 @@ export async function acceptRoomInvite(
 }
 
 export async function removeRoomMember(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomGovernanceOptions;
-    }
+    input: RoomMemberGovernanceInput
 ): Promise<GroupSnapshot> {
     return await governRoomMember({ ...input, action: 'remove' });
 }
 
 export async function banRoomMember(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomGovernanceOptions;
-    }
+    input: RoomMemberGovernanceInput
 ): Promise<GroupSnapshot> {
     return await governRoomMember({ ...input, action: 'ban' });
 }
 
 export async function unbanRoomMember(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomGovernanceOptions;
-    }
+    input: RoomMemberGovernanceInput
 ): Promise<GroupSnapshot> {
     return await governRoomMember({ ...input, action: 'unban' });
 }
 
 export async function setRoomMemberRole(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly role: GroupRole;
-        readonly options?: RallarRoomGovernanceOptions;
-    }
+    input: SetRoomMemberRoleInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     return await runRoomTargetMutation({
@@ -179,10 +191,7 @@ export async function setRoomMemberRole(
 }
 
 export async function transferRoomOwnership(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomGovernanceOptions;
-    }
+    input: RoomMemberGovernanceInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     return await runRoomTargetMutation({
@@ -205,11 +214,7 @@ export async function transferRoomOwnership(
 }
 
 async function governRoomMember(
-    input: RoomMembershipInput & {
-        readonly principalId: string;
-        readonly options?: RallarRoomGovernanceOptions;
-        readonly action: 'remove' | 'ban' | 'unban';
-    }
+    input: GovernRoomMemberInput
 ): Promise<GroupSnapshot> {
     const options = input.options ?? {};
     const request = options.reason === undefined ? {} : { reason: options.reason };

@@ -8,9 +8,12 @@ import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.
 import type { WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
 import type { WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
 
+import type { BrowserServerClockSession } from './browser-server-clock-session.ts';
+
 export namespace CloseBrowserTransportResources {
     /** Startup can fail between acquisitions; each acquired resource still has one cleanup owner. */
     export interface Input {
+        readonly serverClock?: Pick<BrowserServerClockSession.Port, 'close'>;
         readonly heartbeat?: RallarSessionHeartbeat;
         readonly rtcRxStreamer?: WebRtcRxStreamerService;
         readonly webRtcGroupManager?: WebRtcGroupManager;
@@ -30,6 +33,7 @@ export async function closeBrowserTransportResources(
     const failures: Error[] = [];
     const completions: Promise<void>[] = [];
     const steps = [
+        () => resources.serverClock?.close(),
         () => resources.heartbeat?.stop(),
         () => resources.rtcRxStreamer?.dispose(),
         () => resources.webRtcGroupManager?.stopReconcileWakes(),
@@ -79,10 +83,10 @@ function disconnectBrowserTransportPeers(service: WebRtcConnectionService | unde
     }
 }
 
-/** Optional cleanup diagnostics cannot replace the startup failure that caused rollback. */
-export function reportBrowserStartupCleanupFailure(error: Error): void {
+/** Optional cleanup diagnostics cannot interrupt connection retirement or replace its primary failure. */
+export function reportBrowserConnectionCleanupFailure(error: Error): void {
     try {
-        console.error('Browser startup rollback cleanup failed:', error);
+        console.error('Browser connection cleanup failed:', error);
     }
-    catch { /* Keep the exact primary startup failure even when diagnostics fail. */ }
+    catch { /* Keep cleanup and the primary failure intact even when diagnostics fail. */ }
 }

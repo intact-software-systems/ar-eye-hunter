@@ -41,6 +41,7 @@ import {
 } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { NO_RTC_GRANTED_TOPICS } from '../../shared/multicast/rtc-granted-topic-reader-fixtures.ts';
@@ -48,13 +49,11 @@ import { KEYLESS_PUBLICATION_VERIFIER } from '../../shared/multicast/rtc-publica
 import { NO_RTC_TOPIC_SUBSCRIPTIONS } from '../../shared/multicast/rtc-topic-subscription-reader-fixtures.ts';
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { UNAVAILABLE_PUBLICATION_CRYPTO } from '../../shared/signature/publication-crypto-fixtures.ts';
+import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 import { createDefaultVolatileSessionBudget } from '../default-volatile-session-budget.ts';
 import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
-import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admission.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
@@ -286,6 +285,8 @@ function openRtcReceiverPeer(faults: ScriptedTransportFaultPort) {
 /** The outbound owner and, as `initialise-browser-middleware.ts` adds it, the inbound half on the receiver's channel. */
 function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnectionService): WebRtcOverlayMulticastManager {
     const manager = initialiseRtcOverlayMulticastManager({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         faultPort: runtime.faults,
         replacedLayoutOverlapMs: 15_000,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
@@ -302,6 +303,9 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         selfPrincipalId: service.input.sessionId
     });
     const streamer = initialiseRtcRxStreamer({
+        rttCreationNowEpochMs: Date.now,
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         webRtcOverlayMulticastManager: manager,
         publicationCrypto: UNAVAILABLE_PUBLICATION_CRYPTO,
@@ -311,7 +315,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('self'),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
@@ -378,6 +382,8 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
 
 async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) {
     const connecting = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: runtime.faults,
@@ -392,7 +398,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: createDefaultVolatileSessionBudget(),
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

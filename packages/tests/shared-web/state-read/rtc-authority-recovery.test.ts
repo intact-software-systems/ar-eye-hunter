@@ -85,6 +85,7 @@ import { UNGATED_TEST_PEER_ADMISSION } from '../../shared/ungated-test-peer-admi
 import { waitForOwnedQueueWork } from '../../shared/wait-for-owned-queue-work.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { createInitialiseMiddlewareDouble } from '../connection/create-initialise-middleware-double.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 
@@ -778,7 +779,12 @@ function createGeneratedSendFacade(sender: NativeAuthorityEndpoint): RallarFacad
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
     vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
-        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+        createInitialiseMiddlewareDouble(async () => ({
+            middleware: context.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }))
     );
     return createRallarFacade();
 }
@@ -990,7 +996,12 @@ async function refreshNormalRoom(): Promise<void> {
     vi.mocked(auth.readSession).mockReturnValue(context.session);
     vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
     vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockImplementation(
-        createInitialiseMiddlewareDouble(async () => ({ middleware: context.middleware, rtcCaptureReceipt, checkpoints: [] }))
+        createInitialiseMiddlewareDouble(async () => ({
+            middleware: context.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        }))
     );
     const facade = createRallarFacade();
     await facade.rooms.session(room).refresh();
@@ -1020,19 +1031,6 @@ function snapshotResponse(snapshot: GroupSnapshot, scenario: string): Response {
     });
 }
 
-namespace NativeAuthorityEndpoint {
-    export interface Input {
-        readonly sessionId: string;
-        readonly peerId: string;
-        readonly nativeRuntime: NativeRtcRuntime;
-        readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
-        readonly refresh: RtcGroupSnapshotRefresh | undefined;
-        readonly faultPort: TransportFaultPort;
-        readonly qosProvider: ALQosInputProvider | undefined;
-        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
-    }
-}
-
 /** The receiver's request for seq 1 on the sender's track, as it asks on the copy that revealed the gap. */
 function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
     return newALRepairControlMessage(
@@ -1048,6 +1046,19 @@ function toSupersededSeqRepair(revealingMsgId: string): ALMessage {
             missingRanges: [{ from: 1, to: 1 }]
         }
     );
+}
+
+namespace NativeAuthorityEndpoint {
+    export interface Input {
+        readonly sessionId: string;
+        readonly peerId: string;
+        readonly nativeRuntime: NativeRtcRuntime;
+        readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
+        readonly refresh: RtcGroupSnapshotRefresh | undefined;
+        readonly faultPort: TransportFaultPort;
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly outboundSettlements: ALDeliverySettlementSink | undefined;
+    }
 }
 
 class NativeAuthorityEndpoint {

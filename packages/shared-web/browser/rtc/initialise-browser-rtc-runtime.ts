@@ -71,6 +71,8 @@ import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/ws-rtc-signal
 import { createBrowserRtcCapture } from './create-browser-rtc-capture.ts';
 
 export interface InitialiseRtcOverlayMulticastManagerInput {
+    readonly nowEpochMs: () => number;
+    readonly workNowEpochMs: () => number;
     readonly creationNow?: QueueBoxUtilities.CreationClock;
     /** The server's bound on how long a replaced room layout stays routable, read once at connect. */
     readonly replacedLayoutOverlapMs: number;
@@ -113,12 +115,15 @@ export function initialiseRtcOverlayMulticastManager(
         multicasterFactory: (overlayId: OverlayId): WebRtcOverlayMulticaster =>
             new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
         outboundRuntime: createDefaultALOutboundRuntimeResources({
+            nowMs: input.nowEpochMs,
+            workNowMs: input.workNowEpochMs,
             decodePrepared: decodeALOutboundTransportMessage,
             queueEngine: qboxEngine,
             stores,
             volatileStores: createBrowserALVolatileOutboundRuntimeStores(
                 toBrowserRtcOverlayALRuntimeStoreId(webRtcConnectionService.input.sessionId),
-                input.volatileBudget
+                input.volatileBudget,
+                { nowMs: input.nowEpochMs, workNowMs: input.workNowEpochMs }
             ),
             checkpointStores: input.checkpointStores,
             durableWorkOwnership: input.durableWorkOwnership
@@ -141,6 +146,9 @@ export function initialiseRtcOverlayMulticastManager(
 }
 
 export interface InitialiseRtcRxStreamerInput {
+    readonly nowEpochMs: () => number;
+    readonly rttCreationNowEpochMs: () => number;
+    readonly workNowEpochMs: () => number;
     readonly webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager;
     /** The session's one key, which signs the receipts its inbound runtime sends for it, never through the manager. */
     readonly publicationCrypto: PublicationCrypto;
@@ -168,7 +176,9 @@ export function initialiseRtcRxStreamer(
         sessionId: clientData.sessionId,
         inboundStores: input.inboundStores,
         inboundVolatileStores: input.inboundVolatileStores,
-        nowEpochMs: Date.now,
+        nowEpochMs: input.nowEpochMs,
+        rttCreationNowEpochMs: input.rttCreationNowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         heartbeat: { maxMissedPings: defaultMaxMissedPings, pingFrequencyMsecs: defaultPingFrequencyMsecs },
         roomAuthorityRefresh: input.roomAuthorityRefresh,
         inboundDiagnostics: input.inboundDiagnostics,

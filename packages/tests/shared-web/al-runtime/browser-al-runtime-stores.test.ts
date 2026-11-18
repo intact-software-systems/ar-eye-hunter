@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
@@ -65,6 +66,7 @@ import {
 } from '@shared/mod.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 
@@ -74,9 +76,7 @@ import {
     createWsClientMintingPlanner,
     readOutboundTestAdmission
 } from '../../shared/alm/outbound-runtime-test-fixture.ts';
-// @vitest-environment happy-dom
 import '../../setup-browser-indexeddb.ts';
-import { createPassThroughGroupStateSnapshotChangeSink } from '@shared/repository/group-state-snapshot-change-sink.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -800,8 +800,14 @@ describe('Browser AL runtime IndexedDB stores', () => {
     });
 
     it('gives every carrier a fresh, empty memory pair that shares nothing with IndexedDB', async () => {
-        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
-        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget());
+        const first = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget(), {
+            nowMs: Date.now,
+            workNowMs: Date.now
+        });
+        const second = createBrowserALVolatileOutboundRuntimeStores('browser-ws-client:session-1', createDefaultVolatileSessionBudget(), {
+            nowMs: Date.now,
+            workNowMs: Date.now
+        });
 
         expect(first.workQueue).toBeInstanceOf(InMemoryQueueBox);
         expect(second.workQueue).not.toBe(first.workQueue);
@@ -812,16 +818,18 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const budget = new ALVolatileSessionBudget(AL_VOLATILE_SESSION_LIMITS);
         const outbound = createBrowserALVolatileOutboundRuntimeStores(
             'browser-ws-client:session-budget',
-            budget
+            budget,
+            { nowMs: Date.now, workNowMs: Date.now }
         );
         const overlay = createBrowserALVolatileOutboundRuntimeStores(
             'browser-rtc-overlay:session-budget',
-            budget
+            budget,
+            { nowMs: Date.now, workNowMs: Date.now }
         );
         const inbound = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId('session-budget'),
             budget,
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         );
 
         expect(outbound.budget).toBe(budget);
@@ -835,7 +843,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             createDefaultVolatileSessionBudget(),
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         );
         const message = createOutboundUnicastMessage('inbound-memory');
         await volatile.workQueue.enqueueIfAbsent(QueueBoxUtilities.toResourceEntryFromMsg(message, 'inbox', Temporal.Now.instant()));
@@ -853,7 +861,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const volatile = createBrowserALVolatileInboundRuntimeStores(
             storeId,
             createDefaultVolatileSessionBudget(),
-            (event) => stated.push(event)
+            { storage: (event) => stated.push(event), nowMs: Date.now, workNowMs: Date.now }
         );
         const inbound = createInboundTestRuntime({ carrier: 'ws', stores: volatile, effectWorkerId: 'al-inbound:tracks' });
         await inbound.runtime.ready();

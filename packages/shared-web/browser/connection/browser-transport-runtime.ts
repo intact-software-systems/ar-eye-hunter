@@ -17,7 +17,7 @@ import {
     type MiddlewareInitOptions
 } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
-import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarRtcIceConfigRefreshOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { readALBrowserLocks } from '@shared/alm/storage/al-browser-locks.ts';
 import {
@@ -29,10 +29,15 @@ import { readSession } from '@shared/api/auth.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import type { RtcSignalingDiagnostics } from '@shared/webrtc/rtc-signaling-diagnostics.ts';
 
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
-import { closeBrowserTransportResources } from './close-browser-transport-resources.ts';
+import type { BrowserServerClockSession } from './browser-server-clock-session.ts';
+import {
+    closeBrowserTransportResources,
+    reportBrowserConnectionCleanupFailure
+} from './close-browser-transport-resources.ts';
 import { readIceCandidates } from './connection-http-api.ts';
 import { createBrowserConnectionReservation } from './create-browser-connection-reservation.ts';
 import { checkRtcCaptureCompatibility } from './rallar-rtc-capture-connection-required-error.ts';
@@ -59,6 +64,7 @@ export interface BrowserTransportRuntimePort {
 export namespace BrowserTransportRuntime {
     /** One connect's middleware as the facade holds it, and the checkpoints its page lifecycle flushes. */
     export interface Construction {
+        readonly serverClock: BrowserServerClockSession.Port;
         readonly middleware: ApiMiddleware;
         readonly diagnosticsPorts: RallarDiagnosticsPorts;
         readonly rtcCaptureReceipt: RtcSignalingDiagnostics.CaptureReceipt;
@@ -66,6 +72,7 @@ export namespace BrowserTransportRuntime {
     }
 
     export interface Connection {
+        readonly serverClock: BrowserServerClockSession.Port;
         readonly middleware: ApiMiddleware;
         /** Immutable ports supplied to this middleware's initializer, retained across cached reuse. */
         readonly diagnosticsPorts: RallarDiagnosticsPorts;
@@ -86,6 +93,18 @@ export namespace BrowserTransportRuntime {
     export interface PendingConnection extends BrowserTransportRuntime.IceAcquisition {
         readonly durableWork: BrowserALDurableWorkClaim;
     }
+
+    export interface OwnershipInput {
+        readonly session: AuthSession;
+        readonly scope: StateScope;
+        readonly observers: BrowserDeliverySettlements.Observers;
+        readonly signal: AbortSignal;
+    }
+
+    export interface Ownership {
+        readonly durableWork: BrowserALDurableWorkClaim;
+        readonly epoch: BrowserDeliverySettlements.Epoch;
+    }
 }
 
 export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
@@ -95,6 +114,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private activeDurableWork: BrowserALDurableWorkClaim | undefined;
     private activePageLifecycle: BrowserPageLifecycleFlush | undefined;
     private pendingConnection: Promise<BrowserTransportRuntime.Connection> | undefined;
+    private connectionLifetime: AbortController | undefined;
     private generation = 0;
     private iceCandidates: LoanedValue<IceConfig> | undefined;
     private iceApiBaseUrl: string | undefined;
@@ -189,8 +209,11 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         }
         catch (error) {
             if (this.pendingConnection === reservation.promise) {
+                const lifetime = this.connectionLifetime;
+                this.connectionLifetime = undefined;
                 this.pendingConnection = undefined;
                 this.rtcCaptureConfiguration = undefined;
+                lifetime?.abort(error);
             }
             // The caller still receives the original synchronous throw; a reentrant waiter receives the same rejection.
             void reservation.promise.catch(() => undefined);
@@ -204,25 +227,31 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         options: BrowserTransportInitOptions,
         pendingConnection: Promise<BrowserTransportRuntime.Connection>
     ): Promise<BrowserTransportRuntime.Connection> {
-        const scope = options.scope ?? defaultStateScope();
+        const generation = this.generation;
         const apiBaseUrl = readApiBaseUrl();
-        const sessionChannel = this.openSessionChannel(scope, session, options.deliverySettlements);
-        const durableWork = this.claimDurableWork(scope, session, sessionChannel);
-        const epoch = this.deliverySettlements.open(options.deliverySettlements, sessionChannel);
-        const connection: BrowserTransportRuntime.PendingConnection = {
+        const lifetime = new AbortController();
+        const signal = options.signal ? AbortSignal.any([options.signal, lifetime.signal]) : lifetime.signal;
+        this.connectionLifetime = lifetime;
+        const { durableWork, epoch } = this.openConnectionOwnership({
             session,
-            generation: this.generation,
-            apiBaseUrl,
-            durableWork
-        };
+            scope: options.scope ?? defaultStateScope(),
+            observers: options.deliverySettlements,
+            signal
+        });
+        const connection: BrowserTransportRuntime.PendingConnection = { session, generation, apiBaseUrl, durableWork };
         return this.createMiddleware(session, {
             ...options,
+            signal,
             readIceCandidates: (signal) => this.readConnectionIceCandidates(connection, signal),
             deliverySettlements: epoch.settlements,
             durableWorkOwnership: durableWork
         })
             .then((connected) => this.acceptConnection(connected, connection))
             .catch((error) => {
+                if (this.connectionLifetime === lifetime) {
+                    this.connectionLifetime = undefined;
+                }
+                lifetime.abort(error);
                 if (connection.generation === this.generation) {
                     this.rtcCaptureConfiguration = undefined;
                 }
@@ -246,10 +275,15 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             connection.generation !== this.generation || !currentSession ||
             toAuthSessionKey(currentSession) !== toAuthSessionKey(connection.session)
         ) {
-            this.shutdownMiddleware(connected.middleware.middleware);
+            this.shutdownMiddleware(connected);
             throw new Error('Rallar connection was cancelled because auth ended.');
         }
+        if (connected.serverClock.signal.aborted) {
+            this.shutdownMiddleware(connected, 'server-clock-unavailable');
+            throw new Error('Rallar connection was cancelled because server clock calibration ended.');
+        }
         const connectionResult: BrowserTransportRuntime.Connection = Object.freeze({
+            serverClock: connected.serverClock,
             middleware: connected.middleware,
             diagnosticsPorts: connected.diagnosticsPorts,
             rtcCapture: Object.freeze({ status: 'observed', value: connected.rtcCaptureReceipt })
@@ -261,6 +295,21 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             ownership: connection.durableWork,
             checkpoints: connected.checkpoints
         });
+        const endClockConnection = (): void => {
+            if (this.activeConnection === connectionResult) {
+                try {
+                    this.activePageLifecycle?.flush();
+                }
+                finally {
+                    this.shutdown('server-clock-unavailable');
+                }
+            }
+        };
+        connected.serverClock.signal.addEventListener('abort', endClockConnection, { once: true });
+        if (connected.serverClock.signal.aborted) {
+            endClockConnection();
+            connected.serverClock.signal.throwIfAborted();
+        }
         return connectionResult;
     }
 
@@ -273,15 +322,18 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         }
         this.pendingConnection = undefined;
         this.rtcCaptureConfiguration = undefined;
-        const middleware = this.activeConnection?.middleware;
+        const connection = this.activeConnection;
+        const lifetime = this.connectionLifetime;
+        this.connectionLifetime = undefined;
         const durableWork = this.activeDurableWork;
         this.activePageLifecycle?.release();
         this.activeConnection = undefined;
         this.activeDurableWork = undefined;
         this.activePageLifecycle = undefined;
 
-        if (middleware) {
-            this.shutdownMiddleware(middleware.middleware, reason);
+        lifetime?.abort(new Error(`Rallar connection was cancelled: ${reason}.`));
+        if (connection) {
+            this.shutdownMiddleware(connection, reason);
         }
         // Released after the runtimes stop, so the next owner's takeover starts after them; a batch still in
         // flight is not awaited, and its rows' leases keep each row once.
@@ -390,19 +442,31 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 
     /** Requested once per connect, in the connect's scope; held, with the connect's session channel, until the connect ends. */
-    private claimDurableWork(
-        scope: StateScope,
-        session: AuthSession,
-        sessionChannel: BrowserALSessionChannel
-    ): BrowserALDurableWorkClaim {
+    private openConnectionOwnership(input: BrowserTransportRuntime.OwnershipInput): BrowserTransportRuntime.Ownership {
+        input.signal.throwIfAborted();
+        const sessionChannel = this.openSessionChannel(input.scope, input.session, input.observers);
         const durableWork = new BrowserALDurableWorkClaim({
-            scope,
-            sessionId: session.sessionId,
+            scope: input.scope,
+            sessionId: input.session.sessionId,
             locks: readALBrowserLocks(),
             sessionChannel
         });
-        durableWork.request();
-        return durableWork;
+        try {
+            input.signal.throwIfAborted();
+            durableWork.request();
+            input.signal.throwIfAborted();
+            const epoch = this.deliverySettlements.open(input.observers, sessionChannel);
+            return { durableWork, epoch };
+        }
+        catch (caught) {
+            try {
+                durableWork.release();
+            }
+            catch (failure) {
+                reportBrowserConnectionCleanupFailure(toError(failure));
+            }
+            throw caught;
+        }
     }
 
     private async createMiddleware(
@@ -410,17 +474,23 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         options: BrowserConnectOptions
     ): Promise<BrowserTransportRuntime.Construction> {
         const diagnosticsPorts = Object.freeze({ ...options.diagnosticsPorts });
-        const { middleware, checkpoints, rtcCaptureReceipt } = await initialiseMiddleware(
+        const { middleware, checkpoints, rtcCaptureReceipt, serverClock } = await initialiseMiddleware(
             session,
             AppTopics.rtcSignaling,
             { ...options, diagnosticsPorts }
         );
 
-        return { middleware: { session, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt };
+        return { middleware: { session, middleware }, diagnosticsPorts, checkpoints, rtcCaptureReceipt, serverClock };
     }
 
-    private shutdownMiddleware(middleware: RallarBrowserMiddleware, reason = 'rallar-disconnect'): void {
-        void closeBrowserTransportResources(middleware, reason).catch(() => {
+    private shutdownMiddleware(
+        connection: Pick<BrowserTransportRuntime.Connection, 'middleware' | 'serverClock'>,
+        reason = 'rallar-disconnect'
+    ): void {
+        void closeBrowserTransportResources({
+            ...connection.middleware.middleware,
+            serverClock: connection.serverClock
+        }, reason).catch(() => {
             // Immediate shutdown contains cleanup failures while allowing durable claim transfer.
         });
     }

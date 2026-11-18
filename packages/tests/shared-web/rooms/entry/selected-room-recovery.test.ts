@@ -1,7 +1,17 @@
+import {
+    afterEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+import { decodeJsonWireText } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { SelectedRoomRecovery } from '@shared-web/browser/rooms/entry/selected-room-recovery.ts';
+import type { RallarGroupPresencePolicy } from '@shared-web/browser/session/group-presence-policy.ts';
+import { isApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, expect, it, vi } from 'vitest';
+
 import { createManualTimers } from '../../../shared/resilience/manual-timers.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../../api-middleware-test-double.ts';
 import { createGroupSnapshotFixture } from '../../authoritative-group-fixtures.ts';
@@ -20,9 +30,12 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-function fixture() {
+function fixture(groupPresence?: RallarGroupPresencePolicy) {
     configureApiClient({ apiBaseUrl: '' });
-    const ctx = createDefaultApiMiddlewareTestDouble({ session: { clientId: 'watcher', sessionId: 'watcher' } });
+    let ctx = createDefaultApiMiddlewareTestDouble({
+        session: { clientId: 'watcher', sessionId: 'watcher' },
+        middleware: { heartbeat: { groupPresence } }
+    });
     let selected: GroupRef | undefined = room;
     let session = ctx.session;
     const adopted: GroupSnapshot[] = [];
@@ -30,6 +43,7 @@ function fixture() {
     const owner = new SelectedRoomRecovery({
         selected: () => selected,
         timers,
+        newPresenceGenerationId: () => crypto.randomUUID(),
         requireSession: () => session,
         connect: async () => ctx,
         readPublicationKey: async () => null,
@@ -48,6 +62,13 @@ function fixture() {
         },
         logout() {
             session = { ...session, sessionId: 'replacement' };
+        },
+        replaceSession() {
+            ctx = createDefaultApiMiddlewareTestDouble({
+                session: { clientId: 'watcher', sessionId: 'replacement' },
+                middleware: { heartbeat: { groupPresence } }
+            });
+            session = ctx.session;
         }
     };
 }
@@ -81,7 +102,7 @@ it('restores only the selected spectator presence before a concurrent departure 
         if (init?.method === 'GET') {
             return pointRead(snapshot);
         }
-        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        const { generationId, connectionGenerationId } = decodePresenceRequest(init?.body);
         expect(connectionGenerationId).toBe('ws-generation-watcher');
         issued.resolve();
         await receipt.promise;
@@ -147,6 +168,165 @@ it('never recovers a membership inferred from elsewhere or a room selected after
     expect(paths).toEqual([]);
 });
 
+it('restores an authorized selected room after silent expiry without a socket-close event', async () => {
+    const test = fixture();
+    const methods: string[] = [];
+    vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? 'GET');
+        if (init?.method === 'GET') {
+            return pointRead(snapshot);
+        }
+        const { generationId, connectionGenerationId } = decodePresenceRequest(init?.body);
+        return Response.json({
+            ...snapshot,
+            onlineMemberCount: 2,
+            activeSessions: [...snapshot.activeSessions, { ...initial.activeSessions[1], generationId, connectionGenerationId }]
+        });
+    });
+    test.owner.onSocket('connected');
+    test.owner.observePresence(snapshot);
+    await test.owner.changeRoom(async () => {});
+    expect(methods).toEqual(['GET', 'PUT']);
+    expect(test.adopted.at(-1)?.activeSessions.some((row) => row.principalId === 'watcher')).toBe(true);
+});
+
+it.each(['delayed receipt', 'lost receipt', 'expired rejection'] as const)('resolves an expired %s before issuing fresh presence', async (failure) => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const test = fixture({ leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 });
+    const issued = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const requests: { url: string; body: string; }[] = [];
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'GET') {
+            return pointRead(snapshot);
+        }
+        const request = decodePresenceRequest(init?.body);
+        requests.push({ url: String(url), body: String(init?.body) });
+        if (requests.length === 1) {
+            issued.resolve();
+            await release.promise;
+            if (failure === 'lost receipt') {
+                throw new TypeError('Committed receipt was lost.');
+            }
+            if (failure === 'expired rejection') {
+                return new Response('Presence expiry has elapsed.', { status: 400 });
+            }
+        }
+        return Response.json({
+            ...snapshot,
+            onlineMemberCount: 2,
+            activeSessions: [...snapshot.activeSessions, { ...initial.activeSessions[1], ...request }]
+        });
+    });
+    test.owner.onSocket('connected');
+    test.owner.observePresence(snapshot);
+    await issued.promise;
+    await test.timers.advance(9_000);
+    release.resolve();
+    await test.owner.changeRoom(async () => {});
+    expect(test.adopted).toEqual([]);
+    if (failure === 'lost receipt') {
+        expect(requests[1]).toEqual(requests[0]);
+    }
+    await test.timers.advance(1_000);
+    await test.owner.changeRoom(async () => {});
+    expect(requests.at(-1)?.url).not.toBe(requests[0].url);
+    const restored = test.adopted.at(-1)?.activeSessions.find((row) => row.principalId === 'watcher');
+    expect(restored?.expiresAtEpochMs).toBe(18_000);
+});
+
+it('aborts a stalled presence write at the configured deadline without adopting it', async () => {
+    const test = fixture({ leaseMs: 1_000, renewalIntervalMs: 100, requestTimeoutMs: 50, retryMs: 50 });
+    const aborted = Promise.withResolvers<void>();
+    const methods: string[] = [];
+    vi.stubGlobal('fetch', async (_url: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? 'GET');
+        if (init?.method === 'GET') {
+            return pointRead(snapshot);
+        }
+        const signal = init?.signal;
+        if (!signal) {
+            throw new Error('Presence recovery must supply cancellation to HTTP.');
+        }
+        signal.throwIfAborted();
+        return await new Promise<Response>((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+                aborted.resolve();
+                reject(signal.reason);
+            }, { once: true });
+        });
+    });
+    test.owner.onSocket('connected');
+    test.owner.observePresence(snapshot);
+    await aborted.promise;
+    test.select(undefined);
+    await test.owner.changeRoom(async () => {});
+    expect(methods).toEqual(['GET', 'PUT']);
+    expect(test.adopted).toEqual([]);
+}, 1_000);
+
+it.each(['selection', 'session'] as const)('does not let an unresolved receipt block a new %s', async (replacement) => {
+    const issued = Promise.withResolvers<void>();
+    const test = fixture({ leaseMs: 8_000, renewalIntervalMs: 1_000, requestTimeoutMs: 2_000, retryMs: 500 });
+    let unavailable = true;
+    let firstRead = true;
+    let current = snapshot;
+    const writes: string[] = [];
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'GET') {
+            if (!firstRead && unavailable) {
+                return new Response('Unavailable', { status: 503 });
+            }
+            firstRead = false;
+            return pointRead(current);
+        }
+        writes.push(String(url));
+        if (unavailable) {
+            issued.resolve();
+            throw new TypeError('Receipt lost');
+        }
+        const request = decodePresenceRequest(init?.body);
+        return Response.json({
+            ...current,
+            onlineMemberCount: 2,
+            activeSessions: [...current.activeSessions, {
+                ...initial.activeSessions[1],
+                groupId: current.group.groupId,
+                sessionId: replacement === 'session' ? 'replacement' : 'watcher',
+                ...request
+            }]
+        });
+    });
+    test.owner.onSocket('connected');
+    test.owner.observePresence(snapshot);
+    await issued.promise;
+    await expect(test.owner.changeRoom(async () => {})).rejects.toMatchObject({ status: 503 });
+    unavailable = false;
+    if (replacement === 'selection') {
+        const next = { ...room, groupId: 'another' };
+        current = {
+            ...snapshot,
+            group: { ...snapshot.group, ...next },
+            members: snapshot.members.map((member) => ({ ...member, groupId: next.groupId })),
+            activeSessions: snapshot.activeSessions.map((row) => ({ ...row, groupId: next.groupId }))
+        };
+        test.select(next);
+    }
+    else {
+        test.replaceSession();
+    }
+    await test.owner.changeRoom(async () => {});
+    test.owner.observePresence(current);
+    await test.timers.advance(1_000);
+    await test.owner.changeRoom(async () => {});
+    const restored = test.adopted.at(-1);
+    expect(restored?.group.groupId).toBe(current.group.groupId);
+    expect(restored?.activeSessions.find((row) => row.principalId === 'watcher')?.sessionId)
+        .toBe(replacement === 'session' ? 'replacement' : 'watcher');
+    expect(writes).toHaveLength(2);
+    expect(writes[1]).not.toBe(writes[0]);
+});
+
 it('recovers the committed generation after all PUT replies are lost before switching rooms', async () => {
     const test = fixture();
     const issued = Promise.withResolvers<void>();
@@ -158,7 +338,7 @@ it('recovers the committed generation after all PUT replies are lost before swit
             return pointRead(durable);
         }
         identities.add(String(url));
-        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        const { generationId, connectionGenerationId } = decodePresenceRequest(init?.body);
         durable = {
             ...snapshot,
             onlineMemberCount: 2,
@@ -215,7 +395,7 @@ it('retries a transiently failed restore on the same socket instead of staying a
             }
             return pointRead(snapshot);
         }
-        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        const { generationId, connectionGenerationId } = decodePresenceRequest(init?.body);
         return Response.json({
             ...snapshot,
             onlineMemberCount: 2,
@@ -247,7 +427,7 @@ it('adopts the written generation once the presence summary catches up with a re
             reads.push(String(url));
             return pointRead(summarised);
         }
-        const { generationId, connectionGenerationId } = JSON.parse(String(init?.body));
+        const { generationId, connectionGenerationId } = decodePresenceRequest(init?.body);
         // The presence row commits before the worker rebuilds the summary the reply is read from.
         summarised = {
             ...atPresenceRevision(snapshot, 6),
@@ -287,3 +467,24 @@ it('ends the attempt without polling when the reply names another room', async (
     expect(methods).toEqual(['GET', 'PUT']);
     expect(test.adopted).toEqual([]);
 });
+
+interface DecodedPresenceRequest {
+    readonly generationId: string;
+    readonly connectionGenerationId: string;
+    readonly expiresAtEpochMs: number;
+}
+
+function decodePresenceRequest(body: RequestInit['body']): DecodedPresenceRequest {
+    const parsed = decodeJsonWireText(String(body));
+    if (
+        !isApiJsonObject(parsed) || typeof parsed.generationId !== 'string' ||
+        typeof parsed.connectionGenerationId !== 'string' || typeof parsed.expiresAtEpochMs !== 'number'
+    ) {
+        throw new Error('Expected a complete presence request.');
+    }
+    return {
+        generationId: parsed.generationId,
+        connectionGenerationId: parsed.connectionGenerationId,
+        expiresAtEpochMs: parsed.expiresAtEpochMs
+    };
+}

@@ -1,0 +1,46 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": { "Accept": "application/json" },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "readConfiguredServerIdentity",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/config",
+        "outputs": { "serverPeerId": "body.serverPeerId" }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "serverPeerId": "string" }
+      }
+    },
+    {
+      "name": "readUncachedServerTime",
+      "type": "http",
+      "connection": "api",
+      "request": { "method": "GET", "path": "/api/time" },
+      "expect": {
+        "status": 200,
+        "headers": { "cache-control": "no-store" },
+        "body": {
+          "serverPeerId": "{serverPeerId}",
+          "serverNowEpochMs": "integer"
+        }
+      }
+    }
+  ]
+}

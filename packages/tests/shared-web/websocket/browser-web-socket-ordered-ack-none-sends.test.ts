@@ -103,6 +103,8 @@ async function openOrderedSender(leaseMs: number): Promise<OrderedSender> {
     engine.start();
     const budget = createDefaultVolatileSessionBudget();
     const connecting = createBrowserWebSocketQueueBox({
+        nowEpochMs: Date.now,
+        workNowEpochMs: Date.now,
         durableWorkOwnership: ALWAYS_OWNED_AL_DURABLE_WORK,
         qosProvider: {},
         submissionReadinessFaultPort: toRallarDiagnosticsPorts(undefined).submissionReadinessFaultPort,
@@ -116,7 +118,7 @@ async function openOrderedSender(leaseMs: number): Promise<OrderedSender> {
         inboundVolatileStores: createBrowserALVolatileInboundRuntimeStores(
             toBrowserSessionALInboundRuntimeStoreId(sessionId),
             budget,
-            createPassThroughALStorageEventSink()
+            { storage: createPassThroughALStorageEventSink(), nowMs: Date.now, workNowMs: Date.now }
         ),
         volatileBudget: budget,
         checkpointStores: resolveBrowserALCheckpointStores(sessionId, ALWAYS_OWNED_AL_DURABLE_WORK).wsClient,

@@ -3,7 +3,7 @@ import {
     createBrowserALVolatileOutboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
-import { reportBrowserStartupCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
+import { reportBrowserConnectionCleanupFailure } from '@shared-web/browser/connection/close-browser-transport-resources.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -40,6 +40,8 @@ import {
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
+        readonly nowEpochMs: () => number;
+        readonly workNowEpochMs: () => number;
         readonly qosProvider: ALQosInputProvider;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly outboundSettlements: ALDeliverySettlementSink;
@@ -75,7 +77,7 @@ export async function createBrowserWebSocketQueueBox(
     }
     catch (caught) {
         await wsQueueBox.close(1000, 'initial-connect-failed')
-            .catch((failure) => reportBrowserStartupCleanupFailure(toError(failure)));
+            .catch((failure) => reportBrowserConnectionCleanupFailure(toError(failure)));
         throw caught;
     }
     wsQueueBox
@@ -91,6 +93,8 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
+        nowEpochMs: input.nowEpochMs,
+        workNowEpochMs: input.workNowEpochMs,
         readAuthenticatedPrincipalId: () => {
             const session = readSession();
             return session?.sessionId === clientData.sessionId && session.clientId === clientData.clientId
@@ -107,7 +111,7 @@ function createBrowserWebSocketQueueBoxService(
                 client: clientData,
                 currentSession: readSession(),
                 snapshot: ref ? findGroupStateSnapshotByRef(ref) : undefined,
-                nowMs: Date.now()
+                nowMs: input.nowEpochMs()
             });
         },
         qosProvider: input.qosProvider,
@@ -122,7 +126,8 @@ function createBrowserWebSocketQueueBoxService(
         outboundStores,
         outboundVolatileStores: createBrowserALVolatileOutboundRuntimeStores(
             toBrowserWsClientALRuntimeStoreId(clientData.sessionId),
-            input.volatileBudget
+            input.volatileBudget,
+            { nowMs: input.nowEpochMs, workNowMs: input.workNowEpochMs }
         ),
         outboundCheckpointStores: input.checkpointStores,
         outboundDiagnostics: input.outboundDiagnostics,

@@ -9,23 +9,23 @@ import {
 import type * as AuthApiModule from '@shared-web/browser/auth/session-http-api.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as AppointRoomDirectorModule from '@shared-web/browser/director/appoint-room-director.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type * as RoomMutationWorkflowsModule from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
 import type * as RoomGroupStateWorkflowsModule from '@shared-web/browser/rooms/room-group-state-workflows.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
 import type * as StateEventHttpApiModule from '@shared-web/browser/state-read/state-event-http-api.ts';
-import type * as AuthModule from '@shared/api/auth.ts';
-import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
-import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { newALRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { resolveALDeliveryReceiptAlgo } from '@shared/alm/delivery/resolve-al-delivery-receipt-algo.ts';
+import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createDirectorGroupSnapshot } from '../director-group-snapshot-fixture.ts';
 
@@ -57,6 +57,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })

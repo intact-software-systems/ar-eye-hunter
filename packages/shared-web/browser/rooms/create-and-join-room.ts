@@ -24,6 +24,8 @@ import { captureRoomSession, type RoomSessionFence } from './room-session-fence.
 import type { RallarRoomStateStorePort } from './room-state-store.ts';
 
 export interface CreateAndJoinRoomInput {
+    readonly nowMs: () => number;
+    readonly newGroupId: () => string;
     readonly room: string | RallarCreateRoomInput;
     readonly sessionFence?: RoomSessionFence;
     readonly stateStore: RallarRoomStateStorePort;
@@ -52,10 +54,13 @@ async function createAuthenticatedRoom(input: CreateAndJoinRoomInput): Promise<G
     const session = fence.session;
     const scope = input.resolveOperationScope(createInput.scope);
     const snapshot = await createAndJoinStateGroup({
+        nowMs: input.nowMs,
+        newGroupId: input.newGroupId,
         displayName: createInput.displayName,
         principalId: session.clientId,
         sessionId: session.sessionId,
         generationId: context.middleware.heartbeat.generationId,
+        groupPresence: context.middleware.heartbeat.groupPresence,
         connectionGenerationId: await requireOwnWsConnectionGenerationId(context, operationOptions.signal),
         publicationKey: await input.readPublicationKey(),
         scope,

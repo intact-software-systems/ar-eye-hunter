@@ -16,6 +16,7 @@ import type { OnInboxMessageCallback } from '@shared/services/queue-message-call
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
 
 import { SimulatedNativeRtcPeerConnection } from '../../shared/native-rtc-connection-fixture.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { createBrowserRtcChannelHealth, createBrowserRtcPeerTestDouble } from '../rtc/browser-rtc-peer-test-double.ts';
 
@@ -50,6 +51,7 @@ vi.mock(
         initialiseMiddleware: createInitialiseMiddlewareDouble(async (_session, _topic, options) => ({
             middleware: (await mocks.initialiseApiMiddleware(options)).middleware,
             rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
             checkpoints: []
         }))
     })

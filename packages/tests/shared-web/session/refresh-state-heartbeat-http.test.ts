@@ -1,11 +1,24 @@
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { refreshStateHeartbeat } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { RFC_7517_PUBLICATION_KEY } from '../../shared/api/group-presence/group-presence-publication-key-fixtures.ts';
-import { createActiveGroupPresenceSessionFixture, createClientSnapshotFixture, createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import {
+    createActiveGroupPresenceSessionFixture,
+    createClientSnapshotFixture,
+    createGroupSnapshotFixture
+} from '../authoritative-group-fixtures.ts';
 
 interface FetchCall {
     readonly url: string;
@@ -53,6 +66,7 @@ describe('state heartbeat HTTP workflow', () => {
                 groupSnapshot('group-2')
             ],
             {
+                heartbeatAtEpochMs: Date.now(),
                 publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
@@ -84,6 +98,7 @@ describe('state heartbeat HTTP workflow', () => {
                 : jsonResponse(groupSnapshot(url.includes('/groups/group-1/') ? 'group-1' : 'group-2')));
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1'), groupSnapshot('group-2')], {
+            heartbeatAtEpochMs: Date.now(),
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
             clientSnapshot: undefined,
@@ -122,6 +137,7 @@ describe('state heartbeat HTTP workflow', () => {
             clientData,
             [groupSnapshot('group-1', 'ar-eye-hunter')],
             {
+                heartbeatAtEpochMs: Date.now(),
                 publicationKey: null,
                 generationId: 'generation-1',
                 wsConnectionGenerationId: undefined,
@@ -193,6 +209,7 @@ describe('state heartbeat HTTP workflow', () => {
         });
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
+            heartbeatAtEpochMs: Date.now(),
             publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
@@ -233,6 +250,7 @@ describe('state heartbeat HTTP workflow', () => {
         });
 
         await refreshStateHeartbeat(clientData, [], {
+            heartbeatAtEpochMs: Date.now(),
             publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
@@ -251,6 +269,7 @@ describe('state heartbeat HTTP workflow', () => {
         stubFetch(calls, () => jsonResponse(clientSnapshot('principal-1')));
 
         await refreshStateHeartbeat(clientData, [], {
+            heartbeatAtEpochMs: Date.now(),
             publicationKey: null,
             generationId: 'generation-1',
             wsConnectionGenerationId: undefined,
@@ -374,6 +393,7 @@ async function repairMissingClientSession(wsConnectionGenerationId: string | und
         return notFoundResponse();
     });
     await refreshStateHeartbeat(clientData, [], {
+        heartbeatAtEpochMs: Date.now(),
         publicationKey: null,
         generationId: 'generation-1',
         wsConnectionGenerationId,

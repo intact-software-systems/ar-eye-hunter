@@ -51,6 +51,12 @@ export class BrowserPageLifecycleFlush {
         this.lifetime.abort();
     }
 
+    flush(): void {
+        if (!this.lifetime.signal.aborted && this.input.ownership.isOwned()) {
+            this.input.checkpoints.forEach((checkpoint) => checkpoint.flush());
+        }
+    }
+
     private takeOver(): void {
         if (!this.listening && !this.lifetime.signal.aborted && this.input.ownership.isOwned()) {
             this.listen();
@@ -60,7 +66,7 @@ export class BrowserPageLifecycleFlush {
     private listen(): void {
         this.listening = true;
         const { document, window } = this.input.page;
-        const flush = () => this.input.checkpoints.forEach((checkpoint) => checkpoint.flush());
+        const flush = () => this.flush();
         const options: AddEventListenerOptions = { signal: this.lifetime.signal };
         document?.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {

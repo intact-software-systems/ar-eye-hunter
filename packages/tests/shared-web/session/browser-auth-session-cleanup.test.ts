@@ -1,7 +1,3 @@
-import { toBrowserSessionALRuntimeStoreIds } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
-import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
-import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
 import {
     beforeEach,
     describe,
@@ -9,9 +5,16 @@ import {
     it,
     vi
 } from 'vitest';
+
+import { toBrowserSessionALRuntimeStoreIds } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
+import type { BrowserConnectedMiddleware } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { RallarWsLifecycleEvent } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { ALStorageEvent } from '@shared/alm/storage/al-storage-event.ts';
+
 import { createAuthSessionApiHttpError } from '../auth-session-contract-fixtures.ts';
 import type * as ContractModules from '../auth-session-contract-modules.ts';
 import { createDeferred } from '../browser-lifecycle-fixtures.ts';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import { installFakeBroadcastChannelPerTest } from '../data/rallar-data-test-runtime.ts';
 import { readAuthSessionContractMocks, resetAuthSessionContractMocks } from './browser-auth-session-contract-fixture.ts';
 
@@ -214,7 +217,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         });
         mocks.initialiseMiddleware.mockImplementation(async (session) => {
             initializedSessionIds.push(session.sessionId);
-            return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
+            return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
         });
         const facade = createRallarFacade();
 
@@ -279,7 +282,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             'Rallar connection was cancelled because auth ended.'
         );
 
-        deferred.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
+        deferred.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] });
         await expectation;
 
         expect(facade.status()).toBe('idle');
@@ -316,7 +319,7 @@ describe('Rallar auth logout and transport cleanup contract', () => {
             })
             .mockImplementationOnce(async (session) => {
                 initializedSessionIds.push(session.sessionId);
-                return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] };
+                return { middleware: mocks.ctx.middleware, rtcCaptureReceipt, serverClock: createDefaultBrowserServerClockFixture(), checkpoints: [] };
             });
         mocks.loginToApi.mockResolvedValue(replacementSession);
         const facade = createRallarFacade();
@@ -334,7 +337,12 @@ describe('Rallar auth logout and transport cleanup contract', () => {
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
 
-        pendingMiddleware.resolve({ middleware: mocks.ctx.middleware, rtcCaptureReceipt, checkpoints: [] });
+        pendingMiddleware.resolve({
+            middleware: mocks.ctx.middleware,
+            rtcCaptureReceipt,
+            serverClock: createDefaultBrowserServerClockFixture(),
+            checkpoints: []
+        });
         await expect(pendingConnect).rejects.toThrow(
             'Rallar connection was cancelled because auth ended.'
         );

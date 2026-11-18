@@ -40,6 +40,7 @@ import {
 import { InboxOutboxEngine } from '@shared/services/inbox-outbox-engine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
+import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import {
     createInboundTestMessage,
     createInboundTestRuntime,
@@ -48,8 +49,6 @@ import {
     setNextInboundCommitConflicted
 } from './inbound-runtime-test-fixture.ts';
 import { ALWorkBatchTestObserver } from './work/al-work-batch-test-observer.ts';
-
-import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 
 describe('inbound durable effect worker lifecycle', () => {
     beforeEach(() =>
@@ -1200,11 +1199,11 @@ describe('inbound durable effect worker lifecycle', () => {
         await resources.queueEngine.executeOnce();
         expect(deliveredMessageIds).toEqual([]);
         expect(await resources.workQueue.getItem(work.entry.key)).toMatchObject({
-            status: stage === 'exhaustion-read' ? EntityStatus.NEW : EntityStatus.RESERVED,
-            dequeueAudit: { attempts: stage === 'exhaustion-read' ? 0 : 1 }
+            status: stage === 'exhaustion-read' ? EntityStatus.NEW : EntityStatus.RETRY,
+            dequeueAudit: { attempts: 0 }
         });
 
-        vi.setSystemTime(Date.now() + 10_001);
+        // Disposal releases unstarted work immediately; restart need not wait for lease expiry.
         const restarted = new ALInboundMessageRuntime({
             ...dependencies,
             ...createDefaultALInboundRuntimeResources({
