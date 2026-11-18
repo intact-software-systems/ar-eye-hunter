@@ -64,6 +64,27 @@ describe('build-affecting tree', () => {
 
         expect(after).not.toBe(before);
     });
+
+    it('digests a tree whose listing exceeds the default 1 MiB child-process buffer', () => {
+        const fixture = createGitFixture();
+        const nestedDirectory = ['a', 'b', 'c'].map((letter) => letter.repeat(200)).join('/');
+        const files = Object.fromEntries(
+            Array.from({ length: 1_300 }, (_unused, index) => [
+                `apps/large/${nestedDirectory}/${index}-${'d'.repeat(200)}.ts`,
+                `export const value = ${index};\n`
+            ])
+        );
+        commit(fixture, 'large tree', files);
+        const listing = execFileSync('git', ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'], {
+            cwd: fixture,
+            maxBuffer: 64 * 1024 * 1024
+        });
+        expect(listing.length).toBeGreaterThan(1024 * 1024);
+
+        const digest = computeBuildAffectingTreeDigest({ repoRoot: fixture, headSha: 'HEAD' });
+
+        expect(digest).toMatch(/^[0-9a-f]{64}$/u);
+    });
 });
 
 function createGitFixture(): string {

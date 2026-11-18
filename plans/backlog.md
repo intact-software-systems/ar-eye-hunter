@@ -775,10 +775,10 @@ and it has no status list.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".
-- Mesh drift: the churn measurement cannot compare an accepted mesh with the planner's fresh plan, because no typed
-  read serves the mesh parameter. RTT drift is unmeasured too: the scenario sends no RTT reports. The maintainer
-  ruled a typed read of the mesh parameter with the next measurement (D655), which also replaces the assumed k of
-  the churn report.
+- Mesh drift: done for the mesh parameter. The measurement reads each room's effective topology configuration
+  after the room is created (D655), so mesh drift is computed with the room's own k and the churn report no longer
+  assumes one. Still open: RTT refinements are provoked only with made-up values (the reshape measurement,
+  `npm run perf:api-v1:topology-reshapes`); real RTT needs browsers.
 - Restoring k after a leave: nothing in shared-graph restores a mesh member's k links; the churn report counts the
   members under k; if meshes thin under churn it is its own slice, taken to the maintainer (D657).
 - The departed peer as a time-limited forwarder: a leaver that stays online could forward for the room for a bounded
