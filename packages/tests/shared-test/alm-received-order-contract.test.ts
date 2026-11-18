@@ -28,10 +28,20 @@ describe('an order claim in a messages.received command', () => {
     it.each([
         ['an empty field name', { ascendingBy: '' }],
         ['a blank field name', { ascendingBy: '  ' }],
-        ['a field name that is no string', { ascendingBy: 3 }],
-        ['an order claim beside an absence claim, which has no order', { ascendingBy: 'seq', absent: true }]
+        ['a field name that is no string', { ascendingBy: 3 }]
     ])('refuses %s at both boundaries', (_label, fields) => {
         expect(readBoundaries({ ...command, ...fields })).toEqual({ schema: false, command: false });
+    });
+
+    it('refuses an order claim beside an absence claim where the two are read together', () => {
+        expect(readBoundaries({ ...command, ascendingBy: 'seq', absent: true })).toEqual({ schema: true, command: false });
+    });
+
+    it('still names the field a malformed messages.received lacks', () => {
+        const { windowMs: _windowMs, ...withoutWindow } = command;
+        const checked = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, withoutWindow);
+
+        expect(checked.errors.map((error) => error.message)).toContain('Missing required property windowMs.');
     });
 
     it('says why an absence claim takes no order', () => {

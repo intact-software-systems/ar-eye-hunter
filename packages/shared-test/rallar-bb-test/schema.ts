@@ -537,33 +537,6 @@ const storageFaultActionSchema: JsonSchema = {
     ]
 };
 
-const messagesReceivedCountProperties = {
-    connection: stringSchema,
-    typeId: stringSchema,
-    msgId: stringSchema,
-    count: { type: 'integer', minimum: 0 },
-    absent: booleanSchema,
-    windowMs: { type: 'integer', minimum: 0 }
-} as const;
-
-/** An absence claim has no order, so `ascendingBy` is admitted only where `absent` is not true. */
-const messagesReceivedSchema: JsonSchema = {
-    anyOf: [
-        {
-            ...strictCommandSchema('messages.received', {
-                ...messagesReceivedCountProperties,
-                ascendingBy: nonEmptyStringSchema
-            }),
-            properties: { ...commandBaseProperties('messages.received'), ...messagesReceivedCountProperties }
-        },
-        strictCommandSchema('messages.received', {
-            ...messagesReceivedCountProperties,
-            absent: { const: false },
-            ascendingBy: nonEmptyStringSchema
-        })
-    ]
-};
-
 /** A transport or storage fault matches frames or operations and counts them down, so both fields are required. */
 function toMatchedFaultSchema(properties: CommandPropertySchemas<'fault.inject'>): JsonSchema {
     return {
@@ -818,7 +791,15 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         connection: stringSchema,
         handleId: stringSchema
     }),
-    'messages.received': messagesReceivedSchema,
+    'messages.received': strictCommandSchema('messages.received', {
+        connection: stringSchema,
+        typeId: stringSchema,
+        msgId: stringSchema,
+        count: { type: 'integer', minimum: 0 },
+        absent: booleanSchema,
+        ascendingBy: nonEmptyStringSchema,
+        windowMs: { type: 'integer', minimum: 0 }
+    }),
     'messages.receipts': strictCommandSchema('messages.receipts', {
         connection: stringSchema,
         handleId: stringSchema

@@ -831,11 +831,13 @@ Two fault stream cells run in the full scope of the two-agent family (D669), wit
 Every send of both names `ack: 'receiver'` and the cell's ordering key. `lost-stream-start` runs over `rtc` alone and
 pins a stated limit: the sender holds send 1 by its message id, sends 2 and 3 and reads each acknowledged, then releases
 the hold; the receiver reads two arrivals in sequence order (`ascendingBy: 'seq'`), states `ordering-position`
-`before-entry` for seq 1 and proves the absence of a third; the sender observes handle 1 `failed` with
+`entered` at seq 2 and `before-entry` for seq 1, and proves the absence of a third; the sender observes handle 1 `failed` with
 `failure.kind: 'receipt-exhausted'`. `seeded-jitter-stream` runs over `ws` alone, since an RTC channel applies no
 delay: a seeded jitter of 0 to 80 ms is held on the cell's data frames while twenty sends are sent and each read
-acknowledged, its release must read at least ten delayed frames (`acted.delay`), and the receiver reads twenty
-arrivals in sequence order and proves the absence of a twenty-first. No cell runs under a seeded loss: an ordered
+acknowledged. Two facts prove the jitter disturbed the stream: its release must read at least twenty delayed frames
+(`acted.delay`, one per send), and the sender must have admitted a gap NACK about its track, which the server sends
+only when a later sequence reached it first. The receiver reads twenty arrivals in sequence order and proves the
+absence of a twenty-first. No cell runs under a seeded loss: an ordered
 receipted stream does not reliably recover from one (D670), and a catalog test pins that none claims it.
 
 The `not-yet-in-sync` conformance scenario (`not-yet-in-sync-expires`) runs over
@@ -1164,8 +1166,8 @@ order, so a copy out of order, a repeated value and a copy without the field all
 fail the claim. The count is judged first; a count that is met with the claim
 failed ends `RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING`. The result and the
 diagnostic then carry `ascending`, a boolean, and neither is present when no
-order was claimed. An absence claim has no order: `ascendingBy` beside
-`absent: true` is refused by the schema and by command validation.
+order was claimed. An absence claim has no order: command validation refuses
+`ascendingBy` beside `absent: true`.
 
 `fault.inject` schedules a scripted `drop` for the next `remaining` matching
 frames on the `ws` or `rtc` carrier; `{ delayMs }` and `not-ready` are `ws` only
@@ -1195,7 +1197,9 @@ the frames the fault of that `faultId` has acted on so far, by decision: `drop`,
 when none. It is read after the injection, so the release of a fault
 (`remaining: 0`) reads the fault's totals, and a recipe proves its fault acted by
 asserting a floor on `resultCache.<release>.value.acted.drop`. The counts live
-with the page's connection: a close or a reload starts them again. `acted`
+with the page's connection and add up across every arming of one `faultId`,
+while a seeded draw starts again at each arming: a close or a reload starts
+the counts again. `acted`
 carries no frame and no payload. A storage or product-socket injection returns
 `{ faultId, injected }` alone.
 

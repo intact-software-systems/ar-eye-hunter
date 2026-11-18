@@ -1,33 +1,35 @@
-import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestTransportFaultInjectCommand
+} from '../../../../rallar-black-box-test-contracts.ts';
 
+import { toBudgetMs } from '../../alm-conformance-budgets.ts';
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
+import { ALM_OUTBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { FAULT_TIMEOUT_MS } from '../../alm-conformance-fault-commands.ts';
+import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
+import { toOrderedSendCommands, toOrderingKey } from '../../alm-conformance-ordering-commands.ts';
+import { toReceivedCommand } from '../../alm-conformance-receiver-commands.ts';
 import {
     FULL_TAGS,
     type AlmConformanceScenarioDefinition,
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
-
-import {
-    FAULT_STREAM_SENDS,
-    toSeededFaultArmCommand,
-    toSeededFaultReleaseCommands,
-    toStreamAcknowledgedCommands,
-    toStreamReceivedCommands,
-    toStreamSendCommands
-} from './fault-stream-commands.ts';
+import { toCommandId, toScenarioTypeId } from '../../alm-conformance-step-identities.ts';
+import { toSettledStateCommands } from '../../to-settled-state-commands.ts';
 
 /** An RTC channel applies no delay, so a jitter has one carrier. */
 const JITTER_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
 
-const JITTER = { kind: 'jitter', action: { jitter: { minDelayMs: 0, maxDelayMs: 80, seed: 11 } } } as const;
-
-/** Half the stream: a jitter that delayed fewer frames reordered too little to claim anything. */
-const JITTER_DELAYED_FLOOR = FAULT_STREAM_SENDS / 2;
+const STREAM_SENDS = 20;
+const JITTER = { jitter: { minDelayMs: 0, maxDelayMs: 80, seed: 11 } } as const;
 
 /**
- * An ordered receipted stream keeps its order when every data frame leaves after a seeded delay of 0 to 80 ms, so
- * frames reach the server out of order: all twenty arrive in sequence order, nothing arrives twice, and every handle
- * ends `acknowledged`.
+ * An ordered receipted stream keeps its order when every data frame leaves after a seeded delay of 0 to 80 ms: all
+ * twenty arrive in sequence order, nothing arrives twice, and every handle ends `acknowledged`. Two facts prove the
+ * jitter disturbed the stream. Every matching frame draws a delay, so the release must read one for each send at
+ * least; and the sender must have admitted a gap NACK about its track, which the server sends only when a later
+ * sequence reached it first. A run whose frames all arrived in order claims nothing and fails.
  */
 export const seededJitterStream: AlmConformanceScenarioDefinition = {
     scenarioId: 'seeded-jitter-stream',
@@ -37,14 +39,57 @@ export const seededJitterStream: AlmConformanceScenarioDefinition = {
     roles: ['sender', 'receiver'],
     laneFamily: 'two-agent',
     toSenderCommands: toSeededJitterStreamSenderCommands,
-    toRecipientCommands: (receiver) => toStreamReceivedCommands(receiver, FAULT_STREAM_SENDS)
+    toRecipientCommands: toSeededJitterStreamReceiverCommands
 };
 
 function toSeededJitterStreamSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const sequences = Array.from({ length: STREAM_SENDS }, (_, index) => index + 1);
     return [
-        toSeededFaultArmCommand(sender, JITTER),
-        ...toStreamSendCommands(sender, 1, FAULT_STREAM_SENDS),
-        ...toStreamAcknowledgedCommands(sender, 1, FAULT_STREAM_SENDS),
-        ...toSeededFaultReleaseCommands(sender, JITTER, JITTER_DELAYED_FLOOR)
+        toJitterCommand(sender, 'arm'),
+        ...sequences.flatMap((seq) => toOrderedSendCommands(sender, seq, 'receiver')),
+        ...sequences.flatMap((seq) => toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')),
+        toDiagnosticWait({
+            step: sender,
+            name: 'gap-nack',
+            topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+            historyFrom: 'cell',
+            contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(sender)}:`
+        }),
+        toJitterCommand(sender, 'release'),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-jitter-delayed',
+            resultName: 'jitter-release',
+            field: 'acted.delay',
+            operator: 'gte',
+            expected: STREAM_SENDS
+        })
     ];
+}
+
+function toSeededJitterStreamReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toReceivedCommand({ ...receiver, index: STREAM_SENDS, count: STREAM_SENDS, absent: false, ascendingBy: 'seq' }),
+        toReceivedCommand({ ...receiver, index: STREAM_SENDS + 1, count: STREAM_SENDS + 1, absent: true })
+    ];
+}
+
+/** Held on the data frames of the cell's type until its release. A control frame carries another type and passes. */
+function toJitterCommand(
+    sender: AlmConformanceStepInput,
+    phase: 'arm' | 'release'
+): RallarBlackBoxTestTransportFaultInjectCommand {
+    const typeId = toScenarioTypeId(sender);
+    return {
+        kind: 'fault.inject',
+        commandId: toCommandId(sender, `jitter-${phase}`),
+        faultId: `jitter-ws-${typeId}`,
+        carrier: 'ws',
+        match: { typeId },
+        action: JITTER,
+        remaining: phase === 'arm' ? 'until-cleared' : 0,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, sender.input.deadlineMs)
+    };
 }

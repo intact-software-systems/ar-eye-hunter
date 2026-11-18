@@ -2,7 +2,7 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
-import { ALM_INBOUND_DIAGNOSTICS_TOPIC, toDiagnosticWait } from '../../alm-conformance-diagnostic-waits.ts';
+import { toOrderingPositionWait } from '../../alm-conformance-diagnostic-waits.ts';
 import { toHeldMessageFaultCommands, toHeldSendCommands } from '../../alm-conformance-fault-commands.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import {
@@ -22,7 +22,7 @@ import {
  * send reaches the receiver before it. The receiver holds no state for the track, so it enters at the first frame it
  * sees and refuses the earlier one as before its entry: it cannot tell lost first frames from a late join. The receipt
  * stays truthful: the first send's handle ends `failed`, never `acknowledged`. The first send is held by its message
- * id, so no draw decides which frame is lost. Over `ws` the server orders the track and the first send arrives.
+ * id, so no draw decides which frame is lost.
  */
 export const lostStreamStart: AlmConformanceScenarioDefinition = {
     scenarioId: 'lost-stream-start',
@@ -58,20 +58,15 @@ function toLostStreamStartSenderCommands(sender: AlmConformanceStepInput): reado
 }
 
 /**
- * Two arrivals in order, the refusal of the first send, then no third. One sender holds the cell's track, so the
- * ordering key alone names it.
+ * Two arrivals in order, the entry at send 2 (whose prior is 1), the refusal of send 1 (whose prior is 0), then no
+ * third. One sender holds the cell's track, so the ordering key alone names it.
  */
 function toLostStreamStartReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const track = toOrderingKey(receiver);
     return [
         toReceivedCommand({ ...receiver, index: 2, count: 2, absent: false, ascendingBy: 'seq' }),
-        toDiagnosticWait({
-            step: receiver,
-            name: 'before-entry-1',
-            topic: ALM_INBOUND_DIAGNOSTICS_TOPIC,
-            historyFrom: 'cell',
-            contains: `"trackKey":"${toOrderingKey(receiver)}:`,
-            payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.seq': 1 }
-        }),
+        toOrderingPositionWait(receiver, { name: 'entered-2', status: 'entered', priorSeq: 1, track }),
+        toOrderingPositionWait(receiver, { name: 'before-entry-1', status: 'before-entry', priorSeq: 0, track }),
         toReceivedCommand({ ...receiver, index: 3, count: 3, absent: true })
     ];
 }

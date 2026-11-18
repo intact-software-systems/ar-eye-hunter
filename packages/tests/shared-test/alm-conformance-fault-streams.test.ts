@@ -22,8 +22,6 @@ const CELL_CARRIERS = [
     ['lost-stream-start', ['rtc']],
     ['seeded-jitter-stream', ['ws']]
 ] as const;
-const CELLS = CELL_CARRIERS.flatMap(([key, carriers]) => carriers.map((carrier) => [key, carrier] as const));
-const STREAM_CELLS = CELLS.filter(([key]) => key !== 'lost-stream-start');
 
 function findCell(key: string, carrier: Carrier): AlmConformanceScenario | undefined {
     return createAlmConformanceRecipes(toConformanceInput(carrier)).find((scenario) => scenario.scenarioKey === key);
@@ -86,7 +84,12 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each(CELLS)('%s over %s sends only receipted at-least-once sends on its own track, in sequence', (key, carrier) => {
+    it.each(
+        [
+            ['lost-stream-start', 'rtc'],
+            ['seeded-jitter-stream', 'ws']
+        ] as const
+    )('%s over %s sends only receipted at-least-once sends on its own track, in sequence', (key, carrier) => {
         const sends = toSends(requireCell(key, carrier).sender);
 
         expect(sends.length).toBe(key === 'lost-stream-start' ? 3 : STREAM_SENDS);
@@ -101,8 +104,8 @@ describe('ALM fault stream cells', () => {
         });
     });
 
-    it.each(STREAM_CELLS)('%s over %s settles every send acknowledged', (key, carrier) => {
-        const sender = requireCell(key, carrier).sender;
+    it('seeded-jitter-stream settles every send acknowledged', () => {
+        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
         const settles = Array.from({ length: STREAM_SENDS }, (_, index) => `assert-acknowledged-${index + 1}`);
         const places = toPlaces(sender, settles);
 
@@ -113,8 +116,8 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each(STREAM_CELLS)('%s over %s claims twenty arrivals in sequence order and no twenty-first', (key, carrier) => {
-        const receiver = requireCell(key, carrier).receiver;
+    it('seeded-jitter-stream claims twenty arrivals in sequence order and no twenty-first', () => {
+        const receiver = requireCell('seeded-jitter-stream', 'ws').receiver;
 
         expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
             { count: STREAM_SENDS, ascendingBy: 'seq' },
@@ -124,7 +127,7 @@ describe('ALM fault stream cells', () => {
         expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
     });
 
-    it('seeded-jitter-stream delays every data frame by a seeded 0 to 80 ms and proves at least ten were delayed', () => {
+    it('seeded-jitter-stream delays every data frame by a seeded 0 to 80 ms and proves every send met a delay', () => {
         const sender = requireCell('seeded-jitter-stream', 'ws').sender;
         const release = findCommand(sender, 'jitter-release');
         const typeId = 'alm.conformance.ws.seeded-jitter-stream';
@@ -141,14 +144,31 @@ describe('ALM fault stream cells', () => {
             kind: 'assert',
             source: `resultCache.${release.commandId}.value.acted.delay`,
             operator: 'gte',
-            expected: 10
+            expected: STREAM_SENDS
         }));
         expect(toPlaces(sender, ['jitter-arm', 'send-1'])[0]).toBeLessThan(toPlaces(sender, ['jitter-arm', 'send-1'])[1]);
-        expect(toPlaces(sender, [`assert-acknowledged-${STREAM_SENDS}`, 'jitter-release', 'assert-jitter-delayed'])).toEqual([
-            sender.commands.indexOf(release) - 1,
+        expect(toPlaces(sender, ['jitter-release', 'assert-jitter-delayed'])).toEqual([
             sender.commands.indexOf(release),
             sender.commands.indexOf(release) + 1
         ]);
+    });
+
+    it('seeded-jitter-stream proves frames reached the server out of order: the sender admitted a gap NACK about its track', () => {
+        const sender = requireCell('seeded-jitter-stream', 'ws').sender;
+        const reordered = findCommand(sender, 'gap-nack');
+
+        expect(reordered).toMatchObject({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                contains: `"nackReason":"gap","nackOrderingKey":"${toOrderingKey(toSenderStep('ws', 'seeded-jitter-stream'))}:`
+            }
+        });
+        expect(reordered).not.toHaveProperty('absent');
+        expect(toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])).toEqual(
+            [...toPlaces(sender, ['jitter-arm', 'gap-nack', 'jitter-release'])].sort((left, right) => left - right)
+        );
     });
 
     it('no cell runs under a seeded loss: a stream does not reliably recover from one, so none can claim it', () => {
@@ -196,26 +216,27 @@ describe('ALM fault stream cells', () => {
         }));
     });
 
-    it('lost-stream-start reads two arrivals in order, the first send refused as before the entry, and no third', () => {
+    it('lost-stream-start reads two arrivals in order, its entry at the second send, the first refused as before it, and no third', () => {
         const receiver = requireCell('lost-stream-start', 'rtc').receiver;
-        const refusal = findCommand(receiver, 'before-entry-1');
+        const track = `"trackKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start'))}:`;
+        const position = { kind: 'diagnostic', topic: 'rallar.browser.alm.inbound_diagnostics', contains: track };
+        const steps = ['received-2', 'entered-2', 'before-entry-1', 'received-3'];
 
         expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
             { count: 2, ascendingBy: 'seq' },
             { count: 3, absent: true }
         ]);
-        expect(refusal).toMatchObject({
+        expect(findCommand(receiver, 'entered-2')).toMatchObject({
             kind: 'wait',
-            match: {
-                kind: 'diagnostic',
-                topic: 'rallar.browser.alm.inbound_diagnostics',
-                contains: `"trackKey":"${toOrderingKey(toSenderStep('rtc', 'lost-stream-start'))}:`,
-                payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.seq': 1 }
-            }
+            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'entered', 'data.priorSeq': 1 } }
         });
-        expect(refusal).not.toHaveProperty('absent');
-        expect(toPlaces(receiver, ['received-2', 'before-entry-1', 'received-3'])).toEqual(
-            [...toPlaces(receiver, ['received-2', 'before-entry-1', 'received-3'])].sort((left, right) => left - right)
-        );
+        expect(findCommand(receiver, 'before-entry-1')).toMatchObject({
+            kind: 'wait',
+            match: { ...position, payloadFields: { 'data.kind': 'ordering-position', 'data.status': 'before-entry', 'data.priorSeq': 0 } }
+        });
+        expect(findCommand(receiver, 'entered-2')).not.toHaveProperty('absent');
+        expect(findCommand(receiver, 'before-entry-1')).not.toHaveProperty('absent');
+        expect(toPlaces(receiver, steps)).toEqual([...toPlaces(receiver, steps)].sort((left, right) => left - right));
+        expect(toPlaces(receiver, steps).every((place) => place >= 0)).toBe(true);
     });
 });

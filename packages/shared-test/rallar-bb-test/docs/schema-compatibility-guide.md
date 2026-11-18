@@ -1201,7 +1201,7 @@ Date: 2026-11-18
 Owner: ALM fault proofs
 
 Change type:
-- Compatible optional addition
+- Compatible addition to a result value (fail-closed on a runtime provider that answers no counts)
 
 Affected schemas:
 - RallarBlackBoxTestFaultInjectResultValue (the fault.inject command result)
@@ -1251,8 +1251,8 @@ identity. No recipe could claim the order in which copies arrived.
 New shape:
 messages.received may also name ascendingBy, a field of each copy's payload. The command then also requires that field
 to be a finite number in every matched copy and to ascend strictly in arrival order; its result and diagnostic carry
-ascending (boolean). A met count with a failed order ends RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING. ascendingBy is
-refused when blank and beside absent: true.
+ascending (boolean). A met count with a failed order ends RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_ASCENDING. A blank
+ascendingBy is refused by the schema and by command validation; ascendingBy beside absent: true by command validation.
 
 Migration:
 None: a command that names no ascendingBy validates, runs and reports as before.

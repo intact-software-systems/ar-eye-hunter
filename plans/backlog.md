@@ -736,10 +736,11 @@ and it has no status list.
   `before-entry`. It widens D646's one-frame limit. Recorded by ruling
   (2026-11-18); a fix changes how a receiver enters a track and is its own
   slice.
-- An ordered at-least-once send that names no `ack` takes receipt mode
-  `receiver` over `rtc`, from its channel's `command` purpose (D670). A caller
-  that meant an unreceipted stream gets handles that can end
-  `receipt-exhausted`. Whether that default is wanted is unruled.
+- An ordered at-least-once send that names no `ack` took receipt mode
+  `receiver` over `rtc` in a lane run (D670). Read from the code and not
+  proven by a test: the channel's `command` purpose gives it. A caller that
+  meant an unreceipted stream gets handles that can end `receipt-exhausted`.
+  Whether that default is wanted is unruled.
 - A crash of the instance that holds the publisher's socket mid-publication,
   and what the publisher reads after it reconnects, is unproven. The
   subscriber's case is (D669); this one belongs with the held-send path.

@@ -105,7 +105,7 @@ const HETZNER_WITHHELD_ALM_SCENARIOS: readonly HetznerWithheldAlmScenario[] = [
     // The range repair cells' lane evidence is local and the hosted full read's too; manifests 18 and 22 stay as recorded.
     { scenarioKey: 'ordering-gap-repair', carriers: ALM_CONFORMANCE_SINGLE_HOP_CARRIERS },
     { scenarioKey: 'repair-exhausted', carriers: repairExhausted.carriers },
-    // The fault stream cells' lane evidence is local: they were written to change no hosted manifest (D668).
+    // The fault stream cells' lane evidence is local: they were written to change no hosted manifest (D669).
     { scenarioKey: 'lost-stream-start', carriers: lostStreamStart.carriers },
     { scenarioKey: 'seeded-jitter-stream', carriers: seededJitterStream.carriers },
     // The membership fence cells' lane evidence is local and the hosted full read's; manifest 22 stays as recorded.
