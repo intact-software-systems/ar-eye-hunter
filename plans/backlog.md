@@ -732,11 +732,20 @@ and it has no status list.
   receiver still behind a gap is refused (`to-al-outbound-end-receipt-bundle.ts`);
   a conflicted control is replayed on the generic backoff of up to 16 s while
   a receipt's budget is three 2 s retries (`ResourceInboxRetryPolicy.ts`).
-- Three sender behaviours, as the loss runs after the due order showed them
-  (D673): whether an ACK-timeout retry writes a frame, and whether a given
-  repair commit writes one, is not observable from a control snapshot; the
-  lane needs a frame-written signal to say. A `pending-control` admitted late
-  was not seen again (slowest 445 ms; earlier 7.9 s).
+  Neither showed in the six loss runs after the due order (D673): no gap NACK
+  was refused for a missing repair obligation, and no control was admitted
+  later than 445 ms. No step is ruled for either; the repair-rule design that
+  follows the lost repair frame's unit reproduction is to say whether either
+  still applies. D670's other unknown, why sends 10 to 20 did not reach the
+  `rtc` receiver for 28 s, was answered by the due order (`rtc` 3 of 3).
+- Three sender behaviours read from the loss runs before the due order
+  (D670): an ACK-timeout retry that wrote no frame (D670's timed-out handle
+  that shows one `sent` attempt), repair commits that mostly wrote no send,
+  and an ACK control admitted 7.9 s late. In the runs after the due order (D673):
+  whether an ACK-timeout retry writes a frame, and whether a given repair
+  commit writes one, is not observable from a control snapshot; the lane
+  needs a frame-written signal to say. A late `pending-control` was not seen
+  again (slowest 445 ms).
 - The IndexedDB `creation`-order claim (a claim of NEW rows without RETRY)
   reads the first sixteen rows of each type and status by key and only then
   asks which are due, so sixteen rows due later hide a due one, as the `due`
