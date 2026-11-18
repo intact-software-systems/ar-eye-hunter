@@ -176,7 +176,8 @@ variant goes into `packages/shared/resilience`, not into the topology folder.
 
 - Changing what the browser does with a promotion (#823 owns that).
 - A new topology kind, or a change to how a full plan is computed.
-- Damping RTT-only re-plans further; they are held 15 s already.
+- A second rule for RTT-only re-plans. They keep their own holds (a layout 15 s old, one refinement
+  per 30 s) and go through the reshape gate like any optional reshape.
 - Replacing the lifecycle policy's `commanded` mode, which already hands the decision to the
   application.
 
@@ -543,12 +544,14 @@ leave is still planned at once.
 3. The gate is an input to the planner (approach A below).
 4. It runs on any server of the cluster and adds no machinery beside the existing one: no state in a
    process, no timer, no lock, no second queue and no new AppInbox command.
+5. An RTT refinement obeys the gate fully: it waits while the gate is closed and starts a period when
+   it publishes. This replaces the non-goal that RTT-only re-plans are not damped further.
 
 **Where it runs.** A room is re-planned by the topology work, the APP_OUTBOX row that a membership,
 leader or configuration command queues in its AppInbox transaction and that one server reserves when
 it is due (`replay/work/create-rtc-topology-work-handler.ts`). The work is
-`read -> compute -> validate -> write`, and its write is one transaction guarded by the stored
-layout's revision. The gate lives inside those four steps:
+`read -> compute -> validate -> write`, and its write is one transaction. The gate lives inside
+those four steps:
 
 | Step     | What the gate adds                                                                                                                    |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -557,40 +560,60 @@ layout's revision. The gate lives inside those four steps:
 | validate | The plan and the next state are recomputed from the same read and compared, as the plan record is today.                              |
 | write    | The next state, with expected-revision compare-and-set, and the wake-up row when one is due, in the work's one transaction.           |
 
-A work that loses a race is redelivered and starts from `read`, so it sees the winner's gate state.
+The gate record has a revision of its own, read in `read`. Every write of it is conditional on that
+revision, also in an outcome that writes no layout, and a lost race is a typed conflict: the work is
+redelivered and starts from `read`, so it sees the winner's gate state. The fingerprint's
+unconditional upsert is not the model for this write.
 
 **The stored state**, one record per room in the runtime state store under its own namespace (the
 input fingerprint is the precedent, `rtc-topology-execution-repository.ts`):
 
 - `lastReshapeAtEpochMs`: when the room's last reshape was published; null before the first.
 - `intervalMs`: the wait in force after that reshape.
-- `wanted`: null, or the instant a reshape was first held in this period and the reasons held.
+- `heldAtEpochMs`: the instant a reshape was first held in this period; null when none was. It stays
+  until the next reshape, also when the want goes.
+- `wantedReasons`: the reasons held and still owed; empty when nothing is wanted.
 
-The gate is closed while `now < lastReshapeAtEpochMs + intervalMs`. A room with no stored state has an
-open gate and the lower bound as its interval. The record is removed with the room's layout.
+A period runs from one reshape to the next. The gate is closed while
+`now < lastReshapeAtEpochMs + intervalMs`. A room with no stored state has an open gate and the lower
+bound as its interval. Nothing deletes the record: a layout is never deleted, only replaced by a
+tombstone on the group-state path, and this slice does not widen that path. The work that establishes
+a first layout writes a fresh state instead, so a room that forms again starts with an open gate.
 
 **The rule**, one pure function in `topology/planning/`, from the previous state, the bounds, the
 clock and what the plan did:
 
-1. The plan publishes a reshape, for any reason and from any origin: `lastReshapeAtEpochMs` becomes
-   now and `wanted` becomes null. The interval doubles, capped at the upper bound, when `wanted` was
-   set; it returns to the lower bound when the gate was open and nothing was wanted; otherwise it is
-   unchanged.
-2. The gate is closed and the planner reports a held reshape: `wanted` is set, keeping its first
-   instant and adding the reasons. The first hold of a period queues the wake-up.
-3. The gate is open, `wanted` is set and the plan is no reshape: the want has gone, and `wanted`
-   becomes null.
+1. The plan publishes a reshape, for any reason and from any origin. The interval for the new period
+   is decided first:
+   - a reshape was held in this period and the layout is younger than twice its interval: the room is
+     restless, and the interval doubles, capped at the upper bound;
+   - otherwise, the gate was open: the room is calm, and the interval returns to the lower bound;
+   - otherwise (a reshape that passed a closed gate with nothing held): unchanged.
+
+   Then `lastReshapeAtEpochMs` becomes now, `heldAtEpochMs` null and `wantedReasons` empty.
+2. The gate is closed and the planner reports a held reshape: `heldAtEpochMs` is set if it was null,
+   and the reasons are added to `wantedReasons`. The first hold of a period queues the wake-up.
+3. The gate is open, the plan is no reshape and the planner finds no wanted reason still applies:
+   `wantedReasons` becomes empty. `heldAtEpochMs` stays, so the hold still counts at the next reshape.
 4. Anything else leaves the state as it is and writes nothing for the gate.
 
 A first layout (`established`) is not a reshape and does not start a period: it replaces nothing.
 
-**What a closed gate does to each reason.** The planner takes one new input, reshape `allowed` or
-`held`. Commanded work is always `allowed`. With `held` and an active previous layout:
+Why a hold outlives its want: a room that flaps across a kind boundary every 3 s often wants nothing
+at the instant the gate opens, and wants a reshape again at the next change. If the vanished want left
+no trace, that room would be reshaped about every 15 s for ever. With the rule above its reshapes fall
+at about 0, 15 to 18, 45 to 51 and then every 60 to 63 s. A room that was held once and is reshaped
+ten minutes later is calm: its layout is far older than twice its interval.
+
+**What a closed gate does to each reason.** The planner takes one new input: reshape `held`, or
+`allowed` with the reasons still wanted. Commanded work is always `allowed`; a row that merged
+automatic changes into a command is commanded, and the command rebuilds the room in any case. With
+`held` and an active previous layout:
 
 | Reason                | With the gate closed                                                                                                                                       | Counts as held |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | `kind-change`         | The previous kind is kept and the room is evolved in place. A star is a complete graph, so it is kept only while every member stays within the link limit. | Yes            |
-| `leader-rooting`      | The tree keeps its root. A leader that joins is attached like any joiner.                                                                                  | Yes            |
+| `leader-rooting`      | The tree keeps its root. A leader that joins is attached by the tree's ordinary insert, and the other joiners breadth-first from it.                       | Yes            |
 | `delta-too-large`     | The room is evolved in place whatever the size of the delta.                                                                                               | No             |
 | `refinement`          | An RTT refresh is held as it is today for a young layout: the stored layout stays and nothing is written. A later RTT claim asks again.                    | No             |
 | `update-failed`       | Not held. The in-place update failed, so the room is rebuilt at once, with the kind and the root a fresh plan selects.                                     | —              |
@@ -598,15 +621,27 @@ A first layout (`established`) is not a reshape and does not start a period: it 
 
 Every automatic work that reaches the planner while the gate is closed plans as a membership delta,
 whatever intent it carries today. A rebuild the planner cannot avoid takes the wanted kind and root
-with it, which is why rule 1 clears `wanted`.
+with it, which is why rule 1 empties `wantedReasons`.
+
+A leader that joins cannot be attached by the leader-rooted walk the planner uses today
+(`computeLeaderBreadthFirstJoins` starts at the leader, which is not in the graph yet, and the failure
+would count as `update-failed` and rebuild the room at once). The held planner attaches the leader
+first and then walks from it.
+
+With `allowed` and `leader-rooting` among the wanted reasons, the planner checks the leader's depth
+whatever the size of the delta. Today it checks only when nobody joined or left, so a join in the plan
+that opens the gate would attach, count as no reshape, and the owed re-root would be forgotten.
 
 **The wake-up.** A held reshape in a room where nothing else happens would never run, so the first
 hold of a period inserts one APP_OUTBOX row due at `lastReshapeAtEpochMs + intervalMs`. Its identity
 is derived from the room and `lastReshapeAtEpochMs`, so there is one per period and the insert-only
 rule holds. Membership changes do not merge into it and do not delay it: the room's coalesced re-plan
 row keeps its own window. When it is due any server takes it and plans the room as a membership delta
-with the gate's state as read. A row that is early by the local clock is retried, as the formation
-timer does; a row whose period has ended completes without planning.
+with the gate's state as read. The input-fingerprint skip does not apply to it: in a quiet room the
+members, the leader and the configuration are what they were when the reshape was held, and the skip
+would end the work without planning. It plans whenever the stored state still owes a reshape. A row
+that is early by the local clock is retried, as the formation timer does; a row whose period has ended
+or that finds nothing wanted completes without planning.
 
 **A hold can be the whole outcome.** A leader appointed in a quiet room with the gate closed changes
 no layout. Today that work ends with nothing to store. It now writes the gate state and the wake-up
@@ -615,8 +650,10 @@ row in one transaction of the same shape as a publication, without a publication
 **The policy.** The lifecycle policy's `topology` section gains `reshapeMinIntervalMs` and
 `reshapeMaxIntervalMs`, 15 000 and 60 000 in all four presets. Sparse input takes the preset's values.
 The lower bound in force is the larger of the policy's and the server's replaced-layout overlap
-(`rtcReplacedLayoutOverlapMs`), and the upper bound is never below it. A policy whose upper bound is
-below its lower is refused with its own issue code. The bounds apply to `auto` and `debounced` rooms;
+(`rtcReplacedLayoutOverlapMs`), and the upper bound is never below it. The overlap is api-v1
+configuration today; it reaches the work through the planning authority, as the RTT minimum layout
+age does. The policy's validation sees only its own two numbers: a policy whose upper bound is below
+its lower is refused with its own issue code. The bounds apply to `auto` and `debounced` rooms;
 a `commanded` room's automatic work is already held. This changes the contract: the OpenAPI schema,
 the presets, the decoders and their tests.
 
@@ -627,7 +664,7 @@ the presets, the decoders and their tests.
   the interval, the instant the gate opens and what is wanted.
 - The work's timing line prints the gate's decision.
 - `npm run perf:api-v1:topology-reshapes` reports, per phase, the reshapes held and the longest
-  interval, and waits for `wanted` to clear before it reads convergence.
+  interval, and waits until nothing is wanted before it reads convergence.
 
 **Approaches considered.**
 
@@ -645,15 +682,18 @@ the presets, the decoders and their tests.
   place owes the room nothing until the quality bound exists.
 - A reshape that passes a closed gate because it is necessary or commanded starts a new period and
   does not lengthen the wait unless something was held.
-- A want that has gone by the time the gate opens leaves no trace in the interval.
+- A hold counts at the next reshape even when its want has gone, while the layout is younger than
+  twice its interval. Without this a flapping room never backs off (see "The rule").
+- A held RTT refresh is not recorded as wanted and does not count as a hold: whether it would have
+  refined is unknown without planning. A later RTT claim asks again.
+- The gate record is never deleted; the work that establishes a first layout resets it.
+- The gate record has its own revision and its own typed conflict.
+- Automatic changes merged into a commanded row pass with the command.
 - A commanded reshape starts a period like any other, so the state is no longer cleared when the
   room's topology configuration changes, as this plan first said.
 - A join whose in-place attach fails is rebuilt at once, as today, until the forced edge is built.
 - The two bounds are required stored fields, so a stored policy or plan record written before this
   slice does not decode. The stores are wiped at deploy, as ruled for pull request 827.
-- An RTT refinement waits for the gate and starts a period when it publishes. This goes one step past
-  the non-goal "Damping RTT-only re-plans further": when the interval is above 15 s a refinement waits
-  longer than it does today. Open with the maintainer.
 
 **Left to the builder.** Names and file split; whether the wake-up is a new work kind or a
 group-revision work under its own resource id; the exact shape of the gate state in the operator
@@ -670,9 +710,11 @@ what it becomes; none is loosened without being named in the pull request.
 - A cluster-profile recipe shows a reshape held on one server and released at its due time, with the
   two reshapes at least 15 s apart in the operator read.
 - `npm run perf:api-v1:topology-reshapes` reads: no two reshapes of a room closer than the interval in
-  force; at most 4 kind changes in the 90 s `flap` phase, where the measurement read 30; at most 2
-  re-roots in a `leader` phase of four appointments; every membership plan of those phases still
-  published as an attach or a repair. `npm run perf:api-v1:topology-churn` still reads 15 / 15 / 0.
+  force, which is the criterion; every membership plan of the phases still published as an attach or a
+  repair. The counts that follow from the rule are expectations, not thresholds: at most 4 kind
+  changes in the 90 s `flap` phase, where the measurement read 30, and the re-roots of four
+  appointments 10 s apart at about 0, 15 and 45 s, where it read 3 to 4 within 40 s.
+  `npm run perf:api-v1:topology-churn` still reads 15 / 15 / 0.
 - `test:api-v1:black-box:postgres:medium-scale` passes unweakened.
 
 ### Later, decided after slice 2
