@@ -6,6 +6,7 @@ import {
     isALControlTypeId
 } from '../al-contracts/al-control-type-ids.ts';
 import { isApiJsonObject, type ApiJsonObject } from '../api/api-json-value.ts';
+import { createSeededRandom } from '../random/create-seeded-random.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';
 
@@ -38,6 +39,19 @@ export interface TransportFaultMatch {
     readonly msgId: string | undefined;
 }
 
+/** Drops the share `ratio`, in (0, 1], of the matching frames; which ones depends on the seed alone. */
+export interface TransportFaultLoss {
+    readonly ratio: number;
+    readonly seed: number;
+}
+
+/** Delays every matching frame by a whole number of milliseconds within the bounds, drawn from the seed. */
+export interface TransportFaultJitter {
+    readonly minDelayMs: number;
+    readonly maxDelayMs: number;
+    readonly seed: number;
+}
+
 export interface ScriptedTransportFault {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
@@ -47,7 +61,10 @@ export interface ScriptedTransportFault {
         | 'not-ready'
         | 'backpressure'
         | Readonly<{ delayMs: number; }>
+        | Readonly<{ loss: TransportFaultLoss; }>
+        | Readonly<{ jitter: TransportFaultJitter; }>
         | Readonly<{ rewrite: TransportFaultRewrite; }>;
+    /** Counts the frames the fault acted on: a frame a seeded loss let pass is not one. */
     readonly remaining: number | 'until-cleared';
 }
 
@@ -97,15 +114,25 @@ export function createScriptedTransportFaultPort(): ScriptedTransportFaultPort {
 
 class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     private readonly faults = new Map<string, ScriptedTransportFault>();
+    private readonly seededDraws = new Map<string, () => number>();
     private readonly observations: TransportFaultObservation[] = [];
 
     inject(fault: ScriptedTransportFault): void {
         assertTransportFaultCarrierAction(fault);
+        assertSeededTransportFaultAction(fault);
         this.faults.set(fault.faultId, fault);
+        const seed = toTransportFaultSeed(fault.action);
+        if (seed === undefined) {
+            this.seededDraws.delete(fault.faultId);
+        }
+        else {
+            this.seededDraws.set(fault.faultId, createSeededRandom(seed));
+        }
     }
 
     clear(): void {
         this.faults.clear();
+        this.seededDraws.clear();
         this.observations.length = 0;
     }
 
@@ -126,7 +153,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
         const fault = this.findMatchingFault(carrier, toSerializedFrameFacts(serialized), 'frame');
         const decision: TransportFaultDecision = fault === undefined
             ? { kind: 'pass' }
-            : toFrameFaultDecision(fault, serialized);
+            : toFrameFaultDecision(fault, serialized, this.seededDraws.get(fault.faultId));
         if (fault !== undefined && decision.kind !== 'pass') {
             this.consumeFault(fault, decision.kind);
         }
@@ -175,7 +202,36 @@ function assertTransportFaultCarrierAction(fault: ScriptedTransportFault): void 
     }
 }
 
-function toFrameFaultDecision(fault: ScriptedTransportFault, serialized: string): TransportFaultDecision {
+function assertSeededTransportFaultAction({ faultId, action }: ScriptedTransportFault): void {
+    if (typeof action === 'string') {
+        return;
+    }
+    if ('loss' in action && !(action.loss.ratio > 0 && action.loss.ratio <= 1)) {
+        throw new TypeError(`Transport fault ${faultId} loses a share of frames outside (0, 1].`);
+    }
+    if (
+        'jitter' in action && !(action.jitter.minDelayMs >= 0 && action.jitter.maxDelayMs >= action.jitter.minDelayMs)
+    ) {
+        throw new TypeError(`Transport fault ${faultId} jitters within bounds that are not 0 <= minimum <= maximum.`);
+    }
+}
+
+function toTransportFaultSeed(action: ScriptedTransportFault['action']): number | undefined {
+    if (typeof action === 'string') {
+        return undefined;
+    }
+    if ('loss' in action) {
+        return action.loss.seed;
+    }
+    return 'jitter' in action ? action.jitter.seed : undefined;
+}
+
+/** `draw` is the fault's own seeded sequence; only a seeded action reads it, one number per matching frame. */
+function toFrameFaultDecision(
+    fault: ScriptedTransportFault,
+    serialized: string,
+    draw: (() => number) | undefined
+): TransportFaultDecision {
     const { faultId, action } = fault;
     if (action === 'drop') {
         return { kind: 'drop', faultId };
@@ -183,9 +239,21 @@ function toFrameFaultDecision(fault: ScriptedTransportFault, serialized: string)
     if (typeof action === 'string') {
         return { kind: 'pass' };
     }
-    return 'rewrite' in action
-        ? { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) }
-        : { kind: 'delay', faultId, delayMs: action.delayMs };
+    if ('rewrite' in action) {
+        return { kind: 'rewrite', faultId, serialized: toRewrittenFrame(serialized, action.rewrite) };
+    }
+    if ('delayMs' in action) {
+        return { kind: 'delay', faultId, delayMs: action.delayMs };
+    }
+    if (draw === undefined) {
+        throw new Error(`Transport fault ${faultId} is seeded and holds no sequence.`);
+    }
+    if ('loss' in action) {
+        return draw() < action.loss.ratio ? { kind: 'drop', faultId } : { kind: 'pass' };
+    }
+    const { minDelayMs, maxDelayMs } = action.jitter;
+    const span = Math.floor(maxDelayMs) - Math.ceil(minDelayMs) + 1;
+    return { kind: 'delay', faultId, delayMs: Math.ceil(minDelayMs) + Math.floor(draw() * span) };
 }
 
 /** The frame matched as an AL envelope, so it parses to a record; every field the rewrite does not name stays. */
