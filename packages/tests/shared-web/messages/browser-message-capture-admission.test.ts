@@ -1,9 +1,9 @@
-import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+import { createDefaultBrowserServerClockFixture } from '../connection/browser-server-clock-fixture.ts';
 
 import { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import { RallarRtcCaptureUnverifiedError } from '@shared-web/browser/connection/rallar-rtc-capture-unverified-error.ts';
@@ -28,10 +28,7 @@ describe('required capture at final message admission', () => {
         (replaced, phase) => {
             const queued: string[] = [];
             const context = createDefaultApiMiddlewareTestDouble({
-                serverTime: createDefaultBrowserServerClockFixture(() => {
-                    if (phase === 'clock') replace();
-                    return 1;
-                }),
+                serverTime: createDefaultBrowserServerClockFixture(() => 1),
                 middleware: {
                     webSocketQueueBox: {
                         enqueueOutboxIfAbsent: async (message) => {
@@ -51,6 +48,13 @@ describe('required capture at final message admission', () => {
                     current = createDefaultApiMiddlewareTestDouble();
                 }
             };
+            if (phase === 'clock') {
+                const readWindow = context.serverTime.readWindow.bind(context.serverTime);
+                vi.spyOn(context.serverTime, 'readWindow').mockImplementation(() => {
+                    replace();
+                    return readWindow();
+                });
+            }
             const receipt = createBrowserRtcCapture({
                 configuration: { mode: 'off', origin: 'run' },
                 connectionId: { status: 'observed', value: 'original' },

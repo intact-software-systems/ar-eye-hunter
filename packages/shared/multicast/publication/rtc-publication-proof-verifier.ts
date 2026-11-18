@@ -1,16 +1,12 @@
 import { readALTargetGroupRef, type ALMessage } from '../../al-contracts/al-contract.ts';
-import {
-    toALPublicationProofSigningInput,
-    verifyALPublicationProof
-} from '../../al-contracts/publication-proof/al-publication-proof.ts';
+import { toALPublicationProofSigningInput } from '../../al-contracts/publication-proof/al-publication-proof.ts';
+import { verifyRegisteredPublicationProof } from '../../al-contracts/publication-proof/verify-registered-publication-proof.ts';
 import { isALDeliveryFallbackPastDeadline } from '../../alm/delivery/resolve-al-delivery-fallback-trigger.ts';
 import type { ALOutboundMessageRuntime } from '../../alm/outbound/al-outbound-message-runtime.ts';
-import { resolvePublicationKey } from '../../api/group-presence/resolve-publication-key.ts';
 import type { GroupRef, GroupSnapshot } from '../../api/group-types.ts';
 import { LatestRepository } from '../../cache/LatestRepository.ts';
 import { toBase64Url } from '../../encoding/base64url.ts';
 import type { PublicationVerificationCrypto } from '../../signature/publication-crypto.ts';
-import type { SignatureProof } from '../../signature/signature-proof.ts';
 import { VerificationKeyCache } from '../../signature/verification-key-cache.ts';
 import type { RtcPublicationProofVerifierPort } from './rtc-publication-proof-verifier-port.ts';
 
@@ -64,7 +60,17 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
         const verdictKey = `${proof.keyId}|${proof.signature}|${toBase64Url(digest)}`;
         const nowEpochMs = clock.nowMs();
         if (this.#verdicts.readAt(verdictKey, nowEpochMs) === undefined) {
-            if (!await this.verifyAgainstSnapshot(crypto.subtle, message, proof, nowEpochMs)) {
+            const groupRef = readALTargetGroupRef(message);
+            const snapshot = groupRef === undefined ? undefined : this.#findGroupSnapshot(groupRef);
+            if (
+                snapshot === undefined || !await verifyRegisteredPublicationProof({
+                    message,
+                    snapshot,
+                    nowEpochMs,
+                    subtle: crypto.subtle,
+                    keys: this.#publicKeys
+                })
+            ) {
                 return false;
             }
             this.#verdicts.acceptAt({
@@ -83,24 +89,5 @@ export class RtcPublicationProofVerifier implements RtcPublicationProofVerifierP
 
     getVerifiedSignature(message: ALMessage): boolean {
         return this.#verifiedMessages.has(message);
-    }
-
-    private async verifyAgainstSnapshot(
-        subtle: SubtleCrypto,
-        message: ALMessage,
-        proof: SignatureProof,
-        nowEpochMs: number
-    ): Promise<boolean> {
-        const groupRef = readALTargetGroupRef(message);
-        const snapshot = groupRef === undefined ? undefined : this.#findGroupSnapshot(groupRef);
-        const registered = snapshot === undefined
-            ? null
-            : resolvePublicationKey(snapshot, message.id.senderId, nowEpochMs);
-        if (registered === null || registered.keyId !== proof.keyId) {
-            return false;
-        }
-        const publicKey = await this.#publicKeys.readVerificationKey(subtle, registered);
-        return publicKey !== undefined &&
-            (await verifyALPublicationProof({ subtle, publicKey, message })).right !== undefined;
     }
 }

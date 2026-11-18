@@ -132,16 +132,14 @@ export class BrowserRallarDeliveryRegistry {
         const expiresAtMs = message.constraints?.expiresAtMs;
         if (
             !observation || expiresAtMs === undefined ||
-            (observation.lifecycle.expiresAtMs !== undefined && expiresAtMs >= observation.lifecycle.expiresAtMs)
+            expiresAtMs >= (observation.lifecycle.expiresAtMs ?? Infinity)
         ) {
             return;
         }
         const now = observation.readDeadlineEpochMs();
         this.publishLifecycle(
             observation,
-            now === undefined
-                ? { ...observation.lifecycle, expiresAtMs }
-                : computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, now)
+            computeALDeliveryDeadline({ ...observation.lifecycle, expiresAtMs }, now)
         );
         for (const wait of observation.waits.values()) {
             wait.updateDeadline();
@@ -218,7 +216,9 @@ export class BrowserRallarDeliveryRegistry {
     }
 
     private createObservation({
-        message, carrier, readDeadlineEpochMs,
+        message,
+        carrier,
+        readDeadlineEpochMs,
         rtcCapture = Object.freeze({ status: 'unavailable', reason: 'absent' })
     }: BrowserRallarDeliveryRegistry.Open): DeliveryObservation {
         return {
@@ -282,9 +282,7 @@ export class BrowserRallarDeliveryRegistry {
             return observation.lifecycle;
         }
         const now = observation.readDeadlineEpochMs();
-        const deadlined = now === undefined
-            ? observation.lifecycle
-            : computeALDeliveryDeadline(observation.lifecycle, now);
+        const deadlined = computeALDeliveryDeadline(observation.lifecycle, now);
         if (deadlined !== observation.lifecycle) {
             this.publishLifecycle(observation, deadlined);
         }

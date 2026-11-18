@@ -6,6 +6,7 @@ import { denyGroupPolicy } from '@shared-server/rallar-system/group-state/policy
 import { readALTargetGroupRef, type ALMessage, type ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
 import { resolveALAdmittedRoomAudience } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
+import { verifyRegisteredPublicationProof } from '@shared/al-contracts/publication-proof/verify-registered-publication-proof.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
@@ -14,6 +15,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
 import { isRallarGameSnapshotRequest } from '@shared/rallar-game/snapshot-request.ts';
 import type { Either } from '@shared/resilience/Either.ts';
+import { VerificationKeyCache } from '@shared/signature/verification-key-cache.ts';
 
 import type { GroupPublicationAuthority } from '../group-state/group-state-service-contracts.ts';
 import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
@@ -64,7 +66,8 @@ export interface GroupRoomWsAuthorizerDependencies {
 export function createGroupRoomWsAuthorizer(
     dependencies: GroupRoomWsAuthorizerDependencies
 ): RallarServerWsRoomAuthorizer {
-    return (input) => authorizeGroupRoomMessage(dependencies, input);
+    const keys = new VerificationKeyCache();
+    return (input) => authorizeGroupRoomMessage(dependencies, keys, input);
 }
 
 export interface ComputeServerRoomPublicationAudienceInput extends RallarServerWsPublishAudienceInputDto {
@@ -97,6 +100,7 @@ export function computeServerRoomPublicationAudience(
 
 async function authorizeGroupRoomMessage(
     dependencies: GroupRoomWsAuthorizerDependencies,
+    keys: VerificationKeyCache,
     input: RallarServerWsRoomAuthorizationInput
 ): Promise<RallarServerWsRoomAuthorizationDecision> {
     const targets = input.message.targets && structuredClone(input.message.targets);
@@ -111,6 +115,31 @@ async function authorizeGroupRoomMessage(
     const policyDenial = await readRoomPolicyDenial(dependencies, input, authority.snapshot);
     if (policyDenial) {
         return policyDenial;
+    }
+    if (input.message.proof !== undefined) {
+        if (
+            input.message.id.senderId !== input.senderId || !await verifyRegisteredPublicationProof({
+                message: input.message,
+                snapshot: authority.snapshot,
+                nowEpochMs: dependencies.nowEpochMs(),
+                subtle: crypto.subtle,
+                keys
+            })
+        ) {
+            return {
+                authorized: false,
+                reason: 'unauthorized',
+                logMessage: 'Sender publication proof did not verify.'
+            };
+        }
+        const expiresAtMs = input.message.constraints?.expiresAtMs;
+        if (expiresAtMs !== undefined && expiresAtMs <= dependencies.nowEpochMs()) {
+            return {
+                authorized: false,
+                reason: 'expired',
+                logMessage: 'Signed publication expired before room admission.'
+            };
+        }
     }
     return toRoomAuthorizationDecision({ input, targets, authority, nowEpochMs: dependencies.nowEpochMs() });
 }
