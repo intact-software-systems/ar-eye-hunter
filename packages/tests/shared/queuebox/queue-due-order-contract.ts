@@ -175,6 +175,24 @@ export function describeQueueDueOrderContract(
                 .toEqual({ first: earliest.key.resourceId, nextCursor: null });
         });
 
+        it('a due page reads past expired rows that are due before a live row', async () => {
+            const scope = await createScope(createQueue);
+            await writeRows(scope, [
+                ...toIds(PAGE_SIZE + 4, 'a').map((id, index): DueOrderRow => ({ ...newRow(scope, id, -60 + index), expired: true })),
+                newRow(scope, 'z-live', -1)
+            ]);
+
+            const page = await scope.queue.readWorkPage({
+                typeId: scope.typeA,
+                status: EntityStatus.NEW,
+                maxToRead: PAGE_SIZE,
+                order: 'due',
+                cursor: null
+            });
+
+            expect(toResourceIds(page.entries)).toEqual(toResourceIds(toRuleDueOrder(scope.written, Temporal.Now.instant())));
+        });
+
         it('a key page pages with its cursor as before', async () => {
             const scope = await createScope(createQueue);
             await writeRows(scope, toIds(21, 'k').map((id) => newRow(scope, id, LATER_SECONDS)));

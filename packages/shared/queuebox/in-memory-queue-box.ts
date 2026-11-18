@@ -126,7 +126,9 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             throw validated.left;
         }
         if (request.order === 'due') {
-            const entries = this.getDueOrderedEntries(new Set([request.typeId]), new Set([request.status]));
+            const now = this.now();
+            const entries = this.getDueOrderedEntries(new Set([request.typeId]), new Set([request.status]))
+                .filter((entry) => !isExpiredResourceEntry(entry, now));
             return { entries: entries.slice(0, request.maxToRead).map(toResourceEntrySnapshot), nextCursor: null };
         }
         const page = this.workIndex.read(request);

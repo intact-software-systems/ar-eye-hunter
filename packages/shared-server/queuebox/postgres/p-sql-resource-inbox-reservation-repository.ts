@@ -155,6 +155,7 @@ export class PSqlResourceInboxReservationRepository {
         const rows = await this.sql<ResourceInboxRow[]>`
             select * from resource_inbox
             where ri_type_id = ${request.typeId} and ri_status = ${request.status}
+              and expire_ts > (now() at time zone 'UTC')
             order by next_ts asc nulls first, ri_row_id asc
             limit ${request.maxToRead}
         `;

@@ -153,12 +153,13 @@ export function describeQueueDueOrderStoreCases(storeName: string, createQueueAt
             expect([pending?.dequeueAudit.nextTs, toResourceIds(claimed)]).toEqual([undefined, ['undated']]);
         });
 
-        it('a due page holds expired and not-yet-due rows in due order, with no next cursor', async () => {
+        it('a due page holds not-yet-due rows in due order and no expired row, with no next cursor', async () => {
             const queue = await createQueueAt('due-page');
             await queue.enqueue(createDueEntry('a-later', { nextTs: DUE_NOW.add({ seconds: 2 }) }));
+            // Expired by every clock a store reads, its own and PostgreSQL's wall clock alike.
             await queue.enqueue(createDueEntry('b-expired', {
                 nextTs: DUE_NOW.subtract({ seconds: 5 }),
-                expiryTs: DUE_NOW.subtract({ seconds: 1 })
+                expiryTs: DUE_NOW.subtract({ hours: 24 })
             }));
             await queue.enqueue(createDueEntry('c-due', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
 
@@ -171,7 +172,7 @@ export function describeQueueDueOrderStoreCases(storeName: string, createQueueAt
             });
 
             expect({ ids: toResourceIds(page.entries), nextCursor: page.nextCursor })
-                .toEqual({ ids: ['b-expired', 'c-due', 'a-later'], nextCursor: null });
+                .toEqual({ ids: ['c-due', 'a-later'], nextCursor: null });
         });
 
         it('refuses a due page request that carries a cursor', async () => {

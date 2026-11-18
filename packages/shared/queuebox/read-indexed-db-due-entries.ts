@@ -42,6 +42,19 @@ interface IndexedDbDueCombinationRead {
     readonly status: EntityStatus;
 }
 
+interface ReadCountedIndexedDbEntriesInput {
+    /** The next rows in the read's order after `after`, or from the start when it is absent. */
+    readonly readNext: (
+        after: StoredResourceEntry | undefined,
+        maxToRead: number
+    ) => Promise<readonly StoredResourceEntry[]>;
+    readonly maxToCount: number;
+    /** Absent permits every topic; a row of another topic is read past, uncounted, and not returned. */
+    readonly allowedTopicIds: ReadonlySet<string> | undefined;
+    /** A row this refuses is returned but read past without counting against the bound. */
+    readonly isCounted: (stored: StoredResourceEntry) => boolean;
+}
+
 /** The rows of one type and status in due order, from the start or after a row already read. */
 export async function readNextIndexedDbDueEntries(
     input: ReadNextIndexedDbDueEntriesInput
@@ -87,17 +100,32 @@ async function readIndexedDbDueCombination(
     combination: IndexedDbDueCombinationRead,
     input: ReadIndexedDbDueEntriesInput
 ): Promise<readonly StoredResourceEntry[]> {
+    return await readCountedIndexedDbEntries({
+        readNext: (after, maxToRead) =>
+            readNextIndexedDbDueEntries({
+                ...combination,
+                dueAtOrBeforeEpochMs: input.dueAtOrBeforeEpochMs,
+                maxToRead,
+                after
+            }),
+        maxToCount: input.maxToReadPerCombination,
+        allowedTopicIds: input.allowedTopicIds,
+        isCounted: input.isCounted
+    });
+}
+
+/**
+ * Reads on until `maxToCount` counted rows or the end of the read, so the rows it reads past are unbounded in number.
+ */
+export async function readCountedIndexedDbEntries(
+    input: ReadCountedIndexedDbEntriesInput
+): Promise<readonly StoredResourceEntry[]> {
     const entries: StoredResourceEntry[] = [];
     let counted = 0;
     let after: StoredResourceEntry | undefined = undefined;
-    while (counted < input.maxToReadPerCombination) {
-        const maxToRead = Math.min(input.maxToReadPerCombination - counted, INDEXED_DB_DUE_READ_PAGE_SIZE);
-        const page = await readNextIndexedDbDueEntries({
-            ...combination,
-            dueAtOrBeforeEpochMs: input.dueAtOrBeforeEpochMs,
-            maxToRead,
-            after
-        });
+    while (counted < input.maxToCount) {
+        const maxToRead = Math.min(input.maxToCount - counted, INDEXED_DB_DUE_READ_PAGE_SIZE);
+        const page = await input.readNext(after, maxToRead);
         const selected = page.filter((stored) =>
             isResourceInboxTopicSelected(stored.key.topicId, input.allowedTopicIds)
         );

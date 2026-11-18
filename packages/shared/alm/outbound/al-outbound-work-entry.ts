@@ -152,10 +152,11 @@ export interface ALOutboundWorkDeferral {
  * breaker allows, and an expired row is never advertised. A reserved row is advertised at its lease end
  * only while the sweep that recovers it may run: a closed sweep would leave every batch it started empty.
  * A page that held more rows than it returned and holds a due row answers `nowMs`: one status never
- * hides the next. A truncated page whose visible rows are all expired or gated answers from those rows
- * alone, so a full page of expired rows advertises nothing and leaves the remainder to the queue's own
- * expiry cleanup. Every status is read in one scan, so the probe the engine runs on each round costs one
- * round trip to storage.
+ * hides the next. A pending status's page is its earliest live rows, since the queue reads a `due` page past
+ * expired rows, so expired rows awaiting the queue's expiry cleanup never hide a due row. The reserved page
+ * stays in key order and still returns expired rows: a truncated page whose visible rows are all expired or
+ * gated answers from those rows alone. Every status is read in one scan, so the probe the engine runs on each
+ * round costs one round trip to storage.
  */
 export async function readALOutboundWorkReadyAt(
     port: ALWorkQueuePort,

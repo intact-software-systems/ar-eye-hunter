@@ -14,7 +14,11 @@ import { EntityStatus, type ResourceEntry } from '../ResourceEntry.ts';
  * names, the earliest first; a row that is not yet due is never read as a candidate in place of one that is. Where an
  * undated row falls among dated rows is each store's own: the IndexedDB and memory stores place it by its creation
  * instant, PostgreSQL before every dated row, and no caller may rely on either. Rows that tie fall to the store's own
- * arrival order. A `due` work page reads a type and status's rows in the same order.
+ * arrival order. A `due` work page reads a type and status's rows in the same order, due yet or not, and reads past an
+ * expired row as a `due` claim does: an expired row is not pending work, so it never takes a live row's place on the
+ * page. Expired means what the store's claim means by it, at the store's own clock: the injected clock in memory and
+ * in IndexedDB, the database's `now()` in PostgreSQL. A `key` page returns expired rows, for the cleanup that pages by
+ * key.
  */
 export type ResourceInboxClaimOrder = 'creation' | 'due';
 

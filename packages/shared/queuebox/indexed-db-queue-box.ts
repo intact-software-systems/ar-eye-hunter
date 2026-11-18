@@ -199,7 +199,12 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             }
             const requests = inputs.map((input) => toValidatedWorkPageRequest(input));
             const db = await operation.open();
-            const pages = await readStoredQueueWorkPages(db, this.#storeName, requests);
+            const pages = await readStoredQueueWorkPages({
+                db,
+                storeName: this.#storeName,
+                requests,
+                now: this.#now()
+            });
             return pages.map((stored, index) => toResourceInboxWorkPage(stored, requests[index]));
         }
         finally {
