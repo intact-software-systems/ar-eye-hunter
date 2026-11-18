@@ -20,7 +20,8 @@ describe('API-v1 three-server recipe semantics', () => {
             'api-v1-state-topology-churn',
             'api-v1-state-write-convergence',
             'api-v1-crdt-app-inbox',
-            'api-v1-state-medium-scale-churn'
+            'api-v1-state-medium-scale-churn',
+            'api-v1-cluster-reshape-gate'
         ];
 
         for (const recipeId of clusterRecipeIds) {
