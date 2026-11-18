@@ -301,7 +301,9 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             ...oldRoom,
             activeSessions: oldRoom.activeSessions.map((presence) => ({
                 ...presence,
+                principalId: input.principalId,
                 generationId: input.generationId,
+                connectionGenerationId: input.connectionGenerationId,
                 expiresAtEpochMs: Date.now() + 120_000
             }))
         }));
@@ -315,7 +317,9 @@ describe('Rallar auth login, expiry, and registration contract', () => {
             ...newRoom,
             activeSessions: newRoom.activeSessions.map((presence) => ({
                 ...presence,
+                principalId: input.principalId,
                 generationId: input.generationId,
+                connectionGenerationId: input.connectionGenerationId,
                 expiresAtEpochMs: Date.now() + 120_000
             }))
         }));

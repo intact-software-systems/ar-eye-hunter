@@ -40,10 +40,19 @@ beforeEach(() => {
 describe('browser IndexedDB terminal ownership', () => {
     it('retires each successful connection while a fresh connection keeps persisted rows usable', async () => {
         const opened: IDBDatabase[] = [];
+        const closed = new Set<IDBDatabase>();
         const originalOpen = indexedDB.open.bind(indexedDB);
         vi.spyOn(indexedDB, 'open').mockImplementation((...arguments_) => {
             const request = originalOpen(...arguments_);
-            request.addEventListener('success', () => opened.push(request.result));
+            request.addEventListener('success', () => {
+                const db = request.result;
+                opened.push(db);
+                const close = db.close.bind(db);
+                vi.spyOn(db, 'close').mockImplementation(() => {
+                    closed.add(db);
+                    close();
+                });
+            });
             return request;
         });
         const runtime = new BrowserTransportRuntime({ openSessionChannelPort: () => undefined });
@@ -97,8 +106,14 @@ describe('browser IndexedDB terminal ownership', () => {
             }
         });
         await runtime.init(options);
-        await vi.waitFor(() => expect(opened.length).toBeGreaterThan(retired.length));
-        const current = opened.slice(retired.length);
+        // The reconnect sweep opens and releases its own handle to the now-existing database.
+        const current = await vi.waitFor(() => {
+            const reopened = opened.slice(retired.length);
+            expect(reopened.some((database) => closed.has(database))).toBe(true);
+            const live = reopened.filter((database) => !closed.has(database));
+            expect(live).toHaveLength(retired.length);
+            return live;
+        });
         for (const database of current) {
             expect(() => database.transaction(database.objectStoreNames[0])).not.toThrow();
         }
