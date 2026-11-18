@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
+
+import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import {
@@ -44,6 +48,23 @@ describe('GroupTopologyPlanningService', () => {
             reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: 2_000
         });
+    });
+
+    it('reads the reshape bounds of a stored policy for a room in the stage that follows it', async () => {
+        const group = groupWithSessionsIn('active');
+        const preset = createDefaultGroupLifecyclePolicy();
+        const policy = {
+            ...preset,
+            topology: { ...preset.topology, reshapeMinIntervalMs: 20_000, reshapeMaxIntervalMs: 45_000 }
+        };
+        const service = createPlanningService({
+            group,
+            readLifecyclePolicy: async () => ({ status: 'present', policy })
+        });
+
+        const authority = await service.readTopologyPlanningAuthority({ groupRef: group.group });
+
+        expect(authority.reshapeBounds).toEqual({ minIntervalMs: 20_000, maxIntervalMs: 45_000 });
     });
 
     it('uses newer durable group authority instead of a queued group revision', async () => {
@@ -540,6 +561,7 @@ function createPlanningService(input: {
     group: ReturnType<typeof createTopologyTestGroupSnapshot>;
     config?: ReturnType<typeof resolveGroupTopologyConfig>;
     topologyService?: RallarRtcTopologyService;
+    readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
 }): GroupTopologyPlanningService {
     const topologyService = input.topologyService ?? new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
     return new GroupTopologyPlanningService({
@@ -551,6 +573,7 @@ function createPlanningService(input: {
             readConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
             readResolvedTopologyConfig: async () => input.config ?? resolveGroupTopologyConfig({})
         },
-        topologyService
+        topologyService,
+        readLifecyclePolicy: input.readLifecyclePolicy
     });
 }

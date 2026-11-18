@@ -94,6 +94,8 @@ export interface RtcTopologyFixtureLeaveInput {
     /** Members that join in the same plan as the leave, after the formed members. */
     readonly joinerCount: number;
     readonly reshape?: TopologyReshapePermission;
+    /** The first joiner is appointed the room's director as it joins; absent, the room stays leaderless. */
+    readonly directorJoins?: boolean;
 }
 
 /** Plans a first layout of the members, then plans the room again without the leaver and with the joiners. */
@@ -107,9 +109,11 @@ export function computeRtcTopologyFixtureLeave(input: RtcTopologyFixtureLeaveInp
     const leaverSessionId = typeof input.leaver === 'string'
         ? input.leaver
         : resolveRtcTopologyFixtureSessionId(previous, input.leaver);
+    const group = createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId));
+    const director = input.directorJoins === true ? sessionIds[input.memberCount] : undefined;
     const replanInput: RtcTopologyFixturePlanInput = {
         options: input.options,
-        group: createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
+        group: director === undefined ? group : toRtcTopologyGroupWithDirector(group, director),
         previous,
         reshape: input.reshape
     };

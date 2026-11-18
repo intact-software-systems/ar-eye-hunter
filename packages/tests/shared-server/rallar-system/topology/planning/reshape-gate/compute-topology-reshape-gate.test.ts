@@ -99,22 +99,24 @@ describe('computeTopologyReshapeGate', () => {
         });
     });
 
-    it('a room flapping every 3 s is reshaped at 0, 18 and 48 s, not every 15 s', () => {
-        const reshapes = simulateFlappingRoom();
+    it('a room flapping every 3 s is reshaped at 0, 18, 48, 108 and 168 s, not every 15 s', () => {
+        const reshapes = simulateFlappingRoom(180_000);
 
         const gaps = reshapes.slice(1).map((instant, index) => instant - (reshapes[index] ?? 0));
-        expect(reshapes).toEqual([0, 18_000, 48_000]);
+        expect(reshapes).toEqual([0, 18_000, 48_000, 108_000, 168_000]);
+        expect(gaps).toEqual([18_000, 30_000, 60_000, 60_000]);
         expect(gaps[0]).toBeGreaterThanOrEqual(15_000);
         expect(gaps[1]).toBeGreaterThanOrEqual(30_000);
+        expect(gaps.slice(2).length).toBeGreaterThan(0);
         expect(gaps.slice(2).every((gap) => gap >= 60_000)).toBe(true);
-        expect(reshapes.length).toBeLessThanOrEqual(4);
+        expect(reshapes.filter((instant) => instant <= 90_000).length).toBeLessThanOrEqual(4);
     });
 });
 
-function simulateFlappingRoom(): readonly number[] {
+function simulateFlappingRoom(untilEpochMs: number): readonly number[] {
     const reshapes: number[] = [];
     let current: TopologyReshapeGateState | null = null;
-    for (let nowEpochMs = 0, event = 0; nowEpochMs <= 90_000; nowEpochMs += 3_000, event += 1) {
+    for (let nowEpochMs = 0, event = 0; nowEpochMs <= untilEpochMs; nowEpochMs += 3_000, event += 1) {
         const wantsReshape = event % 2 === 0;
         const permission = resolveTopologyReshapePermission({
             state: current,

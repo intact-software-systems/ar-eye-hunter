@@ -6,9 +6,13 @@ import type { RtcTopologyPlanDerivation } from '@shared-server/rallar-system/top
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyLayoutDelta } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 import { TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
-import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
+import type {
+    HeldTopologyReshapeReason,
+    TopologyReshapePermission
+} from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { EMPTY_TOPOLOGY_LAYOUT_DELTA } from '../../../../../shared/api/topology-plan/empty-topology-layout-delta.ts';
+import { toRtcTopologyGroupWithDirector } from '../../rtc-topology-test-fixtures.ts';
 import {
     computeRtcTopologyFixtureDeparture,
     computeRtcTopologyFixtureLeave,
@@ -18,6 +22,7 @@ import {
     createRtcTopologyFixtureGroup,
     isConnectedRtcTopologyFixtureLayout,
     RTC_TOPOLOGY_MESH_OPTIONS,
+    RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
     RTC_TOPOLOGY_TREE_OPTIONS,
     type RtcTopologyFixtureLayout,
     type RtcTopologyFixtureLeaveInput,
@@ -44,6 +49,23 @@ const SWEEP_ROOMS = [
 const SWEEP_EVENTS = ['leave', 'join', 'leave-and-join'] as const;
 // With the reshape held, a plan rebuilds only when the in-place update itself fails.
 const HELD_SWEEP_RESHAPE_REASONS: readonly TopologyReshapeReason[] = ['kind-change', 'leader-rooting', 'delta-too-large', 'refinement'];
+// Rooms whose single changes the gate holds: the join selects a mesh past fifteen, or the joiner is appointed director.
+const HELD_REASON_SWEEP_ROOMS = [
+    {
+        room: 'a size-selected tree of fifteen',
+        options: RTC_TOPOLOGY_SIZE_SELECTED_OPTIONS,
+        memberCount: 15,
+        directorJoins: false,
+        heldReason: 'kind-change'
+    },
+    {
+        room: 'a tree of fifteen whose joiner is its director',
+        options: RTC_TOPOLOGY_TREE_OPTIONS,
+        memberCount: 15,
+        directorJoins: true,
+        heldReason: 'leader-rooting'
+    }
+] as const;
 const MEASURED_ROOMS = [
     { room: 'a measured 20-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 20 },
     { room: 'a measured 30-member mesh', options: RTC_TOPOLOGY_MESH_OPTIONS, memberCount: 30 },
@@ -252,6 +274,28 @@ describe.each(SWEEP_ROOMS)('the planner\'s plans over every single leave of $roo
     });
 });
 
+describe.each(HELD_REASON_SWEEP_ROOMS)(
+    'the planner\'s plans over every single leave of $room with the reshape held',
+    ({ options, memberCount, directorJoins, heldReason }) => {
+        const sweep = computeRoomSweep({ options, memberCount, directorJoins }, { reshape: 'held' });
+
+        it(`holds ${heldReason} at least once`, () => {
+            expect(sweep.filter((plan) => plan.heldReshapeReasons.includes(heldReason)).length).toBeGreaterThan(0);
+        });
+
+        it('no plan reroutes a member the change did not involve', () => {
+            expect(sweep.filter((plan) => plan.delta.reroutedSessionCount > 0).map(toRebuiltLeave)).toEqual([]);
+        });
+
+        it('no plan is rebuilt for a reason the held reshape holds or evolves past', () => {
+            expect(
+                sweep.filter((plan) => plan.derivation.method === 'rebuilt' && HELD_SWEEP_RESHAPE_REASONS.includes(plan.derivation.reason))
+                    .map(toRebuiltLeave)
+            ).toEqual([]);
+        });
+    }
+);
+
 describe.each(SWEEP_ROOMS)(
     'the planner\'s plans over every pair of members of $room leaving in one plan',
     ({ options, memberCount, linkedPairCount, unlinkedPairCount }) => {
@@ -390,6 +434,7 @@ interface SweptPlan {
     readonly derivation: RtcTopologyPlanDerivation;
     readonly delta: TopologyLayoutDelta;
     readonly planned: RallarOverlayTopologySnapshot;
+    readonly heldReshapeReasons: readonly HeldTopologyReshapeReason[];
 }
 
 /**
@@ -397,7 +442,7 @@ interface SweptPlan {
  * replans plan with the reshape permission given, or without the reshape gate when none is.
  */
 function computeRoomSweep(
-    room: Pick<RtcTopologyFixtureLeaveInput, 'options' | 'memberCount'>,
+    room: Pick<RtcTopologyFixtureLeaveInput, 'options' | 'memberCount' | 'directorJoins'>,
     reshape?: TopologyReshapePermission
 ): readonly SweptPlan[] {
     const formed = computeRtcTopologyFixturePlan({
@@ -405,9 +450,10 @@ function computeRoomSweep(
         group: createRtcTopologyFixtureGroup(room.memberCount),
         previous: undefined
     }).snapshot;
+    const grown = createRtcTopologyFixtureGroup(room.memberCount + 1);
     const joined = computeRtcTopologyFixturePlan({
         options: room.options,
-        group: createRtcTopologyFixtureGroup(room.memberCount + 1),
+        group: room.directorJoins === true ? toRtcTopologyGroupWithDirector(grown, `peer-${room.memberCount + 1}`) : grown,
         previous: formed,
         reshape
     });
@@ -426,7 +472,8 @@ function toSweptPlan(event: SweepEvent, leaverSessionIds: readonly string[], rep
         leaverSessionIds,
         derivation: replan.planned.derivation,
         delta: computeTopologyLayoutDelta(replan.previous, replan.planned.snapshot),
-        planned: replan.planned.snapshot
+        planned: replan.planned.snapshot,
+        heldReshapeReasons: replan.planned.heldReshapeReasons
     };
 }
 
