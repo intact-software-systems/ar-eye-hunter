@@ -91,7 +91,7 @@ describe('AL runtime storage ownership', () => {
             NEVER_EXPIRE_TS
         );
         await stores.workQueue.enqueue(row);
-        const request = { typeId: row.typeId, status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const request = { typeId: row.typeId, status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
         const reading = stores.workQueue.readWorkPage(request);
         await entered.promise;
         let closed = false;

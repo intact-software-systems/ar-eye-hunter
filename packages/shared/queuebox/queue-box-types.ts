@@ -26,11 +26,18 @@ export namespace ResourceInboxWorkPage {
         readonly position: string;
     }
 
+    /**
+     * `key` pages a type and status in the store's own order, resumed by cursor. `due` reads the type and status's
+     * earliest rows in due order (`compareResourceEntriesByDue`), takes no cursor and answers no next cursor.
+     */
+    export type Order = 'key' | 'due';
+
     export interface Request {
         readonly typeId: string;
         readonly status: Resource.EntityStatus;
         readonly maxToRead: number;
-        /** Restart with null to discover work inserted or moved behind the previous cursor. */
+        readonly order: Order;
+        /** Restart with null to discover work inserted or moved behind the previous cursor; always null for `due`. */
         readonly cursor: Cursor | null;
     }
 }

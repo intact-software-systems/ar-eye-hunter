@@ -30,6 +30,7 @@ export async function claimPendingGroupPresenceSummaryWork(
         typeId: EnqueuedType.APP_OUTBOX,
         status,
         maxToRead: COALESCED_SUMMARY_WORK_SCAN_LIMIT,
+        order: 'key',
         cursor: null
     })));
     const pending = pages.flatMap((page) =>

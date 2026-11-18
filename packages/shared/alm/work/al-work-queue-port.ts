@@ -337,7 +337,13 @@ async function readMergedALWorkPageScans(
     const types = [...workTypes];
     const pages = await queue.readWorkPages(
         inputs.flatMap((input) =>
-            types.map((typeId) => ({ typeId, status: input.status, maxToRead: input.maxToRead, cursor: null }))
+            types.map((typeId) => ({
+                typeId,
+                status: input.status,
+                maxToRead: input.maxToRead,
+                order: 'key',
+                cursor: null
+            }))
         )
     );
     return inputs.map((input, index) => {
@@ -370,6 +376,7 @@ async function readMergedALWorkPage(
             typeId: types[index],
             status,
             maxToRead: maxToRead - entries.length,
+            order: 'key',
             cursor: index === cursorIndex ? cursor : null
         });
         entries.push(...page.entries);

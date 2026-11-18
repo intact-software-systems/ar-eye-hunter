@@ -981,6 +981,7 @@ async function readRetainedWorkKinds(stores: OutboundTestStores): Promise<readon
         typeId: toALOutboundWorkType(stores.admissionStore.namespace),
         status: EntityStatus.NEW,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return await Promise.all(

@@ -60,7 +60,7 @@ it.each(['ascending', 'descending', 'shuffled'] as const)('drains memory work pa
     for (let index = 1; index < count; index += 2) {
         await queue.enqueue({ ...entries[index], status: EntityStatus.RETRY, dequeueAudit: DUE_RETRY });
     }
-    const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 31, cursor: null } as const;
+    const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 31, order: 'key', cursor: null } as const;
     let page = await queue.readWorkPage(request);
     const drained: string[] = [];
     while (page.entries.length > 0) {
@@ -98,7 +98,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         ) {
             await queue.enqueue(entry);
         }
-        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
 
         const page = await queue.readWorkPage(request);
 
@@ -137,10 +137,10 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
             await queue.enqueue(entry);
         }
         const requests = [
-            { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null },
-            { typeId: 'ordered-work', status: EntityStatus.RETRY, maxToRead: 2, cursor: null },
-            { typeId: 'another-work-type', status: EntityStatus.NEW, maxToRead: 2, cursor: null },
-            { typeId: 'ordered-work', status: EntityStatus.RESERVED, maxToRead: 2, cursor: null }
+            { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null },
+            { typeId: 'ordered-work', status: EntityStatus.RETRY, maxToRead: 2, order: 'key', cursor: null },
+            { typeId: 'another-work-type', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null },
+            { typeId: 'ordered-work', status: EntityStatus.RESERVED, maxToRead: 2, order: 'key', cursor: null }
         ] as const;
 
         const batched = await queue.readWorkPages(requests);
@@ -160,7 +160,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         const queue = await createQueue(storage);
         const entry = createEntry('transition');
         await queue.enqueue(entry);
-        const pending = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const pending = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
         const retry = { ...entry, status: EntityStatus.RETRY, dequeueAudit: DUE_RETRY };
         await queue.enqueue(retry);
         expect((await queue.readWorkPage(pending)).entries).toEqual([]);
@@ -195,7 +195,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
                 expiryTs: Temporal.Instant.from('2020-01-01T00:00:00Z')
             }
         });
-        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
         const observed = await queue.readWorkPage(request);
         expect(observed.entries).toMatchObject([{ resource: 'expired', status: EntityStatus.NEW }]);
         observed.entries[0].status = EntityStatus.NON_RETRYABLE;
@@ -208,7 +208,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         const queue = await createQueue(storage);
         const entry = createEntry('unchanged');
         await queue.enqueue(entry);
-        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 1, cursor: null } as const;
+        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 1, order: 'key', cursor: null } as const;
         const observed = await queue.readWorkPage(request);
         for (const maxToRead of [0, -1, 257, Number.MAX_SAFE_INTEGER, Number.NaN]) {
             await expect(queue.readWorkPage({ ...request, maxToRead })).rejects.toBeInstanceOf(TypeError);
@@ -226,7 +226,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         const second = createEntry('second');
         await queue.enqueue(first);
         await queue.enqueue(second);
-        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 1, cursor: null } as const;
+        const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 1, order: 'key', cursor: null } as const;
         const page = await queue.readWorkPage(request);
         await queue.removeItem(first.key);
         const next = await queue.readWorkPage({ ...request, cursor: page.nextCursor });
@@ -260,7 +260,7 @@ it('keeps IndexedDB page reads readonly and leaves corruption outside the reques
         transactionModes.add(transaction.mode);
         return transaction;
     });
-    const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+    const request = { typeId: 'ordered-work', status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
     try {
         const page = await queue.readWorkPage(request);
         expect(page.entries.map((entry) => entry.resource)).toEqual(['first', 'second']);
@@ -306,7 +306,7 @@ it('bounds SQL rows visited across a large unrelated gap on both the first and s
         }
     });
     const repository = new PSqlResourceInboxReservationRepository(explainedSql);
-    const request = { typeId: 'page-work', status: EntityStatus.NEW, maxToRead: 16, cursor: null } as const;
+    const request = { typeId: 'page-work', status: EntityStatus.NEW, maxToRead: 16, order: 'key', cursor: null } as const;
 
     const first = await repository.readWorkPage(request);
     const next = await repository.readWorkPage({ ...request, cursor: first.nextCursor });

@@ -373,6 +373,7 @@ async function readAllWorkRows(queue: InMemoryQueueBox): Promise<readonly Resour
                 typeId: toALInboundWorkType(NAMESPACE, 'ws'),
                 status,
                 maxToRead: 32,
+                order: 'key',
                 cursor
             });
             rows.push(...page.entries);

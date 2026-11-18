@@ -653,7 +653,7 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         for (const typeId of typeIds) {
             let cursor: ResourceInboxWorkPage.Cursor | null = null;
             do {
-                const page = this.workIndex.read({ typeId, status, maxToRead: INDEX_PAGE_SIZE, cursor });
+                const page = this.workIndex.read({ typeId, status, maxToRead: INDEX_PAGE_SIZE, order: 'key', cursor });
                 for (const key of page.keys) {
                     const entry = this.data.get(key);
                     if (entry !== undefined) {

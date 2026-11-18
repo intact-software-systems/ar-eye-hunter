@@ -110,6 +110,7 @@ describe('storage faults through the IndexedDB owners', () => {
                 typeId: WORK_TYPE,
                 status: EntityStatus.NEW,
                 maxToRead: 1,
+                order: 'key',
                 cursor: null
             }))
             .then(() => {

@@ -34,7 +34,7 @@ export async function readTestALWorkReadyAtMs(
 ): Promise<number | undefined> {
     const due: number[] = [];
     for (const typeId of workTypes) {
-        const retained = await queue.readWorkPage({ typeId, status: EntityStatus.NEW, maxToRead: 1, cursor: null });
+        const retained = await queue.readWorkPage({ typeId, status: EntityStatus.NEW, maxToRead: 1, order: 'key', cursor: null });
         if (retained.entries.length > 0) {
             due.push(nowMs);
         }
@@ -42,6 +42,7 @@ export async function readTestALWorkReadyAtMs(
             typeId,
             status: EntityStatus.RETRY,
             maxToRead: RETRY_PAGE_SIZE,
+            order: 'key',
             cursor: null
         });
         due.push(

@@ -250,6 +250,7 @@ async function readRetainedWork(
         typeId: toALInboundWorkType(admissionStore.namespace, carrier),
         status: EntityStatus.NEW,
         maxToRead: 10,
+        order: 'key',
         cursor: null
     });
     return page.entries.map((entry) => decodeALInboundWorkEntry(entry, admissionStore.namespace));

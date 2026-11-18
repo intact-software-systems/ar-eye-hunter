@@ -37,7 +37,7 @@ describe('Postgres QueueBox work pages', () => {
         for (const resourceId of ['first', 'second', 'waiting']) {
             await queue.enqueue(createEntry(typeId, resourceId));
         }
-        const request = { typeId, status: EntityStatus.NEW, maxToRead: 2, cursor: null } as const;
+        const request = { typeId, status: EntityStatus.NEW, maxToRead: 2, order: 'key', cursor: null } as const;
         const page = await sql.begin(async (transaction) => {
             await transaction`set transaction read only`;
             const reader = new PSqlQueueBox(createPSqlResourceInboxRepository(transaction, () => new Date()), Temporal.Now.instant);
