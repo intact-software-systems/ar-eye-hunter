@@ -1,10 +1,12 @@
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import type { StoredTopologyReshapeGate } from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
+import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -27,6 +29,14 @@ import {
     type RtcOverlayTopologyMessageFacts
 } from '../../planning/materialize-rtc-overlay-topology-messages.ts';
 import { computeRtcTopologyPlanRecord } from '../../planning/plan-record/compute-rtc-topology-plan-record.ts';
+import type { RtcTopologyPlanDerivation } from '../../planning/plan-record/rtc-topology-plan-derivation.ts';
+import {
+    computeTopologyReshapeGate,
+    UNCHANGED_TOPOLOGY_RESHAPE_GATE,
+    type ComputedTopologyReshapeGate,
+    type TopologyReshapeGatePlanOutcome
+} from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
+import { resolveTopologyReshapePermission } from '../../planning/reshape-gate/resolve-topology-reshape-permission.ts';
 import {
     resolveRttReplanPromotion,
     type HeldRttReplan,
@@ -61,6 +71,7 @@ export interface RtcTopologyWorkRead {
     readonly authority: GroupTopologyPlanningAuthority;
     readonly promotion: TopologyPromotionRead | null;
     readonly storedInputFingerprint: string | null;
+    readonly reshapeGate: StoredTopologyReshapeGate | null;
 }
 
 export interface ComputeRtcTopologyWorkInput {
@@ -92,13 +103,19 @@ export interface RtcTopologyWorkValidationIssue {
 
 interface ComputeAcceptedTopologyMutationInput {
     readonly facts: RtcTopologyWorkFacts;
-    readonly mutationRead: RtcTopologyMutationRead;
-    readonly authority: GroupTopologyPlanningAuthority;
+    readonly read: RtcTopologyWorkRead;
     readonly planned: PlannedTopology;
+    readonly reshape: TopologyReshapePermission;
     readonly inputFingerprint: string;
-    readonly promotionRead: TopologyPromotionRead | null;
     readonly publicationExpireAtTimestamp: number | null;
     readonly rttReplanPromotion: PromotedRttReplan | null;
+}
+
+interface ComputeUnchangedTopologyWorkInput {
+    readonly work: ComputeRtcTopologyWorkInput;
+    readonly planned: PlannedTopology;
+    readonly reshape: TopologyReshapePermission;
+    readonly inputFingerprint: string;
 }
 
 type PlannedTopology = Extract<ReconcileGroupTopologyResult, { action: 'planned'; }>;
@@ -198,7 +215,8 @@ function toRtcTopologyWorkWriteInput(
         formationAutomationEnabled: input.formationAutomationEnabled,
         serviceId: input.serviceId,
         publisherStreamId: input.publisherStreamId,
-        traceId: input.facts.traceId
+        traceId: input.facts.traceId,
+        storedReshapeGateRevision: input.read.reshapeGate?.revision ?? null
     };
 }
 
@@ -210,11 +228,17 @@ function computeAcceptedRtcTopologyWork(
     if (fingerprintSkip !== null) {
         return Either.ofRight(fingerprintSkip);
     }
-    const computedTopology = computeWorkTopology(input);
+    const reshape = resolveWorkReshapePermission(input);
+    const computedTopology = computeWorkTopology(input, reshape);
     if (computedTopology.action === 'frozen') {
         return Either.ofRight(toFrozenTopologyWork(input, computedTopology.current));
     }
-    const unchanged = computeUnchangedTopologyWork(input, computedTopology, inputFingerprint);
+    const unchanged = computeUnchangedTopologyWork({
+        work: input,
+        planned: computedTopology,
+        reshape,
+        inputFingerprint
+    });
     if (unchanged !== null) {
         return Either.ofRight(unchanged);
     }
@@ -224,22 +248,46 @@ function computeAcceptedRtcTopologyWork(
     }
     return computeAcceptedTopologyMutation({
         facts: input.facts,
-        mutationRead: input.read.mutation,
-        authority: input.read.authority,
+        read: input.read,
         planned: computedTopology,
+        reshape,
         inputFingerprint,
-        promotionRead: input.read.promotion,
         publicationExpireAtTimestamp: input.publicationExpireAtTimestamp,
         rttReplanPromotion: rttReplan
     });
 }
 
-function computeWorkTopology(input: ComputeRtcTopologyWorkInput): ReconcileGroupTopologyResult {
+function resolveWorkReshapePermission(input: ComputeRtcTopologyWorkInput): TopologyReshapePermission {
+    const { authority, reshapeGate } = input.read;
+    return resolveTopologyReshapePermission({
+        state: reshapeGate?.state ?? null,
+        bounds: authority.reshapeBounds,
+        workOrigin: toTopologyWorkOrigin(input.facts.workEnvelope.data),
+        nowEpochMs: authority.nowEpochMs
+    });
+}
+
+function computeWorkTopology(
+    input: ComputeRtcTopologyWorkInput,
+    reshape: TopologyReshapePermission
+): ReconcileGroupTopologyResult {
     const work = input.facts.workEnvelope.data;
     return computeGroupTopologyFromAuthority(input.read.authority, input.read.mutation.snapshot?.value, {
         intent: work.kind === 'group-revision' ? 'membership-delta' : 'full-rebuild',
         origin: toTopologyWorkOrigin(work),
-        reshape: { reshape: 'allowed', wantedReasons: [] }
+        reshape
+    });
+}
+
+function computeWorkReshapeGate(
+    read: RtcTopologyWorkRead,
+    outcome: TopologyReshapeGatePlanOutcome
+): ComputedTopologyReshapeGate {
+    return computeTopologyReshapeGate({
+        previous: read.reshapeGate?.state ?? null,
+        bounds: read.authority.reshapeBounds,
+        nowEpochMs: read.authority.nowEpochMs,
+        outcome
     });
 }
 
@@ -257,14 +305,15 @@ function toFrozenTopologyWork(
     };
 }
 
-/** The stored layout stays when the plan equals it and covers the presence the authority carries. */
-function computeUnchangedTopologyWork(
-    input: ComputeRtcTopologyWorkInput,
-    planned: PlannedTopology,
-    inputFingerprint: string
-): UnchangedRtcTopologyWork | null {
-    const { authority, mutation, promotion: promotionRead } = input.read;
-    const work = input.facts.workEnvelope.data;
+/**
+ * The stored layout stays when the plan equals it and covers the presence the authority carries. A reshape the plan
+ * held is still recorded on the gate, so a hold can be the whole outcome.
+ */
+function computeUnchangedTopologyWork(input: ComputeUnchangedTopologyWorkInput): UnchangedRtcTopologyWork | null {
+    const { planned, inputFingerprint } = input;
+    const { read } = input.work;
+    const { authority, mutation, promotion: promotionRead } = read;
+    const work = input.work.facts.workEnvelope.data;
     const stored = mutation.snapshot;
     const unchangedGated = isChangeGatedGroupRevisionWork(work) || work.kind !== 'group-revision';
     if (
@@ -280,7 +329,9 @@ function computeUnchangedTopologyWork(
         inputFingerprint,
         promotionRead,
         criterionPetition: { authority, planned: stored.value },
-        planningObservation: planned.planningObservation
+        planningObservation: planned.planningObservation,
+        reshape: input.reshape.reshape,
+        reshapeGate: computeWorkReshapeGate(read, { kind: 'kept', heldReasons: planned.heldReshapeReasons })
     };
 }
 
@@ -360,11 +411,13 @@ function hasRequiredPresenceCoverage(
 function computeAcceptedTopologyMutation(
     input: ComputeAcceptedTopologyMutationInput
 ): Either<Extract<RtcTopologyMutationComputed, { outcome: 'retry'; }>, AcceptedRtcTopologyWork> {
-    const { authority, planned, inputFingerprint, promotionRead } = input;
+    const { read, planned, inputFingerprint } = input;
+    const { authority, promotion: promotionRead } = read;
+    const plan = computeAcceptedPlanRecord(input);
     const mutationInput: RtcTopologyMutationInput = {
-        read: input.mutationRead,
+        read: read.mutation,
         candidate: planned.snapshot,
-        ...computeAcceptedTopologyPublication(input)
+        ...computeAcceptedTopologyPublication(input, plan)
     };
     const computed = computeTopologyMutation(mutationInput);
     if (computed.outcome === 'retry') {
@@ -384,12 +437,30 @@ function computeAcceptedTopologyMutation(
         promotionRead,
         criterionPetition: { authority, planned: planned.snapshot },
         planningObservation: planned.planningObservation,
-        rttReplanPromotion: input.rttReplanPromotion
+        rttReplanPromotion: input.rttReplanPromotion,
+        reshape: input.reshape.reshape,
+        reshapeGate: computed.outcome === 'write' && plan !== null && planned.derivation !== null
+            ? computeWorkReshapeGate(read, toTopologyReshapeGatePlanOutcome(planned.derivation, plan))
+            : UNCHANGED_TOPOLOGY_RESHAPE_GATE
     });
 }
 
+/** What a written active layout did, as the gate reads it: the change is the plan record's own. */
+function toTopologyReshapeGatePlanOutcome(
+    derivation: RtcTopologyPlanDerivation,
+    plan: RtcTopologyPlanRecord
+): TopologyReshapeGatePlanOutcome {
+    if (derivation.method === 'established') {
+        return { kind: 'established' };
+    }
+    return plan.change?.kind === 'reshape'
+        ? { kind: 'reshape' }
+        : { kind: 'kept', heldReasons: plan.heldReshapeReasons };
+}
+
 function computeAcceptedTopologyPublication(
-    input: ComputeAcceptedTopologyMutationInput
+    input: ComputeAcceptedTopologyMutationInput,
+    plan: RtcTopologyPlanRecord | null
 ): Pick<RtcTopologyMutationInput, 'publication' | 'facts'> {
     const { publicationExpireAtTimestamp } = input;
     const { workEnvelope, workId, attemptCount, traceId } = input.facts;
@@ -400,9 +471,9 @@ function computeAcceptedTopologyPublication(
         };
     }
     const publication = toTopologyPublication({
-        group: input.authority.group,
+        group: input.read.authority.group,
         snapshot: input.planned.snapshot,
-        plan: computePublishedPlanRecord(input),
+        plan,
         facts: {
             workId,
             createdAtEpochMs: workEnvelope.data.requestedAtEpochMs,
@@ -420,20 +491,21 @@ function computeAcceptedTopologyPublication(
     };
 }
 
-function computePublishedPlanRecord(input: ComputeAcceptedTopologyMutationInput): RtcTopologyPlanRecord | null {
+/** The record of an active plan, computed once for its publication and for the reshape gate; null for a removal. */
+function computeAcceptedPlanRecord(input: ComputeAcceptedTopologyMutationInput): RtcTopologyPlanRecord | null {
     const { planned } = input;
     if (planned.snapshot.state === 'removed' || planned.derivation === null) {
         return null;
     }
     const work = input.facts.workEnvelope.data;
     return computeRtcTopologyPlanRecord({
-        stored: input.mutationRead.snapshot?.value ?? null,
+        stored: input.read.mutation.snapshot?.value ?? null,
         planned: planned.snapshot,
         rttRefresh: work.kind === 'rtt-refresh',
         changeGated: isChangeGatedGroupRevisionWork(work),
         derivation: planned.derivation,
         heldReshapeReasons: planned.heldReshapeReasons,
-        nowEpochMs: input.authority.nowEpochMs
+        nowEpochMs: input.read.authority.nowEpochMs
     });
 }
 

@@ -12,6 +12,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import {
     HELD_TOPOLOGY_RESHAPE_REASONS,
+    UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
     type TopologyReshapePermission
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
@@ -60,7 +61,6 @@ const DEFAULT_DEGREE_LIMIT = 5;
 const DEFAULT_TREE_MIN_SIZE = 5;
 const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
-const UNGATED_TOPOLOGY_RESHAPE: TopologyReshapePermission = { reshape: 'allowed', wantedReasons: [] };
 /** A held room whose in-place update failed is rebuilt at once, so the rebuild takes the kind and root it wants. */
 const HELD_TOPOLOGY_REBUILD_RESHAPE: TopologyReshapePermission = {
     reshape: 'allowed',
@@ -226,7 +226,7 @@ export class RtcTopologyPlanner {
     ): RallarRtcTopologyUpdateResult {
         const planned = this.computeCanonicalNextHops(
             input,
-            { reshape: input.updateOptions.reshape ?? UNGATED_TOPOLOGY_RESHAPE, heldFallback: undefined },
+            { reshape: input.updateOptions.reshape ?? UNGATED_TOPOLOGY_RESHAPE_PERMISSION, heldFallback: undefined },
             publicDispatch
         );
         const result = planRallarRtcTopologySnapshot({

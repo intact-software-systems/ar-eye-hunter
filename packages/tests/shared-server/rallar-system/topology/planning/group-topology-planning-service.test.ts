@@ -11,6 +11,7 @@ import {
 } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import type { GroupTopologyReplanningRead } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
@@ -40,6 +41,7 @@ describe('GroupTopologyPlanningService', () => {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: 2_000
         });
     });
@@ -136,6 +138,7 @@ describe('GroupTopologyPlanningService', () => {
                 rttMeasurements: [],
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'debounced',
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: 2_000
             },
             undefined,
@@ -528,6 +531,7 @@ function planningAuthority(
         rttMeasurements: [],
         rttReplanMinimumLayoutAgeMs: 15_000,
         replanning,
+        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
         nowEpochMs: 2_000
     };
 }

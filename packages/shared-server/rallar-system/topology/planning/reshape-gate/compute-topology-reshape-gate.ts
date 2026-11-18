@@ -27,7 +27,8 @@ export type ComputedTopologyReshapeGate =
     | Readonly<{ decision: 'unchanged'; }>
     | Readonly<{ decision: 'write'; state: TopologyReshapeGateState; wakeUpDueAtEpochMs: number | null; }>;
 
-const UNCHANGED: ComputedTopologyReshapeGate = { decision: 'unchanged' };
+/** The gate as it is: nothing is written for it. */
+export const UNCHANGED_TOPOLOGY_RESHAPE_GATE: ComputedTopologyReshapeGate = { decision: 'unchanged' };
 
 const FRESH_TOPOLOGY_RESHAPE_GATE_STATE: TopologyReshapeGateState = {
     gate: { lastPassAtEpochMs: null, consecutiveHeldPasses: 0, heldAtEpochMs: null },
@@ -39,7 +40,7 @@ export function computeTopologyReshapeGate(input: ComputeTopologyReshapeGateInpu
     switch (outcome.kind) {
         case 'established':
             return previous === null || isFreshTopologyReshapeGateState(previous)
-                ? UNCHANGED
+                ? UNCHANGED_TOPOLOGY_RESHAPE_GATE
                 : { decision: 'write', state: FRESH_TOPOLOGY_RESHAPE_GATE_STATE, wakeUpDueAtEpochMs: null };
         case 'reshape': {
             const gate = computeBackoffGatePass({ state: previous?.gate ?? null, bounds, nowEpochMs });
@@ -56,7 +57,7 @@ function computeKeptTopologyReshapeGate(
 ): ComputedTopologyReshapeGate {
     const { previous, bounds, nowEpochMs } = input;
     if (previous === null || previous.gate.lastPassAtEpochMs === null) {
-        return UNCHANGED;
+        return UNCHANGED_TOPOLOGY_RESHAPE_GATE;
     }
     if (heldReasons.length > 0) {
         return computeHeldTopologyReshapeGate({ previous, bounds, nowEpochMs }, heldReasons);
@@ -64,7 +65,7 @@ function computeKeptTopologyReshapeGate(
     if (previous.wantedReasons.length > 0 && isBackoffGateOpen(previous.gate, bounds, nowEpochMs)) {
         return { decision: 'write', state: { ...previous, wantedReasons: [] }, wakeUpDueAtEpochMs: null };
     }
-    return UNCHANGED;
+    return UNCHANGED_TOPOLOGY_RESHAPE_GATE;
 }
 
 interface HeldTopologyReshapeGateInput {
@@ -83,7 +84,7 @@ function computeHeldTopologyReshapeGate(
     );
     const isFirstHold = previous.gate.heldAtEpochMs === null;
     if (!isFirstHold && wantedReasons.length === previous.wantedReasons.length) {
-        return UNCHANGED;
+        return UNCHANGED_TOPOLOGY_RESHAPE_GATE;
     }
     return {
         decision: 'write',

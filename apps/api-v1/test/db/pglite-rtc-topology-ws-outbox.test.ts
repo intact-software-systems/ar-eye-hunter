@@ -229,6 +229,8 @@ for (const collision of ['none', 'last-page', 'last-proof', 'reservation'] as co
                     promotionWrite: null,
                     connectWrites: [],
                     fingerprint: null,
+                    reshapeGate: null,
+                    reshapeDueWrite: null,
                     delivery,
                     reservationFinish: collision === 'reservation' ? { ...reservationFinish, expectedAttempts: 9 } : reservationFinish
                 });
@@ -290,6 +292,8 @@ test('a promotion-only topology work writes its outbox rows in one statement wit
                 promotionWrite,
                 connectWrites,
                 fingerprint: null,
+                reshapeGate: null,
+                reshapeDueWrite: null,
                 delivery: null,
                 reservationFinish: computeRtcTopologyReservationFinish(reservation, new Date())
             });
@@ -334,6 +338,8 @@ test('a publishing topology work writes its promotion, connect and page rows and
                 promotionWrite,
                 connectWrites,
                 fingerprint: null,
+                reshapeGate: null,
+                reshapeDueWrite: null,
                 delivery,
                 reservationFinish: computeRtcTopologyReservationFinish(reservation, new Date())
             });

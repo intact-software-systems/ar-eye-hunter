@@ -12,3 +12,6 @@ export interface TopologyReshapeGateState {
 export type TopologyReshapePermission =
     | Readonly<{ reshape: 'held'; }>
     | Readonly<{ reshape: 'allowed'; wantedReasons: readonly HeldTopologyReshapeReason[]; }>;
+
+/** The permission of work the gate does not apply to: commanded work, and the local planning path that stores no gate. */
+export const UNGATED_TOPOLOGY_RESHAPE_PERMISSION: TopologyReshapePermission = { reshape: 'allowed', wantedReasons: [] };

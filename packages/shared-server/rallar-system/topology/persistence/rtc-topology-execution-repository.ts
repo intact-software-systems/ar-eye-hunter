@@ -10,6 +10,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { groupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RtcTopologyPersistenceComputed } from '../mutation/compute-rtc-topology-persistence.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../mutation/rtc-topology-mutations.ts';
 import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
@@ -19,6 +20,12 @@ import {
     type RtcTopologyInputFingerprintWrite
 } from '../replay/work/rtc-topology-input-fingerprint.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
+import {
+    decodeStoredTopologyReshapeGate,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
+    type RtcTopologyReshapeGateWrite,
+    type StoredTopologyReshapeGate
+} from './rtc-topology-reshape-gate-store.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
@@ -82,6 +89,41 @@ export class RtcTopologyExecutionRepository {
                               updated_ts   = now(),
                               revision     = runtime_state_store.revision + 1
         `;
+    }
+
+    async readTopologyReshapeGate(groupRef: GroupRef): Promise<StoredTopologyReshapeGate | null> {
+        const key = groupStateGroupStorageKey(groupRef);
+        const entry = await this.runtimeRepository.findEntry(RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE, key);
+        return entry === undefined
+            ? null
+            : { state: decodeStoredTopologyReshapeGate(key, entry.value), revision: entry.revision };
+    }
+
+    /** Compare-and-set on the revision the work read: a row another work wrote since is a conflict. */
+    async writeTopologyReshapeGate(transaction: PSqlSql, computed: RtcTopologyReshapeGateWrite): Promise<void> {
+        const rows = computed.expectedRevision === null
+            ? await transaction<Array<{ revision: number | string; }>>`
+                insert into runtime_state_store (store_namespace, store_key, store_value,
+                                                 expire_at_ts, updated_ts, revision)
+                values (${RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE}, ${computed.key}, ${computed.value},
+                        ${computed.expireAtIsoTimestamp}, now(), 0)
+                on conflict (store_namespace, store_key) do nothing
+                returning revision
+            `
+            : await transaction<Array<{ revision: number | string; }>>`
+                update runtime_state_store
+                set store_value = ${computed.value},
+                    expire_at_ts = ${computed.expireAtIsoTimestamp},
+                    updated_ts = now(),
+                    revision = revision + 1
+                where store_namespace = ${RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE}
+                  and store_key = ${computed.key}
+                  and revision = ${computed.expectedRevision}
+                returning revision
+            `;
+        if (!rows[0]) {
+            throw new RuntimeStateWriteConflictError();
+        }
     }
 
     async readTopologyMutation(

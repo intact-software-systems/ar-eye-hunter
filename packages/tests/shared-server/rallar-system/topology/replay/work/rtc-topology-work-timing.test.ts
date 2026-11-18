@@ -51,7 +51,8 @@ describe('RTC topology recompute timing line', () => {
                 outcome: 'write',
                 reason: 'no-active-layout',
                 overlayVersion: 1,
-                planChange: 'attach'
+                planChange: 'attach',
+                reshape: 'allowed'
             })
         })]);
         expect(events[0]?.details).not.toHaveProperty('layoutAgeMs', expect.anything());

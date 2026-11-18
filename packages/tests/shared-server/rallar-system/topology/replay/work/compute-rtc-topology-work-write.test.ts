@@ -13,6 +13,8 @@ import { computeTopologyMutation } from '@shared-server/rallar-system/topology/m
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { decodeRtcTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/decode-rtc-topology-snapshot.ts';
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { UNCHANGED_TOPOLOGY_RESHAPE_GATE } from '@shared-server/rallar-system/topology/planning/reshape-gate/compute-topology-reshape-gate.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { decodeRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts';
 import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import {
@@ -126,7 +128,8 @@ describe('RTC topology complete write computation', () => {
                 },
                 authority: { ...initialAuthority, group: returned, nowEpochMs: 2_000 },
                 promotion: { group: returned.group, policy: { status: 'present', policy: createDefaultGroupLifecyclePolicy() } },
-                storedInputFingerprint: computeAuthorityTopologyInputFingerprint(initialAuthority)
+                storedInputFingerprint: computeAuthorityTopologyInputFingerprint(initialAuthority),
+                reshapeGate: null
             }
         };
 
@@ -558,10 +561,12 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
                 rttMeasurements: [],
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto',
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: 1
             },
             promotion: { group: group.group, policy: { status: 'absent' } },
-            storedInputFingerprint: null
+            storedInputFingerprint: null,
+            reshapeGate: null
         },
         publicationExpireAtTimestamp: null,
         entry,
@@ -606,7 +611,9 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         promotionRead: { group: group.group, policy: { status: 'absent' } },
         criterionPetition: null,
         planningObservation: null,
-        rttReplanPromotion: null
+        rttReplanPromotion: null,
+        reshape: 'allowed',
+        reshapeGate: UNCHANGED_TOPOLOGY_RESHAPE_GATE
     };
     return {
         traceId: 'trace-compute-rtc-topology-work-write',
@@ -622,7 +629,8 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         },
         formationAutomationEnabled: false,
         serviceId: 'topology-service',
-        publisherStreamId: undefined
+        publisherStreamId: undefined,
+        storedReshapeGateRevision: null
     };
 }
 

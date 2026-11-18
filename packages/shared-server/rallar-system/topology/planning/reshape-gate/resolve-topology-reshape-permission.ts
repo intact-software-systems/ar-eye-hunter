@@ -1,6 +1,7 @@
-import type {
-    TopologyReshapeGateState,
-    TopologyReshapePermission
+import {
+    UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
+    type TopologyReshapeGateState,
+    type TopologyReshapePermission
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { isBackoffGateOpen, type BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
 
@@ -17,7 +18,7 @@ export function resolveTopologyReshapePermission(
     input: ResolveTopologyReshapePermissionInput
 ): TopologyReshapePermission {
     if (input.workOrigin === 'commanded') {
-        return { reshape: 'allowed', wantedReasons: [] };
+        return UNGATED_TOPOLOGY_RESHAPE_PERMISSION;
     }
     if (!isBackoffGateOpen(input.state?.gate ?? null, input.bounds, input.nowEpochMs)) {
         return { reshape: 'held' };

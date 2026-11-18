@@ -217,7 +217,7 @@ async function readRtcTopologyWorkComputationInput(
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
     const groupRef = toRtcTopologyWorkGroupRef(work);
-    const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
+    const [authority, promotionRead, storedInputFingerprint, reshapeGate] = await Promise.all([
         // A membership change plans from the group's current stored state, which is at or past
         // the revision that asked (D290); an RTT refresh still carries the snapshot it measured.
         options.topologyPlanning.readTopologyPlanningAuthorityIfPresent({
@@ -229,14 +229,15 @@ async function readRtcTopologyWorkComputationInput(
             publication: options.topologyPublication,
             groupRef
         }),
-        options.executionRepository.readTopologyInputFingerprint(groupRef)
+        options.executionRepository.readTopologyInputFingerprint(groupRef),
+        options.executionRepository.readTopologyReshapeGate(groupRef)
     ]);
     if (authority === null) {
         return null;
     }
     return {
         facts,
-        read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint },
+        read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint, reshapeGate },
         publicationExpireAtTimestamp: facts.workEnvelope.data.publish
             ? options.executionRepository.publicationExpireAtTimestamp()
             : null,
@@ -267,7 +268,9 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         formationAutomationEnabled: options.formationAutomation !== undefined,
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId,
-        traceId: facts.traceId
+        traceId: facts.traceId,
+        // A skipped refinement is decided before the gate is read, and it writes none.
+        storedReshapeGateRevision: null
     };
     const computedWrite = computeRtcTopologyWorkWrite(writeInput);
     const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);

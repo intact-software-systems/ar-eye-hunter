@@ -7,6 +7,7 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { UNGATED_TOPOLOGY_RESHAPE_PERMISSION } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
@@ -35,11 +36,11 @@ import type {
     ReconfigureGroupTopologyInput
 } from './group-topology-planning-contracts.ts';
 import { materializeRtcOverlayTopologyMessages } from './materialize-rtc-overlay-topology-messages.ts';
+import { toTopologyReshapeBounds } from './reshape-gate/to-topology-reshape-bounds.ts';
 import {
     consultsReplanningPolicy,
     resolveTopologyPlanAction,
     toGroupTopologyReplanningRead,
-    type GroupTopologyReplanningRead,
     type TopologyPlanAction,
     type TopologyWorkOrigin
 } from './resolve-topology-plan-action.ts';
@@ -145,10 +146,10 @@ export class GroupTopologyPlanningService {
         if (group === undefined) {
             return null;
         }
-        const [config, rttMeasurements, replanning] = await Promise.all([
+        const [config, rttMeasurements, lifecyclePolicy] = await Promise.all([
             this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
             this.dependencies.readRttMeasurements(group),
-            this.readTopologyReplanningMode(group)
+            this.readTopologyLifecyclePolicy(group)
         ]);
         return {
             group,
@@ -160,7 +161,8 @@ export class GroupTopologyPlanningService {
             }),
             rttMeasurements,
             rttReplanMinimumLayoutAgeMs: this.dependencies.topologyService.readRttReplanMinimumLayoutAgeMs(),
-            replanning,
+            replanning: toGroupTopologyReplanningRead(lifecyclePolicy),
+            reshapeBounds: toTopologyReshapeBounds(lifecyclePolicy),
             nowEpochMs: this.dependencies.topologyService.readNowEpochMs()
         };
     }
@@ -178,7 +180,7 @@ export class GroupTopologyPlanningService {
         const computed = computeGroupTopologyFromAuthority(authority, previous, {
             intent: 'full-rebuild',
             origin: 'automatic',
-            reshape: { reshape: 'allowed', wantedReasons: [] }
+            reshape: UNGATED_TOPOLOGY_RESHAPE_PERMISSION
         });
         this.validateComputedGroupTopology(computed);
         return {
@@ -282,16 +284,16 @@ export class GroupTopologyPlanningService {
 
     /**
      * Only stages whose disposition is `follow-replanning-policy` consult
-     * the mode (the gate is spelled off the registry so the two cannot
-     * drift); every other stage carries the default preset's mode, which
-     * its disposition row never reads.
+     * the policy (the gate is spelled off the registry so the two cannot
+     * drift); every other stage reads as absent and so carries the default
+     * preset's mode and reshape bounds, which its disposition row never reads.
      */
-    private async readTopologyReplanningMode(group: GroupSnapshot): Promise<GroupTopologyReplanningRead> {
+    private async readTopologyLifecyclePolicy(group: GroupSnapshot): Promise<GroupLifecyclePolicyRead> {
         const readLifecyclePolicy = this.dependencies.readLifecyclePolicy;
         if (!readLifecyclePolicy || !consultsReplanningPolicy(group.group.lifecycleState)) {
-            return toGroupTopologyReplanningRead({ status: 'absent' });
+            return { status: 'absent' };
         }
-        return toGroupTopologyReplanningRead(await readLifecyclePolicy(group.group));
+        return await readLifecyclePolicy(group.group);
     }
 
     /** The local paths' share of the 4b gate, resolved by the one owner. */
@@ -302,7 +304,7 @@ export class GroupTopologyPlanningService {
     ): Promise<TopologyPlanAction> {
         return resolveTopologyPlanAction({
             lifecycleState: group.group.lifecycleState,
-            replanning: await this.readTopologyReplanningMode(group),
+            replanning: toGroupTopologyReplanningRead(await this.readTopologyLifecyclePolicy(group)),
             workOrigin,
             previous
         });

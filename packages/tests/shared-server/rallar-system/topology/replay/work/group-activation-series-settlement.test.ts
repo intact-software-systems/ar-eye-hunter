@@ -20,6 +20,7 @@ import {
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { createActivationStatusClockWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-activation-status-clock-work-handler.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import {
@@ -337,6 +338,7 @@ function createFixture(change: 'basis' | 'epoch' | 'same', managed: boolean): Ac
         rttMeasurements: [],
         rttReplanMinimumLayoutAgeMs: 15_000,
         replanning: 'auto',
+        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
         nowEpochMs: 2_000
     };
     const spokes = group.activeSessions.slice(1).map(({ sessionId }) => sessionId);
