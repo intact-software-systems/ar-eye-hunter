@@ -387,9 +387,8 @@ limit). Thresholds are read from that configuration, never assumed.
   session. While the accepted layout still holds that member, the measurement neither reports from it nor
   reports a pair that includes it, since the server would refuse such a pair (`no-shared-active-group`).
 - A joiner during churn has no socket, so it reports nothing.
-- The RTT rooms cannot report until a server bug is fixed: an RTT-refresh publication id is longer than the
-  256 characters the operator plans read accepts, so that read fails and the command stops at the first RTT
-  room (see `plans/backlog.md`).
+- The RTT-refresh publication id now carries a digest of the resource id, so it stays within the 256-character
+  contract.
 - Drift is read once per room, at its end. It is measured for star, tree and mesh with the room's own k, and
   has no status of its own. It is signed: the fresh no-RTT plan is the planner's reference layout, not the
   shortest one, so an evolved layout can be shorter and the difference negative.
