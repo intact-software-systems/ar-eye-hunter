@@ -170,7 +170,7 @@ report of what remains.
   from the others and broke a resource-inbox suite; revised during the build.
 - Three ALM tests drove the engine with one batch per timeout and leaned on key order for a receipt's exhaustion.
   Their driver now drains until nothing is due, and one test states what a stalled engine does under due order: the
-  receipt still ends after its budget of retries, in 2M+1 timeouts instead of M+1.
+  receipt still ends after its budget of retries, later: in more than M+1 timeouts and at most 2M+1.
 
 ## Decisions (maintainer, 2026-11-18)
 
