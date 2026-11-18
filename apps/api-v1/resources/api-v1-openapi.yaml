@@ -6280,7 +6280,7 @@ components:
     AdminRoomTopologyPlansResponse:
       type: object
       additionalProperties: false
-      required: [roomRef, observedAtEpochMs, plans, nextAfterPublicationId]
+      required: [roomRef, observedAtEpochMs, plans, nextAfterPublicationId, reshapeGate]
       properties:
         roomRef:
           $ref: '#/components/schemas/GroupRef'
@@ -6291,6 +6291,32 @@ components:
           items:
             $ref: '#/components/schemas/AdminRoomTopologyPlan'
         nextAfterPublicationId: { type: [string, 'null'], minLength: 1, maxLength: 256 }
+        reshapeGate:
+          oneOf:
+            - $ref: '#/components/schemas/AdminRoomReshapeGate'
+            - type: 'null'
+
+    AdminRoomReshapeGate:
+      type: object
+      additionalProperties: false
+      required: [gate, wantedReasons, intervalMs, opensAtEpochMs]
+      properties:
+        gate:
+          $ref: '#/components/schemas/BackoffGateState'
+        wantedReasons:
+          type: array
+          items: { type: string, enum: [kind-change, leader-rooting] }
+        intervalMs: { type: integer, minimum: 0 }
+        opensAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+
+    BackoffGateState:
+      type: object
+      additionalProperties: false
+      required: [lastPassAtEpochMs, consecutiveHeldPasses, heldAtEpochMs]
+      properties:
+        lastPassAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        consecutiveHeldPasses: { type: integer, minimum: 0 }
+        heldAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
     AdminRoomTopologyPlan:
       type: object

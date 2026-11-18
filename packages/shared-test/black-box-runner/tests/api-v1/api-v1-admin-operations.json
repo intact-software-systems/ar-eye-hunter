@@ -1312,6 +1312,7 @@
           },
           "observedAtEpochMs": "integer",
           "nextAfterPublicationId": null,
+          "reshapeGate": null,
           "plans": [
             {
               "publicationId": "string",

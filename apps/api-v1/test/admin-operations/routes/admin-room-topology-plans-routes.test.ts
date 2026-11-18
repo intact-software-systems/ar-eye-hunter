@@ -50,7 +50,13 @@ const response: AdminRoomTopologyPlansResponse = {
             heldReshapeReasons: []
         }
     }],
-    nextAfterPublicationId: null
+    nextAfterPublicationId: null,
+    reshapeGate: {
+        gate: { lastPassAtEpochMs: 8_000, consecutiveHeldPasses: 1, heldAtEpochMs: 9_500 },
+        wantedReasons: ['kind-change'],
+        intervalMs: 30_000,
+        opensAtEpochMs: 38_000
+    }
 };
 
 interface TopologyPlansTestInput {
@@ -152,13 +158,26 @@ test('the OpenAPI document describes the path and every field the route serves',
     assert.deepEqual(limit.schema, { type: 'integer', minimum: 1, maximum: 100, default: 50 });
     const { schemas } = schema.components;
     const count = { type: 'integer', minimum: 0 };
+    const nullableCount = { type: ['integer', 'null'], minimum: 0 };
     const layout = { $ref: '#/components/schemas/GroupLayoutIdentity' };
     const expectedProperties: Record<string, Record<string, object>> = {
         AdminRoomTopologyPlansResponse: {
             roomRef: { $ref: '#/components/schemas/GroupRef' },
             observedAtEpochMs: count,
             plans: { type: 'array', maxItems: 100, items: { $ref: '#/components/schemas/AdminRoomTopologyPlan' } },
-            nextAfterPublicationId: { type: ['string', 'null'], minLength: 1, maxLength: 256 }
+            nextAfterPublicationId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
+            reshapeGate: { oneOf: [{ $ref: '#/components/schemas/AdminRoomReshapeGate' }, { type: 'null' }] }
+        },
+        AdminRoomReshapeGate: {
+            gate: { $ref: '#/components/schemas/BackoffGateState' },
+            wantedReasons: { type: 'array', items: { type: 'string', enum: ['kind-change', 'leader-rooting'] } },
+            intervalMs: count,
+            opensAtEpochMs: nullableCount
+        },
+        BackoffGateState: {
+            lastPassAtEpochMs: nullableCount,
+            consecutiveHeldPasses: count,
+            heldAtEpochMs: nullableCount
         },
         AdminRoomTopologyPlan: {
             publicationId: { type: 'string', minLength: 1, maxLength: 256 },

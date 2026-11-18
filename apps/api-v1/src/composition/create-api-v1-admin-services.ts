@@ -5,8 +5,7 @@ import { ReadAdminRoomTopologyPlans } from '@shared-server/rallar-system/admin-o
 import { ReadAdminRoomTopologyWork } from '@shared-server/rallar-system/admin-operations/rooms/read-admin-room-topology-work.ts';
 import type {
     AdminSupportTopologyQuery,
-    AdminSupportUseCases,
-    GroupAdminSupportDependencies
+    AdminSupportUseCases
 } from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import {
     createAdminSupportUseCases
@@ -19,10 +18,14 @@ import type {
     SpaStatisticsUseCases
 } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-status.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/json-web-socket-server.ts';
 
 import {
@@ -32,7 +35,7 @@ import {
 
 export interface CreateApiV1AdminServicesInput extends CreateApiV1AdminOperationUseCasesInput {
     readonly topologyQuery: AdminSupportTopologyQuery;
-    readonly readLifecyclePolicy: GroupAdminSupportDependencies['readLifecyclePolicy'];
+    readonly readLifecyclePolicy: (groupRef: GroupRef) => Promise<GroupLifecyclePolicyRead>;
     readonly clientStateService: Pick<ClientStateService, 'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'>;
     readonly groupStateService: Pick<
         CachedGroupStateService,
@@ -68,6 +71,8 @@ export function createApiV1AdminServices(
         }),
         topologyPlans: new ReadAdminRoomTopologyPlans({
             publications: new RtcTopologyPublicationRepository(new PSqlRuntimeStateRepository(input.database)),
+            reshapeGates: new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(input.database)),
+            readReshapeBounds: async (roomRef) => toTopologyReshapeBounds(await input.readLifecyclePolicy(roomRef)),
             nowEpochMs: input.nowEpochMs
         }),
         operations: createApiV1AdminOperationUseCases(input),
