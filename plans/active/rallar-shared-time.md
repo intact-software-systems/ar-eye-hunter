@@ -25,12 +25,12 @@ The connected SDK comparison and [runnable room poll](../../examples/shared-dead
 
 Grumpy Town now consumes the connected deadline APIs for away-seat recovery across host replacement on [PR #832](https://github.com/intact-software-systems/ar-eye-hunter/pull/832). A poll with two phase boundaries is the next test of read-only room timelines.
 
-The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. A voter can still lose the response to a submission without knowing whether the authority counted it.
+The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. The voter also recovers a missing receipt after request or response loss. The next qualification gap is the clock difference between a calibration node and a separate enforcement node.
 
 ## Next two slices
 
-1. **Recover an unacknowledged ballot.** Use the existing authorized snapshot read to check the participant's disposition after a failed submission. Keep both choices disabled while the outcome is unknown. If the authority still reports pending, offer an explicit retry of the same choice while definitely open. Once closed, recover the final tally. Bound read retries and preserve unmount cleanup.
-2. **Qualify both sides of a lost response.** Interrupt one ballot before receipt, then let the voter's explicit retry reach the authority and discard its response. Verify that the same browser recovers acceptance, the tally increases exactly once and the opposite choice stays unavailable. Retain skew, spectator recovery and late receipt coverage. Run the focused browser journey, typecheck and authority test.
+1. **Measure the offset between two directly addressed API nodes.** Supply both origins and expected peer identities plus an explicit maximum allowed offset. Sample both time endpoints, project both observations to the same monotonic instant using the shared clock-window calculation, and report the signed interval for enforcement minus calibration. Return within budget only when the entire interval fits, outside when it is disjoint, and inconclusive on overlap. Fail closed for unusable samples. Cover signed offsets, equality and uncertainty with deterministic tests.
+2. **Make the check repeatable for operators.** Provide a runnable command and a deployment example, then exercise it against two local Rallar memory API processes. Verify a successful measurement and a non-passing invocation. Document direct routing, sample lifetime, probe assumptions and the distinction between measuring node skew and compensating for it in live deadline decisions. Typecheck the command and run the focused clock tests.
 
 ## Public product and launch evidence
 
