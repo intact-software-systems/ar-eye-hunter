@@ -231,3 +231,30 @@ returned epoch in its checkpoint. An unavailable clock returns `undefined`.
 A successor compares the stored deadline with `rallar.compareDeadline`.
 Using the latest plausible server time at creation gives the participant the
 full grace period even when the creation window has nonzero width.
+
+## Check the clock difference between API nodes
+
+When one node provides the time sample and another enforces the deadline, run
+this probe from the repository root. Supply direct origins for the two known
+nodes and their configured server peer IDs. A cluster can share a peer ID.
+Distinct origins alone cannot establish that they route to different machines.
+
+```sh
+bun run examples/browser-startup-room/check-node-clock-offset.ts \
+  https://api-a.example.org cluster-peer https://api-b.example.org cluster-peer 25
+```
+
+The last argument is the deployment's allowed absolute difference in
+milliseconds. The example value of 25 is illustrative. The probe takes two
+uncached samples and projects both to the same local monotonic instant.
+Positive offsets mean the enforcement node is ahead. The reported minimum
+and maximum include network travel and measurement uncertainty. The probe
+assumes relative clock drift at most 1,000 ppm, local monotonic measurement
+error at most 2 ms, round trips within 500 ms and samples at most 2 seconds old.
+
+Exit 0 means the entire interval fits the budget. Exit 1 means the interval
+is outside the budget or straddles its boundary (inconclusive). Exit 2 means
+the input or measurement was unusable. Repeat measurements from representative
+paths and under load. A passing sample describes that instant only. The browser
+SDK uses the sampled server's time window directly. This probe measures node
+offset and does not widen that window or enforce a deployment skew policy.
