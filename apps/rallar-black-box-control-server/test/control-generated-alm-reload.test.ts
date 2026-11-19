@@ -376,6 +376,21 @@ for (const carrier of ALM_CONFORMANCE_RTC_ALONE_CARRIERS) {
             { requester: 'recipient-b', requestNumber: 1, outcome: 'repaired' },
             { requester: 'receiver', requestNumber: 2, outcome: 'exhausted' }
         ]);
+        // The sender's repair commits of the second send, in its page's order with the observe that read it `failed`: the
+        // two served reports, then the exhausting request's commit, which ends the message; none follows the settlement.
+        const held = findMarked(ports, 'repair-exhausted')[1];
+        const observedFailed = `alm-${carrier}-repair-exhausted-sender-observe-failed-2`;
+        expect(
+            ports.sender.state().events.flatMap((event) => {
+                if (event.commandId === observedFailed) {
+                    return ['observed failed'];
+                }
+                const data = isJsonRecordValue(event.payload) ? event.payload.data : undefined;
+                return isJsonRecordValue(data) && data.kind === 'commit-phases' && data.origin === 'repair' && data.msgId === held.msgId
+                    ? [`repair ${String(data.commitOutcome)}`]
+                    : [];
+            })
+        ).toEqual(['repair committed', 'repair committed', 'repair committed', 'observed failed']);
     });
 }
 

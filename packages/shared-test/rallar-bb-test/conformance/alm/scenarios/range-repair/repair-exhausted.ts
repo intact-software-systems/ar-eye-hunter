@@ -2,6 +2,11 @@ import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-tes
 
 import { NON_EXPIRING_SEND_TIMEOUT_MS } from '../../alm-conformance-budgets.ts';
 import { ALM_CONFORMANCE_RTC_ALONE_CARRIERS } from '../../alm-conformance-carriers.ts';
+import {
+    ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+    toDiagnosticWait,
+    toSentMsgIdReference
+} from '../../alm-conformance-diagnostic-waits.ts';
 import { toObserveCommand, toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import {
     toHeldGapCommands,
@@ -29,7 +34,8 @@ const ONE_REPAIR: AlmConformanceOrderedSendOptions = { maxRepairs: 1 };
  * sender's second frame stays held through every retransmission, and each receiver orders the track itself and reports
  * the gap once the third frame arrives. Each receiver's first report spends its own one retransmit; the range stays
  * missing, so the receiver renews it 1 to 1.5 s later, and that renewal, its request numbered 2, finds its budget
- * spent: the sender settles the second frame `skipped` with reason `repair-exhausted`. Both receivers delivered the
+ * spent: the sender settles the second frame `skipped` with reason `repair-exhausted`, and the settlement ends the
+ * message, so no repair of it commits in the window after its handle read `failed`. Both receivers delivered the
  * first send only: the third and fourth wait for a second that never arrives. The cell is not run over `ws`, where the
  * server orders the track and requests its gaps; it is untested there since the budget became per requester. Over
  * `rtc-with-ws-fallback` the held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the
@@ -80,8 +86,29 @@ function toRepairExhaustedSenderCommands(
             field: 'failure.reason',
             operator: 'equals',
             expected: 'repair-exhausted'
-        })
+        }),
+        toNoRepairCommitAfterFailedWait(sender)
     ];
+}
+
+/**
+ * The settlement ends the message: no repair dispatch of the second send commits in the window after its handle read
+ * `failed`. The exhausting request's own commit, which ends the message, is stated before the handle reads `failed`,
+ * so the wait starts its history at its own first event, after both. The lane reads the commit, not the frame: whether
+ * a frame left the page is not in the snapshot.
+ */
+function toNoRepairCommitAfterFailedWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const step = { ...sender, index: 2 };
+    const wait = toDiagnosticWait({
+        step,
+        name: 'no-repair-commit-after-failed-2',
+        topic: ALM_OUTBOUND_DIAGNOSTICS_TOPIC,
+        historyFrom: 'cell',
+        absent: true,
+        contains: `"msgId":"${toSentMsgIdReference(step)}"`,
+        payloadFields: { 'data.kind': 'commit-phases', 'data.origin': 'repair', 'data.commitOutcome': 'committed' }
+    });
+    return { ...wait, match: { ...wait.match, sinceCommandIdPrefix: wait.commandId } };
 }
 
 /** A receiver's first arrival is the first frame, since nothing later is sent before its cue; then only absence. */

@@ -1054,8 +1054,8 @@ export class AlmReloadPorts {
     /**
      * The budget is per requester: the send's stated `maxRepairs`, or the product's, which no requester's requests
      * outnumber. A number its requester already sent charges nothing (D573), as a later arrival's report of the same gap
-     * does; one past the budget settles the held message `skipped` as `repair-exhausted`, once; a message delivered or
-     * settled is missing no more.
+     * does; one past the budget commits the end of the message and settles it `skipped` as `repair-exhausted`, once; a
+     * message delivered or settled is missing no more, so no later request is served.
      */
     private admitGapRequest(held: PortMessage, requester: PortGapRequest['requester'], requestNumber: number): void {
         const own = held.gapRequests.filter((request) => request.requester === requester);
@@ -1067,16 +1067,17 @@ export class AlmReloadPorts {
         }
         const outcome = own.length >= (held.command.maxRepairs ?? Infinity) ? 'exhausted' : 'repaired';
         held.gapRequests.push({ requester, requestNumber, outcome });
+        this.recordRepairDispatch(held);
         if (outcome === 'exhausted') {
             held.state = 'failed';
             held.failure = { kind: 'skipped', reason: 'repair-exhausted' };
         }
-        else {
-            this.recordRepairDispatch(held);
-        }
     }
 
-    /** The hint served: the held message's repair commit, stated as the sender's own commit while the hold stands. */
+    /**
+     * The hint served, or the exhausting request's commit that ends the message, stated before its settlement: the held
+     * message's repair commit, stated as the sender's own commit while the hold stands.
+     */
     private recordRepairDispatch(held: PortMessage): void {
         recordOutboundDiagnostic(this.sender, {
             kind: 'commit-phases',

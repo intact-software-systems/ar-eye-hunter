@@ -825,7 +825,13 @@ receiver's own one retransmit, still held. The sender sends seq 4 too, whose arr
 receivers; that report repeats its requester's first request number and charges nothing (D573). The range stays
 missing, so each receiver renews it 1 to 1.5 s after it went missing; the first renewal, a request numbered 2, finds
 its receiver's budget spent, and the sender settles seq 2. The sender observes seq 2's handle `failed` within its
-10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
+10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`. The
+settlement ends the message: its last command, `no-repair-commit-after-failed-2`, an absent wait on
+`rallar.browser.alm.outbound_diagnostics`, reads no `commit-phases` event of seq 2 with `origin: 'repair'` and
+`commitOutcome: 'committed'` in the 5 s after the handle read `failed`. The exhausting renewal's own commit, which
+ends the message, precedes the settlement, so the wait starts its history at its own first event
+(`sinceCommandIdPrefix` is its own command id). The lane sees a dispatch's commit, not its frame: whether a frame left
+the page is not in the snapshot. Both receivers
 receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
 arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
 absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
