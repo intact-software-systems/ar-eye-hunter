@@ -69,12 +69,7 @@ export function createApiV1AdminServices(
             repository: new PSqlResourceInboxEntryReader(input.database, () => new Date(input.nowEpochMs())),
             nowEpochMs: input.nowEpochMs
         }),
-        topologyPlans: new ReadAdminRoomTopologyPlans({
-            publications: new RtcTopologyPublicationRepository(new PSqlRuntimeStateRepository(input.database)),
-            reshapeGates: new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(input.database)),
-            readReshapeBounds: async (roomRef) => toTopologyReshapeBounds(await input.readLifecyclePolicy(roomRef)),
-            nowEpochMs: input.nowEpochMs
-        }),
+        topologyPlans: createApiV1AdminTopologyPlans(input),
         operations: createApiV1AdminOperationUseCases(input),
         support: createAdminSupportUseCases({
             now: input.nowEpochMs,
@@ -98,6 +93,15 @@ export function createApiV1AdminServices(
             wsStatus: input.readWebSocketStatus
         })
     };
+}
+
+function createApiV1AdminTopologyPlans(input: CreateApiV1AdminServicesInput): ReadAdminRoomTopologyPlans {
+    return new ReadAdminRoomTopologyPlans({
+        publications: new RtcTopologyPublicationRepository(new PSqlRuntimeStateRepository(input.database)),
+        reshapeGates: new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(input.database)),
+        readReshapeBounds: async (roomRef) => toTopologyReshapeBounds(await input.readLifecyclePolicy(roomRef)),
+        nowEpochMs: input.nowEpochMs
+    });
 }
 
 export function readApiV1WebSocketStatus(

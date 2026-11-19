@@ -233,6 +233,14 @@ function decodeTopologyPolicy(value: JsonWireValue): GroupLifecyclePolicy['topol
             maximum: MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
             label: 'Group lifecycle topology maxReplanWaitMs'
         }),
+        ...decodeTopologyReshapeIntervals(topology)
+    };
+}
+
+function decodeTopologyReshapeIntervals(
+    topology: JsonWireObject
+): Pick<GroupLifecyclePolicy['topology'], 'reshapeMinIntervalMs' | 'reshapeMaxIntervalMs'> {
+    return {
         reshapeMinIntervalMs: requireBoundedInteger({
             value: topology.reshapeMinIntervalMs,
             minimum: MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS,

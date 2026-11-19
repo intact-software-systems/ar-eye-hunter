@@ -1,4 +1,4 @@
-import { Either } from '../../resilience/Either.ts';
+import { Either } from '../resilience/Either.ts';
 
 /** A subset of `known` with no duplicates, in the order of `known`: anything else is refused, never normalized. */
 export function decodeCanonicalSubset<Known extends string>(
