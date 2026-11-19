@@ -15,6 +15,7 @@ const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadlin
 test('a delayed ballot and a returning browser share one room cutoff', async ({ page, browser, baseURL }) => {
     test.skip(!config.enabled, config.skipReason);
     const guest = await browser.newPage({ baseURL });
+    const spectator = await browser.newPage({ baseURL });
     const roomRef = {
         applicationId: config.applicationId,
         workspaceId: config.workspaceId,
@@ -40,7 +41,11 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
             page.clock.setSystemTime(Date.now() + 120_000),
             guest.clock.setSystemTime(Date.now() - 120_000)
         ]);
-        await Promise.all([prepareMember(page, roomRef, true), prepareMember(guest, roomRef, false)]);
+        await Promise.all([
+            prepareMember(page, roomRef, true),
+            prepareMember(guest, roomRef, false),
+            prepareMember(spectator, roomRef, false)
+        ]);
         await page.evaluate(async ({ rallarUrl, roomRef }) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
             await rallar.rooms.createAndSwitch({
@@ -49,7 +54,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
                 joinMode: 'open'
             });
         }, { rallarUrl, roomRef });
-        await Promise.all([mount(page, hostGrant), mount(guest, guestGrant)]);
+        await Promise.all([mount(page, hostGrant), mount(guest, guestGrant), mount(spectator, guestGrant)]);
         expect(await page.evaluate(() => Date.now()) - await guest.evaluate(() => Date.now())).toBeGreaterThan(230_000);
         await expect(page.getByText('Question preview')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
@@ -58,6 +63,8 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         const schedule = await page.locator('time').allTextContents();
         expect(schedule).toHaveLength(2);
         await expect(guest.locator('time')).toHaveText(schedule);
+        await expect(spectator.getByText('Yes 0 · No 0 · Your vote: pending')).toBeVisible();
+        await spectator.route(poll.url, (route) => route.abort('failed'), { times: 1 });
         await page.getByRole('button', { name: 'Yes' }).click();
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
         await guest.route(poll.url, async (route) => {
@@ -70,6 +77,9 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await guest.getByRole('button', { name: 'No' }).click();
         await voteSent.promise;
         await expect(page.getByText('Voting closed')).toBeVisible({ timeout: 25_000 });
+        await expect(spectator.getByText('Final results unavailable · Retrying')).toBeVisible();
+        await expect(spectator.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
+        await expect(spectator.getByText('Voting closed · Results')).toBeVisible();
         releaseVote.resolve();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
         const lateEntry = await browser.newPage({ baseURL });
@@ -93,6 +103,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
     }
     finally {
         releaseVote.resolve();
+        await spectator.close();
         await guest.close();
         await poll.close();
     }

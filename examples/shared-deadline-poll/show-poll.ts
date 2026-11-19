@@ -15,12 +15,14 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const { root, roomRef, endpoint, participantGrant } = input;
     await rallar.connect();
     await rallar.rooms.enter(roomRef);
+    const lifetime = new AbortController();
     async function request(choice?: PollAuthority.Choice): Promise<PollAuthority.Snapshot> {
         const response = await fetch(endpoint, {
             method: choice === undefined ? 'GET' : 'POST',
             headers: { Authorization: `Bearer ${participantGrant}` },
             body: choice,
-            cache: 'no-store'
+            cache: 'no-store',
+            signal: lifetime.signal
         });
         if (!response.ok) {
             throw new Error(`Poll request failed (HTTP ${response.status}).`);
@@ -48,15 +50,36 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     no.textContent = 'No';
     root.replaceChildren(title, opening, closing, phase, yes, no, result);
     let submitting = false;
+    let refreshing = false;
+    let retryAt = 0;
+    async function refreshResults(): Promise<void> {
+        refreshing = true;
+        try {
+            record = await request();
+        }
+        catch {
+            // The view retries while mounted. A failed read cannot confirm a final tally.
+        }
+        finally {
+            refreshing = false;
+            retryAt = performance.now() + 2_000;
+        }
+    }
     function render(): void {
         const opening = rallar.compareDeadline(record.schedule.opensAtEpochMs);
         const closing = rallar.compareDeadline(record.schedule.closesAtEpochMs);
         let label: string;
-        if (opening === 'unavailable' || closing === 'unavailable') {
+        if (record.closed) {
+            label = 'Voting closed · Results';
+        }
+        else if (opening === 'unavailable' || closing === 'unavailable') {
             label = 'Waiting for server time';
         }
         else if (closing === 'at-or-after') {
-            label = 'Voting closed · Results';
+            label = 'Voting closed';
+            if (!submitting && !refreshing && performance.now() >= retryAt) {
+                void refreshResults();
+            }
         }
         else if (opening === 'before') {
             label = 'Question preview';
@@ -68,10 +91,17 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             label = 'Voting open';
         }
         phase.textContent = label;
-        const disabled = submitting || opening !== 'at-or-after' || closing !== 'before' ||
+        const disabled = record.closed || refreshing || submitting || opening !== 'at-or-after' ||
+            closing !== 'before' ||
             record.disposition !== 'pending';
         yes.disabled = disabled;
         no.disabled = disabled;
+        if (!record.closed && closing === 'at-or-after') {
+            result.textContent = retryAt && !refreshing
+                ? 'Final results unavailable · Retrying'
+                : 'Loading final results';
+            return;
+        }
         result.textContent = `Yes ${record.yes} · No ${record.no} · Your vote: ${record.disposition}`;
     }
     async function submit(choice: PollAuthority.Choice): Promise<void> {
@@ -81,6 +111,9 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             record = await request(choice);
         }
         catch (error) {
+            if (lifetime.signal.aborted) {
+                return;
+            }
             const message = document.createElement('p');
             message.setAttribute('role', 'alert');
             message.textContent = String(error);
@@ -88,12 +121,19 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
         finally {
             submitting = false;
-            render();
+            if (!lifetime.signal.aborted) {
+                render();
+            }
         }
     }
     yes.onclick = () => void submit('yes');
     no.onclick = () => void submit('no');
     render();
     const timer = window.setInterval(render, 200);
-    return () => window.clearInterval(timer);
+    return () => {
+        window.clearInterval(timer);
+        yes.onclick = null;
+        no.onclick = null;
+        lifetime.abort();
+    };
 }

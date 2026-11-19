@@ -11,11 +11,14 @@ it('uses receipt time, retains each first ballot, and returns a private disposit
     now = 99;
     expect(poll.vote('alice', 'yes').disposition).toBe('accepted');
     now = 100;
+    expect(poll.read('bob').closed).toBe(true);
+    now = 99;
     expect(poll.vote('bob', 'no').disposition).toBe('late');
     now = 101;
     expect(poll.vote('alice', 'no')).toEqual({
         roomRef: room,
         schedule,
+        closed: true,
         yes: 1,
         no: 0,
         disposition: 'accepted'
@@ -24,6 +27,7 @@ it('uses receipt time, retains each first ballot, and returns a private disposit
     expect(poll.read('charlie')).toEqual({
         roomRef: room,
         schedule,
+        closed: true,
         yes: 1,
         no: 0,
         disposition: 'pending'
