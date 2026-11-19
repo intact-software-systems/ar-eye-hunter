@@ -21,15 +21,13 @@ The foundation PR supplies an uncached server observation, a connection-scoped t
 
 ## Next two independently testable slices
 
-### 1. Compare a room deadline through the connected client
+### 1. Give the example poll one authority
 
-Expose `rallar.compareDeadline(closesAtEpochMs)` for a poll view that reads its closing instant from the current room record. Each call reads the active connection's calibrated window. Return `before`, `overlaps`, `at-or-after`, or `unavailable` as defined below. Reject a malformed epoch explicitly. The call needs no network request, timer, or retained deadline. Show how a poll view handles each result and delegates the vote decision to the poll authority.
+Keep a single room poll in a server process for the lifetime of the example. Publish its immutable room ID and closing instant, accept one ballot per admitted participant, and retain that participant's disposition across retries. Use the authority clock at receipt. An arrival exactly at close is late. Verify the cutoff and replay behavior with controlled server time. Production database persistence and host replacement remain separate investments.
 
-**Exit evidence.** Exercise both edges of the window, a point window, absence or retirement of calibration, and replacement with a new connection. Verify shared-web types, the public facade snapshot, and browser bundle boundaries.
+### 2. Prove the participant journey
 
-### 2. Demonstrate poll closure and recovery across two browsers
-
-Use one poll authority to publish the room's deadline, record votes, and return the authoritative disposition. Recover the record on join and reconnect. Drive clients with opposite device offsets, submit before close, and deliver a delayed vote at or after close. Check that both clients recover the same record and that submission timing is decided by the authority. This supplies the first product demonstration before qualifying a second consumer and mobile recovery.
+Run two isolated Chromium sessions against the in-memory Rallar API. Give their wall clocks opposite offsets and read one poll through the example authority. Both connected facades must report open before the cutoff. Hold a participant's submission until the other browser observes closure, then deliver it and check the authority's late disposition. Reload and reconnect to recover the same deadline, disposition and tally. Include the journey in the existing full-stack memory suite and publish the runnable command. This demonstration qualifies browser recovery and authoritative receipt over the example transport. Carrier-specific fallback and physical suspension remain separate qualification.
 
 ## Public product and launch evidence
 
