@@ -25,12 +25,12 @@ The connected SDK comparison and [runnable room poll](../../examples/shared-dead
 
 Grumpy Town now consumes the connected deadline APIs for away-seat recovery across host replacement on [PR #832](https://github.com/intact-software-systems/ar-eye-hunter/pull/832). A poll with two phase boundaries is the next test of read-only room timelines.
 
-The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator who joined before another participant voted still has an older snapshot at the closing transition.
+The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. A voter can still lose the response to a submission without knowing whether the authority counted it.
 
 ## Next two slices
 
-1. **Recover final results at the phase transition.** Once the connected clock establishes closure, refresh the participant's snapshot from the poll authority. Distinguish loading or failed reads from confirmed results. Retry transient failures with a bounded request rate, stop after success, and release the view on unmount. Keep ballot submission and its private disposition consistent with the read.
-2. **Qualify a spectator through closure and a failed read.** In the browser journey, keep a spectator mounted while another participant votes. Fail its first closing read, check the recovery state, then verify it sees the final tally without a reload or ballot of its own. Preserve the existing skew, late submission and late-entry checks. Run the focused browser journey, authority test and TypeScript check.
+1. **Recover an unacknowledged ballot.** Use the existing authorized snapshot read to check the participant's disposition after a failed submission. Keep both choices disabled while the outcome is unknown. If the authority still reports pending, offer an explicit retry of the same choice while definitely open. Once closed, recover the final tally. Bound read retries and preserve unmount cleanup.
+2. **Qualify both sides of a lost response.** Interrupt one ballot before receipt, then let the voter's explicit retry reach the authority and discard its response. Verify that the same browser recovers acceptance, the tally increases exactly once and the opposite choice stays unavailable. Retain skew, spectator recovery and late receipt coverage. Run the focused browser journey, typecheck and authority test.
 
 ## Public product and launch evidence
 
