@@ -138,7 +138,14 @@ it('applies a command-injected hold through the configured readiness owner and r
 
 it('answers from a transport fault injection what that fault has acted on so far', async () => {
     const { runtime } = await loadConnectedMessageRuntime('messages.ws');
-    const message = newALUnicastMessage('sender', { topicId: 'topic', contextId: 'room', resourceId: 'one' }, 'receiver', 'lost', {});
+    const message = newALUnicastMessage({
+        senderId: 'sender',
+        createdAtEpochMs: 1000,
+        route: { topicId: 'topic', contextId: 'room', resourceId: 'one' },
+        toPeerId: 'receiver',
+        typeId: 'lost',
+        resource: {}
+    });
     const serialized = JSON.stringify(message);
     const fault = { faultId: 'lose-two', carrier: 'ws', action: 'drop', match: { typeId: 'lost' }, remaining: 2 };
     const nothingActedOn = { drop: 0, delay: 0, rewrite: 0, 'not-ready': 0, backpressure: 0 };
