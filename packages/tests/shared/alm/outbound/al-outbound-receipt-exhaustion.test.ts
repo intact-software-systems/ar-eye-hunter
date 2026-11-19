@@ -163,3 +163,55 @@ describe('the receipt budget runs out (Q6)', () => {
         expect((await readReceipt(fixture))?.attempts).toBe(2);
     });
 });
+
+describe('the receipt timer of a message that has ended', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('clears a complete kept row at its closed window as it does for every complete row', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const fixture = await createExhaustionFixture({ ...SPENT_RECEIPT, ackedPeerIds: ['peer-1', 'peer-2'], attempts: 1 });
+        await endMessage(fixture);
+
+        await fixture.repair.retryPendingAck(fixture.message.id.msgId);
+
+        expect(await readReceipt(fixture)).toBeUndefined();
+        expect(fixture.facts).toEqual([]);
+    });
+
+    it('leaves an incomplete kept row as it is: no retry, no hint, no fact', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        const fixture = await createExhaustionFixture({ ...SPENT_RECEIPT, attempts: 1 });
+        await endMessage(fixture);
+        const kept = await readReceipt(fixture);
+        const commits = vi.spyOn(fixture.stores.admissionStore, 'commitBundle');
+
+        await fixture.repair.retryPendingAck(fixture.message.id.msgId);
+
+        expect(await readReceipt(fixture)).toEqual(kept);
+        expect(commits).not.toHaveBeenCalled();
+        expect(fixture.facts).toEqual([]);
+    });
+});
+
+/** Marks the message's stored row ended, as a terminal commit that keeps its receipt row does. */
+async function endMessage(fixture: ExhaustionFixture): Promise<void> {
+    const read = await fixture.stores.admissionStore.readRepairMessage(fixture.message.id.msgId, (msg) => ({
+        msg,
+        dropReasonCode: undefined,
+        lane: 'durable',
+        preparedMessages: []
+    }));
+    expect(
+        await fixture.stores.admissionStore.commitBundle({
+            senderId: fixture.message.id.senderId,
+            expectedVersion: read.clientRecord?.version,
+            mutations: [{ kind: 'end-sent-message', stored: read.storedMessage! }],
+            durableEffects: []
+        })
+    ).toBe('committed');
+}

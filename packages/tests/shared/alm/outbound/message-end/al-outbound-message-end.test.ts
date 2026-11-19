@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
-import type { ALOutboundRepairAttemptSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
+import type {
+    ALOutboundPendingAckSnapshot,
+    ALOutboundRepairAttemptSnapshot
+} from '@shared/alm/al-runtime-state-stores.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALOutboundPlanner,
@@ -210,38 +213,37 @@ describe('a terminal settlement ends its message', () => {
     });
 
     it.each(STORES)(
-        'on %s, a superseded receipt timer that meets the row a timed-out server receipt kept rewrites nothing and states nothing',
+        'on %s, a superseded receipt timer that runs in time re-writes the timer the terminal receipt completed, which stays completed',
         async (store) => {
             const fixture = await createEndedMessageFixture(store, { maxRepairs: 4 });
-            const second = fixture.messages[1]!;
-            const receipt = { originPeerId: second.id.senderId, msgId: second.id.msgId };
-            await advanceTo(fixture, 50);
-            await requestSeqTwo(fixture, 'peer-1', 1);
-            await advanceTo(fixture, 75);
-            await requestSeqTwo(fixture, 'peer-2', 1);
-            await advanceTo(fixture, 100);
-            // The first send's and the first repair's timers are superseded: the second repair moved the deadline last.
-            expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout', 'ack-timeout']);
-            expect(
-                await fixture.runtime.acceptReceipt(createServerReceipt(second, 'timed-out', RECEIVERS, {
-                    controlMsgId: `receipt-timed-out-${second.id.msgId}`,
-                    confirmedRecipientPeerIds: ['peer-1']
-                }))
-            ).toEqual({ kind: 'committed' });
-            const kept = await fixture.stores.admissionStore.readReceiptState(receipt);
-            expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout']);
+            const { second, kept } = await keepTimedOutReceiptOverSupersededTimers(fixture);
 
             await advanceTo(fixture, 30_000);
 
             expect(framesOf(fixture, 2)).toEqual(['first-send', 'gap-repair(peer-1#1)', 'gap-repair(peer-2#1)']);
-            expect(await fixture.stores.admissionStore.readReceiptState(receipt)).toEqual(kept);
+            expect(await readReceiptRow(fixture, second)).toEqual(kept);
             expect(await pendingWorkOf(fixture, 2)).toEqual([]);
-            expect(
-                fixture.settlements.filter((settlement) =>
-                    settlement.msgId === second.id.msgId &&
-                    (settlement.kind === 'acknowledgement' || settlement.kind === 'receipt-exhausted')
-                ).map((settlement) => settlement.kind)
-            ).toEqual(['acknowledgement']);
+            expect(receiptFactKindsOf(fixture, second)).toEqual(['acknowledgement']);
+        }
+    );
+
+    it.each(STORES)(
+        'on %s, a superseded receipt timer that runs late, past the kept row\'s deadline, rewrites nothing and states nothing',
+        async (store) => {
+            const fixture = await createEndedMessageFixture(store, { maxRepairs: 4 });
+            const { second, kept } = await keepTimedOutReceiptOverSupersededTimers(fixture);
+
+            // The engine runs late: one drain once every deadline of the receipt has passed.
+            vi.setSystemTime(START_MS + 2_200);
+            await drainOutboundWorkDueNow(fixture.runtime, fixture.stores);
+            expect(await readReceiptRow(fixture, second)).toEqual(kept);
+            expect(await pendingWorkOf(fixture, 2)).toEqual([]);
+            await advanceTo(fixture, 30_000);
+
+            expect(framesOf(fixture, 2)).toEqual(['first-send', 'gap-repair(peer-1#1)', 'gap-repair(peer-2#1)']);
+            expect(await readReceiptRow(fixture, second)).toEqual(kept);
+            expect(await pendingWorkOf(fixture, 2)).toEqual([]);
+            expect(receiptFactKindsOf(fixture, second)).toEqual(['acknowledgement']);
         }
     );
 
@@ -265,6 +267,46 @@ describe('a terminal settlement ends its message', () => {
         expect(terminalFactsOf(fixture, 2)).toEqual([['admission', 'repair-exhausted']]);
     });
 });
+
+/**
+ * Two gap repairs move seq 2's receipt deadline twice, so the first send's and the first repair's timers are
+ * superseded; a `timed-out` server receipt at 100 ms then ends the message and its receipt's current timer, and keeps
+ * the incomplete row.
+ */
+async function keepTimedOutReceiptOverSupersededTimers(
+    fixture: EndedMessageFixture
+): Promise<{ readonly second: ALMessage; readonly kept: ALOutboundPendingAckSnapshot | undefined; }> {
+    const second = fixture.messages[1]!;
+    await advanceTo(fixture, 50);
+    await requestSeqTwo(fixture, 'peer-1', 1);
+    await advanceTo(fixture, 75);
+    await requestSeqTwo(fixture, 'peer-2', 1);
+    await advanceTo(fixture, 100);
+    expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout', 'ack-timeout']);
+    expect(
+        await fixture.runtime.acceptReceipt(createServerReceipt(second, 'timed-out', RECEIVERS, {
+            controlMsgId: `receipt-timed-out-${second.id.msgId}`,
+            confirmedRecipientPeerIds: ['peer-1']
+        }))
+    ).toEqual({ kind: 'committed' });
+    expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout']);
+    return { second, kept: await readReceiptRow(fixture, second) };
+}
+
+async function readReceiptRow(
+    fixture: EndedMessageFixture,
+    message: ALMessage
+): Promise<ALOutboundPendingAckSnapshot | undefined> {
+    return await fixture.stores.admissionStore.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId });
+}
+
+/** The receipt facts stated for `message`: each acknowledgement and each `receipt-exhausted`, by kind. */
+function receiptFactKindsOf(fixture: EndedMessageFixture, message: ALMessage): readonly string[] {
+    return fixture.settlements.filter((settlement) =>
+        settlement.msgId === message.id.msgId &&
+        (settlement.kind === 'acknowledgement' || settlement.kind === 'receipt-exhausted')
+    ).map((settlement) => settlement.kind);
+}
 
 /** Both receivers' first requests are served; peer-2's second finds its budget of one spent at 1 325 ms. */
 async function exhaustSeqTwo(fixture: EndedMessageFixture): Promise<void> {

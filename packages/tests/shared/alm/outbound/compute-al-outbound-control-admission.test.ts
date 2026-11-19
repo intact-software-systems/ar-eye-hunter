@@ -17,6 +17,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     computeALOutboundControlAdmission,
+    toALOutboundControlSettlements,
     type ALControlAdmissionRead
 } from '@shared/alm/outbound/compute-al-outbound-control-admission.ts';
 import { toALOutboundControlRepairHint } from '@shared/alm/outbound/control/to-al-outbound-control-repair-hint.ts';
@@ -469,39 +470,75 @@ describe('the end of the message a control admission writes', () => {
     const ack = toTestALAckPayload({ ackedMsgId: 'ending', fromPeerId: 'r2', toPeerId: 'self' });
     const ENDS = [{ kind: 'end-sent-message', stored: SENT }];
 
+    // Each case states the facts the commit states and the end it writes, so the two statements of the terminal
+    // conditions cannot drift apart unseen.
     it.each(
         [
-            { name: 'an ACK that completes the receipt', read: { parsed: { type: 'ack', payload: ack }, history: { kind: 'acks', values: [] } }, end: ENDS },
-            { name: 'a terminal NACK that removes an open receipt', read: { parsed: { type: 'nack', payload: nack('expired') } }, end: ENDS },
-            { name: 'a relay rejection', read: { parsed: { type: 'nack', payload: nack('resync-required') }, pending: undefined }, end: ENDS },
             {
-                name: 'an ACK that leaves the receipt open',
+                name: 'an ACK that completes the receipt (set, complete)',
+                read: { parsed: { type: 'ack', payload: ack }, history: { kind: 'acks', values: [] } },
+                facts: ['acknowledgement:complete'],
+                end: ENDS
+            },
+            {
+                name: 'a terminal NACK that removes an open receipt (remove, with a receipt)',
+                read: { parsed: { type: 'nack', payload: nack('expired') } },
+                facts: ['acknowledgement:open', 'receipt-exhausted'],
+                end: ENDS
+            },
+            {
+                name: 'a relay rejection',
+                read: { parsed: { type: 'nack', payload: nack('resync-required') }, pending: undefined },
+                facts: ['relay-rejected'],
+                end: ENDS
+            },
+            {
+                name: 'an ACK that leaves the receipt open (set, incomplete)',
                 read: {
                     parsed: { type: 'ack', payload: ack },
                     history: { kind: 'acks', values: [] },
                     pending: { ...OPEN, ackedPeerIds: [], expectedPeerIds: ['r1', 'r2', 'r3'] }
                 },
+                facts: ['acknowledgement:open'],
                 end: []
             },
-            { name: 'a gap NACK', read: {}, end: [] },
+            {
+                name: 'an ACK with no receipt to move (remove, without a receipt)',
+                read: { parsed: { type: 'ack', payload: ack }, history: { kind: 'acks', values: [] }, pending: undefined },
+                facts: [],
+                end: []
+            },
+            { name: 'a gap NACK', read: {}, facts: [], end: [] },
             {
                 name: 'an outside-audience NACK that leaves the receipt open',
                 read: { parsed: { type: 'nack', payload: nack('not-subscribed') }, pending: { ...OPEN, ackedPeerIds: [] } },
+                facts: ['acknowledgement:open'],
                 end: []
             },
-            { name: 'a terminal NACK on a send with no receipt', read: { parsed: { type: 'nack', payload: nack('expired') }, pending: undefined }, end: [] },
+            {
+                name: 'a terminal NACK on a send with no receipt',
+                read: { parsed: { type: 'nack', payload: nack('expired') }, pending: undefined },
+                facts: [],
+                end: []
+            },
             {
                 name: 'a terminal NACK for a message that has already ended',
                 read: { parsed: { type: 'nack', payload: nack('expired') }, sent: { ...SENT, ended: true } },
+                facts: ['acknowledgement:open', 'receipt-exhausted'],
                 end: []
             }
         ] as const
-    )('$name: messageEnd is $end.length mutations', ({ read, end }) => {
+    )('$name: states $facts and ends the message with $end.length mutations', ({ read, facts, end }) => {
         const candidate = computeALOutboundControlAdmission(
             toRead(read as Partial<ALControlAdmissionRead>),
             normalizeALRuntimeStoreRetention()
         );
 
+        expect(
+            toALOutboundControlSettlements(candidate, 'trace').map((fact) =>
+                fact.kind === 'acknowledgement' ? `acknowledgement:${fact.complete ? 'complete' : 'open'}` : fact.kind
+            )
+        ).toEqual(facts);
         expect(candidate.messageEnd).toEqual(end);
         if (end.length > 0) {
             expect(candidate.removeRepairAttempt).toBe(true);

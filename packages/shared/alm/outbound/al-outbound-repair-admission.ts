@@ -227,6 +227,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
             await this.commitOrphanedReceiptCleanup(msgId, read.clientRecord);
             return;
         }
+        // A terminal commit that keeps its incomplete row ended the message: a timer still queued writes nothing for it.
+        if (stored.ended && !isALOutboundReceiptComplete(pending)) {
+            return;
+        }
         const messageExpiresAtMs = stored.reference.expiresAtMs;
         if (pending.deadlineAtMs > this.readNowMs()) {
             await this.persistNextAckTimeout({ msg, pending, messageExpiresAtMs }, read.clientRecord?.version);
