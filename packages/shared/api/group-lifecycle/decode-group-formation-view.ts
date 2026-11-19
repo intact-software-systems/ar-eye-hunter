@@ -4,6 +4,7 @@ import { isSameGroupRef } from '../api-type-utils.ts';
 import type { PendingTopologyReplan } from '../graph-topology-management-types.ts';
 import type { GroupRef, GroupStateCausalRevision } from '../group-types.ts';
 import { validateRallarGroupRef, validateRallarNonNegativeInteger } from '../rallar-validation.ts';
+import { decodeHeldTopologyReshape } from '../topology-plan/decode-held-topology-reshape.ts';
 import {
     GROUP_ACTIVATION_CONDITIONS,
     GROUP_ACTIVATION_REMEDIATIONS,
@@ -57,6 +58,11 @@ const FIELD_CHECKS = {
     pending: {
         message: 'Pending replan must be null or the queued replan',
         isValid: isNullOr(isPendingTopologyReplan)
+    },
+    heldReshape: {
+        message:
+            'Held reshape must be null or name its wanted reasons, known, once each and in order, and the instant its gate opens',
+        isValid: isNullOr(isHeldTopologyReshape)
     },
     maxFormationAttempts: {
         message: 'Attempt budget must be null or a positive integer',
@@ -176,6 +182,10 @@ function isPendingTopologyReplan(value: unknown): value is PendingTopologyReplan
         typeof value.reconfigureQueued === 'boolean' &&
         (value.dueAtEpochMs === null || isNonNegativeInteger(value.dueAtEpochMs)) &&
         (value.generation === null || isNonNegativeInteger(value.generation));
+}
+
+function isHeldTopologyReshape(value: ApiJsonValue): boolean {
+    return decodeHeldTopologyReshape(value).right !== undefined;
 }
 
 function isCausalRevision(value: unknown): value is GroupStateCausalRevision {

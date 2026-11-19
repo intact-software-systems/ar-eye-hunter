@@ -94,4 +94,21 @@ describe('group formation view decoding', () => {
             causalRevision: { groupRevision: 1, presenceRevision: 1, observedAtEpochMs: 5 }
         }))).toEqual([]);
     });
+
+    it('requires the held reshape and accepts null or a decoded one', () => {
+        const view = createFormationView(groupRef);
+        const { heldReshape: _heldReshape, ...withoutHeldReshape } = view;
+        const held = { wantedReasons: ['kind-change'], opensAtEpochMs: 1_795_060_154_711 };
+
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify(withoutHeldReshape)), groupRef).left).toEqual([
+            { path: 'heldReshape', code: 'missing-field', message: 'Formation view is missing heldReshape' }
+        ]);
+        expect(decodeGroupFormationView(JSON.parse(JSON.stringify({ ...view, heldReshape: held })), groupRef).right?.heldReshape)
+            .toEqual(held);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: [] } }))).toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['kind-change', 'kind-change'] } })))
+            .toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['refinement'] } }))).toEqual(['heldReshape']);
+        expect(issuePaths(JSON.stringify({ ...view, heldReshape: {} }))).toEqual(['heldReshape']);
+    });
 });
