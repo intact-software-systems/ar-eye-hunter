@@ -105,6 +105,15 @@ export function decodeGroupFormationView(
     return issues.length > 0 ? Either.ofLeft(issues) : Either.ofRight(value as GroupFormationView);
 }
 
+/** A reader that refuses an undecodable view throws this: every issue, joined in the decoder's order. */
+export function toGroupFormationViewError(groupId: string, issues: readonly GroupFormationViewIssue[]): TypeError {
+    return new TypeError(
+        `Formation view for ${groupId} is invalid: ${
+            issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+        }`
+    );
+}
+
 function toFieldIssues(
     field: keyof GroupFormationView,
     fieldValue: ApiJsonValue | undefined

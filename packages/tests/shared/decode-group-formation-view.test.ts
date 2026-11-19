@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeGroupFormationView } from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
+import {
+    decodeGroupFormationView,
+    toGroupFormationViewError
+} from '@shared/api/group-lifecycle/decode-group-formation-view.ts';
 
 import { createFormationView } from '../shared-web/rooms/formation/room-formation-test-fixtures.ts';
 
@@ -112,5 +115,18 @@ describe('group formation view decoding', () => {
         expect(issuePaths(JSON.stringify({ ...view, heldReshape: { ...held, wantedReasons: ['leader-rooting', 'kind-change'] } })))
             .toEqual(['heldReshape']);
         expect(issuePaths(JSON.stringify({ ...view, heldReshape: {} }))).toEqual(['heldReshape']);
+    });
+
+    it('joins every issue into one TypeError naming the group', () => {
+        const error = toGroupFormationViewError('room-1', [
+            { path: 'condition', code: 'invalid-value', message: 'condition is not a known value' },
+            { path: 'groupRef', code: 'invalid-value', message: 'Formation view names a different group' }
+        ]);
+
+        expect(error).toBeInstanceOf(TypeError);
+        expect(error.message).toBe(
+            'Formation view for room-1 is invalid: condition: condition is not a known value; ' +
+                'groupRef: Formation view names a different group'
+        );
     });
 });
