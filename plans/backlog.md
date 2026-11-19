@@ -811,7 +811,8 @@ and it has no status list.
   `maxCount` less the pending claimed, `al-work-queue-port.ts`), so a crashed
   lease is recovered late for as long as a backlog of pending work lasts. The
   port's design is unchanged by D671, but claims fill more often now that due
-  work is no longer hidden.
+  work is no longer hidden. Option: a guaranteed share of each claim for the
+  sweep; a port decision.
 - The memory queue (`InMemoryQueueBox`) filters its whole map and sorts it for
   every `due` page and claim (`in-memory-queue-box.ts`). It is a production
   store: ALM's volatile and checkpoint lanes (`al-runtime-stores.ts`) and
