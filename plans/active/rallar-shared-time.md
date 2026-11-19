@@ -21,21 +21,15 @@ The foundation PR supplies an uncached server observation, a connection-scoped t
 
 ## Next two independently testable slices
 
-### 1. Carry one signed deadline from creation to final delivery
+### 1. Compare a room deadline through the connected client
 
-Use the smallest failing cross-clock room-entry or play case from the Grumpy Town integration as the reproducer. For a short-lived message, capture the signed creation and expiry fields, which carrier handled it, and the acceptance or rejection at the destination. Run with the sender ahead and behind. This distinguishes an invalid deadline at creation from a valid envelope rejected farther downstream. [Consumer PR](https://github.com/intact-software-systems/ar-eye-hunter/pull/832)
+Expose `rallar.compareDeadline(closesAtEpochMs)` for a poll view that reads its closing instant from the current room record. Each call reads the active connection's calibrated window. Return `before`, `overlaps`, `at-or-after`, or `unavailable` as defined below. Reject a malformed epoch explicitly. The call needs no network request, timer, or retained deadline. Show how a poll view handles each result and delegates the vote decision to the poll authority.
 
-Keep wire semantics in the shared message contract. The browser connection supplies conservative creation time before signing and the latest plausible time for expiry checks. Follow the envelope through the page delivery registry and RTC proof verifier. RTC forwarding preserves the original proof. At WebSocket handoff the server verifies the original envelope against the sender’s registered room key. It issues a recipient-specific copy under server authority and preserves the original deadline. Each of the five low-level message builders requires a named creation epoch.
+**Exit evidence.** Exercise both edges of the window, a point window, absence or retirement of calibration, and replacement with a new connection. Verify shared-web types, the public facade snapshot, and browser bundle boundaries.
 
-**Exit evidence.** Show that an in-budget message arrives with opposing device offsets, the same envelope is rejected at equality with its deadline on both carriers, and a delayed fallback or replay cannot extend its life. Exercise the owning package tests and type checks, then rerun the smallest browser case. If room entry still fails before a message is sent, record that boundary and exercise the envelope independently.
+### 2. Demonstrate poll closure and recovery across two browsers
 
-### 2. Recover room presence and pending work after clock loss
-
-Follow one bounded room lease through join, renewal, suspension, expiry and reconnection. Evaluate having the client request a duration and the server grant an absolute expiry against the existing persistence and API contracts. Compare any granted expiry using the active calibration window. Keep room selection as recoverable user intent. The authoritative session and connection generation determine whether a restored participant can act.
-
-Trace dirty checkpoints and reserved work across the same interruption. Expired calibration ends new authority while previously owned work can flush or release. Preserve monotonic elapsed time for game ticks and RTT durations. Include ICE or signaling expiry where the reproducer crosses those boundaries.
-
-**Exit evidence.** Run the three independent-browser clock-skew cases tracked in #836, the normal-clock room and rematch regressions, and focused checkpoint and lease tests. Demonstrate bounded interruption, survivor continuation after host loss, refusal of stale work, and successful checkpoint cleanup. Repeat background and foreground recovery on a physical phone before claiming mobile recovery.
+Use one poll authority to publish the room's deadline, record votes, and return the authoritative disposition. Recover the record on join and reconnect. Drive clients with opposite device offsets, submit before close, and deliver a delayed vote at or after close. Check that both clients recover the same record and that submission timing is decided by the authority. This supplies the first product demonstration before qualifying a second consumer and mobile recovery.
 
 ## Public product and launch evidence
 
