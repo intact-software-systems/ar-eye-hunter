@@ -25,7 +25,7 @@ tests.
 
 ## Goals
 
-- **B.** A WS client that sends a receipted room message resends it on its own hop until the server answers for it,
+- **B.** A WS client that sends a receipted message, to a room or to one session, resends it on its own hop until the server answers for it,
   within the send's own receipt timeout and retries. A send the server never answers ends `failed`,
   `receipt-exhausted`, as it does over `rtc`.
 - **A.** A receiver that still has a gap asks again, on a timer, and the sender answers a renewed request with a new
@@ -46,7 +46,7 @@ tests.
   for the server as today.
 - The held-send path (D640), the lost stream start over `rtc`, the relay statement rules: their own slices.
 - Any change to a receipt once the server has answered: the server's receipts own the schedule from there, as today.
-- Unicast sends, whose repair policy is `none`.
+- Gap repair for unicast sends, whose repair policy is `none`: part A does not apply to them. Part B does.
 
 ## Anti-goals
 
@@ -67,7 +67,7 @@ tests.
   request payloads gain the new required field, and the statement that _another requester_ finds the budget spent is
   restated to the per-requester budget the maintainer ruled.
 - The reproduction of part one stays byte for byte and green (`outbound-work-readiness-starvation.test.ts`).
-- The ALM lane cells that exist today pass unchanged, the jitter cell among them: it delays frames by up to 80 ms and
+- The ALM lane cells that exist today pass unchanged, with one exception by ruling (`repair-exhausted`, below). The jitter cell is among those that must not change: it delays frames by up to 80 ms and
   must not draw a renewal.
 - The suite for receipts under a transport hold (`acknowledgement-under-transport-hold-indexeddb.test.ts`) passes
   unedited. It does not exercise a room send's first-hop wait (its `ws` sender is a `hop` unicast), so part B brings
@@ -114,17 +114,19 @@ Today a WS client's receipted room send is written to the socket and forgotten u
 creates the sender's receipt row. The change: at dispatch, the sender records that it is waiting for the server to
 answer for this message, with a timer.
 
-- **Which sends.** A room send from a composition that has an own hop (`hopPeerIds`, the WS client's server), with a
-  logical audience, a receipt mode other than `none`, and a retry policy that allows at least one retry. Over `rtc`
-  nothing changes: the sender already tracks its peers.
+- **Which sends.** Any send, to a room or to one session, from a composition that has an own hop (`hopPeerIds`, the
+  WS client's server), with a receipt mode other than `none` and a retry policy that allows at least one retry. One
+  rule by hop, not by the send's shape. A `hop` send already has its own timer and is left alone. Over `rtc` nothing
+  changes: the sender already tracks its peers.
 - **The timer.** The send's own receipt policy: its timeout (2 s by default) and its retries (3 by default). No new
   setting.
 - **When it fires.** The sender writes the same message again on its own hop, with a new identity per attempt so a
   frame is written, and waits again.
 - **What ends the wait.** Any receipt from the server for the message: `admitted`, `complete` or `timed-out`. Each
   proves the server has it, and a terminal receipt can arrive before `admitted`. The wait and its timer work are
-  removed in the commit that admits that receipt. A timer already claimed by a running batch finds the wait ended
-  and does nothing.
+  removed in the commit that admits that receipt. A terminal refusal from the server (for example `unauthorized`)
+  ends the wait too, so a refused send does not keep resending. A timer already claimed by a running batch finds
+  the wait ended and does nothing.
 - **A receipt that arrives after a first-hop deadline** is admitted like any other. The first-hop wait's deadline and
   attempts never become the receipt's: today a receipt row keeps its current deadline and attempts and refuses an
   `admitted` that arrives after that deadline, so the wait cannot simply be the receipt row with the server as its
@@ -135,8 +137,10 @@ answer for this message, with a timer.
   sender only. Where the server instance no longer holds the receipt (another cluster instance, a restart), nothing
   is answered and the send can still end `failed` although delivered. That is recorded as a limit and pinned by a
   test.
-- **Under a transport hold.** A frame that could not be written charges no attempt, as for the `rtc` receipt timer.
-  Part B's own test states it.
+- **Under a transport hold.** A frame that could not be written charges no attempt: a client that is offline does
+  not spend a send's retries. The first draft said "as for the `rtc` receipt timer"; that timer has no such rule
+  (it charges at every deadline), so the first hop gets this rule on its own and the receipt timer is left to the
+  held-send slice (D640). Part B's own test states it.
 
 ### Part A: the requester asks again
 
@@ -153,7 +157,8 @@ directions, and `rtc` peers that send to each other directly.
    ended has no new arriving frame to name, so it names the same message as the last report. Four places would
    otherwise drop it as already seen: the receiver's own work id for the NACK and the repair request; the sender's
    control admission history; the sender's repair-hint id; and the attempt identity. The number enters all four.
-3. **The receiver renews a sequence that has stayed missing.** When a track gets a gap, the receiver arms a timer.
+3. **The receiver renews a sequence that has stayed missing.** When a track gets a gap, the receiver arms a timer
+   for the newly missing range.
    When it runs, it renews only the sequences that have been missing for the whole interval since their last
    request, names only those, and gives each its own next number. A sequence that went missing since the last run
    already had its arrival report and waits its own interval. When no sequence is left to renew, the timer ends. A
@@ -196,6 +201,11 @@ The six red cases were written before the rulings. Under the ruled design:
   before send 20, so a later frame always reveals a gap and the cell does not depend on whether the seed spares the
   last frame. All twenty arrive in order. The lost last frame is the stated limit, pinned at unit level.
 - Both are withheld from the hosted manifests, as the other fault cells are.
+- The existing cell `repair-exhausted` is restated by ruling. It proved exhaustion through a second requester
+  finding a shared budget spent, which the per-requester budget removes. The harness's send command gains
+  `maxRepairs`; the cell states a budget of one, and its requester's own first renewal is answered
+  `repair-exhausted`. `rallar-black-box-test-contracts.ts` is at its line backstop, so the field comes with a split of
+  that file by owned feature.
 - If either cell is not green on its carriers, three runs each, the work stops with a report of what remains.
 
 ## Validation
@@ -232,7 +242,9 @@ The six red cases were written before the rulings. Under the ruled design:
   interval.
 - The renewal intervals, their random stretch, and the budget of 4.
 - A second lane cell for `ack: 'none'`, which releases its loss before the last send.
-- D573's pin file changes in the two named ways.
+- D573's pin file changes in the two named ways, and in a third found while planning: its helper that reads the
+  attempt row's count follows the row's per-requester shape. No assertion changes.
+- One timer row per newly missing range, in place of one per track; the behaviour is the per-sequence rule above.
 - One pull request (#847) for both parts, B's commits first.
 
 ## Decisions (maintainer, 2026-11-19)
@@ -245,3 +257,5 @@ The six red cases were written before the rulings. Under the ruled design:
 | B: a lost `admitted` receipt        | The server answers a duplicate with `admitted` again.          |
 | A: what resends a lost repair frame | The requester asks again while the gap stands.                 |
 | A: how the repair budget counts     | Per requester.                                                 |
+| B: which sends wait                 | Every receipted `ws` send, room or unicast.                    |
+| The `repair-exhausted` cell         | Restated with a budget of one.                                 |
