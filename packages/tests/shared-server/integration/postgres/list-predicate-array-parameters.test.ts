@@ -429,11 +429,17 @@ function toGenericExplainingSql(source: PSqlSql, explained: PlanNode[][]): PSqlS
         return source.begin(async (transaction) => {
             await transaction`set local plan_cache_mode = force_generic_plan`;
             await transaction(toTemplate(`prepare generic_explained as ${text}`));
-            const rows = await transaction<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode; }[]; }[]>(
-                toTemplate(`explain (format json) execute generic_explained(${values.map(toSqlLiteral).join(', ')})`)
-            );
-            await transaction(toTemplate('deallocate generic_explained'));
-            explained.push(rows.flatMap((row) => row['QUERY PLAN'].flatMap((plan) => toPlanNodes(plan.Plan))));
+            try {
+                const rows = await transaction.begin(async (savepoint) =>
+                    await savepoint<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode; }[]; }[]>(
+                        toTemplate(`explain (format json) execute generic_explained(${values.map(toSqlLiteral).join(', ')})`)
+                    )
+                );
+                explained.push(rows.flatMap((row) => row['QUERY PLAN'].flatMap((plan) => toPlanNodes(plan.Plan))));
+            }
+            finally {
+                await transaction(toTemplate('deallocate generic_explained'));
+            }
             return [] as Result;
         });
     }
