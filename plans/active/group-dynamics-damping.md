@@ -866,7 +866,7 @@ their last phase: a re-root held near the end of `leader-churn` and released whe
 
 ### The held reshape in the formation read
 
-Design, not built. Approach and lane behaviour ruled by the maintainer on 2026-11-19.
+Built (pull request #848). Approach and lane behaviour ruled by the maintainer on 2026-11-19.
 
 **Why.** A reshape the gate holds publishes nothing, so nothing outside the operator read can tell that a
 room still owes one. The lanes' stable-layout wait (`create-stable-rtc-layout-wait.ts`) reads the page's own

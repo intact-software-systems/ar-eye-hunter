@@ -847,6 +847,9 @@ and it has no status list.
     be the sign to scale it.
   - The scale setup's accepted-layout gate is a `formation.readiness` too, so a page already settled there reads
     the formation view at the gate and again in the stable-layout wait.
+  - A stored gate record that does not decode makes the formation read answer 400 with the storage key in the
+    body: the graph-topology routes map an error that carries no status by its message. The mapping predates the
+    held reshape and the fingerprint read shares it; a route test pins the status.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".
