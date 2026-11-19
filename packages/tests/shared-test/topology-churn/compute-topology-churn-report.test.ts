@@ -388,6 +388,80 @@ describe('computeTopologyChurnReport', () => {
         expect(Object.values(phase.reshapesByReason).reduce((sum, count) => sum + count, 0)).toBe(3);
     });
 
+    it('counts the plans that held a reshape, and each held reason, with every held reason present at zero', () => {
+        const phase = computeFormation([
+            createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, heldReshapeReasons: ['kind-change'] }),
+            createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 2_000, heldReshapeReasons: ['kind-change'] }),
+            createTopologyChurnPlan({
+                version: 3,
+                plannedAtEpochMs: 3_000,
+                change: { kind: 'repair' },
+                heldReshapeReasons: ['leader-rooting']
+            }),
+            createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 4_000 })
+        ]);
+
+        expect(phase.heldReshapePlanCount).toBe(3);
+        expect(phase.heldReshapesByReason).toEqual({ 'kind-change': 2, 'leader-rooting': 1 });
+    });
+
+    it('counts a plan that held both reasons once, and under each reason', () => {
+        const phase = computeFormation([
+            createTopologyChurnPlan({
+                version: 1,
+                plannedAtEpochMs: 1_000,
+                heldReshapeReasons: ['kind-change', 'leader-rooting']
+            })
+        ]);
+
+        expect(phase.heldReshapePlanCount).toBe(1);
+        expect(phase.heldReshapesByReason).toEqual({ 'kind-change': 1, 'leader-rooting': 1 });
+    });
+
+    it('reports nothing held for a phase whose plans held nothing', () => {
+        const phase = computeFormation([createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000 })]);
+
+        expect(phase.heldReshapePlanCount).toBe(0);
+        expect(phase.heldReshapesByReason).toEqual({ 'kind-change': 0, 'leader-rooting': 0 });
+    });
+
+    it('gives the room\'s closest two reshapes, across phases, and each phase\'s closest within it', () => {
+        const churn: TopologyChurnPhaseWindow = { ...FORMATION, name: 'churn', startedAtEpochMs: 60_000, endedAtEpochMs: 120_000 };
+        const report = computeTopologyChurnReport({
+            plans: [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 10_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 40_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+                createTopologyChurnPlan({ version: 3, plannedAtEpochMs: 58_000 }),
+                // 21 s after version 2, across the phase boundary: the room's closest, in neither phase alone.
+                createTopologyChurnPlan({ version: 4, plannedAtEpochMs: 61_000, change: { kind: 'reshape', reason: 'leader-rooting' } }),
+                createTopologyChurnPlan({ version: 5, plannedAtEpochMs: 101_000, change: { kind: 'reshape', reason: 'leader-rooting' } })
+            ],
+            sightings: [],
+            linkSamples: [],
+            phases: [FORMATION, churn],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.closestReshapesMs).toBe(21_000);
+        expect(report.phases.map((phase) => phase.closestReshapesMs)).toEqual([30_000, 40_000]);
+    });
+
+    it('has no closest reshapes for a room or a phase with fewer than two reshapes', () => {
+        const report = computeTopologyChurnReport({
+            plans: [
+                createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 10_000, change: { kind: 'reshape', reason: 'kind-change' } }),
+                createTopologyChurnPlan({ version: 2, plannedAtEpochMs: 20_000 })
+            ],
+            sightings: [],
+            linkSamples: [],
+            phases: [FORMATION],
+            replacedLayoutOverlapMs: OVERLAP_MS
+        });
+
+        expect(report.closestReshapesMs).toBeNull();
+        expect(report.phases[0].closestReshapesMs).toBeNull();
+    });
+
     it('an identity-only plan belongs to no kind', () => {
         const phase = computeFormation([
             createTopologyChurnPlan({ version: 1, plannedAtEpochMs: 1_000, delta: IDENTITY_ONLY, causes: ['rtt'] }),

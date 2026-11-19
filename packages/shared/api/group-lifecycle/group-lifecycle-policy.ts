@@ -113,6 +113,8 @@ export type GroupTopologyPolicy = Readonly<{
     reconfigureLanding: GroupTopologyReconfigureLanding;
     debounceWindowMs: number;
     maxReplanWaitMs: number;
+    reshapeMinIntervalMs: number;
+    reshapeMaxIntervalMs: number;
 }>;
 
 /**
@@ -247,7 +249,8 @@ export const GROUP_LIFECYCLE_POLICY_ISSUE_CODES = [
     'server-auto-requires-automatic-trigger',
     'server-auto-requires-automatic-activation',
     'server-auto-cannot-command-replanning',
-    'replan-window-exceeds-maximum-wait'
+    'replan-window-exceeds-maximum-wait',
+    'reshape-minimum-interval-exceeds-maximum'
 ] as const;
 
 export type GroupLifecyclePolicyIssueCode = typeof GROUP_LIFECYCLE_POLICY_ISSUE_CODES[number];

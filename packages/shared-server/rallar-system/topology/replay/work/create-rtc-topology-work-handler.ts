@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/outbox-queue-reader.ts';
 import type { OnMessageCallback } from '@shared/services/queue-message-callbacks.ts';
@@ -30,6 +31,7 @@ import {
 } from './compute-rtc-topology-work-write.ts';
 import {
     computeRtcTopologyWork,
+    resolveRtcTopologyWorkReshapeDue,
     validateRtcTopologyWork,
     type ComputeRtcTopologyWorkInput,
     type RtcTopologyWorkFacts
@@ -162,6 +164,7 @@ async function processRtcTopologyWork(input: ProcessRtcTopologyWorkInput): Promi
         await writeRtcTopologyWorkCompletion(options.database, reservationFinish);
         return;
     }
+    releaseReshapeDueWorkNotDue(computationInput);
     const computeStartedAtMs = options.topologyPlanning.readDurationNowMs();
     const computation = computeRtcTopologyWork(computationInput);
     const issues = validateRtcTopologyWork(computationInput, computation);
@@ -200,6 +203,7 @@ function toRtcTopologyWorkFacts(input: ToRtcTopologyWorkFactsInput): RtcTopology
             entry.audit.expiryTs.epochMilliseconds,
             input.nowEpochMs + options.finishedRetentionMs
         ),
+        finishedRetentionMs: options.finishedRetentionMs,
         traceId: message.id.traceId
     };
 }
@@ -217,7 +221,7 @@ async function readRtcTopologyWorkComputationInput(
     const { workEnvelope } = facts;
     const work = workEnvelope.data;
     const groupRef = toRtcTopologyWorkGroupRef(work);
-    const [authority, promotionRead, storedInputFingerprint] = await Promise.all([
+    const [authority, promotionRead, storedInputFingerprint, reshapeGate] = await Promise.all([
         // A membership change plans from the group's current stored state, which is at or past
         // the revision that asked (D290); an RTT refresh still carries the snapshot it measured.
         options.topologyPlanning.readTopologyPlanningAuthorityIfPresent({
@@ -229,14 +233,15 @@ async function readRtcTopologyWorkComputationInput(
             publication: options.topologyPublication,
             groupRef
         }),
-        options.executionRepository.readTopologyInputFingerprint(groupRef)
+        options.executionRepository.readTopologyInputFingerprint(groupRef),
+        options.executionRepository.readTopologyReshapeGate(groupRef)
     ]);
     if (authority === null) {
         return null;
     }
     return {
         facts,
-        read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint },
+        read: { mutation: mutationRead, authority, promotion: promotionRead, storedInputFingerprint, reshapeGate },
         publicationExpireAtTimestamp: facts.workEnvelope.data.publish
             ? options.executionRepository.publicationExpireAtTimestamp()
             : null,
@@ -246,6 +251,18 @@ async function readRtcTopologyWorkComputationInput(
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId
     };
+}
+
+/**
+ * The queue holds a reshape-due row until its gate opens by the queue's clock. When this server's clock, or bounds that
+ * grew while the row waited, still find the gate closed, the row is released as not ready: it comes back when the gate
+ * opens by this clock, and readiness spends none of its attempts.
+ */
+function releaseReshapeDueWorkNotDue(input: ComputeRtcTopologyWorkInput): void {
+    const due = resolveRtcTopologyWorkReshapeDue(input);
+    if (due?.decision === 'not-due') {
+        throw new NotReadyException(due.retryAfterMs, 'The reshape gate is still closed for this reshape-due work');
+    }
 }
 
 interface WriteSkippedRttRefinementInput {
@@ -263,11 +280,14 @@ async function writeSkippedRttRefinement(input: WriteSkippedRttRefinementInput):
         entry,
         sourceWorkId: facts.workId,
         derivedExpireAtEpochMs: facts.derivedExpireAtEpochMs,
+        finishedRetentionMs: facts.finishedRetentionMs,
         reservationFinish,
         formationAutomationEnabled: options.formationAutomation !== undefined,
         serviceId: options.serviceId,
         publisherStreamId: options.topologyDelivery?.publisherStreamId,
-        traceId: facts.traceId
+        traceId: facts.traceId,
+        // A skipped refinement is decided before the gate is read, and it writes none.
+        storedReshapeGateRevision: null
     };
     const computedWrite = computeRtcTopologyWorkWrite(writeInput);
     const issues = validateRtcTopologyWorkWrite(writeInput, computedWrite);
@@ -390,7 +410,7 @@ async function writeRtcTopologyWorkDecision(
     input: WriteAcceptedRtcTopologyWorkInput
 ): Promise<void> {
     const { options, accepted, computedWrite, computeDurationMs, traceId } = input;
-    if (accepted.decision === 'skipped-rtt-refinement') {
+    if (accepted.decision === 'skipped-rtt-refinement' || accepted.decision === 'skipped-reshape-settled') {
         await writeCompletionOnly(options.database, computedWrite);
         return;
     }

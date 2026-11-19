@@ -1,0 +1,1132 @@
+{
+  "description": "No-browser API-v1 reshape gate across a three-node cluster, read through the operator's topology-plans route. An optimistic (auto) room fills to four members on the primary and is a star with no reshape gate stored. A fifth member joins on the secondary: the kind change to a tree is a reshape that passes the open gate, and the gate stored on the tertiary's read starts a 15 000 ms period with no held passes. The fifth leaves on the primary at once: the kind change back to a star falls inside that period and is held, so the leave is planned as a repair of the tree that names kind-change as held, the gate records the hold and wants kind-change, and the room stays a tree. When the gate opens, a reshape-due row released by any node publishes the star: a second kind-change reshape, planned no earlier than 15 000 ms after the first, after which the gate's interval is 30 000 ms with one held pass and nothing wanted. Each reshape's plannedAtEpochMs is the gate's lastPassAtEpochMs of the same pass, which is how the recipe captures both instants. The recipe depends on the leave landing within 15 s of the first reshape: it leaves directly after observing that reshape, and a run whose leave lands after the gate opened sees an ordinary reshape instead of a hold. It needs a fresh runId: its reads poll for states the room passes through once.",
+  "variables": {
+    "apiPrimary": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "apiSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "apiTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_RESHAPEGATECL_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-reshapegatecl"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_RESHAPEGATECL_WORKSPACE_ID",
+      "default": "workspace-reshapegatecl-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_RESHAPEGATECL_GROUP_ID",
+      "default": "reshapegatecl-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_RESHAPEGATECL_PASSWORD",
+      "default": "api-v1-reshapegatecl-password",
+      "secret": true
+    },
+    "adminUsername": {
+      "env": "RALLAR_BB_ADMIN_USERNAME",
+      "default": "admin"
+    },
+    "adminPassword": {
+      "env": "RALLAR_BB_ADMIN_PASSWORD",
+      "default": "admin",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "primary": {
+      "type": "http",
+      "baseUrl": "{apiPrimary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "secondary": {
+      "type": "http",
+      "baseUrl": "{apiSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "tertiary": {
+      "type": "http",
+      "baseUrl": "{apiTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerOwner",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reshapegatecl-register-owner-{runId}",
+        "body": {
+          "username": "reshapegatecl-owner-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "owner member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-owner-{runId}",
+        "body": {
+          "username": "reshapegatecl-owner-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerSessionId": "body.sessionId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerSecond",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reshapegatecl-register-second-{runId}",
+        "body": {
+          "username": "reshapegatecl-second-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "second member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginSecond",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-second-{runId}",
+        "body": {
+          "username": "reshapegatecl-second-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "secondClientId": "body.clientId",
+          "secondSessionId": "body.sessionId",
+          "secondAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveSecondAuthHeader",
+      "type": "set",
+      "output": "secondAuthHeader",
+      "secret": true,
+      "redactAs": "secondAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.secondAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerThird",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reshapegatecl-register-third-{runId}",
+        "body": {
+          "username": "reshapegatecl-third-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "third member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginThird",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-third-{runId}",
+        "body": {
+          "username": "reshapegatecl-third-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "thirdClientId": "body.clientId",
+          "thirdSessionId": "body.sessionId",
+          "thirdAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveThirdAuthHeader",
+      "type": "set",
+      "output": "thirdAuthHeader",
+      "secret": true,
+      "redactAs": "thirdAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.thirdAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerFourth",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reshapegatecl-register-fourth-{runId}",
+        "body": {
+          "username": "reshapegatecl-fourth-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "fourth member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFourth",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-fourth-{runId}",
+        "body": {
+          "username": "reshapegatecl-fourth-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "fourthClientId": "body.clientId",
+          "fourthSessionId": "body.sessionId",
+          "fourthAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFourthAuthHeader",
+      "type": "set",
+      "output": "fourthAuthHeader",
+      "secret": true,
+      "redactAs": "fourthAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.fourthAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerFifth",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register/requests/reshapegatecl-register-fifth-{runId}",
+        "body": {
+          "username": "reshapegatecl-fifth-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "fifth member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFifth",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-fifth-{runId}",
+        "body": {
+          "username": "reshapegatecl-fifth-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "fifthClientId": "body.clientId",
+          "fifthSessionId": "body.sessionId",
+          "fifthAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFifthAuthHeader",
+      "type": "set",
+      "output": "fifthAuthHeader",
+      "secret": true,
+      "redactAs": "fifthAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.fifthAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginAdmin",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login/requests/reshapegatecl-login-admin-{runId}",
+        "body": {
+          "username": "{adminUsername}",
+          "password": "{adminPassword}"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ownerCreatesTheRoomOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/requests/reshapegatecl-create-room-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "groupId": "{groupId}",
+          "displayName": "Reshape gate cluster {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}",
+          "lifecyclePolicy": {
+            "preset": "optimistic"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "kind": "room"
+          }
+        }
+      }
+    },
+    {
+      "name": "ownerJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{ownerClientId}/requests/reshapegatecl-join-owner-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "secondJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{secondClientId}/requests/reshapegatecl-join-second-{runId}",
+        "headers": {
+          "Authorization": "{secondAuthHeader}",
+          "x-client-id": "{secondClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "thirdJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{thirdClientId}/requests/reshapegatecl-join-third-{runId}",
+        "headers": {
+          "Authorization": "{thirdAuthHeader}",
+          "x-client-id": "{thirdClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fourthJoinsOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{fourthClientId}/requests/reshapegatecl-join-fourth-{runId}",
+        "headers": {
+          "Authorization": "{fourthAuthHeader}",
+          "x-client-id": "{fourthClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "ownerConnectsPresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{ownerSessionId}/requests/reshapegatecl-presence-owner-{runId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-owner-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "reshapegatecl-connection-generation-owner-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "secondConnectsPresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{secondSessionId}/requests/reshapegatecl-presence-second-{runId}",
+        "headers": {
+          "Authorization": "{secondAuthHeader}",
+          "x-client-id": "{secondClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-second-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "reshapegatecl-connection-generation-second-{runId}",
+          "principalId": "{secondClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "thirdConnectsPresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{thirdSessionId}/requests/reshapegatecl-presence-third-{runId}",
+        "headers": {
+          "Authorization": "{thirdAuthHeader}",
+          "x-client-id": "{thirdClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-third-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "reshapegatecl-connection-generation-third-{runId}",
+          "principalId": "{thirdClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fourthConnectsPresenceOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{fourthSessionId}/requests/reshapegatecl-presence-fourth-{runId}",
+        "headers": {
+          "Authorization": "{fourthAuthHeader}",
+          "x-client-id": "{fourthClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-fourth-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "reshapegatecl-connection-generation-fourth-{runId}",
+          "principalId": "{fourthClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theFourMembersFormAStar",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 40,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1.2
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "groupRef": {
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "state": "active",
+            "topology": "star",
+            "activeSessionIds": [
+              "{ownerSessionId}",
+              "{secondSessionId}",
+              "{thirdSessionId}",
+              "{fourthSessionId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "theStarStoresNoReshapeGate",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "reshapeGate": null
+        }
+      }
+    },
+    {
+      "name": "fifthJoinsOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{fifthClientId}/requests/reshapegatecl-join-fifth-{runId}",
+        "headers": {
+          "Authorization": "{fifthAuthHeader}",
+          "x-client-id": "{fifthClientId}"
+        },
+        "body": {
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "fifthConnectsPresenceOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{fifthSessionId}/requests/reshapegatecl-presence-fifth-{runId}",
+        "headers": {
+          "Authorization": "{fifthAuthHeader}",
+          "x-client-id": "{fifthClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-fifth-{runId}",
+          "publicationKey": null,
+          "connectionGenerationId": "reshapegatecl-connection-generation-fifth-{runId}",
+          "principalId": "{fifthClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theKindChangeToATreePassesTheOpenGate",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "poll": {
+          "maxAttempts": 100,
+          "maxDurationMs": 20000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        },
+        "outputs": {
+          "firstReshapeAt": "body.reshapeGate.gate.lastPassAtEpochMs",
+          "firstGateOpensAt": "body.reshapeGate.opensAtEpochMs",
+          "firstWantedReasons": "body.reshapeGate.wantedReasons"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "roomRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "plans": [
+            {
+              "topology": "tree",
+              "memberCount": 5,
+              "plan": {
+                "change": {
+                  "kind": "reshape",
+                  "reason": "kind-change"
+                }
+              }
+            }
+          ],
+          "reshapeGate": {
+            "gate": {
+              "lastPassAtEpochMs": "integer",
+              "consecutiveHeldPasses": 0,
+              "heldAtEpochMs": null
+            },
+            "intervalMs": 15000,
+            "opensAtEpochMs": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "fifthLeavesOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{fifthSessionId}/disconnect/requests/reshapegatecl-disconnect-fifth-{runId}",
+        "headers": {
+          "Authorization": "{fifthAuthHeader}",
+          "x-client-id": "{fifthClientId}"
+        },
+        "body": {
+          "generationId": "reshapegatecl-generation-fifth-{runId}",
+          "principalId": "{fifthClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "computeWhenTheGateOpens",
+      "type": "set",
+      "output": "gateOpensAt",
+      "transform": {
+        "add": [
+          {
+            "path": "outputs.firstReshapeAt"
+          },
+          15000
+        ]
+      }
+    },
+    {
+      "name": "theKindChangeBackToAStarIsHeld",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "poll": {
+          "maxAttempts": 50,
+          "maxDurationMs": 10000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        },
+        "outputs": {
+          "heldAt": "body.reshapeGate.gate.heldAtEpochMs",
+          "heldWantedReasons": "body.reshapeGate.wantedReasons"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "plans": [
+            {
+              "topology": "tree",
+              "memberCount": 4,
+              "plan": {
+                "change": {
+                  "kind": "repair"
+                },
+                "heldReshapeReasons": [
+                  "kind-change"
+                ]
+              }
+            }
+          ],
+          "reshapeGate": {
+            "gate": {
+              "lastPassAtEpochMs": "{firstReshapeAt}",
+              "consecutiveHeldPasses": 0,
+              "heldAtEpochMs": "integer"
+            },
+            "wantedReasons": [
+              "kind-change"
+            ],
+            "intervalMs": 15000,
+            "opensAtEpochMs": "{gateOpensAt}"
+          }
+        }
+      }
+    },
+    {
+      "name": "theRoomKeepsItsTreeWhileHeld",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 5000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "comparison": "compatible-complete",
+        "body": {
+          "groupRef": {
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "state": "active",
+            "topology": "tree",
+            "activeSessionIds": [
+              "{ownerSessionId}",
+              "{secondSessionId}",
+              "{thirdSessionId}",
+              "{fourthSessionId}"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "theFirstReshapeOpenedTheGateAndTheHoldFellInsideIt",
+      "type": "assert",
+      "actual": {
+        "firstReshapeAt": "{firstReshapeAt}",
+        "firstGateOpensAt": "{firstGateOpensAt}",
+        "firstWantedReasons": "{firstWantedReasons}",
+        "gateOpensAt": "{gateOpensAt}",
+        "heldAt": "{heldAt}",
+        "heldWantedReasons": "{heldWantedReasons}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "firstGateOpensAt",
+            "equals": "{gateOpensAt}"
+          },
+          {
+            "path": "firstWantedReasons",
+            "length": 0
+          },
+          {
+            "path": "heldAt",
+            "gte": "{firstReshapeAt}"
+          },
+          {
+            "path": "heldAt",
+            "lt": "{gateOpensAt}"
+          },
+          {
+            "path": "heldWantedReasons",
+            "equals": [
+              "kind-change"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "theOpenedGateReleasesTheHeldKindChange",
+      "type": "http",
+      "connection": "tertiary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "poll": {
+          "maxAttempts": 60,
+          "maxDurationMs": 25000,
+          "backoffMs": 500,
+          "backoffMultiplier": 1
+        },
+        "outputs": {
+          "secondReshapeAt": "body.reshapeGate.gate.lastPassAtEpochMs",
+          "releasedWantedReasons": "body.reshapeGate.wantedReasons"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "plans": [
+            {
+              "topology": "star",
+              "memberCount": 4,
+              "plan": {
+                "change": {
+                  "kind": "reshape",
+                  "reason": "kind-change"
+                }
+              }
+            }
+          ],
+          "reshapeGate": {
+            "gate": {
+              "lastPassAtEpochMs": "integer",
+              "consecutiveHeldPasses": 1,
+              "heldAtEpochMs": null
+            },
+            "intervalMs": 30000
+          }
+        }
+      }
+    },
+    {
+      "name": "bothReshapesArePlannedAtTheirGatePasses",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/rooms/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology-plans",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "poll": {
+          "maxAttempts": 25,
+          "maxDurationMs": 5000,
+          "backoffMs": 200,
+          "backoffMultiplier": 1
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "plans": [
+            {
+              "topology": "tree",
+              "memberCount": 5,
+              "plan": {
+                "plannedAtEpochMs": "{firstReshapeAt}",
+                "change": {
+                  "kind": "reshape",
+                  "reason": "kind-change"
+                }
+              }
+            },
+            {
+              "topology": "star",
+              "memberCount": 4,
+              "plan": {
+                "plannedAtEpochMs": "{secondReshapeAt}",
+                "change": {
+                  "kind": "reshape",
+                  "reason": "kind-change"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "theReleaseWaitedForTheGateAndOwesNothing",
+      "type": "assert",
+      "actual": {
+        "secondReshapeAt": "{secondReshapeAt}",
+        "gateOpensAt": "{gateOpensAt}",
+        "releasedWantedReasons": "{releasedWantedReasons}"
+      },
+      "expect": {
+        "comparators": [
+          {
+            "path": "secondReshapeAt",
+            "gte": "{gateOpensAt}"
+          },
+          {
+            "path": "releasedWantedReasons",
+            "length": 0
+          }
+        ]
+      }
+    }
+  ]
+}

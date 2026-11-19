@@ -15,6 +15,7 @@ import {
     toGroupConnectTriggerStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts';
 import {
     petitionGroupConnectTrigger,
@@ -586,6 +587,7 @@ function createTimerHandler(
                 rttMeasurements: [],
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto' as const,
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: input.nowEpochMs
             })
         },

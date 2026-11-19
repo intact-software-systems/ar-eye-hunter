@@ -1312,6 +1312,7 @@
           },
           "observedAtEpochMs": "integer",
           "nextAfterPublicationId": null,
+          "reshapeGate": null,
           "plans": [
             {
               "publicationId": "string",
@@ -1332,7 +1333,8 @@
                 },
                 "change": {
                   "kind": "attach|reshape"
-                }
+                },
+                "heldReshapeReasons": []
               }
             }
           ]

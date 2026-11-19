@@ -12,7 +12,10 @@ import {
     type GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { readRtcTopologyWorkMessage } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
+import {
+    readRtcTopologyWorkMessage,
+    RTC_TOPOLOGY_WORK_KINDS
+} from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
@@ -31,6 +34,7 @@ import {
 import { validateRtcRttMeasurement } from '../../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 import type {
     RtcTopologyGroupRevisionWork,
+    RtcTopologyReshapeDueWork,
     RtcTopologyRttRefreshWork
 } from '../../mutation/rtc-topology-outbox-entry.ts';
 
@@ -47,7 +51,10 @@ interface PersistedRtcTopologyGroupRevisionWork extends RtcTopologyGroupRevision
     readonly [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
 }
 
-export type PersistedRtcTopologyWork = PersistedRtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
+export type PersistedRtcTopologyWork =
+    | PersistedRtcTopologyGroupRevisionWork
+    | RtcTopologyRttRefreshWork
+    | RtcTopologyReshapeDueWork;
 
 interface RequireWorkKeysInput {
     readonly value: JsonWireObject;
@@ -110,9 +117,16 @@ export function toRtcTopologyQueueContextId(groupRef: GroupRef): string {
     return groupStateGroupStorageKey(groupRef);
 }
 
-/** The group a work row plans for: a membership change names it, an RTT refresh carries its snapshot. */
+/**
+ * The group a work row plans for: membership and reshape-due work name it, an RTT refresh carries its snapshot. A new
+ * work kind fails the anchor below instead of silently reading a group reference.
+ */
 export function toRtcTopologyWorkGroupRef(work: PersistedRtcTopologyWork): GroupRef {
-    return work.kind === 'group-revision' ? work.groupRef : toCanonicalGroupRef(work.groupSnapshot.group);
+    if (work.kind === 'rtt-refresh') {
+        return toCanonicalGroupRef(work.groupSnapshot.group);
+    }
+    work.kind satisfies 'group-revision' | 'reshape-due';
+    return work.groupRef;
 }
 
 function readPersistedRtcTopologyWorkEnvelope(
@@ -165,18 +179,50 @@ function readPersistedRtcTopologyWork(
     contextId: string
 ): PersistedRtcTopologyWork {
     const work = requireWorkRecord(envelope.data, 'RTC topology work data');
-    if (work.kind !== 'group-revision' && work.kind !== 'rtt-refresh') {
-        throw new TypeError('RTC topology work kind is invalid');
+    const kind = resolvePersistedRtcTopologyWorkKind(work.kind);
+    switch (kind) {
+        case 'rtt-refresh': {
+            const groupSnapshot = readWorkGroupSnapshot(work.groupSnapshot);
+            const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef: groupSnapshot.group });
+            return readRttRefreshWork(variantInput, groupSnapshot);
+        }
+        case 'group-revision':
+        case 'reshape-due': {
+            const groupRef = readWorkGroupRef(work.groupRef);
+            const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef });
+            return kind === 'group-revision'
+                ? readGroupRevisionWork(variantInput, groupRef)
+                : readReshapeDueWork(variantInput, groupRef);
+        }
+        case undefined:
+            throw new TypeError('RTC topology work kind is invalid');
     }
-    const groupRef = work.kind === 'group-revision'
-        ? readWorkGroupRef(work.groupRef)
-        : readWorkGroupSnapshot(work.groupSnapshot).group;
-    const commonWork = readCommonRtcTopologyWork(work, contextId, groupRef);
-    const durableIdentity = readRtcRttTopologyOutboxIdentity(resourceId, groupRef);
-    const variantInput = { work, commonKeys: COMMON_WORK_KEYS, commonWork, durableIdentity };
-    return work.kind === 'group-revision'
-        ? readGroupRevisionWork(variantInput, groupRef)
-        : readRttRefreshWork(variantInput, readWorkGroupSnapshot(work.groupSnapshot));
+}
+
+/**
+ * The contract's kinds, typed as the union's: a kind added to the contract fails this return, and one added to the
+ * union fails the exhaustive switch above until it has a reader.
+ */
+function resolvePersistedRtcTopologyWorkKind(value: JsonWireValue): PersistedRtcTopologyWork['kind'] | undefined {
+    return RTC_TOPOLOGY_WORK_KINDS.find((known) => known === value);
+}
+
+interface ToWorkVariantInput {
+    readonly work: JsonWireObject;
+    readonly resourceId: string;
+    readonly contextId: string;
+    readonly groupRef: GroupRef;
+}
+
+function toWorkVariantInput(
+    { work, resourceId, contextId, groupRef }: ToWorkVariantInput
+): ReadRtcTopologyWorkVariantInput {
+    return {
+        work,
+        commonKeys: COMMON_WORK_KEYS,
+        commonWork: readCommonRtcTopologyWork(work, contextId, groupRef),
+        durableIdentity: readRtcRttTopologyOutboxIdentity(resourceId, groupRef)
+    };
 }
 
 function readCommonRtcTopologyWork(
@@ -253,6 +299,24 @@ function readGroupRevisionWork(
         sourceGroupStateCausalRevision,
         origin: work.origin,
         ...optionalCoalescedMetadata(metadata)
+    };
+}
+
+function readReshapeDueWork(input: ReadRtcTopologyWorkVariantInput, groupRef: GroupRef): PersistedRtcTopologyWork {
+    const { work, commonKeys, commonWork, durableIdentity } = input;
+    if (durableIdentity) {
+        throw new TypeError('RTC topology reshape-due work cannot use an RTT durable identity');
+    }
+    const keys = [...commonKeys, 'groupRef', 'periodStartedAtEpochMs', 'notBeforeEpochMs'];
+    requireWorkKeys({ value: work, required: keys, allowed: keys, label: 'RTC topology work data' });
+    requireWorkInteger(work.periodStartedAtEpochMs, 'RTC topology reshape-due period');
+    requireWorkInteger(work.notBeforeEpochMs, 'RTC topology reshape-due due time');
+    return {
+        kind: 'reshape-due',
+        ...commonWork,
+        groupRef,
+        periodStartedAtEpochMs: work.periodStartedAtEpochMs,
+        notBeforeEpochMs: work.notBeforeEpochMs
     };
 }
 

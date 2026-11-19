@@ -20,6 +20,7 @@ import {
     computeTopologyChurnKindFigures,
     type TopologyChurnKindFigures
 } from './compute-topology-churn-kind-figures.ts';
+import { computeTopologyChurnReshapeGaps } from './compute-topology-churn-reshape-gaps.ts';
 import { computeValuesByKey } from './compute-values-by-key.ts';
 import type { TopologyChurnPhaseSpec } from './phases/compute-topology-churn-phase-schedule.ts';
 import { toPlannedTopologyPlans, type PlannedTopologyPlan } from './to-planned-topology-plans.ts';
@@ -91,6 +92,8 @@ export interface TopologyChurnPhaseReport extends TopologyChurnKindFigures {
     readonly plansByCause: Record<TopologyReplanCause, number>;
     readonly uncausedPlanCount: number;
     readonly reshapesPerMinute: number | null;
+    /** The smallest gap between two consecutive reshapes both planned in the phase; null for fewer than two. */
+    readonly closestReshapesMs: number | null;
     /** The reroutes of the reshape plans alone; null when the phase has none. */
     readonly reroutedSessionsPerReshape: TopologyChurnDistribution | null;
     readonly reroutedSessionsPerReshapeByReason: Readonly<
@@ -106,6 +109,8 @@ export interface TopologyChurnReport {
     readonly phases: readonly TopologyChurnPhaseReport[];
     /** Plans planned in no phase's window: before the first or from the end of the last. */
     readonly outsidePhasesPlanCount: number;
+    /** The smallest gap between two consecutive reshapes of the room, across phases; null for fewer than two. */
+    readonly closestReshapesMs: number | null;
 }
 
 interface ComputePhaseFiguresInput {
@@ -147,7 +152,9 @@ export function computeTopologyChurnReport(input: ComputeTopologyChurnReportInpu
                 ...computeLinkFigures(figures)
             };
         }),
-        outsidePhasesPlanCount: plans.filter((plan) => !input.phases.some((phase) => isWithinPhase(plan, phase))).length
+        outsidePhasesPlanCount:
+            plans.filter((plan) => !input.phases.some((phase) => isWithinPhase(plan, phase))).length,
+        closestReshapesMs: computeClosestReshapesMs(plans)
     };
 }
 
@@ -192,7 +199,10 @@ function computeKindFigures(
     & TopologyChurnKindFigures
     & Pick<
         TopologyChurnPhaseReport,
-        'reshapesPerMinute' | 'reroutedSessionsPerReshape' | 'reroutedSessionsPerReshapeByReason'
+        | 'reshapesPerMinute'
+        | 'closestReshapesMs'
+        | 'reroutedSessionsPerReshape'
+        | 'reroutedSessionsPerReshapeByReason'
     > {
     const records = input.plans.map((plan) => plan.plan);
     const reshapes: readonly ReshapeReroute[] = records.flatMap((record) =>
@@ -210,6 +220,7 @@ function computeKindFigures(
             promotedRecords: selectPromotedPlans(input).map((promoted) => promoted.plan.plan)
         }),
         reshapesPerMinute: computePerMinute(reshapes.length, input.durationMs),
+        closestReshapesMs: computeClosestReshapesMs(input.plans),
         reroutedSessionsPerReshape: computeDistribution(reshapes.map((reshape) => reshape.reroutedSessionCount)),
         reroutedSessionsPerReshapeByReason: computeValuesByKey(TOPOLOGY_RESHAPE_REASONS, distributeReroutes)
     };
@@ -295,6 +306,10 @@ function computePlansByCause(records: readonly RtcTopologyPlanRecord[]): Record<
     const countPlans = (cause: TopologyReplanCause): number =>
         records.filter((record) => record.causes.includes(cause)).length;
     return computeValuesByKey(TOPOLOGY_REPLAN_CAUSES, countPlans);
+}
+
+function computeClosestReshapesMs(plans: readonly PlannedTopologyPlan[]): number | null {
+    return computeNumberExtrema(computeTopologyChurnReshapeGaps(plans))?.min ?? null;
 }
 
 function computePerMinute(count: number, durationMs: number): number | null {

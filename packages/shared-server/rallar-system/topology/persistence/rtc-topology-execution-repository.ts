@@ -8,8 +8,11 @@ import { type RtcTopologyPublication } from '@shared-server/rallar-system/topolo
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import type { RuntimeStateConditionalWrite } from '../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { writeRuntimeStateConditional } from '../../../runtime-state/postgres/write-runtime-state-conditional.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { groupStateGroupStorageKey } from '../../group-state/persistence/aggregate/group-aggregate-storage-keys.ts';
 import type { RtcTopologyPersistenceComputed } from '../mutation/compute-rtc-topology-persistence.ts';
 import type { RtcTopologyMutationComputed, RtcTopologyMutationRead } from '../mutation/rtc-topology-mutations.ts';
 import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/consumer/rtc-topology-replay-policy.ts';
@@ -23,6 +26,11 @@ import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from './rtc-topology-snapshot-repository.ts';
+import {
+    decodeStoredTopologyReshapeGate,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
+    type StoredTopologyReshapeGate
+} from './stored-topology-reshape-gate.ts';
 
 export class RtcTopologyExecutionRepository {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -82,6 +90,22 @@ export class RtcTopologyExecutionRepository {
                               updated_ts   = now(),
                               revision     = runtime_state_store.revision + 1
         `;
+    }
+
+    async readTopologyReshapeGate(groupRef: GroupRef): Promise<StoredTopologyReshapeGate | null> {
+        const key = groupStateGroupStorageKey(groupRef);
+        const entry = await this.runtimeRepository.findEntry(RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE, key);
+        return entry === undefined
+            ? null
+            : { state: decodeStoredTopologyReshapeGate(key, entry.value), revision: entry.revision };
+    }
+
+    /** Compare-and-set on the revision the work read: a row another work wrote since is a conflict. */
+    async writeTopologyReshapeGate(transaction: PSqlSql, computed: RuntimeStateConditionalWrite): Promise<void> {
+        const result = await writeRuntimeStateConditional(transaction, computed);
+        if (result.status !== 'applied') {
+            throw new RuntimeStateWriteConflictError();
+        }
     }
 
     async readTopologyMutation(

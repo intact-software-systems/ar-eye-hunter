@@ -425,6 +425,20 @@ describe('black-box runner recipe matrix', () => {
         ]);
     });
 
+    it('runs the reshape gate recipe across the three-node cluster only', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find((candidate) => candidate.id === 'api-v1-cluster-reshape-gate');
+
+        expect(entry?.recipe).toBe('tests/api-v1/api-v1-cluster-reshape-gate.json');
+        expect(entry?.profiles).toEqual(['api-v1-black-box-cluster']);
+        expect(entry?.tier).toBe(1);
+        expect(entry?.requires?.httpServices?.map((service) => service.env)).toEqual([
+            'RALLAR_API_BASE_URL',
+            'RALLAR_API_BASE_URL_SECONDARY',
+            'RALLAR_API_BASE_URL_TERTIARY'
+        ]);
+    });
+
     it('runs the topic subscription recipe standalone on the Rallar API', () => {
         const { entries } = readMatrix();
         const entry = entries.find((candidate) => candidate.id === 'api-v1-group-topic-subscriptions');

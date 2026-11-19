@@ -1,3 +1,4 @@
+import { decodeCanonicalSubset } from '../../encoding/decode-canonical-subset.ts';
 import { getOwnCount, getOwnField } from '../../encoding/get-own-field.ts';
 import { Either } from '../../resilience/Either.ts';
 import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
@@ -11,8 +12,17 @@ import {
     type TopologyReplanCause
 } from './rtc-topology-plan-record.ts';
 import { TOPOLOGY_RESHAPE_REASONS, type TopologyPlanChange } from './topology-plan-change.ts';
+import { HELD_TOPOLOGY_RESHAPE_REASONS, type HeldTopologyReshapeReason } from './topology-reshape-gate.ts';
 
-const RECORD_KEYS = ['plannedAtEpochMs', 'replaced', 'causes', 'delta', 'longestPathHops', 'change'] as const;
+const RECORD_KEYS = [
+    'plannedAtEpochMs',
+    'replaced',
+    'causes',
+    'delta',
+    'longestPathHops',
+    'change',
+    'heldReshapeReasons'
+] as const;
 const REPLACED_KEYS = ['layout', 'ageMs'] as const;
 const DELTA_KEYS = [
     'joinedSessionCount',
@@ -39,12 +49,14 @@ export function decodeRtcTopologyPlanRecord(value: unknown): Either<string, RtcT
     const causes = decodeTopologyReplanCauses(getOwnField(fields, 'causes'));
     const delta = decodeTopologyLayoutDelta(getOwnField(fields, 'delta'));
     const change = decodeTopologyPlanChange(getOwnField(fields, 'change'));
+    const heldReshapeReasons = decodeHeldTopologyReshapeReasons(getOwnField(fields, 'heldReshapeReasons'));
     if (
         replaced.right === undefined || causes.right === undefined || delta.right === undefined ||
-        change.right === undefined
+        change.right === undefined || heldReshapeReasons.right === undefined
     ) {
         return Either.ofLeft(
-            replaced.left ?? causes.left ?? delta.left ?? change.left ?? 'Topology plan record is invalid'
+            replaced.left ?? causes.left ?? delta.left ?? change.left ?? heldReshapeReasons.left ??
+                'Topology plan record is invalid'
         );
     }
     if ((change.right === null) !== isEmptyTopologyLayoutDelta(delta.right)) {
@@ -56,8 +68,17 @@ export function decodeRtcTopologyPlanRecord(value: unknown): Either<string, RtcT
         causes: causes.right,
         delta: delta.right,
         longestPathHops,
-        change: change.right
+        change: change.right,
+        heldReshapeReasons: heldReshapeReasons.right
     });
+}
+
+function decodeTopologyReplanCauses(value: unknown): Either<string, readonly TopologyReplanCause[]> {
+    return decodeCanonicalSubset(value, TOPOLOGY_REPLAN_CAUSES, 'Topology plan record causes');
+}
+
+function decodeHeldTopologyReshapeReasons(value: unknown): Either<string, readonly HeldTopologyReshapeReason[]> {
+    return decodeCanonicalSubset(value, HELD_TOPOLOGY_RESHAPE_REASONS, 'Topology plan record heldReshapeReasons');
 }
 
 function decodeTopologyPlanChange(value: unknown): Either<string, TopologyPlanChange | null> {
@@ -90,17 +111,6 @@ function decodeReplacedTopologyLayout(value: unknown): Either<string, ReplacedTo
         return Either.ofLeft('Replaced topology layout ageMs must be a non-negative integer');
     }
     return Either.ofRight({ layout, ageMs });
-}
-
-function decodeTopologyReplanCauses(value: unknown): Either<string, readonly TopologyReplanCause[]> {
-    if (!Array.isArray(value)) {
-        return Either.ofLeft('Topology plan record causes must be an array');
-    }
-    const causes = TOPOLOGY_REPLAN_CAUSES.filter((cause) => value.includes(cause));
-    if (causes.length !== value.length || causes.some((cause, index) => cause !== value[index])) {
-        return Either.ofLeft('Topology plan record causes must be known, unique and in canonical order');
-    }
-    return Either.ofRight(causes);
 }
 
 function decodeTopologyLayoutDelta(value: unknown): Either<string, TopologyLayoutDelta> {

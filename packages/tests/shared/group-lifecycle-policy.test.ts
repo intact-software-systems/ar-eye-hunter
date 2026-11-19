@@ -1,3 +1,4 @@
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '@shared/api/api-config.ts';
 import { createDefaultGroupLifecyclePolicy, resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import {
     GROUP_LIFECYCLE_POLICY_PRESET_NAMES,
@@ -10,6 +11,7 @@ import {
     MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
     MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS,
     MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+    MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS,
     toGroupMemberPolicy,
     toNormalizedGroupLifecyclePolicy
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
@@ -140,6 +142,30 @@ describe('group lifecycle policy normalization', () => {
         expect(policy.topology.maxReplanWaitMs).toBe(MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS);
     });
 
+    it.each(GROUP_LIFECYCLE_POLICY_PRESET_NAMES)('gives %s the reshape gate bounds 15 000 and 60 000', (name) => {
+        const { topology } = resolveGroupLifecyclePolicyPreset(name);
+
+        expect(topology.reshapeMinIntervalMs).toBe(15_000);
+        expect(topology.reshapeMaxIntervalMs).toBe(60_000);
+    });
+
+    it('raises a reshape lower bound below the largest replaced-layout overlap to it', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            topology: { reshapeMinIntervalMs: 5_000 }
+        });
+
+        expect(policy.topology.reshapeMinIntervalMs).toBe(MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS);
+    });
+
+    it('clamps reshape bounds above the maximum interval to it', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            topology: { reshapeMinIntervalMs: 900_000, reshapeMaxIntervalMs: 900_000 }
+        });
+
+        expect(policy.topology.reshapeMinIntervalMs).toBe(MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS);
+        expect(policy.topology.reshapeMaxIntervalMs).toBe(MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS);
+    });
+
     it.each([
         { field: 'above one', input: 1.5, expected: 1 },
         { field: 'below zero', input: -0.5, expected: 0 },
@@ -237,6 +263,19 @@ describe('group lifecycle policy validation', () => {
         });
 
         expect(toIssueCodes(policy)).toContain('replan-window-exceeds-maximum-wait');
+    });
+
+    it('rejects a reshape upper bound below the lower bound', () => {
+        const policy = toNormalizedGroupLifecyclePolicy({
+            topology: { reshapeMinIntervalMs: 40_000, reshapeMaxIntervalMs: 20_000 }
+        });
+
+        expect(validateGroupLifecyclePolicy(policy).left).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                code: 'reshape-minimum-interval-exceeds-maximum',
+                field: 'topology.reshapeMinIntervalMs'
+            })
+        ]));
     });
 
     // The slice-5 sibling deadlock: nobody could ever grant a parked join

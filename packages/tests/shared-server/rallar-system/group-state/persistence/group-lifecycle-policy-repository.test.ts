@@ -160,6 +160,41 @@ describe('GroupLifecyclePolicyRepository', () => {
         expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
     });
 
+    it('rejects a persisted topology without the reshape bounds', async () => {
+        const repository = createRepository();
+        const policy = createDefaultGroupLifecyclePolicy();
+        const { reshapeMinIntervalMs: _min, reshapeMaxIntervalMs: _max, ...topology } = policy.topology;
+
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: { ...policy, topology } });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
+    it('rejects a persisted reshape lower bound below the largest replaced-layout overlap', async () => {
+        const repository = createRepository();
+        const policy = createDefaultGroupLifecyclePolicy();
+
+        await storeRaw(repository, GROUP, {
+            groupRef: GROUP,
+            policy: { ...policy, topology: { ...policy.topology, reshapeMinIntervalMs: 14_999 } }
+        });
+
+        expect(await repository.readPolicy(GROUP)).toMatchObject({ status: 'corrupt' });
+    });
+
+    it('reads persisted reshape bounds of 15 000 and 60 000', async () => {
+        const repository = createRepository();
+        const policy = createDefaultGroupLifecyclePolicy();
+        const topology = { ...policy.topology, reshapeMinIntervalMs: 15_000, reshapeMaxIntervalMs: 60_000 };
+
+        await storeRaw(repository, GROUP, { groupRef: GROUP, policy: { ...policy, topology } });
+
+        expect(await repository.readPolicy(GROUP)).toEqual({
+            status: 'present',
+            policy: { ...policy, topology }
+        });
+    });
+
     it('rejects an extra persisted row field', async () => {
         const repository = createRepository();
 
