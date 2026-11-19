@@ -121,16 +121,19 @@ describe('ALM fault stream cells', () => {
         }
     });
 
-    it.each(STREAM_CELLS)('%s over %s claims twenty arrivals in sequence order and no twenty-first', (key, carrier) => {
-        const receiver = requireCell(key, carrier).receiver;
+    it.each([...STREAM_CELLS, ['seeded-loss-unreceipted-stream', 'ws']] as const)(
+        '%s over %s claims twenty arrivals in sequence order and no twenty-first',
+        (key, carrier) => {
+            const receiver = requireCell(key, carrier).receiver;
 
-        expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
-            { count: STREAM_SENDS, ascendingBy: 'seq' },
-            { count: STREAM_SENDS + 1, absent: true }
-        ]);
-        expect(findCommand(receiver, `received-${STREAM_SENDS}`)).not.toHaveProperty('absent', true);
-        expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
-    });
+            expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
+                { count: STREAM_SENDS, ascendingBy: 'seq' },
+                { count: STREAM_SENDS + 1, absent: true }
+            ]);
+            expect(findCommand(receiver, `received-${STREAM_SENDS}`)).not.toHaveProperty('absent', true);
+            expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
+        }
+    );
 
     it.each(['ws', 'rtc'] as const)(
         'seeded-loss-stream over %s holds its loss until the last send is admitted, and recovers after its release',
@@ -239,17 +242,6 @@ describe('ALM fault stream cells', () => {
             expected: 1
         }));
         expect(toNames(sender).filter((name) => name.startsWith('observe-acknowledged-'))).toEqual([]);
-    });
-
-    it('seeded-loss-unreceipted-stream claims twenty arrivals in sequence order and no twenty-first', () => {
-        const receiver = requireCell('seeded-loss-unreceipted-stream', 'ws').receiver;
-
-        expect(receiver.commands.filter((command) => command.kind === 'messages.received')).toMatchObject([
-            { count: STREAM_SENDS, ascendingBy: 'seq' },
-            { count: STREAM_SENDS + 1, absent: true }
-        ]);
-        expect(findCommand(receiver, `received-${STREAM_SENDS}`)).not.toHaveProperty('absent', true);
-        expect(findCommand(receiver, `received-${STREAM_SENDS + 1}`)).not.toHaveProperty('ascendingBy');
     });
 
     it('seeded-jitter-stream delays every data frame by a seeded 0 to 80 ms and proves every send met a delay', () => {
