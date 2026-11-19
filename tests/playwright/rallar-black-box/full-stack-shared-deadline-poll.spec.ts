@@ -51,10 +51,13 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         }, { rallarUrl, roomRef });
         await Promise.all([mount(page, hostGrant), mount(guest, guestGrant)]);
         expect(await page.evaluate(() => Date.now()) - await guest.evaluate(() => Date.now())).toBeGreaterThan(230_000);
-        await expect(page.getByText('Voting open')).toBeVisible();
+        await expect(page.getByText('Question preview')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        await expect(page.getByText('Voting open')).toBeVisible({ timeout: 15_000 });
         await expect(guest.getByText('Voting open')).toBeVisible();
-        const deadline = await page.locator('time').innerText();
-        await expect(guest.locator('time')).toHaveText(deadline);
+        const schedule = await page.locator('time').allTextContents();
+        expect(schedule).toHaveLength(2);
+        await expect(guest.locator('time')).toHaveText(schedule);
         await page.getByRole('button', { name: 'Yes' }).click();
         await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
         await guest.route(poll.url, async (route) => {
@@ -69,9 +72,21 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await expect(page.getByText('Voting closed')).toBeVisible({ timeout: 25_000 });
         releaseVote.resolve();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
+        const lateEntry = await browser.newPage({ baseURL });
+        try {
+            await prepareMember(lateEntry, roomRef, true);
+            await mount(lateEntry, hostGrant);
+            await expect(lateEntry.locator('time')).toHaveText(schedule);
+            await expect(lateEntry.getByText('Voting closed · Results')).toBeVisible();
+            await expect(lateEntry.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+            await expect(lateEntry.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        }
+        finally {
+            await lateEntry.close();
+        }
         await guest.reload();
         await mount(guest, guestGrant);
-        await expect(guest.locator('time')).toHaveText(deadline);
+        await expect(guest.locator('time')).toHaveText(schedule);
         await expect(guest.getByText('Voting closed')).toBeVisible();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
         await expect(guest.getByRole('button', { name: 'Yes' })).toBeDisabled();
@@ -125,7 +140,14 @@ async function startPollEndpoint(origin: string, roomRef: GroupRef, grants: Read
             response.writeHead(403).end();
             return;
         }
-        poll ??= new PollAuthority(roomRef, Date.now() + 12_000, Date.now);
+        if (!poll) {
+            const startsAt = Date.now();
+            poll = new PollAuthority(
+                roomRef,
+                { opensAtEpochMs: startsAt + 5_000, closesAtEpochMs: startsAt + 17_000 },
+                Date.now
+            );
+        }
         let record: PollAuthority.Snapshot;
         if (request.method === 'GET') {
             record = poll.read(principal);

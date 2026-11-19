@@ -34,8 +34,11 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let record = await request();
     const title = document.createElement('h1');
     title.textContent = 'Hold another round?';
+    const opening = document.createElement('time');
+    opening.dateTime = new Date(record.schedule.opensAtEpochMs).toISOString();
+    opening.textContent = 'Opens at ' + opening.dateTime;
     const closing = document.createElement('time');
-    closing.dateTime = new Date(record.closesAtEpochMs).toISOString();
+    closing.dateTime = new Date(record.schedule.closesAtEpochMs).toISOString();
     closing.textContent = 'Closes at ' + closing.dateTime;
     const phase = document.createElement('p');
     const result = document.createElement('p');
@@ -43,18 +46,30 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     const no = document.createElement('button');
     yes.textContent = 'Yes';
     no.textContent = 'No';
-    root.replaceChildren(title, closing, phase, yes, no, result);
+    root.replaceChildren(title, opening, closing, phase, yes, no, result);
     let submitting = false;
-    const labels = {
-        before: 'Voting open',
-        overlaps: 'Voting is closing',
-        'at-or-after': 'Voting closed',
-        unavailable: 'Waiting for server time'
-    };
     function render(): void {
-        const comparison = rallar.compareDeadline(record.closesAtEpochMs);
-        phase.textContent = labels[comparison];
-        const disabled = submitting || comparison !== 'before' || record.disposition !== 'pending';
+        const opening = rallar.compareDeadline(record.schedule.opensAtEpochMs);
+        const closing = rallar.compareDeadline(record.schedule.closesAtEpochMs);
+        let label: string;
+        if (opening === 'unavailable' || closing === 'unavailable') {
+            label = 'Waiting for server time';
+        }
+        else if (closing === 'at-or-after') {
+            label = 'Voting closed · Results';
+        }
+        else if (opening === 'before') {
+            label = 'Question preview';
+        }
+        else if (opening === 'overlaps' || closing === 'overlaps') {
+            label = 'Voting boundary uncertain';
+        }
+        else {
+            label = 'Voting open';
+        }
+        phase.textContent = label;
+        const disabled = submitting || opening !== 'at-or-after' || closing !== 'before' ||
+            record.disposition !== 'pending';
         yes.disabled = disabled;
         no.disabled = disabled;
         result.textContent = `Yes ${record.yes} · No ${record.no} · Your vote: ${record.disposition}`;

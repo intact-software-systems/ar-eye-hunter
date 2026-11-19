@@ -2,9 +2,13 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 
 export namespace PollAuthority {
     export type Choice = 'yes' | 'no';
+    export interface Schedule {
+        readonly opensAtEpochMs: number;
+        readonly closesAtEpochMs: number;
+    }
     export interface Snapshot {
         readonly roomRef: GroupRef;
-        readonly closesAtEpochMs: number;
+        readonly schedule: Schedule;
         readonly yes: number;
         readonly no: number;
         readonly disposition: 'pending' | 'accepted' | 'late';
@@ -17,21 +21,29 @@ export class PollAuthority {
     private yes = 0;
     private no = 0;
     private readonly roomRef: GroupRef;
-    private readonly closesAtEpochMs: number;
+    private readonly schedule: PollAuthority.Schedule;
     private readonly nowEpochMs: () => number;
 
-    constructor(roomRef: GroupRef, closesAtEpochMs: number, nowEpochMs: () => number) {
-        if (!Number.isSafeInteger(closesAtEpochMs) || closesAtEpochMs < 0) {
-            throw new RangeError('Poll closing time must be a nonnegative integer epoch in milliseconds.');
+    constructor(roomRef: GroupRef, schedule: PollAuthority.Schedule, nowEpochMs: () => number) {
+        const { opensAtEpochMs, closesAtEpochMs } = schedule;
+        if (
+            !Number.isSafeInteger(opensAtEpochMs) || opensAtEpochMs < 0 || !Number.isSafeInteger(closesAtEpochMs) ||
+            closesAtEpochMs <= opensAtEpochMs
+        ) {
+            throw new RangeError('Poll epochs must be safe nonnegative integers with opening before closing.');
         }
         this.roomRef = Object.freeze({ ...roomRef });
-        this.closesAtEpochMs = closesAtEpochMs;
+        this.schedule = Object.freeze({ ...schedule });
         this.nowEpochMs = nowEpochMs;
     }
 
     vote(principalId: string, choice: PollAuthority.Choice): PollAuthority.Snapshot {
         if (!this.ballots.has(principalId)) {
-            const ballot = this.nowEpochMs() >= this.closesAtEpochMs ? 'late' : choice;
+            const receivedAt = this.nowEpochMs();
+            if (receivedAt < this.schedule.opensAtEpochMs) {
+                return this.read(principalId);
+            }
+            const ballot = receivedAt >= this.schedule.closesAtEpochMs ? 'late' : choice;
             this.ballots.set(principalId, ballot);
             if (ballot === 'yes') {
                 this.yes++;
@@ -47,7 +59,7 @@ export class PollAuthority {
         const ballot = this.ballots.get(principalId);
         return {
             roomRef: this.roomRef,
-            closesAtEpochMs: this.closesAtEpochMs,
+            schedule: this.schedule,
             yes: this.yes,
             no: this.no,
             disposition: ballot === undefined ? 'pending' : ballot === 'late' ? 'late' : 'accepted'
