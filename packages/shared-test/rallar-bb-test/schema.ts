@@ -489,8 +489,26 @@ const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIEL
 const faultDelayActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, {
     delayMs: numberSchema
 });
+const faultLossActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultLossAction, {
+    loss: strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultLoss, {
+        ratio: { type: 'number', exclusiveMinimum: 0, maximum: 1 },
+        seed: integerSchema
+    })
+});
+const faultJitterActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultJitterAction, {
+    jitter: strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultJitter, {
+        minDelayMs: { type: 'integer', minimum: 0 },
+        maxDelayMs: { type: 'integer', minimum: 0 },
+        seed: integerSchema
+    })
+});
 const faultActionSchema: JsonSchema = {
-    oneOf: [{ type: 'string', enum: ['drop', 'not-ready', 'backpressure'] }, faultDelayActionSchema]
+    oneOf: [
+        { type: 'string', enum: ['drop', 'not-ready', 'backpressure'] },
+        faultDelayActionSchema,
+        faultLossActionSchema,
+        faultJitterActionSchema
+    ]
 };
 const faultRewriteActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultRewriteAction, {
     rewrite: {
@@ -505,7 +523,7 @@ const faultRewriteActionSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJ
     }
 });
 const rtcFaultActionSchema: JsonSchema = {
-    oneOf: [{ type: 'string', enum: ['drop', 'backpressure'] }, faultRewriteActionSchema]
+    oneOf: [{ type: 'string', enum: ['drop', 'backpressure'] }, faultRewriteActionSchema, faultLossActionSchema]
 };
 const faultRemainingSchema: JsonSchema = { oneOf: [numberSchema, { const: 'until-cleared' }] };
 const storageFaultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.storageFaultMatch, {
@@ -779,6 +797,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         msgId: stringSchema,
         count: { type: 'integer', minimum: 0 },
         absent: booleanSchema,
+        ascendingBy: nonEmptyStringSchema,
         windowMs: { type: 'integer', minimum: 0 }
     }),
     'messages.receipts': strictCommandSchema('messages.receipts', {

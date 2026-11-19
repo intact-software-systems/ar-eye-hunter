@@ -31,8 +31,13 @@ interface FarthestTreeSession {
     readonly pathMs: number;
 }
 
-/** Keeps the accepted tree, evolved to the current members, unless the weighted rebuild is worth its churn. */
-export function resolveRttRefinementNextHops(input: ResolveRttRefinementNextHopsInput): DerivedRtcTopologyNextHops {
+/**
+ * Keeps the accepted tree, evolved to the current members, unless the weighted rebuild is worth its churn. A refinement
+ * runs only with the reshape allowed, so it holds no reshape back.
+ */
+export function resolveRttRefinementNextHops(
+    input: ResolveRttRefinementNextHopsInput
+): Pick<DerivedRtcTopologyNextHops, 'nextHopsBySessionId' | 'derivation'> {
     const rebuilt = input.rebuiltNextHopsBySessionId;
     if (input.evolve.kind !== 'tree') {
         return { nextHopsBySessionId: rebuilt, derivation: { method: 'rebuilt', reason: 'refinement' } };

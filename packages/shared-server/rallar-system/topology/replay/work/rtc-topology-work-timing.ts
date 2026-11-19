@@ -1,6 +1,6 @@
-import type { TopologyPlanChange } from '@shared/api/topology-plan/topology-plan-change.ts';
+import type { RtcTopologyPlanRecord } from '@shared/api/topology-plan/rtc-topology-plan-record.ts';
 
-import { recordRallarTiming, type RallarTimingSink } from '../../../observability/timing.ts';
+import { recordRallarTiming, type RallarTimingDetails, type RallarTimingSink } from '../../../observability/timing.ts';
 import type { RttReplanPromotion } from '../../planning/resolve-rtt-replan-promotion.ts';
 import type { AcceptedRtcTopologyWork } from './compute-rtc-topology-work-write.ts';
 
@@ -24,8 +24,6 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
     if (input.timing === undefined || accepted.decision === 'skipped-rtt-refinement') {
         return;
     }
-    const promotion = readRttReplanPromotion(accepted);
-    const planChange = readPlanChange(accepted);
     recordRallarTiming({
         sink: input.timing,
         event: {
@@ -36,18 +34,7 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
             applicationId: accepted.group.group.applicationId,
             workspaceId: accepted.group.group.workspaceId,
             groupId: accepted.group.group.groupId,
-            details: {
-                workKind: accepted.work.kind,
-                decision: accepted.decision,
-                outcome: accepted.decision === 'accepted' ? accepted.computed.outcome : undefined,
-                reason: promotion?.reason,
-                layoutAgeMs: promotion !== null && 'layoutAgeMs' in promotion ? promotion.layoutAgeMs : undefined,
-                planChange: planChange?.kind,
-                reshapeReason: planChange?.kind === 'reshape' ? planChange.reason : undefined,
-                overlayVersion: readCommittedOverlayVersion(accepted),
-                groupRevision: accepted.group.causalRevision.groupRevision,
-                presenceRevision: accepted.group.causalRevision.presenceRevision
-            }
+            details: toRtcTopologyWorkTimingDetails(accepted)
         },
         status: 'ok',
         durationMs: input.computeDurationMs
@@ -56,18 +43,45 @@ export function recordRtcTopologyWorkTiming(input: RecordRtcTopologyWorkTimingIn
 
 type TimedRtcTopologyWork = Exclude<AcceptedRtcTopologyWork, { decision: 'skipped-rtt-refinement'; }>;
 
+function toRtcTopologyWorkTimingDetails(accepted: TimedRtcTopologyWork): RallarTimingDetails {
+    const promotion = readRttReplanPromotion(accepted);
+    const plan = resolvePublishedPlan(accepted);
+    const planChange = plan?.change ?? null;
+    return {
+        workKind: accepted.work.kind,
+        decision: accepted.decision,
+        outcome: accepted.decision === 'accepted' ? accepted.computed.outcome : undefined,
+        reason: promotion?.reason,
+        layoutAgeMs: promotion !== null && 'layoutAgeMs' in promotion ? promotion.layoutAgeMs : undefined,
+        planChange: planChange?.kind,
+        reshapeReason: planChange?.kind === 'reshape' ? planChange.reason : undefined,
+        heldReshapeReasons: plan === null || plan.heldReshapeReasons.length === 0
+            ? undefined
+            : plan.heldReshapeReasons.join(','),
+        reshape: accepted.decision === 'accepted' || accepted.decision === 'skipped-unchanged'
+            ? accepted.reshape
+            : undefined,
+        overlayVersion: readCommittedOverlayVersion(accepted),
+        groupRevision: accepted.group.causalRevision.groupRevision,
+        presenceRevision: accepted.group.causalRevision.presenceRevision
+    };
+}
+
 function readRttReplanPromotion(accepted: TimedRtcTopologyWork): RttReplanPromotion | null {
     return accepted.decision === 'accepted' || accepted.decision === 'held-young-layout'
         ? accepted.rttReplanPromotion
         : null;
 }
 
-function readPlanChange(accepted: TimedRtcTopologyWork): TopologyPlanChange | null {
-    return accepted.decision === 'accepted' ? accepted.publication?.plan?.change ?? null : null;
+function resolvePublishedPlan(accepted: TimedRtcTopologyWork): RtcTopologyPlanRecord | null {
+    return accepted.decision === 'accepted' ? accepted.publication?.plan ?? null : null;
 }
 
 /** The layout version the decision left stored; a superseded attempt committed none of its own. */
 function readCommittedOverlayVersion(accepted: TimedRtcTopologyWork): number | undefined {
+    if (accepted.decision === 'skipped-reshape-settled') {
+        return undefined;
+    }
     if (accepted.decision !== 'accepted') {
         return accepted.criterionPetition?.planned.version;
     }

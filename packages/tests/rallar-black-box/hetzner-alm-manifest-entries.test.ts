@@ -196,6 +196,9 @@ describe('ALM conformance hosted lane families', () => {
             ...ALM_CONFORMANCE_CARRIERS.flatMap((carrier) => withheldEverywhere.map((key) => `alm-${carrier}-${key}`)),
             ...ALM_CONFORMANCE_WORLD_SEND_CARRIERS.map((carrier) => `alm-${carrier}-capacity-tracks`),
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-ordering-gap-repair`),
+            // The fault stream cells' evidence is the local full lane's: no hosted manifest is changed for them.
+            'alm-rtc-lost-stream-start',
+            'alm-ws-seeded-jitter-stream',
             'alm-rtc-with-ws-fallback-backpressure-hands-over',
             'alm-rtc-backpressure-refused',
             ...ALM_CONFORMANCE_SINGLE_HOP_CARRIERS.map((carrier) => `alm-${carrier}-backpressure-deferred`),

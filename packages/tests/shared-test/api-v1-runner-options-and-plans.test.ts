@@ -170,7 +170,7 @@ describe('API-v1 runner options and process plans', () => {
             RALLAR_SQL_BACKEND: 'postgres',
             RALLAR_PGLITE_SCHEMA_INIT: 'disabled',
             RALLAR_DB_PUBSUB: 'postgres',
-            DATABASE_URL: 'postgres://app:app@localhost:5432/appdb',
+            DATABASE_URL: 'postgres://app:app@localhost:5432/appdb?application_name=rallar-bb-api-18080',
             RALLAR_LOGIN_IP_RATE_LIMIT: '100',
             RALLAR_LOGIN_USER_RATE_LIMIT: '100',
             RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'local-api-v1-black-box-operator-secret',
@@ -178,6 +178,22 @@ describe('API-v1 runner options and process plans', () => {
             RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON: '[{"documentType":"black-box-map","rollout":"production"}]',
             RALLAR_GRANTED_WS_TOPICS_JSON: '[{"topicId":"room.bb-granted-feed","fanout":"outbox","serverProducerIds":[]}]'
         });
+    });
+
+    it('names each managed server\'s database sessions after its own port', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--port=18080',
+            '--secondary-port=18081',
+            '--tertiary-port=18082'
+        ]);
+        const plans = toManagedApiServerPlans(options, toApiV1BlackBoxEnvironment(options, {}), '/tmp/api-v1-bb');
+
+        expect(plans.map((plan) => new URL(plan.env.DATABASE_URL).searchParams.get('application_name'))).toEqual([
+            'rallar-bb-api-18080',
+            'rallar-bb-api-18081',
+            'rallar-bb-api-18082'
+        ]);
     });
 
     it('configures the black-box granted topic by default, preserves an explicit one and passes it to every managed server', () => {

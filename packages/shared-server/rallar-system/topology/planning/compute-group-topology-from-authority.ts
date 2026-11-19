@@ -4,6 +4,7 @@ import type { GroupTopologyValidationIssue } from '@shared/api/graph-topology-ma
 import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
@@ -21,6 +22,7 @@ import { isGroupTopologyActiveAt } from './select-group-topology-planning-snapsh
 export interface TopologyPlanningRequest {
     readonly intent: RtcTopologyPlanningIntent;
     readonly origin: TopologyWorkOrigin;
+    readonly reshape: TopologyReshapePermission;
 }
 
 export function computeGroupTopologyFromAuthority(
@@ -61,7 +63,8 @@ export function computeGroupTopologyFromAuthority(
             updateOptions: {
                 previous,
                 topologyOptions: authority.config.effective,
-                planningIntent: planning.intent
+                planningIntent: planning.intent,
+                reshape: planning.reshape
             },
             nowEpochMs: authority.nowEpochMs
         }
@@ -118,6 +121,7 @@ function computeRemovedTopology(
         action: 'planned',
         planningObservation: null,
         derivation: null,
+        heldReshapeReasons: [],
         snapshot: {
             sourceGroupStateCausalRevision: group.causalRevision,
             state: 'removed',

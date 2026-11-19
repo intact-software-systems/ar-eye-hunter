@@ -2,6 +2,7 @@ import { test } from 'bun:test';
 import type { Hono } from 'hono';
 import assert from 'node:assert/strict';
 
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-input-fingerprint.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type {
@@ -686,6 +687,7 @@ function createRouteApp(options: {
                         rttMeasurements: [],
                         rttReplanMinimumLayoutAgeMs: 15_000,
                         replanning: 'auto',
+                        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                         nowEpochMs: 123_456
                     }))
         },
@@ -968,6 +970,7 @@ function planningAuthorityWith(
                 rttMeasurements,
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto' as const,
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: 123_456
             })
     };
@@ -1329,6 +1332,7 @@ test('formation view states the causal revision of the planning snapshot, not th
                     rttMeasurements: [],
                     rttReplanMinimumLayoutAgeMs: 15_000,
                     replanning: 'auto' as const,
+                    reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                     nowEpochMs: 123_456
                 })
         }

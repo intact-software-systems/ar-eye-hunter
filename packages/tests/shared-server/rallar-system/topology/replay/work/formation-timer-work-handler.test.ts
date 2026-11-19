@@ -16,6 +16,7 @@ import {
     toGroupConnectTriggerStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-connect-trigger-latch-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { computeFormationCriterionCommand } from '@shared-server/rallar-system/topology/replay/work/compute-formation-criterion-command.ts';
 import { createFormationTimerWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-formation-timer-work-handler.ts';
 import type { GroupFormationAutomationPort } from '@shared-server/rallar-system/topology/replay/work/create-group-connect-trigger-work-handler.ts';
@@ -119,6 +120,7 @@ describe('formation timer work handler', () => {
                     rttMeasurements: [],
                     rttReplanMinimumLayoutAgeMs: 15_000,
                     replanning: 'auto' as const,
+                    reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                     nowEpochMs
                 })
             },
@@ -340,6 +342,7 @@ function unusedTopologyPlanning(group: ReturnType<typeof formationGroup>, nowEpo
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto' as const,
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs
         })
     };

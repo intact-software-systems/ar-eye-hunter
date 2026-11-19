@@ -8,6 +8,8 @@ import { createRallarRemoteBrowserRtcProvider } from '../rallar-remote-browser-p
 import { createRallarWebRtcWebSocketSignalingProvider } from '../rallar-webrtc-runtime.ts';
 import { type RtcProvider } from '../rtc-provider.ts';
 import { toRtcFailureStatus } from '../rtc/rtc-wait-expectations.ts';
+import { SERVER_FAULTS_URL_ENVIRONMENT_VARIABLE } from '../server-faults/server-fault-command.ts';
+import { ServerFaultSteps } from '../server-faults/server-fault-steps.ts';
 import { normalizeRedactions } from './black-box-redaction.ts';
 import { toRunnerCorrelationConfig } from './black-box-run-correlation.ts';
 import {
@@ -118,6 +120,10 @@ export function createScenarioContext(input: CreateScenarioContextInput): any {
             ...createRtcProviders(dependencies),
             ...options.rtcProviders
         },
+        serverFaults: new ServerFaultSteps({
+            url: (options.environment || environment)[SERVER_FAULTS_URL_ENVIRONMENT_VARIABLE],
+            fetch: dependencies.fetch
+        }),
         options,
         dryRun: options?.dryRun === true,
         correlation,

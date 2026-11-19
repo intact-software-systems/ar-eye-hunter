@@ -6,13 +6,15 @@ import type {
 
 const MANAGED_TOPOLOGY = resolveGroupLifecyclePolicyPreset('managed').topology;
 
-/** A debounced room debounces as the `managed` preset does; everything else is the optimistic default. */
+/** A debounced room debounces and gates reshapes as the `managed` preset does; everything else is the optimistic default. */
 export function toTopologyChurnPolicy(replanning: GroupTopologyReplanningMode): Partial<GroupTopologyPolicy> {
     return replanning === 'debounced'
         ? {
             replanning,
             debounceWindowMs: MANAGED_TOPOLOGY.debounceWindowMs,
-            maxReplanWaitMs: MANAGED_TOPOLOGY.maxReplanWaitMs
+            maxReplanWaitMs: MANAGED_TOPOLOGY.maxReplanWaitMs,
+            reshapeMinIntervalMs: MANAGED_TOPOLOGY.reshapeMinIntervalMs,
+            reshapeMaxIntervalMs: MANAGED_TOPOLOGY.reshapeMaxIntervalMs
         }
         : { replanning };
 }

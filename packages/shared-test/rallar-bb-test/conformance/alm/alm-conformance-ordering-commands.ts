@@ -13,17 +13,26 @@ import {
 import type { AlmConformanceMessageStepInput, AlmConformanceStepInput } from './alm-conformance-scenario-definition.ts';
 import { toAlmCellCommandPrefix } from './cell/to-alm-cell-command-prefix.ts';
 
-/** One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. */
+/**
+ * One at-least-once send on the scenario's ordering key, admitted; the sequence names the send and its payload. With
+ * no `ack`, the channel's purpose decides the receipt.
+ */
 export function toOrderedSendCommands(
     sender: AlmConformanceStepInput,
-    seq: number
+    seq: number,
+    ack?: 'receiver'
 ): readonly RallarBlackBoxTestCommand[] {
     return [
         toSendCommand({
             ...sender,
             index: seq,
             payload: { marker: sender.scenarioId, seq },
-            delivery: { reliability: 'at-least-once', orderingKey: toOrderingKey(sender), seq }
+            delivery: {
+                reliability: 'at-least-once',
+                orderingKey: toOrderingKey(sender),
+                seq,
+                ...(ack === undefined ? {} : { ack })
+            }
         }),
         ...toAdmissionCommands({ ...sender, index: seq })
     ];

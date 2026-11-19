@@ -82,11 +82,14 @@ function expectPrincipalTrackEntry(wait: RallarBlackBoxTestWaitCommand): void {
     expect(wait.match.contains, wait.commandId).toMatch(/^"trackKey":"\{resultCache\.[^}]+\.contextId\}:\{resultCache\.[^}]+\.senderId\}:$/);
 }
 
-/** An `entered` wait on a track the cell does not key may only read the page's history, since the page entered it once. */
-function isFirstContactOutsideTheCell(wait: RallarBlackBoxTestWaitCommand, scenarioKey: string): boolean {
+/**
+ * An `entered` wait on a track the cell does not key may only read the page's history, since the page entered it once.
+ * A cell keys a track by its scenario key, or by its key under its carrier.
+ */
+function isFirstContactOutsideTheCell(wait: RallarBlackBoxTestWaitCommand, cellTrackKeys: readonly string[]): boolean {
     const fields = wait.match.payloadFields ?? {};
     const entry = fields['data.kind'] === 'ordering-position' && fields['data.status'] === 'entered';
-    return entry && wait.match.contains?.startsWith(`"trackKey":"${scenarioKey}:`) !== true;
+    return entry && !cellTrackKeys.some((key) => wait.match.contains?.startsWith(`"trackKey":"${key}:`));
 }
 
 describe('alm-conformance cell parts', () => {
@@ -196,7 +199,12 @@ describe('alm-conformance cell parts', () => {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 for (const role of scenario.roles) {
                     const waits = toWaitCommands(scenario.partsByRole[role]!.body)
-                        .filter((wait) => isFirstContactOutsideTheCell(wait, scenario.scenarioKey));
+                        .filter((wait) =>
+                            isFirstContactOutsideTheCell(wait, [
+                                scenario.scenarioKey,
+                                `alm-${carrier}-${scenario.scenarioKey}`
+                            ])
+                        );
                     for (const wait of waits) {
                         outsideTheCell.push(wait.commandId!.slice(`alm-${carrier}-`.length));
                         expect(wait.metadata?.historyFrom, wait.commandId).toBe('page');

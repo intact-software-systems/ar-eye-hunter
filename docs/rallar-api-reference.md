@@ -3023,7 +3023,9 @@ Room inspection routes also require current API admin authority and return `Cach
 - `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-plans`
   returns the live retained topology publications of one room with the plan record each was computed from
   (`plan`, null for a removal): `limit` (maximum 100) and `afterPublicationId`, pages in storage-key order, not time
-  order. It carries no member identities and no routing edges.
+  order. It carries no member identities and no routing edges. `reshapeGate` is the room's stored reshape gate (null
+  when it stores none): its back-off state, the reasons wanted, the wait in force (`intervalMs`) and when it opens
+  (`opensAtEpochMs`, null before the room's first reshape).
 - `GET /api/admin/operations/rooms/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology-work/:outboxId`
   observes the exact receipt's retained queue work. Its mandatory fields are `roomRef`, `outboxId`,
   `observedAtEpochMs`, `status`, `attempts` and `settledAtEpochMs`. Status is `unknown`, `pending`,

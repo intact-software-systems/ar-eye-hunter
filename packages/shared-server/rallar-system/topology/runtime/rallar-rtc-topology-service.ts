@@ -4,6 +4,10 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import type {
+    HeldTopologyReshapeReason,
+    TopologyReshapePermission
+} from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { RallarRtcTopologyMetrics } from '@shared/rtc/rallar-rtc-topology-metrics.ts';
 
 import type { RtcTopologyPlanDerivation } from '../planning/plan-record/rtc-topology-plan-derivation.ts';
@@ -35,12 +39,15 @@ export interface RallarRtcTopologyUpdateResult {
     readonly changed: boolean;
     readonly previous: RallarOverlayTopologySnapshot | null;
     readonly derivation: RtcTopologyPlanDerivation;
+    /** The reshapes the plan held back, in HELD_TOPOLOGY_RESHAPE_REASONS order; empty unless the reshape was held. */
+    readonly heldReshapeReasons: readonly HeldTopologyReshapeReason[];
 }
 
 export interface RallarRtcTopologyUpdateOptions {
     readonly previous?: RallarOverlayTopologySnapshot;
     readonly topologyOptions?: RallarRtcTopologyServiceOptions;
     readonly planningIntent?: RtcTopologyPlanningIntent;
+    readonly reshape?: TopologyReshapePermission;
 }
 
 export type RtcTopologyPlanningIntent = 'membership-delta' | 'full-rebuild';

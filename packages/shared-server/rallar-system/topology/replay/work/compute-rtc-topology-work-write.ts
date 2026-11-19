@@ -1,19 +1,29 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { ResourceInboxReservationFinish } from '../../../../queuebox/postgres/resource-inbox-reservation-write.ts';
+import type { RuntimeStateConditionalWrite } from '../../../../runtime-state/compute-runtime-state-conditional-write.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import { computeAppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
+import { computeAppOutboxInsert, type AppOutboxInsert } from '../../../app-outbox/app-outbox-insert.ts';
 import { validateComputedProjection } from '../../../computed-data-validation.ts';
 import {
     computeTopologyMutation,
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationInput
 } from '../../mutation/rtc-topology-mutations.ts';
-import type { RtcTopologyRttRefreshWork } from '../../mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyReshapeDueEntry,
+    type RtcTopologyReshapeDueWork,
+    type RtcTopologyRttRefreshWork
+} from '../../mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyReshapeGateWrite
+} from '../../persistence/stored-topology-reshape-gate.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
+import type { ComputedTopologyReshapeGate } from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
 import type { HeldRttReplan, PromotedRttReplan } from '../../planning/resolve-rtt-replan-promotion.ts';
 import type { RtcTopologyPublication } from '../../publication/rtc-topology-publication.ts';
 import {
@@ -62,6 +72,8 @@ export type AcceptedRtcTopologyWork =
         planningObservation: RtcTopologyPlanningObservation | null;
         /** Why an RTT refresh promotes; null for membership work. */
         rttReplanPromotion: PromotedRttReplan | null;
+        reshape: TopologyReshapePermission['reshape'];
+        reshapeGate: ComputedTopologyReshapeGate;
     }>
     | Readonly<{
         decision: 'skipped-fingerprint';
@@ -78,6 +90,8 @@ export type AcceptedRtcTopologyWork =
         promotionRead: TopologyPromotionRead | null;
         criterionPetition: CommittedCriterionPetition | null;
         planningObservation: RtcTopologyPlanningObservation | null;
+        reshape: TopologyReshapePermission['reshape'];
+        reshapeGate: ComputedTopologyReshapeGate;
     }>
     | Readonly<{
         decision: 'skipped-frozen';
@@ -97,6 +111,12 @@ export type AcceptedRtcTopologyWork =
     | Readonly<{
         decision: 'skipped-rtt-refinement';
         work: RtcTopologyRttRefreshWork;
+        group: GroupSnapshot;
+    }>
+    | Readonly<{
+        /** A held reshape's wake-up that found its period ended or nothing wanted: it completes without planning. */
+        decision: 'skipped-reshape-settled';
+        work: RtcTopologyReshapeDueWork;
         group: GroupSnapshot;
     }>;
 
@@ -133,64 +153,121 @@ export interface ComputeRtcTopologyWorkWriteInput {
     readonly sourceWorkId: string;
     /** The expiry of the promotion and connect-trigger rows the write derives. */
     readonly derivedExpireAtEpochMs: number;
+    /** How long past its due time a reshape-due row the write derives lives at least. */
+    readonly finishedRetentionMs: number;
     readonly reservationFinish: ResourceInboxReservationFinish;
     readonly formationAutomationEnabled: boolean;
     readonly serviceId: string | undefined;
     readonly publisherStreamId: string | undefined;
     readonly traceId: string;
+    /** The revision of the reshape gate row the work read; null when the room holds none. */
+    readonly storedReshapeGateRevision: number | null;
 }
+
+type TransactedRtcTopologyWork = Exclude<
+    AcceptedRtcTopologyWork,
+    { decision: 'skipped-rtt-refinement' | 'skipped-fingerprint' | 'skipped-reshape-settled'; }
+>;
 
 export function computeRtcTopologyWorkWrite(
     input: ComputeRtcTopologyWorkWriteInput
 ): AcceptedRtcTopologyWorkWrite {
-    const { accepted, entry, reservationFinish } = input;
+    const { accepted, reservationFinish } = input;
     if (
         accepted.decision === 'skipped-rtt-refinement' ||
         accepted.decision === 'skipped-fingerprint' ||
+        accepted.decision === 'skipped-reshape-settled' ||
         (accepted.decision === 'accepted' && accepted.computed.outcome === 'superseded')
     ) {
         return { kind: 'completion-only', reservationFinish };
     }
-    const target = accepted.decision === 'accepted'
-        ? accepted.computed.outcome === 'write'
-            ? accepted.computed.snapshotGuard.candidate
-            : null
-        : accepted.criterionPetition?.planned ?? null;
-    const mutation = accepted.decision === 'accepted' &&
-            accepted.computed.outcome !== 'superseded'
-        ? accepted.computed
-        : null;
+    return { kind: 'transaction', transaction: computeTopologyWorkTransaction(input, accepted) };
+}
+
+function computeTopologyWorkTransaction(
+    input: ComputeRtcTopologyWorkWriteInput,
+    accepted: TransactedRtcTopologyWork
+): RtcTopologyPublicationTransactionWrite {
+    const { entry } = input;
+    const target = resolveTopologyWorkTarget(accepted);
     return {
-        kind: 'transaction',
-        transaction: {
-            mutation,
-            promotionWrite: toOptionalAppOutboxWrite(computeTopologyPromotionRequest({
-                read: accepted.promotionRead,
-                serviceId: input.serviceId,
-                entry,
-                sourceWorkId: input.sourceWorkId,
-                target,
-                expireAtEpochMs: input.derivedExpireAtEpochMs,
-                traceId: input.traceId
-            })),
-            connectWrites: computePublicationConnectTriggerRequests({
-                automationEnabled: input.formationAutomationEnabled,
-                target,
-                sourceWorkId: input.sourceWorkId,
-                entry,
-                expireAtEpochMs: input.derivedExpireAtEpochMs,
-                traceId: input.traceId
-            }).map(computeAppOutboxInsert),
-            fingerprint: computeFingerprintWrite(accepted),
-            delivery: accepted.decision === 'accepted' && accepted.publication
-                ? computeRtcTopologyPublicationDeliveryWrite(
-                    accepted.publication,
-                    input.publisherStreamId
-                )
-                : null,
-            reservationFinish
-        }
+        mutation: accepted.decision === 'accepted' && accepted.computed.outcome !== 'superseded'
+            ? accepted.computed
+            : null,
+        promotionWrite: toOptionalAppOutboxWrite(computeTopologyPromotionRequest({
+            read: accepted.promotionRead,
+            serviceId: input.serviceId,
+            entry,
+            sourceWorkId: input.sourceWorkId,
+            target,
+            expireAtEpochMs: input.derivedExpireAtEpochMs,
+            traceId: input.traceId
+        })),
+        connectWrites: computePublicationConnectTriggerRequests({
+            automationEnabled: input.formationAutomationEnabled,
+            target,
+            sourceWorkId: input.sourceWorkId,
+            entry,
+            expireAtEpochMs: input.derivedExpireAtEpochMs,
+            traceId: input.traceId
+        }).map(computeAppOutboxInsert),
+        fingerprint: computeFingerprintWrite(accepted),
+        reshapeGate: computeReshapeGateWrite(accepted, input.storedReshapeGateRevision),
+        reshapeDueWrite: computeReshapeDueWrite(accepted, input),
+        delivery: accepted.decision === 'accepted' && accepted.publication
+            ? computeRtcTopologyPublicationDeliveryWrite(accepted.publication, input.publisherStreamId)
+            : null,
+        reservationFinish: input.reservationFinish
     };
+}
+
+/** The layout the decision leaves stored, which the promotion and connect rows are derived from. */
+function resolveTopologyWorkTarget(accepted: TransactedRtcTopologyWork): RallarOverlayTopologySnapshot | null {
+    if (accepted.decision !== 'accepted') {
+        return accepted.criterionPetition?.planned ?? null;
+    }
+    return accepted.computed.outcome === 'write' ? accepted.computed.snapshotGuard.candidate : null;
+}
+
+function computeReshapeGateWrite(
+    accepted: TransactedRtcTopologyWork,
+    storedRevision: number | null
+): RuntimeStateConditionalWrite | null {
+    if (accepted.decision !== 'accepted' && accepted.decision !== 'skipped-unchanged') {
+        return null;
+    }
+    const { reshapeGate } = accepted;
+    return reshapeGate.decision === 'write'
+        ? computeRtcTopologyReshapeGateWrite(accepted.group.group, reshapeGate.state, storedRevision)
+        : null;
+}
+
+/** The first hold of a gate period queues the row that wakes the room when the gate opens. */
+function computeReshapeDueWrite(
+    accepted: TransactedRtcTopologyWork,
+    input: ComputeRtcTopologyWorkWriteInput
+): AppOutboxInsert | null {
+    if (accepted.decision !== 'accepted' && accepted.decision !== 'skipped-unchanged') {
+        return null;
+    }
+    const { reshapeGate } = accepted;
+    if (reshapeGate.decision !== 'write' || reshapeGate.wakeUpDueAtEpochMs === null) {
+        return null;
+    }
+    const { lastPassAtEpochMs, heldAtEpochMs } = reshapeGate.state.gate;
+    if (lastPassAtEpochMs === null || heldAtEpochMs === null) {
+        throw new TypeError('A reshape gate wake-up requires a period and its first hold');
+    }
+    const notBeforeEpochMs = reshapeGate.wakeUpDueAtEpochMs;
+    return computeAppOutboxInsert(computeRtcTopologyReshapeDueEntry({
+        groupRef: accepted.group.group,
+        periodStartedAtEpochMs: lastPassAtEpochMs,
+        notBeforeEpochMs,
+        requestedAtEpochMs: heldAtEpochMs,
+        expireAtEpochMs: Math.max(input.derivedExpireAtEpochMs, notBeforeEpochMs + input.finishedRetentionMs),
+        senderId: input.entry.audit.createdBy,
+        traceId: input.traceId
+    }));
 }
 
 export function validateRtcTopologyWorkWrite(
@@ -215,6 +292,8 @@ export function computeRtcTopologyReplayWrite(
             promotionWrite: null,
             connectWrites: [],
             fingerprint: null,
+            reshapeGate: null,
+            reshapeDueWrite: null,
             delivery: null,
             reservationFinish: input.reservationFinish
         }
@@ -283,9 +362,7 @@ function toReplayMutationInput(read: RtcTopologyMutationInput['read']): RtcTopol
     };
 }
 
-function computeFingerprintWrite(
-    accepted: Exclude<AcceptedRtcTopologyWork, { decision: 'skipped-rtt-refinement' | 'skipped-fingerprint'; }>
-) {
+function computeFingerprintWrite(accepted: TransactedRtcTopologyWork) {
     if (
         accepted.decision === 'skipped-frozen' ||
         accepted.decision === 'held-young-layout' ||

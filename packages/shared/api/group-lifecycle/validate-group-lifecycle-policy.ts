@@ -14,7 +14,8 @@ export function validateGroupLifecyclePolicy(
     const issues: GroupLifecyclePolicyIssue[] = [
         ...toManagerIssues(policy),
         ...toActivationIssues(policy),
-        ...toAutomationIssues(policy)
+        ...toAutomationIssues(policy),
+        ...toReshapeIntervalIssues(policy)
     ];
 
     return issues.length === 0
@@ -178,6 +179,21 @@ function toAutomationIssues(
     }
 
     return issues;
+}
+
+function toReshapeIntervalIssues(
+    policy: GroupLifecyclePolicy
+): readonly GroupLifecyclePolicyIssue[] {
+    const { topology } = policy;
+    if (topology.reshapeMinIntervalMs <= topology.reshapeMaxIntervalMs) {
+        return [];
+    }
+    return [{
+        code: 'reshape-minimum-interval-exceeds-maximum',
+        field: 'topology.reshapeMinIntervalMs',
+        message: 'topology.reshapeMinIntervalMs exceeds topology.reshapeMaxIntervalMs, ' +
+            'so the reshape interval could never double up to its maximum'
+    }];
 }
 
 function usesThreshold(mode: GroupLifecyclePolicy['activation']['mode']): boolean {
