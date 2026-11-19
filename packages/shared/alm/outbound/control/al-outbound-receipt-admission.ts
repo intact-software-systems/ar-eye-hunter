@@ -11,7 +11,6 @@ import {
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
-import { toALOutboundFirstHopTimeoutEffectId } from '../to-al-outbound-effect-id.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -29,6 +28,7 @@ import {
 } from './compute-al-outbound-receipt-admission.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
+import { toALOutboundEndedTimeoutEffectIds } from './write-al-outbound-timeout-completions.ts';
 
 export interface ALOutboundReceiptAdmissionDependencies<TPrepared> {
     readonly admissionStore: ALOutboundAdmissionStore<TPrepared>;
@@ -152,14 +152,16 @@ export class ALOutboundReceiptAdmission<TPrepared> {
 /**
  * The receipt's row and the shared-head rows it moves, and, when the sender still waits on the server to first answer
  * for the message, the end of that wait and its timer: any receipt proves the server has the message. A terminal
- * receipt also ends the message: its row stays as the final snapshot, its repair count goes and its row is marked.
+ * receipt also ends the message: its row stays as the final snapshot, its timer and repair count go, and its sent row
+ * is marked.
  */
 function toReceiptCommitBundle<TPrepared>(
     read: ALOutboundReceiptAdmissionRead,
     write: ALOutboundReceiptWrite
 ): ALOutboundCommitBundle<TPrepared> {
     const { receipt, stored } = read;
-    const messageEnd = stored !== undefined && isALOutboundTerminalReceipt(read, write)
+    const terminal = isALOutboundTerminalReceipt(read, write);
+    const messageEnd = stored !== undefined && terminal
         ? [
             { kind: 'end-sent-message', stored } as const,
             { kind: 'delete-repair-attempt', msgId: receipt.msgId } as const
@@ -168,6 +170,10 @@ function toReceiptCommitBundle<TPrepared>(
     const waitEnd = read.firstHopWait === undefined
         ? []
         : [{ kind: 'delete-first-hop-wait', msgId: receipt.msgId } as const];
+    const endedTimeoutEffectIds = toALOutboundEndedTimeoutEffectIds(
+        terminal ? read.pending : undefined,
+        read.firstHopWait
+    );
     return {
         senderId: receipt.originPeerId,
         expectedVersion: read.clientRecord?.version,
@@ -178,8 +184,6 @@ function toReceiptCommitBundle<TPrepared>(
             ...messageEnd
         ],
         durableEffects: [],
-        ...(read.firstHopWait === undefined
-            ? {}
-            : { endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(read.firstHopWait)] })
+        ...(endedTimeoutEffectIds.length === 0 ? {} : { endedTimeoutEffectIds })
     };
 }

@@ -23,8 +23,10 @@ import {
     type ALOutboundComputedDto,
     type ALOutboundComputeIntent
 } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
-import { toALOutboundReadMessageEndBundle } from '@shared/alm/outbound/message-end/to-al-outbound-message-end-bundle.ts';
-import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
+import {
+    toALOutboundAckTimeoutEffectId,
+    toALOutboundRepairRequesterKey
+} from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { validateALOutboundDispatch } from '@shared/alm/outbound/validate-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -248,7 +250,12 @@ describe('outbound dispatch value ownership', () => {
         });
 
         expect(computed.verdict.kind).toBe('skipped');
-        expect(computed.bundle).toEqual(toALOutboundReadMessageEndBundle(read.msg, read));
+        expect(computed.bundle?.mutations).toEqual([
+            { kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId: message.id.msgId },
+            { kind: 'delete-repair-attempt', msgId: message.id.msgId },
+            { kind: 'end-sent-message', stored: read.storedMessage }
+        ]);
+        expect(computed.bundle?.endedTimeoutEffectIds).toEqual([]);
         expect(computed.bundle?.durableEffects).toEqual([]);
         expect(computed.entries).toEqual([]);
     });
@@ -416,7 +423,13 @@ describe('a dispatch and the end of its message', () => {
         const computed = dispatch(store, read, 'repair', { repairBudget: { requesterKey: 'peer-1', maxAttempts: 1 } });
 
         expect(computed.verdict).toMatchObject({ kind: 'skipped', reason: 'repair-exhausted' });
-        expect(computed.bundle).toEqual(toALOutboundReadMessageEndBundle(read.msg, read));
+        expect(computed.bundle?.mutations).toEqual([
+            { kind: 'delete-pending-ack', originPeerId: message.id.senderId, msgId },
+            { kind: 'delete-repair-attempt', msgId },
+            { kind: 'end-sent-message', stored: read.storedMessage }
+        ]);
+        expect(computed.bundle?.endedTimeoutEffectIds).toEqual([toALOutboundAckTimeoutEffectId(OPEN_RECEIPT)]);
+        expect(computed.bundle?.expectedVersion).toBe(read.clientRecord?.version);
         expect(toALOutboundCommitSettlements({ bundle: computed.bundle!, msg: message, read, intent: 'repair' })).toEqual([]);
     });
 

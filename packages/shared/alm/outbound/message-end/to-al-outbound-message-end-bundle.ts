@@ -6,11 +6,8 @@ import type {
 } from '../admission/al-outbound-admission-store.ts';
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { toALOutboundEndReceiptBundle } from '../control/to-al-outbound-end-receipt-bundle.ts';
+import { toALOutboundEndedTimeoutEffectIds } from '../control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
-import {
-    toALOutboundAckTimeoutEffectId,
-    toALOutboundFirstHopTimeoutEffectId
-} from '../to-al-outbound-effect-id.ts';
 
 export interface ALOutboundMessageEndInput {
     readonly senderId: string;
@@ -42,10 +39,7 @@ export function toALOutboundMessageEndBundle<TPrepared>(
             ...(stored === undefined ? [] : [{ kind: 'end-sent-message', stored } as const]),
             ...(firstHopWait === undefined ? [] : [{ kind: 'delete-first-hop-wait', msgId } as const])
         ],
-        endedTimeoutEffectIds: [
-            ...(openReceipt === undefined ? [] : [toALOutboundAckTimeoutEffectId(openReceipt)]),
-            ...(firstHopWait === undefined ? [] : [toALOutboundFirstHopTimeoutEffectId(firstHopWait)])
-        ]
+        endedTimeoutEffectIds: toALOutboundEndedTimeoutEffectIds(openReceipt, firstHopWait)
     };
 }
 

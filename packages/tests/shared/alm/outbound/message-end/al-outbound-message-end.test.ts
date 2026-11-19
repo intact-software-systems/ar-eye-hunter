@@ -19,6 +19,7 @@ import type {
 } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import type { ALOutboundControlAdmissionResult } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
+import { toALOutboundRepairRequesterKey } from '@shared/alm/outbound/to-al-outbound-effect-id.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
 import {
@@ -26,6 +27,7 @@ import {
     createDefaultOutboundTestStores,
     createIndexedDbOutboundTestStores,
     createOutboundMessage,
+    createServerReceipt,
     drainOutboundWorkDueNow,
     enqueueOutboundOrThrow
 } from '../../outbound-runtime-test-fixture.ts';
@@ -68,6 +70,8 @@ interface EndedMessageFixture {
 interface EndedMessageFixtureOptions {
     readonly maxRepairs: number;
     readonly holdRepairs?: boolean;
+    /** The sequences both receivers acknowledge; 1, 3, 4 and 5 unless stated. */
+    readonly acknowledgedSeqs?: readonly number[];
 }
 
 describe('a terminal settlement ends its message', () => {
@@ -179,6 +183,87 @@ describe('a terminal settlement ends its message', () => {
         expect(await fixture.stores.admissionStore.readReceiptState({ originPeerId: second.id.senderId, msgId: second.id.msgId })).toBeUndefined();
         expect(await pendingWorkOf(fixture, 2)).toEqual([]);
     });
+
+    it.each(STORES)('on %s, a timed-out server receipt ends the message: its receipt timer rewrites nothing and states nothing after it', async (store) => {
+        const fixture = await createEndedMessageFixture(store, { maxRepairs: 4 });
+        const second = fixture.messages[1]!;
+        const receipt = { originPeerId: second.id.senderId, msgId: second.id.msgId };
+        await advanceTo(fixture, 50);
+        const timedOut = createServerReceipt(second, 'timed-out', RECEIVERS, {
+            controlMsgId: `receipt-timed-out-${second.id.msgId}`,
+            confirmedRecipientPeerIds: ['peer-1']
+        });
+        expect(await fixture.runtime.acceptReceipt(timedOut)).toEqual({ kind: 'committed' });
+        const kept = await fixture.stores.admissionStore.readReceiptState(receipt);
+
+        await advanceTo(fixture, 30_000);
+
+        expect(framesOf(fixture, 2)).toEqual(['first-send']);
+        expect(await fixture.stores.admissionStore.readReceiptState(receipt)).toEqual(kept);
+        expect(await pendingWorkOf(fixture, 2)).toEqual([]);
+        expect(
+            fixture.settlements.filter((settlement) =>
+                settlement.msgId === second.id.msgId &&
+                (settlement.kind === 'acknowledgement' || settlement.kind === 'receipt-exhausted')
+            ).map((settlement) => settlement.kind)
+        ).toEqual(['acknowledgement']);
+    });
+
+    it.each(STORES)(
+        'on %s, a superseded receipt timer that meets the row a timed-out server receipt kept rewrites nothing and states nothing',
+        async (store) => {
+            const fixture = await createEndedMessageFixture(store, { maxRepairs: 4 });
+            const second = fixture.messages[1]!;
+            const receipt = { originPeerId: second.id.senderId, msgId: second.id.msgId };
+            await advanceTo(fixture, 50);
+            await requestSeqTwo(fixture, 'peer-1', 1);
+            await advanceTo(fixture, 75);
+            await requestSeqTwo(fixture, 'peer-2', 1);
+            await advanceTo(fixture, 100);
+            // The first send's and the first repair's timers are superseded: the second repair moved the deadline last.
+            expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout', 'ack-timeout']);
+            expect(
+                await fixture.runtime.acceptReceipt(createServerReceipt(second, 'timed-out', RECEIVERS, {
+                    controlMsgId: `receipt-timed-out-${second.id.msgId}`,
+                    confirmedRecipientPeerIds: ['peer-1']
+                }))
+            ).toEqual({ kind: 'committed' });
+            const kept = await fixture.stores.admissionStore.readReceiptState(receipt);
+            expect(await pendingWorkOf(fixture, 2)).toEqual(['ack-timeout', 'ack-timeout']);
+
+            await advanceTo(fixture, 30_000);
+
+            expect(framesOf(fixture, 2)).toEqual(['first-send', 'gap-repair(peer-1#1)', 'gap-repair(peer-2#1)']);
+            expect(await fixture.stores.admissionStore.readReceiptState(receipt)).toEqual(kept);
+            expect(await pendingWorkOf(fixture, 2)).toEqual([]);
+            expect(
+                fixture.settlements.filter((settlement) =>
+                    settlement.msgId === second.id.msgId &&
+                    (settlement.kind === 'acknowledgement' || settlement.kind === 'receipt-exhausted')
+                ).map((settlement) => settlement.kind)
+            ).toEqual(['acknowledgement']);
+        }
+    );
+
+    it.each(STORES)('on %s, a request over an ended and a live sequence serves and charges the live one alone', async (store) => {
+        const fixture = await createEndedMessageFixture(store, { maxRepairs: 1, acknowledgedSeqs: [3, 4, 5] });
+        const [first, second] = fixture.messages as [ALMessage, ALMessage];
+        await exhaustSeqTwo(fixture);
+        expect((await fixture.stores.admissionStore.readStoredMessage(second.id.msgId))?.ended).toBe(true);
+        expect((await fixture.stores.admissionStore.readStoredMessage(first.id.msgId))?.ended).toBe(false);
+        const secondFrames = framesOf(fixture, 2);
+
+        expect(await requestGap(fixture, { peer: 'peer-1', number: 2, from: 1 })).toEqual({ kind: 'committed' });
+        await advanceTo(fixture, 1_425);
+
+        expect(framesOf(fixture, 1)).toEqual(['first-send', 'gap-repair(peer-1#2)']);
+        expect((await readRepairAttempt(fixture, first))?.attemptsByRequester).toEqual({
+            [toALOutboundRepairRequesterKey({ requestedByPeerId: 'peer-1' })]: 1
+        });
+        expect(framesOf(fixture, 2)).toEqual(secondFrames);
+        expect(await readRepairAttempt(fixture, second)).toBeUndefined();
+        expect(terminalFactsOf(fixture, 2)).toEqual([['admission', 'repair-exhausted']]);
+    });
 });
 
 /** Both receivers' first requests are served; peer-2's second finds its budget of one spent at 1 325 ms. */
@@ -216,7 +301,7 @@ async function createEndedMessageFixture(
         await enqueueOutboundOrThrow(fixture.runtime, message);
     }
     for (const peer of RECEIVERS) {
-        for (const message of [messages[0]!, messages[2]!, messages[3]!, messages[4]!]) {
+        for (const message of (options.acknowledgedSeqs ?? [1, 3, 4, 5]).map((seq) => messages[seq - 1]!)) {
             await fixture.runtime.acceptControlMessage(toAck(message, peer), 'peer');
         }
     }
@@ -325,18 +410,27 @@ async function requestSeqTwo(
     peer: string,
     number: number
 ): Promise<ALOutboundControlAdmissionResult> {
+    return await requestGap(fixture, { peer, number, from: 2 });
+}
+
+/** A gap NACK for sequences `from` to 2 that names sequence 3's message, the one whose arrival revealed the gap. */
+async function requestGap(
+    fixture: EndedMessageFixture,
+    request: { readonly peer: string; readonly number: number; readonly from: number; }
+): Promise<ALOutboundControlAdmissionResult> {
+    const { peer, number, from } = request;
     const revealing = fixture.messages[2]!;
     return await fixture.runtime.acceptControlMessage(
         newALNackControlMessage(
-            { v: 4, msgId: `gap-${peer}-${number}`, ts: Date.now(), senderId: peer, traceId: 'trace-message-end' },
+            { v: 4, msgId: `gap-${peer}-${number}-from-${from}`, ts: Date.now(), senderId: peer, traceId: 'trace-message-end' },
             toTestALNackPayload({
                 msgId: revealing.id.msgId,
                 fromPeerId: peer,
                 toPeerId: 'self',
                 reason: 'gap',
                 orderingKey: toALOrderingTrackKey(revealing)!,
-                expectedSeq: 2,
-                missingRanges: [{ from: 2, to: 2 }],
+                expectedSeq: from,
+                missingRanges: [{ from, to: 2 }],
                 gapRequestNumber: number
             })
         ),

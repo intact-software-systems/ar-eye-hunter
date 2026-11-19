@@ -1,6 +1,23 @@
 import { EntityStatus } from '../../../queuebox/ResourceEntry.ts';
 import type { ALAdmissionWorkWriteContext } from '../../al-admission-work-backend.ts';
+import type { ALOutboundPendingAckSnapshot } from '../../al-runtime-state-stores.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
+import {
+    toALOutboundAckTimeoutEffectId,
+    toALOutboundFirstHopTimeoutEffectId
+} from '../to-al-outbound-effect-id.ts';
+
+/** The current timers of the receipt and the first-hop wait a commit ends; each is given only when that commit ends it. */
+export function toALOutboundEndedTimeoutEffectIds(
+    endedReceipt: ALOutboundPendingAckSnapshot | undefined,
+    endedWait: ALOutboundFirstHopWaitSnapshot | undefined
+): readonly string[] {
+    return [
+        ...(endedReceipt === undefined ? [] : [toALOutboundAckTimeoutEffectId(endedReceipt)]),
+        ...(endedWait === undefined ? [] : [toALOutboundFirstHopTimeoutEffectId(endedWait)])
+    ];
+}
 
 /**
  * Completes each waiting timer of a receipt or a first-hop wait this commit ends: left pending, it would find nothing

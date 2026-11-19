@@ -51,7 +51,8 @@ export interface ALStoredOutboundMessage {
 
 /**
  * The sent row as it is written: positions only once a recording kept them, so a row without them reads as one an
- * older build wrote, and an older build still reads every row that recorded nothing; the end marker only once true.
+ * older build wrote, and an older build still reads every row that recorded nothing. The row writes `ended` only when
+ * the message has ended; an absent key is the row's current shape for a message that has not.
  */
 export type ALStoredOutboundMessageRow = Omit<ALStoredOutboundMessage, 'sentPositions' | 'ended'> & {
     readonly sentPositions?: Readonly<Record<string, number>>;

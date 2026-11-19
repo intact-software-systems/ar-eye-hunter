@@ -30,13 +30,10 @@ import {
 import { toALOutboundControlRepairHint } from './control/to-al-outbound-control-repair-hint.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
+import { toALOutboundEndedTimeoutEffectIds } from './control/write-al-outbound-timeout-completions.ts';
 import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
-import { toALOutboundSettledMessageEnd } from './message-end/to-al-outbound-settled-message-end.ts';
-import {
-    toALOutboundAckTimeoutEffectId,
-    toALOutboundFirstHopTimeoutEffectId,
-    toALOutboundRepairHintEffectId
-} from './to-al-outbound-effect-id.ts';
+import { toALOutboundControlMessageEnd } from './message-end/to-al-outbound-control-message-end.ts';
+import { toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundOutsideAudienceNack,
     acceptALOutboundPendingAckSnapshot,
@@ -121,10 +118,7 @@ export function computeALOutboundControlAdmission(
     const terminal = read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload);
     const receiptEnded = terminal || pending.kind === 'remove' ||
         (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value));
-    const messageEnd = toALOutboundSettledMessageEnd(
-        read.sent,
-        toALOutboundControlSettlements({ read, history, pending }, read.targetMsgId)
-    );
+    const messageEnd = toALOutboundControlMessageEnd({ read, pending });
     return {
         read,
         history,
@@ -151,14 +145,10 @@ function toEndedTimers(
     receiptEnded: boolean,
     sendEnded: boolean
 ): Pick<ALControlAdmissionCandidate, 'removeFirstHopWait' | 'endedTimeoutEffectIds'> {
-    const endedReceipt = receiptEnded ? read.pending : undefined;
     const endedWait = sendEnded ? read.firstHopWait : undefined;
     return {
         removeFirstHopWait: endedWait !== undefined,
-        endedTimeoutEffectIds: [
-            ...(endedReceipt === undefined ? [] : [toALOutboundAckTimeoutEffectId(endedReceipt)]),
-            ...(endedWait === undefined ? [] : [toALOutboundFirstHopTimeoutEffectId(endedWait)])
-        ]
+        endedTimeoutEffectIds: toALOutboundEndedTimeoutEffectIds(receiptEnded ? read.pending : undefined, endedWait)
     };
 }
 
@@ -169,7 +159,7 @@ function toEndedTimers(
  * production because a control is built with it.
  */
 export function toALOutboundControlSettlements(
-    candidate: Pick<ALControlAdmissionCandidate, 'read' | 'history' | 'pending'>,
+    candidate: ALControlAdmissionCandidate,
     traceId: string
 ): readonly ALOutboundSettlementFact[] {
     const { read, history } = candidate;
@@ -226,7 +216,7 @@ export function controlTargetMsgId(parsed: ALParsedControlMessage): string {
 
 /** A `set` carries the receipt the commit wrote; a `remove` the one it tore down. */
 function resolveAcceptedReceipt(
-    candidate: Pick<ALControlAdmissionCandidate, 'read' | 'pending'>
+    candidate: ALControlAdmissionCandidate
 ): ALOutboundPendingAckSnapshot | undefined {
     switch (candidate.pending.kind) {
         case 'set':

@@ -173,7 +173,7 @@ export function toALOutboundReceiptSettlement(
             nextHopPeerIds,
             completedHopPeerIds: nextHopPeerIds.filter((peerId) => write.value.ackedPeerIds.includes(peerId))
         },
-        complete: read.receipt.phase !== 'timed-out' && isALOutboundTerminalReceipt(read, write),
+        complete: read.receipt.phase !== 'timed-out' && isALOutboundReceiptComplete(write.value),
         traceId
     });
 }

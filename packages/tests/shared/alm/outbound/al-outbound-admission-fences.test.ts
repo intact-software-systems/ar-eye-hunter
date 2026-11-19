@@ -56,7 +56,8 @@ import { createPSqlAdmissionTestStorage } from '../../../shared-server/al-runtim
 import {
     createOutboundCanonicalEntry,
     createOutboundMessage,
-    readOutboundTestAdmission
+    readOutboundTestAdmission,
+    trackOutboundTestAcks
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
 
@@ -311,6 +312,54 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
         }
         expect((await decideRepair()).verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
+    });
+
+    it('a receipt retry decided before the message ended conflicts, and decided again writes no frame and no receipt row', async () => {
+        const fixture = await createFenceFixture(storage);
+        const message = createOutboundMessage('ended-before-receipt-retry');
+        const planner: ALOutboundPlanner<OutboundTestPayload> = (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            lane: 'durable',
+            preparedMessages: [{ text: planned.id.msgId }],
+            ackTracking: trackOutboundTestAcks(['receiver'])
+        });
+        expect(
+            await fixture.store.commitBundle(
+                await readOutboundTestAdmission({
+                    store: fixture.store,
+                    message,
+                    creationNow: () => Temporal.Now.instant(),
+                    clock: { nowMs: () => Date.now() },
+                    planner
+                })
+            )
+        ).toBe('committed');
+        const decideRetry = async () => {
+            const read = await fixture.store.readOutgoingMessage({ msg: message, planner, observedCanonicalEntry: undefined, intent: 'repair' });
+            return computeALOutboundDispatch({
+                read,
+                outboxEntry: createOutboundCanonicalEntry(fixture.store, read.msg, Temporal.Now.instant()),
+                dispatchAtMs: Date.now(),
+                intent: 'repair',
+                phase: 'immediate',
+                options: { attemptIdentity: 'receipt-retry-decided-before-the-end' }
+            });
+        };
+        const decided = await decideRetry();
+        expect(decided.bundle!.mutations.map((mutation) => mutation.kind)).toContain('set-pending-ack');
+        const repairRead = await fixture.store.readRepairMessage(message.id.msgId, planner);
+
+        expect(await fixture.store.commitBundle(toALOutboundReadMessageEndBundle(message, repairRead))).toBe('committed');
+        expect(await fixture.store.commitBundle(decided.bundle!)).toBe('conflict');
+        // Its send rows are the frame it would write; its timer may share the admission's id, which the end completed.
+        for (const effect of decided.bundle!.durableEffects.filter((written) => written.payload.kind === 'send-prepared')) {
+            expect(await fixture.backend.workQueue.getItem(toALOutboundWorkKey(FENCE_NAMESPACE, effect.effectId))).toBeUndefined();
+        }
+        expect(await fixture.store.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
+        const again = await decideRetry();
+        expect(again.verdict).toMatchObject({ kind: 'skipped', reason: 'message-ended' });
+        expect(again.bundle).toBeUndefined();
     });
 
     it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {
