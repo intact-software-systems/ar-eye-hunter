@@ -134,6 +134,10 @@ export interface RallarConnectionOperations {
     defaults(): RallarDefaults | undefined;
     connect(options?: RallarScopedOperationOptions): Promise<ApiMiddleware>;
     disconnect(): Promise<void>;
+    /** Earliest closing instant that guarantees the full duration under the live clock bounds.
+     * Returns undefined without calibration. Invalid durations and unsafe epochs throw RangeError.
+     */
+    deadlineAfter(durationMs: number): number | undefined;
     /** Compare an inclusive closing instant with the active server-time window. Invalid epochs throw RangeError. */
     compareDeadline(deadlineEpochMs: number): 'before' | 'overlaps' | 'at-or-after' | 'unavailable';
     rtcCapture(): RtcSignalingDiagnostics.CaptureReceipt | undefined;

@@ -28,6 +28,20 @@ export function createRallarSessionConnectionOperations(
         defaults: () => input.connectionRuntime.defaults(),
         connect: (options) => input.authLifecycle.connect(options),
         disconnect: () => input.authLifecycle.disconnect(),
+        deadlineAfter(durationMs) {
+            if (!Number.isSafeInteger(durationMs) || durationMs < 0) {
+                throw new RangeError('Duration must be a nonnegative safe integer in milliseconds.');
+            }
+            const window = input.connectionRuntime.readMiddleware()?.serverTime.readWindow().right;
+            if (window === undefined) {
+                return undefined;
+            }
+            const deadline = window.latestEpochMs + durationMs;
+            if (!Number.isSafeInteger(deadline)) {
+                throw new RangeError('Deadline exceeds the supported epoch range.');
+            }
+            return deadline;
+        },
         compareDeadline(deadlineEpochMs) {
             if (!Number.isSafeInteger(deadlineEpochMs) || deadlineEpochMs < 0) {
                 throw new RangeError('Deadline must be a nonnegative safe integer epoch in milliseconds.');

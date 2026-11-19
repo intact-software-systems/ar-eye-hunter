@@ -224,3 +224,10 @@ showed “Voting open” can still arrive late.
 
 Run the [two-browser room poll](../shared-deadline-poll/README.md) to see an
 in-time vote count and a delayed vote arrive after closure.
+
+A room authority that grants a minimum grace period can call
+`rallar.deadlineAfter(10_000)` once when the absence begins and save the
+returned epoch in its checkpoint. An unavailable clock returns `undefined`.
+A successor compares the stored deadline with `rallar.compareDeadline`.
+Using the latest plausible server time at creation gives the participant the
+full grace period even when the creation window has nonzero width.
