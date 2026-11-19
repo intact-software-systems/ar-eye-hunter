@@ -179,7 +179,7 @@ function readPersistedRtcTopologyWork(
     contextId: string
 ): PersistedRtcTopologyWork {
     const work = requireWorkRecord(envelope.data, 'RTC topology work data');
-    const kind = findPersistedRtcTopologyWorkKind(work.kind);
+    const kind = resolvePersistedRtcTopologyWorkKind(work.kind);
     switch (kind) {
         case 'rtt-refresh': {
             const groupSnapshot = readWorkGroupSnapshot(work.groupSnapshot);
@@ -203,7 +203,7 @@ function readPersistedRtcTopologyWork(
  * The contract's kinds, typed as the union's: a kind added to the contract fails this return, and one added to the
  * union fails the exhaustive switch above until it has a reader.
  */
-function findPersistedRtcTopologyWorkKind(value: JsonWireValue): PersistedRtcTopologyWork['kind'] | undefined {
+function resolvePersistedRtcTopologyWorkKind(value: JsonWireValue): PersistedRtcTopologyWork['kind'] | undefined {
     return RTC_TOPOLOGY_WORK_KINDS.find((known) => known === value);
 }
 

@@ -10,7 +10,6 @@ export function toTopologyReshapeBounds(read: GroupLifecyclePolicyRead): Backoff
         case 'present':
             return toBackoffGateBounds(read.policy.topology);
         case 'absent':
-            return toBackoffGateBounds(createDefaultGroupLifecyclePolicy().topology);
         case 'corrupt':
             // The defaults are safe here: a corrupt policy already holds automatic re-planning.
             return toBackoffGateBounds(createDefaultGroupLifecyclePolicy().topology);
