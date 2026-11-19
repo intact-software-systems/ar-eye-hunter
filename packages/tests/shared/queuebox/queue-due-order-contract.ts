@@ -26,8 +26,8 @@ interface DueOrderScope {
 
 /**
  * The due order every store's claim and `due` page follow (`resource-inbox-claim-order.ts`), stated here on its own
- * so that no store's helper decides what the store is checked against. Ties and rows with no next time fall to the
- * store's arrival order, so no case asserts an order among them.
+ * so that no store's helper decides what the store is checked against. Where ties and rows with no next time fall is
+ * each store's own, so no case asserts an order among them.
  */
 function toRuleDueOrder(rows: readonly ResourceEntry[], now: Temporal.Instant): ResourceEntry[] {
     const isDue = (row: ResourceEntry): boolean => row.dequeueAudit.nextTs === undefined || Temporal.Instant.compare(row.dequeueAudit.nextTs, now) <= 0;

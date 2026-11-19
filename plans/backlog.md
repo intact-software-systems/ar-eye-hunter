@@ -766,17 +766,70 @@ and it has no status list.
   0.3 ms for its custom plan on a 200 k-row table, with or without
   `resource_inbox_due_ix` (D674). Whether the server ever settles on that
   cached generic plan was not checked. Next: check it (how many executions,
-  which driver settings) before anything is changed.
+  which driver settings) before anything is changed. The api-v1 adapter
+  forces a custom plan only for a statement marked `toPlannedPerExecution()`
+  (`postgres-sql-adapter.ts`, `p-sql-fragment.ts`); neither the presence read
+  nor the `due` page is marked.
 - No store orders RESERVED rows by lease end, so ALM's readiness scan pages
   them by key, and with more than a page of reserved rows a lease that has
   ended can be advertised up to one lease (10 s) late (D673). Pinned as
   today's behaviour in
-  `packages/tests/shared/alm/outbound-work-readiness-reserved.test.ts`.
+  `packages/tests/shared/alm/outbound-work-readiness-reserved.test.ts`. "Up
+  to one lease late" holds only while the timeout sweep reaches the row: on
+  IndexedDB the sweep reads at most 64 reserved rows per type in key order
+  (`INDEXED_DB_QUEUE_PROBE_MAX_TO_READ`, `indexed-db-queue-box.ts`), so a
+  lease that ended behind 64 live leases is not recovered by it either until
+  rows ahead of it settle; memory and PostgreSQL find it.
 - A claim reads past expired rows and rows whose attempts are spent, and a
-  `due` page past expired rows, with no bound on how many (D671): until
-  cleanup runs (up to 60 s on IndexedDB) each claim and each readiness probe
-  walks them again. A cost, not a correctness gap; a bounded sweep or a page
-  budget would close it.
+  `due` page past expired rows, with no bound on how many (D671). On
+  IndexedDB a claim deletes the expired rows it reads past (one write it
+  already owes), so only the readiness probe walks them again, until the
+  cleanup that runs at most once per 60 s window and deletes at most 256
+  expired rows per pass; memory and PostgreSQL claims filter them without
+  deleting. Spent rows are walked again by every claim and probe on every
+  store. A cost, not a correctness gap; a bounded sweep or a page budget
+  would close it.
+- Three IndexedDB limits of the due order (D671), each a difference from
+  memory and PostgreSQL: the fairness pass selects an undated RETRY row at its
+  creation instant where the other stores exclude it (pinned in
+  `indexeddb-queuebox-indexed-reads.test.ts`), and no writer produces one
+  today (a RETRY release requires a delay); a due claim reads only the
+  statuses in the due index, so a claim naming RETRY with a non-pending
+  status would see none of that status's undated rows, and no caller makes
+  one; an undated pending row whose creation instant is ahead of the store's
+  clock is not read until the clock reaches it, though the rule calls it due
+  at once, and only a writer whose clock runs ahead of the store's produces
+  one.
+- While the dequeue circuit is open the outbound lane still claims gated
+  dequeue rows when a batch runs for other due work, and releases each as
+  not ready until the breaker's backoff (`al-outbound-dequeued-admission.ts`);
+  the readiness scan keeps every type's page whole so these rows never hide
+  the owner's due work (D671). Same as before D671. Skipping gated types in
+  the claim while the circuit is open would end the churn: a lane decision.
+- When every batch claims a full page of pending rows, the timeout sweep
+  that recovers a crashed lease gets no room (`claimALWork` gives it
+  `maxCount` less the pending claimed, `al-work-queue-port.ts`), so a crashed
+  lease is recovered late for as long as a backlog of pending work lasts. The
+  port's design is unchanged by D671, but claims fill more often now that due
+  work is no longer hidden.
+- The memory queue (`InMemoryQueueBox`) filters its whole map and sorts it for
+  every `due` page and claim (`in-memory-queue-box.ts`). It is a production
+  store: ALM's volatile and checkpoint lanes (`al-runtime-stores.ts`) and
+  the default in-memory ALM runtimes
+  (`create-default-al-inbound-message-runtime.ts`,
+  `create-default-al-outbound-message-runtime.ts`). Measured in the final
+  review: 2 000 rows with 200 pending, a `due` probe 1.3 ms against 0.01 ms
+  for the key probe before D671, a claim taking nothing 1.1 ms against 0.7
+  ms; 20 000 rows with 2 000 pending, 25 ms against 0.004 ms and 28 ms
+  against 8 ms. Option: a due-ordered read in
+  `in-memory-queue-work-index.ts`, its own change (the store file sits at 108
+  of 110 cognitive load).
+- `packages/tests/shared/alm/work/al-durable-work-ownership.test.ts` ("takes
+  over … reports restored") races a running batch: it waits only for the
+  send, which happens mid-batch, and `hasReadyWork` answers false without a
+  probe while a batch runs. The race predates D671 (identical before it). Fix:
+  `await other.runtime.ready()` before `executeOnce()`, as the sibling test
+  does.
 - Over `rtc`, the first send of a new ordered track is lost for good when a
   later send reaches the receiver before it (D669, `lost-stream-start`): the
   receiver enters at the first frame it sees and refuses the earlier one as

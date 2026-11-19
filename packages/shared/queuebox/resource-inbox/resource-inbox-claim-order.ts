@@ -10,15 +10,15 @@ import { EntityStatus, type ResourceEntry } from '../ResourceEntry.ts';
  * connections need not follow arrival, so arrival within one millisecond is not ordered there.
  *
  * Due order, on every store: a row is due when it has no next time or its next time is at or before now; a row with no
- * next time is due at once. A `due` claim takes at most `maxToReserve` due rows, counted across every type and status it
- * names, the earliest first; a row that is not yet due is never read as a candidate in place of one that is. Where an
- * undated row falls among dated rows is each store's own: the IndexedDB and memory stores place it by its creation
+ * next time is due at once. A `due` claim takes at most `maxToReserve` due rows, counted across every type and status
+ * it names, the earliest first; a row that is not yet due is never read as a candidate in place of one that is. Where
+ * an undated row falls among dated rows is each store's own: the IndexedDB and memory stores place it by its creation
  * instant, PostgreSQL before every dated row, and no caller may rely on either. Rows that tie fall to the store's own
- * arrival order. A `due` work page reads a type and status's rows in the same order, due yet or not, and reads past an
- * expired row as a `due` claim does: an expired row is not pending work, so it never takes a live row's place on the
- * page. Expired means what the store's claim means by it, at the store's own clock: the injected clock in memory and
- * in IndexedDB, the database's `now()` in PostgreSQL. A `key` page returns expired rows, for the cleanup that pages by
- * key.
+ * order: insertion order in memory, key order within a type and status in IndexedDB, row id in PostgreSQL. A `due` work
+ * page reads a type and status's rows in the same order, due yet or not, and reads past an expired row as a `due` claim
+ * does: an expired row is not pending work, so it never takes a live row's place on the page. Expired means what the
+ * store's claim means by it, at the store's own clock: the injected clock in memory and in IndexedDB, the database's
+ * `now()` in PostgreSQL. A `key` page returns expired rows, for the cleanup that pages by key.
  */
 export type ResourceInboxClaimOrder = 'creation' | 'due';
 
