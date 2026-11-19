@@ -11,11 +11,11 @@ import {
     computeRtcTopologyOutboxInsert,
     computeRtcTopologyReshapeDueEntry
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
     decodeStoredTopologyReshapeGate,
     type StoredTopologyReshapeGate
-} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
-import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { computeTopologyLayoutDelta } from '@shared-server/rallar-system/topology/planning/plan-record/compute-topology-layout-delta.ts';

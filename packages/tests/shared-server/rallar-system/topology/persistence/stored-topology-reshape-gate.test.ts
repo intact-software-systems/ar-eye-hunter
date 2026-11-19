@@ -6,7 +6,7 @@ import {
     computeRtcTopologyReshapeGateWrite,
     decodeStoredTopologyReshapeGate,
     RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
-} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';

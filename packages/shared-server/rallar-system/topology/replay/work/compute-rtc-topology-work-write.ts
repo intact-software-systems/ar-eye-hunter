@@ -21,7 +21,7 @@ import {
 } from '../../mutation/rtc-topology-outbox-entry.ts';
 import {
     computeRtcTopologyReshapeGateWrite
-} from '../../persistence/rtc-topology-reshape-gate-store.ts';
+} from '../../persistence/stored-topology-reshape-gate.ts';
 import type { GroupTopologyPlanningAuthority } from '../../planning/group-topology-planning-authority.ts';
 import type { ComputedTopologyReshapeGate } from '../../planning/reshape-gate/compute-topology-reshape-gate.ts';
 import type { HeldRttReplan, PromotedRttReplan } from '../../planning/resolve-rtt-replan-promotion.ts';
@@ -189,7 +189,7 @@ function computeTopologyWorkTransaction(
     accepted: TransactedRtcTopologyWork
 ): RtcTopologyPublicationTransactionWrite {
     const { entry } = input;
-    const target = readTopologyWorkTarget(accepted);
+    const target = resolveTopologyWorkTarget(accepted);
     return {
         mutation: accepted.decision === 'accepted' && accepted.computed.outcome !== 'superseded'
             ? accepted.computed
@@ -222,7 +222,7 @@ function computeTopologyWorkTransaction(
 }
 
 /** The layout the decision leaves stored, which the promotion and connect rows are derived from. */
-function readTopologyWorkTarget(accepted: TransactedRtcTopologyWork): RallarOverlayTopologySnapshot | null {
+function resolveTopologyWorkTarget(accepted: TransactedRtcTopologyWork): RallarOverlayTopologySnapshot | null {
     if (accepted.decision !== 'accepted') {
         return accepted.criterionPetition?.planned ?? null;
     }

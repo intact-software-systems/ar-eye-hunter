@@ -23,14 +23,14 @@ import {
 } from '../replay/work/rtc-topology-input-fingerprint.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './rtc-topology-errors.ts';
 import {
-    decodeStoredTopologyReshapeGate,
-    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
-    type StoredTopologyReshapeGate
-} from './rtc-topology-reshape-gate-store.ts';
-import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository
 } from './rtc-topology-snapshot-repository.ts';
+import {
+    decodeStoredTopologyReshapeGate,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
+    type StoredTopologyReshapeGate
+} from './stored-topology-reshape-gate.ts';
 
 export class RtcTopologyExecutionRepository {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;

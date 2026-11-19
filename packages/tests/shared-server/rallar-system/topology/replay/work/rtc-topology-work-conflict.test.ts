@@ -9,13 +9,13 @@ import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topolog
 import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import {
-    computeRtcTopologyReshapeGateWrite,
-    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
-} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
-import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     toStoredRtcTopologySnapshotRow
 } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    computeRtcTopologyReshapeGateWrite,
+    RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';

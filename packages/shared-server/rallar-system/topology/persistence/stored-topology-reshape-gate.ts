@@ -1,5 +1,6 @@
+import { decodeExactGroupRef } from '@shared/api/decode-exact-group-ref.ts';
 import { decodePlainRecord, hasExactKeys } from '@shared/api/exact-object-decoding.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
 import { decodeTopologyReshapeGateState } from '@shared/api/topology-plan/decode-topology-reshape-gate-state.ts';
 import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { getOwnField } from '@shared/encoding/get-own-field.ts';
@@ -26,7 +27,6 @@ interface StoredTopologyReshapeGateValue {
 }
 
 const STORED_VALUE_KEYS = ['groupRef', 'state'] as const satisfies readonly (keyof StoredTopologyReshapeGateValue)[];
-const GROUP_REF_KEYS = ['applicationId', 'workspaceId', 'groupId'] as const satisfies readonly (keyof GroupRef)[];
 
 /** A null revision inserts where the room holds no gate; otherwise the row is replaced only at that revision. */
 export function computeRtcTopologyReshapeGateWrite(
@@ -34,14 +34,7 @@ export function computeRtcTopologyReshapeGateWrite(
     state: TopologyReshapeGateState,
     expectedRevision: number | null
 ): RuntimeStateConditionalWrite {
-    const stored: StoredTopologyReshapeGateValue = {
-        groupRef: {
-            applicationId: groupRef.applicationId,
-            workspaceId: groupRef.workspaceId,
-            groupId: groupRef.groupId
-        },
-        state
-    };
+    const stored: StoredTopologyReshapeGateValue = { groupRef: toCanonicalGroupRef(groupRef), state };
     const row = {
         namespace: RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE,
         key: groupStateGroupStorageKey(groupRef),
@@ -74,8 +67,8 @@ function decodeStoredTopologyReshapeGateValue(key: string, value: JsonWireValue)
     if (fields === undefined || !hasExactKeys(fields, STORED_VALUE_KEYS)) {
         throw new TypeError('Stored RTC topology reshape gate fields are invalid');
     }
-    const groupRef = decodeStoredGroupRef(getOwnField(fields, 'groupRef'));
-    if (groupRef === null || groupStateGroupStorageKey(groupRef) !== key) {
+    const groupRef = decodeExactGroupRef(getOwnField(fields, 'groupRef'), 'Stored RTC topology reshape gate');
+    if (groupStateGroupStorageKey(groupRef) !== key) {
         throw new TypeError('Stored RTC topology reshape gate group identity is inconsistent');
     }
     const state = decodeTopologyReshapeGateState(getOwnField(fields, 'state'));
@@ -83,15 +76,4 @@ function decodeStoredTopologyReshapeGateValue(key: string, value: JsonWireValue)
         throw new TypeError(state.left);
     }
     return state.right;
-}
-
-function decodeStoredGroupRef(value: JsonWireValue): GroupRef | null {
-    const fields = decodePlainRecord(value).right;
-    if (fields === undefined || !hasExactKeys(fields, GROUP_REF_KEYS)) {
-        return null;
-    }
-    const [applicationId, workspaceId, groupId] = GROUP_REF_KEYS.map((field) => getOwnField(fields, field));
-    return typeof applicationId === 'string' && typeof workspaceId === 'string' && typeof groupId === 'string'
-        ? { applicationId, workspaceId, groupId }
-        : null;
 }

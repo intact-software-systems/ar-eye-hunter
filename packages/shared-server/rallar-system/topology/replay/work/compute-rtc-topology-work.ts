@@ -1,5 +1,5 @@
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
-import type { StoredTopologyReshapeGate } from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
+import type { StoredTopologyReshapeGate } from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import type { GroupTopologyPlanningAuthority } from '@shared-server/rallar-system/topology/planning/group-topology-planning-authority.ts';
 import { computeRtcTopologyExecutionCommandDigest } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';

@@ -28,12 +28,12 @@ import {
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import {
     computeRtcTopologyReshapeGateWrite,
     RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
-} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
-import { RTC_TOPOLOGY_ACCEPTED_SNAPSHOTS_NAMESPACE } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { RtcTopologyReconnectHydrator } from '@shared-server/rallar-system/topology/replay/hydration/rtc-topology-reconnect-hydrator.ts';
 import { createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/replay/work/create-rtc-topology-work-handler.ts';

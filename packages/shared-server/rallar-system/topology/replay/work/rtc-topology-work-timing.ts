@@ -45,7 +45,7 @@ type TimedRtcTopologyWork = Exclude<AcceptedRtcTopologyWork, { decision: 'skippe
 
 function toRtcTopologyWorkTimingDetails(accepted: TimedRtcTopologyWork): RallarTimingDetails {
     const promotion = readRttReplanPromotion(accepted);
-    const plan = readPublishedPlan(accepted);
+    const plan = resolvePublishedPlan(accepted);
     const planChange = plan?.change ?? null;
     return {
         workKind: accepted.work.kind,
@@ -73,7 +73,7 @@ function readRttReplanPromotion(accepted: TimedRtcTopologyWork): RttReplanPromot
         : null;
 }
 
-function readPublishedPlan(accepted: TimedRtcTopologyWork): RtcTopologyPlanRecord | null {
+function resolvePublishedPlan(accepted: TimedRtcTopologyWork): RtcTopologyPlanRecord | null {
     return accepted.decision === 'accepted' ? accepted.publication?.plan ?? null : null;
 }
 

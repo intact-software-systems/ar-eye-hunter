@@ -3,14 +3,14 @@ import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/top
 import {
     computeRtcTopologyReshapeGateWrite,
     RTC_TOPOLOGY_RESHAPE_GATES_NAMESPACE
-} from '@shared-server/rallar-system/topology/persistence/rtc-topology-reshape-gate-store.ts';
+} from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import { RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
 import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
-import type { BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
 import { expect, it } from 'vitest';
 
+import { BACKOFF_GATE_TEST_BOUNDS } from '../../../../shared/resilience/backoff-gate-test-fixtures.ts';
 import { FakeRuntimeStateRepository } from '../../../runtime-state/test-support/fake-runtime-state-repository.ts';
 import {
     createGroupRef,
@@ -19,7 +19,6 @@ import {
 } from '../../topology/rtc-topology-repository-test-fixtures.ts';
 
 const NOW = 5_000;
-const RESHAPE_BOUNDS: BackoffGateBounds = { minIntervalMs: 15_000, maxIntervalMs: 60_000 };
 
 interface StoreInput {
     readonly ref: GroupRef;
@@ -38,7 +37,7 @@ async function createReader() {
         reshapeGates: new RtcTopologyExecutionRepository(runtimeRepository),
         readReshapeBounds: (roomRef) => {
             boundsReads.push(roomRef);
-            return Promise.resolve(RESHAPE_BOUNDS);
+            return Promise.resolve(BACKOFF_GATE_TEST_BOUNDS);
         },
         nowEpochMs: () => NOW
     });
