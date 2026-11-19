@@ -182,7 +182,9 @@ nodes that did not take those writes, and asserts that the second reshape is pla
 15 000 ms after the first and that the gate then reads one held pass, a 30 000 ms
 interval and nothing wanted. Each reshape's `plannedAtEpochMs` equals the gate's
 `lastPassAtEpochMs` of that pass, which is how the recipe captures both instants
-without depending on the order of the plans. The hold depends on the leave landing
+without depending on the order of the plans. The recipe also reads `heldReshape` in
+the formation view under the owner's session, on the tertiary while the kind change is
+held and on the primary after its release. The hold depends on the leave landing
 inside the first 15 s, and the recipe needs a fresh `runId`.
 
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
