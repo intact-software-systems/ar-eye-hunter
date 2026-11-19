@@ -1,7 +1,6 @@
 import type { RallarBlackBoxTestCommand } from '../../../../rallar-black-box-test-contracts.ts';
 
 import type { AlmConformanceCarrier } from '../../alm-conformance-carriers.ts';
-import { toResultAssertion } from '../../alm-conformance-message-commands.ts';
 import { toOrderedSendCommands } from '../../alm-conformance-ordering-commands.ts';
 import {
     FULL_TAGS,
@@ -9,7 +8,7 @@ import {
     type AlmConformanceStepInput
 } from '../../alm-conformance-scenario-definition.ts';
 import { STREAM_SENDS, toOrderedStreamReceiverCommands, toSequences } from './ordered-stream.ts';
-import { toSeededLossCommand } from './seeded-loss-stream.ts';
+import { toLossDroppedAssertion, toSeededLossCommand } from './seeded-loss-stream.ts';
 
 /** The server orders the track and asks for what it misses; over `rtc` a lost unreceipted frame has no such hop. */
 const UNRECEIPTED_LOSS_CARRIERS: readonly AlmConformanceCarrier[] = ['ws'];
@@ -39,14 +38,7 @@ function toSeededLossUnreceiptedStreamSenderCommands(
         toSeededLossCommand(sender, 'arm'),
         ...toSequences(1, STREAM_SENDS - 1).flatMap((seq) => toOrderedSendCommands(sender, seq, { ack: 'none' })),
         toSeededLossCommand(sender, 'release'),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-loss-dropped',
-            resultName: 'loss-release',
-            field: 'acted.drop',
-            operator: 'gte',
-            expected: 1
-        }),
+        toLossDroppedAssertion(sender),
         ...toOrderedSendCommands(sender, STREAM_SENDS, { ack: 'none' })
     ];
 }

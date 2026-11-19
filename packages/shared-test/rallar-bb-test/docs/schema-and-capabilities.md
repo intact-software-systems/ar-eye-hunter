@@ -261,7 +261,7 @@ logical algorithm.
 
 `maxRepairs` is an integer of at least 1: the retransmits each receiver's gap requests may draw for the message. The
 page sends it as `qos: { repair: { algo: 'retransmit', opts: { maxRepairs } } }`, beside a stated `qos.ack` in the
-same request. Absent, the product's repair budget applies. Only `repair-exhausted` states it.
+same request. Absent, the product's repair budget applies.
 
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
@@ -828,8 +828,8 @@ its receiver's budget spent, and the sender settles seq 2. The sender observes s
 10 s observation budget and asserts `failure.kind: 'skipped'` with `failure.reason: 'repair-exhausted'`; both receivers
 receive the first send once and prove the absence of a second, since seq 3 and seq 4 wait for a seq 2 that never
 arrives. The hold stays until the page ends: a release would let the second frame reach a receiver inside its
-absence window. The cell does not run over `ws`: there the server orders the track and is the one requester of its
-gaps, which the cell's receivers do not describe. Both cells are withheld from the hosted
+absence window. The cell is not run over `ws`, where the server orders the track and requests its gaps; it is
+untested there since the repair budget became per requester. Both cells are withheld from the hosted
 manifests, as the checkpoint cells are; they run in the local lane and in the observation's full read.
 
 Four fault stream cells run in the full scope of the two-agent family (D669), withheld from the hosted manifests too.

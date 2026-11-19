@@ -30,10 +30,10 @@ const ONE_REPAIR: AlmConformanceOrderedSendOptions = { maxRepairs: 1 };
  * the gap once the third frame arrives. Each receiver's first report spends its own one retransmit; the range stays
  * missing, so the receiver renews it 1 to 1.5 s later, and that renewal, its request numbered 2, finds its budget
  * spent: the sender settles the second frame `skipped` with reason `repair-exhausted`. Both receivers delivered the
- * first send only: the third and fourth wait for a second that never arrives. Over `ws` the server orders the track
- * and is the one requester of its gaps, which this cell's receivers do not describe. Over `rtc-with-ws-fallback` the
- * held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the RTC repair's to exhaust; what
- * a handed-over held frame ends as is undocumented, so the cell asserts `rtc` alone.
+ * first send only: the third and fourth wait for a second that never arrives. The cell is not run over `ws`, where the
+ * server orders the track and requests its gaps; it is untested there since the budget became per requester. Over
+ * `rtc-with-ws-fallback` the held frame's run of `not-ready` attempts hands it to WS (D56), where it is no longer the
+ * RTC repair's to exhaust; what a handed-over held frame ends as is undocumented, so the cell asserts `rtc` alone.
  */
 export const repairExhausted: AlmConformanceScenarioDefinition = {
     scenarioId: 'repair-exhausted',

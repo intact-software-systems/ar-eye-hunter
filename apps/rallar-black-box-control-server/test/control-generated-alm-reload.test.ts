@@ -332,9 +332,10 @@ for (const carrier of ALM_CONFORMANCE_SINGLE_HOP_CARRIERS) {
             [3, false, undefined]
         ]);
         expect([...messages].sort((left, right) => left.deliveredIndex! - right.deliveredIndex!).map((message) => message.command.seq)).toEqual([1, 2, 3]);
-        // The fixture clock passes every renewal interval before the release; at the product's budget none is past it.
-        expect(messages[1].gapRequests[0]).toEqual({ requester: carrier === 'ws' ? 'server' : 'receiver', requestNumber: 1, outcome: 'repaired' });
-        expect(messages[1].gapRequests.map((request) => request.outcome)).not.toContain('exhausted');
+        // The fixture clock jumps to the sender's NACK wait's deadline, past every renewal interval, before the release;
+        // the send states no budget, so the model charges each request.
+        const requester = carrier === 'ws' ? 'server' : 'receiver';
+        expect(messages[1].gapRequests).toEqual([1, 2, 3, 4].map((requestNumber) => ({ requester, requestNumber, outcome: 'repaired' })));
     });
 }
 

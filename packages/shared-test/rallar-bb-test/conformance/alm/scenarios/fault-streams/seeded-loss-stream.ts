@@ -55,18 +55,23 @@ function toSeededLossStreamSenderCommands(sender: AlmConformanceStepInput): read
             toOrderedSendCommands(sender, seq, { ack: 'receiver' })
         ),
         toSeededLossCommand(sender, 'release'),
-        toResultAssertion({
-            step: sender,
-            name: 'assert-loss-dropped',
-            resultName: 'loss-release',
-            field: 'acted.drop',
-            operator: 'gte',
-            expected: 1
-        }),
+        toLossDroppedAssertion(sender),
         ...toSequences(entered + 1, STREAM_SENDS).flatMap((seq) =>
             toSettledStateCommands({ ...sender, index: seq }, 'acknowledged')
         )
     ];
+}
+
+/** The loss's release read at least one dropped frame, so the loss disturbed the stream. */
+export function toLossDroppedAssertion(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toResultAssertion({
+        step: sender,
+        name: 'assert-loss-dropped',
+        resultName: 'loss-release',
+        field: 'acted.drop',
+        operator: 'gte',
+        expected: 1
+    });
 }
 
 /** Held on the data frames of the cell's type until its release. A control frame carries another type and passes. */
