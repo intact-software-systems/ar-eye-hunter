@@ -754,12 +754,19 @@ and it has no status list.
   `packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts`
   ("a NEW-only claim reads its first sixteen rows by key") pins today's
   behaviour.
-- The state-write cost of `resource_inbox_due_ix` (D674) is not measured:
-  every write to the queue table maintains one more index, and the one-type
-  claim read about 50 more buffers per 16 rows on a 200 k-row copy.
-  `perf:api-v1:state-write` was not run; it must run by its protocol, on the
-  pinned perf-bench container (`docker-compose.perf-bench.yml`, port 5433)
-  with this branch against its base, before the index is taken as free.
+- The state-write cost of `resource_inbox_due_ix` (D674) is not measured
+  under load: every write to the queue table maintains one more index, and
+  both claim statements were slower with it in every paired run (2–23 %,
+  about 20 to 50 more buffers per claim). The maintainer kept the index
+  (2026-11-19) and left this comparison here. `perf:api-v1:state-write` must
+  run by its protocol, on the pinned perf-bench container
+  (`docker-compose.perf-bench.yml`, port 5433), with this branch against its
+  base.
+- The work-presence read's true generic plan takes about 22 ms against about
+  0.3 ms for its custom plan on a 200 k-row table, with or without
+  `resource_inbox_due_ix` (D674). Whether the server ever settles on that
+  cached generic plan was not checked. Next: check it (how many executions,
+  which driver settings) before anything is changed.
 - No store orders RESERVED rows by lease end, so ALM's readiness scan pages
   them by key, and with more than a page of reserved rows a lease that has
   ended can be advertised up to one lease (10 s) late (D673). Pinned as
