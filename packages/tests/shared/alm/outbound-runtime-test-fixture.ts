@@ -424,24 +424,32 @@ export function createWsClientMintingPlanner(sessionId: string): ALOutboundPlann
         );
 }
 
+/** A later answer of the server for one message: a control of its own, naming whom the server has counted. */
+interface ServerReceiptAnswer {
+    readonly controlMsgId: string;
+    readonly confirmedRecipientPeerIds: readonly string[];
+}
+
 /**
- * The WS server's receipt to the origin of `message` naming the audience it routed; it confirms nobody unless it
- * names whom it has counted. A later answer of the same phase is a new control: `answer` keeps its id apart.
+ * The WS server's receipt to the origin of `message` naming the audience it routed. Its first answer is the control
+ * `receipt-<phase>-<msgId>` and confirms nobody; a later answer states its own control id and whom it counted.
  */
 export function createServerReceipt(
     message: ALMessage,
     phase: ALReceiptPayload['phase'],
     expectedRecipientPeerIds: readonly string[],
-    counted: Readonly<{ answer: number; confirmedRecipientPeerIds: readonly string[]; }> = { answer: 1, confirmedRecipientPeerIds: [] }
+    answer: ServerReceiptAnswer = {
+        controlMsgId: `receipt-${phase}-${message.id.msgId}`,
+        confirmedRecipientPeerIds: []
+    }
 ): ALMessage {
-    const answer = counted.answer === 1 ? '' : `-${counted.answer}`;
     return newALReceiptControlMessage(
-        { v: 4, msgId: `receipt-${phase}-${message.id.msgId}${answer}`, senderId: 'server', ts: Date.now(), traceId: 'trace-server-receipt' },
+        { v: 4, msgId: answer.controlMsgId, senderId: 'server', ts: Date.now(), traceId: 'trace-server-receipt' },
         {
             msgId: message.id.msgId,
             originPeerId: message.id.senderId,
             expectedRecipientPeerIds,
-            confirmedRecipientPeerIds: counted.confirmedRecipientPeerIds,
+            confirmedRecipientPeerIds: answer.confirmedRecipientPeerIds,
             outsideAudienceRecipientPeerIds: [],
             snapshotVersion: 1,
             phase,

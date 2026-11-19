@@ -351,7 +351,10 @@ describe('a WS client\'s receipt row when the server answers admitted twice', ()
         const factsBefore = fixture.settlements.length;
         vi.setSystemTime(Date.now() + 300);
 
-        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], { answer: 2, confirmedRecipientPeerIds: [] });
+        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], {
+            controlMsgId: `receipt-admitted-again-${only.id.msgId}`,
+            confirmedRecipientPeerIds: []
+        });
         expect(await fixture.ws.acceptReceipt(second)).toEqual({
             kind: 'rejected',
             reason: 'AL receipt moves no receipt of its message'
@@ -380,7 +383,10 @@ describe('a WS client\'s receipt row when the server answers admitted twice', ()
         const first = await readReceiptRow(fixture, only);
         const factsBefore = fixture.settlements.length;
 
-        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], { answer: 2, confirmedRecipientPeerIds: ['peer-b'] });
+        const second = createServerReceipt(only, 'admitted', ['peer-b', 'peer-c'], {
+            controlMsgId: `receipt-admitted-again-${only.id.msgId}`,
+            confirmedRecipientPeerIds: ['peer-b']
+        });
         expect(await fixture.ws.acceptReceipt(second)).toEqual({ kind: 'committed' });
 
         expect(await readReceiptRow(fixture, only)).toEqual({ ...first, ackedPeerIds: ['peer-b'] });

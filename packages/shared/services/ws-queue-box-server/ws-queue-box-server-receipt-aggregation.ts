@@ -264,18 +264,16 @@ export class WsQueueBoxServerReceiptAggregation {
     }
 
     /**
-     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap.
-     * An empty audience is complete as it is admitted. An admission whose aggregate is already live changes
-     * nothing and answers from that aggregate: what it has counted, never a fresh one.
+     * The `admitted` receipt the origin receives at once, and the aggregate this admission ended at the cap,
+     * for a message whose aggregate is not live. An empty audience is complete as it is admitted.
      */
     recordAdmission(
         admission: WsQueueBoxServerReceiptAggregation.Admission
     ): WsQueueBoxServerReceiptAggregation.RecordedAdmission {
         const key = toReceiptAggregateKey(admission.originPeerId, admission.msgId);
         const nowMs = this.#dependencies.clock.nowMs();
-        const live = this.#aggregates.readAt(key, nowMs);
-        const aggregate = live ?? { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
-        if (live !== undefined || aggregate.expectedRecipientPeerIds.length === 0) {
+        const aggregate = { ...admission, confirmedRecipientPeerIds: [], outsideAudienceRecipientPeerIds: [] };
+        if (aggregate.expectedRecipientPeerIds.length === 0) {
             return { admitted: toReceiptPayload(aggregate, 'admitted', nowMs), evicted: undefined };
         }
         const evicted = this.takeOldestAggregateAtCap(nowMs);
@@ -371,14 +369,15 @@ export class WsQueueBoxServerReceiptAggregation {
 
     /**
      * A message the server admitted, or retained for admission, starts its receipt here, once. A copy its
-     * sender sent again, however a live runtime accepted it, finds the aggregate live and is answered `admitted`
-     * again with what the aggregate has counted, to that sender alone, so a lost `admitted` does not leave
-     * the sender resending into silence. Where no aggregate is live (it has ended, or another instance holds
-     * it) the copy is answered nothing: the stated limit.
+     * sender sent again that ingress accepts as a duplicate or a pending admission finds the aggregate live
+     * and is answered `admitted` again with what the aggregate has counted, to that sender alone, so a lost
+     * `admitted` does not leave the sender resending into silence; a copy accepted any other way is answered
+     * nothing. Where no aggregate is live (it has ended, or another instance holds it) a copy is answered
+     * nothing either: the stated limit.
      */
     async writeAdmittedReceipt(admitted: WsQueueBoxServerReceiptAggregation.AdmittedMessage): Promise<void> {
         const kind = admitted.acceptance?.kind;
-        if (admitted.roomAudience === undefined || kind === undefined || kind === 'disposed') {
+        if (admitted.roomAudience === undefined) {
             return;
         }
         const nowMs = this.#dependencies.clock.nowMs();
@@ -387,7 +386,9 @@ export class WsQueueBoxServerReceiptAggregation {
             nowMs
         );
         if (live !== undefined) {
-            await this.writeReceipt(toIssuedReceipt(live, 'admitted', nowMs));
+            if (kind === 'duplicate' || kind === 'pending-admission') {
+                await this.writeReceipt(toIssuedReceipt(live, 'admitted', nowMs));
+            }
             return;
         }
         if (kind !== 'admitted' && kind !== 'pending-admission') {

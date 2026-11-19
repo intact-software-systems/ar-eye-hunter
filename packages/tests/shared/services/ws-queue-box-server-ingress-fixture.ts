@@ -19,6 +19,7 @@ import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
 
 export interface ServerIngressFixture {
     readonly service: WsQueueBoxServerService;
+    readonly engine: InboxOutboxEngine;
     readonly server: JsonWebSocketServer;
     readonly socket: SimulatedWebSocket;
     readonly admission: ALAdmissionMemoryState;
@@ -84,7 +85,7 @@ export async function createServerIngressFixture(
             throw failure.reason;
         }
     });
-    return { service, server, socket, admission, backend, admissionStore, delivered };
+    return { service, engine, server, socket, admission, backend, admissionStore, delivered };
 }
 
 export function createIncomingMessage(): ALMessage {

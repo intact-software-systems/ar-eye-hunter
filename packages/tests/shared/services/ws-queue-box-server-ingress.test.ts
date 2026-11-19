@@ -19,6 +19,7 @@ import { ConnectionContext } from '@shared/websocket/json-web-socket-server.ts';
 
 import { SimulatedWebSocket } from '../native-websocket-fixture.ts';
 import { createIncomingMessage, createRoomMessage, createServerIngressFixture } from './ws-queue-box-server-ingress-fixture.ts';
+import { settleQueueEngine } from './ws-queue-box-server-receipt-fixture.ts';
 
 import { toTestALAckPayload } from '../../al-control-test-payloads.ts';
 import { attachTestWebSocket } from '../websocket/attach-test-web-socket.ts';
@@ -691,6 +692,8 @@ describe('WS server bounded and authorized admission', () => {
 
         expect(again.right?.kind).toBe('duplicate');
         await expect.poll(() => readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted', 'admitted']);
+        await settleQueueEngine(fixture.engine);
+        expect(readReceiptPhases(fixture.socket, resentMsgId)).toEqual(['admitted', 'admitted']);
         await expect.poll(() => fixture.delivered.map((message) => message.id.msgId)).toEqual(delivered);
         expect(readReceiptPhases(peer, resentMsgId)).toEqual([]);
         expect(peer.sent.filter((frame) => decodePersistedALMessage(frame).id.msgId === resentMsgId)).toHaveLength(1);
