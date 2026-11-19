@@ -8,6 +8,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { PollAuthority } from '../../../examples/shared-deadline-poll/poll-authority.ts';
 import { loginThroughUi, readFullStackConfig, uniqueSuffix } from './full-stack-helpers.ts';
 
+const enforcementOffsetMs = -2_000;
 const config = readFullStackConfig();
 const rallarUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
 const viewUrl = '/@fs' + fileURLToPath(new URL('../../../examples/shared-deadline-poll/show-poll.ts', import.meta.url));
@@ -58,6 +59,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         expect(await page.evaluate(() => Date.now()) - await guest.evaluate(() => Date.now())).toBeGreaterThan(230_000);
         await expect(page.getByText('Question preview')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        await expectUncertainBoundary(spectator, 'opening');
         await expect(page.getByText('Voting open')).toBeVisible({ timeout: 15_000 });
         await expect(guest.getByText('Voting open')).toBeVisible();
         const schedule = await page.locator('time').allTextContents();
@@ -94,6 +96,7 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         });
         await guest.getByRole('button', { name: 'No' }).click();
         await voteSent.promise;
+        await expectUncertainBoundary(spectator, 'closing');
         await expect(page.getByText('Voting closed')).toBeVisible({ timeout: 25_000 });
         await expect(spectator.getByText('Final results unavailable · Retrying')).toBeVisible();
         await expect(spectator.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
@@ -127,17 +130,51 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
     }
 
     async function mount(member: Page, grant: string): Promise<void> {
-        await member.evaluate(async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl }) => {
+        await member.evaluate(async ({ viewUrl, rallarUrl, roomRef, endpoint, grant, apiBaseUrl, authority }) => {
             const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
             rallar.configure({ apiBaseUrl });
             rallar.setDefaults(roomRef);
             const { showPoll }: typeof import('../../../examples/shared-deadline-poll/show-poll.ts') = await import(
                 viewUrl
             );
-            await showPoll({ root: document.querySelector('main')!, roomRef, endpoint, participantGrant: grant });
-        }, { viewUrl, rallarUrl, roomRef, endpoint: poll.url, grant, apiBaseUrl: config.apiBaseUrl });
+            await showPoll({
+                root: document.querySelector('main')!,
+                roomRef,
+                endpoint,
+                participantGrant: grant,
+                authority
+            });
+        }, {
+            viewUrl,
+            rallarUrl,
+            roomRef,
+            endpoint: poll.url,
+            grant,
+            apiBaseUrl: config.apiBaseUrl,
+            authority: { maxAuthorityOffsetMs: Math.abs(enforcementOffsetMs) }
+        });
     }
 });
+
+async function expectUncertainBoundary(page: Page, boundary: 'opening' | 'closing'): Promise<void> {
+    await expect.poll(() =>
+        page.evaluate(async ({ rallarUrl, boundary }) => {
+            const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+            const [opening, closing] = document.querySelectorAll('main time');
+            const cutoff = Date.parse((boundary === 'opening' ? opening : closing).getAttribute('datetime')!);
+            const plain = rallar.compareDeadline(cutoff);
+            const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('main button'));
+            return {
+                plain,
+                uncertain: document.querySelector('main')?.textContent?.includes('Voting boundary uncertain'),
+                disabled: buttons.length === 2 && buttons.every((button) => button.disabled)
+            };
+        }, { rallarUrl, boundary }), { timeout: 20_000, intervals: [100] }).toEqual({
+            plain: boundary === 'opening' ? 'at-or-after' : 'before',
+            uncertain: true,
+            disabled: true
+        });
+}
 
 async function prepareMember(page: Page, roomRef: GroupRef, host: boolean): Promise<void> {
     await loginThroughUi({ page, config, user: host ? config.userA : config.userB, suffix: uniqueSuffix() });
@@ -153,6 +190,7 @@ async function prepareMember(page: Page, roomRef: GroupRef, host: boolean): Prom
 
 /** Loopback transport for a single poll. Only the two fixture participants receive poll-specific grants. */
 async function startPollEndpoint(origin: string, roomRef: GroupRef, grants: ReadonlyMap<string, string>) {
+    const authorityNow = () => Date.now() + enforcementOffsetMs;
     let poll: PollAuthority | undefined;
     const server = createServer(async (request, response) => {
         response.setHeader('Access-Control-Allow-Origin', origin);
@@ -170,11 +208,11 @@ async function startPollEndpoint(origin: string, roomRef: GroupRef, grants: Read
             return;
         }
         if (!poll) {
-            const startsAt = Date.now();
+            const startsAt = authorityNow();
             poll = new PollAuthority(
                 roomRef,
-                { opensAtEpochMs: startsAt + 5_000, closesAtEpochMs: startsAt + 17_000 },
-                Date.now
+                { opensAtEpochMs: startsAt + 9_000, closesAtEpochMs: startsAt + 24_000 },
+                authorityNow
             );
         }
         let record: PollAuthority.Snapshot;

@@ -1,3 +1,4 @@
+import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connection-facade.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -9,6 +10,7 @@ export interface ShowPollInput {
     readonly roomRef: GroupRef;
     readonly endpoint: string;
     readonly participantGrant: string;
+    readonly authority?: RallarDeadlineAuthority;
 }
 
 /** Mount after login. The application supplies the URL and a participant grant for this poll alone. */
@@ -73,7 +75,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function render(): void {
-        const currentPhase = pollPhase(record, rallar);
+        const currentPhase = pollPhase(record, rallar, input.authority);
         const needsSnapshot = checkingReceipt || currentPhase === 'Voting closed';
         if (needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
