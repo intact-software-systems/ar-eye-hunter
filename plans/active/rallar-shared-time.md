@@ -27,12 +27,15 @@ Grumpy Town now consumes the connected deadline APIs for away-seat recovery acro
 
 The fixed-schedule poll now demonstrates preview, voting and results under opposing device clocks. A browser entering after close reads the final tally. A spectator now recovers the authority's final tally even after a failed closing read. The voter also recovers a missing receipt after request or response loss. The operator probe now measures the signed interval between directly addressed calibration and enforcement nodes. One observation can check a deployment assumption for that instant. A deployment that independently maintains a bound can also use it in client deadline decisions.
 
-The connected SDK now accepts the deployment bound for both comparison and minimum-duration creation. The poll currently uses the default zero bound.
+The SDK and poll now use the deployment bound for deadline decisions. Chromium verified uncertain opening and closing with a controlled two-second offset.
 
-## Next two slices
+## Next three qualification slices
 
-1. **Apply the maintained bound to the room poll.** Let the application supply the SDK deadline-authority option at mount. Use it for both opening and closing comparisons, including after reload. Preserve one-argument SDK semantics for callers that omit it. The receiver still owns acceptance and the published schedule.
-2. **Exercise a separate enforcement clock in Chromium.** Give the loopback poll authority a known offset from the Rallar API clock. Use that bound in the mounted example and verify that uncertain opening and closing boundaries disable voting even when a zero-bound comparison would permit it. Retain delayed ballot, lost receipt, spectator and late-entry coverage. Run the focused memory-stack journey and typecheck the example and fixture. This qualifies a controlled clock difference on one host.
+1. **Foreground recovery.** On returning to the visible poll, recover the connection, room and authoritative snapshot before enabling votes. Exercise suspension across close, verify the original schedule and accepted tally, and provide the same acceptance sequence for a physical phone. Record device evidence only when a real device is available.
+2. **Carrier fallback at the poll authority.** Send a ballot through the room message API with RTC-to-WebSocket fallback, verify the carrier actually used, preserve the message identity and deadline, and exercise receipt-time acceptance, duplicate and late delivery. Keep the poll authority's receipt policy separate from transport expiry. Preserve the HTTP example's existing coverage.
+3. **Independent API node qualification.** Make repeated, time-spaced offset checks practical for operators. Record per-sample outcomes, latency and uncertainty; preserve one-shot CLI compatibility. Exercise passing, inconclusive and unavailable observations. Run against independently hosted direct node origins under representative load when the deployment and its maintained offset budget are available. Local runs qualify the tooling only.
+
+Timeline revision and managed timeline work await a separate decision.
 
 ## Public product and launch evidence
 
