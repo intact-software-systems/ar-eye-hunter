@@ -5,13 +5,13 @@ import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH
 } from './composite-result-paths.ts';
+import type { RallarBlackBoxTestLoopChildResult } from './loop/loop-result-contracts.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     RALLAR_BLACK_BOX_TEST_RESULT_STATUSES,
     type RallarBlackBoxTestCompositeChildResult,
     type RallarBlackBoxTestError,
-    type RallarBlackBoxTestLoopChildResult,
     type RallarBlackBoxTestParallelChildResult,
     type RallarBlackBoxTestRedactionOptions,
     type RallarBlackBoxTestResult,

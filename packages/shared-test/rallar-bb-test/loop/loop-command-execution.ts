@@ -6,15 +6,17 @@ import {
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestLoopChildResult,
-    RallarBlackBoxTestLoopPacingIteration,
-    RallarBlackBoxTestLoopResultValue,
-    RallarBlackBoxTestLoopThresholdFailure,
     RallarBlackBoxTestResult
 } from '../rallar-black-box-test-contracts.ts';
 import { isAbortError } from '../runtime/sleep-with-abort.ts';
 import { computeCommandDeadlineEpochMs } from '../runtime/to-runtime-command-values.ts';
 import { computeLoopThresholdFailures } from './loop-command-thresholds.ts';
+import type {
+    RallarBlackBoxTestLoopChildResult,
+    RallarBlackBoxTestLoopPacingIteration,
+    RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestLoopThresholdFailure
+} from './loop-result-contracts.ts';
 import { runLoopUntilFirstSuccess, type LoopIterationOutcome } from './loop-until.ts';
 import { resolveLoopPlan, type LoopCommandWithId, type LoopPlan } from './resolve-loop-plan.ts';
 import { toLoopChildCommand } from './to-loop-child-command.ts';
