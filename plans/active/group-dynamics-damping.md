@@ -628,7 +628,8 @@ the command.
 `allowed` with the reasons still wanted. Commanded work is always `allowed`, with the reasons
 still wanted; a row that merged automatic changes into a command is commanded. A commanded row
 plans as a membership delta and can evolve in place, so it checks the wanted reasons as automatic
-work does, and the want is cleared only when the gate is open and no wanted reason still applies.
+work does. Any reshape clears the want; without one it is cleared only when the gate is open and no wanted
+reason still applies.
 With `held` and an active previous layout:
 
 | Reason                | With the gate closed                                                                                                                                       | Counts as held |
@@ -665,7 +666,8 @@ that is early by the local clock is retried, as the formation timer does; a row 
 or that finds nothing wanted completes without planning. A wake-up that finds the room frozen, or
 held by a `commanded` or unreadable policy, completes with the want kept; so a change-gated re-plan
 does not take the input-fingerprint skip while the gate applies, is open and a reshape is wanted,
-and the next re-plan of the room releases the reshape.
+and the next re-plan the room's policy lets plan releases the reshape; in a `commanded` room that is the next
+command.
 
 **A hold can be the whole outcome.** A leader appointed in a quiet room with the gate closed changes
 no layout. Today that work ends with nothing to store. It now writes the gate state and the wake-up
@@ -754,7 +756,98 @@ room is then reshaped when the gate opens, possibly inside the lane's traffic wi
 
 ### What the reshape gate measured
 
-The figures follow the controller's runs of the cluster recipe and the two measurements.
+Two runs of `npm run perf:api-v1:topology-reshapes` on the head `69fffd7cc`, 2026-11-19, local Postgres, a managed
+three-process cluster. Run 1 is report `1b14b8a4dc374a8a81f8e502`, run 2 is `a0d9e4aed6314c80adba6961`. Both
+passed: ten rooms formed, ran their phases, were owed no held reshape at the end and converged. In the same chain
+the medium-scale Postgres black-box passed (2842 operations, 0 failures), the standard Postgres black-box passed
+(api-v1 75, cluster 14, among them `api-v1-cluster-reshape-gate` with 39 steps), and the churn command's six rooms
+(report `b6e674b182da4b5e8f0b1561`) read 15 attaches, 15 repairs and 0 reshapes in every room, with no gate record
+in any of them.
+
+Each cell reads run 1 / run 2; one value means both runs agree. "Held" is plans that carry a held reshape reason.
+"Closest" is the smallest gap between two reshapes inside the phase, in seconds. "Rerouted" is sessions rerouted per
+reshape, median (max). "Inside" is promoted plans that landed inside the replaced layout's overlap window. Every
+led phase had four appointments. The table to compare with is the one under "What the reshape measurement found".
+
+| Room and phase                       | Mode      | Plans   | Reshapes | Held | Per min   | Closest (s) | Rerouted          | Inside  |
+| ------------------------------------ | --------- | ------- | -------- | ---- | --------- | ----------- | ----------------- | ------- |
+| 4 members, `ramp-up`                 | auto      | 13      | 2        | 0    | 3.1       | 32.9 / 33.1 | 4 (15)            | 13      |
+| 4 members, `ramp-down`               | auto      | 13      | 2        | 0    | 3.1       | 21.1        | 0 (9) / 3 (11)    | 13      |
+| 4 members, `flap` (90 s)             | auto      | 30      | 2        | 14   | 1.3       | 32.8 / 32.9 | 3 (4)             | 30      |
+| 4 members, `ramp-up`                 | debounced | 13      | 2        | 0    | 3.1       | 33.0 / 33.3 | 4 (14) / 3 (14)   | 13      |
+| 4 members, `ramp-down`               | debounced | 13      | 2        | 0    | 3.1       | 21.0 / 20.9 | 2 (11) / 0 (9)    | 13      |
+| 4 members, `flap` (90 s)             | debounced | 30      | 2        | 14   | 1.3       | 33.0        | 3 (4) / 0 (4)     | 30      |
+| 8 members, `leader`                  | auto      | 2       | 2        | 0    | 3.0       | 15.0 / 15.1 | 6 (8) / 7 (7)     | 0 / 1   |
+| 8 members, `leader-churn`            | auto      | 16      | 1        | 0    | 1.3       | none        | 8 (8) / 7 (7)     | 15      |
+| 8 members, `leader`                  | debounced | 0 / 1   | 0 / 1    | 0    | 0.0 / 1.5 | none        | none / 6 (6)      | 0 / 1   |
+| 8 members, `leader-churn`            | debounced | 16 / 17 | 1 / 2    | 0    | 1.3 / 2.7 | none / 23.9 | 9 (9) / 8 (9)     | 15 / 16 |
+| 12 members, `leader`                 | auto      | 2 / 1   | 2 / 1    | 0    | 3.0 / 1.5 | 15.0 / none | 10 (11) / 11 (11) | 0 / 1   |
+| 12 members, `leader-churn`           | auto      | 16 / 17 | 1 / 2    | 0    | 1.3 / 2.7 | none / 15.1 | 8 (8) / 10 (12)   | 15 / 16 |
+| 12 members, `leader`                 | debounced | 0       | 0        | 0    | 0.0       | none        | none              | 0       |
+| 12 members, `leader-churn`           | debounced | 17 / 18 | 2 / 3    | 0    | 2.7 / 4.0 | 15.0 / 15.1 | 5 (8) / 8 (12)    | 16 / 17 |
+| 8 members, RTT, `rtt-uniform`        | auto      | 1       | 1        | 0    | 1.6       | none        | 7 (7)             | 0       |
+| 8 members, RTT, `rtt-skewed`         | auto      | 1       | 1        | 0    | 1.6       | none        | 8 (8)             | 0       |
+| 8 members, RTT, `rtt-uniform`        | debounced | 1       | 1        | 0    | 1.6       | none        | 7 (7) / 5 (5)     | 0       |
+| 8 members, RTT, `rtt-skewed`         | debounced | 1       | 1        | 0    | 1.6       | none        | 8 (8)             | 0       |
+| 20 members, RTT, `rtt-shift` (120 s) | auto      | 3       | 3        | 0    | 1.5       | 30.0        | 7 (13) / 9 (10)   | 0       |
+| 20 members, RTT, `rtt-churn` (45 s)  | auto      | 15      | 0        | 0    | 0.0       | none        | none              | 14      |
+| 20 members, RTT, `rtt-shift` (120 s) | debounced | 3       | 3        | 0    | 1.5       | 30.0        | 9 (12) / 9 (11)   | 0       |
+| 20 members, RTT, `rtt-churn` (45 s)  | debounced | 15      | 0        | 0    | 0.0       | none        | none              | 14      |
+
+The reason is `kind-change` in the 4-member room, `leader-rooting` in the led rooms and `refinement` in the RTT
+rooms, as before the gate.
+
+**Closest reshapes per room, over the whole run.** In milliseconds, run 1 / run 2. No two reshapes in any of the 20
+room-runs were closer than 15 007 ms.
+
+| Room            | Mode      | Closest reshapes (ms) | Gate's interval at the end (ms) |
+| --------------- | --------- | --------------------- | ------------------------------- |
+| 4 members       | auto      | 15 111 / 15 053       | 60 000                          |
+| 4 members       | debounced | 15 014 / 15 034       | 60 000                          |
+| 8 members, led  | auto      | 15 015 / 15 064       | 60 000                          |
+| 8 members, led  | debounced | none / 23 908         | 15 000                          |
+| 12 members, led | auto      | 15 027 / 15 101       | 60 000 / 30 000                 |
+| 12 members, led | debounced | 15 007 / 15 110       | 60 000 / 30 000                 |
+| 8 members, RTT  | auto      | 38 109 / 38 016       | 15 000                          |
+| 8 members, RTT  | debounced | 38 004 / 38 002       | 15 000                          |
+| 20 members, RTT | auto      | 30 002 / 30 000       | 15 000                          |
+| 20 members, RTT | debounced | 30 008 / 30 000       | 15 000                          |
+
+"None" is a room with one reshape. Every room ended with nothing wanted. Four led room-runs had one plan after
+their last phase: a re-root held near the end of `leader-churn` and released when the gate opened.
+
+**What the gate changed.**
+
+- `flap`: 2 kind changes in 90 s in both modes and both runs, where every one of the 30 plans was a kind change
+  before (20.0 a minute, now 1.3). The other 28 plans are 14 attaches and 14 repairs, and 14 of them carry a held
+  `kind-change`. The room's gate stood at its 60 s interval when the run ended.
+- The ramps are unchanged at 2 kind changes each. Their kind changes are 21 to 33 s apart, wider than the gate.
+- `leader`: at most 2 re-roots in the phase's 40 s, where three of the four rooms had 3 or 4. Of the 32
+  appointments in the two runs, 5 re-rooted at once, 9 met a closed gate and 18 were planned with the gate open
+  and left the layout as it was. Three re-roots inside the phase were released by the wake-up row, 15 015, 15 027
+  and 15 064 ms after the previous reshape.
+- `leader-churn`: 1 to 3 re-roots per room next to its 8 attaches and 7 repairs, where there were 2 to 4.
+- Over both runs a wake-up row planned a room 35 times. It released a reshape 17 times, found the want gone and
+  left the layout as it was 7 times, and planned a pending join without a reshape twice. The other 9 ran while
+  the rooms were being emptied, after the report was read.
+
+**What the measurement does not show.**
+
+- The gate never closed on a refinement. The tree rooms refine once per 38 s phase, and the mesh refines every
+  30 s, the layout age an RTT refresh already waits for (the server log reads `layout-at-minimum-age`), so the
+  mesh's three refinements in 120 s are the figure measured before the gate. That a refinement obeys the gate is
+  covered by unit tests only.
+- A held re-root does not show in the "Held" column. An appointment in a room where nobody joins or leaves changes
+  no layout while it is held, so no plan is published; the hold is in the gate's record and in the gap to the next
+  re-root.
+- The 18 appointments that changed nothing with the gate open are the leader rule's nearest-weight case described
+  above, not holds: the server log reads each as an unchanged plan with the reshape allowed. They are spread
+  unevenly. The debounced room of 12 re-rooted none of its four `leader` appointments in either run, where it
+  re-rooted four of four in both runs before the gate, and the debounced room of 8 re-rooted none and one, as it
+  did before. The planner's path for an appointment with the reshape allowed is the one it was, so this is read
+  as the layout's chance; two runs do not settle it.
+- One server process took all the topology work in both runs. Work taken by different servers is what the cluster
+  recipe covers.
 
 ### Later, decided after slice 2
 

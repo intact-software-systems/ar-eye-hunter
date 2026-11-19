@@ -416,13 +416,17 @@ transaction, also when no layout is written. A lost race is a
 A hold is released in three ways. The first hold of a period inserts one
 `reshape-due` row due when the gate opens; any server that takes it plans the
 room as a membership delta and is not stopped by an unchanged input
-fingerprint. A row whose period has ended, or whose room no longer wants a
-reshape, completes without planning, and a row that is early by the local clock
-is retried. Any other work that plans the room while the gate is open takes the
-owed reshape too, or clears a want that no longer applies, and a change-gated
+fingerprint. Where the gate applies, a row whose period has ended, or whose
+room no longer wants a reshape, completes without planning, and a row that is
+early by the local clock is retried; in any other stage the row is planned as
+that stage's other automatic work is. Any other work that plans the room while
+the gate is open takes the owed reshape too, or clears a want that no longer
+applies, and a change-gated
 re-plan with an unchanged fingerprint still plans while an open gate owes one,
-so a wake-up that found the room frozen does not strand the want. Commanded
-work takes an owed reshape that still applies at once, gate open or closed.
+so a wake-up that found the room frozen does not strand the want. In a
+`commanded` room automatic work does not plan, so the owed reshape waits for
+the next command. Commanded work takes an owed reshape that still applies at
+once, gate open or closed.
 
 ## Durable Publications
 
