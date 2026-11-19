@@ -1,6 +1,7 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyConfigPatch, GroupTopologyConfigView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { BackoffGateBounds } from '@shared/resilience/backoff-gate.ts';
 
 import type { RtcTopologyKindHysteresisWidths } from '../runtime/rallar-rtc-topology-service.ts';
 import type { GroupTopologyReplanningRead } from './resolve-topology-plan-action.ts';
@@ -26,5 +27,7 @@ export interface GroupTopologyPlanningAuthority {
      * stage carries the default preset's mode, which its row never reads.
      */
     readonly replanning: GroupTopologyReplanningRead;
+    /** The reshape gate's bounds, from the same policy read as `replanning` and with the same default. */
+    readonly reshapeBounds: BackoffGateBounds;
     readonly nowEpochMs: number;
 }

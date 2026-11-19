@@ -10,6 +10,11 @@ import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
+import {
+    toMergedHeldTopologyReshapeReasons,
+    UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
+    type TopologyReshapePermission
+} from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
 
 import type {
@@ -40,6 +45,11 @@ import type {
     DerivedRtcTopologyNextHops,
     RtcTopologyPlanDerivation
 } from './plan-record/rtc-topology-plan-derivation.ts';
+import {
+    resolveHeldTopologyFallback,
+    type HeldTopologyFallback
+} from './reshape-gate/resolve-held-topology-fallback.ts';
+import { resolveHeldTopologyKind, type HeldTopologyKind } from './reshape-gate/resolve-held-topology-kind.ts';
 import { resolveRttRefinementNextHops } from './resolve-rtt-refinement-next-hops.ts';
 import {
     DEFAULT_MESH_EXIT_WIDTH,
@@ -61,6 +71,26 @@ interface RtcTopologyPlanInput {
     readonly previous: RallarOverlayTopologySnapshot | undefined;
     readonly topologyOptions: RallarRtcTopologyServiceOptions;
     readonly planningIntent: RtcTopologyPlanningIntent;
+    readonly reshape: TopologyReshapePermission;
+}
+
+interface PlanTopologySelectionInput {
+    readonly group: GroupSnapshot;
+    readonly activeSessionIds: readonly string[];
+    readonly topologyOptions: RallarRtcTopologyServiceOptions;
+    readonly previous: RallarOverlayTopologySnapshot | undefined;
+    readonly reshape: TopologyReshapePermission;
+    readonly recordsHysteresisHold: boolean;
+}
+
+interface CanonicalPlanAttempt {
+    readonly reshape: TopologyReshapePermission;
+    /** Set on the replan that follows a held attempt whose in-place update failed. */
+    readonly heldFallback: HeldTopologyFallback | undefined;
+}
+
+interface PlannedRtcTopologyNextHops extends DerivedRtcTopologyNextHops {
+    readonly topology: RallarRtcTopologyKind;
 }
 
 interface CreateWeightedTopologyNextHopsInput {
@@ -189,33 +219,16 @@ export class RtcTopologyPlanner {
         input: RtcTopologyPlanner.CanonicalPlanInput,
         publicDispatch: RtcTopologyPlanner.PublicDispatch = this
     ): RallarRtcTopologyUpdateResult {
-        const topologyOptions = this.readTopologyOptions(input.updateOptions);
-        const topology = this.selectPlanTopology(
-            input.group,
-            topologyOptions,
-            input.previous,
-            publicDispatch
-        );
-        const degreeLimit = this.readDegreeLimit(topologyOptions);
-        const planned = this.computePlannedNextHops(
-            {
-                group: input.group,
-                leaderSessionId: resolveRallarGroupLeaderSessionId(input.group),
-                activeSessionIds: input.activeSessionIds,
-                relevantRttMeasurements: input.relevantRttMeasurements,
-                topology,
-                previous: input.previous,
-                topologyOptions,
-                planningIntent: input.updateOptions.planningIntent ?? 'full-rebuild'
-            },
+        const planned = this.computeCanonicalNextHops(
+            input,
+            { reshape: input.updateOptions.reshape ?? UNGATED_TOPOLOGY_RESHAPE_PERMISSION, heldFallback: undefined },
             publicDispatch
         );
         const result = planRallarRtcTopologySnapshot({
             group: input.group,
             previous: input.previous,
-            topology,
             ...planned,
-            degreeLimit,
+            degreeLimit: this.readDegreeLimit(this.readTopologyOptions(input.updateOptions)),
             nowEpochMs: input.nowEpochMs
         });
         this.dependencies.metrics.recordTopologyResult(result.changed);
@@ -276,41 +289,98 @@ export class RtcTopologyPlanner {
         };
     }
 
-    private selectPlanTopology(
-        group: GroupSnapshot,
-        topologyOptions: RallarRtcTopologyServiceOptions,
-        previous: RallarOverlayTopologySnapshot | undefined,
+    /** The replan after a held attempt rebuilds as a membership delta, so no refinement evolves the layout again. */
+    private computeCanonicalNextHops(
+        input: RtcTopologyPlanner.CanonicalPlanInput,
+        attempt: CanonicalPlanAttempt,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
-    ): RallarRtcTopologyKind {
-        const previousKind = previous?.state === 'active' ? previous.topology : undefined;
-        const topology = publicDispatch.selectTopology(group, topologyOptions, previousKind);
+    ): PlannedRtcTopologyNextHops {
+        const { reshape, heldFallback } = attempt;
+        const topologyOptions = this.readTopologyOptions(input.updateOptions);
+        const selected = this.selectPlanTopology(
+            { ...input, topologyOptions, reshape, recordsHysteresisHold: heldFallback === undefined },
+            publicDispatch
+        );
+        const plan: RtcTopologyPlanInput = {
+            group: input.group,
+            leaderSessionId: resolveRallarGroupLeaderSessionId(input.group),
+            activeSessionIds: input.activeSessionIds,
+            relevantRttMeasurements: input.relevantRttMeasurements,
+            topology: selected.topology,
+            previous: input.previous,
+            topologyOptions,
+            planningIntent: heldFallback === undefined
+                ? input.updateOptions.planningIntent ?? 'full-rebuild'
+                : 'membership-delta',
+            reshape
+        };
+        const evolved = resolveHeldTopologyFallback(heldFallback, selected.topology) ??
+            this.computeEvolvedNextHops(plan);
+        if (reshape.reshape === 'held' && evolved?.outcome === 'full-rebuild') {
+            const fallback = { topology: selected.topology, reason: evolved.reason };
+            return this.computeCanonicalNextHops(
+                input,
+                { reshape: UNGATED_TOPOLOGY_RESHAPE_PERMISSION, heldFallback: fallback },
+                publicDispatch
+            );
+        }
+        const planned = this.computePlannedNextHops(plan, evolved, publicDispatch);
+        const heldReshapeReasons = toMergedHeldTopologyReshapeReasons(
+            selected.heldReshapeReasons,
+            planned.heldReshapeReasons
+        );
+        return { ...planned, topology: selected.topology, heldReshapeReasons };
+    }
+
+    private selectPlanTopology(
+        input: PlanTopologySelectionInput,
+        publicDispatch: RtcTopologyPlanner.PublicDispatch
+    ): HeldTopologyKind {
+        const previousKind = input.previous?.state === 'active' ? input.previous.topology : undefined;
+        const topology = publicDispatch.selectTopology(input.group, input.topologyOptions, previousKind);
         if (
+            input.recordsHysteresisHold &&
             previousKind !== undefined &&
             topology === previousKind &&
-            publicDispatch.selectTopology(group, topologyOptions) !== topology
+            publicDispatch.selectTopology(input.group, input.topologyOptions) !== topology
         ) {
             this.dependencies.metrics.recordHysteresisHold();
         }
-        return topology;
+        return resolveHeldTopologyKind({
+            reshape: input.reshape,
+            previousKind,
+            selectedKind: topology,
+            explicitKind: isExplicitTopologyKind(input.topologyOptions.topologyKind),
+            activeSize: input.activeSessionIds.length,
+            degreeLimit: this.readDegreeLimit(input.topologyOptions)
+        });
     }
 
     private computePlannedNextHops(
         plan: RtcTopologyPlanInput,
+        evolved: EvolvePlannedTopologyResult | undefined,
         publicDispatch: RtcTopologyPlanner.PublicDispatch
     ): DerivedRtcTopologyNextHops {
         if (plan.topology === 'star') {
             return this.computeStarNextHops(plan);
         }
-        const evolved = this.computeEvolvedNextHops(plan);
         if (evolved?.outcome === 'planned') {
-            return { nextHopsBySessionId: evolved.nextHopsBySessionId, derivation: { method: 'incremental' } };
+            return {
+                nextHopsBySessionId: evolved.nextHopsBySessionId,
+                derivation: { method: 'incremental' },
+                heldReshapeReasons: evolved.heldReshapeReasons
+            };
         }
         const rebuildDerivation = resolveRtcTopologyPlanDerivation(plan, {
             method: 'rebuilt',
             reason: evolved?.reason ?? 'refinement'
         });
         if (plan.relevantRttMeasurements.length === 0) {
-            return { nextHopsBySessionId: this.computeNoRttNextHops(plan), derivation: rebuildDerivation };
+            return {
+                nextHopsBySessionId: this.computeNoRttNextHops(plan),
+                derivation: rebuildDerivation,
+                heldReshapeReasons: []
+            };
         }
         return this.computeWeightedNextHops(plan, rebuildDerivation, publicDispatch);
     }
@@ -332,9 +402,13 @@ export class RtcTopologyPlanner {
             plan.planningIntent !== 'full-rebuild' || plan.topology !== 'tree' || plan.previous?.state !== 'active' ||
             plan.previous.topology !== 'tree'
         ) {
-            return { nextHopsBySessionId: rebuiltNextHopsBySessionId, derivation: rebuildDerivation };
+            return {
+                nextHopsBySessionId: rebuiltNextHopsBySessionId,
+                derivation: rebuildDerivation,
+                heldReshapeReasons: []
+            };
         }
-        return resolveRttRefinementNextHops({
+        const refined = resolveRttRefinementNextHops({
             evolve: {
                 previous: plan.previous,
                 group: plan.group,
@@ -343,11 +417,13 @@ export class RtcTopologyPlanner {
                 globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
                 kind: plan.topology,
                 degreeLimit: this.readDegreeLimit(plan.topologyOptions),
-                meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
+                meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK,
+                reshape: plan.reshape
             },
             rttMeasurements: plan.relevantRttMeasurements,
             rebuiltNextHopsBySessionId
         });
+        return { ...refined, heldReshapeReasons: [] };
     }
 
     private computeStarNextHops(plan: RtcTopologyPlanInput): DerivedRtcTopologyNextHops {
@@ -360,12 +436,17 @@ export class RtcTopologyPlanner {
             meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
         });
         this.dependencies.metrics.recordStarPlan(this.dependencies.durationNowMs() - startedAtMs);
-        return { nextHopsBySessionId, derivation: resolveRtcTopologyPlanDerivation(plan, { method: 'incremental' }) };
+        return {
+            nextHopsBySessionId,
+            derivation: resolveRtcTopologyPlanDerivation(plan, { method: 'incremental' }),
+            heldReshapeReasons: []
+        };
     }
 
+    /** With the reshape held, every plan evolves as a membership delta, whatever its intent. */
     private computeEvolvedNextHops(plan: RtcTopologyPlanInput): EvolvePlannedTopologyResult | undefined {
         if (
-            plan.planningIntent !== 'membership-delta' ||
+            (plan.planningIntent !== 'membership-delta' && plan.reshape.reshape !== 'held') ||
             plan.previous?.state !== 'active' ||
             plan.previous.topology !== plan.topology ||
             (plan.topology !== 'tree' && plan.topology !== 'mesh')
@@ -380,7 +461,8 @@ export class RtcTopologyPlanner {
             globalGraph: this.createEvolutionRoomGraph(plan, plan.previous),
             kind: plan.topology,
             degreeLimit: this.readDegreeLimit(plan.topologyOptions),
-            meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK
+            meshParamK: this.readMeshArgs(plan.topologyOptions).meshParamK,
+            reshape: plan.reshape
         });
         if (evolved.outcome === 'full-rebuild') {
             this.dependencies.metrics.recordIncrementalFallback(evolved.reason);

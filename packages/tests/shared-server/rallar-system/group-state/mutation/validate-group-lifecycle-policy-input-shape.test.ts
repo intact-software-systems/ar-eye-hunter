@@ -69,6 +69,17 @@ describe('validateGroupLifecyclePolicyInputShape', () => {
         ).toEqual(expect.arrayContaining([expect.stringContaining('settleMs must be a finite number')]));
     });
 
+    it('accepts numeric reshape bounds and rejects a string one', () => {
+        expect(validateGroupLifecyclePolicyInputShape({
+            topology: { reshapeMinIntervalMs: 15_000, reshapeMaxIntervalMs: 60_000 }
+        })).toEqual([]);
+        expect(
+            validateGroupLifecyclePolicyInputShape({
+                topology: { reshapeMinIntervalMs: '15000' }
+            }).map((issue) => issue.message)
+        ).toEqual(expect.arrayContaining([expect.stringContaining('reshapeMinIntervalMs must be a finite number')]));
+    });
+
     it('rejects enum values outside the contract', () => {
         expect(validateGroupLifecyclePolicyInputShape({ initiator: 'nobody' }).map((issue) => issue.message)).toEqual(
             expect.arrayContaining([expect.stringContaining('initiator must be one of')])

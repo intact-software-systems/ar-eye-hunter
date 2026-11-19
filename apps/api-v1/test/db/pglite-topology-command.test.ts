@@ -15,6 +15,7 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { computeRtcTopologyReshapeGateWrite } from '@shared-server/rallar-system/topology/persistence/stored-topology-reshape-gate.ts';
 import { computeGroupTopologyFromAuthority } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-stream-service.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/delivery/rtc-topology-delivery-validation.ts';
@@ -29,6 +30,7 @@ import type {
     GroupPresenceSummary,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
+import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import type { ResourceInboxRelease } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
@@ -73,7 +75,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(result.snapshot.state, 'removed');
@@ -97,7 +99,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -124,7 +126,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'active');
@@ -151,7 +153,7 @@ test(
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: { reshape: 'allowed', wantedReasons: [] } }
             ));
 
             assert.equal(scenario.authority.group.group.status, 'archived');
@@ -262,7 +264,8 @@ test(
 
             const filtered = requirePlannedTopology(computeGroupTopologyFromAuthority(authority, previous, {
                 intent: 'full-rebuild',
-                origin: 'automatic'
+                origin: 'automatic',
+                reshape: { reshape: 'allowed', wantedReasons: [] }
             }));
 
             assert.equal(filtered.planningObservation?.relevantRttMeasurementCount, 0);
@@ -292,7 +295,8 @@ test(
 
             const withReportingRtt = requirePlannedTopology(computeGroupTopologyFromAuthority(mixedAuthority, previous, {
                 intent: 'full-rebuild',
-                origin: 'automatic'
+                origin: 'automatic',
+                reshape: { reshape: 'allowed', wantedReasons: [] }
             }));
 
             assert.equal(withReportingRtt.planningObservation?.relevantRttMeasurementCount, 1);
@@ -766,3 +770,35 @@ test(
         });
     }
 );
+
+test('PGlite topology reshape gate writes compare and set on the revision it read', async () => {
+    await withPGliteSql(async (sql) => {
+        const groupRef = { applicationId: 'pglite-reshape-gate', workspaceId: 'planning', groupId: 'room' };
+        const repository = new RtcTopologyExecutionRepository(new PSqlRuntimeStateRepository(sql));
+        const held: TopologyReshapeGateState = {
+            gate: { lastPassAtEpochMs: 10_000, consecutiveHeldPasses: 0, heldAtEpochMs: 12_000 },
+            wantedReasons: ['kind-change']
+        };
+        const passed: TopologyReshapeGateState = {
+            gate: { lastPassAtEpochMs: 25_000, consecutiveHeldPasses: 1, heldAtEpochMs: null },
+            wantedReasons: []
+        };
+
+        assert.equal(await repository.readTopologyReshapeGate(groupRef), null);
+        await repository.writeTopologyReshapeGate(sql, computeRtcTopologyReshapeGateWrite(groupRef, held, null));
+        assert.deepEqual(await repository.readTopologyReshapeGate(groupRef), { state: held, revision: 0 });
+
+        await repository.writeTopologyReshapeGate(sql, computeRtcTopologyReshapeGateWrite(groupRef, passed, 0));
+        assert.deepEqual(await repository.readTopologyReshapeGate(groupRef), { state: passed, revision: 1 });
+
+        await assert.rejects(
+            () => repository.writeTopologyReshapeGate(sql, computeRtcTopologyReshapeGateWrite(groupRef, held, 0)),
+            RuntimeStateWriteConflictError
+        );
+        await assert.rejects(
+            () => repository.writeTopologyReshapeGate(sql, computeRtcTopologyReshapeGateWrite(groupRef, held, null)),
+            RuntimeStateWriteConflictError
+        );
+        assert.deepEqual(await repository.readTopologyReshapeGate(groupRef), { state: passed, revision: 1 });
+    });
+});

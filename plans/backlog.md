@@ -816,7 +816,35 @@ and it has no status list.
 - Layout-stamped hops: a frame carries the layout it was planned on, so a receiver can tell a replaced
   layout's frame from an unauthorized one without a time window. Later.
 - The two server re-plan paths without the tree-keeping gate, leader rooting after a failed update and the mesh
-  rebuild: the group dynamics damping plan (draft pull request #827) takes them.
+  rebuild: the reshape gate of the group dynamics damping plan (pull request #844) holds the optional leader
+  re-root (`leader-rooting`) and a mesh's too-large delta in time. A rebuild after a failed update or a broken
+  invariant is not held. The quality bound for these paths, the tree-keeping gate of #810 that they skip, is still
+  open.
+- A held reshape is invisible to the stable-layout wait. `formation.readiness`'s `hasPendingLayout` does not see a
+  reshape the gate holds, because a held reshape publishes nothing, so `create-stable-rtc-layout-wait.ts`
+  (`packages/shared-test/rallar-bb-test/fixtures/`) can pass while a reshape is owed. The room is then reshaped when
+  the gate opens, up to 60 s later, which can fall inside a lane's traffic window. The hosted ALM scale lane
+  (`create-alm-scale-setup-commands.ts`) and `publication-commands.ts` use that wait.
+- Reshape gate leftovers (pull request #844):
+  - The plan record's `changeGated` input is overloaded for a `reshape-due` row, so a wake-up's plan has empty
+    `causes`; naming a cause for it would change the plan record contract.
+  - The work codec does not tie a `reshape-due` row's resource id to its payload.
+  - The OpenAPI schema has no `uniqueItems` or `maxItems` on `wantedReasons` and `heldReshapeReasons`.
+  - Bounds raised after a period's wake-up has run leave a later hold of that period without a row until the next
+    work.
+  - `processRtcTopologyWork` (`create-rtc-topology-work-handler.ts`) is about 55 lines, past the 40-line limit.
+  - The reshape measurement's owed-reshape wait reads every page of topology plans per poll and has no unit test.
+  - A room that empties while its gate is closed keeps its empty layout's kind until the gate opens, and that hold
+    counts as any other. Whether a layout of no or one member should pass the gate is not decided.
+  - `packages/shared/encoding` imports `packages/shared/api/exact-object-decoding.ts` at runtime (the GroupRef
+    and back-off gate decoders), while `api` imports `encoding`. Moving `exact-object-decoding.ts` into `encoding`
+    ends the cycle; it has about 140 importers.
+  - `toCoalescedGroupRevisionEntry` builds a topology work entry by hand beside `toRtcTopologyWorkEntry`.
+  - `BackoffGateState` says "never passed" two ways: a null state, and a state whose `lastPassAtEpochMs` is null.
+  - A `reshape-due` row carries `ordering: { epoch: 0, seq: 0 }` on the room's ordering key; what that value means
+    to the queue was not checked.
+  - Two older GroupRef decoders (`decode-stored-group-lifecycle-policy.ts`, `decode-rtc-topology-snapshot.ts`)
+    differ from `decodeExactGroupRef` in their checks and messages and were left as they are.
 - What the churn measurement could not read without browsers (the damping plan's "What the measuring slice
   established"): the edge setup time of an accepted layout, and the instant its coverage first reached the success
   rate, the only read of "absorbed".

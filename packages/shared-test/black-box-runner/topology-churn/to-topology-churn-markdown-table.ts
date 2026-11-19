@@ -1,7 +1,9 @@
+import type { AdminRoomReshapeGate } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupTopologyReplanningMode } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
+import { HELD_TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import type { TopologyChurnDrift } from './compute-topology-churn-drift.ts';
 import type {
@@ -17,6 +19,8 @@ export interface TopologyChurnRoomEntry {
     readonly report: TopologyChurnReport;
     readonly drift: TopologyChurnDrift;
     readonly topologyConfig: EffectiveGroupTopologyConfig;
+    /** The gate as read once the room converged; null when the room stores none. */
+    readonly reshapeGate: AdminRoomReshapeGate | null;
 }
 
 const NO_FIGURE = '—';
@@ -47,7 +51,9 @@ const COLUMNS: readonly (readonly [string, (phase: TopologyChurnPhaseReport) => 
     ['promoted kinds attach/repair/reshape', (phase) => toKindFigure(phase.promotedPlansByKind)],
     ['rerouting kinds attach/repair/reshape', (phase) => toKindFigure(phase.reroutingPlansByKind)],
     ['reshape reasons', (phase) => toReshapeReasonFigure(phase.reshapesByReason)],
+    ['held', (phase) => toHeldFigure(phase)],
     ['reshapes/min', (phase) => toFixedFigure(phase.reshapesPerMinute, 1)],
+    ['closest reshapes (s)', (phase) => toSecondsFigure(phase.closestReshapesMs)],
     ['rerouted per reshape min/p50/p90/max', (phase) => toDistributionFigure(phase.reroutedSessionsPerReshape)],
     [
         'rerouted per reshape by reason p50/max',
@@ -70,6 +76,7 @@ export function toTopologyChurnMarkdownTable(entry: TopologyChurnRoomEntry): str
         ...entry.report.phases.map((phase) => toMarkdownRow(COLUMNS.map(([, toCell]) => toCell(phase)))),
         '',
         `Plans outside every phase: ${entry.report.outsidePhasesPlanCount}. Drift: ${toDriftFigure(entry.drift)}`,
+        toClosestReshapesLine(entry.report.closestReshapesMs),
         toConfigurationLine(entry.topologyConfig)
     ].join('\n');
 }
@@ -80,6 +87,26 @@ function toMarkdownRow(cells: readonly string[]): string {
 
 function toFixedFigure(value: number | null, fractionDigits: number): string {
     return value === null ? NO_FIGURE : value.toFixed(fractionDigits);
+}
+
+function toSecondsFigure(durationMs: number | null): string {
+    return durationMs === null ? NO_FIGURE : (durationMs / 1_000).toFixed(1);
+}
+
+function toHeldFigure(phase: TopologyChurnPhaseReport): string {
+    const reasons = HELD_TOPOLOGY_RESHAPE_REASONS.flatMap((reason) => {
+        const count = phase.heldReshapesByReason[reason];
+        return count === 0 ? [] : [`${reason}: ${count}`];
+    });
+    return reasons.length === 0
+        ? String(phase.heldReshapePlanCount)
+        : `${phase.heldReshapePlanCount} (${reasons.join(', ')})`;
+}
+
+function toClosestReshapesLine(closestReshapesMs: number | null): string {
+    return closestReshapesMs === null
+        ? `Closest two reshapes of the room: ${NO_FIGURE} (fewer than two reshapes).`
+        : `Closest two reshapes of the room: ${toSecondsFigure(closestReshapesMs)} s apart.`;
 }
 
 function toDistributionFigure(distribution: TopologyChurnDistribution | null): string {

@@ -6,11 +6,13 @@ describe('toTopologyChurnPolicy', () => {
         expect(toTopologyChurnPolicy('auto')).toEqual({ replanning: 'auto' });
     });
 
-    it('gives a debounced room the managed preset\'s window and maximum wait', () => {
+    it('gives a debounced room the managed preset\'s window, maximum wait and reshape bounds', () => {
         expect(toTopologyChurnPolicy('debounced')).toEqual({
             replanning: 'debounced',
             debounceWindowMs: 500,
-            maxReplanWaitMs: 5_000
+            maxReplanWaitMs: 5_000,
+            reshapeMinIntervalMs: 15_000,
+            reshapeMaxIntervalMs: 60_000
         });
     });
 });

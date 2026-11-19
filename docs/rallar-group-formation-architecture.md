@@ -148,16 +148,20 @@ and initiator denials. Managed scale recipes use the same publication-fenced lif
 `GroupLifecyclePolicy` (`packages/shared/api/group-lifecycle/group-lifecycle-policy.ts`) has formation
 and initiator choices plus six policy sections. Every field is required once normalized.
 
-| Section         | Fields                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------ |
-| `formation`     | `'phased'` \| `'immediate'`                                                                            |
-| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                       |
-| `manager`       | `selection`, `assignedPrincipalIds`, `count`, `succession`                                             |
-| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                               |
-| `activation`    | `mode`, `successRate`, `minimumViableRate`, `deadlineMs`, `maxFormationAttempts`, `strictConfirmation` |
-| `admission`     | `mode`, `untilEpochMs`, `untilMemberCount` (`null` means the window does not apply)                    |
-| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`                              |
-| `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                        |
+| Section         | Fields                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `formation`     | `'phased'` \| `'immediate'`                                                                                               |
+| `initiator`     | `'manager'` \| `'any-member'` \| `'server-auto'`                                                                          |
+| `manager`       | `selection`, `assignedPrincipalIds`, `count`, `succession`                                                                |
+| `establishment` | `transports`, `maxConcurrentEdgeSetups`, `planTrigger`, `connectTrigger`                                                  |
+| `activation`    | `mode`, `successRate`, `minimumViableRate`, `deadlineMs`, `maxFormationAttempts`, `strictConfirmation`                    |
+| `admission`     | `mode`, `untilEpochMs`, `untilMemberCount` (`null` means the window does not apply)                                       |
+| `topology`      | `replanning`, `reconfigureLanding`, `debounceWindowMs`, `maxReplanWaitMs`, `reshapeMinIntervalMs`, `reshapeMaxIntervalMs` |
+| `data`          | `preActivationAppData`: `'allowed'` \| `'blocked-until-active'`                                                           |
+
+`topology.reshapeMinIntervalMs` and `topology.reshapeMaxIntervalMs` bound the reshape gate of an
+`active` room: what it holds, where it applies and how a hold is released are in
+[the reshape gate section](rallar-convergent-state-and-rtc-topology.md#reshape-gate).
 
 `topology.replanning` is enforced at two gates that take the planner's decision on the same stored
 facts. The planner (`resolveTopologyPlanAction`) freezes automatic work for an `active` group whose
@@ -252,6 +256,8 @@ is carried the same way but read by nothing yet, and no server path reads either
 | `topology.reconfigureLanding`     | `apply`      | `apply`                 | `hold`                         | `apply`          |
 | `topology.debounceWindowMs`       | 500          | 500                     | 500                            | 500              |
 | `topology.maxReplanWaitMs`        | 5 000        | 5 000                   | 5 000                          | 5 000            |
+| `topology.reshapeMinIntervalMs`   | 15 000       | 15 000                  | 15 000                         | 15 000           |
+| `topology.reshapeMaxIntervalMs`   | 60 000       | 60 000                  | 60 000                         | 60 000           |
 
 `strictConfirmation` is `false` in every preset. Two preset facts are easy to misread:
 
@@ -295,6 +301,8 @@ Clamping is silent and total, so no input produces an out-of-range document:
 | `admission.untilMemberCount`       | 1 … 100 000                   |
 | `topology.debounceWindowMs`        | 0 … 30 000                    |
 | `topology.maxReplanWaitMs`         | 0 … 600 000                   |
+| `topology.reshapeMinIntervalMs`    | 15 000 … 600 000              |
+| `topology.reshapeMaxIntervalMs`    | 15 000 … 600 000              |
 | trigger `settleMs`, `fallbackMs`   | 0 … 600 000                   |
 | `presence` trigger `memberCount`   | 1 … 100 000                   |
 
@@ -319,6 +327,7 @@ returns every issue at once as an `Either` and never throws:
 | `server-auto-requires-automatic-activation` | `phased` + `server-auto` with `activation.mode: manual`          |
 | `server-auto-cannot-command-replanning`     | `topology.replanning: commanded` with `server-auto`              |
 | `replan-window-exceeds-maximum-wait`        | `topology.debounceWindowMs > topology.maxReplanWaitMs`           |
+| `reshape-minimum-interval-exceeds-maximum`  | `topology.reshapeMinIntervalMs > topology.reshapeMaxIntervalMs`  |
 
 Transient zero-manager states are legal — an assigned manager who has not joined, or managers who
 all left — because invite-and-accept recovers them; only permanently granterless or initiator-less
@@ -596,10 +605,11 @@ command it asks for — `activateGroup` with `observedRate` and a `degraded` fla
 
 **The evidence leg** is the RTC topology work handler (`create-rtc-topology-work-handler.ts`).
 After every topology work item commits — a published layout, an unchanged or frozen plan, a held
-RTT replan (`held-young-layout`), or a fingerprint skip, for group-revision and RTT-refresh work
-alike — it petitions the criterion with the
+RTT replan (`held-young-layout`), or a fingerprint skip, for group-revision, RTT-refresh and
+reshape-due work alike — it petitions the criterion with the
 planned row the commit made durable and the authority's evidence, then the stage trigger and the
-activation-status observer. It costs nothing while no work arrives; RTT-refresh items the refinement
+activation-status observer. A reshape-due row that completes without planning
+(`skipped-reshape-settled`) does not petition it. It costs nothing while no work arrives; RTT-refresh items the refinement
 gate defers reach the criterion only through the damped edge-trigger below.
 
 **The threshold edge-trigger.** RTT-refresh work whose replan the refinement gate defers

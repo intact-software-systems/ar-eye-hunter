@@ -9,6 +9,7 @@ import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { TopologyReshapeReason } from '@shared/api/topology-plan/topology-plan-change.ts';
+import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 
 import {
@@ -42,6 +43,8 @@ interface RtcTopologyFixturePlanInput {
     readonly previous: RallarOverlayTopologySnapshot | undefined;
     readonly planningIntent?: RtcTopologyPlanningIntent;
     readonly rttMeasurements?: readonly RttMeasurementInfo[];
+    /** Absent plans as the planner does without the reshape gate: allowed, with nothing wanted. */
+    readonly reshape?: TopologyReshapePermission;
 }
 
 /** A previously accepted layout and the plan the real planner derives from it. */
@@ -64,7 +67,7 @@ export function computeRtcTopologyFixturePlan(input: RtcTopologyFixturePlanInput
         group: input.group,
         rttMeasurements: input.rttMeasurements ?? [],
         previous: input.previous,
-        updateOptions: { planningIntent: input.planningIntent ?? 'membership-delta' },
+        updateOptions: { planningIntent: input.planningIntent ?? 'membership-delta', reshape: input.reshape },
         nowEpochMs: 100
     });
 }
@@ -90,6 +93,9 @@ export interface RtcTopologyFixtureLeaveInput {
     readonly leaver: RtcTopologyFixtureLeaver;
     /** Members that join in the same plan as the leave, after the formed members. */
     readonly joinerCount: number;
+    readonly reshape?: TopologyReshapePermission;
+    /** The first joiner is appointed the room's director as it joins; absent, the room stays leaderless. */
+    readonly directorJoins?: boolean;
 }
 
 /** Plans a first layout of the members, then plans the room again without the leaver and with the joiners. */
@@ -103,10 +109,13 @@ export function computeRtcTopologyFixtureLeave(input: RtcTopologyFixtureLeaveInp
     const leaverSessionId = typeof input.leaver === 'string'
         ? input.leaver
         : resolveRtcTopologyFixtureSessionId(previous, input.leaver);
+    const group = createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId));
+    const director = input.directorJoins === true ? sessionIds[input.memberCount] : undefined;
     const replanInput: RtcTopologyFixturePlanInput = {
         options: input.options,
-        group: createRtcTopologyFixtureGroupOf(sessionIds.filter((sessionId) => sessionId !== leaverSessionId)),
-        previous
+        group: director === undefined ? group : toRtcTopologyGroupWithDirector(group, director),
+        previous,
+        reshape: input.reshape
     };
     return { previous, planned: computeRtcTopologyFixturePlan(replanInput), replanInput, leaverSessionId };
 }

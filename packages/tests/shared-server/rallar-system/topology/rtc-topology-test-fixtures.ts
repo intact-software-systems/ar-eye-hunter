@@ -199,6 +199,7 @@ export function createRtcTopologyPublicationPlan(snapshot: RallarOverlayTopology
         rttRefresh: false,
         changeGated: true,
         derivation: RTC_TOPOLOGY_ESTABLISHED_DERIVATION,
+        heldReshapeReasons: [],
         nowEpochMs: snapshot.updatedAtEpochMs
     });
 }

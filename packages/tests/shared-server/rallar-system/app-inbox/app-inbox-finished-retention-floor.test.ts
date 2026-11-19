@@ -7,7 +7,8 @@ import {
 import {
     MAX_GROUP_FORMATION_DEADLINE_MS,
     MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
-    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
+    MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+    MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS
 } from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 
 describe('AppInbox finished-retention floor', () => {
@@ -15,7 +16,8 @@ describe('AppInbox finished-retention floor', () => {
         const longestTimerDelayMs = Math.max(
             MAX_GROUP_FORMATION_DEADLINE_MS,
             MAX_GROUP_STAGE_TRIGGER_DELAY_MS,
-            MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
+            MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS,
+            MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS
         );
 
         expect(MIN_APP_INBOX_FINISHED_RETENTION_MS).toBeGreaterThan(longestTimerDelayMs);

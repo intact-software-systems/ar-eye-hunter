@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateALTraceId } from '@shared/al-contracts/trace/al-trace-id.ts';
+import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import { GROUP_LIFECYCLE_STATES, type GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { TopologyReshapePermission } from '@shared/api/topology-plan/topology-reshape-gate.ts';
+
+import type { GroupLifecyclePolicyRead } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import {
@@ -10,12 +15,16 @@ import {
 } from '@shared-server/rallar-system/topology/planning/compute-group-topology-from-authority.ts';
 import type { ReconcileGroupTopologyResult } from '@shared-server/rallar-system/topology/planning/group-topology-planning-contracts.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import type { GroupTopologyReplanningRead } from '@shared-server/rallar-system/topology/planning/resolve-topology-plan-action.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { requirePlannedTopology } from '@shared-test/shared-server/require-planned-topology.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
 
 import { createTopologyTestGroupRef, createTopologyTestGroupSnapshot } from '../config/mutation/group-topology-config-mutation-test-fixtures.ts';
+
+// The reshape gate is decided by the topology work, not by these planning paths.
+const UNGATED_RESHAPE: TopologyReshapePermission = { reshape: 'allowed', wantedReasons: [] };
 
 describe('GroupTopologyPlanningService', () => {
     it('reads one explicit planning authority from query, RTT, and RTC clock owners', async () => {
@@ -36,8 +45,26 @@ describe('GroupTopologyPlanningService', () => {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: 2_000
         });
+    });
+
+    it('reads the reshape bounds of a stored policy for a room in the stage that follows it', async () => {
+        const group = groupWithSessionsIn('active');
+        const preset = createDefaultGroupLifecyclePolicy();
+        const policy = {
+            ...preset,
+            topology: { ...preset.topology, reshapeMinIntervalMs: 20_000, reshapeMaxIntervalMs: 45_000 }
+        };
+        const service = createPlanningService({
+            group,
+            readLifecyclePolicy: async () => ({ status: 'present', policy })
+        });
+
+        const authority = await service.readTopologyPlanningAuthority({ groupRef: group.group });
+
+        expect(authority.reshapeBounds).toEqual({ minIntervalMs: 20_000, maxIntervalMs: 45_000 });
     });
 
     it('uses newer durable group authority instead of a queued group revision', async () => {
@@ -132,10 +159,11 @@ describe('GroupTopologyPlanningService', () => {
                 rttMeasurements: [],
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'debounced',
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: 2_000
             },
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
 
         expect(result).toMatchObject({
@@ -154,7 +182,7 @@ describe('GroupTopologyPlanningService', () => {
         const computed = computeGroupTopologyFromAuthority(
             planningAuthority(groupWithSessionsIn('active')),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
         const snapshot = {
             ...requirePlannedTopology(computed).snapshot,
@@ -183,14 +211,14 @@ describe('GroupTopologyPlanningService', () => {
         const expected = computeGroupTopologyFromAuthority(
             authority,
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
         const statefulTopology = new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
         statefulTopology.observeCommittedTopologySnapshot(requirePlannedTopology(expected).snapshot);
         expect(computeGroupTopologyFromAuthority(
             authority,
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         )).toEqual(expected);
         expect(requirePlannedTopology(expected).planningObservation).toEqual({
             relevantRttMeasurementCount: 0,
@@ -247,7 +275,7 @@ describe('GroupTopologyPlanningService', () => {
         const result = computeGroupTopologyFromAuthority(
             planningAuthority(forming),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
 
         expect(requirePlannedTopology(result).snapshot.state).toBe('removed');
@@ -264,14 +292,14 @@ describe('GroupTopologyPlanningService', () => {
         const first = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(beforePresence),
             undefined,
-            { intent: 'membership-delta', origin: 'automatic' }
+            { intent: 'membership-delta', origin: 'automatic', reshape: UNGATED_RESHAPE }
         ));
         expect(first.snapshot).toMatchObject({ state: 'removed', activeSessionIds: [] });
 
         const afterPresence = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(forming),
             first.snapshot,
-            { intent: 'membership-delta', origin: 'automatic' }
+            { intent: 'membership-delta', origin: 'automatic', reshape: UNGATED_RESHAPE }
         ));
         expect(afterPresence.changed).toBe(true);
         expect(afterPresence.snapshot).toMatchObject({
@@ -286,7 +314,7 @@ describe('GroupTopologyPlanningService', () => {
         const first = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(forming),
             undefined,
-            { intent: 'membership-delta', origin: 'automatic' }
+            { intent: 'membership-delta', origin: 'automatic', reshape: UNGATED_RESHAPE }
         ));
         const noCurrentSessions = {
             ...forming,
@@ -296,7 +324,7 @@ describe('GroupTopologyPlanningService', () => {
         const unchanged = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(noCurrentSessions),
             first.snapshot,
-            { intent: 'membership-delta', origin: 'automatic' }
+            { intent: 'membership-delta', origin: 'automatic', reshape: UNGATED_RESHAPE }
         ));
 
         expect(unchanged.changed).toBe(false);
@@ -308,7 +336,7 @@ describe('GroupTopologyPlanningService', () => {
         const planned = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(active),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         ));
         expect(planned.snapshot.state).not.toBe('removed');
 
@@ -316,7 +344,7 @@ describe('GroupTopologyPlanningService', () => {
         const held = computeGroupTopologyFromAuthority(
             planningAuthority(forming),
             planned.snapshot,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
         expect(requirePlannedTopology(held).snapshot.state).toBe('removed');
     });
@@ -327,7 +355,7 @@ describe('GroupTopologyPlanningService', () => {
             const result = requirePlannedTopology(computeGroupTopologyFromAuthority(
                 planningAuthority(group),
                 undefined,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
             ));
 
             if (lifecycleState === 'dormant' || lifecycleState === 'forming') {
@@ -347,7 +375,7 @@ describe('GroupTopologyPlanningService', () => {
             computeGroupTopologyFromAuthority(
                 planningAuthority(seed),
                 undefined,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
             )
         ).snapshot;
         const frozenStages: GroupLifecycleState[] = ['connecting', 'reconnecting'];
@@ -356,7 +384,7 @@ describe('GroupTopologyPlanningService', () => {
             const result = computeGroupTopologyFromAuthority(
                 planningAuthority(group),
                 stored,
-                { intent: 'full-rebuild', origin: 'automatic' }
+                { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
             );
 
             if (frozenStages.includes(lifecycleState)) {
@@ -377,20 +405,20 @@ describe('GroupTopologyPlanningService', () => {
         const stored = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(group),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         )).snapshot;
 
         const automatic = computeGroupTopologyFromAuthority(
             planningAuthority(group, 'commanded'),
             stored,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
         expect(automatic).toEqual({ action: 'frozen', current: stored });
 
         const commanded = computeGroupTopologyFromAuthority(
             planningAuthority(group, 'commanded'),
             stored,
-            { intent: 'full-rebuild', origin: 'commanded' }
+            { intent: 'full-rebuild', origin: 'commanded', reshape: UNGATED_RESHAPE }
         );
         expect(requirePlannedTopology(commanded).snapshot.state).not.toBe('removed');
     });
@@ -400,13 +428,13 @@ describe('GroupTopologyPlanningService', () => {
         const stored = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(group),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         )).snapshot;
 
         expect(computeGroupTopologyFromAuthority(
             planningAuthority(group, 'corrupt'),
             stored,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         )).toEqual({ action: 'frozen', current: stored });
 
         // C7: presence expiry flows in as automatic membership-delta work; a
@@ -419,7 +447,7 @@ describe('GroupTopologyPlanningService', () => {
         const afterDeparture = computeGroupTopologyFromAuthority(
             planningAuthority(departed, 'commanded'),
             stored,
-            { intent: 'membership-delta', origin: 'automatic' }
+            { intent: 'membership-delta', origin: 'automatic', reshape: UNGATED_RESHAPE }
         );
         expect(afterDeparture).toEqual({ action: 'frozen', current: stored });
     });
@@ -431,7 +459,7 @@ describe('GroupTopologyPlanningService', () => {
         const stored = requirePlannedTopology(computeGroupTopologyFromAuthority(
             planningAuthority(group),
             undefined,
-            { intent: 'full-rebuild', origin: 'automatic' }
+            { intent: 'full-rebuild', origin: 'automatic', reshape: UNGATED_RESHAPE }
         )).snapshot;
         topologyService.observeCommittedTopologySnapshot(stored);
 
@@ -524,6 +552,7 @@ function planningAuthority(
         rttMeasurements: [],
         rttReplanMinimumLayoutAgeMs: 15_000,
         replanning,
+        reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
         nowEpochMs: 2_000
     };
 }
@@ -532,6 +561,7 @@ function createPlanningService(input: {
     group: ReturnType<typeof createTopologyTestGroupSnapshot>;
     config?: ReturnType<typeof resolveGroupTopologyConfig>;
     topologyService?: RallarRtcTopologyService;
+    readLifecyclePolicy?: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
 }): GroupTopologyPlanningService {
     const topologyService = input.topologyService ?? new RallarRtcTopologyService({ rttReplanMinimumLayoutAgeMs: 15_000, now: () => 2_000 });
     return new GroupTopologyPlanningService({
@@ -543,6 +573,7 @@ function createPlanningService(input: {
             readConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
             readResolvedTopologyConfig: async () => input.config ?? resolveGroupTopologyConfig({})
         },
-        topologyService
+        topologyService,
+        readLifecyclePolicy: input.readLifecyclePolicy
     });
 }

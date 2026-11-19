@@ -10,13 +10,14 @@ import { EnqueuedType, type RttMeasurementInfo } from '@shared/api/api-config.ts
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import {
     toCanonicalGroupRef,
     type GroupRef,
     type GroupSnapshot,
     type GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
@@ -90,32 +91,64 @@ export interface RtcTopologyRttRefreshWork {
     readonly publish: boolean;
 }
 
+/**
+ * A held reshape's wake-up (the reshape gate): one row per gate period, due when the gate opens, so a room where
+ * nothing else happens still gets the reshape it is owed.
+ */
+export interface RtcTopologyReshapeDueWork {
+    readonly kind: 'reshape-due';
+    readonly overlayId: string;
+    readonly groupRef: GroupRef;
+    /** The gate period this row belongs to: the `gate.lastPassAtEpochMs` it was queued under. */
+    readonly periodStartedAtEpochMs: number;
+    readonly notBeforeEpochMs: number;
+    readonly requestedAtEpochMs: number;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly publish: boolean;
+}
+
+export interface ComputeRtcTopologyReshapeDueEntryInput {
+    readonly groupRef: GroupRef;
+    readonly periodStartedAtEpochMs: number;
+    readonly notBeforeEpochMs: number;
+    readonly requestedAtEpochMs: number;
+    readonly expireAtEpochMs: number;
+    readonly senderId: string;
+    readonly traceId: string;
+}
+
+type RtcTopologyWork = RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork | RtcTopologyReshapeDueWork;
+
 interface RtcTopologyWorkEnvelope {
     readonly type: typeof AppOutboxType.RTC_TOPOLOGY_RECOMPUTE;
     readonly topicId: string;
     readonly resourceId: string;
     readonly contextId: string;
     readonly senderId: string;
-    readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
+    readonly data: RtcTopologyWork;
+}
+
+interface ToRtcTopologyWorkEntryInput {
+    readonly groupRef: GroupRef;
+    readonly resourceId: string;
+    readonly senderId: string;
+    readonly data: RtcTopologyWork;
+    readonly createdAtEpochMs: number;
+    readonly expireAtEpochMs: number;
+    readonly traceId: string;
+    readonly ordering: Readonly<{ epoch: number; seq: number; }>;
+    /** Null for work due at once; otherwise the queue holds the row invisible until then. */
+    readonly notBeforeEpochMs: number | null;
 }
 
 function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry {
-    const createdBy = toAppQueueCreatedBy(computed.senderId);
-    const overlayId = toScopedOverlayId(computed.aggregateRef);
-    const sourceGroupStateCausalRevision = readGroupCausalRevision(computed.groupSnapshot);
-    const messageId = toRtcTopologyEntryResourceId(computed);
-    const contextId = groupStateGroupStorageKey(computed.aggregateRef);
-    const key = toAppQueueKey({
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId: messageId,
-        contextId
-    });
     const commonWork = {
-        overlayId,
+        overlayId: toScopedOverlayId(computed.aggregateRef),
         requestedAtEpochMs: computed.createdAtEpochMs,
         requestOptions: computed.requestOptions,
         publish: computed.publish
     } as const;
+    const sourceGroupStateCausalRevision = readGroupCausalRevision(computed.groupSnapshot);
     const data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork = computed.payloadKind === 'rtt-refresh'
         ? {
             ...commonWork,
@@ -133,29 +166,98 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
             sourceGroupStateCausalRevision,
             origin: computed.origin
         };
-    const envelope: RtcTopologyWorkEnvelope = {
-        type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
-        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
-        resourceId: messageId,
-        contextId,
-        senderId: createdBy,
-        data
-    };
-    const message: ALMessage = {
-        id: {
-            v: AL_MESSAGE_ENVELOPE_VERSION,
-            msgId: messageId,
-            ts: computed.createdAtEpochMs,
-            senderId: createdBy,
-            traceId: computed.traceId
-        },
-        route: key,
-        constraints: { expiresAtMs: computed.expireAtEpochMs },
+    return toRtcTopologyWorkEntry({
+        groupRef: computed.aggregateRef,
+        resourceId: toRtcTopologyEntryResourceId(computed),
+        senderId: computed.senderId,
+        data,
+        createdAtEpochMs: computed.createdAtEpochMs,
+        expireAtEpochMs: computed.expireAtEpochMs,
+        traceId: computed.traceId,
         ordering: {
-            orderingKey: key.contextId,
             epoch: computed.acceptedCausalRevision.groupRevision,
             seq: computed.acceptedCausalRevision.presenceRevision
         },
+        notBeforeEpochMs: null
+    });
+}
+
+/** Insert-only: its identity is the room and the period, so the period's one first hold writes the one row. */
+export function computeRtcTopologyReshapeDueEntry(input: ComputeRtcTopologyReshapeDueEntryInput): ResourceEntry {
+    const overlayId = toScopedOverlayId(input.groupRef);
+    return toRtcTopologyWorkEntry({
+        groupRef: input.groupRef,
+        resourceId: `${overlayId}:reshape-due:${input.periodStartedAtEpochMs}`,
+        senderId: input.senderId,
+        data: {
+            kind: 'reshape-due',
+            overlayId,
+            groupRef: toCanonicalGroupRef(input.groupRef),
+            periodStartedAtEpochMs: input.periodStartedAtEpochMs,
+            notBeforeEpochMs: input.notBeforeEpochMs,
+            requestedAtEpochMs: input.requestedAtEpochMs,
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+            publish: true
+        },
+        createdAtEpochMs: input.requestedAtEpochMs,
+        expireAtEpochMs: input.expireAtEpochMs,
+        traceId: input.traceId,
+        ordering: { epoch: 0, seq: 0 },
+        notBeforeEpochMs: input.notBeforeEpochMs
+    });
+}
+
+function toRtcTopologyWorkEntry(input: ToRtcTopologyWorkEntryInput): ResourceEntry {
+    const createdBy = toAppQueueCreatedBy(input.senderId);
+    const contextId = groupStateGroupStorageKey(input.groupRef);
+    const key = toAppQueueKey({ topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC, resourceId: input.resourceId, contextId });
+    const envelope: RtcTopologyWorkEnvelope = {
+        type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+        topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+        resourceId: input.resourceId,
+        contextId,
+        senderId: createdBy,
+        data: input.data
+    };
+    const createdTs = Temporal.Instant.fromEpochMilliseconds(input.createdAtEpochMs)
+        .toZonedDateTimeISO('UTC')
+        .toPlainDateTime();
+    return {
+        key,
+        resource: JSON.stringify(toRtcTopologyWorkMessage({ input, key, createdBy, envelope })),
+        typeId: EnqueuedType.APP_OUTBOX,
+        status: EntityStatus.NEW,
+        audit: {
+            date: createdTs.toPlainTime(),
+            createdBy,
+            createdTs,
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(input.expireAtEpochMs)
+        },
+        dequeueAudit: input.notBeforeEpochMs === null
+            ? { attempts: 0 }
+            : { attempts: 0, nextTs: Temporal.Instant.fromEpochMilliseconds(input.notBeforeEpochMs) }
+    };
+}
+
+interface ToRtcTopologyWorkMessageInput {
+    readonly input: ToRtcTopologyWorkEntryInput;
+    readonly key: Key;
+    readonly createdBy: string;
+    readonly envelope: RtcTopologyWorkEnvelope;
+}
+
+function toRtcTopologyWorkMessage({ input, key, createdBy, envelope }: ToRtcTopologyWorkMessageInput): ALMessage {
+    return {
+        id: {
+            v: AL_MESSAGE_ENVELOPE_VERSION,
+            msgId: input.resourceId,
+            ts: input.createdAtEpochMs,
+            senderId: createdBy,
+            traceId: input.traceId
+        },
+        route: key,
+        constraints: { expiresAtMs: input.expireAtEpochMs },
+        ordering: { orderingKey: key.contextId, ...input.ordering },
         delivery: {
             ownership: 'exclusive',
             reliability: 'at-least-once',
@@ -168,24 +270,8 @@ function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceE
         },
         audit: {
             createdBy,
-            createdTs: computed.createdAtEpochMs
+            createdTs: input.createdAtEpochMs
         }
-    };
-    const createdTs = Temporal.Instant.fromEpochMilliseconds(computed.createdAtEpochMs)
-        .toZonedDateTimeISO('UTC')
-        .toPlainDateTime();
-    return {
-        key,
-        resource: JSON.stringify(message),
-        typeId: EnqueuedType.APP_OUTBOX,
-        status: EntityStatus.NEW,
-        audit: {
-            date: createdTs.toPlainTime(),
-            createdBy,
-            createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(computed.expireAtEpochMs)
-        },
-        dequeueAudit: { attempts: 0 }
     };
 }
 
