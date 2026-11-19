@@ -1,32 +1,33 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-resource-limits.ts';
+import {
+    AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER,
+    AL_MESSAGE_RESOURCE_LIMITS
+} from '../../../al-contracts/al-message-resource-limits.ts';
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import { computeALOrderingMissingRanges } from '../../compute-al-ordering-observation.ts';
-import { isALCountedRecipient } from '../../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import type {
     ALInboundCommitBundle,
-    ALInboundDurableEffect,
+    ALInboundGapRenewalEffect,
     ALInboundMessageReadDto
 } from '../al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '../al-inbound-canonical-message.ts';
-import {
-    toALInboundNegativeControlEffects,
-    type ALInboundControlEffectInput,
-    type ALInboundEffectIntent
-} from '../al-inbound-effect-intent.ts';
+import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import { toALInboundEffectId, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
-import { isALInboundRecipientReceiptIntent } from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
+import {
+    isALInboundCountedSelf,
+    isALInboundRecipientReceiptIntent
+} from '../receipt-proof/is-al-inbound-recipient-receipt.ts';
 
-/** The timer row of one missing range. */
-export type ALInboundGapRenewalEffect = Extract<ALInboundDurableEffect, { readonly kind: 'renew-gap'; }>;
-
-/** The number an arrival's own report carries is 1, so the first renewal is 2. */
-const AL_FIRST_GAP_RENEWAL_NUMBER = 2;
+/** The gap NACK an admission planned for an arrival that revealed a gap. */
+export type ALInboundGapNackIntent = ALInboundEffectIntent & {
+    readonly payload: Extract<ALInboundEffectIntent['payload'], { readonly kind: 'send-nack'; }>;
+};
 
 export interface ToALInboundGapRenewalEffectsInput {
     readonly read: ALInboundMessageReadDto;
-    readonly controls: ALInboundControlEffectInput;
+    /** The admission's own gap NACK; absent when it planned none, and then it arms nothing. */
+    readonly gapNack: ALInboundGapNackIntent | undefined;
     /** The receiving peer, whose gap NACK the renewal's signing rule is read from. */
     readonly selfPeerId: string;
 }
@@ -68,7 +69,7 @@ export function computeALGapRenewalStretch(random: () => number): number {
 /** How long the request numbered `requestNumber` waits after the one before it; none past the last interval. */
 export function computeALGapRenewalDelayMs(requestNumber: number, stretch: number): number | undefined {
     const intervalMs: number | undefined =
-        AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs[requestNumber - AL_FIRST_GAP_RENEWAL_NUMBER];
+        AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs[requestNumber - AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER];
     return intervalMs === undefined ? undefined : Math.ceil(intervalMs * stretch);
 }
 
@@ -77,26 +78,27 @@ export function toALInboundGapRenewalEffectId(payload: ALInboundGapRenewalEffect
     return toALInboundEffectId(['renew-gap', trackKey, range.from, range.to, requestNumber, message.msgId]);
 }
 
+export function isALInboundGapNackIntent(intent: ALInboundEffectIntent): intent is ALInboundGapNackIntent {
+    return intent.payload.kind === 'send-nack' && intent.payload.reason === 'gap';
+}
+
 /** One timer per range an admitted gap reveals, toward the peer its gap NACK goes to and expiring with that NACK. */
 export function toALInboundGapRenewalEffects(
     input: ToALInboundGapRenewalEffectsInput
 ): readonly ALInboundEffectIntent[] {
-    const { read, controls } = input;
+    const { read, gapNack } = input;
     const trackKey = read.plan.orderingRuntime.trackKey;
-    const gapNack = toALInboundNegativeControlEffects(controls).find((effect) =>
-        effect.payload.kind === 'send-nack' && effect.payload.reason === 'gap'
-    );
-    if (gapNack?.payload.kind !== 'send-nack' || trackKey === undefined) {
+    if (gapNack === undefined || trackKey === undefined) {
         return [];
     }
     const { toPeerId } = gapNack.payload;
-    const countsSelf = isALCountedRecipient(read.msg, read.plan.effective.ack.algo, input.selfPeerId);
+    const countsSelf = isALInboundCountedSelf(read.msg, read.plan, input.selfPeerId);
     return computeALInboundNewlyMissingRanges(read.orderingSnapshot, read.plan.orderingRuntime).map((range) => {
         const payload: ALInboundGapRenewalEffect = {
             kind: 'renew-gap',
             trackKey,
             range,
-            requestNumber: AL_FIRST_GAP_RENEWAL_NUMBER,
+            requestNumber: AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER,
             toPeerId,
             message: toALInboundMessageReference(read.msg),
             traceId: read.msg.id.traceId,

@@ -353,22 +353,24 @@ export type ALInboundDurableEffect =
         trackKey: string;
         seq: number;
     }>
-    /**
-     * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks `toPeerId`
-     * again, under `requestNumber`, for what of `range` is still missing. `message` is that arrival, which the renewal
-     * names; the row holds no time, so the same arrival planned again computes the same row.
-     */
-    | Readonly<{
-        kind: 'renew-gap';
-        trackKey: string;
-        range: ALSeqRange;
-        requestNumber: number;
-        toPeerId: string;
-        message: ALInboundMessageReference;
-        traceId: string;
-        /** Whether the renewal's NACK is a counted recipient's own, which its writer signs, as the arrival's was. */
-        signsForRecipient: boolean;
-    }>;
+    | ALInboundGapRenewalEffect;
+
+/**
+ * The timer of one range an arrival revealed missing: due when its request is to be renewed, it asks `toPeerId`
+ * again, under `requestNumber`, for what of `range` is still missing. `message` is that arrival, which the renewal
+ * names; the row holds no time, so the same arrival planned again computes the same row.
+ */
+export type ALInboundGapRenewalEffect = Readonly<{
+    kind: 'renew-gap';
+    trackKey: string;
+    range: ALSeqRange;
+    requestNumber: number;
+    toPeerId: string;
+    message: ALInboundMessageReference;
+    traceId: string;
+    /** Whether the renewal's NACK is a counted recipient's own, which its writer signs, as the arrival's was. */
+    signsForRecipient: boolean;
+}>;
 
 export interface ALInboundCommitBundle {
     /** Original data-admission eligibility; null identifies later control/finalization bookkeeping. */

@@ -1,6 +1,7 @@
 import { expect, onTestFinished, vi } from 'vitest';
 
 import { newALBroadcastMessage, newALRoute, type ALAckMode, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -93,13 +94,13 @@ export function createLossyLink(store: WsClientCarrierStoreKind, input: LossyLin
     const exchange = async (): Promise<void> => {
         for (let round = 0; round < LINK_EXCHANGE_LIMIT; round += 1) {
             for (const frame of inFlight.splice(0)) {
-                await receiver.runtime.admitIncomingMessage(frame, WS_CLIENT_SOURCE);
+                await receiver.runtime.admitIncomingMessage(toWireMessage(frame), WS_CLIENT_SOURCE);
             }
             await runInboundWorkDueNow(receiver);
             const controls = receiver.controlSends.flat().slice(forwardedControls);
             forwardedControls += controls.length;
             for (const control of controls) {
-                await sender.acceptControlMessage(control, 'peer');
+                await sender.acceptControlMessage(toWireMessage(control), 'peer');
             }
             await drainOutboundWorkDueNow(sender, senderStores);
             if (inFlight.length === 0 && controls.length === 0) {
@@ -177,6 +178,19 @@ function createLinkReceiver(store: WsClientCarrierStoreKind): InboundTestRuntime
         orderingObserver: 'every-track',
         random: () => 0
     });
+}
+
+/**
+ * A message as the other end receives it: the WS carriers send `JSON.stringify` of it (`JsonWebSocketClient.send`,
+ * `JsonWebSocketServer.encode`), parse the text with `JSON.parse`, and decode it with `decodeALMessageValue`
+ * (`WsQueueBoxServerService.acceptIncomingMessage`, `WsQueueBoxClientService.acceptIncomingMessage`).
+ */
+function toWireMessage(message: ALMessage): ALMessage {
+    const decoded = decodeALMessageValue(JSON.parse(JSON.stringify(message)));
+    if (decoded.left) {
+        throw new Error(`The receiving carrier refused the frame: ${decoded.left.message}`);
+    }
+    return decoded.right!;
 }
 
 function createOrderedRoomBroadcast(name: string, ack: ALAckMode): ALMessage {

@@ -8,7 +8,6 @@ import {
 import { resolveALMessageExpireAtMs, type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation, ALSeqRange } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { isALCountedRecipient } from '../delivery/resolve-al-counted-recipient-peer-ids.ts';
 import { computeALInboundWitnessedCompletedThrough } from './admission/al-inbound-delivery-progress.ts';
 import type {
     ALInboundAdmissionMutation,
@@ -21,7 +20,10 @@ import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import { toALForwardedReceiptControlMessage } from './control/to-al-forwarded-receipt-control-message.ts';
-import { isALInboundRecipientReceiptIntent } from './receipt-proof/is-al-inbound-recipient-receipt.ts';
+import {
+    isALInboundCountedSelf,
+    isALInboundRecipientReceiptIntent
+} from './receipt-proof/is-al-inbound-recipient-receipt.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -104,8 +106,7 @@ function computeDurableEffects(input: PrepareALInboundCommitBundleInput): readon
     const { read, facts } = input;
     const msg = toPreparedALInboundMessage(read);
     const { traceId, senderId: originPeerId } = msg.id;
-    // The message's own receipt decides: a plan that refuses it plans no receipt of its own (`ack.algo: 'none'`).
-    const countsSelf = isALCountedRecipient(msg, toPreparedALInboundPlan(read).effective.ack.algo, facts.selfPeerId);
+    const countsSelf = isALInboundCountedSelf(msg, toPreparedALInboundPlan(read), facts.selfPeerId);
     return input.effects.map((effect, index) => {
         const expireAtTimestamp = effect.expireAtTimestamp ?? read.nowMs + read.retention.durableEffectTtlMs;
         const payload = prepareALInboundDurableEffect({

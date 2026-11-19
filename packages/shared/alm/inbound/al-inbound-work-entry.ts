@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_CARRIERS, type ALDeliveryCarrier } from '../../al-contracts/al-control-value-codec.ts';
+import { isALGapRenewalRequestNumber } from '../../al-contracts/al-message-resource-limits.ts';
 import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
 import { decodeALInboundSource } from './al-inbound-source-validation.ts';
@@ -35,9 +36,8 @@ import {
     decodeALAdmissionSeqRanges,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
+import type { ALInboundDurableEffect, ALInboundGapRenewalEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
-import type { ALInboundGapRenewalEffect } from './gap-renewal/compute-al-inbound-gap-renewal.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
 
@@ -324,14 +324,17 @@ function decodeALInboundGapRenewalEffect(
         'signsForRecipient'
     ]);
     const [range] = decodeALAdmissionSeqRanges([effect.range]);
-    if (range === undefined || typeof effect.signsForRecipient !== 'boolean') {
-        throw new TypeError('Persisted gap renewal names no range or no signing rule');
+    if (
+        range === undefined || typeof effect.signsForRecipient !== 'boolean' ||
+        !isALGapRenewalRequestNumber(effect.requestNumber)
+    ) {
+        throw new TypeError('Persisted gap renewal names no range, no signing rule or no renewal number');
     }
     return {
         kind: 'renew-gap',
         trackKey: decodeALAdmissionString(effect.trackKey),
         range,
-        requestNumber: decodeALAdmissionNumber(effect.requestNumber),
+        requestNumber: effect.requestNumber,
         toPeerId: decodeALAdmissionString(effect.toPeerId),
         message: decodeALInboundMessageReference(effect.message),
         traceId: decodeALAdmissionString(effect.traceId),

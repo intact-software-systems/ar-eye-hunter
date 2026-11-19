@@ -13,7 +13,7 @@ import {
 } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
-import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import { normalizeALRuntimeStoreRetention, type ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import type { ALOrderingObserver } from '@shared/alm/inbound/admission/resolve-al-ordering-observer-role.ts';
 import {
@@ -60,23 +60,19 @@ export const INBOUND_TEST_SOURCE: ALInboundMessageRuntime.Source = {
     authenticatedScope: { applicationId: 'app-1', workspaceId: 'workspace-1' }
 };
 
-/** The policy's own plan for the fixture's two peers: what every inbound owner here admits with. */
-export const planInboundTestMessage: ALInboundPlanner = (msg, _source, observations) =>
-    planALMessageHandling(msg, {
-        ...observations,
-        selfPeerId: INBOUND_TEST_SELF_PEER_ID,
-        fromPeerId: INBOUND_TEST_SENDER_PEER_ID
-    });
-
-/** The policy's own plan for another receiving peer, from whichever peer the source names. */
-function createInboundTestPlanner(selfPeerId: string): ALInboundPlanner {
-    return (msg, source, observations) =>
-        planALMessageHandling(msg, {
-            ...observations,
-            selfPeerId,
-            fromPeerId: source.kind === 'trusted-server' ? msg.id.senderId : source.peerId
-        });
+/** The policy's own plan for `selfPeerId`, from the peer `readFromPeerId` names. */
+function createInboundTestPlanner(
+    selfPeerId: string,
+    readFromPeerId: (msg: ALMessage, source: ALInboundMessageRuntime.Source) => string
+): ALInboundPlanner {
+    return (msg, source, observations) => planALMessageHandling(msg, { ...observations, selfPeerId, fromPeerId: readFromPeerId(msg, source) });
 }
+
+/** The policy's own plan for the fixture's two peers: what every inbound owner here admits with. */
+export const planInboundTestMessage: ALInboundPlanner = createInboundTestPlanner(
+    INBOUND_TEST_SELF_PEER_ID,
+    () => INBOUND_TEST_SENDER_PEER_ID
+);
 
 export const CARRIER_AUTHENTICATED_RECEIPT_PROOFS: ALInboundReceiptProofs = { kind: 'carrier-authenticated' };
 
@@ -109,6 +105,8 @@ export interface CreateInboundTestStoresInput {
     readonly maxDeliveredMarkers?: number;
     /** Hears each marker count the store states after a new marker; absent, the store states nothing. */
     readonly reportDeliveredMarkers?: (markers: number) => void;
+    /** Absent keeps the default retention. */
+    readonly retention?: ALRuntimeStoreRetentionConfig;
 }
 
 export interface InboundTestBackendStores {
@@ -137,7 +135,7 @@ export function createInboundTestBackendStores(input: CreateInboundTestStoresInp
                 backend,
                 orderingTrackTtlMs: 60_000,
                 supersedenceTrackTtlMs: 60_000,
-                retention: normalizeALRuntimeStoreRetention(),
+                retention: normalizeALRuntimeStoreRetention(input.retention),
                 maxOrderingTracks: input.maxOrderingTracks,
                 reportOrderingTracks: input.reportOrderingTracks,
                 maxDeliveredMarkers: input.maxDeliveredMarkers,
@@ -214,7 +212,11 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const deliveredMessages: ALMessage[] = [];
     const sequence: InboundTestEffectCall[] = [];
     const controlSends: (readonly ALMessage[])[] = [];
-    const planner = input.selfPeerId === undefined ? planInboundTestMessage : createInboundTestPlanner(input.selfPeerId);
+    // Another receiving peer is planned from whichever peer the source names.
+    const planner = input.selfPeerId === undefined ? planInboundTestMessage : createInboundTestPlanner(
+        input.selfPeerId,
+        (msg, source) => source.kind === 'trusted-server' ? msg.id.senderId : source.peerId
+    );
     const runtime = new ALInboundMessageRuntime({
         orderingObserver: input.orderingObserver ?? 'addressed',
         ...createDefaultALInboundRuntimeResources({

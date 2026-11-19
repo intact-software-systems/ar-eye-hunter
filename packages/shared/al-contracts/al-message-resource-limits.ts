@@ -33,6 +33,15 @@ export const AL_MESSAGE_RESOURCE_LIMITS = {
     gapRenewalMaxStretch: 1.5
 } as const;
 
+/** An arrival's own gap report carries 1, so a receiver's first renewal of it carries 2. */
+export const AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER = 2;
+
+/** A number a renewal may carry: an integer from the first renewal's to the one each interval's renewal reaches. */
+export function isALGapRenewalRequestNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER &&
+        value < AL_FIRST_GAP_RENEWAL_REQUEST_NUMBER + AL_MESSAGE_RESOURCE_LIMITS.gapRenewalIntervalsMs.length;
+}
+
 /** Byte policy is selected by a trusted protocol owner, never by envelope fields. */
 export interface ALMessageByteLimits {
     readonly envelopeBytes: number;

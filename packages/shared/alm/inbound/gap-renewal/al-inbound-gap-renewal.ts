@@ -1,6 +1,6 @@
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '../../../al-contracts/al-runtime.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
-import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore, ALInboundGapRenewalEffect } from '../al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from '../al-inbound-effect-intent.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../al-inbound-runtime-diagnostics.ts';
@@ -24,8 +24,7 @@ import {
     computeALGapRenewalDelayMs,
     computeALInboundStillMissingRanges,
     toALInboundGapRenewalEffectId,
-    toALInboundWorkEntryDueAt,
-    type ALInboundGapRenewalEffect
+    toALInboundWorkEntryDueAt
 } from './compute-al-inbound-gap-renewal.ts';
 
 export namespace ALInboundGapRenewal {

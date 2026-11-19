@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ALOrderingObservation, ALOrderingTrackSnapshot, ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import type { ALInboundGapRenewalEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     computeALGapRenewalDelayMs,
     computeALGapRenewalStretch,
@@ -80,5 +82,36 @@ describe('computeALGapRenewalStretch', () => {
         { random: 0.5, expected: 1.25 }
     ])('for a draw of $random is $expected', ({ random, expected }) => {
         expect(computeALGapRenewalStretch(() => random)).toBe(expected);
+    });
+});
+
+describe('a stored gap renewal', () => {
+    const NAMESPACE = 'gap-renewal-decoding';
+    const toStoredRenewal = (requestNumber: number | string) =>
+        computeALInboundWorkEntry({
+            namespace: NAMESPACE,
+            effectId: 'renew-gap:stored',
+            payload: {
+                kind: 'renew-gap',
+                trackKey: 'chat:sender:1',
+                range: { from: 1, to: 1 },
+                requestNumber,
+                toPeerId: 'sender',
+                message: { senderId: 'sender', msgId: '2' },
+                traceId: 'trace-gap-renewal-decoding',
+                signsForRecipient: false
+            } as ALInboundGapRenewalEffect,
+            observedAtMs: 0,
+            expireAtTimestamp: 60_000,
+            carrier: 'ws',
+            signsForRecipient: false
+        }).entry;
+
+    it.each([2, 3, 4])('decodes renewal number %s', (requestNumber) => {
+        expect(decodeALInboundWorkEntry(toStoredRenewal(requestNumber), NAMESPACE).payload).toMatchObject({ requestNumber });
+    });
+
+    it.each([1, 5, 2.5, '2'])('refuses renewal number %j', (requestNumber) => {
+        expect(() => decodeALInboundWorkEntry(toStoredRenewal(requestNumber), NAMESPACE)).toThrow();
     });
 });

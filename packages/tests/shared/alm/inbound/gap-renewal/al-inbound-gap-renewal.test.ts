@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 
@@ -6,6 +6,7 @@ import { newALMulticastMessage, type ALAckMode, type ALMessage } from '@shared/a
 import { decodeALPeerControlMessage } from '@shared/al-contracts/al-control.ts';
 import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import type { ALSeqRange } from '@shared/al-contracts/al-runtime.ts';
+import type { ALRuntimeStoreRetentionConfig } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     decodeALInboundWorkEntry,
@@ -22,6 +23,7 @@ import { NOT_COMPLETED_RETRYABLE_STATUSES } from '@shared/queuebox/ResourceEntry
 import '../../../../setup-browser-indexeddb.ts';
 import { verifyTestALReceiptControl } from '../../../../al-control-test-payloads.ts';
 import { createAvailablePublicationCryptoFixture } from '../../../signature/publication-crypto-fixtures.ts';
+import { readInboundTestWorkDueAtMs } from '../../../wait-for-al-inbound-work.ts';
 import {
     createInboundTestRuntime,
     createInboundTestStores,
@@ -56,11 +58,13 @@ interface RenewalFixtureInput {
     readonly dbName?: string;
     readonly carrier?: 'ws' | 'rtc';
     readonly receiptProofs?: ALInboundReceiptProofs;
+    readonly retention?: ALRuntimeStoreRetentionConfig;
 }
 
 interface OrderedMessageInput {
     readonly ack?: ALAckMode;
-    readonly ttlMs?: number;
+    /** Absent gives 60 s; `null` sends the message with no deadline of its own. */
+    readonly ttlMs?: number | null;
 }
 
 let fixtureCount = 0;
@@ -98,6 +102,26 @@ describe('a receiver whose ordered track has a gap', () => {
             expect(await readPendingInboundWork(fixture)).toEqual([]);
         }
     );
+
+    // Breaks when nothing wakes the lane for a timer that comes due with nothing else arriving: today the rotation's
+    // per-round probe keeps the engine passing, and the due time it advertises at the end of a turn is the second path.
+    // Without both, only the engine's idle backoff reaches the row, near 3 s; the 2 s ceiling tells the two apart.
+    it.each(STORAGES)('on %s, a started engine runs the first renewal by itself, about a second after the gap', async (storage) => {
+        vi.useRealTimers();
+        const fixture = createRenewalFixture(storage);
+        fixture.queueEngine.start();
+        onTestFinished(async () => {
+            await fixture.queueEngine.stop();
+        });
+        await fixture.runtime.ready();
+        const admittedAtMs = Date.now();
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2), INBOUND_TEST_SOURCE);
+        await expect.poll(() => renewedRanges(fixture, 2), { timeout: 2_000, interval: 20 }).toEqual([
+            [{ from: 1, to: 1 }],
+            [{ from: 1, to: 1 }]
+        ]);
+        expect(Date.now() - admittedAtMs).toBeGreaterThanOrEqual(1_000);
+    });
 
     it('stops when the gap closes', async () => {
         const fixture = createRenewalFixture('memory');
@@ -267,6 +291,28 @@ describe('a receiver whose ordered track has a gap', () => {
             .toHaveLength(2);
     });
 
+    it('a timer and its renewals expire with the message they name, not with a shorter durable-effect retention', async () => {
+        const fixture = createRenewalFixture('memory', { retention: { durableEffectTtlMs: 500 } });
+        const second = orderedMessage(2);
+        await fixture.runtime.admitIncomingMessage(second, INBOUND_TEST_SOURCE);
+        await advanceTo(fixture, 1_000);
+        expect(renewedRanges(fixture, 2)).toEqual([[{ from: 1, to: 1 }], [{ from: 1, to: 1 }]]);
+        const renewalRows = (await readWorkRows(fixture)).filter((effect) => effect.payload.kind === 'renew-gap' || effect.effectId.includes('renewal'));
+        expect(renewalRows).toHaveLength(4);
+        expect(renewalRows.map((effect) => effect.expireAtTimestamp)).toEqual(
+            renewalRows.map(() => second.constraints?.expiresAtMs)
+        );
+    });
+
+    it('a message with no deadline of its own under a durable-effect retention shorter than the first interval draws no renewal and leaves no work due', async () => {
+        const fixture = createRenewalFixture('memory', { retention: { durableEffectTtlMs: 500 } });
+        await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ttlMs: null }), INBOUND_TEST_SOURCE);
+        expect(await readRenewalExpiries(fixture)).toEqual([START_MS + 500]);
+        await advanceTo(fixture, 29_000);
+        expect(renewedRanges(fixture, 2)).toEqual([]);
+        expect(await readInboundTestWorkDueAtMs(fixture.stores.workQueue)).toBeUndefined();
+    });
+
     it('no renewal follows the revealing message\'s deadline', async () => {
         const fixture = createRenewalFixture('memory');
         await fixture.runtime.admitIncomingMessage(orderedMessage(2, { ttlMs: 500 }), INBOUND_TEST_SOURCE);
@@ -282,7 +328,8 @@ function createRenewalFixture(storage: InboundTestStorage, input: RenewalFixture
             namespace: 'gap-renewal',
             storage,
             observer: createPassThroughIndexedDbOperationObserver(),
-            dbName: input.dbName
+            dbName: input.dbName,
+            retention: input.retention
         }),
         carrier: input.carrier ?? 'ws',
         effectWorkerId: `al-inbound:gap-renewal-${fixtureCount}`,
@@ -299,7 +346,7 @@ function orderedMessage(seq: number, input: OrderedMessageInput = {}): ALMessage
         ROOM,
         'chat.message.v1',
         { text: String(seq) },
-        { ack: input.ack ?? 'none', reliability: 'at-least-once', ttlMs: input.ttlMs ?? 60_000 }
+        { ack: input.ack ?? 'none', reliability: 'at-least-once', ttlMs: input.ttlMs === null ? undefined : input.ttlMs ?? 60_000 }
     );
     const frozen = toALFrozenMulticastMessage(
         { ...message, id: { ...message.id, msgId: String(seq) } },
@@ -356,28 +403,26 @@ function renewedRanges(fixture: InboundTestRuntime, requestNumber: number): read
 
 /** The effect ids of every row the lane has still to run. */
 async function readPendingInboundWork(fixture: InboundTestRuntime): Promise<readonly string[]> {
-    const { workQueue, admissionStore } = fixture.stores;
-    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
-    return rows.flatMap((row) =>
-        row !== undefined && row !== null && NOT_COMPLETED_RETRYABLE_STATUSES.has(row.status)
-            ? [decodeALInboundWorkEntry(row, admissionStore.namespace).effectId]
-            : []
-    );
+    return (await readWorkRows(fixture))
+        .filter((effect) => NOT_COMPLETED_RETRYABLE_STATUSES.has(effect.entry.status))
+        .map((effect) => effect.effectId);
 }
 
+async function readRenewalDueTimes(fixture: InboundTestRuntime): Promise<readonly number[]> {
+    return (await readWorkRows(fixture))
+        .filter((effect) => effect.payload.kind === 'renew-gap')
+        .map((effect) => resolveALInboundWorkDueAtMs(effect.entry));
+}
+
+async function readRenewalExpiries(fixture: InboundTestRuntime): Promise<readonly number[]> {
+    return (await readWorkRows(fixture))
+        .filter((effect) => effect.payload.kind === 'renew-gap')
+        .map((effect) => effect.expireAtTimestamp);
+}
+
+/** Every work row the lane's store holds, decoded. */
 async function readWorkRows(fixture: InboundTestRuntime): Promise<readonly ALPersistedInboundEffect[]> {
     const { workQueue, admissionStore } = fixture.stores;
     const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
     return rows.flatMap((row) => row === undefined || row === null ? [] : [decodeALInboundWorkEntry(row, admissionStore.namespace)]);
-}
-
-async function readRenewalDueTimes(fixture: InboundTestRuntime): Promise<readonly number[]> {
-    const { workQueue, admissionStore } = fixture.stores;
-    const rows = await Promise.all((await workQueue.getAllKeys()).map(async (key) => await workQueue.getItem(key)));
-    return rows.flatMap((row) =>
-        row !== undefined && row !== null &&
-            decodeALInboundWorkEntry(row, admissionStore.namespace).payload.kind === 'renew-gap'
-            ? [resolveALInboundWorkDueAtMs(row)]
-            : []
-    );
 }

@@ -27,7 +27,7 @@ import {
     type ALWorkQueuePort
 } from '../../work/al-work-queue-port.ts';
 import { AL_WORK_UNDESCRIBED_COMMIT } from '../../work/al-work-readiness-memory.ts';
-import type { ALInboundPlanner } from '../al-inbound-admission-store.ts';
+import type { ALInboundGapRenewalEffect, ALInboundPlanner } from '../al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from '../al-inbound-admitted-delivery.ts';
 import { toALInboundLocalDeliveryEffectId } from '../al-inbound-effect-intent.ts';
 import { ALInboundMessageAdmission } from '../al-inbound-message-admission.ts';
@@ -56,10 +56,7 @@ import {
     type ALInboundPendingControl
 } from '../control/al-inbound-control-admission.ts';
 import { ALInboundGapRenewal } from '../gap-renewal/al-inbound-gap-renewal.ts';
-import {
-    computeALGapRenewalStretch,
-    type ALInboundGapRenewalEffect
-} from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
+import { computeALGapRenewalStretch } from '../gap-renewal/compute-al-inbound-gap-renewal.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
