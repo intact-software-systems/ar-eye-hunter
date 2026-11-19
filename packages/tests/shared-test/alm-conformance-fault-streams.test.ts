@@ -241,6 +241,10 @@ describe('ALM fault stream cells', () => {
             operator: 'gte',
             expected: 1
         }));
+        expect(toPlaces(sender, ['loss-release', 'assert-loss-dropped'])).toEqual([
+            sender.commands.indexOf(release),
+            sender.commands.indexOf(release) + 1
+        ]);
         expect(toNames(sender).filter((name) => name.startsWith('observe-acknowledged-'))).toEqual([]);
     });
 
