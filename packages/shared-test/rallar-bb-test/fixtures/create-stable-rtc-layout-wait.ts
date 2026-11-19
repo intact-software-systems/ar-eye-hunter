@@ -1,8 +1,7 @@
+import { FORMATION_LAYOUT_QUIET_WINDOW_MS } from '../../black-box-runner/browser/rallar-browser-runtime/formation/formation-held-reshape-reading.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import type { RallarBlackBoxTestLoopCommand } from '../rallar-black-box-test-contracts.ts';
 
-/** The scale lane measured follow-up replanning 2.7 s after acceptance; retain its 3.5 s observation window. */
-const LAYOUT_QUIET_WINDOW_MS = 3_500;
 const LAYOUT_RECHECK_INTERVAL_MS = 500;
 const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
 
@@ -47,7 +46,7 @@ export function createStableRtcLayoutWait(input: StableRtcLayoutWaitInput): Rall
                 operator: 'gte',
                 source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
                     `${prefix}-layout-readiness.value.acceptedHeldForMs`,
-                expected: LAYOUT_QUIET_WINDOW_MS
+                expected: FORMATION_LAYOUT_QUIET_WINDOW_MS
             }
         ]
     };

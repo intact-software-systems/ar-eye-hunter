@@ -133,6 +133,14 @@ resolves when the room's transport state is `open` **and** the room has at
 least one desired peer, because an accepted layout with no desired peers reads
 `open` immediately and would satisfy a bare state check vacuously.
 
+Once the page's accepted layout has been held for 3 500 ms with no planned
+layout pending, the observation also reads the formation view and reports
+`heldReshape` with `reading` `none` or `held`. Before that, or when the read
+fails, `reading` is `not-read` with `because` (`layout-not-settled` or
+`view-read-failed`); a failed read does not fail the observation. A `held`
+reading is repeated without a read until its `opensAtEpochMs`, and forgotten
+once the page's layout is no longer settled.
+
 Unlike `rtc.connect`, whose room fields are each independently optional, a
 formation command must name its room: an exact `roomRef`, or an
 `applicationId` together with a `roomId`. `workspaceId` defaults to `default`

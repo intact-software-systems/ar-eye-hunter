@@ -39,6 +39,7 @@ import type {
     RallarRoomReconfigureOptions
 } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import { BrowserRtcRoomRuntime } from '@shared-web/browser/rtc/browser-rtc-room-runtime.ts';
+import type { GroupFormationView } from '@shared/api/group-lifecycle/group-formation-view.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -51,6 +52,7 @@ import {
     type LiveRtcJsonRecord
 } from '../../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { createAcceptedOverlayFixture, createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
+import { createFormationView } from '../../shared-web/rooms/formation/room-formation-test-fixtures.ts';
 import {
     facade,
     loadRuntime,
@@ -142,6 +144,7 @@ class FormationHarness {
     readonly snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['session-a'] });
     readonly calls: (readonly [string, FormationCommandOptions])[] = [];
     readonly emitted: Omit<BlackBoxRallarEvent, 'atEpochMs'>[] = [];
+    readonly viewReadTimeouts: (number | undefined)[] = [];
     readonly #changeListeners: RallarStateListener<RallarRoomFormationStatus>[] = [];
     readonly #layoutListeners: RallarRoomLayoutListener[] = [];
     readonly #statusListeners: RallarRtcStatusListener[] = [];
@@ -150,6 +153,7 @@ class FormationHarness {
     #status: RallarRoomFormationStatus | undefined;
     #room: RallarRtcRoomTransportStatus;
     nowEpochMs = 1_000;
+    formationView: GroupFormationView | Error = createFormationView(roomRef, { lifecycleState: 'active' });
 
     constructor(input: FormationHarness.Input) {
         this.#status = toFormationStatus(input, this.snapshot);
@@ -231,7 +235,12 @@ class FormationHarness {
         return {
             roomRef,
             status: () => this.#status,
-            readView: () => Promise.reject(new Error('unused')),
+            readView: (options) => {
+                this.viewReadTimeouts.push(options?.timeoutMs);
+                return this.formationView instanceof Error
+                    ? Promise.reject(this.formationView)
+                    : Promise.resolve(this.formationView);
+            },
             plan: this.#record('plan'),
             connect: this.#record('connect'),
             activate: this.#record('activate'),
@@ -994,6 +1003,82 @@ it('reports no hold while no layout is accepted', async () => {
     const result = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
 
     expect(result).not.toHaveProperty('acceptedHeldSinceEpochMs');
+});
+
+it('reads the formation view only once the accepted layout has been quiet for the window', async () => {
+    const harness = createOpenFormationHarness();
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+
+    harness.nowEpochMs = 20_000;
+    const first = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 23_499;
+    const early = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 23_500;
+    const settled = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect([first.heldReshape, early.heldReshape]).toEqual([
+        { reading: 'not-read', because: 'layout-not-settled' },
+        { reading: 'not-read', because: 'layout-not-settled' }
+    ]);
+    expect(settled.heldReshape).toEqual({ reading: 'none', readAtEpochMs: 23_500 });
+    expect(harness.viewReadTimeouts).toEqual([5_000]);
+    expect(harness.emitted.at(-1)).toMatchObject({
+        topic: 'rallar.browser.formation.ready',
+        data: { heldReshape: { reading: 'none', readAtEpochMs: 23_500 } }
+    });
+});
+
+it('does not read the formation view while a planned layout is pending', async () => {
+    const harness = createOpenFormationHarness();
+    const accepted = toAcceptedLayout(harness, PLANNED);
+    harness.emitChange({ accepted, planned: { ...accepted, role: 'planned', identity: { ...PLANNED, version: PLANNED.version + 1 } } });
+
+    harness.nowEpochMs = 20_000;
+    await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 30_000;
+    const observation = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(observation.heldReshape).toEqual({ reading: 'not-read', because: 'layout-not-settled' });
+    expect(harness.viewReadTimeouts).toEqual([]);
+});
+
+it('reports the held reshape the view states and reads again only when its gate opens', async () => {
+    const harness = createOpenFormationHarness();
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.formationView = createFormationView(roomRef, {
+        lifecycleState: 'active',
+        heldReshape: { wantedReasons: ['leader-rooting'], opensAtEpochMs: 80_000 }
+    });
+    const held = { reading: 'held', readAtEpochMs: 30_000, wantedReasons: ['leader-rooting'], opensAtEpochMs: 80_000 };
+
+    harness.nowEpochMs = 20_000;
+    await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 30_000;
+    const read = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 30_500;
+    const repeated = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.formationView = createFormationView(roomRef, { lifecycleState: 'active' });
+    harness.nowEpochMs = 80_000;
+    const released = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect([read.heldReshape, repeated.heldReshape]).toEqual([held, held]);
+    expect(released.heldReshape).toEqual({ reading: 'none', readAtEpochMs: 80_000 });
+    expect(harness.viewReadTimeouts).toEqual([5_000, 5_000]);
+});
+
+it('reports a failed view read as not read without failing the readiness', async () => {
+    const harness = createOpenFormationHarness();
+    harness.emitChange({ accepted: toAcceptedLayout(harness, PLANNED) });
+    harness.formationView = new Error('Formation view read timed out');
+
+    harness.nowEpochMs = 20_000;
+    await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+    harness.nowEpochMs = 30_000;
+    const observation = await harness.controller.readiness({ roomRef, timeoutMs: 5_000 });
+
+    expect(observation.heldReshape)
+        .toEqual({ reading: 'not-read', because: 'view-read-failed', message: 'Formation view read timed out' });
+    expect(observation.formation.room.state).toBe('open');
 });
 
 it('restarts the accepted hold after a group-first transition temporarily removes the layout body', async () => {
