@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { TOPOLOGY_RESHAPE_REASONS } from '@shared/api/topology-plan/topology-plan-change.ts';
+
 import { createRtcTopologyMemberIds } from '../rtc-topology-test-fixtures.ts';
 import {
     computeRtcTopologyFixtureLeave,
@@ -213,5 +215,9 @@ describe('the derivation of a planned layout', () => {
         });
 
         expect(joined.derivation).toEqual({ method: 'rebuilt', reason: 'delta-too-large' });
+    });
+
+    it.each(TOPOLOGY_RESHAPE_REASONS)('a plan rebuilt for %s with the reshape allowed holds no reshape', (reason) => {
+        expect(computeRtcTopologyFixtureRebuild(reason).planned.heldReshapeReasons).toEqual([]);
     });
 });

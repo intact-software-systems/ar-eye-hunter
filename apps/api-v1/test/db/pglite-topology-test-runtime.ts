@@ -318,7 +318,8 @@ async function planTopologyWorkPublication(
     const topology = requirePlannedTopology(
         computeGroupTopologyFromAuthority(authority, undefined, {
             intent: 'full-rebuild',
-            origin: 'automatic'
+            origin: 'automatic',
+            reshape: { reshape: 'allowed', wantedReasons: [] }
         })
     ).snapshot;
     const expiresAtEpochMs = executionRepository.publicationExpireAtTimestamp();

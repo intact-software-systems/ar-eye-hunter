@@ -5,7 +5,10 @@ import {
     toRtcRttMutationReceiptId,
     toRtcRttTopologyOutboxId
 } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
-import { computeRtcTopologyOutboxInsert } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import {
+    computeRtcTopologyOutboxInsert,
+    computeRtcTopologyReshapeDueEntry
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import {
     childKey,
@@ -17,9 +20,11 @@ import {
 } from '@shared-server/rallar-system/topology/replay/work/rtc-topology-work-codec.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { isAdminTopologyOutboxId } from '@shared/api/admin-rooms/decode-admin-room-topology-work.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import { COALESCED_APP_OUTBOX_WORK_FIELD } from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
+import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 
 import { createRtcTopologyGroupSnapshot, createRtcTopologyRttMeasurement } from '../../rtc-topology-test-fixtures.ts';
 
@@ -95,7 +100,46 @@ describe('RTC topology work codec', () => {
             value: publicationId
         });
     });
+
+    it('a reshape-due work round-trips and refuses an unknown key', () => {
+        const group = createRtcTopologyGroupSnapshot('group-1', ['peer-1', 'peer-2']);
+        const entry = computeRtcTopologyReshapeDueEntry({
+            groupRef: group.group,
+            periodStartedAtEpochMs: 100_000,
+            notBeforeEpochMs: 115_000,
+            requestedAtEpochMs: 103_000,
+            expireAtEpochMs: 4_102_444_800_000,
+            senderId: 'topology-service',
+            traceId: 'trace-rtc-topology-work-codec'
+        });
+        const message = decodePersistedALMessage(entry.resource);
+        const envelope = readRtcTopologyWorkEnvelope(message, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+
+        expect(isCanonicalRtcTopologyWorkEntry(entry)).toBe(true);
+        expect(entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(115_000);
+        expect(envelope.resourceId).toBe(`${toScopedOverlayId(group.group)}:reshape-due:100000`);
+        expect(envelope.data).toEqual({
+            kind: 'reshape-due',
+            overlayId: toScopedOverlayId(group.group),
+            groupRef: toCanonicalGroupRef(group.group),
+            periodStartedAtEpochMs: 100_000,
+            notBeforeEpochMs: 115_000,
+            requestedAtEpochMs: 103_000,
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+            publish: true
+        });
+        expect(() => readRtcTopologyWorkEnvelope(withWorkDataField(message, 'origin', 'automatic'), AppOutboxType.RTC_TOPOLOGY_RECOMPUTE))
+            .toThrow('RTC topology work data has unexpected origin');
+    });
 });
+
+function withWorkDataField(message: ReturnType<typeof decodePersistedALMessage>, key: string, value: string) {
+    const envelope = JSON.parse(message.payload.resource) as { data: object; };
+    return {
+        ...message,
+        payload: { ...message.payload, resource: JSON.stringify({ ...envelope, data: { ...envelope.data, [key]: value } }) }
+    };
+}
 
 function toLongestScope(group: GroupSnapshot): GroupSnapshot {
     const scope = { applicationId: LONGEST_ROUTE_ID, workspaceId: LONGEST_ROUTE_ID };

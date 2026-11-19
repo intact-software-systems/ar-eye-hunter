@@ -33,6 +33,7 @@ import {
     computeRtcTopologyOutboxInsert,
     type ComputedRtcTopologyOutbox
 } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import type {
     GroupTopologyReconfigureComputed,
     GroupTopologyReconfigureRead
@@ -495,6 +496,7 @@ function reconfigureRead(): GroupTopologyReconfigureRead {
             rttMeasurements: [],
             rttReplanMinimumLayoutAgeMs: 15_000,
             replanning: 'auto',
+            reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
             nowEpochMs: NOW_EPOCH_MS
         },
         authorityGuard: groupAuthorityGuard(),

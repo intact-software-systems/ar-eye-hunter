@@ -57,7 +57,9 @@ const OPTIMISTIC_POLICY: GroupLifecyclePolicy = {
         replanning: 'auto',
         reconfigureLanding: 'apply',
         debounceWindowMs: 500,
-        maxReplanWaitMs: 5_000
+        maxReplanWaitMs: 5_000,
+        reshapeMinIntervalMs: 15_000,
+        reshapeMaxIntervalMs: 60_000
     },
     data: { preActivationAppData: 'allowed' }
 };
@@ -100,7 +102,9 @@ const MANAGED_POLICY: GroupLifecyclePolicy = {
         replanning: 'debounced',
         reconfigureLanding: 'apply',
         debounceWindowMs: 500,
-        maxReplanWaitMs: 5_000
+        maxReplanWaitMs: 5_000,
+        reshapeMinIntervalMs: 15_000,
+        reshapeMaxIntervalMs: 60_000
     },
     data: { preActivationAppData: 'allowed' }
 };
@@ -148,7 +152,9 @@ const MATCH_POLICY: GroupLifecyclePolicy = {
         replanning: 'commanded',
         reconfigureLanding: 'hold',
         debounceWindowMs: 500,
-        maxReplanWaitMs: 5_000
+        maxReplanWaitMs: 5_000,
+        reshapeMinIntervalMs: 15_000,
+        reshapeMaxIntervalMs: 60_000
     },
     data: { preActivationAppData: 'blocked-until-active' }
 };
@@ -185,7 +191,9 @@ const DROP_IN_SOCIAL_POLICY: GroupLifecyclePolicy = {
         replanning: 'debounced',
         reconfigureLanding: 'apply',
         debounceWindowMs: 500,
-        maxReplanWaitMs: 5_000
+        maxReplanWaitMs: 5_000,
+        reshapeMinIntervalMs: 15_000,
+        reshapeMaxIntervalMs: 60_000
     },
     data: { preActivationAppData: 'allowed' }
 };

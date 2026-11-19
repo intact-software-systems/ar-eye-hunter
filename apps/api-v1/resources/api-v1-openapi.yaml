@@ -6280,7 +6280,7 @@ components:
     AdminRoomTopologyPlansResponse:
       type: object
       additionalProperties: false
-      required: [roomRef, observedAtEpochMs, plans, nextAfterPublicationId]
+      required: [roomRef, observedAtEpochMs, plans, nextAfterPublicationId, reshapeGate]
       properties:
         roomRef:
           $ref: '#/components/schemas/GroupRef'
@@ -6291,6 +6291,37 @@ components:
           items:
             $ref: '#/components/schemas/AdminRoomTopologyPlan'
         nextAfterPublicationId: { type: [string, 'null'], minLength: 1, maxLength: 256 }
+        reshapeGate:
+          oneOf:
+            - $ref: '#/components/schemas/AdminRoomReshapeGate'
+            - type: 'null'
+
+    AdminRoomReshapeGate:
+      type: object
+      additionalProperties: false
+      required: [gate, wantedReasons, intervalMs, opensAtEpochMs]
+      properties:
+        gate:
+          $ref: '#/components/schemas/BackoffGateState'
+        wantedReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
+        intervalMs: { type: integer, minimum: 0 }
+        opensAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+
+    HeldTopologyReshapeReason:
+      type: string
+      enum: [kind-change, leader-rooting]
+
+    BackoffGateState:
+      type: object
+      additionalProperties: false
+      required: [lastPassAtEpochMs, consecutiveHeldPasses, heldAtEpochMs]
+      properties:
+        lastPassAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+        consecutiveHeldPasses: { type: integer, minimum: 0 }
+        heldAtEpochMs: { type: [integer, 'null'], minimum: 0 }
 
     AdminRoomTopologyPlan:
       type: object
@@ -6312,7 +6343,7 @@ components:
     RtcTopologyPlanRecord:
       type: object
       additionalProperties: false
-      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change]
+      required: [plannedAtEpochMs, replaced, causes, delta, longestPathHops, change, heldReshapeReasons]
       properties:
         plannedAtEpochMs: { type: integer, minimum: 0 }
         replaced:
@@ -6329,6 +6360,10 @@ components:
           oneOf:
             - $ref: '#/components/schemas/TopologyPlanChange'
             - type: 'null'
+        heldReshapeReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
 
     TopologyPlanChange:
       oneOf:
@@ -8734,6 +8769,13 @@ components:
             `debounceWindowMs` and replans no later than `maxReplanWaitMs` after
             the first change of a burst; `auto` carries no policy window and
             replans on the server's first opportunity after a change.
+            `reshapeMinIntervalMs` is the shortest time an automatic optional
+            reshape of an `active` room must wait after the room's previous
+            reshape (default 15000). `reshapeMaxIntervalMs` is the longest
+            that wait grows to as reshapes keep coming (default 60000, not
+            below `reshapeMinIntervalMs`). Both have the range 15000 to
+            600000: a lower value is raised to 15000 and a higher one lowered
+            to 600000.
           properties:
             replanning:
               type: string
@@ -8745,6 +8787,12 @@ components:
               type: integer
               format: int64
             maxReplanWaitMs:
+              type: integer
+              format: int64
+            reshapeMinIntervalMs:
+              type: integer
+              format: int64
+            reshapeMaxIntervalMs:
               type: integer
               format: int64
         activation:

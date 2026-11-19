@@ -13,6 +13,11 @@ import { computeTopologyMutation } from '@shared-server/rallar-system/topology/m
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { decodeRtcTopologySnapshot } from '@shared-server/rallar-system/topology/persistence/decode-rtc-topology-snapshot.ts';
 import { toStoredRtcTopologySnapshotRow } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import {
+    computeTopologyReshapeGate,
+    UNCHANGED_TOPOLOGY_RESHAPE_GATE
+} from '@shared-server/rallar-system/topology/planning/reshape-gate/compute-topology-reshape-gate.ts';
+import { toTopologyReshapeBounds } from '@shared-server/rallar-system/topology/planning/reshape-gate/to-topology-reshape-bounds.ts';
 import { decodeRtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/decode-rtc-topology-publication.ts';
 import { createRtcTopologyExecutionReceipt } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import {
@@ -39,6 +44,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import { toCanonicalGroupRef, type GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { decodeStateSnapshotPage } from '@shared/api/state-snapshot-page.ts';
+import type { HeldTopologyReshapeReason, TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -106,7 +112,8 @@ describe('RTC topology complete write computation', () => {
                 workEnvelope,
                 workId: toRtcTopologyExecutionId(workEnvelope, decodePersistedALMessage(entry.resource).id.ts),
                 attemptCount: entry.dequeueAudit.attempts,
-                derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+                derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+                finishedRetentionMs: 3_600_000
             },
             entry,
             reservationFinish: { ...fixture.reservationFinish, key: entry.key, expectedAttempts: 1, completedAt: new Date(2_000) },
@@ -126,7 +133,8 @@ describe('RTC topology complete write computation', () => {
                 },
                 authority: { ...initialAuthority, group: returned, nowEpochMs: 2_000 },
                 promotion: { group: returned.group, policy: { status: 'present', policy: createDefaultGroupLifecyclePolicy() } },
-                storedInputFingerprint: computeAuthorityTopologyInputFingerprint(initialAuthority)
+                storedInputFingerprint: computeAuthorityTopologyInputFingerprint(initialAuthority),
+                reshapeGate: null
             }
         };
 
@@ -529,6 +537,83 @@ describe('RTC topology complete write computation', () => {
     });
 });
 
+describe('RTC topology reshape wake-up', () => {
+    it('the first hold of a period inserts one reshape-due row due when the gate opens', () => {
+        const input = withHeldReshapeGate(createWriteInput(), {
+            previous: { gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 0, heldAtEpochMs: null }, wantedReasons: [] },
+            heldReasons: ['kind-change'],
+            nowEpochMs: 103_000
+        });
+
+        const computed = computeRtcTopologyWorkWrite(input);
+
+        if (computed.kind !== 'transaction' || computed.transaction.reshapeDueWrite === null) {
+            throw new Error('The first hold of a period must queue its wake-up');
+        }
+        const { entry } = computed.transaction.reshapeDueWrite;
+        const envelope = readRtcTopologyWorkEnvelope(decodePersistedALMessage(entry.resource), AppOutboxType.RTC_TOPOLOGY_RECOMPUTE);
+        expect(envelope.resourceId.endsWith(':reshape-due:100000')).toBe(true);
+        expect(entry.dequeueAudit.nextTs?.epochMilliseconds).toBe(115_000);
+        expect(envelope.data).toMatchObject({
+            kind: 'reshape-due',
+            periodStartedAtEpochMs: 100_000,
+            notBeforeEpochMs: 115_000,
+            requestedAtEpochMs: 103_000
+        });
+        expect(entry.audit.expiryTs.epochMilliseconds).toBe(input.derivedExpireAtEpochMs);
+        expect(validateRtcTopologyWorkWrite(input, computed)).toEqual([]);
+    });
+
+    it('a reshape-due row lives its retention past the instant it is due', () => {
+        const input = withHeldReshapeGate({ ...createWriteInput(), derivedExpireAtEpochMs: 110_000 }, {
+            previous: { gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 0, heldAtEpochMs: null }, wantedReasons: [] },
+            heldReasons: ['kind-change'],
+            nowEpochMs: 103_000
+        });
+
+        const computed = computeRtcTopologyWorkWrite(input);
+
+        expect(computed.kind === 'transaction' ? computed.transaction.reshapeDueWrite?.entry.audit.expiryTs.epochMilliseconds : null)
+            .toBe(115_000 + input.finishedRetentionMs);
+    });
+
+    it('a second hold of the period inserts no row', () => {
+        const input = withHeldReshapeGate(createWriteInput(), {
+            previous: {
+                gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 0, heldAtEpochMs: 103_000 },
+                wantedReasons: ['kind-change']
+            },
+            heldReasons: ['leader-rooting'],
+            nowEpochMs: 106_000
+        });
+
+        const computed = computeRtcTopologyWorkWrite(input);
+
+        expect(computed.kind === 'transaction' ? computed.transaction.reshapeGate : null).not.toBeNull();
+        expect(computed.kind === 'transaction' ? computed.transaction.reshapeDueWrite : undefined).toBeNull();
+    });
+});
+
+interface HeldReshapeGate {
+    readonly previous: TopologyReshapeGateState;
+    readonly heldReasons: readonly HeldTopologyReshapeReason[];
+    readonly nowEpochMs: number;
+}
+
+/** The accepted work held a reshape against the given gate state, as the planner reports it. */
+function withHeldReshapeGate(input: ComputeRtcTopologyWorkWriteInput, held: HeldReshapeGate): ComputeRtcTopologyWorkWriteInput {
+    if (input.accepted.decision !== 'accepted') {
+        throw new Error('The write fixture must hold an accepted work');
+    }
+    const reshapeGate = computeTopologyReshapeGate({
+        previous: held.previous,
+        bounds: toTopologyReshapeBounds({ status: 'absent' }),
+        nowEpochMs: held.nowEpochMs,
+        outcome: { kind: 'kept', heldReasons: held.heldReasons }
+    });
+    return { ...input, accepted: { ...input.accepted, reshapeGate }, storedReshapeGateRevision: 4 };
+}
+
 function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
     const group = createRtcTopologyGroupSnapshot('group-1', ['session-1']);
     const entry = createReservedEntry();
@@ -546,7 +631,8 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
             },
             workId: 'work-1',
             attemptCount: entry.dequeueAudit.attempts,
-            derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds
+            derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+            finishedRetentionMs: 3_600_000
         },
         read: {
             mutation: { snapshot: null, publicationClaim: null },
@@ -558,10 +644,12 @@ function createCompleteWorkInput(): ComputeRtcTopologyWorkInput {
                 rttMeasurements: [],
                 rttReplanMinimumLayoutAgeMs: 15_000,
                 replanning: 'auto',
+                reshapeBounds: toTopologyReshapeBounds({ status: 'absent' }),
                 nowEpochMs: 1
             },
             promotion: { group: group.group, policy: { status: 'absent' } },
-            storedInputFingerprint: null
+            storedInputFingerprint: null,
+            reshapeGate: null
         },
         publicationExpireAtTimestamp: null,
         entry,
@@ -606,7 +694,9 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         promotionRead: { group: group.group, policy: { status: 'absent' } },
         criterionPetition: null,
         planningObservation: null,
-        rttReplanPromotion: null
+        rttReplanPromotion: null,
+        reshape: 'allowed',
+        reshapeGate: UNCHANGED_TOPOLOGY_RESHAPE_GATE
     };
     return {
         traceId: 'trace-compute-rtc-topology-work-write',
@@ -614,6 +704,7 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         entry,
         sourceWorkId: 'rtc-topology:group-1:work-1:0',
         derivedExpireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
+        finishedRetentionMs: 3_600_000,
         reservationFinish: {
             key: entry.key,
             expectedAttempts: entry.dequeueAudit.attempts,
@@ -622,7 +713,8 @@ function createWriteInput(): ComputeRtcTopologyWorkWriteInput {
         },
         formationAutomationEnabled: false,
         serviceId: 'topology-service',
-        publisherStreamId: undefined
+        publisherStreamId: undefined,
+        storedReshapeGateRevision: null
     };
 }
 

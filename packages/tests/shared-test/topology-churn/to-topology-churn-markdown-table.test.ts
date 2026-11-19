@@ -31,7 +31,9 @@ const COLUMNS = [
     'promoted kinds attach/repair/reshape',
     'rerouting kinds attach/repair/reshape',
     'reshape reasons',
+    'held',
     'reshapes/min',
+    'closest reshapes (s)',
     'rerouted per reshape min/p50/p90/max',
     'rerouted per reshape by reason p50/max',
     'causes join/leave/leader-change/config/rtt',
@@ -74,8 +76,11 @@ const CHURN: TopologyChurnPhaseReport = {
         'kind-change': 0,
         refinement: 2
     },
+    heldReshapePlanCount: 3,
+    heldReshapesByReason: { 'kind-change': 2, 'leader-rooting': 1 },
     // Three reshapes over 90 250 ms.
     reshapesPerMinute: 1.9944598337950139,
+    closestReshapesMs: 15_520,
     reroutedSessionsPerReshape: { min: 1, median: 2, p90: 3, max: 3 },
     reroutedSessionsPerReshapeByReason: {
         'leader-rooting': null,
@@ -127,7 +132,10 @@ const EMPTY_FORMATION: TopologyChurnPhaseReport = {
         'kind-change': 0,
         refinement: 0
     },
+    heldReshapePlanCount: 0,
+    heldReshapesByReason: { 'kind-change': 0, 'leader-rooting': 0 },
     reshapesPerMinute: null,
+    closestReshapesMs: null,
     reroutedSessionsPerReshape: null,
     reroutedSessionsPerReshapeByReason: {
         'leader-rooting': null,
@@ -147,9 +155,10 @@ const ENTRY: TopologyChurnRoomEntry = {
     replanning: 'debounced',
     memberCount: 8,
     topology: ['tree', 'mesh'],
-    report: { phases: [EMPTY_FORMATION, CHURN], outsidePhasesPlanCount: 2 },
+    report: { phases: [EMPTY_FORMATION, CHURN], outsidePhasesPlanCount: 2, closestReshapesMs: 15_520 },
     drift: { acceptedLongestPathHops: 4, freshLongestPathHops: 3, hopDifference: 1 },
-    topologyConfig: { topologyKind: 'auto', degreeLimit: 4, treeMinSize: 5, meshMinSize: 16, meshParamK: 3 }
+    topologyConfig: { topologyKind: 'auto', degreeLimit: 4, treeMinSize: 5, meshMinSize: 16, meshParamK: 3 },
+    reshapeGate: null
 };
 
 function toCells(line: string): string[] {
@@ -197,7 +206,9 @@ describe('toTopologyChurnMarkdownTable', () => {
             '5 / 2 / 2',
             '0 / 0 / 3',
             'delta-too-large: 1, refinement: 2',
+            '3 (kind-change: 2, leader-rooting: 1)',
             '2.0',
+            '15.5',
             '1 / 2 / 3 / 3',
             'delta-too-large: 1/1, refinement: 2/3',
             '7 / 5 / 0 / 0 / 1',
@@ -220,7 +231,11 @@ describe('toTopologyChurnMarkdownTable', () => {
         };
         const entry: TopologyChurnRoomEntry = {
             ...ENTRY,
-            report: { phases: [{ ...CHURN, reroutedSessionsPerReshapeByReason: byReason }], outsidePhasesPlanCount: 0 }
+            report: {
+                phases: [{ ...CHURN, reroutedSessionsPerReshapeByReason: byReason }],
+                outsidePhasesPlanCount: 0,
+                closestReshapesMs: null
+            }
         };
         const column = COLUMNS.indexOf('rerouted per reshape by reason p50/max');
 
@@ -258,6 +273,8 @@ describe('toTopologyChurnMarkdownTable', () => {
             '0 / 0 / 0',
             '0 / 0 / 0',
             '—',
+            '0',
+            '—',
             '—',
             '—',
             '—',
@@ -274,8 +291,35 @@ describe('toTopologyChurnMarkdownTable', () => {
         expect(lines.slice(6)).toEqual([
             '',
             'Plans outside every phase: 2. Drift: accepted 4 hops, fresh no-RTT plan 3 hops, difference 1.',
+            'Closest two reshapes of the room: 15.5 s apart.',
             'Room configuration: kind auto, tree from 5 members, mesh from 16, k = 3, degree limit 4.'
         ]);
+    });
+
+    it('says a room with fewer than two reshapes has no closest two', () => {
+        const entry: TopologyChurnRoomEntry = { ...ENTRY, report: { ...ENTRY.report, closestReshapesMs: null } };
+
+        expect(toTopologyChurnMarkdownTable(entry).split('\n')[8]).toBe(
+            'Closest two reshapes of the room: — (fewer than two reshapes).'
+        );
+    });
+
+    it('names only the held reasons that held a plan', () => {
+        const entry: TopologyChurnRoomEntry = {
+            ...ENTRY,
+            report: {
+                ...ENTRY.report,
+                phases: [{
+                    ...CHURN,
+                    heldReshapePlanCount: 2,
+                    heldReshapesByReason: { 'kind-change': 0, 'leader-rooting': 2 }
+                }]
+            }
+        };
+
+        expect(toCells(toTopologyChurnMarkdownTable(entry).split('\n')[4])[COLUMNS.indexOf('held')]).toBe(
+            '2 (leader-rooting: 2)'
+        );
     });
 
     it('says a negative drift means the accepted layout is shorter than the fresh plan', () => {

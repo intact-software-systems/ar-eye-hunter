@@ -4,6 +4,10 @@ import {
     type TopologyPlanChange,
     type TopologyReshapeReason
 } from '@shared/api/topology-plan/topology-plan-change.ts';
+import {
+    HELD_TOPOLOGY_RESHAPE_REASONS,
+    type HeldTopologyReshapeReason
+} from '@shared/api/topology-plan/topology-reshape-gate.ts';
 
 import { computeValuesByKey } from './compute-values-by-key.ts';
 
@@ -18,6 +22,9 @@ export interface TopologyChurnKindFigures {
     readonly promotedPlansByKind: TopologyChurnKindCounts;
     readonly reroutingPlansByKind: TopologyChurnKindCounts;
     readonly reshapesByReason: Readonly<Record<TopologyReshapeReason, number>>;
+    /** The plans that held at least one reshape; a plan that held both reasons counts once. */
+    readonly heldReshapePlanCount: number;
+    readonly heldReshapesByReason: Readonly<Record<HeldTopologyReshapeReason, number>>;
 }
 
 interface ComputeTopologyChurnKindFiguresInput {
@@ -37,6 +44,11 @@ export function computeTopologyChurnKindFigures(input: ComputeTopologyChurnKindF
             (reason) =>
                 input.records.filter((record) => record.change?.kind === 'reshape' && record.change.reason === reason)
                     .length
+        ),
+        heldReshapePlanCount: input.records.filter((record) => record.heldReshapeReasons.length > 0).length,
+        heldReshapesByReason: computeValuesByKey(
+            HELD_TOPOLOGY_RESHAPE_REASONS,
+            (reason) => input.records.filter((record) => record.heldReshapeReasons.includes(reason)).length
         )
     };
 }

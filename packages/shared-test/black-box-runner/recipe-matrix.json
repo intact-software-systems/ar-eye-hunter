@@ -3448,6 +3448,41 @@
       "description": "No-browser API-v1 publication grants across three nodes: a grant written on the primary is read back on the secondary and the tertiary through the polled cross-node read, a revoke written on the secondary is read back on the primary and the tertiary, and replaying the primary's grant requestId on the tertiary answers the first result. Over the granted topic room.bb-granted-feed, Alice's room broadcast on the tertiary reaches Bob, granted subscribe, and not Carol, who joined with no grant; after the revoke on the secondary her next publish on the tertiary is refused with a no-publish-grant NACK, and every node reads the remaining grant back."
     },
     {
+      "id": "api-v1-cluster-reshape-gate",
+      "recipe": "tests/api-v1/api-v1-cluster-reshape-gate.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cluster-reshape-gate",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 reshape gate across three nodes, read through the operator's topology-plans route: a fifth member joining a four-member star on the secondary makes a kind-change reshape that passes the open gate; the same member leaving on the primary at once makes a kind change back to a star that the gate holds, so the leave is a repair of the tree; when the gate opens a reshape-due row publishes the star, planned at least 15 000 ms after the first reshape, and the gate then reads one held pass, a 30 000 ms interval and nothing wanted."
+    },
+    {
       "id": "api-v1-group-reconnect-across-stages",
       "recipe": "tests/api-v1/api-v1-group-reconnect-across-stages.json",
       "category": "api-v1-black-box",

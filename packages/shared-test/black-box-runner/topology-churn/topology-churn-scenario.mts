@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import { SESSION_HEARTBEAT_INTERVAL_MS } from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { DEFAULT_STATE_HEARTBEAT_TTL_MSECS } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
-import type { AdminRoomTopologyPlan } from '@shared/api/admin-rooms/admin-room-topology-plans.ts';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts';
 import { isSameGroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -37,7 +36,12 @@ import { toTopologyChurnLinkSample, type TopologyChurnLinkSample } from './to-to
 import { toTopologyChurnMarkdownTable, type TopologyChurnRoomEntry } from './to-topology-churn-markdown-table.ts';
 import { toTopologyChurnMember } from './to-topology-churn-member.ts';
 import { toTopologyChurnPolicy } from './to-topology-churn-policy.ts';
-import type { TopologyChurnApi, TopologyChurnMember, TopologyChurnSession } from './topology-churn-api.mts';
+import type {
+    TopologyChurnApi,
+    TopologyChurnMember,
+    TopologyChurnRoomTopologyPlans,
+    TopologyChurnSession
+} from './topology-churn-api.mts';
 
 const TOPOLOGY_CHURN_SETTLE_MS = 6_000;
 const TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS = 250;
@@ -63,6 +67,8 @@ export namespace TopologyChurnScenario {
 }
 
 const CONVERGENCE_BOUND_MS = 15_000;
+/** A reshape owed when the last phase ends is released at most 60 s later; the rest is the work's own latency. */
+const RESHAPE_GATE_SETTLE_BOUND_MS = 75_000;
 const BURST_CONCURRENCY = 10;
 const ADMINISTRATOR_CLIENT_IP = '10.0.0.1';
 const APPLICATION_ID = 'topology-churn';
@@ -102,12 +108,14 @@ interface ChurnRoom {
     readonly signal: AbortSignal;
 }
 
-interface ConvergedRoom {
-    readonly plans: readonly AdminRoomTopologyPlan[];
+interface ConvergedRoom extends TopologyChurnRoomTopologyPlans {
     readonly outcome: TopologyChurnOutcome;
 }
 
-/** Liveness only: a failed or timed-out request, a room without a plan or a late convergence fails the run unreported. */
+/**
+ * Liveness only: a failed or timed-out request, a room without a plan, a held reshape still owed or a late convergence
+ * fails the run unreported.
+ */
 export class TopologyChurnScenario {
     readonly #input: TopologyChurnScenario.Input;
     readonly #runToken = crypto.randomUUID().slice(0, 8);
@@ -231,6 +239,8 @@ export class TopologyChurnScenario {
         }
         await this.#sleepUntil(formationEndedAtEpochMs, room.signal);
         const runs = await this.#runPhases(room, formationEndedAtEpochMs);
+        room.progress.step = 'waiting until the room is owed no held reshape';
+        await this.#awaitNoWantedReshape(room, context.administrator);
         room.progress.step = 'waiting for the newest plan to be accepted';
         const converged = await this.#awaitConvergence(room, context.administrator);
         room.progress.step = 'reading the accepted layout';
@@ -254,7 +264,8 @@ export class TopologyChurnScenario {
                 replacedLayoutOverlapMs: context.replacedLayoutOverlapMs
             }),
             drift,
-            topologyConfig: room.topologyConfig
+            topologyConfig: room.topologyConfig,
+            reshapeGate: converged.reshapeGate
         };
     }
 
@@ -389,17 +400,36 @@ export class TopologyChurnScenario {
         }
     }
 
+    /** A reshape the gate held is released when the gate opens, possibly after the last phase ended. */
+    async #awaitNoWantedReshape(room: ChurnRoom, administrator: TopologyChurnSession): Promise<void> {
+        const deadlineEpochMs = this.#input.clock.nowEpochMs() + RESHAPE_GATE_SETTLE_BOUND_MS;
+        for (;;) {
+            const { reshapeGate } = await this.#input.api.readRoomTopologyPlans(administrator, room.roomRef);
+            if (reshapeGate === null || reshapeGate.wantedReasons.length === 0) {
+                return;
+            }
+            if (this.#input.clock.nowEpochMs() >= deadlineEpochMs) {
+                throw new Error(
+                    `the room ${room.roomRef.groupId} still wanted the reshapes ` +
+                        `${reshapeGate.wantedReasons.join(', ')} ${RESHAPE_GATE_SETTLE_BOUND_MS} ms after its last ` +
+                        `phase ended; its gate opens at epoch ms ${String(reshapeGate.opensAtEpochMs)}`
+                );
+            }
+            await this.#sleepUntil(this.#input.clock.nowEpochMs() + TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS, room.signal);
+        }
+    }
+
     async #awaitConvergence(room: ChurnRoom, administrator: TopologyChurnSession): Promise<ConvergedRoom> {
         const deadlineEpochMs = this.#input.clock.nowEpochMs() + CONVERGENCE_BOUND_MS;
         for (;;) {
-            const plans = await this.#input.api.readRoomTopologyPlans(administrator, room.roomRef);
+            const read = await this.#input.api.readRoomTopologyPlans(administrator, room.roomRef);
             const snapshot = await this.#input.api.readRoom(room.creator, room.roomRef);
             const outcome = resolveTopologyChurnOutcome({
-                plans,
+                plans: read.plans,
                 acceptedLayout: snapshot.group.acceptedLayoutIdentity
             });
             if (outcome.converged) {
-                return { plans, outcome };
+                return { ...read, outcome };
             }
             if (this.#input.clock.nowEpochMs() >= deadlineEpochMs) {
                 throw new Error(
@@ -543,6 +573,7 @@ function toReport(
             sampleIntervalMs: TOPOLOGY_CHURN_SAMPLE_INTERVAL_MS,
             requestTimeoutMs: TOPOLOGY_CHURN_REQUEST_TIMEOUT_MS,
             convergenceBoundMs: CONVERGENCE_BOUND_MS,
+            reshapeGateSettleBoundMs: RESHAPE_GATE_SETTLE_BOUND_MS,
             burstConcurrency: BURST_CONCURRENCY,
             presenceLeaseMs: DEFAULT_STATE_HEARTBEAT_TTL_MSECS,
             heartbeatIntervalMs: SESSION_HEARTBEAT_INTERVAL_MS

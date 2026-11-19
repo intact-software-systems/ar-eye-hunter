@@ -1,3 +1,4 @@
+import { MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS } from '../api-config.ts';
 import {
     createDefaultGroupLifecyclePolicy,
     resolveGroupLifecyclePolicyPreset
@@ -22,6 +23,7 @@ export const MAX_GROUP_FORMATION_ATTEMPTS = 16;
 export const MAX_GROUP_ADMISSION_MEMBER_COUNT = 100_000;
 export const MAX_GROUP_TOPOLOGY_DEBOUNCE_WINDOW_MS = 30_000;
 export const MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS = 600_000;
+export const MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS = 600_000;
 export const MAX_GROUP_STAGE_TRIGGER_DELAY_MS = 600_000;
 
 /**
@@ -121,6 +123,16 @@ function toTopologyPolicy(
             input?.maxReplanWaitMs ?? base.maxReplanWaitMs,
             0,
             MAX_GROUP_TOPOLOGY_REPLAN_WAIT_MS
+        ),
+        reshapeMinIntervalMs: toClampedInteger(
+            input?.reshapeMinIntervalMs ?? base.reshapeMinIntervalMs,
+            MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS,
+            MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS
+        ),
+        reshapeMaxIntervalMs: toClampedInteger(
+            input?.reshapeMaxIntervalMs ?? base.reshapeMaxIntervalMs,
+            MAX_RTC_REPLACED_LAYOUT_OVERLAP_MS,
+            MAX_GROUP_TOPOLOGY_RESHAPE_INTERVAL_MS
         )
     };
 }

@@ -1,9 +1,9 @@
 import {
-    decodeExactGroupRef,
     decodeTopologyReconfigureInboxResult,
     type TopologyReconfigureInboxResult
 } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
@@ -111,7 +111,7 @@ export function decodeTopologyAppInboxResult(value: JsonWireValue): TopologyAppI
     }
 
     const receiptRecord = decodeJsonRecord(result.receipt, 'Topology config AppInbox receipt');
-    const groupRef = decodeExactGroupRef(receiptRecord.groupRef);
+    const groupRef = decodeExactGroupRef(receiptRecord.groupRef, 'Topology AppInbox');
     const receipt = readTopologyConfigReceiptBoundary(receiptRecord, groupRef);
     if (receipt.operation === 'putConfig') {
         requireExactKeys(result, ['receipt', 'config'], 'Topology config AppInbox result');
