@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { HeldTopologyReshapeReason, TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
-import type { BackoffGateBounds, BackoffGateState } from '@shared/resilience/backoff-gate.ts';
+import type { BackoffGateState } from '@shared/resilience/backoff-gate.ts';
 
 import {
     computeTopologyReshapeGate,
@@ -9,12 +9,7 @@ import {
     type TopologyReshapeGatePlanOutcome
 } from '@shared-server/rallar-system/topology/planning/reshape-gate/compute-topology-reshape-gate.ts';
 import { resolveTopologyReshapePermission } from '@shared-server/rallar-system/topology/planning/reshape-gate/resolve-topology-reshape-permission.ts';
-
-const BOUNDS: BackoffGateBounds = { minIntervalMs: 15_000, maxIntervalMs: 60_000 };
-
-function gate(lastPass: number | null, count: number, heldAt: number | null): BackoffGateState {
-    return { lastPassAtEpochMs: lastPass, consecutiveHeldPasses: count, heldAtEpochMs: heldAt };
-}
+import { BACKOFF_GATE_TEST_BOUNDS, toBackoffGateState } from '../../../../../shared/resilience/backoff-gate-test-fixtures.ts';
 
 function state(
     gateState: BackoffGateState,
@@ -28,16 +23,16 @@ function compute(
     nowEpochMs: number,
     outcome: TopologyReshapeGatePlanOutcome
 ): ComputedTopologyReshapeGate {
-    return computeTopologyReshapeGate({ previous, bounds: BOUNDS, nowEpochMs, outcome });
+    return computeTopologyReshapeGate({ previous, bounds: BACKOFF_GATE_TEST_BOUNDS, nowEpochMs, outcome });
 }
 
-const FRESH = state(gate(null, 0, null), []);
+const FRESH = state(toBackoffGateState(null, 0, null), []);
 
 describe('computeTopologyReshapeGate', () => {
     it('a first layout leaves an absent state absent and resets a used one', () => {
         expect(compute(null, 1_000, { kind: 'established' })).toEqual({ decision: 'unchanged' });
         expect(compute(FRESH, 1_000, { kind: 'established' })).toEqual({ decision: 'unchanged' });
-        expect(compute(state(gate(0, 2, 3_000), ['kind-change']), 1_000, { kind: 'established' })).toEqual({
+        expect(compute(state(toBackoffGateState(0, 2, 3_000), ['kind-change']), 1_000, { kind: 'established' })).toEqual({
             decision: 'write',
             state: FRESH,
             wakeUpDueAtEpochMs: null
@@ -45,25 +40,25 @@ describe('computeTopologyReshapeGate', () => {
     });
 
     it('the first hold of a period records the reason and is due when the gate opens', () => {
-        expect(compute(state(gate(0, 0, null), []), 3_000, { kind: 'kept', heldReasons: ['kind-change'] })).toEqual({
+        expect(compute(state(toBackoffGateState(0, 0, null), []), 3_000, { kind: 'kept', heldReasons: ['kind-change'] })).toEqual({
             decision: 'write',
-            state: state(gate(0, 0, 3_000), ['kind-change']),
+            state: state(toBackoffGateState(0, 0, 3_000), ['kind-change']),
             wakeUpDueAtEpochMs: 15_000
         });
     });
 
     it('a second hold of the period adds its reason and queues nothing', () => {
-        const previous = state(gate(0, 0, 3_000), ['leader-rooting']);
+        const previous = state(toBackoffGateState(0, 0, 3_000), ['leader-rooting']);
 
         expect(compute(previous, 6_000, { kind: 'kept', heldReasons: ['kind-change'] })).toEqual({
             decision: 'write',
-            state: state(gate(0, 0, 3_000), ['kind-change', 'leader-rooting']),
+            state: state(toBackoffGateState(0, 0, 3_000), ['kind-change', 'leader-rooting']),
             wakeUpDueAtEpochMs: null
         });
     });
 
     it('a repeated hold of the same reason writes nothing', () => {
-        const previous = state(gate(0, 0, 3_000), ['kind-change']);
+        const previous = state(toBackoffGateState(0, 0, 3_000), ['kind-change']);
 
         expect(compute(previous, 6_000, { kind: 'kept', heldReasons: ['kind-change'] })).toEqual({
             decision: 'unchanged'
@@ -71,30 +66,30 @@ describe('computeTopologyReshapeGate', () => {
     });
 
     it('a reshape empties what was wanted and passes the gate', () => {
-        const previous = state(gate(0, 0, 3_000), ['kind-change', 'leader-rooting']);
+        const previous = state(toBackoffGateState(0, 0, 3_000), ['kind-change', 'leader-rooting']);
 
         expect(compute(previous, 15_000, { kind: 'reshape' })).toEqual({
             decision: 'write',
-            state: state(gate(15_000, 1, null), []),
+            state: state(toBackoffGateState(15_000, 1, null), []),
             wakeUpDueAtEpochMs: null
         });
     });
 
     it('an open gate with a plan that is no reshape forgets the want and keeps the hold', () => {
-        const previous = state(gate(0, 0, 3_000), ['kind-change']);
+        const previous = state(toBackoffGateState(0, 0, 3_000), ['kind-change']);
 
         expect(compute(previous, 15_000, { kind: 'kept', heldReasons: [] })).toEqual({
             decision: 'write',
-            state: state(gate(0, 0, 3_000), []),
+            state: state(toBackoffGateState(0, 0, 3_000), []),
             wakeUpDueAtEpochMs: null
         });
         expect(compute(previous, 14_999, { kind: 'kept', heldReasons: [] })).toEqual({ decision: 'unchanged' });
     });
 
     it('a hold whose want has gone still doubles the next interval', () => {
-        expect(compute(state(gate(0, 0, 3_000), []), 18_000, { kind: 'reshape' })).toEqual({
+        expect(compute(state(toBackoffGateState(0, 0, 3_000), []), 18_000, { kind: 'reshape' })).toEqual({
             decision: 'write',
-            state: state(gate(18_000, 1, null), []),
+            state: state(toBackoffGateState(18_000, 1, null), []),
             wakeUpDueAtEpochMs: null
         });
     });
@@ -120,7 +115,7 @@ function simulateFlappingRoom(untilEpochMs: number): readonly number[] {
         const wantsReshape = event % 2 === 0;
         const permission = resolveTopologyReshapePermission({
             state: current,
-            bounds: BOUNDS,
+            bounds: BACKOFF_GATE_TEST_BOUNDS,
             workOrigin: 'automatic',
             nowEpochMs
         });
@@ -132,7 +127,7 @@ function simulateFlappingRoom(untilEpochMs: number): readonly number[] {
         if (outcome.kind === 'reshape') {
             reshapes.push(nowEpochMs);
         }
-        const computed = computeTopologyReshapeGate({ previous: current, bounds: BOUNDS, nowEpochMs, outcome });
+        const computed = computeTopologyReshapeGate({ previous: current, bounds: BACKOFF_GATE_TEST_BOUNDS, nowEpochMs, outcome });
         current = computed.decision === 'write' ? computed.state : current;
     }
     return reshapes;

@@ -9,6 +9,7 @@ import {
     resolveStagedTopologyReshapePermission,
     type TopologyReshapeGateStage
 } from '@shared-server/rallar-system/topology/planning/reshape-gate/topology-reshape-gate-stage.ts';
+import { BACKOFF_GATE_TEST_BOUNDS } from '../../../../../shared/resilience/backoff-gate-test-fixtures.ts';
 
 const HELD_STATE: TopologyReshapeGateState = {
     gate: { lastPassAtEpochMs: 100_000, consecutiveHeldPasses: 1, heldAtEpochMs: 103_000 },
@@ -20,7 +21,7 @@ function toStage(lifecycleState: GroupLifecycleState): TopologyReshapeGateStage 
     return {
         lifecycleState,
         state: HELD_STATE,
-        bounds: { minIntervalMs: 15_000, maxIntervalMs: 60_000 },
+        bounds: BACKOFF_GATE_TEST_BOUNDS,
         nowEpochMs: 110_000
     };
 }
