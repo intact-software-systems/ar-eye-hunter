@@ -1,6 +1,9 @@
 import { FORMATION_LAYOUT_QUIET_WINDOW_MS } from '../../black-box-runner/browser/rallar-browser-runtime/formation/formation-held-reshape-reading.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
-import type { RallarBlackBoxTestLoopCommand } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestAssertCommand,
+    RallarBlackBoxTestLoopCommand
+} from '../rallar-black-box-test-contracts.ts';
 
 const LAYOUT_RECHECK_INTERVAL_MS = 500;
 const LAYOUT_READINESS_TIMEOUT_MS = 5_000;
@@ -43,30 +46,36 @@ export function createStableRtcLayoutWait(input: StableRtcLayoutWaitInput): Rall
                 roomRef: { ...input.group },
                 timeoutMs: LAYOUT_READINESS_TIMEOUT_MS
             },
-            {
-                kind: 'assert',
-                commandId: `${prefix}-assert-no-pending-layout`,
-                operator: 'equals',
-                source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                    `${prefix}-layout-readiness.value.hasPendingLayout`,
-                expected: false
-            },
-            {
-                kind: 'assert',
-                commandId: `${prefix}-assert-layout-stable`,
-                operator: 'gte',
-                source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                    `${prefix}-layout-readiness.value.acceptedHeldForMs`,
-                expected: FORMATION_LAYOUT_QUIET_WINDOW_MS
-            },
-            {
-                kind: 'assert',
-                commandId: `${prefix}-assert-no-held-reshape`,
-                operator: 'equals',
-                source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
-                    `${prefix}-layout-readiness.value.heldReshape.reading`,
-                expected: 'none'
-            }
+            ...toLayoutStableAsserts(prefix)
         ]
     };
+}
+
+function toLayoutStableAsserts(prefix: string): readonly RallarBlackBoxTestAssertCommand[] {
+    return [
+        {
+            kind: 'assert',
+            commandId: `${prefix}-assert-no-pending-layout`,
+            operator: 'equals',
+            source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                `${prefix}-layout-readiness.value.hasPendingLayout`,
+            expected: false
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-assert-layout-stable`,
+            operator: 'gte',
+            source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                `${prefix}-layout-readiness.value.acceptedHeldForMs`,
+            expected: FORMATION_LAYOUT_QUIET_WINDOW_MS
+        },
+        {
+            kind: 'assert',
+            commandId: `${prefix}-assert-no-held-reshape`,
+            operator: 'equals',
+            source: `resultCache.${prefix}-layout-stable:i{loop.iteration}:c1:` +
+                `${prefix}-layout-readiness.value.heldReshape.reading`,
+            expected: 'none'
+        }
+    ];
 }
