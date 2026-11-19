@@ -108,7 +108,7 @@ export function decodeALNackPayload(value: unknown): ALNackPayload {
         ...decodeOptionalSeqRanges(record, 'missingRanges', 'NACK missing ranges'),
         ...decodeGapRequestNumber(record, reason === 'gap', {
             misplaced: 'NACK gap request number is required on a gap and refused on any other reason',
-            invalid: 'NACK gap request number is invalid'
+            label: 'NACK gap request number'
         }),
         ...decodeOptionalNumber(record, 'serverSnapshotVersion', 'NACK server snapshot version'),
         proof: decodeControlProof(record.proof)
@@ -122,15 +122,21 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
         ['orderingKey', 'expectedSeq', 'missingRanges', 'gapRequestNumber']
     );
     const reason = decodeRepairReason(record.reason);
+    const missingRanges = decodeOptionalSeqRanges(record, 'missingRanges', 'repair missing ranges');
+    if (namesMissingRange(missingRanges) !== (reason === 'missing-seq')) {
+        throw new TypeError(
+            'Repair missing ranges are required on a missing-seq request and refused on any other reason'
+        );
+    }
     return {
         ...decodeControlRoute(record, 'repair'),
         reason,
         ...decodeOptionalIdentifier(record, 'orderingKey', 'repair ordering key'),
         ...decodeOptionalNumber(record, 'expectedSeq', 'repair expected sequence'),
-        ...decodeOptionalSeqRanges(record, 'missingRanges', 'repair missing ranges'),
+        ...missingRanges,
         ...decodeGapRequestNumber(record, reason === 'missing-seq', {
             misplaced: 'Repair gap request number is required on a missing-seq request and refused on any other reason',
-            invalid: 'Repair gap request number is invalid'
+            label: 'Repair gap request number'
         })
     };
 }
@@ -301,14 +307,26 @@ function decodeOptionalNumber(
     return Object.hasOwn(record, key) ? { [key]: decodeControlNumber(record[key], label) } : {};
 }
 
+/**
+ * A `missing-seq` request names at least one missing range; a repair request of any other reason names none. NACKs are
+ * not held to it: the WS server observes every track, so its `expired` or `overloaded` NACK for a copy on a gapped
+ * track carries that gap.
+ */
+function namesMissingRange(decoded: Readonly<Record<string, readonly ALSeqRange[]>>): boolean {
+    return (decoded.missingRanges?.length ?? 0) > 0;
+}
+
 /** The control field a gap request number becomes: present exactly when there is a number. */
-export function toALGapRequestNumberField(gapRequestNumber: number | undefined): Readonly<{ gapRequestNumber?: number; }> {
+export function toALGapRequestNumberField(
+    gapRequestNumber: number | undefined
+): Readonly<{ gapRequestNumber?: number; }> {
     return gapRequestNumber === undefined ? {} : { gapRequestNumber };
 }
 
 interface GapRequestNumberRefusals {
     readonly misplaced: string;
-    readonly invalid: string;
+    /** The number's name in its `<label> is invalid` refusal. */
+    readonly label: string;
 }
 
 /** Present exactly when the control's reason names a gap; a safe integer of at least 1. */
@@ -323,9 +341,9 @@ function decodeGapRequestNumber(
     if (!namesGap) {
         return {};
     }
-    const value = record.gapRequestNumber;
-    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
-        throw new TypeError(refusals.invalid);
+    const value = decodeControlNumber(record.gapRequestNumber, refusals.label);
+    if (value < 1) {
+        throw new TypeError(`${refusals.label} is invalid`);
     }
     return { gapRequestNumber: value };
 }

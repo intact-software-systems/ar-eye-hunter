@@ -384,8 +384,8 @@ describe('the repair hint a gap request raises', () => {
         expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).toMatchObject({ gapRequestNumber: 1 });
     });
 
-    it('carries no number on a hint that names no missing range', () => {
-        const repair = { msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'missing-seq' as const, observedAtEpochMs: 1, gapRequestNumber: 1 };
+    it('carries no number on the hint of a retransmit request', () => {
+        const repair = { msgId: 'm', fromPeerId: 'b', toPeerId: 'a', reason: 'retransmit' as const, observedAtEpochMs: 1, missingRanges: [] };
 
         expect(toALOutboundControlRepairHint({ type: 'repair', payload: repair })).not.toHaveProperty('gapRequestNumber');
     });

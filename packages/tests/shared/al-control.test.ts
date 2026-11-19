@@ -60,7 +60,7 @@ const repair: ALRepairPayload = {
     observedAtEpochMs: 14,
     orderingKey: 'track',
     expectedSeq: 2,
-    missingRanges: [{ from: 2, to: 2 }]
+    missingRanges: []
 };
 const receipt: ALReceiptPayload = {
     msgId: 'msg-1',
@@ -78,6 +78,32 @@ const controlId: ALMessage['id'] = {
     ts: 11,
     senderId: 'sender',
     traceId: 'trace-al-control'
+};
+
+const GAP_NACK_FIELDS = {
+    msgId: 'm',
+    fromPeerId: 'b',
+    toPeerId: 'a',
+    logicalRecipientPeerId: 'b',
+    originPeerId: 'a',
+    reason: 'gap',
+    observedAtEpochMs: 1,
+    orderingKey: 'k',
+    expectedSeq: 1,
+    missingRanges: [{ from: 1, to: 1 }],
+    gapRequestNumber: 1,
+    proof: null
+} as const;
+const MISSING_SEQ_FIELDS: ALRepairPayload = {
+    msgId: 'm',
+    fromPeerId: 'b',
+    toPeerId: 'a',
+    reason: 'missing-seq',
+    observedAtEpochMs: 1,
+    orderingKey: 'k',
+    expectedSeq: 1,
+    missingRanges: [{ from: 1, to: 1 }],
+    gapRequestNumber: 1
 };
 
 describe('AL control message codec', () => {
@@ -137,12 +163,67 @@ describe('AL control message codec', () => {
         expect(() => decodeALRepairPayload(missing)).toThrow(
             'Repair gap request number is required on a missing-seq request and refused on any other reason'
         );
-        expect(() => decodeALRepairPayload({ ...missing, reason: 'retransmit', gapRequestNumber: 1 })).toThrow(
+        expect(() => decodeALRepairPayload({ ...missing, reason: 'retransmit', missingRanges: [], gapRequestNumber: 1 })).toThrow(
             'Repair gap request number is required on a missing-seq request and refused on any other reason'
         );
         expect(() => decodeALRepairPayload({ ...missing, gapRequestNumber: 0 })).toThrow('Repair gap request number is invalid');
         expect(decodeALRepairPayload({ ...missing, gapRequestNumber: 2 }).gapRequestNumber).toBe(2);
-        expect(decodeALRepairPayload({ ...missing, reason: 'retransmit' })).not.toHaveProperty('gapRequestNumber');
+        expect(decodeALRepairPayload({ ...missing, reason: 'retransmit', missingRanges: [] }))
+            .not.toHaveProperty('gapRequestNumber');
+    });
+
+    it.each([-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null])('refuses a gap NACK numbered %s as invalid', (gapRequestNumber) => {
+        expect(() => decodeALNackPayload({ ...GAP_NACK_FIELDS, gapRequestNumber })).toThrow('NACK gap request number is invalid');
+    });
+
+    it.each([-1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1, '1', null])('refuses a missing-seq request numbered %s as invalid', (gapRequestNumber) => {
+        expect(() => decodeALRepairPayload({ ...MISSING_SEQ_FIELDS, gapRequestNumber })).toThrow('Repair gap request number is invalid');
+    });
+
+    it.each([['absent', {}], ['empty', { missingRanges: [] }]] as const)(
+        'refuses a missing-seq request whose missing ranges are %s',
+        (_label, ranges) => {
+            const { missingRanges: _ranges, ...missingSeq } = MISSING_SEQ_FIELDS;
+
+            expect(() => decodeALRepairPayload({ ...missingSeq, ...ranges })).toThrow(
+                'Repair missing ranges are required on a missing-seq request and refused on any other reason'
+            );
+        }
+    );
+
+    it('accepts a gap NACK that names no missing range, numbered as any gap NACK is', () => {
+        const { missingRanges: _ranges, ...rangeless } = GAP_NACK_FIELDS;
+
+        expect(decodeALNackPayload(rangeless)).toEqual(rangeless);
+    });
+
+    it.each(['retransmit', 'resync'] as const)('refuses a %s request that names a missing range', (reason) => {
+        const { gapRequestNumber: _number, ...request } = MISSING_SEQ_FIELDS;
+
+        expect(() => decodeALRepairPayload({ ...request, reason }))
+            .toThrow('Repair missing ranges are required on a missing-seq request and refused on any other reason');
+        expect(decodeALRepairPayload({ ...request, reason, missingRanges: [] }).missingRanges).toEqual([]);
+    });
+
+    it('keeps the missing ranges a NACK of another reason names, as the WS server states them for an expired copy on a gapped track', () => {
+        const { gapRequestNumber: _number, ...expired } = GAP_NACK_FIELDS;
+
+        expect(decodeALNackPayload({ ...expired, reason: 'expired' }).missingRanges).toEqual([{ from: 1, to: 1 }]);
+    });
+
+    it.each([
+        [
+            'al.control.nack.v3',
+            newALNackControlMessage(
+                controlId,
+                { ...GAP_NACK_FIELDS, fromPeerId: 'sender', logicalRecipientPeerId: 'sender' }
+            )
+        ],
+        ['al.control.repair.v2', newALRepairControlMessage(controlId, { ...MISSING_SEQ_FIELDS, fromPeerId: 'sender' })]
+    ])('refuses a whole %s control unsupported', (typeId, current) => {
+        const retired = { ...current, payload: { ...current.payload, typeId } };
+
+        expect(decodeALControlMessage(retired).left).toMatchObject({ code: 'unsupported' });
     });
 
     it('refuses an al.control.ack.v2 and an al.control.nack.v2 control unsupported', () => {

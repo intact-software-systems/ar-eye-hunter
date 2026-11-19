@@ -293,8 +293,11 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
     if (request.trigger !== 'ack-timeout' && request.trigger !== 'nack' && request.trigger !== 'repair') {
         throw new TypeError('Persisted AL repair trigger is invalid');
     }
-    if (request.trigger !== 'nack' && request.gapRequestNumber !== undefined) {
-        throw new TypeError('Persisted AL repair gap request number is refused on a hint that names no missing range');
+    const missingRanges = decodeALAdmissionSeqRanges(request.missingRanges);
+    if ((missingRanges.length > 0) !== (request.gapRequestNumber !== undefined)) {
+        throw new TypeError(
+            'Persisted AL repair gap request number is required on a hint that names a missing range and refused on any other'
+        );
     }
     requireOptionalPersistedALSafeInteger(request.gapRequestNumber, 1, 'repair gap request number');
     requireOptionalPersistedALNonEmptyString(request.requestedByPeerId, 'repair requester');
@@ -304,6 +307,5 @@ function decodeALOutboundRepairHint(value: unknown): ALOutboundRepairHint {
         throw new TypeError('Persisted AL repair peer or sequence array is missing');
     }
     requireOptionalPersistedALStringArray(request.failedPeerIds, 'failed repair peers');
-    decodeALAdmissionSeqRanges(request.missingRanges);
     return value as ALOutboundRepairHint;
 }

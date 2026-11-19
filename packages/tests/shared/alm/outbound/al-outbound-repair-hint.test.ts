@@ -98,20 +98,38 @@ describe('the repair hint a gap NACK raises (S4ii-R3)', () => {
             logicalRecipientPeerId: 'leaf',
             orderingTrackKey: 'feed:origin:1',
             missingRanges: [{ from: 2, to: 2 }],
+            gapRequestNumber: 1,
             failedPeerIds: []
         };
 
         expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
     });
 
-    it('round-trips a nack hint\'s gap request number and refuses one that is invalid or on a hint naming no range', () => {
+    it('round-trips a nack hint\'s gap request number and refuses one that is invalid', () => {
         const request = toALOutboundControlRepairHint({ type: 'nack', payload: { ...GAP, gapRequestNumber: 2 } });
-        const noRange: ALOutboundRepairHint = { trigger: 'repair', missingRanges: [], failedPeerIds: [], gapRequestNumber: 1 };
 
         expect(toPersistedHint(request)).toEqual({ kind: 'repair-hint', msgId: 'subject', request });
         expect(() => toPersistedHint({ ...request, gapRequestNumber: 0 })).toThrow('Persisted AL repair gap request number is invalid');
-        expect(() => toPersistedHint(noRange))
-            .toThrow('Persisted AL repair gap request number is refused on a hint that names no missing range');
+    });
+
+    it('refuses a hint that names a missing range without a number, as the previous build wrote it, and a number on any other', () => {
+        const { gapRequestNumber: _number, ...numberless } = toALOutboundControlRepairHint({ type: 'nack', payload: GAP });
+        const repair: ALOutboundRepairHint = { trigger: 'repair', missingRanges: [], failedPeerIds: [], gapRequestNumber: 1 };
+        const timeout: ALOutboundRepairHint = { trigger: 'ack-timeout', missingRanges: [], failedPeerIds: ['b'], gapRequestNumber: 1 };
+        const refusal = 'Persisted AL repair gap request number is required on a hint that names a missing range and refused on any other';
+
+        expect(() => toPersistedHint(numberless)).toThrow(refusal);
+        expect(() => toPersistedHint(repair)).toThrow(refusal);
+        expect(() => toPersistedHint(timeout)).toThrow(refusal);
+    });
+
+    it('carries no number on the hint of a gap NACK that names no missing range, the contract a rangeless gap NACK has today', () => {
+        const { missingRanges: _ranges, ...rangeless } = GAP;
+        const hint = toALOutboundControlRepairHint({ type: 'nack', payload: rangeless });
+
+        expect(hint).toMatchObject({ trigger: 'repair', missingRanges: [] });
+        expect(hint).not.toHaveProperty('gapRequestNumber');
+        expect(toPersistedHint(hint)).toEqual({ kind: 'repair-hint', msgId: 'subject', request: hint });
     });
 
     it('decodes a persisted hint without a recipient as one whose requester is the recipient', () => {

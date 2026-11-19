@@ -10,11 +10,8 @@ import {
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    newALAckControlMessage,
-    newALRepairControlMessage,
-    type ALRepairReason
-} from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALRepairControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import {
     createInMemoryALAdmissionState,
     InMemoryAdmissionBackend,
@@ -214,9 +211,10 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
     it('aborts a moved control effect without a write or a revision bump', async () => {
         const fixture = await createFenceFixture(storage);
         const control = createFenceControlAdmission(fixture);
-        const message = await seedControlObligation(fixture.store);
-        // Both repairs name the same repair-hint effect, so the second observes what the first wrote.
-        expect(await control.admit(toRepairControl(message, 'retransmit', Date.now()), 'peer')).toEqual({ kind: 'committed' });
+        const message = await seedControlObligation(fixture.store, { orderingKey: 'stream', epoch: 1, seq: 3 });
+        // A relay's retransmit requests from two positions of the track name the same repair-hint effect, so the
+        // second observes what the first wrote.
+        expect(await control.admit(toRepairControl(message, 2, Date.now()), 'peer')).toEqual({ kind: 'committed' });
         const repairWork = await readOutboundWorkRow(fixture.backend, 'repair-hint');
         const write = fixture.backend.write.bind(fixture.backend);
         let before = '';
@@ -227,7 +225,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
             return await write(operation);
         });
 
-        expect(await control.admit(toRepairControl(message, 'missing-seq', Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
+        expect(await control.admit(toRepairControl(message, 3, Date.now()), 'peer')).toEqual({ kind: 'pending-control' });
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
@@ -378,8 +376,12 @@ function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string
 }
 
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */
-async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTestPayload>): Promise<ALMessage> {
-    const message = createOutboundMessage('control-fence');
+async function seedControlObligation(
+    store: ALOutboundAdmissionStore<OutboundTestPayload>,
+    ordering?: ALMessage['ordering']
+): Promise<ALMessage> {
+    const created = createOutboundMessage('control-fence');
+    const message = ordering === undefined ? created : { ...created, ordering };
     const admission = await readOutboundTestAdmission({
         store: store,
         message: message,
@@ -475,16 +477,25 @@ function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAd
     });
 }
 
-function toRepairControl(message: ALMessage, reason: ALRepairReason, observedAtEpochMs: number): ALMessage {
+/** A relay's retransmit request for an owned child it could not reach, sent when its track expects `expectedSeq`. */
+function toRepairControl(message: ALMessage, expectedSeq: number, observedAtEpochMs: number): ALMessage {
     return newALRepairControlMessage(
-        { v: 4, msgId: `${message.id.msgId}-${reason}`, senderId: 'peer-1', ts: observedAtEpochMs, traceId: 'trace-al-outbound-admission-fences' },
+        {
+            v: 4,
+            msgId: `${message.id.msgId}-retransmit-${expectedSeq}`,
+            senderId: 'peer-1',
+            ts: observedAtEpochMs,
+            traceId: 'trace-al-outbound-admission-fences'
+        },
         {
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
             msgId: message.id.msgId,
-            reason,
-            ...(reason === 'missing-seq' ? { gapRequestNumber: 1 } : {}),
-            observedAtEpochMs
+            reason: 'retransmit',
+            observedAtEpochMs,
+            orderingKey: toALOrderingTrackKey(message)!,
+            expectedSeq,
+            missingRanges: []
         }
     );
 }

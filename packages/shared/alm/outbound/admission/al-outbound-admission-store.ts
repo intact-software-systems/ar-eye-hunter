@@ -296,7 +296,7 @@ export interface ALOutboundRepairHint {
     readonly failedPeerIds: readonly string[];
     readonly orderingTrackKey?: string;
     readonly missingRanges: readonly ALSeqRange[];
-    /** The gap request number of the control that raised a `nack` hint; absent on any hint that names no missing range. */
+    /** The gap request number of the control that raised the hint, present exactly when the hint names a missing range. */
     readonly gapRequestNumber?: number;
 }
 
