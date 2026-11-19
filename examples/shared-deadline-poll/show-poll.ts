@@ -1,9 +1,9 @@
 import type { RallarDeadlineAuthority } from '@shared-web/browser/rallar-connection-facade.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
-import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { PollAuthority } from './poll-authority.ts';
 import { pollPhase } from './poll-phase.ts';
+import { requestPollSnapshot } from './request-poll-snapshot.ts';
 
 export interface ShowPollInput {
     readonly root: HTMLElement;
@@ -15,28 +15,11 @@ export interface ShowPollInput {
 
 /** Mount after login. The application supplies the URL and a participant grant for this poll alone. */
 export async function showPoll(input: ShowPollInput): Promise<() => void> {
-    const { root, roomRef, endpoint, participantGrant } = input;
+    const { root, roomRef } = input;
     await rallar.connect();
     await rallar.rooms.enter(roomRef);
     const lifetime = new AbortController();
-    async function request(choice?: PollAuthority.Choice): Promise<PollAuthority.Snapshot> {
-        const response = await fetch(endpoint, {
-            method: choice === undefined ? 'GET' : 'POST',
-            headers: { Authorization: `Bearer ${participantGrant}` },
-            body: choice,
-            cache: 'no-store',
-            signal: lifetime.signal
-        });
-        if (!response.ok) {
-            throw new Error(`Poll request failed (HTTP ${response.status}).`);
-        }
-        const record: PollAuthority.Snapshot = await response.json();
-        if (!isSameGroupRef(record.roomRef, roomRef)) {
-            throw new Error('Unexpected poll room.');
-        }
-        return record;
-    }
-    let record = await request();
+    let record = await requestPollSnapshot(input, lifetime.signal);
     const title = document.createElement('h1');
     title.textContent = 'Hold another round?';
     const opening = document.createElement('time');
@@ -57,10 +40,23 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
     let retryAt = 0;
     let unacknowledged: PollAuthority.Choice | undefined;
     let checkingReceipt = false;
+    let away = document.visibilityState === 'hidden';
+    let generation = away ? 1 : 0;
+    let restored = 0;
     async function refreshSnapshot(): Promise<void> {
         refreshing = true;
+        const current = generation;
         try {
-            record = await request();
+            if (restored !== current) {
+                await rallar.connect();
+                await rallar.rooms.enter(roomRef);
+            }
+            const snapshot = await requestPollSnapshot(input, lifetime.signal);
+            if (current !== generation || lifetime.signal.aborted) {
+                return;
+            }
+            restored = current;
+            record = snapshot;
             checkingReceipt = false;
             if (record.closed || record.disposition !== 'pending') {
                 unacknowledged = undefined;
@@ -75,9 +71,10 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         }
     }
     function render(): void {
-        const currentPhase = pollPhase(record, rallar, input.authority);
-        const needsSnapshot = checkingReceipt || currentPhase === 'Voting closed';
-        if (needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
+        const restoring = away || restored !== generation;
+        const currentPhase = restoring ? 'Recovering room poll' : pollPhase(record, rallar, input.authority);
+        const needsSnapshot = restoring || checkingReceipt || currentPhase === 'Voting closed';
+        if (!away && needsSnapshot && !submitting && !refreshing && performance.now() >= retryAt) {
             void refreshSnapshot();
         }
         phase.textContent = currentPhase;
@@ -87,6 +84,10 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         no.disabled = disabled || unacknowledged === 'yes';
         yes.textContent = unacknowledged === 'yes' ? 'Retry Yes' : 'Yes';
         no.textContent = unacknowledged === 'no' ? 'Retry No' : 'No';
+        if (restoring) {
+            result.textContent = 'Waiting for the current room snapshot';
+            return;
+        }
         if (checkingReceipt) {
             result.textContent = 'Checking your vote with the poll authority';
             return;
@@ -107,7 +108,7 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
         submitting = true;
         render();
         try {
-            record = await request(choice);
+            record = await requestPollSnapshot(input, lifetime.signal, choice);
             unacknowledged = undefined;
         }
         catch {
@@ -125,6 +126,29 @@ export async function showPoll(input: ShowPollInput): Promise<() => void> {
             }
         }
     }
+    function suspend(): void {
+        generation++;
+        away = true;
+        render();
+    }
+    function resume(): void {
+        away = document.visibilityState === 'hidden';
+        retryAt = 0;
+        render();
+    }
+    const listeners = { signal: lifetime.signal };
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            suspend();
+        }
+        else {
+            resume();
+        }
+    }, listeners);
+    document.addEventListener('freeze', suspend, listeners);
+    document.addEventListener('resume', resume, listeners);
+    window.addEventListener('pagehide', suspend, listeners);
+    window.addEventListener('pageshow', resume, listeners);
     yes.onclick = () => void submit('yes');
     no.onclick = () => void submit('no');
     render();

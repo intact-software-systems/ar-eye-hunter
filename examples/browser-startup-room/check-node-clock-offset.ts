@@ -1,5 +1,6 @@
 import { readServerClockSample } from '@shared-web/browser/connection/server-clock/read-server-clock-sample.ts';
 import { computeRemoteClockWindow, type RemoteClockObservation } from '@shared/resilience/remote-clock.ts';
+import { parseNodeClockProbe } from './parse-node-clock-probe.ts';
 
 interface NodeClockPair {
     readonly calibration: RemoteClockObservation;
@@ -47,35 +48,62 @@ async function sampleNode(baseUrl: string, expectedServerPeerId: string) {
     return sample.right!;
 }
 
-function parseOrigin(value: string): string {
-    const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol) || (value !== url.origin && value !== url.origin + '/')) {
-        throw new Error('Supply a direct HTTP(S) origin without credentials, query or path.');
-    }
-    return url.origin;
-}
-
 if (import.meta.main) {
     try {
-        const args = process.argv.slice(2);
-        const [calibrationUrl, calibrationId, enforcementUrl, enforcementId, budget] = args;
-        if (args.length !== 5 || !calibrationId || !enforcementId || !/^\d+$/.test(budget)) {
-            throw new Error(
-                'Expected calibrationOrigin calibrationPeerId enforcementOrigin enforcementPeerId budgetMs.'
-            );
+        const { first, second, calibrationId, enforcementId, budgetMs, observations, intervalMs, repeated } =
+            parseNodeClockProbe(process.argv.slice(2));
+        let exit = 0;
+        for (let sequence = 1; sequence <= observations; sequence++) {
+            if (sequence > 1) {
+                await new Promise((resolve) => setTimeout(resolve, intervalMs));
+            }
+            const started = performance.now();
+            const at = new Date().toISOString();
+            try {
+                const [calibration, enforcement] = await Promise.all([
+                    sampleNode(first, calibrationId),
+                    sampleNode(second, enforcementId)
+                ]);
+                const now = performance.now();
+                const result = checkNodeClockOffset({ calibration, enforcement }, now, budgetMs);
+                console.log(JSON.stringify(
+                    repeated
+                        ? {
+                            sequence,
+                            at,
+                            ...result,
+                            elapsedMs: now - started,
+                            calibrationRoundTripMs: calibration.responseReceivedAtMonotonicMs -
+                                calibration.requestStartedAtMonotonicMs,
+                            enforcementRoundTripMs: enforcement.responseReceivedAtMonotonicMs -
+                                enforcement.requestStartedAtMonotonicMs,
+                            calibrationAgeMs: now - calibration.responseReceivedAtMonotonicMs,
+                            enforcementAgeMs: now - enforcement.responseReceivedAtMonotonicMs,
+                            widthMs: result.maximumOffsetMs - result.minimumOffsetMs
+                        }
+                        : result
+                ));
+                if (result.verdict !== 'within') {
+                    exit = Math.max(exit, 1);
+                }
+            }
+            catch (error) {
+                if (!repeated) {
+                    throw error;
+                }
+                console.log(
+                    JSON.stringify({
+                        sequence,
+                        at,
+                        verdict: 'unavailable',
+                        elapsedMs: performance.now() - started,
+                        reason: error instanceof Error ? error.message : 'Clock observation failed.'
+                    })
+                );
+                exit = 2;
+            }
         }
-        const first = parseOrigin(calibrationUrl);
-        const second = parseOrigin(enforcementUrl);
-        if (first === second) {
-            throw new Error('Supply distinct direct node origins.');
-        }
-        const [calibration, enforcement] = await Promise.all([
-            sampleNode(first, calibrationId),
-            sampleNode(second, enforcementId)
-        ]);
-        const result = checkNodeClockOffset({ calibration, enforcement }, performance.now(), Number(budget));
-        console.log(JSON.stringify(result));
-        process.exitCode = result.verdict === 'within' ? 0 : 1;
+        process.exitCode = exit;
     }
     catch (error) {
         console.error(error instanceof Error ? error.message : 'Clock qualification failed.');

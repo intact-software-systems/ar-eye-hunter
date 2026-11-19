@@ -8,6 +8,15 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { PollAuthority } from '../../../examples/shared-deadline-poll/poll-authority.ts';
 import { loginThroughUi, readFullStackConfig, uniqueSuffix } from './full-stack-helpers.ts';
 
+declare global {
+    interface Window {
+        receivePollBallot(
+            value: { msgId: string; expiresAtMs?: number; senderId: string; choice: PollAuthority.Choice; }
+        ): Promise<void>;
+        loseBallotRtcRoute(): Promise<void>;
+    }
+}
+
 const enforcementOffsetMs = -2_000;
 const config = readFullStackConfig();
 const rallarUrl = '/@fs' + fileURLToPath(new URL('../../../packages/shared-web/browser/rallar.ts', import.meta.url));
@@ -97,12 +106,18 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         await guest.getByRole('button', { name: 'No' }).click();
         await voteSent.promise;
         await expectUncertainBoundary(spectator, 'closing');
-        await expect(page.getByText('Voting closed')).toBeVisible({ timeout: 25_000 });
-        await expect(spectator.getByText('Final results unavailable · Retrying')).toBeVisible();
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+        await expect(page.getByText('Recovering room poll')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Yes' })).toBeDisabled();
+        await expect(spectator.getByText('Final results unavailable · Retrying')).toBeVisible({ timeout: 25_000 });
         await expect(spectator.getByText('Yes 1 · No 0 · Your vote: pending')).toBeVisible();
         await expect(spectator.getByText('Voting closed · Results')).toBeVisible();
         releaseVote.resolve();
         await expect(guest.getByText('Yes 1 · No 0 · Your vote: late')).toBeVisible();
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+        await expect(page.getByText('Voting closed · Results')).toBeVisible();
+        await expect(page.getByText('Yes 1 · No 0 · Your vote: accepted')).toBeVisible();
+        await expect(page.locator('time')).toHaveText(schedule);
         const lateEntry = await browser.newPage({ baseURL });
         try {
             await prepareMember(lateEntry, roomRef, true);
@@ -155,6 +170,118 @@ test('a delayed ballot and a returning browser share one room cutoff', async ({ 
         });
     }
 });
+
+for (const disposition of ['accepted', 'late'] as const) {
+    test(`fallback ballot is ${disposition} at authority receipt`, async ({ page, browser, baseURL }) => {
+        test.skip(!config.enabled, config.skipReason);
+        const voter = await browser.newPage({ baseURL });
+        const roomRef = {
+            applicationId: config.applicationId,
+            workspaceId: config.workspaceId,
+            groupId: 'ballot-' + uniqueSuffix()
+        };
+        let receiptTime = 99;
+        const schedule = { opensAtEpochMs: 90, closesAtEpochMs: 100 };
+        const poll = new PollAuthority(roomRef, schedule, () => receiptTime);
+        try {
+            await Promise.all([prepareMember(page, roomRef, true), prepareMember(voter, roomRef, false)]);
+            await page.evaluate(async ({ rallarUrl, roomRef }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                await rallar.rooms.createAndSwitch({
+                    groupId: roomRef.groupId,
+                    joinMode: 'open',
+                    displayName: 'Ballots'
+                });
+            }, { rallarUrl, roomRef });
+            const voterSession = await voter.evaluate(async ({ rallarUrl, roomRef }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                await rallar.rooms.enter(roomRef);
+                return rallar.session()!.sessionId;
+            }, { rallarUrl, roomRef });
+            const arrivals: { msgId: string; expiresAtMs: number; }[] = [];
+            await page.exposeFunction('receivePollBallot', (arrival: {
+                msgId: string;
+                expiresAtMs: number;
+                senderId: string;
+                choice: PollAuthority.Choice;
+            }) => {
+                expect(arrival.senderId).toBe(voterSession);
+                arrivals.push(arrival);
+                poll.vote(config.userB.username, arrival.choice);
+            });
+            await page.evaluate(async ({ rallarUrl, roomRef }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                const room = await rallar.rooms.enter(roomRef);
+                room.message<PollAuthority.Choice>('ballot').onWs(async (choice, message) => {
+                    if (message.roomId !== roomRef.groupId || (choice !== 'yes' && choice !== 'no')) {
+                        return;
+                    }
+                    await window.receivePollBallot({
+                        msgId: message.raw.id.msgId,
+                        expiresAtMs: message.raw.constraints?.expiresAtMs,
+                        senderId: message.senderId,
+                        choice
+                    });
+                });
+            }, { rallarUrl, roomRef });
+            await voter.exposeFunction('loseBallotRtcRoute', () => {
+                if (disposition === 'late') {
+                    receiptTime = schedule.closesAtEpochMs;
+                }
+            });
+            const original = await voter.evaluate(async ({ rallarUrl, roomRef }) => {
+                const { rallar }: typeof import('@shared-web/browser/rallar.ts') = await import(rallarUrl);
+                const room = await rallar.rooms.enter(roomRef);
+                const channel = room.message<PollAuthority.Choice>('ballot');
+                const manager = (await rallar.connect()).middleware.webRtcOverlayMulticastManager;
+                const enqueue = manager.enqueueLegIfAbsent;
+                const sent: { msgId: string; expiresAtMs: number | undefined; }[] = [];
+                manager.enqueueLegIfAbsent = async function (message, gap) {
+                    if (message.payload.typeId !== 'room.ballot.v1') {
+                        return await enqueue.call(this, message, gap);
+                    }
+                    sent.push({ msgId: message.id.msgId, expiresAtMs: message.constraints?.expiresAtMs });
+                    await window.loseBallotRtcRoute();
+                    return {
+                        verdict: { kind: 'unroutable', reason: 'no-route', detail: 'Fixture RTC route loss' },
+                        message,
+                        entries: [],
+                        trackedReceiptAlgo: 'none'
+                    };
+                };
+                try {
+                    for (const choice of ['yes', 'no'] as const) {
+                        const handle = await channel.send(choice, { strategy: 'rtc-with-ws-fallback', ttlMs: 30_000 });
+                        await handle.wait({
+                            until: ['queued', 'accepted', 'acknowledged', 'transport-accepted'],
+                            timeoutMs: 5_000
+                        });
+                    }
+                }
+                finally {
+                    manager.enqueueLegIfAbsent = enqueue;
+                }
+                return sent;
+            }, { rallarUrl, roomRef });
+            expect(original).toHaveLength(2);
+            for (const ballot of original) {
+                expect(ballot.expiresAtMs).toEqual(expect.any(Number));
+            }
+            await expect.poll(() => arrivals.map(({ msgId, expiresAtMs }) => ({ msgId, expiresAtMs }))).toEqual(
+                original
+            );
+            expect(poll.read(config.userB.username)).toMatchObject({
+                schedule,
+                disposition,
+                yes: disposition === 'accepted' ? 1 : 0,
+                no: 0
+            });
+        }
+        finally {
+            await voter.close();
+        }
+    });
+}
 
 async function expectUncertainBoundary(page: Page, boundary: 'opening' | 'closing'): Promise<void> {
     await expect.poll(() =>

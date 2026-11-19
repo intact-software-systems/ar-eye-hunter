@@ -4,7 +4,7 @@ Run the example from the repository root with Chromium installed. Add
 `--headed` to watch both participants.
 
 ```sh
-npm run test:rallar:full-stack:memory -- --grep 'delayed ballot' --workers=1
+npm run test:rallar:full-stack:memory -- --grep 'delayed ballot|fallback ballot' --workers=1
 ```
 
 The journey starts the Rallar memory API, signs in two room participants and
@@ -40,3 +40,26 @@ authorization. A durable implementation can use the [server AppInbox
 example](../server-app-inbox/README.md) to commit ballots and retain replay
 results. RTC fallback, a server restart, and suspension on a physical phone
 have separate qualification requirements.
+
+
+## Recover after a phone is backgrounded
+
+Mount the poll on a physical phone using a deployment the browser trusts.
+Record the device model, OS, browser, network, UTC schedule and initial vote.
+Background the browser during voting, keep it suspended until after the cutoff,
+and return to the same tab. The view holds both buttons disabled while it
+reconnects, re-enters the room and reads a fresh snapshot. Verify the original
+closing time, final tally and private receipt. Repeat after switching networks.
+Record any trust prompt or failure to restore. The Chromium journey exercises
+the page lifecycle callbacks; device suspension and certificate trust require
+a physical-device run.
+
+## Verify a ballot through carrier fallback
+
+The two fallback cases use authenticated browser clients and the room message
+API. The test injects a no-route admission on the RTC leg and records the
+original message ID and expiry. It compares them with the actual WebSocket
+delivery in the receiving browser. The receiver binds the authenticated
+sender session to the fixture voter. An in-time ballot and a repeated submission
+count once. In the late case the authority reaches its cutoff during handover
+and records a late receipt while the transport envelope is still valid.

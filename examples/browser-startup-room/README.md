@@ -276,3 +276,15 @@ and creating a ten-millisecond grace period yields 115. Omitting the bound
 uses zero. If the deployment loses its offset guarantee, suspend cross-node
 deadline decisions until the guarantee is restored. The probe supplies
 measurement evidence at a point in time.
+
+
+To collect deployment evidence, append a sample count and an interval in
+milliseconds. For example, append `60 5000` to take 60 pairs with a five-second
+pause after each completed pair. Run during a representative workload on the
+two named nodes. Save stdout as JSON Lines. Each row records its UTC start
+time, elapsed time and verdict. Successful observations also include both
+round-trip times, sample ages and the signed offset interval and width.
+Unavailable observations remain in the series. The exit code is 2 if any
+observation was unavailable, otherwise 1 if any was outside or inconclusive,
+otherwise 0. This measures the probe's requests; browser startup and refresh
+traffic must be measured on the actual browser connection.
