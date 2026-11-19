@@ -65,7 +65,7 @@ export async function readNextIndexedDbDueEntries(
     const values = await readIndexedDbRequest(input.index.getAll(
         IDBKeyRange.bound(
             lower,
-            [input.typeId, input.status, input.dueAtOrBeforeEpochMs, '￿'],
+            [input.typeId, input.status, input.dueAtOrBeforeEpochMs, '\uffff'],
             input.after !== undefined
         ),
         input.maxToRead
@@ -115,22 +115,27 @@ async function readIndexedDbDueCombination(
 }
 
 /**
- * Reads on until `maxToCount` counted rows or the end of the read, so the rows it reads past are unbounded in number.
+ * Reads on in pages of the bound until `maxToCount` counted rows or the end of the read, and returns the rows up to
+ * the last one counted, so the rows it reads past are unbounded in number while a page never shrinks behind them.
  */
 export async function readCountedIndexedDbEntries(
     input: ReadCountedIndexedDbEntriesInput
 ): Promise<readonly StoredResourceEntry[]> {
+    const maxToRead = Math.min(input.maxToCount, INDEXED_DB_DUE_READ_PAGE_SIZE);
     const entries: StoredResourceEntry[] = [];
     let counted = 0;
     let after: StoredResourceEntry | undefined = undefined;
     while (counted < input.maxToCount) {
-        const maxToRead = Math.min(input.maxToCount - counted, INDEXED_DB_DUE_READ_PAGE_SIZE);
         const page = await input.readNext(after, maxToRead);
-        const selected = page.filter((stored) =>
-            isResourceInboxTopicSelected(stored.key.topicId, input.allowedTopicIds)
-        );
-        entries.push(...selected);
-        counted += selected.filter(input.isCounted).length;
+        for (const stored of page) {
+            if (counted === input.maxToCount) {
+                return entries;
+            }
+            if (isResourceInboxTopicSelected(stored.key.topicId, input.allowedTopicIds)) {
+                entries.push(stored);
+                counted += input.isCounted(stored) ? 1 : 0;
+            }
+        }
         if (page.length < maxToRead) {
             break;
         }
@@ -165,33 +170,25 @@ export async function readIndexedDbFairnessEntries(
     const transaction = input.db.transaction(input.storeName, 'readonly');
     return await readIndexedDbTransaction(transaction, async () => {
         const index = transaction.objectStore(input.storeName).index(input.indexName);
-        const states = await Promise.all(input.typeIds.map(async (typeId) => ({
-            typeId,
-            entries: await readNextIndexedDbDueEntries({
+        const readNextRetry = (typeId: string, after: StoredResourceEntry | undefined) =>
+            readNextIndexedDbDueEntries({
                 index,
                 typeId,
                 status: EntityStatus.RETRY,
                 dueAtOrBeforeEpochMs: input.overdueBeforeEpochMs,
                 maxToRead: 1,
-                after: undefined
-            })
+                after
+            });
+        const states = await Promise.all(input.typeIds.map(async (typeId) => ({
+            typeId,
+            entries: await readNextRetry(typeId, undefined)
         })));
-        // An excluded context's row is read past for free, so the budget counts only rows a claim could take.
-        const isExcluded = (entry: StoredResourceEntry | undefined) =>
-            entry !== undefined && (input.excludedContextIds?.has(entry.key.contextId) === true ||
-                (!isResourceInboxTopicSelected(entry.key.topicId, input.allowedTopicIds)));
+        const isExcluded = (entry: StoredResourceEntry | undefined) => isFairnessEntryExcluded(entry, input);
         let scanned = input.typeIds.length - states.filter((state) => isExcluded(state.entries[0])).length;
         const active = new Set(states.filter((state) => state.entries.length > 0));
         while (scanned < input.maxToScan && active.size > 0) {
             const selected = [...active].reduce(earlierFairnessReadState);
-            const next = await readNextIndexedDbDueEntries({
-                index,
-                typeId: selected.typeId,
-                status: EntityStatus.RETRY,
-                dueAtOrBeforeEpochMs: input.overdueBeforeEpochMs,
-                maxToRead: 1,
-                after: selected.entries.at(-1)
-            });
+            const next = await readNextRetry(selected.typeId, selected.entries.at(-1));
             if (next.length === 0) {
                 scanned += 1;
                 active.delete(selected);
@@ -202,6 +199,15 @@ export async function readIndexedDbFairnessEntries(
         }
         return new Map(states.map((state) => [state.typeId, state.entries.filter((entry) => !isExcluded(entry))]));
     });
+}
+
+/** An excluded context's row is read past for free, so the budget counts only rows a claim could take. */
+function isFairnessEntryExcluded(
+    entry: StoredResourceEntry | undefined,
+    input: ReadFairnessStoredQueueEntriesInput
+): boolean {
+    return entry !== undefined && (input.excludedContextIds?.has(entry.key.contextId) === true ||
+        !isResourceInboxTopicSelected(entry.key.topicId, input.allowedTopicIds));
 }
 
 interface FairnessReadState {

@@ -7,14 +7,13 @@ import {
 import type { IndexedDbStoreDefinition } from '../persistence/open-indexed-db.ts';
 import {
     decodeStoredResourceEntryValue,
-    INDEXED_DB_QUEUE_PENDING_STATUSES,
     type StoredResourceEntry
 } from './indexed-db-queue-box-entry-codec.ts';
 import { isStoredQueueEntryExpired } from './indexed-db-queue-box-entry.ts';
 import type { ResourceInboxWorkPage } from './queue-box-types.ts';
 import { readCountedIndexedDbEntries, readNextIndexedDbDueEntries } from './read-indexed-db-due-entries.ts';
 import { isResourceInboxTopicSelected } from './resource-inbox/is-resource-inbox-topic-selected.ts';
-import { EntityStatus, type ResourceEntryKeyString } from './ResourceEntry.ts';
+import { EntityStatus, NEW_AND_RETRY_STATUSES, type ResourceEntryKeyString } from './ResourceEntry.ts';
 
 interface ReadStoredQueueEntriesByTypesAndStatusesInput {
     readonly allowedTopicIds?: ReadonlySet<string>;
@@ -130,37 +129,54 @@ export async function readStoredQueueWorkPages(
     const transaction = db.transaction(storeName, 'readonly');
     return await readIndexedDbTransaction(transaction, async () => {
         const store = transaction.objectStore(storeName);
-        const keyIndex = store.index(INDEXED_DB_QUEUE_WORK_INDEX_NAME);
-        const dueIndex = store.index(INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME);
-        return await Promise.all(requests.map(async (request) => {
-            if (request.order === 'key') {
-                return await readStoredQueueKeyPage(keyIndex, request);
-            }
-            const isLive = (stored: StoredResourceEntry) => !isStoredQueueEntryExpired(stored, now);
-            // Every pending row is in the due index; a row of any other status has no next time, so it ties and keeps key order.
-            const read = await readCountedIndexedDbEntries({
-                readNext: (after, maxToRead) =>
-                    INDEXED_DB_QUEUE_PENDING_STATUSES.has(request.status)
-                        ? readNextIndexedDbDueEntries({
-                            index: dueIndex,
-                            typeId: request.typeId,
-                            status: request.status,
-                            dueAtOrBeforeEpochMs: Infinity,
-                            maxToRead,
-                            after
-                        })
-                        : readStoredQueueKeyPage(keyIndex, {
-                            ...request,
-                            maxToRead,
-                            cursor: toKeyPageCursor(request, after)
-                        }),
-                maxToCount: request.maxToRead,
-                allowedTopicIds: undefined,
-                isCounted: isLive
-            });
-            return read.filter(isLive);
-        }));
+        const indexes = {
+            key: store.index(INDEXED_DB_QUEUE_WORK_INDEX_NAME),
+            due: store.index(INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME)
+        };
+        return await Promise.all(requests.map((request) =>
+            request.order === 'key'
+                ? readStoredQueueKeyPage(indexes.key, request)
+                : readStoredQueueDuePage(indexes, request, now)
+        ));
     });
+}
+
+interface StoredQueueWorkIndexes {
+    readonly key: IDBIndex;
+    readonly due: IDBIndex;
+}
+
+/**
+ * A `due` page's live rows: every pending row is in the due index; a row of any other status has no next time, so it
+ * ties and keeps key order.
+ */
+async function readStoredQueueDuePage(
+    indexes: StoredQueueWorkIndexes,
+    request: ResourceInboxWorkPage.Request,
+    now: Temporal.Instant
+): Promise<StoredResourceEntry[]> {
+    const isLive = (stored: StoredResourceEntry) => !isStoredQueueEntryExpired(stored, now);
+    const read = await readCountedIndexedDbEntries({
+        readNext: (after, maxToRead) =>
+            NEW_AND_RETRY_STATUSES.has(request.status)
+                ? readNextIndexedDbDueEntries({
+                    index: indexes.due,
+                    typeId: request.typeId,
+                    status: request.status,
+                    dueAtOrBeforeEpochMs: Infinity,
+                    maxToRead,
+                    after
+                })
+                : readStoredQueueKeyPage(indexes.key, {
+                    ...request,
+                    maxToRead,
+                    cursor: toKeyPageCursor(request, after)
+                }),
+        maxToCount: request.maxToRead,
+        allowedTopicIds: undefined,
+        isCounted: isLive
+    });
+    return read.filter(isLive);
 }
 
 async function readStoredQueueKeyPage(

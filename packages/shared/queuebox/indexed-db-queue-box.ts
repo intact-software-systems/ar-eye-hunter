@@ -430,7 +430,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
             return toCreationOrderedEntries(read, (stored) => Temporal.PlainDateTime.from(stored.audit.createdTs));
         }
         return await readIndexedDbDueEntries({
-            ...input,
+            db: input.db,
+            typeIds: input.typeIds,
+            statusIds: input.statusIds,
+            maxToReadPerCombination: input.maxToReadPerCombination,
             storeName: this.#storeName,
             indexName: INDEXED_DB_QUEUE_FAIRNESS_INDEX_NAME,
             dueAtOrBeforeEpochMs: Number(now.epochMilliseconds),

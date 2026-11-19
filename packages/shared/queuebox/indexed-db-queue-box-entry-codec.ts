@@ -4,6 +4,7 @@ import { toCreatedAtEpochMs } from './resource-inbox/resource-inbox-claim-order.
 import {
     COMPLETED_STATUSES,
     EntityStatus,
+    NEW_AND_RETRY_STATUSES,
     toKeyAsString,
     type Key,
     type ResourceEntry,
@@ -238,12 +239,6 @@ function toExpectedEndEpochMs(
     return COMPLETED_STATUSES.has(status) ? 0 : null;
 }
 
-/** The statuses of a pending row: `by-type-status-next-key` holds every one of them, dated or not. */
-export const INDEXED_DB_QUEUE_PENDING_STATUSES: ReadonlySet<EntityStatus> = new Set([
-    EntityStatus.NEW,
-    EntityStatus.RETRY
-]);
-
 /**
  * The due index time: a row's next time; for an undated pending row, its creation instant (stored as UTC wall time),
  * so a due claim reads it as due; for any other undated row, none, which keeps it out of the index.
@@ -255,7 +250,7 @@ function toFairnessDueEpochMs(
     if (timestamps.nextTs !== undefined) {
         return Number(timestamps.nextTs.epochMilliseconds);
     }
-    return INDEXED_DB_QUEUE_PENDING_STATUSES.has(status)
+    return NEW_AND_RETRY_STATUSES.has(status)
         ? toCreatedAtEpochMs(timestamps.createdTs)
         : undefined;
 }

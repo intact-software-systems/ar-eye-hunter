@@ -380,6 +380,38 @@ describe('IndexedDbQueueBox due order', () => {
         expect(claimed.size).toBe(0);
     });
 
+    it.each([
+        ['expired rows first', 0],
+        ['fifteen live rows first', 15]
+    ])('a due page and a due claim read past 320 expired rows in pages of sixteen: %s', async (_label, liveFirst) => {
+        const queue = createQueueAt('read-past-pages');
+        for (const [index, id] of toDueIds(liveFirst, 'a-live').entries()) {
+            await queue.enqueue(createDueEntry(id, { nextTs: DUE_NOW.subtract({ seconds: 600 - index }) }));
+        }
+        for (let index = 0; index < 320; index += 1) {
+            await queue.enqueue(createDueEntry(`b-expired-${String(index).padStart(3, '0')}`, {
+                nextTs: DUE_NOW.subtract({ seconds: 400 - index }),
+                expiryTs: DUE_NOW.subtract({ seconds: 1 })
+            }));
+        }
+        await queue.enqueue(createDueEntry('c-live', { nextTs: DUE_NOW.subtract({ seconds: 1 }) }));
+        const getAllSpy = vi.spyOn(IDBIndex.prototype, 'getAll');
+
+        const page = await queue.readWorkPage({ typeId: DUE_TYPE_ID, status: EntityStatus.NEW, maxToRead: 16, order: 'due', cursor: null });
+        const pageReads = getAllSpy.mock.calls.length;
+        getAllSpy.mockClear();
+        const claimed = await queue.reserveEntries({
+            typeIds: new Set([DUE_TYPE_ID]),
+            statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]),
+            reservationInput: 16
+        });
+        const claimReads = getAllSpy.mock.calls.length;
+
+        // 321 rows read 16 at a time; the claim reads the same and one page of its RETRY rows.
+        expect({ page: page.entries.length, pageReads, claimed: claimed.size, claimReads })
+            .toEqual({ page: liveFirst + 1, pageReads: 21, claimed: liveFirst + 1, claimReads: 22 });
+    });
+
     it('a due page of reserved rows, which carry no next time, holds them in key order', async () => {
         const queue = createQueueAt('due-page-reserved');
         for (const id of ['b', 'a']) {
