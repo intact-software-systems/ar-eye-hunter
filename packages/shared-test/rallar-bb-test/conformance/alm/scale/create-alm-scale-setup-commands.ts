@@ -1,4 +1,7 @@
-import { createStableRtcLayoutWait } from '../../../fixtures/create-stable-rtc-layout-wait.ts';
+import {
+    createStableRtcLayoutWait,
+    toStableRtcLayoutWaitTimeoutMs
+} from '../../../fixtures/create-stable-rtc-layout-wait.ts';
 import { createRallarBlackBoxEnsureGroupCommands } from '../../../fixtures/live-rtc-setup.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -34,7 +37,7 @@ export function createAlmScaleSetupCommands(
     role: 'director' | 'player'
 ): readonly RallarBlackBoxTestCommand[] {
     const prefix = `alm-scale-${role}`;
-    const created = createSetupBarrier(input, prefix, 'group-created');
+    const created = createSetupBarrier(prefix, 'group-created', input.readyTimeoutMs);
     return [
         createSignInCommand(input, prefix),
         ...(role === 'director'
@@ -48,9 +51,9 @@ export function createAlmScaleSetupCommands(
                 created
             ]
             : [created, createPlayerConnectCommand(input, prefix)]),
-        { ...createSetupBarrier(input, prefix, 'connected'), timeoutMs: computePlayerConnectTimeoutMs(input) },
+        createSetupBarrier(prefix, 'connected', computePlayerConnectTimeoutMs(input)),
         createAudienceWait(input, prefix),
-        createSetupBarrier(input, prefix, 'appointed'),
+        createSetupBarrier(prefix, 'appointed', input.readyTimeoutMs),
         createDirectorWait(input, prefix),
         {
             kind: 'director.status',
@@ -61,9 +64,11 @@ export function createAlmScaleSetupCommands(
         },
         createAcceptedLayoutGate(input, prefix),
         createStableRtcLayoutWait({ group: input.group, prefix, settleTimeoutMs: input.readyTimeoutMs }),
-        createSetupBarrier(input, prefix, 'setup-complete'),
+        // The setup-complete barrier shares the stable wait's limit: its window opens at the first arrival, and one
+        // agent can wait out a hold another did not see.
+        createSetupBarrier(prefix, 'setup-complete', toStableRtcLayoutWaitTimeoutMs(input.readyTimeoutMs)),
         { kind: 'storage.counters', commandId: `${prefix}-storage-reset`, reset: true },
-        createSetupBarrier(input, prefix, 'traffic-ready')
+        createSetupBarrier(prefix, 'traffic-ready', input.readyTimeoutMs)
     ];
 }
 
@@ -111,12 +116,12 @@ function createSignInCommand(input: AlmScaleRecipeInput, prefix: string): Rallar
     };
 }
 
-function createSetupBarrier(input: AlmScaleRecipeInput, prefix: string, phase: string): RallarBlackBoxTestCommand {
+function createSetupBarrier(prefix: string, phase: string, timeoutMs: number): RallarBlackBoxTestCommand {
     return {
         kind: 'barrier',
         commandId: `${prefix}-${phase}`,
         barrierId: `alm-scale-${phase}`,
-        timeoutMs: input.readyTimeoutMs
+        timeoutMs
     };
 }
 

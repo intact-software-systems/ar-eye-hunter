@@ -420,6 +420,15 @@ describe('ALM scale recipes', () => {
                     }
                 ]
             });
+            // A barrier's window opens at the first arrival, so the barrier after the wait shares the wait's limit.
+            expect(recipe.commands[setupComplete]).toEqual({
+                kind: 'barrier',
+                commandId: `${prefix}-setup-complete`,
+                barrierId: 'alm-scale-setup-complete',
+                timeoutMs: 105_000
+            });
+            expect(recipe.commands.find((command) => command.commandId === `${prefix}-traffic-ready`))
+                .toMatchObject({ kind: 'barrier', timeoutMs: 45_000 });
         }
     );
 

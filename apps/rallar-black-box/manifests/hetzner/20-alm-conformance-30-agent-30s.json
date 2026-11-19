@@ -1764,7 +1764,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-director-setup-complete",
             "barrierId": "alm-scale-setup-complete",
-            "timeoutMs": 45000
+            "timeoutMs": 105000
           },
           {
             "kind": "storage.counters",
@@ -6007,7 +6007,7 @@
             "kind": "barrier",
             "commandId": "alm-scale-player-setup-complete",
             "barrierId": "alm-scale-setup-complete",
-            "timeoutMs": 45000
+            "timeoutMs": 105000
           },
           {
             "kind": "storage.counters",
