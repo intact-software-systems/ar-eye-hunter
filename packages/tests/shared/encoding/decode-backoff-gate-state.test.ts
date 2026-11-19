@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { decodeBackoffGateState } from '@shared/encoding/decode-backoff-gate-state.ts';
 import type { BackoffGateState } from '@shared/resilience/backoff-gate.ts';
-import { decodeBackoffGateState } from '@shared/resilience/decode-backoff-gate-state.ts';
 
 const HELD: BackoffGateState = { lastPassAtEpochMs: 10_000, consecutiveHeldPasses: 2, heldAtEpochMs: 13_000 };
 

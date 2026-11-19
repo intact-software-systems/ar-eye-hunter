@@ -1,7 +1,7 @@
 import { decodePlainRecord, hasExactKeys } from '../api/exact-object-decoding.ts';
-import { getOwnCount, getOwnNullableCount } from '../encoding/get-own-field.ts';
-import type { BackoffGateState } from './backoff-gate.ts';
-import { Either } from './Either.ts';
+import type { BackoffGateState } from '../resilience/backoff-gate.ts';
+import { Either } from '../resilience/Either.ts';
+import { getOwnCount, getOwnNullableCount } from './get-own-field.ts';
 
 const GATE_KEYS = [
     'lastPassAtEpochMs',
