@@ -7,7 +7,6 @@ import type {
     ResourceInboxReleaseDisposition,
     ResourceInboxWorkPage
 } from '../../queuebox/queue-box-types.ts';
-import { compareResourceEntriesByDue } from '../../queuebox/resource-inbox/resource-inbox-claim-order.ts';
 import {
     EntityStatus,
     isKeysEqual,
@@ -53,14 +52,17 @@ export interface ReadALWorkPageInput {
 export interface ReadALWorkPageScanInput {
     readonly status: EntityStatus;
     readonly maxToRead: number;
-    /** `due` reads the status's earliest rows across every work type; `key` reads whole pages in work-type order. */
+    /** `due` reads each work type's earliest rows of the status; `key` reads whole pages in work-type order. */
     readonly order: ResourceInboxWorkPage.Order;
 }
 
 export interface ALWorkPageScan {
-    /** At most `maxToRead` rows of this status, in the order the scan named. */
+    /**
+     * Rows of this status, each work type's in the order the scan named: at most `maxToRead` per work type for a `due`
+     * scan, at most `maxToRead` in all for a `key` scan.
+     */
     readonly entries: readonly ResourceEntry[];
-    /** The queue holds more rows of this status than the cap returned. */
+    /** The queue holds more rows of this status than the scan returned. */
     readonly hasMoreEntries: boolean;
 }
 
@@ -328,9 +330,10 @@ function toReleaseDisposition(
 
 /**
  * Reads every status of a scan across every type in `workTypes` from one repository call, each type's page in the
- * order the scan names. A `due` status merges its types' pages by due time before the cut, so the page holds the
- * status's earliest rows whatever their type; a `key` status keeps whole per-type pages in type order. Either way
- * it reports whether the queue held more rows than the cap returned.
+ * order the scan names. A `due` status keeps every type's page whole: a scan may rate one type's rows later than
+ * their own next time, so a cut across types would let that type's rows take another type's due rows' places. A
+ * `key` status keeps whole per-type pages in type order, cut at the cap. Either way it reports whether the queue
+ * held more rows than the scan returned.
  */
 async function readMergedALWorkPageScans(
     queue: QueueBoxResourceEntryRepository,
@@ -350,10 +353,14 @@ async function readMergedALWorkPageScans(
         )
     );
     return inputs.map((input, index) => {
-        const entries = pages.slice(index * types.length, (index + 1) * types.length)
-            .flatMap((page) => page.entries);
-        const ordered = input.order === 'due' ? entries.sort(compareResourceEntriesByDue) : entries;
-        return { entries: ordered.slice(0, input.maxToRead), hasMoreEntries: entries.length >= input.maxToRead };
+        const typePages = pages.slice(index * types.length, (index + 1) * types.length);
+        const entries = typePages.flatMap((page) => page.entries);
+        return input.order === 'due'
+            ? {
+                entries,
+                hasMoreEntries: typePages.some((page) => page.entries.length >= input.maxToRead)
+            }
+            : { entries: entries.slice(0, input.maxToRead), hasMoreEntries: entries.length >= input.maxToRead };
     });
 }
 
