@@ -1,8 +1,8 @@
-import { decodeExactGroupRef } from '@shared/api/decode-exact-group-ref.ts';
 import { decodePlainRecord, hasExactKeys } from '@shared/api/exact-object-decoding.ts';
 import { toCanonicalGroupRef, type GroupRef } from '@shared/api/group-types.ts';
 import { decodeTopologyReshapeGateState } from '@shared/api/topology-plan/decode-topology-reshape-gate-state.ts';
 import type { TopologyReshapeGateState } from '@shared/api/topology-plan/topology-reshape-gate.ts';
+import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { getOwnField } from '@shared/encoding/get-own-field.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 

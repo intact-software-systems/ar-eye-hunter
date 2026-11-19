@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeCanonicalSubset } from '@shared/api/decode-canonical-subset.ts';
+import { decodeCanonicalSubset } from '@shared/encoding/decode-canonical-subset.ts';
 
 const KNOWN = ['first', 'second', 'third'] as const;
 

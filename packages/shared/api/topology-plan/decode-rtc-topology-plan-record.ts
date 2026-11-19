@@ -1,6 +1,6 @@
+import { decodeCanonicalSubset } from '../../encoding/decode-canonical-subset.ts';
 import { getOwnCount, getOwnField } from '../../encoding/get-own-field.ts';
 import { Either } from '../../resilience/Either.ts';
-import { decodeCanonicalSubset } from '../decode-canonical-subset.ts';
 import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
 import { isGroupLayoutIdentity } from '../group-lifecycle/group-layout-identity.ts';
 import { isEmptyTopologyLayoutDelta } from './is-empty-topology-layout-delta.ts';

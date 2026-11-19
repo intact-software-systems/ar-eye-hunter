@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeExactGroupRef } from '@shared/api/decode-exact-group-ref.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 
 const GROUP_REF = { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' };
 
@@ -13,7 +14,7 @@ describe('decodeExactGroupRef', () => {
         expect(decoded).not.toBe(source);
     });
 
-    it.each<[string, unknown, string]>([
+    it.each<[string, ApiJsonValue, string]>([
         ['no object', 'room-1', 'Stored row groupRef must be an exact object'],
         ['an extra key', { ...GROUP_REF, extra: 1 }, 'Stored row groupRef fields are invalid'],
         ['a missing key', { applicationId: 'app-1', workspaceId: 'workspace-1' }, 'Stored row groupRef fields are invalid'],

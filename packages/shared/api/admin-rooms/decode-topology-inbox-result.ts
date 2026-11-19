@@ -1,4 +1,4 @@
-import { decodeExactGroupRef } from '../decode-exact-group-ref.ts';
+import { decodeExactGroupRef } from '../../encoding/decode-exact-group-ref.ts';
 import { requireExactKeys, requireRecord, requireString } from '../exact-object-decoding.ts';
 import type { GroupRef } from '../group-types.ts';
 

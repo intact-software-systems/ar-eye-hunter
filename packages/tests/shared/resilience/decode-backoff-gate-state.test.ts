@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { BackoffGateState } from '@shared/resilience/backoff-gate.ts';
 import { decodeBackoffGateState } from '@shared/resilience/decode-backoff-gate-state.ts';
 
@@ -13,16 +14,16 @@ describe('decodeBackoffGateState', () => {
         expect(decodeBackoffGateState({ ...fresh }).right).toEqual(fresh);
     });
 
-    it.each<[string, unknown]>([
+    it.each<[string, ApiJsonValue]>([
         ['an unknown key', { ...HELD, extra: 1 }],
         ['a missing key', { lastPassAtEpochMs: 0, consecutiveHeldPasses: 0 }],
         ['a value that is no object', 'gate'],
-        ['an array', [HELD]]
+        ['an array', [{ ...HELD }]]
     ])('refuses %s as no exact object', (_label, value) => {
         expect(decodeBackoffGateState(value).left).toBe('Backoff gate state must be an exact object with its own fields');
     });
 
-    it.each<[string, unknown]>([
+    it.each<[string, ApiJsonValue]>([
         ['a negative count', { ...HELD, consecutiveHeldPasses: -1 }],
         ['a null count', { ...HELD, consecutiveHeldPasses: null }],
         ['a fractional instant', { ...HELD, lastPassAtEpochMs: 1.5 }],

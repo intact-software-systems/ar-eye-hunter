@@ -2,8 +2,8 @@ import {
     decodeTopologyReconfigureInboxResult,
     type TopologyReconfigureInboxResult
 } from '@shared/api/admin-rooms/decode-topology-inbox-result.ts';
-import { decodeExactGroupRef } from '@shared/api/decode-exact-group-ref.ts';
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import { decodeExactGroupRef } from '@shared/encoding/decode-exact-group-ref.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 

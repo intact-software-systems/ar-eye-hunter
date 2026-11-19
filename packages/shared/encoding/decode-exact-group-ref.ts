@@ -1,5 +1,5 @@
-import { requireExactKeys, requireRecord, requireString } from './exact-object-decoding.ts';
-import type { GroupRef } from './group-types.ts';
+import { requireExactKeys, requireRecord, requireString } from '../api/exact-object-decoding.ts';
+import type { GroupRef } from '../api/group-types.ts';
 
 /** Throws a TypeError naming `label` unless the value is an exact group reference with non-empty ids. */
 export function decodeExactGroupRef(value: unknown, label: string): GroupRef {

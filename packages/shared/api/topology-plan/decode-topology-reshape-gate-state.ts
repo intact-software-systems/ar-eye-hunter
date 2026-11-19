@@ -1,8 +1,8 @@
+import { decodeCanonicalSubset } from '../../encoding/decode-canonical-subset.ts';
 import { getOwnField } from '../../encoding/get-own-field.ts';
 import { decodeBackoffGateState } from '../../resilience/decode-backoff-gate-state.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ApiJsonValue } from '../api-json-value.ts';
-import { decodeCanonicalSubset } from '../decode-canonical-subset.ts';
 import { decodePlainRecord, hasExactKeys } from '../exact-object-decoding.ts';
 import { HELD_TOPOLOGY_RESHAPE_REASONS, type TopologyReshapeGateState } from './topology-reshape-gate.ts';
 
