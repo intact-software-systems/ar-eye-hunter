@@ -25,6 +25,11 @@ The connected SDK comparison and [runnable room poll](../../examples/shared-dead
 
 The next product decision is whether a second application can consume the same public comparison without duplicating phase or recovery policy. Grumpy Town and physical-device testing remain the candidates described below.
 
+## Next two slices
+
+1. **Create a grace deadline on the connected client.** A room authority with a minimum grace duration needs to publish an absolute instant once. Add `rallar.deadlineAfter(durationMs)` returning the latest plausible server epoch plus the duration, or `undefined` when no live estimate exists. This gives a participant at least the requested duration under the clock bounds. Reject invalid durations and arithmetic overflow. Check skew-independent creation, loss of calibration, and comparison at equality through the public facade. Run shared-web type, export and browser bundle checks.
+2. **Apply it to Grumpy Town seat recovery.** The game director publishes the ten-second away-seat deadline in the existing match checkpoint. Successor directors compare that same instant. A definitively early return can reclaim the seat, a definitely expired seat becomes an observer, and uncertainty defers the time-dependent decision. Explicit departure remains immediate. Verify the existing game build, focused seat tests and a host-loss browser journey. Round countdown, simulation and scoring keep their tick semantics. The game lives on dependent PR #832.
+
 ## Public product and launch evidence
 
 **Shared deadlines.** Expose comparison through the connected client. For a deadline D and valid window [earliest, latest], return *before* when latest < D, *at or after* when earliest ≥ D, and *overlaps* otherwise. Return *unavailable* when the connection lacks a valid sample. The room or domain record owns D. The UI may show “closing” during overlap. The authoritative receiver owns vote or move acceptance. Use a local monotonic clock for animation and elapsed durations.
