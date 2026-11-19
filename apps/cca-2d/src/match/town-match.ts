@@ -5,7 +5,7 @@ import type { TownRoutes } from '../town/routes.ts';
 import { computeTownWorld } from '../town/rules.ts';
 import { createTownState, type TownState, type TownWorldPlayer } from '../town/state.ts';
 import type { TownMatchInput } from './match-input.ts';
-import { computeTownMatchSeats, createTownMatchSeats, type TownMatchSeat } from './match-seats.ts';
+import { computeTownMatchSeats, createTownMatchSeats, type TownMatchSeat, type TownMatchSeatObservation } from './match-seats.ts';
 
 export const TOWN_MATCH_RATE = 30;
 export const TOWN_MATCH_DURATION = 180;
@@ -49,6 +49,7 @@ export interface TownMatchReady extends TownMatchIdentity {
 export interface TownMatchTick {
     readonly state: TownMatchState;
     readonly routes: TownRoutes;
+    readonly clock: TownMatchSeatObservation['clock'];
     readonly inputs: readonly TownMatchInput[];
     readonly now: number;
 }
@@ -56,7 +57,7 @@ export interface TownMatchRecovery {
     readonly state: TownMatchState;
     readonly members: readonly TownMatchIdentity[];
     readonly departedIds: readonly string[];
-    readonly now: number;
+    readonly clock: TownMatchSeatObservation['clock'];
 }
 
 export function createTownMatch(
@@ -149,9 +150,6 @@ export function computeTownMatchRoster(
 export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<readonly string[], TownMatchState> {
     const { state, members } = recovery;
     const issues = [...validateTownMatchMembers(members, 1)];
-    if (!Number.isSafeInteger(recovery.now) || recovery.now < 0) {
-        issues.push('Recovery requires a non-negative epoch time in milliseconds.');
-    }
     if (state.phase !== 'playing' && state.phase !== 'countdown') {
         issues.push('Only an active round can resume from a checkpoint.');
     }
@@ -164,14 +162,23 @@ export function computeTownMatchRecovery(recovery: TownMatchRecovery): Either<re
     if (members.length < 2) {
         return Either.ofLeft(['Recovery requires at least two original round participants.']);
     }
+    const seats = computeTownMatchSeats({
+        seats: state.seats,
+        available: members,
+        departedIds: recovery.departedIds,
+        clock: recovery.clock
+    });
+    // A returning controller or newly absent player needs a definite timing decision
+    // before this roster can become a valid checkpoint.
+    if (seats.some(seat => {
+        const present = members.some(member => member.id === seat.id);
+        return (seat.status === 'active' && !present) || (seat.status === 'away' && present);
+    })) {
+        return Either.ofLeft(['Seat recovery is waiting for a definite deadline decision.']);
+    }
     return Either.ofRight({
         ...state,
-        seats: computeTownMatchSeats({
-            seats: state.seats,
-            available: members,
-            departedIds: recovery.departedIds,
-            now: recovery.now
-        }),
+        seats,
         members: members.toSorted((left, right) => left.id.localeCompare(right.id)).map((member) => ({
             ...member,
             displayName: state.participants.find((participant) => participant.id === member.id)?.displayName ??
@@ -205,7 +212,7 @@ export function computeTownMatchTick(input: TownMatchTick): TownMatchState {
         seats: state.seats,
         available: state.members,
         departedIds: [],
-        now: input.now
+        clock: input.clock
     });
     if (state.phase === 'countdown') {
         const countdownTicks = Math.max(0, state.countdownTicks - 1);

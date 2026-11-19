@@ -36,7 +36,7 @@ export namespace TownMatchSession {
     export interface Dependencies {
         readonly browser: Pick<
             RallarFacade,
-            'director' | 'messages' | 'realtime' | 'rooms' | 'session' | 'isConnected' | 'ws'
+            'compareDeadline' | 'deadlineAfter' | 'director' | 'messages' | 'realtime' | 'rooms' | 'session' | 'isConnected' | 'ws'
         >;
         readonly timers: Timers;
         readonly subtle: Pick<SubtleCrypto, 'digest'>;
@@ -255,7 +255,7 @@ export class TownMatchSession {
                 this.controls = { x: 0, z: 0, dash: this.controls.dash };
             }
             else if (view.isDirector) {
-                this.simulation?.advance(now, this.checkpoints.getState().committed?.state);
+                this.simulation?.advance(now, this.checkpoints.getState().committed?.state, this.dependencies.browser);
             }
             const match = this.checkpoints.getState().committed?.state;
             if (match?.phase === 'playing' && now - this.lastInput >= 50) {
@@ -277,7 +277,7 @@ export class TownMatchSession {
             this.changes.publishLatest(undefined);
         }
         catch (error) {
-            this.report(error);
+            this.report(error instanceof Error ? error.message : 'The match connection failed.');
         }
     }
 
@@ -332,7 +332,7 @@ export class TownMatchSession {
         const source = previous?.committed?.state;
         const active = source?.phase === 'playing' || source?.phase === 'countdown';
         const working = active
-            ? computeTownMatchRecovery({ state: source, members, departedIds, now: this.dependencies.timers.nowMs() })
+            ? computeTownMatchRecovery({ state: source, members, departedIds, clock: this.dependencies.browser })
                 .right ?? source
             : source
             ? computeTownMatchRoster(source, members).right
@@ -476,8 +476,9 @@ export class TownMatchSession {
                 !state.pending && this.simulation &&
                 (!recovery.recoveryRequired || recovery.recovered || phase === 'lobby' || phase === 'interrupted')
             ) {
-                this.restoreRecovery(recovery);
-                await this.propose();
+                if (this.restoreRecovery(recovery)) {
+                    await this.propose();
+                }
             }
             const committedProposal = this.committedProposal;
             if (committedProposal) {
@@ -502,27 +503,29 @@ export class TownMatchSession {
         }
     }
 
-    private restoreRecovery(recovery: TownMatchCheckpoints.State): void {
+    private restoreRecovery(recovery: TownMatchCheckpoints.State): boolean {
         const source = recovery.recoveryCheckpoint?.state;
         const view = this.getView();
         if (
             !recovery.recoveryRequired || !recovery.recovered || !source ||
             (view.interruption && source.matchId === view.match?.matchId)
         ) {
-            return;
+            return true;
         }
         const working = source.phase === 'playing' || source.phase === 'countdown'
             ? computeTownMatchRecovery({
                 state: source,
                 members: this.members,
                 departedIds: this.room.getView().departedIds,
-                now: this.dependencies.timers.nowMs()
+                clock: this.dependencies.browser
             }).right
             : computeTownMatchRoster(source, this.members).right;
-        if (working) {
-            this.simulation?.stop();
-            this.simulation = new TownMatchSimulation(working, this.dependencies.timers.nowMs());
+        if (!working) {
+            return false;
         }
+        this.simulation?.stop();
+        this.simulation = new TownMatchSimulation(working, this.dependencies.timers.nowMs());
+        return true;
     }
 
     private async propose(): Promise<void> {
@@ -622,7 +625,7 @@ export class TownMatchSession {
             );
         }
         catch (error) {
-            this.report(error);
+            this.report(error instanceof Error ? error.message : 'The match connection failed.');
         }
     }
 
@@ -785,9 +788,9 @@ export class TownMatchSession {
         return !this.lifetime.signal.aborted && generation === this.generation && this.getView().available;
     }
 
-    private report(error: unknown): void {
+    private report(message: string): void {
         if (!this.lifetime.signal.aborted) {
-            this.error = error instanceof Error ? error.message : 'The match connection failed.';
+            this.error = message;
             this.changes.publishLatest(undefined);
         }
     }

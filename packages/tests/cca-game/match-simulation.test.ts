@@ -16,6 +16,7 @@ import {
     computeTownMatchStart,
     createTownMatch
 } from '../../../apps/cca-2d/src/match/town-match.ts';
+import { seatDeadlineClock } from './seat-deadline-clock.ts';
 
 const members = [
     { id: 'alice', sessionId: 'alice-session', displayName: 'Alice' },
@@ -66,7 +67,7 @@ describe('director clock and control admission', () => {
         const simulation = createCountdown();
         let committed = simulation.getState();
         for (let now = 16; now <= 3008; now += 16) {
-            simulation.advance(now, committed);
+            simulation.advance(now, committed, seatDeadlineClock(now));
             if (now % 112 === 0) {
                 committed = simulation.getState();
             }
@@ -85,7 +86,7 @@ describe('director clock and control admission', () => {
         simulation.accept(movement, 'bob-session', 0);
         for (let now = 16; now <= 5000; now += 16) {
             simulation.accept(movement, 'bob-session', now);
-            simulation.advance(now, committed);
+            simulation.advance(now, committed, seatDeadlineClock(now));
         }
         const state = simulation.getState();
         expect(state.tick).toBe(60);
@@ -101,7 +102,7 @@ describe('director clock and control admission', () => {
         const movement = createFrame(1, { kind: 'controls', x: 1, z: 0, dash: 0 });
         simulation.accept(movement, 'outsider', 0);
         simulation.accept({ ...movement, matchId: 'old-round' }, 'bob-session', 0);
-        simulation.advance(100, before);
+        simulation.advance(100, before, seatDeadlineClock(100));
         expect(simulation.getState().players.map((player) => player.x)).toEqual(before.players.map((player) => player.x));
         simulation.stop();
     });

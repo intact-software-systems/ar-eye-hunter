@@ -7,6 +7,7 @@ import {
 import { TownMatchCheckpoints } from '../../../apps/cca-2d/src/match/match-checkpoints.ts';
 import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
 import { computeTownMatchRecovery, computeTownMatchRoster, createTownMatch } from '../../../apps/cca-2d/src/match/town-match.ts';
+import { seatDeadlineClock } from './seat-deadline-clock.ts';
 
 const members = [
     { id: 'alice', sessionId: 'alice-session', displayName: 'Alice' },
@@ -155,7 +156,7 @@ describe('match checkpoint agreement', () => {
         const saved = {
             ...proposal,
             epoch: 2,
-            state: computeTownMatchRecovery({ state: { ...state, phase: 'playing' }, members: members.slice(1), departedIds: [], now: 1000 }).right!
+            state: computeTownMatchRecovery({ state: { ...state, phase: 'playing' }, members: members.slice(1), departedIds: [], clock: seatDeadlineClock(1000) }).right!
         };
         expect(decodeTownMatchSnapshot(JSON.stringify(saved.state)).left).toBeUndefined();
         checkpoints.propose(saved, 'bob-session');
@@ -171,7 +172,7 @@ describe('match checkpoint agreement', () => {
             ...saved,
             sequence: 2,
             digest: 'b'.repeat(64),
-            state: computeTownMatchRecovery({ state: saved.state, members: [returning, ...continuing.members], departedIds: [], now: 2000 }).right!
+            state: computeTownMatchRecovery({ state: saved.state, members: [returning, ...continuing.members], departedIds: [], clock: seatDeadlineClock(2000) }).right!
         };
         expect(decodeTownMatchSnapshot(JSON.stringify(resumed.state)).left).toBeUndefined();
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
@@ -320,7 +321,7 @@ describe('match checkpoint agreement', () => {
             ...latest,
             epoch: 2,
             sequence: 1,
-            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], now: 1000 }).right!
+            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], clock: seatDeadlineClock(1000) }).right!
         };
         expect(checkpoints.propose({ ...resumed, state: { ...resumed.state, tick: 0 } }, 'bob-session').left).toBeDefined();
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
@@ -368,7 +369,7 @@ describe('match checkpoint agreement', () => {
             epoch: 2,
             sequence: 1,
             digest: 'c'.repeat(64),
-            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], now: 1000 }).right!
+            state: computeTownMatchRecovery({ state: latest.state, members: members.slice(1), departedIds: [], clock: seatDeadlineClock(1000) }).right!
         };
         expect(checkpoints.propose(resumed, 'bob-session').right).toBe(true);
         checkpoints.changeAuthority({ epoch: 3, sessionId: 'carol-session', members: members.slice(1) });

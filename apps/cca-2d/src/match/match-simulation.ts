@@ -7,6 +7,7 @@ import {
     computeTownMatchStart,
     computeTownMatchTick,
     TOWN_MATCH_RATE,
+    type TownMatchTick,
     type TownMatchState
 } from './town-match.ts';
 
@@ -27,7 +28,7 @@ export class TownMatchSimulation {
         return this.state;
     }
 
-    advance(now: number, committed: TownMatchState | undefined): void {
+    advance(now: number, committed: TownMatchState | undefined, clock: TownMatchTick['clock']): void {
         const confirmedTime = committed ? committed.tick - committed.countdownTicks : 0;
         const unconfirmedTime = this.state.tick - this.state.countdownTicks;
         if (committed && unconfirmedTime - confirmedTime >= TOWN_MATCH_RATE * 2) {
@@ -39,6 +40,7 @@ export class TownMatchSimulation {
             this.state = computeTownMatchTick({
                 state: this.state,
                 routes: this.routes,
+                clock,
                 inputs: [...this.inputs.values()],
                 now
             });

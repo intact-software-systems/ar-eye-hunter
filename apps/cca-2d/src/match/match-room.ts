@@ -15,7 +15,7 @@ import type { TownMatchIdentity } from './town-match.ts';
 
 export namespace TownMatchRoom {
     export interface Dependencies {
-        readonly browser: Pick<RallarFacade, 'director' | 'rooms' | 'session' | 'isConnected'>;
+        readonly browser: Pick<RallarFacade, 'compareDeadline' | 'director' | 'rooms' | 'session' | 'isConnected'>;
         readonly timers: Timers;
     }
     export interface View {
@@ -51,10 +51,9 @@ export class TownMatchRoom {
         const browser = this.dependencies.browser;
         const snapshot = browser.rooms.current();
         const names = browser.rooms.state().members;
-        const now = this.dependencies.timers.nowMs();
         const members = snapshot && isSameGroupRef(snapshot.group, this.roomRef)
             ? snapshot.activeSessions.filter((session) =>
-                session.status === 'active' && session.expiresAtEpochMs > now &&
+                session.status === 'active' && browser.compareDeadline(session.expiresAtEpochMs) === 'before' &&
                 snapshot.members.some((member) =>
                     member.principalId === session.principalId && member.status === 'active' &&
                     member.role !== 'spectator'

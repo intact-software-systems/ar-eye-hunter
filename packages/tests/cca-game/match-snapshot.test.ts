@@ -20,6 +20,7 @@ import {
 import { TownRoutes } from '../../../apps/cca-2d/src/town/routes.ts';
 import { requestTownSpectacle } from '../../../apps/cca-2d/src/town/spectacles/rules.ts';
 import { TOWN_BARBECUE } from '../../../apps/cca-2d/src/town/spectacles/state.ts';
+import { seatDeadlineClock } from './seat-deadline-clock.ts';
 
 const members = [
     { id: 'alice', sessionId: 'alice-session', displayName: 'Alice' },
@@ -29,7 +30,7 @@ const members = [
 describe('network match snapshot boundary', () => {
     it('requires complete seat state and rejects contradictory deadlines and controller identities', () => {
         const lobby = createTownMatch('seats', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
-        const away = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], now: 2000 }).right!;
+        const away = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], clock: seatDeadlineClock(2000) }).right!;
         expect(decodeTownMatchSnapshot(JSON.stringify(away)).right?.seats[0].expiresAtEpochMs).toBe(12000);
         for (
             const seats of [
@@ -50,7 +51,7 @@ describe('network match snapshot boundary', () => {
 
     it('preserves retired participants in a resumed checkpoint and rejects altered identities', () => {
         const lobby = createTownMatch('recovery', [...members, { id: 'carol', sessionId: 'carol-session', displayName: 'Carol' }]).right!;
-        const recovered = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], now: 1000 })
+        const recovered = computeTownMatchRecovery({ state: { ...lobby, phase: 'playing' }, members: lobby.members.slice(1), departedIds: [], clock: seatDeadlineClock(1000)})
             .right!;
         expect(decodeTownMatchSnapshot(JSON.stringify(recovered)).right).toEqual(recovered);
         expect(decodeTownMatchSnapshot(JSON.stringify({ ...recovered, participants: recovered.participants.slice(1) })).left).toBeDefined();
@@ -72,7 +73,7 @@ describe('network match snapshot boundary', () => {
         state = { ...state, town: { ...town, heat: 6 } };
         const routes = new TownRoutes();
         for (let tick = 0; tick < 5490; tick++) {
-            state = computeTownMatchTick({ state, routes, inputs: [], now: tick * 1000 / 30 });
+            state = computeTownMatchTick({ state, routes, inputs: [], now: tick * 1000 / 30, clock: seatDeadlineClock(tick * 1000 / 30) });
             if (tick % 150 === 0 || tick === 5489) {
                 const decoded = decodeTownMatchSnapshot(JSON.stringify(state));
                 expect(decoded.left).toBeUndefined();

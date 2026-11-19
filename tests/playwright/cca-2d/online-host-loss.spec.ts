@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 
+import { decodeTownMatchSnapshot } from '../../../apps/cca-2d/src/match/match-snapshot.ts';
 import { decodeMatchWire, startTownMatch } from './match-browser.ts';
 
 test('two survivors replace a silently unreachable host and fence its return', async ({ browser }) => {
@@ -9,6 +10,7 @@ test('two survivors replace a silently unreachable host and fence its return', a
     const pages = await Promise.all(contexts.map((context) => context.newPage()));
     const [alice, bob, carol] = pages;
     const epochs: number[] = [];
+    const graceByProposal = new Map<string, number>();
     let offline = false;
     let discarded = 0;
     let closes = 0;
@@ -44,8 +46,18 @@ test('two survivors replace a silently unreachable host and fence its return', a
         survivor.on('websocket', (socket) =>
             socket.on('framesent', ({ payload }) => {
                 const frame = decodeMatchWire(payload);
-                if (frame?.action.kind === 'proposal' && !epochs.includes(frame.epoch)) {
+                if (frame?.action.kind !== 'proposal') {
+                    return;
+                }
+                if (!epochs.includes(frame.epoch)) {
                     epochs.push(frame.epoch);
+                }
+                if (offline && frame.epoch > hostEpoch) {
+                    const match = decodeTownMatchSnapshot(frame.action.snapshot).right;
+                    const away = match?.seats.find(seat => seat.status === 'away');
+                    if (away) {
+                        graceByProposal.set(frame.action.digest, away.expiresAtEpochMs);
+                    }
                 }
             }));
     }
@@ -72,6 +84,10 @@ test('two survivors replace a silently unreachable host and fence its return', a
         expect(recoveryElapsedMs).toBeLessThan(11500);
         expect(closes).toBe(0);
         await expect(alice.locator('#round-results')).toBeVisible();
+        await expect.poll(() => graceByProposal.size).toBeGreaterThan(1);
+        const deadlines = [...new Set(graceByProposal.values())];
+        expect(deadlines).toHaveLength(1);
+        expect(deadlines[0]).toBeGreaterThanOrEqual(partitionedAt + 10_000);
         offline = false;
         await expect(alice.locator('#online-game')).toHaveAttribute('data-director', 'false', { timeout: 15000 });
         await expect(alice.locator('#online-game')).toHaveAttribute('data-seat', 'active');
