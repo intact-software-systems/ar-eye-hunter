@@ -12,7 +12,10 @@ import {
     type GroupStateCausalRevision
 } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import { readRtcTopologyWorkMessage } from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
+import {
+    readRtcTopologyWorkMessage,
+    RTC_TOPOLOGY_WORK_KINDS
+} from '@shared/queuebox/rtc-topology-work-entry-contract.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkMetadata
@@ -176,19 +179,32 @@ function readPersistedRtcTopologyWork(
     contextId: string
 ): PersistedRtcTopologyWork {
     const work = requireWorkRecord(envelope.data, 'RTC topology work data');
-    if (work.kind === 'rtt-refresh') {
-        const groupSnapshot = readWorkGroupSnapshot(work.groupSnapshot);
-        const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef: groupSnapshot.group });
-        return readRttRefreshWork(variantInput, groupSnapshot);
+    const kind = findPersistedRtcTopologyWorkKind(work.kind);
+    switch (kind) {
+        case 'rtt-refresh': {
+            const groupSnapshot = readWorkGroupSnapshot(work.groupSnapshot);
+            const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef: groupSnapshot.group });
+            return readRttRefreshWork(variantInput, groupSnapshot);
+        }
+        case 'group-revision':
+        case 'reshape-due': {
+            const groupRef = readWorkGroupRef(work.groupRef);
+            const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef });
+            return kind === 'group-revision'
+                ? readGroupRevisionWork(variantInput, groupRef)
+                : readReshapeDueWork(variantInput, groupRef);
+        }
+        case undefined:
+            throw new TypeError('RTC topology work kind is invalid');
     }
-    if (work.kind !== 'group-revision' && work.kind !== 'reshape-due') {
-        throw new TypeError('RTC topology work kind is invalid');
-    }
-    const groupRef = readWorkGroupRef(work.groupRef);
-    const variantInput = toWorkVariantInput({ work, resourceId, contextId, groupRef });
-    return work.kind === 'group-revision'
-        ? readGroupRevisionWork(variantInput, groupRef)
-        : readReshapeDueWork(variantInput, groupRef);
+}
+
+/**
+ * The contract's kinds, typed as the union's: a kind added to the contract fails this return, and one added to the
+ * union fails the exhaustive switch above until it has a reader.
+ */
+function findPersistedRtcTopologyWorkKind(value: JsonWireValue): PersistedRtcTopologyWork['kind'] | undefined {
+    return RTC_TOPOLOGY_WORK_KINDS.find((known) => known === value);
 }
 
 interface ToWorkVariantInput {
