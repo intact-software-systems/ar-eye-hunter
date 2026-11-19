@@ -35,6 +35,10 @@ export function toALOutboundRepairAttemptKey(namespace: string, msgId: string): 
     return `${namespace}:repair-attempt:${msgId}`;
 }
 
+export function toALOutboundFirstHopWaitKey(namespace: string, msgId: string): string {
+    return `${namespace}:first-hop-wait:${msgId}`;
+}
+
 export function toALOutboundNotYetInSyncRetryKey(namespace: string, msgId: string): string {
     return `${namespace}:not-yet-in-sync-retry:${msgId}`;
 }

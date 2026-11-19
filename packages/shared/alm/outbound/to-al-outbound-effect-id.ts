@@ -2,6 +2,8 @@ import { toALSeqRangesText } from '../../al-contracts/al-seq-range.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALOutboundRepairHint } from './admission/al-outbound-admission-store.ts';
 import type { ALOutboundDispatchPhase } from './al-outbound-message-runtime.ts';
+import type { ALOutboundCommitDispatchOptions } from './compute-al-outbound-dispatch.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 
 /** What names one prepared copy's send: the attempt it belongs to and the copy's place and content in it. */
 export interface ALOutboundSendEffectIdentity {
@@ -16,6 +18,11 @@ export function toALOutboundEffectId(
     parts: readonly (number | string)[]
 ): string {
     return parts.map((part) => encodeURIComponent(String(part))).join(':');
+}
+
+/** The identity the sends of one dispatch carry: `initial` for a first send, its hint's for a repair. */
+export function toALOutboundAttemptIdentity(options: Pick<ALOutboundCommitDispatchOptions, 'attemptIdentity'>): string {
+    return options.attemptIdentity ?? 'initial';
 }
 
 /** The send of one prepared copy; a re-executed attempt names the same sends, which are written once. */
@@ -35,6 +42,13 @@ export function toALOutboundAckTimeoutEffectId(
     pending: Pick<ALOutboundPendingAckSnapshot, 'msgId' | 'attempts' | 'deadlineAtMs'>
 ): string {
     return toALOutboundEffectId(['ack-timeout', pending.msgId, pending.attempts + 1, pending.deadlineAtMs]);
+}
+
+/** The timeout check a first-hop wait schedules for its next attempt; the wait's attempt and deadline name it. */
+export function toALOutboundFirstHopTimeoutEffectId(
+    wait: Pick<ALOutboundFirstHopWaitSnapshot, 'msgId' | 'attempts' | 'deadlineAtMs'>
+): string {
+    return toALOutboundEffectId(['first-hop-timeout', wait.msgId, wait.attempts + 1, wait.deadlineAtMs]);
 }
 
 /**

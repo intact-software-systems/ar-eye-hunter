@@ -125,6 +125,10 @@ export function decodeALOutboundEffectPayload<TPrepared>(
             decodeALAdmissionRecord(value, ['kind', 'msgId']);
             requirePersistedALNonEmptyString(payload.msgId, 'acknowledgement timeout message id');
             return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'ack-timeout'; }>;
+        case 'first-hop-timeout':
+            decodeALAdmissionRecord(value, ['kind', 'msgId']);
+            requirePersistedALNonEmptyString(payload.msgId, 'first-hop timeout message id');
+            return value as Extract<ALOutboundDurableEffect<TPrepared>, { kind: 'first-hop-timeout'; }>;
         case 'repair-hint':
             decodeALAdmissionRecord(value, ['kind', 'msgId', 'request']);
             requirePersistedALNonEmptyString(payload.msgId, 'repair hint message id');

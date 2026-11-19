@@ -54,6 +54,8 @@ import {
 } from '../control/al-outbound-control-admission.ts';
 import type { ALOutboundReceiptAdmissionSurface } from '../control/compute-al-outbound-receipt-admission.ts';
 import { toALOutboundOutsideAudienceCommit } from '../control/to-al-outbound-outside-audience-commit.ts';
+import { writeALOutboundTimeoutCompletion } from '../control/write-al-outbound-timeout-completion.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import type {
     ALOrderingIndexedSequence,
     ALOrderingStoredPredecessors
@@ -247,6 +249,7 @@ export interface ALOutboundMessageReadDto<TPrepared> {
     readonly sentPositions: ALOutboundSentPositions | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
+    readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
     /**
      * A send row of the read's `repairAttempt` identity already exists: the attempt was committed, and
@@ -270,6 +273,7 @@ export interface ALOutboundRepairReadDto<TPrepared> {
     readonly storedMessage: ALStoredOutboundMessage | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
+    readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
     readonly acks: readonly ALAckPayload[];
     readonly nacks: readonly ALNackPayload[];
@@ -311,6 +315,10 @@ export type ALOutboundDurableEffect<TPrepared> =
     }>
     | Readonly<{
         kind: 'ack-timeout';
+        msgId: string;
+    }>
+    | Readonly<{
+        kind: 'first-hop-timeout';
         msgId: string;
     }>
     | Readonly<{
@@ -361,6 +369,8 @@ export interface ALOutboundCommitBundle<TPrepared> {
     readonly canonicalEntry?: ResourceEntry;
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
+    /** The timer rows this commit ends, each completed unless a batch already leased it; absent: the commit ends no timer. */
+    readonly endedTimeoutEffectIds?: readonly string[];
 }
 
 export interface ALOutboundNotYetInSyncRetrySchedule {
@@ -788,6 +798,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             return {
                 stored,
                 pending: await this.reads.readReceiptState(session, receipt),
+                firstHopWait: await this.reads.readFirstHopWait(session, receipt.msgId),
                 clientRecord: await this.reads.readClientRecord(session, receipt.originPeerId),
                 trackPositions: await this.reads.readReceiptTrackPositions(session, receipt, stored)
             };
@@ -926,6 +937,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
         const effects = candidates.flatMap((candidate) => candidate.effects);
         const mutations = candidates.flatMap((candidate) => candidate.mutations);
+        const endedTimeoutEffectIds = candidates.flatMap((candidate) => candidate.bundle.endedTimeoutEffectIds ?? []);
         try {
             return await this.backend.write(async (tx) => {
                 // A deadline the reads above already crossed answers before any fence: the message is
@@ -945,6 +957,9 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
                 }
                 this.effectStore.writeEffects(tx, effects);
                 await this.mutations.writeStateWrites(tx, mutations);
+                for (const effectId of endedTimeoutEffectIds) {
+                    await writeALOutboundTimeoutCompletion(tx, this.namespace, effectId);
+                }
                 await tx.setFence(versionKey, version, versionExpireAt);
                 return 'committed';
             }, computeALOutboundGroupExecutionExpiry(candidates));
@@ -1032,7 +1047,8 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
 }
 
 function hasALOutboundBundleWrites<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): boolean {
-    return bundle.mutations.length > 0 || bundle.durableEffects.length > 0;
+    return bundle.mutations.length > 0 || bundle.durableEffects.length > 0 ||
+        (bundle.endedTimeoutEffectIds?.length ?? 0) > 0;
 }
 
 /** Every bundle of one group was decided against the same read of the version of one sender. */

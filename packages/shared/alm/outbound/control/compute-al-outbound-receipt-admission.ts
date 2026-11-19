@@ -14,6 +14,7 @@ import type {
 import type { ALStoredOutboundMessage } from '../admission/al-outbound-admission-validation.ts';
 import { computeALOutboundRoomSentFloorReceipt } from '../admission/sequencing/al-outbound-room-sent-floor.ts';
 import type { ALOutboundSettlementFact } from '../al-outbound-message-runtime.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
     isALOutboundReceiptComplete,
     toALOutboundAcknowledgementFact
@@ -23,6 +24,8 @@ import {
 export interface ALOutboundReceiptAdmissionSurface {
     readonly stored: ALStoredOutboundMessage | undefined;
     readonly pending: ALOutboundPendingAckSnapshot | undefined;
+    /** The sender's wait for the server to first answer for the message, which any receipt of it ends. */
+    readonly firstHopWait: ALOutboundFirstHopWaitSnapshot | undefined;
     readonly clientRecord: ALOutboundVersionedClientRecord | undefined;
     /**
      * Read only for an `admitted` receipt, the one phase carrying the audience the server routed, of a sequenced

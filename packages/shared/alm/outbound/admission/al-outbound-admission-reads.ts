@@ -39,6 +39,8 @@ import {
 import { readALOutboundCanonicalMessage } from '../al-outbound-canonical-storage.ts';
 import type { ALOutboundDispatchPlan } from '../al-outbound-message-runtime.ts';
 import { toALOutboundWorkKey } from '../al-outbound-work-entry.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
+import { decodeALOutboundFirstHopWait } from '../first-hop/decode-al-outbound-first-hop-wait.ts';
 import {
     isALOutboundRowUnrecorded,
     type ALOrderingIndexedSequence,
@@ -49,6 +51,7 @@ import { toALOutboundPreparedFingerprint } from '../to-al-outbound-prepared-fing
 import { isALOutboundReceiptComplete } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundControlHistoryKey,
+    toALOutboundFirstHopWaitKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
     toALOutboundSentMessageKey,
@@ -215,6 +218,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const recording = toALOutboundSentPositionRecording(input, stored);
         const { plan, sentPositions } = await this.readSentPositionRecord(session, minted.plan, recording);
         const fences = await this.readAdmissionFences({ session, outgoing: input, plan, nowMs });
+        // Only a plan that waits on its first hop reads the wait, so no other send pays the round trip.
+        const firstHopWait = plan.firstHopTracking === undefined
+            ? undefined
+            : await this.readFirstHopWait(session, msg.id.msgId);
 
         return {
             kind: 'outgoing',
@@ -231,6 +238,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             sentPositions,
             sentSnapshot: stored && canonical ? this.toLiveSentSnapshot(stored, canonical, this.nowMs()) : undefined,
             ...control,
+            firstHopWait,
             repairs,
             ...fences
         };
@@ -267,6 +275,10 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (msg && plan) {
             requireALOutboundPlannedMessage(msg, plan.msg);
         }
+        const [control, firstHopWait] = await Promise.all([
+            this.readControlTracking(session, msgId, senderId),
+            this.readFirstHopWait(session, msgId)
+        ]);
         return {
             kind: 'repair',
             msgId,
@@ -274,7 +286,8 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             storedMessage: stored,
             sentSnapshot,
-            ...await this.readControlTracking(session, msgId, senderId),
+            ...control,
+            firstHopWait,
             plan
         };
     }
@@ -463,6 +476,17 @@ export class ALOutboundAdmissionReads<TPrepared> {
             session,
             toALOutboundPendingAckKey({ namespace: this.namespace, ...receipt }),
             (value) => decodeALOutboundPendingAck(value, receipt.msgId)
+        );
+    }
+
+    async readFirstHopWait(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALOutboundFirstHopWaitSnapshot | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundFirstHopWaitKey(this.namespace, msgId),
+            (value) => decodeALOutboundFirstHopWait(value, msgId)
         );
     }
 

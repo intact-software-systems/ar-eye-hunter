@@ -18,7 +18,9 @@ import type {
 } from '../../compute-al-supersedence-observation.ts';
 import { computeALReceiptRetentionExpiryMs } from '../../delivery/compute-al-receipt-retention-expiry-ms.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from '../first-hop/compute-al-outbound-first-hop-wait.ts';
 import {
+    toALOutboundFirstHopWaitKey,
     toALOutboundMessageOwnerKey,
     toALOutboundPendingAckKey,
     toALOutboundRepairAttemptKey,
@@ -112,6 +114,16 @@ export type ALOutboundAdmissionMutation =
         msgId: string;
     }>
     | Readonly<{
+        kind: 'set-first-hop-wait';
+        snapshot: ALOutboundFirstHopWaitSnapshot;
+        /** The message deadline: the wait cannot outlive the send it resends. */
+        expireAtTimestamp: number;
+    }>
+    | Readonly<{
+        kind: 'delete-first-hop-wait';
+        msgId: string;
+    }>
+    | Readonly<{
         kind: 'set-repair-attempt';
         snapshot: ALOutboundRepairAttemptSnapshot;
         expireAtTimestamp?: number;
@@ -146,6 +158,7 @@ export interface ALOutboundStateWrite {
         | string
         | ALStoredOutboundMessageRow
         | ALOutboundPendingAckSnapshot
+        | ALOutboundFirstHopWaitSnapshot
         | ALOutboundRepairAttemptSnapshot
         | ALOutboundTrackPositionRow
         | ALOutboundRoomSentFloorRow
@@ -357,9 +370,17 @@ export class ALOutboundAdmissionMutations {
             case 'set-repair-attempt':
             case 'set-pending-ack':
                 return this.computeReceiptWrite(mutation, nowMs);
+            case 'set-first-hop-wait':
+                return {
+                    key: toALOutboundFirstHopWaitKey(this.namespace, mutation.snapshot.msgId),
+                    value: mutation.snapshot,
+                    expireAtTimestamp: mutation.expireAtTimestamp,
+                    guard: undefined
+                };
             case 'delete-ordering-message':
             case 'delete-sent-message':
             case 'delete-pending-ack':
+            case 'delete-first-hop-wait':
             case 'delete-repair-attempt':
                 return {
                     key: this.toDeletedMutationKey(mutation),
@@ -464,6 +485,7 @@ export class ALOutboundAdmissionMutations {
                 | 'delete-ordering-message'
                 | 'delete-sent-message'
                 | 'delete-pending-ack'
+                | 'delete-first-hop-wait'
                 | 'delete-repair-attempt';
         }>
     ): string {
@@ -478,6 +500,8 @@ export class ALOutboundAdmissionMutations {
                     originPeerId: mutation.originPeerId,
                     msgId: mutation.msgId
                 });
+            case 'delete-first-hop-wait':
+                return toALOutboundFirstHopWaitKey(this.namespace, mutation.msgId);
             case 'delete-repair-attempt':
                 return toALOutboundRepairAttemptKey(this.namespace, mutation.msgId);
         }

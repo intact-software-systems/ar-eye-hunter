@@ -1,0 +1,118 @@
+import { EntityStatus, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import type { ALOutboundDurableEffectWrite } from '../admission/al-outbound-admission-store.ts';
+import type { ALOutboundDispatchPhase } from '../al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchWrites, ComputeALOutboundDispatchInput } from '../compute-al-outbound-dispatch.ts';
+import {
+    toALOutboundAttemptIdentity,
+    toALOutboundEffectId,
+    toALOutboundFirstHopTimeoutEffectId
+} from '../to-al-outbound-effect-id.ts';
+
+/** The sender's wait for its own hop to answer for a send; `attemptIdentity` and `phase` name the attempt whose frame it stands on. */
+export interface ALOutboundFirstHopWaitSnapshot {
+    readonly msgId: string;
+    readonly timeoutMs: number;
+    readonly maxAttempts: number;
+    readonly attempts: number;
+    readonly deadlineAtMs: number;
+    readonly attemptIdentity: string;
+    readonly phase: ALOutboundDispatchPhase;
+}
+
+export type ALOutboundFirstHopTimeoutDecision =
+    | Readonly<{ kind: 'ended' | 'orphaned' | 'early' | 'exhausted'; }>
+    | Readonly<{ kind: 'unwritten' | 'resend'; next: ALOutboundFirstHopWaitSnapshot; }>;
+
+export interface ComputeALOutboundFirstHopTimeoutInput {
+    readonly wait: ALOutboundFirstHopWaitSnapshot | undefined;
+    /** The message is still retained, re-planned and before its deadline. */
+    readonly messageLive: boolean;
+    /** The send rows of the attempt the wait stands on, one per prepared copy. */
+    readonly attemptRows: readonly (ResourceEntry | undefined)[];
+    readonly nowMs: number;
+}
+
+/**
+ * The wait the dispatch that writes a send's first frame records: nothing for a repair, which never starts one, nor
+ * for a send whose own hop has already answered (a receipt row) or that already waits.
+ */
+export function computeALOutboundFirstHopWaitWrites<TPrepared>(
+    input: ComputeALOutboundDispatchInput<TPrepared>,
+    messageExpiresAtMs: number
+): ALOutboundDispatchWrites<TPrepared> {
+    const { read } = input;
+    const tracking = read.plan.firstHopTracking;
+    if (
+        tracking === undefined || read.plan.preparedMessages.length === 0 || input.intent === 'repair' ||
+        read.pendingAck !== undefined || read.firstHopWait !== undefined
+    ) {
+        return { mutations: [], durableEffects: [] };
+    }
+    const snapshot: ALOutboundFirstHopWaitSnapshot = {
+        msgId: read.msg.id.msgId,
+        timeoutMs: tracking.timeoutMs,
+        maxAttempts: tracking.maxAttempts,
+        attempts: 0,
+        deadlineAtMs: read.nowMs + tracking.timeoutMs,
+        attemptIdentity: toALOutboundAttemptIdentity(input.options),
+        phase: input.phase
+    };
+    return {
+        mutations: [{ kind: 'set-first-hop-wait', snapshot, expireAtTimestamp: messageExpiresAtMs }],
+        durableEffects: [toALOutboundFirstHopTimeoutEffect(snapshot, messageExpiresAtMs)]
+    };
+}
+
+/**
+ * What a first-hop deadline does. A frame its transport has not written yet charges nothing and waits a whole timeout
+ * more; a written one that drew no answer is written again under a new attempt identity, so a new frame goes out.
+ */
+export function computeALOutboundFirstHopTimeout(
+    input: ComputeALOutboundFirstHopTimeoutInput
+): ALOutboundFirstHopTimeoutDecision {
+    const { wait, nowMs } = input;
+    if (wait === undefined) {
+        return { kind: 'ended' };
+    }
+    if (!input.messageLive) {
+        return { kind: 'orphaned' };
+    }
+    if (wait.deadlineAtMs > nowMs) {
+        return { kind: 'early' };
+    }
+    const deadlineAtMs = nowMs + wait.timeoutMs;
+    if (input.attemptRows.some((row) => row !== undefined && isUnwrittenALOutboundSend(row))) {
+        return { kind: 'unwritten', next: { ...wait, deadlineAtMs } };
+    }
+    if (wait.attempts >= wait.maxAttempts) {
+        return { kind: 'exhausted' };
+    }
+    const attempts = wait.attempts + 1;
+    return {
+        kind: 'resend',
+        next: {
+            ...wait,
+            attempts,
+            deadlineAtMs,
+            attemptIdentity: toALOutboundEffectId(['first-hop', wait.msgId, attempts, deadlineAtMs]),
+            phase: 'immediate'
+        }
+    };
+}
+
+/** The timer of a wait, retained until the message deadline as a receipt's `ack-timeout` is. */
+export function toALOutboundFirstHopTimeoutEffect<TPrepared>(
+    wait: ALOutboundFirstHopWaitSnapshot,
+    messageExpiresAtMs: number
+): ALOutboundDurableEffectWrite<TPrepared> {
+    return {
+        effectId: toALOutboundFirstHopTimeoutEffectId(wait),
+        retryAtMs: wait.deadlineAtMs,
+        expireAtTimestamp: messageExpiresAtMs,
+        payload: { kind: 'first-hop-timeout', msgId: wait.msgId }
+    };
+}
+
+function isUnwrittenALOutboundSend(row: ResourceEntry): boolean {
+    return row.status === EntityStatus.NEW || row.status === EntityStatus.RETRY || row.status === EntityStatus.RESERVED;
+}

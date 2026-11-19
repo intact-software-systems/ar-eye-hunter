@@ -30,8 +30,13 @@ import {
     toALOutboundDispatchCompletionReceipt,
     type ALOutboundDispatchCompletionRead
 } from './control/to-al-outbound-dispatch-completion-receipt.ts';
+import { computeALOutboundFirstHopWaitWrites } from './first-hop/compute-al-outbound-first-hop-wait.ts';
 import { toALCapacityRefusedVerdict } from './lane/admit-al-outbound-volatile-budget.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundSendEffectId } from './to-al-outbound-effect-id.ts';
+import {
+    toALOutboundAckTimeoutEffectId,
+    toALOutboundAttemptIdentity,
+    toALOutboundSendEffectId
+} from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     isALOutboundAckTrackingWritable,
@@ -78,7 +83,7 @@ interface ALOutboundRepairExhaustion {
 }
 
 /** The state mutations and durable effects one commit writes together. */
-interface ALOutboundDispatchWrites<TPrepared> {
+export interface ALOutboundDispatchWrites<TPrepared> {
     readonly mutations: readonly ALOutboundAdmissionMutation[];
     readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
 }
@@ -133,27 +138,33 @@ export function computeALOutboundDispatch<TPrepared>(
     };
 }
 
-/** The identity the sends of one dispatch carry: `initial` for a first send, its hint's for a repair. */
-export function toALOutboundAttemptIdentity(options: ALOutboundCommitDispatchOptions): string {
-    return options.attemptIdentity ?? 'initial';
-}
-
-/** Everything an admitted dispatch writes: its message rows, its repair charge, its sends and its receipt. */
+/**
+ * Everything an admitted dispatch writes: its message rows, its repair charge, its sends, and its receipt or the
+ * first-hop wait that stands until the receipt's first answer.
+ */
 function computeDispatchWrites<TPrepared>(
     input: ComputeALOutboundDispatchInput<TPrepared>,
     canonicalEntry: ResourceEntry,
     repairCharge: readonly ALOutboundAdmissionMutation[]
 ): ALOutboundDispatchWrites<TPrepared> {
     const { read } = input;
+    const messageExpiresAtMs = toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs;
     const ackTracking = read.plan.preparedMessages.length > 0
-        ? computeAckTrackingWrites(
-            read,
-            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
-        )
+        ? computeAckTrackingWrites(read, messageExpiresAtMs)
         : { mutations: [], durableEffects: [] };
+    const firstHop = computeALOutboundFirstHopWaitWrites(input, messageExpiresAtMs);
     return {
-        mutations: [...computeMessageMutations(read, canonicalEntry), ...repairCharge, ...ackTracking.mutations],
-        durableEffects: [...computePreparedEffects(input, canonicalEntry), ...ackTracking.durableEffects]
+        mutations: [
+            ...computeMessageMutations(read, canonicalEntry),
+            ...repairCharge,
+            ...ackTracking.mutations,
+            ...firstHop.mutations
+        ],
+        durableEffects: [
+            ...computePreparedEffects(input, canonicalEntry),
+            ...ackTracking.durableEffects,
+            ...firstHop.durableEffects
+        ]
     };
 }
 

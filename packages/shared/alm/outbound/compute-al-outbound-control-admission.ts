@@ -29,7 +29,12 @@ import {
 } from './control/resolve-al-outbound-relay-rejection.ts';
 import { toALOutboundReceiptClasses } from './control/to-al-outbound-receipt-classes.ts';
 import { toALOutboundReceiptExhaustedFact } from './control/to-al-outbound-receipt-exhausted-fact.ts';
-import { toALOutboundAckTimeoutEffectId, toALOutboundRepairHintEffectId } from './to-al-outbound-effect-id.ts';
+import type { ALOutboundFirstHopWaitSnapshot } from './first-hop/compute-al-outbound-first-hop-wait.ts';
+import {
+    toALOutboundAckTimeoutEffectId,
+    toALOutboundFirstHopTimeoutEffectId,
+    toALOutboundRepairHintEffectId
+} from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundOutsideAudienceNack,
     acceptALOutboundPendingAckSnapshot,
@@ -62,6 +67,8 @@ export interface ALControlAdmissionRead {
     readonly ownerVersion?: ALOutboundVersionedClientRecord;
     readonly sent?: ALStoredOutboundMessage;
     readonly pending?: ALOutboundPendingAckSnapshot;
+    /** The sender's wait for its own hop to first answer for the message; absent when it waits on none. */
+    readonly firstHopWait?: ALOutboundFirstHopWaitSnapshot;
     readonly history: ALControlHistory;
     /** The ACKs admitted before this control, which the hop view reads whatever kind of control it is. */
     readonly acknowledgements: readonly ALAckPayload[];
@@ -92,6 +99,8 @@ export interface ALControlAdmissionCandidate {
     readonly removeRepairAttempt: boolean;
     /** The timeout check of a receipt this control ended, which the same commit completes; undefined otherwise. */
     readonly endedAckTimeoutEffectId: string | undefined;
+    /** The timer of a first-hop wait a refusal of the whole send ended, which the same commit removes and completes. */
+    readonly endedFirstHopTimeoutEffectId: string | undefined;
     readonly receiptExpireAtTimestamp: number;
     readonly repairEffect?: ALRepairHintEffectWrite;
     readonly controlExpireAtTimestamp: number;
@@ -115,6 +124,10 @@ export function computeALOutboundControlAdmission(
         removeRepairAttempt: receiptEnded,
         endedAckTimeoutEffectId: receiptEnded && read.pending !== undefined
             ? toALOutboundAckTimeoutEffectId(read.pending)
+            : undefined,
+        endedFirstHopTimeoutEffectId: (terminal || resolveALOutboundRelayRejection(read) !== undefined) &&
+                read.firstHopWait !== undefined
+            ? toALOutboundFirstHopTimeoutEffectId(read.firstHopWait)
             : undefined,
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
             ? read.sent?.reference.expiresAtMs ?? read.nowMs

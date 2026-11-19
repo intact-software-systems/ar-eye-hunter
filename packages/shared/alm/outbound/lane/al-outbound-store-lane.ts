@@ -62,6 +62,7 @@ import type {
     ALOutboundControlAdmissionResult
 } from '../control/al-outbound-control-admission.ts';
 import { ALOutboundReceiptAdmission } from '../control/al-outbound-receipt-admission.ts';
+import { ALOutboundFirstHopWait } from '../first-hop/al-outbound-first-hop-wait.ts';
 import type { ALOutboundCanonicalHandoff } from './al-outbound-canonical-handoff.ts';
 import { ALOutboundDequeuedAdmission } from './al-outbound-dequeued-admission.ts';
 import type { ALOutboundReceiptWorkEvidence } from './al-outbound-receipt-observation.ts';
@@ -112,6 +113,7 @@ export class ALOutboundStoreLane<TPrepared> {
     private readonly readiness: ALStorageReadiness;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    private readonly firstHopWait: ALOutboundFirstHopWait<TPrepared>;
     private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
@@ -134,6 +136,7 @@ export class ALOutboundStoreLane<TPrepared> {
         const admissions = createALOutboundLaneAdmissions(input, workPort, settlements);
         this.dispatchAdmission = admissions.dispatchAdmission;
         this.repairAdmission = admissions.repairAdmission;
+        this.firstHopWait = admissions.firstHopWait;
         this.receiptAdmission = admissions.receiptAdmission;
         this.repairRetransmission = admissions.repairRetransmission;
         const workType = toALOutboundWorkType(stores.admissionStore.namespace);
@@ -514,6 +517,9 @@ export class ALOutboundStoreLane<TPrepared> {
             case 'ack-timeout':
                 await this.repairAdmission.retryPendingAck(effect.payload.msgId);
                 return { status: 'completed' };
+            case 'first-hop-timeout':
+                await this.firstHopWait.retry(effect.payload.msgId);
+                return { status: 'completed' };
             case 'repair-hint':
                 await this.repairRetransmission.retransmitFromRepairHint(
                     effect.payload.msgId,
@@ -683,6 +689,7 @@ export class ALOutboundStoreLane<TPrepared> {
 interface ALOutboundLaneAdmissions<TPrepared> {
     readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    readonly firstHopWait: ALOutboundFirstHopWait<TPrepared>;
     readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
 }
@@ -735,6 +742,7 @@ function createALOutboundLaneAdmissions<TPrepared>(
     return {
         dispatchAdmission,
         repairAdmission: createALOutboundLaneRepairAdmission(input, controlAdmission, settlements),
+        firstHopWait: createALOutboundLaneFirstHopWait(input, dispatchAdmission, settlements),
         receiptAdmission: createALOutboundLaneReceiptAdmission(input, controlAdmission, settlements),
         repairRetransmission: new ALOutboundRepairRetransmission({
             admissionStore: stores.admissionStore,
@@ -762,6 +770,21 @@ function createALOutboundLaneRepairAdmission<TPrepared>(
         planRepairMessage: runtime.planRepairMessage,
         hopPeerIds: runtime.hopPeerIds,
         diagnostics: runtime.diagnostics,
+        settlements
+    });
+}
+
+/** A first-hop deadline resends through the lane's own dispatch admission, as a repair does. */
+function createALOutboundLaneFirstHopWait<TPrepared>(
+    input: ALOutboundStoreLane.Input<TPrepared>,
+    dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>,
+    settlements: ALOutboundSettlementEmitter
+): ALOutboundFirstHopWait<TPrepared> {
+    return new ALOutboundFirstHopWait({
+        admissionStore: input.stores.admissionStore,
+        dispatchAdmission,
+        clock: input.runtime.clock,
+        planOutgoingMessage: input.runtime.planOutgoingMessage,
         settlements
     });
 }
@@ -806,6 +829,7 @@ function resolveALOutboundEffectMsgId<TPrepared>(
         case 'send-prepared':
             return payload.message.msgId;
         case 'ack-timeout':
+        case 'first-hop-timeout':
         case 'repair-hint':
         case 'nack-retry':
             return payload.msgId;

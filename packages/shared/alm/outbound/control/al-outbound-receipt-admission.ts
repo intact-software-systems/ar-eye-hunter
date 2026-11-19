@@ -1,13 +1,17 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import { decodeALControlMessage, type ALReceiptPayload } from '../../../al-contracts/al-control.ts';
 import type { ALWorkOutcome } from '../../work/al-work-queue-port.ts';
-import type { ALOutboundAdmissionStore } from '../admission/al-outbound-admission-store.ts';
+import type {
+    ALOutboundAdmissionStore,
+    ALOutboundCommitBundle
+} from '../admission/al-outbound-admission-store.ts';
 import {
     writeALOutboundRuntimeDiagnostic,
     type ALOutboundMessageRuntime,
     type ALOutboundRuntimeDiagnosticsSink,
     type ALOutboundSettlementEmitter
 } from '../al-outbound-message-runtime.ts';
+import { toALOutboundFirstHopTimeoutEffectId } from '../to-al-outbound-effect-id.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -18,7 +22,9 @@ import {
     toALOutboundReceiptMutation,
     toALOutboundReceiptSettlement,
     toALOutboundReceiptTrackMutations,
-    validateALOutboundReceiptAdmission
+    validateALOutboundReceiptAdmission,
+    type ALOutboundReceiptAdmissionSurface,
+    type ALOutboundReceiptWrite
 } from './compute-al-outbound-receipt-admission.ts';
 import { toALOutboundReceiptConfirmationDiagnostic } from './to-al-outbound-receipt-confirmation-diagnostic.ts';
 import { writeALOutboundControlAdmissionDiagnostic } from './write-al-outbound-control-admission-diagnostic.ts';
@@ -115,15 +121,9 @@ export class ALOutboundReceiptAdmission<TPrepared> {
             }
             return { kind: 'rejected', reason: issues.map((issue) => issue.message).join('; ') };
         }
-        const status = await admissionStore.commitBundle({
-            senderId: receipt.originPeerId,
-            expectedVersion: surface.clientRecord?.version,
-            mutations: [
-                toALOutboundReceiptMutation(candidate.write, receipt),
-                ...toALOutboundReceiptTrackMutations(surface.trackPositions, candidate.write)
-            ],
-            durableEffects: []
-        });
+        const status = await admissionStore.commitBundle(
+            toReceiptCommitBundle(surface, candidate.write, receipt)
+        );
         const settlement = status === 'committed'
             ? toALOutboundReceiptSettlement(candidate.read, candidate.write, control.id.traceId)
             : undefined;
@@ -146,4 +146,29 @@ export class ALOutboundReceiptAdmission<TPrepared> {
         }
         return status === 'conflict' ? 'conflict' : { kind: 'rejected', reason: 'AL receipt commit expired' };
     }
+}
+
+/**
+ * The receipt's row and the shared-head rows it moves, and, when the sender still waits on the server to first answer
+ * for the message, the end of that wait and its timer: any receipt proves the server has the message.
+ */
+function toReceiptCommitBundle<TPrepared>(
+    surface: ALOutboundReceiptAdmissionSurface,
+    write: ALOutboundReceiptWrite,
+    receipt: ALReceiptPayload
+): ALOutboundCommitBundle<TPrepared> {
+    const bundle: ALOutboundCommitBundle<TPrepared> = {
+        senderId: receipt.originPeerId,
+        expectedVersion: surface.clientRecord?.version,
+        mutations: [
+            toALOutboundReceiptMutation(write, receipt),
+            ...toALOutboundReceiptTrackMutations(surface.trackPositions, write)
+        ],
+        durableEffects: []
+    };
+    return surface.firstHopWait === undefined ? bundle : {
+        ...bundle,
+        mutations: [...bundle.mutations, { kind: 'delete-first-hop-wait', msgId: receipt.msgId }],
+        endedTimeoutEffectIds: [toALOutboundFirstHopTimeoutEffectId(surface.firstHopWait)]
+    };
 }

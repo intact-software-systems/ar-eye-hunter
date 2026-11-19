@@ -1,10 +1,12 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
+import { resolveALFrozenMulticastAudience } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALQosEffectivePolicy } from '../../al-contracts/al-policy.ts';
 import { isALUnicastAddressedTo } from '../../al-contracts/is-al-unicast-addressed-to.ts';
 import { isALLogicalReceiptMode } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundAckTrackingPlan,
+    ALOutboundFirstHopTrackingPlan,
     ALOutboundMessageRuntime
 } from '../../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundControlAdmissionResult } from '../../alm/outbound/control/al-outbound-control-admission.ts';
@@ -33,6 +35,29 @@ export function toWsQueueBoxClientAckTrackingPlan(
         nextHopPeerIds: receiptAudience,
         mode: effective.ack.algo
     };
+}
+
+/**
+ * The first hop a WS send waits on: every receipted send the receipt above expects nobody for at dispatch, a `receiver`
+ * or `leader` room send and a `receiver` unicast to a session alike. Until the server answers for it, only this client
+ * can write it again; from the server's first receipt on, the server's receipts own its schedule. A send with no
+ * retries to spend, or one whose frozen audience is empty and so complete at admission, waits on nothing.
+ */
+export function toWsQueueBoxClientFirstHopTrackingPlan(
+    effective: ALQosEffectivePolicy,
+    msg: ALMessage,
+    serverPeerId: string | undefined
+): ALOutboundFirstHopTrackingPlan | undefined {
+    const waits = serverPeerId !== undefined &&
+        isALLogicalReceiptMode(effective.ack.algo) &&
+        !isALUnicastAddressedTo(msg, serverPeerId) &&
+        effective.ack.opts.timeoutMs > 0 &&
+        effective.retry.algo !== 'none' &&
+        effective.retry.opts.maxAttempts > 0 &&
+        resolveALFrozenMulticastAudience(msg.targets)?.recipientPeerIds.length !== 0;
+    return waits
+        ? { timeoutMs: effective.ack.opts.timeoutMs, maxAttempts: effective.retry.opts.maxAttempts }
+        : undefined;
 }
 
 function toReceiptAudience(
