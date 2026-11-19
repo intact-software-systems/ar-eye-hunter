@@ -6305,9 +6305,14 @@ components:
           $ref: '#/components/schemas/BackoffGateState'
         wantedReasons:
           type: array
-          items: { type: string, enum: [kind-change, leader-rooting] }
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
         intervalMs: { type: integer, minimum: 0 }
         opensAtEpochMs: { type: [integer, 'null'], minimum: 0 }
+
+    HeldTopologyReshapeReason:
+      type: string
+      enum: [kind-change, leader-rooting]
 
     BackoffGateState:
       type: object
@@ -6357,7 +6362,8 @@ components:
             - type: 'null'
         heldReshapeReasons:
           type: array
-          items: { type: string, enum: [kind-change, leader-rooting] }
+          items:
+            $ref: '#/components/schemas/HeldTopologyReshapeReason'
 
     TopologyPlanChange:
       oneOf:

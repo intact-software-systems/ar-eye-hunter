@@ -1,5 +1,5 @@
 import {
-    HELD_TOPOLOGY_RESHAPE_REASONS,
+    toMergedHeldTopologyReshapeReasons,
     type HeldTopologyReshapeReason,
     type TopologyReshapeGateState
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
@@ -79,9 +79,7 @@ function computeHeldTopologyReshapeGate(
     heldReasons: readonly HeldTopologyReshapeReason[]
 ): ComputedTopologyReshapeGate {
     const { previous, bounds, nowEpochMs } = input;
-    const wantedReasons = HELD_TOPOLOGY_RESHAPE_REASONS.filter((reason) =>
-        previous.wantedReasons.includes(reason) || heldReasons.includes(reason)
-    );
+    const wantedReasons = toMergedHeldTopologyReshapeReasons(previous.wantedReasons, heldReasons);
     const isFirstHold = previous.gate.heldAtEpochMs === null;
     if (!isFirstHold && wantedReasons.length === previous.wantedReasons.length) {
         return UNCHANGED_TOPOLOGY_RESHAPE_GATE;

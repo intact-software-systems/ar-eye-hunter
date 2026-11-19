@@ -11,7 +11,7 @@ import { resolveRallarGroupLeaderSessionId } from '@shared/api/group-director.ts
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import {
-    HELD_TOPOLOGY_RESHAPE_REASONS,
+    toMergedHeldTopologyReshapeReasons,
     UNGATED_TOPOLOGY_RESHAPE_PERMISSION,
     type TopologyReshapePermission
 } from '@shared/api/topology-plan/topology-reshape-gate.ts';
@@ -325,8 +325,9 @@ export class RtcTopologyPlanner {
             );
         }
         const planned = this.computePlannedNextHops(plan, evolved, publicDispatch);
-        const heldReshapeReasons = HELD_TOPOLOGY_RESHAPE_REASONS.filter((reason) =>
-            selected.heldReshapeReasons.includes(reason) || planned.heldReshapeReasons.includes(reason)
+        const heldReshapeReasons = toMergedHeldTopologyReshapeReasons(
+            selected.heldReshapeReasons,
+            planned.heldReshapeReasons
         );
         return { ...planned, topology: selected.topology, heldReshapeReasons };
     }
