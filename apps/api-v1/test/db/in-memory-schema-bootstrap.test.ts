@@ -70,6 +70,7 @@ test('in-memory schema applies idempotently and creates expected tables/indexes'
                 'group_state_events_page_ix',
                 'group_state_events_pk',
                 'group_state_events_type_page_ix',
+                'resource_inbox_due_ix',
                 'resource_inbox_expire_ts_ix',
                 'resource_inbox_ix',
                 'resource_inbox_reserved_timeout_ix',
@@ -108,6 +109,10 @@ test('in-memory schema applies idempotently and creates expected tables/indexes'
             indexes.rows.find((row) => row.indexname === 'runtime_state_store_namespace_key_c_ix')
                 ?.indexdef ?? '',
             /\(store_namespace, store_key COLLATE "C"\)/
+        );
+        assert.match(
+            indexes.rows.find((row) => row.indexname === 'resource_inbox_due_ix')?.indexdef ?? '',
+            /\(ri_type_id, ri_status, next_ts NULLS FIRST, ri_row_id\)/
         );
     }
     finally {

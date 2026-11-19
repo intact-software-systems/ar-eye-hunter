@@ -42,6 +42,9 @@ CREATE INDEX IF NOT EXISTS resource_inbox_runnable_ix
 CREATE INDEX IF NOT EXISTS resource_inbox_reserved_timeout_ix
     ON resource_inbox (ri_type_id, ri_status, start_ts, expire_ts, ri_row_id);
 
+CREATE INDEX IF NOT EXISTS resource_inbox_due_ix
+    ON resource_inbox (ri_type_id, ri_status, next_ts NULLS FIRST, ri_row_id);
+
 CREATE SEQUENCE IF NOT EXISTS trans_inbox_results_seq
     START WITH 1000
     INCREMENT BY 1

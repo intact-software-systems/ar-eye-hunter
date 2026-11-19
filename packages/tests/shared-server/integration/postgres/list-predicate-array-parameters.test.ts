@@ -143,12 +143,12 @@ describe('Postgres list predicates', () => {
             });
 
             expect(plans.map(toIndexNames)).toEqual([
-                ['resource_inbox_ix', 'resource_inbox_reserved_timeout_ix', 'resource_inbox_runnable_ix'],
-                ['resource_inbox_runnable_ix'],
+                ['resource_inbox_due_ix', 'resource_inbox_ix', 'resource_inbox_reserved_timeout_ix'],
+                ['resource_inbox_due_ix'],
                 ['resource_inbox_reserved_timeout_ix'],
                 ['resource_inbox_reserved_timeout_ix'],
                 ['resource_inbox_ix'],
-                ['resource_inbox_ix', 'ri_pk']
+                ['resource_inbox_due_ix', 'ri_pk']
             ]);
             for (const plan of plans) {
                 expect(plan).not.toContain('Seq Scan on resource_inbox');
@@ -213,6 +213,28 @@ describe('Postgres list predicates', () => {
             }));
             expect(inboxScans.map((node) => node['Node Type'])).not.toContain('Seq Scan');
             expect(inboxScans.map((node) => node['Node Type'])).not.toContain('Bitmap Heap Scan');
+        });
+    });
+
+    postgresIt('read a due page by an ordered scan of the due index with no sort, planned for its values or generically', async () => {
+        await withStorage(async (storage) => {
+            await seedEligibleBacklog(storage.sql);
+            const request = { typeId: EnqueuedType.WS_OUTBOX, status: EntityStatus.NEW, maxToRead: 16, order: 'due', cursor: null } as const;
+            const customPlans: PlanNode[][] = [];
+            const genericPlans: PlanNode[][] = [];
+
+            await new PSqlResourceInboxReservationRepository(toJsonExplainingSql(storage.sql, customPlans)).readWorkPage(request);
+            await storage.sql.begin(async (transaction) => {
+                await transaction`set local plan_cache_mode = force_generic_plan`;
+                await new PSqlResourceInboxReservationRepository(toJsonExplainingSql(transaction, genericPlans)).readWorkPage(request);
+            });
+
+            for (const nodes of [...customPlans, ...genericPlans]) {
+                expect(nodes).toContainEqual(expect.objectContaining({ 'Node Type': 'Index Scan', 'Index Name': 'resource_inbox_due_ix' }));
+                expect(nodes.map((node) => node['Node Type'])).not.toContain('Sort');
+                expect(nodes.map((node) => node['Node Type'])).not.toContain('Incremental Sort');
+            }
+            expect([customPlans.length, genericPlans.length]).toEqual([1, 1]);
         });
     });
 
